@@ -271,9 +271,11 @@ class RuntimeActivationTests(unittest.TestCase):
             consume_provider_activation(
                 state_root=self.state, starter=lambda **_kwargs: ({"status": "failed"}, 503),
                 task_reader=lambda: self.task, provider_inspector=inspector, git_runner=self.git,
+                task_controller=controller,
             )
         self.assertEqual(caught.exception.status, "provider_start_failed")
         self.assertEqual(controller.enabled, [plan["task_action_sha256"]])
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
 
     def test_missing_signed_runner_ack_or_heartbeat_recovers_deterministically(self):
         plan, controller, _ = self._prepared()

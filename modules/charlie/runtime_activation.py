@@ -169,7 +169,10 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         task_controller.enable_and_trigger_exact(plan["task_action_sha256"])
     except Exception:
         if rollback_path.exists():
-            _recover_prepare_failure(state_root, plan, task_controller, archive_path, stop_path)
+            _close_prepare_failure(
+                state_root, plan, task_controller, archive_path, stop_path,
+                lane_path, rollback_path, packet_path,
+            )
         elif lane_path.exists():
             lane_path.replace(ledger / f"{activation_id}-prepare-write-failed-lane.json")
         raise
@@ -181,9 +184,10 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
     }
 
 
-def consume_provider_activation(*, state_root, starter, task_reader=read_watchdog_task,
+def consume_provider_activation(*, state_root, starter, task_controller,
+                                task_reader=read_watchdog_task,
                                 provider_inspector=None, git_runner=subprocess.run,
-                                task_controller=None, now=None):
+                                now=None):
     state_root = Path(state_root).resolve()
     packet_path = state_root / "activation-packet.json"
     packet = _read_json(packet_path, "activation_packet_invalid")
@@ -206,9 +210,8 @@ def consume_provider_activation(*, state_root, starter, task_reader=read_watchdo
     try:
         result, status_code = starter(execution_mode=MODE)
     except Exception as exc:
-        if task_controller is not None:
-            recover_activation(state_root=state_root, task_controller=task_controller,
-                               activation_id=packet["activation_id"])
+        recover_activation(state_root=state_root, task_controller=task_controller,
+                           activation_id=packet["activation_id"])
         raise ActivationError("provider_start_failed", error_type=exc.__class__.__name__) from exc
     finally:
         if previous is None:
@@ -221,9 +224,8 @@ def consume_provider_activation(*, state_root, starter, task_reader=read_watchdo
     updated["packet_hmac_sha256"] = _sign_packet(updated, _read_key(state_root / "activation-authority.key"))
     _atomic_json(packet_path, updated)
     if status_code >= 300:
-        if task_controller is not None:
-            recover_activation(state_root=state_root, task_controller=task_controller,
-                               activation_id=packet["activation_id"])
+        recover_activation(state_root=state_root, task_controller=task_controller,
+                           activation_id=packet["activation_id"])
         raise ActivationError("provider_start_failed", start_result=result)
     return {"success": True, "status": status, "activation_id": packet["activation_id"],
             "terminal_spawned_core": False, "provider": provider, "start_result": result}
@@ -340,7 +342,7 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
 
 def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
                                 allowed_descendant_tree=None,
-                                inspector=None):
+                                inspector=None, child_inspector=None):
     static = validate_bootstrap_tree(
         tree, generation=generation, revision=revision,
         startup_nonce=startup_nonce, require_interpreter=True,
@@ -348,7 +350,14 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
     if not static.get("authorized"):
         return static
     inspector = inspector or _inspect_exact_process
+    child_inspector = child_inspector or _inspect_exact_children
     members = tree.get("members") if isinstance(tree, dict) else []
+    signed_pids = {int(item.get("pid") or -1) for item in members}
+    allowed_members = (
+        allowed_descendant_tree.get("members", [])
+        if isinstance(allowed_descendant_tree, dict) else []
+    )
+    allowed_pids = {int(item.get("pid") or -1) for item in allowed_members}
     for record in members:
         current = inspector(int(record.get("pid") or -1))
         if not isinstance(current, dict) or not current.get("inspection_complete"):
@@ -364,8 +373,20 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
         )
         if not all(checks):
             return {"authorized": False, "reason": "owned_pid_identity_changed"}
+        children = child_inspector(int(record.get("pid") or -1))
+        if not isinstance(children, list):
+            return {"authorized": False, "reason": "owned_descendant_inspection_failed"}
+        if any(int(child.get("pid") or -1) not in signed_pids | allowed_pids for child in children):
+            return {"authorized": False, "reason": "unsigned_live_descendant"}
+    if allowed_pids:
+        allowed_roots = [
+            item for item in allowed_members
+            if int(item.get("parent_pid") or -1) not in allowed_pids
+        ]
+        if len(allowed_roots) != 1 or int(allowed_roots[0].get("parent_pid") or -1) not in signed_pids:
+            return {"authorized": False, "reason": "descendant_tree_parentage_mismatch"}
     return {"authorized": True, "reason": "exact_owned_members_live",
-            "member_pids": sorted(int(item["pid"]) for item in members)}
+            "member_pids": sorted(signed_pids), "complete_descendants": True}
 
 
 def _inspect_exact_process(pid, runner=subprocess.run):
@@ -381,6 +402,31 @@ def _inspect_exact_process(pid, runner=subprocess.run):
     )
     if completed.returncode:
         return {"inspection_complete": False}
+
+
+def _inspect_exact_children(parent_pid, runner=subprocess.run):
+    script = (
+        "$ErrorActionPreference='Stop';"
+        f"$p=@(Get-CimInstance Win32_Process -Filter \"ParentProcessId={int(parent_pid)}\");"
+        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CreationDate,CommandLine|ConvertTo-Json -Compress"
+    )
+    completed = runner(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    if completed.returncode:
+        return None
+    try:
+        rows = json.loads(completed.stdout or "[]")
+        rows = rows if isinstance(rows, list) else [rows]
+        return [{
+            "pid": int(row["ProcessId"]), "parent_pid": int(row["ParentProcessId"]),
+            "executable_path": str(row.get("ExecutablePath") or ""),
+            "creation_time": str(row.get("CreationDate") or ""),
+            "command_line": str(row.get("CommandLine") or ""),
+        } for row in rows]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
     try:
         row = json.loads(completed.stdout)
         return {
@@ -527,26 +573,28 @@ class WindowsExactTaskController:
         self.expected_task = rows
 
     def enable_and_trigger_exact(self, digest):
-        self._mutate(digest, "Enable-ScheduledTask -InputObject $t|Out-Null")
+        self._mutate(digest, "Enable-ScheduledTask -InputObject $t|Out-Null", {"Disabled"})
         if _task_action_sha256(self.task_reader()) != digest:
-            self._mutate(digest, "Disable-ScheduledTask -InputObject $t|Out-Null")
+            self._mutate(digest, "Disable-ScheduledTask -InputObject $t|Out-Null", {"Ready", "Running", "Disabled"})
             raise ActivationError("scheduled_task_identity_changed_after_enable")
-        self._mutate(digest, "Start-ScheduledTask -InputObject $t")
+        self._mutate(digest, "Start-ScheduledTask -InputObject $t", {"Ready"})
 
     def disable_exact(self, digest):
-        self._mutate(digest, "Disable-ScheduledTask -InputObject $t|Out-Null")
+        self._mutate(digest, "Disable-ScheduledTask -InputObject $t|Out-Null", {"Ready", "Running", "Disabled"})
 
-    def _mutate(self, digest, action):
+    def _mutate(self, digest, action, allowed_states):
         if _task_action_sha256(self.task_reader()) != digest:
             raise ActivationError("scheduled_task_identity_changed")
         if not self.expected_task:
             raise ActivationError("scheduled_task_binding_missing")
         encoded = base64.b64encode(_canonical(self.expected_task[0])).decode("ascii")
+        states = ",".join(f"'{value}'" for value in sorted(allowed_states))
         script = (
             "$ErrorActionPreference='Stop';"
             f"$e=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded}'))|ConvertFrom-Json;"
             "$ts=@(Get-ScheduledTask -TaskName $e.task_name -TaskPath $e.task_path);"
             "if($ts.Count-ne 1){throw 'task identity ambiguous'};$t=$ts[0];$a=@($t.Actions);"
+            f"if(@({states})-notcontains[string]$t.State){{throw 'task state changed'}};"
             "if($a.Count-ne 1-or[string]$a[0].Execute-ne[string]$e.execute-or"
             "[string]$a[0].Arguments-ne[string]$e.arguments-or"
             "[string]$a[0].WorkingDirectory-ne[string]$e.working_directory){throw 'task action changed'};"
@@ -593,7 +641,9 @@ def _validate_pre_mutation(plan, *, task_reader, git_runner):
     ):
         if _sha256(path) != expected:
             raise ActivationError(status)
-    if _task_action_sha256(task_reader()) != plan["task_action_sha256"]:
+    task = task_reader()
+    _validate_exact_task(task, Path(plan["runtime_root"]))
+    if _task_action_sha256(task) != plan["task_action_sha256"]:
         raise ActivationError("scheduled_task_identity_changed")
     runtime = _worktree(Path(plan["runtime_root"]), git_runner)
     execution = _worktree(Path(plan["execution_root"]), git_runner)
@@ -618,6 +668,8 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
             or Path(packet.get("runtime_root", "")).resolve() != state_root / "core-runtime-current"
             or Path(packet.get("execution_root", "")).resolve() != state_root / "core-execution-current"):
         raise ActivationError("activation_packet_authority_or_roots_invalid")
+    if _read_json(packet.get("authority_path"), "activation_authority_invalid") != authority:
+        raise ActivationError("activation_authority_content_mismatch")
     lane = _read_json(state_root / "activation.lock", "activation_lane_missing")
     rollback = _read_json(
         state_root / "activation-ledger" / f"{packet['activation_id']}-rollback.json",
@@ -671,12 +723,33 @@ def _validate_exact_task(rows, runtime_root):
         raise ActivationError("scheduled_task_arguments_mismatch")
 
 
-def _recover_prepare_failure(state_root, plan, controller, archive, stop):
-    try:
-        controller.disable_exact(plan["task_action_sha256"])
-    finally:
-        if archive.exists() and not stop.exists():
-            archive.replace(stop)
+def _close_prepare_failure(state_root, plan, controller, archive, stop,
+                           lane_path, rollback_path, packet_path):
+    errors = []
+    if archive.exists():
+        try:
+            if hasattr(controller, "bind_exact"):
+                controller.bind_exact(plan["task_ownership"])
+            controller.disable_exact(plan["task_action_sha256"])
+        except Exception as exc:
+            errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
+        try:
+            if not stop.exists():
+                archive.replace(stop)
+            if _sha256(stop) != plan["stop_marker_sha256"]:
+                raise ActivationError("governed_stop_restore_failed")
+        except Exception as exc:
+            errors.append({"component": "governed_stop", "status": getattr(exc, "status", exc.__class__.__name__)})
+    if errors:
+        raise ActivationError("activation_prepare_recovery_incomplete", errors=errors)
+    ledger = Path(state_root) / "activation-ledger"
+    activation_id = plan["activation_id"]
+    if packet_path.exists():
+        packet_path.replace(ledger / f"{activation_id}-prepare-failed-packet.json")
+    if rollback_path.exists():
+        rollback_path.replace(ledger / f"{activation_id}-prepare-failed-rollback.json")
+    if lane_path.exists():
+        lane_path.replace(ledger / f"{activation_id}-prepare-failed-lane.json")
 
 
 def _validate_roots(state, runtime, execution):
