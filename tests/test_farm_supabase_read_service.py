@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +16,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             self.fail_fragment = fail_fragment
             self.description = [FarmSupabaseReadServiceTests._Column("placeholder")]
             self.rows = []
+            self.last_sql = ""
 
         def __enter__(self):
             return self
@@ -25,6 +26,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
         def execute(self, sql, _params=()):
             text = str(sql).lower()
+            self.last_sql = text
             if self.fail_fragment and self.fail_fragment in text:
                 raise TimeoutError("bounded statement timeout")
             self.rows = []
@@ -32,6 +34,11 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
         def fetchall(self):
             return self.rows
+
+        def fetchone(self):
+            if "transaction_timestamp()" in self.last_sql:
+                return (datetime(2026, 8, 17, 13, 0, tzinfo=timezone.utc),)
+            return self.rows[0] if self.rows else None
 
     class _SnapshotConnection:
         def __init__(self, fail_fragment=None):

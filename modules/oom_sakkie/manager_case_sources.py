@@ -78,10 +78,13 @@ def _herdmaster(now):
                    "waiting_for_evidence": "urgent", "protected_owner_decision": "due"}.get(item.state.value, "watch")
         candidates.append(_candidate(
             "herdmaster:" + str(item.dedupe_key), "HERDMASTER", urgency,
-            [f"result:{result.result_id}", *item.provenance.source_refs], unknowns,
+            [f"result:{result.result_id}",
+             f"observed:{item.provenance.observed_at.isoformat()}",
+             *item.provenance.source_refs], unknowns,
             item.title + ": " + item.why, item.next_action, due))
     from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
     snapshot = get_allocation_input_rows()
+    snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
     for row in snapshot.get("overview_rows") or ():
         if str(row.get("Tag_Number") or "").strip().casefold() != "151":
             continue
@@ -89,7 +92,8 @@ def _herdmaster(now):
         if withdrawal not in {"cleared", "not_applicable"}:
             candidates.append(_candidate("herdmaster:pig-151-withdrawal-sales", "HERDMASTER", "urgent",
                 [f"pig:{row.get('Pig_ID') or 'tag-151'}", f"withdrawal:{withdrawal}",
-                 f"allocation:{row.get('Allocation_Evidence_State') or 'unknown'}"],
+                 f"allocation:{row.get('Allocation_Evidence_State') or 'unknown'}",
+                 f"observed:{snapshot_observed.isoformat()}"],
                 ["withdrawal_clearance", "sales_eligibility"],
                 "Pig 151 does not have proved withdrawal clearance and sales eligibility.",
                 "Delegate to HERDMASTER; retain the hold until canonical withdrawal and allocation evidence both support eligibility.",
@@ -105,7 +109,8 @@ def _herdmaster(now):
             candidates.append(_candidate("herdmaster:molly-active-litter", "HERDMASTER", "due",
                 [f"litter:{litter_id}", f"status:{status or 'unknown'}",
                  f"farrowing:{farrowing}", f"wean_due:{wean}",
-                 f"weaned_count:{weaned if weaned is not None else 'unknown'}"],
+                 f"weaned_count:{weaned if weaned is not None else 'unknown'}",
+                 f"observed:{snapshot_observed.isoformat()}"],
                 ([] if wean != "unknown" else ["current_litter_weaning_due_date"]),
                 f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}.",
                 "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.",
