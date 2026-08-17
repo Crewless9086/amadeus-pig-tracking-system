@@ -2146,3 +2146,25 @@ boundaries; it may not infer activity from windows, replay failed epochs, operat
 hardware, publish/spend, send customer messages, write farm/order state or create
 duplicate infrastructure. Its durable external log is
 `C:\tmp\CONTROL_TOWER_OVERNIGHT_WATCH_LOG_20260817.md`.
+
+### ROOTLINE #1057 deployed; plan/authority continuation active - 2026-08-17 21:18 SAST
+
+ROOTLINE's outcome terminal exited 0 after merging PR #1057 and observing exact
+deployment `4aeb0f3b`. Canonical generation-1 identities now exist for B, C,
+fertiliser injection, mixer and Borehole MINI R4; provider readback shows all OFF
+and no terminal control call occurred. The reusable remaining defect is a current-
+plan contradiction: the canonical endpoint reports `no_current_water_energy_plan`
+while fresh scheduled audit evidence recommends B/C. B/C commissioning evidence
+and standing authority are not yet canonical; fertiliser and borehole retain
+additional physical fail-safe dependencies. The completed ROOTLINE wrapper was
+closed.
+
+Existing Slot 2 was immediately resumed as `ROOTLINE - PLAN AND AUTHORITY
+RECOVERY`. It must consume Charl's already recorded 18:03 SAST Telegram evidence
+“Reservoir is full”, reconcile the one authoritative plan and Oom Sakkie delivery,
+recover exact valid historical commissioning evidence without inference, and
+complete all safe source/review/deploy/replay-silent work overnight. No terminal
+hardware command or unsupervised new commissioning ON is authorized. The morning
+target is genuine operation under already-proven authority, electronically green
+readiness for one exact supervised observation, or one precise automatically
+owned evidence exception—not another generic wait.
