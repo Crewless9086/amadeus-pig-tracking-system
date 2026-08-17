@@ -1560,3 +1560,41 @@ rail only if every binding remains exact. It must prove loaded revision, signed
 supervisor/runner ancestry, heartbeat, one independent cycle, next trigger and a
 later cycle after all development and activation terminals close. Source merge or
 terminal-created cycles do not make CORE live.
+
+### HMQ-20260813-04 offspring summary continuation — 2026-08-17
+
+Charl confirms that the `Nageslagte` section still lacks useful outcome summaries.
+The retained Cursor-era CODEX UI worktree
+`C:\tmp\ui-hmq-20260813-04-human-identity-preview-20260815` is clean in tracked
+source at `b936a1e88c67c6c116ce5c1c39e7d5d9113abd23`; only preserved preview output is
+untracked. Fresh process inspection found no terminal or worker owning that
+worktree. It is 19 unique commits ahead and 125 commits behind current main, so it
+must remain immutable evidence and must not be merged, rebased, reset or revived
+wholesale. The Cursor terminal can close without affecting any runtime or work.
+
+Classify HMQ-20260813-04 as `OWNER_PRIORITY / BACKEND_CONTRACT_REQUIRED / UI
+PREVIEW_SUPERSEDED`. The corrected local preview truthfully removed invented
+Unknown/outcome cards and retained `Totaal aangeteken — 37`, but that is not the
+requested useful business outcome. Current main has no canonical
+`offspring_disposition_summary` projection. Status, purpose and `on_farm` alone
+must not be interpreted as completed sale, processing or exit evidence.
+
+Execute in two serialized external-terminal increments. First, HERDMASTER owns a
+fresh-current-main backend projection that returns `total_recorded`, `on_farm`,
+`livestock_sale`, `auction_sale`, `slaughter_pig_sale`, `meat_processed`,
+`deceased`, `other_unresolved`, `classified_count`, `reconciles_to_total`,
+`rule_id`, and one primary canonical disposition/evidence classification per
+offspring. Categories must be mutually exclusive, evidence-backed and reconcile
+exactly to the attributable total; Unknown evidence remains unresolved, never
+zero or an inferred outcome. Historical branch commits may be inspected and
+selectively reimplemented only after current-source and collision review.
+
+Second, after the HERDMASTER contract is reviewed and integrated, launch a fresh
+external CODEX UI worktree from then-current main. Reconcile only the approved
+three-file owner experience: useful summary cards beneath `Nageslagte`, canonical
+total and reconciliation status, human-readable labels, unresolved-evidence
+warning, existing 37-row operational table, Dashboard-family styling, desktop/
+390px mobile behavior and authenticated GET-only local preview. Require Charl's
+approval before merge or deployment. The UI must not become livestock authority
+or invent categories. Both target terminals must return the complete
+`CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` and Control Tower receipt.
