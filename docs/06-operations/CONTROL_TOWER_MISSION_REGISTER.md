@@ -1035,3 +1035,44 @@ accepted. Operational completion requires a genuine canonical evidence change,
 deployed HERDMASTER prioritisation, OOM SAKKIE delivery, protected owner preview,
 confirmed canonical readback, downstream preparation, correct quiet/defer
 behaviour and a later terminal-independent reassessment.
+
+### Recovery Slot 3 SAM/BEACON operational reality — 2026-08-17
+
+Fresh read-only provider and canonical evidence proves the deployed SAM
+`sam-live-stock-operating-loop` is continuously cycling inside Render deployment
+`a0038c42`. Worker `srv-d6sijjkhg0os73f7regg-747d9955fc-trzw9:pid-59`
+completed three independent 60-second cycles through 12:38:47 UTC, each scanning
+1,791 conversations with durable next-cycle times, zero proposals, zero sends and
+zero business effects. The canonical projection contained one pre-activation
+ineligible obligation and no genuinely actionable post-activation event. The
+large provider unread inventory (711 conversations / 1,783 messages) is therefore
+not treated as 711 reply obligations or replay authority.
+
+SAM is honestly `WORKING / AUTONOMOUS_SHADOW_OBSERVER / EVENT_WAITING /
+CUSTOMER_DISPATCH_AUTHORITY_DISABLED`. `SAM_SALES_LEVEL1_COHORT_ENABLED=0` and
+the operating mode defaults fail-closed to shadow. This proves terminal-independent
+observation and replay silence, not useful customer service. Do not enable the
+cohort merely to create acceptance evidence. The next genuine eligible
+post-activation event must prove exact claim, supported response or protected
+exception, provider delivered/read state, follow-up ownership and replay silence.
+Any authority decision first requires reconciliation of the retained dirty SAM
+worktree, which is 80 commits behind current main and contains three preserved
+uncommitted response-authority files.
+
+Fresh canonical BEACON inputs show 27 live-sale-ready animals, 14 in the meat
+window and 11 slaughter/cull-ready animals, with 23 media assets, 10 approved,
+12 awaiting review, scheduling and spend disabled, three recorded production
+posts and zero qualified buyer leads. This is a real commercial opportunity but
+no deployed stock-to-proposal worker, heartbeat or current proposal/media-request
+case is proven. Classify BEACON `WORKING / DEPLOYED_DORMANT /
+STOCK_OPPORTUNITY_UNOWNED`. Its next bounded revenue increment is a canonical
+sale-ready-stock observer that reuses existing proposal/media authority and may
+surface only a protected proposal or precise missing-media request—never publish,
+spend or infer private-media authority.
+
+Evidence caveat: the assessment terminal used superseded 986/259/208-line
+governance from historical SAM head `486306ab`, so its governance PASS is not
+accepted as a current implementation authorization. It also wrote an untracked
+handover in the dirty owner workspace; preserve it as evidence but do not commit,
+move or delete it from that workspace. Runtime observations remain admissible
+because they were freshly read from current deployed revision `a0038c42`.
