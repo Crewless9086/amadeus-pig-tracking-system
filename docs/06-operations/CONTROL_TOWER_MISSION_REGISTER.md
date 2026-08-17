@@ -470,7 +470,7 @@ fresh genuine trigger, verified result, next trigger and terminal-close proof.
 
 | Agent / development terminal | Current honest operating state | Complete outcome target | Continuous trigger and follow-up | Current acceptance blocker | Owner work removed |
 |---|---|---|---|---|---|
-| CORE / CORE | Source release/staging rail integrated; deployed worker and coherent runtime identity not proven | Durably receive, plan, dispatch, supervise and close bounded software missions, including detecting stalled agents, without Charl pasting prompts or monitoring terminals | Durable mission queue plus supervised runner; every mission retains worker, heartbeat, progress, closeout and next eligible mission | Isolated exact-revision staging, coherent runtime/execution/manifest state, governed restart and later independent cycle remain unproven | Manual prompt relay, terminal checking, recovery and cross-terminal coordination |
+| CORE / CORE | Release/staging rail integrated; `ebc661b5` was coherently staged under preserved governed stop, but authoritative main advanced to `f588c276` with the continuous-operation and Brain Guard reset before activation; no deployed worker exists | Durably receive, plan, dispatch, supervise and close bounded software missions, including detecting stalled agents, without Charl pasting prompts or monitoring terminals | Durable mission queue plus supervised runner; every mission retains worker, heartbeat, progress, closeout and next eligible mission | Revalidate and restage exact current authoritative main through the proven isolated rail, then separately govern activation, loaded-revision proof, exact-tree containment, heartbeat, next independent cycle and terminal-close continuity | Manual prompt relay, terminal checking, recovery and cross-terminal coordination |
 | OOM SAKKIE / OOM SAKKIE | Partial authenticated intake and summaries; continuous manager loop not proven | Continuously ingest material farm/business/runtime events, investigate them, delegate typed specialist work, track it to closure and notify Charl or Anton only with a useful result, genuine exception or protected decision | Event subscriptions plus bounded reassessment scheduler and durable unresolved-work ledger; next trigger is evidence change or earliest due time, not tomorrow's brief | Current branch recovery/PR evidence is fresh only when the restarted terminal returns; deployed all-domain event intake, manager case lifecycle and terminal-independent continuity are absent | Discovering omissions, asking each specialist, repeating facts, chasing failures and waiting until the next morning |
 | ROOTLINE / ROOTLINE | Request/invocation paths exist; current water-energy plan returned `no_current_water_energy_plan`; no current independent decision cycle proven | Continuously refresh water, weather, power, device and irrigation evidence; maintain a current plan; execute routine approved work inside standing authority; verify effects; retry/reassess; escalate one exact exception | Evidence-change events plus durable due-time scheduler; failures remain owned and reassessed automatically | Shared OOM/ROOTLINE claim delivery and reusable device commissioning spine remain incomplete; fresh plan worker/next cycle absent | Manually waking ROOTLINE, asking for irrigation status, repeating valve presence and monitoring retries |
 | HERDMASTER / HERDMASTER | Canonical pig/litter/weight reads are useful; continuous husbandry worklist and follow-through not proven | Continuously maintain the herd work queue for weighing, litter care, treatments, welfare, breeding and sales eligibility; dispatch due work through Oom Sakkie and verify resulting canonical updates | Canonical event subscriptions plus due-date scheduler; every due item has next action, assignee, deadline and reassessment | Molly's due treatment was omitted from the manager output; weighing remained a count rather than an operated workflow; Pig 151 exclusion was silent rather than explained | Finding due animal work, checking lists/pages and diagnosing why an animal is unavailable |
@@ -511,6 +511,18 @@ terminal closes. Missing evidence changes the state to `Unknown`, `dormant`,
 Charl should send no routine wake-up, status-check or repeated evidence message.
 The only permissible owner interactions are a genuinely unavailable physical
 fact, strategic choice, exception or protected authority expansion.
+
+### CORE staging assessment — 2026-08-17
+
+The staging epoch for `ebc661b58f6a0cbfeb50651f55bef4659966abd3`
+successfully proved the new serialized, receipt-bound, zero-start rail while
+preserving the governed stop. It did not activate CORE. Authoritative main then
+advanced to `f588c27622555488553d74270dae07efe1925060`, which contains the
+continuous-agent reset and fail-closed Brain Guard alignment enforcement.
+Activation of the older staged revision is prohibited. Slot 1 remains WORKING /
+`RESTAGE_CURRENT_MAIN_REQUIRED`; the next CORE target is exact current main, not
+the historical staged commit. The successful staging receipt remains immutable
+rail evidence and is not reused as validation authority for the new revision.
 
 ## Delivery limitation
 
