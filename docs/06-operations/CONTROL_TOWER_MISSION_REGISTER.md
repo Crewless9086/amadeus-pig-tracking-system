@@ -1712,3 +1712,40 @@ confirmed plan delivery. Require new schedule-origin delivery and a later replay
 silent cycle after deployment. Typed device/standing-authority commissioning
 remains separately sequenced after the plan-delivery contract and never authorizes
 terminal actuation.
+
+### Revenue Slot 3 generation-9 campaign package — correction required — 2026-08-17
+
+Deployed BEACON autonomously prepared and delivered protected generation 9 for
+case `OOM-CASE-63E41A327E76EB895B4B76B8`, attribution
+`BEACON-CAMPAIGN-48C78B9256323E30AED38BE0`, through OOM SAKKIE. Render cycle
+`OOM-MANAGER-CYCLE-20260817T152038672902Z-089DF963B27B4326B8BD5C389E508B79`
+completed with one provider-confirmed delivery, seven suppressions and zero
+exceptions; a later provider-owned cycle recorded duplicate suppression. This
+proves autonomous package preparation, owner-card delivery and replay silence.
+The released clean Revenue development terminal was closed after handover; the
+deployed five-minute worker continues independently.
+
+No Facebook publication, boost, spend, customer inbound, SAM response, quote,
+reservation, allocation, payment, sale or profit occurred. Publication/spend
+authority remains disabled. The delivered envelope proposed 18 August 18:00 SAST,
+Facebook messaging conversations, ZAR 300 total/ZAR 100 daily for three days, and
+text-only media. Do not approve or execute that exact package from Control Tower.
+
+Commercial review finds a reusable objective/copy contradiction: the objective is
+message-generation for the BEACON-to-SAM revenue loop, but the copy merely asks
+people to “follow the farm journey” and does not invite livestock enquiries,
+identify a truthful availability proposition or create a clear SAM inbound path.
+Spending on this card would not satisfy Charl's standing priority that BEACON
+creates demand which SAM can handle. Classify generation 9
+`PROTECTED_CARD_DELIVERED / CORRECTION_REQUIRED / NO_PUBLICATION_AUTHORITY`.
+
+Automatically continue the same Recovery Slot 3 with a fresh-current-main bounded
+BEACON package-quality repair. Require semantic alignment among campaign objective,
+canonical sale-ready stock/media evidence, copy, call to action, target audience,
+attribution and SAM-supported response class. The package must remain truthful,
+must not promise unavailable animals or prices, must not infer private-media
+authority and must retain exact budget/time/stop/rollback controls. The deployed
+agent—not a terminal—must produce and deliver the corrected protected card. Only
+then is one exact approve/correct/decline owner decision eligible; publication and
+spend remain blocked until approval, and Meta/SAM/commercial readback remain later
+acceptance gates.
