@@ -990,3 +990,48 @@ Automatic prompt delivery to every visible terminal is not proven. Charl must
 paste a prompt unless target-specific delivery and acknowledgement are evidenced.
 The target is the durable CORE queue/runner. Until then, queued, delivered,
 started and deployed-runtime-active remain distinct states.
+
+### OP-004 unified HERDMASTER Herd Decisions journey — 2026-08-17
+
+Charl has resolved OP-004's documented owner-choice gap in favour of one
+HERDMASTER-led owner journey. `/pig-allocation` becomes the canonical Herd
+Decisions (`Kuddebesluite`) surface; `/purpose-review` remains only as a
+compatibility redirect into the unified page's Needs Decision view. This extends
+existing OP-004 and its canonical allocation/purpose-review rails. It does not
+authorize a second allocation engine, purpose ledger, protected-write path or UI
+mission.
+
+The accepted product direction is workflow redesign first and facelift second.
+HERDMASTER must continuously reassess material weight, weaning, movement,
+medical, sale and lifecycle changes; rank Action Needed work by urgency and
+supported commercial impact; explain evidence, confidence, missing data, holds
+and conflicts; group only compatible recommendations; retain acknowledgement
+and evidence-bound deferral; and prepare one exact protected preview. OOM SAKKIE
+surfaces material findings and the smallest required decision. Approval remains
+protected: HERDMASTER may not silently change purpose, reserve or slaughter an
+animal, contact a customer or publish availability. After confirmation it must
+read back canonical truth, immediately reassess, and prepare—never implicitly
+execute—the correct SAM, BEACON, meat, breeding or sales handoff.
+
+The owner page defaults to Action Needed rather than the whole herd, uses human
+identity before internal IDs, keeps All Active, Already Allocated and
+Exited/History as secondary views, and unifies individual and grouped decisions.
+Every group must expose removable exceptions and exact per-animal evidence before
+one confirmation. Acknowledged unchanged findings remain quiet; deferred items
+reopen only at the recorded due time or material evidence/urgency change. Unknown
+or conflicting facts stay explicit. The final CODEX UI increment must follow the
+Dashboard-family standard and preserve contextual returns, desktop/mobile states
+and owner-approved local previews without recalculating HERDMASTER decisions.
+
+Classify existing OP-004 as `WORKING / OWNER_DIRECTION_ACCEPTED /
+CONTRACT_RECONCILIATION_QUEUED`. The current OP-004 worktrees are clean retained
+historical evidence; no matching active OP-004 process or current-lineage owner
+was proven. The visible HERDMASTER processes date from 2026-08-13 and are not
+active-work proof. CODEX UI has no fresh terminal process. Therefore do not
+prompt those terminals now. First, after an eligible Recovery WIP slot and fresh
+collision check, dispatch HERDMASTER a read-only current-main reconciliation and
+unified contract/acceptance packet. CODEX UI begins only after that contract is
+accepted. Operational completion requires a genuine canonical evidence change,
+deployed HERDMASTER prioritisation, OOM SAKKIE delivery, protected owner preview,
+confirmed canonical readback, downstream preparation, correct quiet/defer
+behaviour and a later terminal-independent reassessment.
