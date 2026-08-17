@@ -86,7 +86,7 @@ def test_expired_lease_resumes_after_restart():
     with connect() as db:
         row = db.execute("select status,lease_until,next_reassessment_at from app_private.oom_manager_cases where dedupe_key='rootline:current-plan'").fetchone()
         assert row[0] == "waiting_reassessment" and row[1] is None
-        assert row[2] == now - timedelta(seconds=1)
+        assert row[2] == now + timedelta(minutes=5)
 
 
 def test_changed_case_refresh_supersedes_stale_generation_then_stable_cycle_delivers():
