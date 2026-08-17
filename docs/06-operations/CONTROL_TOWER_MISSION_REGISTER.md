@@ -2057,3 +2057,17 @@ GetInstances/EnginePID/InstanceGuid and startup-handshake failure, add a
 Windows-realistic regression, preserve strict identity controls, complete one
 reviewed source PR and stop after merge. Staging, task mutation and activation
 are forbidden until a later fresh validation gate.
+
+### SALES four-line quote local preview ready - 2026-08-17 19:56 SAST
+
+The resumed SALES review exited 0, read the canonical 278-line programme, passed
+115 Python tests, JavaScript syntax and diff checks, and produced authenticated
+desktop/mobile screenshots for the exact four-line 22-pig request. The preview is
+explicitly zero-write: no order, reservation, allocation, fulfilment or customer
+message. The completed shell was closed and its dirty unique worktree retained.
+
+State is `OWNER_HOLD / LOCAL_PREVIEW_READY`. Before any release, Control Tower
+must obtain owner visual direction and reconcile the implementation with open
+HERDMASTER PR #1001's typed live-transfer disclosure contract; this branch may not
+create a competing health/movement authority. No PR, merge or deployment is yet
+authorized.
