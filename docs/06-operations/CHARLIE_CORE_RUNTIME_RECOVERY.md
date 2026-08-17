@@ -20,6 +20,10 @@ Promotion writes `.charlie_runner/runtime-manifest.json`. The manifest binds the
 
 ## Safe promotion
 
+The legacy promotion command below is retained for historical operations. Do not
+run it beneath a development/Codex process tree because it combines source
+validation, scheduled-task registration, and runtime staging.
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\promote_charlie_runtime.ps1
 ```
@@ -29,6 +33,73 @@ The promotion command fetches `origin`, refuses a dirty existing runtime, checks
 At cold start, CORE may bootstrap `GH_TOKEN` in process memory from the existing Windows Git credential. The token is never returned, logged, committed, or written to the runtime manifest. This keeps Git and GitHub CLI on one credential source after restart.
 
 It does not reset the owner checkout, delete branches, apply migrations, claim missions, merge PRs, or start CORE.
+
+## Isolated source staging boundary
+
+`scripts/charlie_runtime_stage.py` separates source staging from validation,
+watchdog registration, and CORE startup. It consumes a full 40-character commit
+and the SHA-256 of an immutable JSON validation receipt produced in a disposable
+process boundary. The receipt binds the exact commit and records positive focused
+and full-suite results, no host-process visibility, and zero targets outside the
+boundary. It must also carry issuer `control_tower_isolated_validator_v1` and a
+valid HMAC-SHA-256 made with the independently provisioned
+`validation-receipt.key` in the state directory. A caller-supplied file hash alone
+is never validation authority.
+
+Both `plan` and `stage` require the exact current runtime, execution, and manifest
+commit identities. This makes a deliberately retained mismatch explicit instead
+of treating it as authority. Planning is read-only and reports `zero_effect`.
+Staging requires clean worktrees, one unambiguous non-running watchdog task owned
+by the runtime root, `supervisor_stopped`, `governed_stop_active`, and an unchanged
+stop marker. It atomically acquires a non-stealable release-lane file and writes a
+byte-exact rollback tuple before switching either detached worktree.
+
+Only after both worktrees read back at the source commit does staging write the
+manifest. It never clears the stop, registers/enables/invokes the watchdog, or
+starts/stops CORE. Failure after the first switch restores both prior worktree
+heads and the exact prior manifest bytes; the durable ledger retains the lane,
+rollback, and result records for review.
+
+The lane and evidence files are flushed before use and after replacement. A local
+administrator or non-compliant writer can still race filesystem metadata outside
+the cooperative lane; therefore staging requires the existing protected state
+directory/ACL and is not a hostile-host security boundary.
+
+Example read-only planning shape (values must come from independently verified
+evidence, never from mutable aliases):
+
+```powershell
+python -B scripts\charlie_runtime_stage.py plan `
+  --source-ref <40-character-commit> `
+  --runtime-root <runtime-worktree> `
+  --execution-root <execution-worktree> `
+  --state-root <state-directory> `
+  --receipt <sealed-receipt.json> `
+  --receipt-sha256 <64-character-sha256> `
+  --expected-runtime-head <40-character-commit> `
+  --expected-execution-head <40-character-commit> `
+  --expected-manifest-commit <40-character-commit> `
+  --expected-task-sha256 <independently-audited-action-sha256>
+```
+
+Changing `plan` to `stage` is a separate authorized release action. Source review
+and CI do not authorize that action and do not prove runtime-loaded behavior or
+terminal-independent continuity.
+
+An interrupted lane is never inferred stale or stolen. Read it without effects:
+
+```powershell
+python -B scripts\charlie_runtime_stage_recovery.py readback --state-root <state-directory>
+```
+
+If readback reports `release_lane_recovery_required`, a separately authorized
+recovery must bind the exact lane ID and rollback-file SHA-256 it returned. The
+`recover` action must also receive the failure-result SHA-256 when readback reports
+one. It accepts only the recorded rollback identities or the detached lane source,
+and only an original or digest-bound interrupted manifest. It verifies clean
+worktrees, the task, stop evidence, Git checkout safety and every rollback
+readback; it retains the lane on any incomplete recovery. Recovery does not start
+CORE or alter the scheduled task.
 
 ## Read-only audit
 
