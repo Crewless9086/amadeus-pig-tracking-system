@@ -838,6 +838,44 @@ merge or deployment may occur without owner visual approval.
 
 ## Delivery limitation
 
+### CMQ-20260813-05 provider-origin activation rail integrated — 2026-08-17
+
+PR #1038 was merged from exact reviewed head
+`ce21dbbb7e104533b378e50a2e2be45074b68a42` as authoritative merge
+`64e5335496d06bde5dba8ba9a840ecb5f0168238`. Before merge, both independent
+reviews approved the exact head, disposable-Docker validation reported 147
+passed and 4 platform skips, and all three required hosted CI lanes passed. A
+fresh release-ledger readback showed the preceding OOM SAKKIE PR #1039 lane was
+durably released; no active release lane was treated as owned merely from an
+open process. The incoming OOM manager paths did not overlap the CORE activation
+paths, and GitHub accepted the merge pinned to the exact head.
+
+Classify Recovery Slot 1 as `WORKING / SOURCE_MERGED /
+EXACT_CURRENT_STAGING_REQUIRED`. This is source integration only. It does not
+prove a loaded CORE runtime, enabled scheduled task, provider-created
+supervisor, signed owned process tree, heartbeat, independent cycle or
+terminal-close continuity. CORE therefore remains honestly
+`authority-disabled / staged-state-stale-or-unverified / operationally dormant`
+until fresh runtime evidence says otherwise. The released development terminal
+and any old runtime files, waits or process records are not active-work proof.
+
+The next bounded action is a separate stopped-state staging epoch against exact
+authoritative main `64e5335496d06bde5dba8ba9a840ecb5f0168238`: fetch and verify
+governance, create a fresh isolated-validation receipt, prove the serialized
+lane is free, stage runtime/execution/manifest agreement while preserving the
+governed stop, and return the complete Control Tower handover. It must not
+activate CORE. Only after that receipt may Control Tower separately authorize
+the reviewed provider-origin activation. Operational acceptance still requires
+the Windows scheduled provider to create CORE, followed by exact loaded-revision
+proof, signed supervisor/runner ancestry, a fresh heartbeat, one independent
+cycle, the next trigger, and a later cycle after all development and activation
+terminals close.
+
+Dispatch status: `SEND NOW — TERMINAL IDLE OR RELEASED`, targeting a separate
+CORE stopped-state staging authority, not the completed source-development
+terminal. Automatic delivery is not proven, so the prompt is prepared for Charl
+to paste unless target delivery and acknowledgement are independently recorded.
+
 Automatic prompt delivery to every visible terminal is not proven. Charl must
 paste a prompt unless target-specific delivery and acknowledgement are evidenced.
 The target is the durable CORE queue/runner. Until then, queued, delivered,
