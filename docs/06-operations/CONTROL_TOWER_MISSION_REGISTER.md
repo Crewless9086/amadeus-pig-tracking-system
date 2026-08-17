@@ -1306,3 +1306,35 @@ The ROOTLINE diagnostic terminal had incomplete governance reads and therefore
 supplies admissible current diagnosis, not implementation authority. Its
 read-only assessment is complete and the terminal can close; the deployed
 scheduler continues independently.
+
+### HERDMASTER premature weaning card and owner-time formatting — 2026-08-17
+
+Charl rejected the Molly card as operationally mistimed. Litter
+`LIT-2026-5C36` farrowed 2026-08-11 and has planned weaning 2026-09-11; current
+care attention is first dosing, not a weaning preview almost four weeks early.
+Current source proves the cause: `_herdmaster` creates a due
+`herdmaster:molly-active-litter` candidate unconditionally for every non-closed
+Molly litter, assigns a 30-minute reassessment and foregrounds weaning regardless
+of care phase or proximity to the planned boundary. This is an owner-noise and
+priority defect, not a request for Charl to reconfirm known dates.
+
+The active FARM mission owns the affected manager collector/renderer surfaces.
+At its next safe boundary it must add phase-aware litter care: derive the current
+care milestone from canonical litter, piglet, product/medical and observation
+evidence; surface first dosing when actually due with exact supported evidence;
+keep planned weaning quietly owned until a governed preparation window; promote
+weaning only when that window, missing prerequisite or material exception is
+reached; and suppress unchanged future milestones. Unknown weaned count before
+the weaning window is expected, not itself an urgent unknown. No dosing fact,
+date, product or completion may be inferred, and no medical/litter write occurs
+without the applicable protected confirmation.
+
+Charl also rejected raw UTC ISO timestamps in owner messages. Current source
+prints `next_reassessment_at` verbatim, producing text such as
+`2026-08-17T13:20:14.102507+00:00`. Every OOM SAKKIE owner-facing schedule,
+deadline and evidence check must instead be converted from the canonical aware
+instant to `Africa/Johannesburg` and rendered without seconds, fractional seconds
+or offset syntax: `Today, 15:20`, `Tomorrow, 08:00`, or `17 Sep 2026, 08:00`.
+Use an owner-language label such as `Next check`, not internal `Next evidence
+check`; keep the exact UTC instant only in canonical/audit evidence. Add DST/time
+zone, day-boundary, malformed/Unknown and Telegram HTML regression coverage.
