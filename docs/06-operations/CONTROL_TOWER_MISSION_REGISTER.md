@@ -768,6 +768,41 @@ preview, provider delivery, owner confirmation, canonical readback, refreshed
 outstanding projection and a later terminal-independent cycle; no terminal may
 manufacture that event or perform the payment.
 
+### CMQ-20260813-03 dedicated grouped-movement journey — 2026-08-17
+
+Current source proves that `/bulk-weights` can classify a blank-weight row with
+a changed destination as `movement_only`, record only canonical
+`pig_location_events`, preserve Unknown weight and handle a 21-row movement-only
+batch in tests. This is useful temporary capability, but it is hidden inside a
+weighing workflow. No dedicated `/bulk-movements` page or separately exposed,
+channel-invariant grouped-movement preview/confirm contract exists. The prior
+mission classification `deployed_waiting_for_genuine_acceptance` is therefore
+insufficient: the intended owner journey cannot honestly pass acceptance yet.
+
+Extend existing mission `CMQ-20260813-03`; create no competing uploader,
+movement ledger or executor. Classify it `WORKING /
+OPERATIONAL_USABILITY_GAP / QUEUED_NEXT_INCREMENT`. The next bounded increment
+must first review and define one shared movement-only preview/confirm/execute
+contract using the strongest existing atomic, locked and idempotent grouped
+action. It must validate exact pig identity, current pen, destination, active/on-
+farm state, event chronology and replay immediately before commit; append only
+location events; preserve effective versus recorded time; support a movement
+reason, notes and observer; and never implicitly alter weight, purpose, sale,
+medical or breeding state. Application, Telegram and future voice must normalize
+to the same contract. The dedicated application page may reuse selection/filter
+components but must contain no weight input and must show selected/moving/
+skipped/blocked/Unknown totals before one confirmation.
+
+No matching CMQ-03 development process is running. All retained CMQ-03 and bulk-
+weight worktrees are clean but historical, ranging from 184 to 1,846 commits
+behind current main; none is an authorized continuation base. Do not revive or
+merge them blindly. This increment is queued, not dispatched, while CORE Slot 1,
+OOM SAKKIE Slot 2 and continuous-agent recovery occupy strategic WIP. Promotion
+requires a free slot, fresh current-main/collision review, HERDMASTER livestock-
+location review and preservation of the deployed grouped-weight executor. Until
+then `/bulk-weights` movement-only preview is the temporary governed path; a
+blank weight must remain Unknown and the preview must show zero weight entries.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
