@@ -2071,3 +2071,18 @@ must obtain owner visual direction and reconcile the implementation with open
 HERDMASTER PR #1001's typed live-transfer disclosure contract; this branch may not
 create a competing health/movement authority. No PR, merge or deployment is yet
 authorized.
+
+### Operational outcome correction and three-lane dispatch - 2026-08-17 20:50 SAST
+
+Charl corrected Control Tower: ROOTLINE is not a first commissioning project.
+Irrigation/device paths operated previously and numerous recovery missions exist.
+Slot 2 must find the regression, preserve valid historical commissioning evidence
+and restore operation; require new proof only where current identity, authority or
+physical safety evidence genuinely expired. Do not describe it as greenfield.
+
+ROOTLINE, BEACON/SAM and HERDMASTER now run outcome-bound development terminals
+in parallel while CORE is repaired: operational B/C irrigation first; a deliberate
+media-backed campaign card leading to Meta and SAM after exact approval; and
+PR #1001/order integration unlocking the preserved four-line quote journey.
+CORE PR #1055 is merged in main `08a54ddb`; its completed source shell was closed.
+CORE is not an operational-plane dependency.
