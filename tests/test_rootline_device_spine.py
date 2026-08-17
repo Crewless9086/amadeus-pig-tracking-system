@@ -26,7 +26,8 @@ def test_borehole_profile_is_stricter_than_valve():
           standing_authority=True))
 
 def _evidence():
-    return {key:"proof:"+key for key in ("provider_discovered","readback_proven",
+    return {key:{"source":"canonical","evidence_id":"proof:"+key,
+      "observed_at":"2026-08-17T10:00:00+02:00","sha256":"a"*64} for key in ("provider_discovered","readback_proven",
       "bounded_actuation_ready","physical_identity_proven","fail_stop_proven",
       "replay_proven","operational_dependencies_proven","supervised")}
 
@@ -37,12 +38,14 @@ def test_ordinary_relay_standing_authority_requires_complete_evidence_and_envelo
     assert validate_device(_device(device_type="generic_relay_output",
       commissioning_stage="standing_active",standing_authority=True,
       commissioning_evidence=_evidence(),authority_envelope={
-        "standing_authority_id":"ROOTLINE-RELAY-1","version":"1","revoked":False}))
+        "standing_authority_id":"ROOTLINE-RELAY-1","version":"1","issuer":"owner_policy",
+        "policy_sha256":"b"*64,"revoked":False}))
 
 def test_strict_device_requires_independent_physical_and_fail_stop_proof():
     row=_device(device_type="pump",commissioning_stage="standing_active",standing_authority=True,
       commissioning_evidence=_evidence(),authority_envelope={
-        "standing_authority_id":"ROOTLINE-PUMP-1","version":"1","revoked":False})
+        "standing_authority_id":"ROOTLINE-PUMP-1","version":"1","issuer":"owner_policy",
+        "policy_sha256":"b"*64,"revoked":False})
     with pytest.raises(ValueError,match="strict_device_proof_missing"):
         validate_device(row)
 

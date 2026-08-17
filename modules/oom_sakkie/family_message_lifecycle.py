@@ -54,8 +54,14 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     """Persist and visibly deliver one result; duplicate input is a no-op."""
     mission_id = mission_id or mission_identity(parsed, specialist)
     card_mission_id = card_mission_id or mission_id
-    if (result.get("callback_token") and result.get("preview_digest")
-            and result.get("action_kind") and result.get("_protected_delivery_owned") is not True):
+    protected_fields = tuple(bool(result.get(key)) for key in
+        ("callback_token", "preview_digest", "action_kind"))
+    if any(protected_fields) and not all(protected_fields):
+        return {"success": False, "status": "protected_delivery_binding_incomplete",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0,
+            "writes_farm_data": False}
+    if all(protected_fields) and result.get("_protected_delivery_owned") is not True:
         if protected_delivery is None:
             from modules.oom_sakkie.protected_delivery_lifecycle import recover_protected_card
             protected_delivery = recover_protected_card

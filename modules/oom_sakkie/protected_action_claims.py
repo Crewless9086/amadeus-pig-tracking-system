@@ -117,7 +117,7 @@ def load_active_child_claim(*, action_kind, mission_id, parent_claim_token,
     return {"success":True,"status":"protected_claim_existing",
         "callback_token":rows[0][0],"preview_digest":rows[0][1],
         "expires_at":rows[0][2].isoformat(),"preview_payload":rows[0][3],
-        "preview_card_message_id":str(rows[0][4] or "")}
+        "preview_card_message_id":str(rows[0][4] or ""),"action_kind":str(action_kind)}
 
 def load_active_presence_claim(*, action_kind, mission_id, owner_user_id,
                                private_chat_id, provider_message_id,
@@ -142,7 +142,7 @@ def load_active_presence_claim(*, action_kind, mission_id, owner_user_id,
     return {"success":True,"status":"protected_claim_existing",
         "callback_token":rows[0][0],"preview_digest":rows[0][1],
         "expires_at":rows[0][2].isoformat(),"preview_payload":rows[0][3],
-        "preview_card_message_id":str(rows[0][4] or "")}
+        "preview_card_message_id":str(rows[0][4] or ""),"action_kind":str(action_kind)}
 
 def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
         owner_user_id, private_chat_id, provider_message_id, connect_factory=None):

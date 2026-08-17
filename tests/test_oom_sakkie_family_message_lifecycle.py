@@ -75,6 +75,16 @@ def test_protected_preview_owns_durable_attempt_before_provider_send():
     assert order==[("owned","TOKEN","rootline_device_commissioning"),("confirmed","700")]
     assert len(memory.sent)==1 and result["delivery_confirmed"] is True
 
+@pytest.mark.parametrize("partial",[
+    {"callback_token":"TOKEN"},{"preview_digest":"DIGEST"},
+    {"action_kind":"mortality"},{"callback_token":"TOKEN","preview_digest":"DIGEST"}])
+def test_partial_protected_binding_fails_closed_before_sender(partial):
+    memory=Memory()
+    result=deliver_family_result(PARSED,{**RESULT,**partial},specialist="HERDMASTER",
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert result["status"]=="protected_delivery_binding_incomplete"
+    assert result["telegram_sends"]==0 and memory.sent==[]
+
 
 def test_same_provider_inbound_never_recomputes_into_a_second_edit_when_live_evidence_changes():
     memory=Memory();mission="OOM-ROOTLINE-3236"

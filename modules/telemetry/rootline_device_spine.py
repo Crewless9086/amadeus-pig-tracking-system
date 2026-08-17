@@ -49,24 +49,48 @@ def store_device_record(record: Mapping, *, connect_factory) -> dict:
         record.get("authority_envelope"), Mapping) else {}
     key = f"{record['provider']}:{record['provider_account_binding']}:{record['device_id']}:{record['channel']}"
     with connect_factory() as db, db.cursor() as cur:
+        cur.execute("""select registry_generation,evidence_digest,device_record from
+          app_private.rootline_device_registry where device_key=%s for update""", (key,))
+        prior = cur.fetchone()
+        generation = record.get("registry_generation")
+        if not isinstance(generation, int) or generation < 1:
+            raise ValueError("rootline_device_registry_generation_invalid")
+        if prior and str(prior[1]) == digest:
+            return {"success": True, "device_key": key, "evidence_digest": digest,
+                "registry_generation": int(prior[0]), "replayed": True,
+                "execution_authority": False}
+        expected = (int(prior[0]) + 1) if prior else 1
+        if generation != expected:
+            raise ValueError("rootline_device_registry_generation_conflict")
+        if prior and isinstance(prior[2], Mapping):
+            before = str(prior[2].get("commissioning_stage") or "")
+            after = str(record.get("commissioning_stage") or "")
+            revoked = bool((record.get("authority_envelope") or {}).get("revoked"))
+            if STAGE_ORDER.index(after) < STAGE_ORDER.index(before) and not (
+                    before == "standing_active" and revoked):
+                raise ValueError("rootline_device_registry_stage_regression")
         cur.execute("""insert into app_private.rootline_device_registry(
           device_key,contract_version,device_record,commissioning_stage,
-          standing_authority_id,standing_authority_version,authority_revoked,evidence_digest)
-          values(%s,%s,%s::jsonb,%s,%s,%s,%s,%s)
+          standing_authority_id,standing_authority_version,authority_revoked,evidence_digest,
+          registry_generation)
+          values(%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)
           on conflict(device_key) do update set contract_version=excluded.contract_version,
           device_record=excluded.device_record,commissioning_stage=excluded.commissioning_stage,
           standing_authority_id=excluded.standing_authority_id,
           standing_authority_version=excluded.standing_authority_version,
           authority_revoked=excluded.authority_revoked,evidence_digest=excluded.evidence_digest,
-          updated_at=now()""", (key, CONTRACT_VERSION, material,
+          registry_generation=excluded.registry_generation,updated_at=now()""", (key, CONTRACT_VERSION, material,
           record["commissioning_stage"], authority.get("standing_authority_id"),
-          authority.get("version"), bool(authority.get("revoked")), digest))
+          authority.get("version"), bool(authority.get("revoked")), digest, generation))
+        cur.execute("""insert into app_private.rootline_device_registry_history(
+          device_key,registry_generation,device_record,evidence_digest)
+          values(%s,%s,%s::jsonb,%s)""", (key, generation, material, digest))
     return {"success": True, "device_key": key, "evidence_digest": digest,
-        "execution_authority": False}
+        "registry_generation": generation, "replayed": False, "execution_authority": False}
 
 def load_device_record(device_key: str, *, connect_factory) -> dict | None:
     with connect_factory() as db, db.cursor() as cur:
-        cur.execute("""select contract_version,device_record,evidence_digest
+        cur.execute("""select contract_version,device_record,evidence_digest,registry_generation
           from app_private.rootline_device_registry where device_key=%s""", (str(device_key),))
         row = cur.fetchone()
     if not row:
@@ -76,8 +100,11 @@ def load_device_record(device_key: str, *, connect_factory) -> dict | None:
     material = json.dumps(dict(record), sort_keys=True, separators=(",", ":"), default=str)
     if row[0] != CONTRACT_VERSION or hashlib.sha256(material.encode()).hexdigest() != row[2]:
         raise ValueError("rootline_device_registry_digest_mismatch")
+    if int(record.get("registry_generation") or 0) != int(row[3]):
+        raise ValueError("rootline_device_registry_generation_mismatch")
     return {"device_key": str(device_key), "device_record": dict(record),
-        "evidence_digest": str(row[2]), "execution_authority": False}
+        "evidence_digest": str(row[2]), "registry_generation":int(row[3]),
+        "execution_authority": False}
 
 def validate_device(record: Mapping) -> bool:
     required = ("provider", "provider_account_binding", "device_id", "channel",
@@ -112,12 +139,14 @@ def validate_device(record: Mapping) -> bool:
             "physical_identity_proven", "fail_stop_proven", "replay_proven",
             "operational_dependencies_proven", "supervised")
         if (not isinstance(evidence, Mapping)
-                or any(not str(evidence.get(key) or "").strip() for key in required)):
+                or any(not _valid_evidence(evidence.get(key)) for key in required)):
             raise ValueError("rootline_standing_authority_evidence_missing")
         authority = record.get("authority_envelope")
         if (not isinstance(authority, Mapping)
                 or not str(authority.get("standing_authority_id") or "").strip()
                 or not str(authority.get("version") or "").strip()
+                or not str(authority.get("issuer") or "").strip()
+                or not _sha256(authority.get("policy_sha256"))
                 or authority.get("revoked") is not False):
             raise ValueError("rootline_standing_authority_envelope_invalid")
         if profile.get("strict") and (
@@ -125,6 +154,17 @@ def validate_device(record: Mapping) -> bool:
                 or record.get("independent_fail_stop_proven") is not True):
             raise ValueError("rootline_strict_device_proof_missing")
     return True
+
+def _sha256(value) -> bool:
+    text = str(value or "")
+    return len(text) == 64 and all(char in "0123456789abcdef" for char in text.lower())
+
+def _valid_evidence(value) -> bool:
+    return (isinstance(value, Mapping)
+        and str(value.get("source") or "") in {"canonical", "provider", "physical_review"}
+        and bool(str(value.get("evidence_id") or "").strip())
+        and bool(str(value.get("observed_at") or "").strip())
+        and _sha256(value.get("sha256")))
 
 def manager_stage_projection(record: Mapping) -> dict:
     """Project asserted evidence for review; never returns action authority."""

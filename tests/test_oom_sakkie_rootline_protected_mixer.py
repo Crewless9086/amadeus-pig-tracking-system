@@ -1,6 +1,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import pytest
 
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.oom_sakkie.protected_action_claims import (load_active_child_claim,
@@ -45,6 +46,14 @@ def test_preview_binds_exact_non_actuating_mixer_contract():
     assert payload["emergency_off_required"] and payload["no_on_retry"]
     assert payload["injection_enabled"] is False
     assert payload["physical_observations_required"] == ["normal_recirculation", "pump_stopped"]
+
+def test_preview_requires_exact_canonical_device_registry_record():
+    with pytest.raises(ValueError,match="device_registry_missing"):
+        build_preview_payload(artifact(),parsed(),device_loader=lambda _key:None)
+    baseline=build_preview_payload(artifact(),parsed())["device_record"]
+    with pytest.raises(ValueError,match="device_registry_binding_changed"):
+        build_preview_payload(artifact(),parsed(),device_loader=lambda _key:{
+          "device_record":{**baseline,"registry_generation":2}})
 
 def test_exact_claim_delegates_once_to_existing_executor():
     payload = build_preview_payload(artifact(), parsed()); calls = []
