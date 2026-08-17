@@ -123,6 +123,7 @@ class PostgresManagerCaseStore:
                     outcome = {
                     "success": True, "status": "manager_delivery_disabled",
                     "delivery_confirmed": False, "telegram_sends": 0,
+                    "next_reassessment_at": (now + CADENCE).isoformat(),
                     }
                     if duplicate:
                         outcome["status"] = "manager_delivery_duplicate_suppressed"
@@ -174,10 +175,16 @@ class PostgresManagerCaseStore:
             connection.close()
 
     def _reconcile(self, cur, candidate, now):
-        cur.execute("select evidence_digest,generation,status from app_private.oom_manager_cases where dedupe_key=%s for update",
+        cur.execute("select evidence_digest,generation,status,assigned_worker_id,lease_until from app_private.oom_manager_cases where dedupe_key=%s for update",
                     (candidate["dedupe_key"],))
         prior = cur.fetchone()
         if prior and prior[0] == candidate["evidence_digest"]:
+            return "replayed"
+        # A delegated generation owns immutable evidence until its delivery
+        # lifecycle finishes.  An expired lease may be reclaimed only for that
+        # same generation; it must never permit a newer generation while an old
+        # process could still resume at the provider boundary.
+        if prior and prior[2] == "delegated":
             return "replayed"
         generation = int(prior[1]) + 1 if prior else 1
         cur.execute("""insert into app_private.oom_manager_cases
@@ -206,10 +213,17 @@ class PostgresManagerCaseStore:
         next_at = _time(outcome.get("next_reassessment_at") or case["next_reassessment_at"], "next_reassessment_at")
         with self.connect_factory() as connection:
             with connection.cursor() as cur:
-                cur.execute("select generation,evidence_digest from app_private.oom_manager_cases where case_id=%s for update",
+                cur.execute("select generation,evidence_digest,last_delivery_digest,status from app_private.oom_manager_cases where case_id=%s for update",
                             (case["case_id"],))
                 current = cur.fetchone()
                 if not current or int(current[0]) != int(case["generation"]) or current[1] != case["evidence_digest"]:
+                    return
+                # Provider-confirmed delivery is monotonic for one immutable
+                # generation.  A reclaimed expired-lease worker may finish
+                # later, but its ambiguous/failed outcome cannot downgrade the
+                # already confirmed result.
+                if (current[2] == case["evidence_digest"] and not confirmed
+                        and outcome.get("status") != "manager_delivery_duplicate_suppressed"):
                     return
                 delivery_digest = case["evidence_digest"] if confirmed else None
                 cur.execute("""update app_private.oom_manager_cases set status=%s,
@@ -248,7 +262,7 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None):
     """Present changed farm cases through the existing owner-only lifecycle."""
     specialist = str(case.get("specialist") or "").upper()
-    if specialist not in {"HERDMASTER", "ROOTLINE"}:
+    if specialist not in {"HERDMASTER", "ROOTLINE", "BEACON"}:
         return {"success": True, "status": "non_farm_case_delivery_suppressed",
                 "delivery_confirmed": False, "telegram_sends": 0}
     owners = [value.strip() for value in str(
@@ -260,6 +274,23 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     owner = owners[0]
     observed = _aware(now or datetime.now(timezone.utc))
     mission_id = f"{case['case_id']}:G{int(case['generation'])}"
+    if specialist == "BEACON":
+        from modules.oom_sakkie.beacon_request_runtime import build_scheduled_sale_ready_stock_result
+        try:
+            result = build_scheduled_sale_ready_stock_result()
+        except Exception as exc:
+            return {"success": False, "status": "beacon_canonical_evidence_unavailable",
+                    "failure_kind": exc.__class__.__name__, "delivery_confirmed": False,
+                    "telegram_sends": 0, "customer_sends": 0, "publishes": False,
+                    "spends_money": False, "writes_farm_data": False}
+        expected = next((str(value).split(":", 1)[1] for value in case.get("evidence_refs") or ()
+                         if str(value).startswith("beacon_result:")), "")
+        if not expected or result.get("result_digest") != expected:
+            return {"success": False, "status": "beacon_material_evidence_changed_before_delivery",
+                    "delivery_confirmed": False, "telegram_sends": 0, "customer_sends": 0,
+                    "publishes": False, "spends_money": False, "writes_farm_data": False}
+    else:
+        result = None
     unknowns = tuple(str(value) for value in case.get("unknowns") or ())
     lines = [f"<b>OOM SAKKIE — {specialist} CURRENT CASE</b>", "",
              html.escape(str(case.get("summary") or "Current farm case.")), "",
@@ -267,9 +298,10 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
              "<b>Next evidence check:</b> " + html.escape(str(case.get("next_reassessment_at") or "Unavailable"))]
     if unknowns:
         lines.extend(("", "<b>Still unproven:</b> " + html.escape("; ".join(unknowns))))
-    result = {"success": True, "status": "general_manager_case_ready",
-              "answer": "\n".join(lines), "result_digest": case["evidence_digest"],
-              "hardware_commands": 0, "writes_farm_data": False}
+    if result is None:
+        result = {"success": True, "status": "general_manager_case_ready",
+                  "answer": "\n".join(lines), "result_digest": case["evidence_digest"],
+                  "hardware_commands": 0, "writes_farm_data": False}
     parsed = {"telegram_user_id": owner, "telegram_chat_id": owner,
               "provider_message_id": "scheduled:" + mission_id,
               "provider_timestamp": observed.isoformat(), "text": "General Manager case"}
@@ -278,8 +310,9 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
         deliver = deliver_family_result
     outcome = dict(deliver(parsed, result, specialist=specialist,
                            mission_id=mission_id, card_mission_id=case["case_id"]) or {})
-    confirmed = bool(outcome.get("provider_delivery_confirmed") is True
-                     and outcome.get("telegram_message_id"))
+    confirmed = bool(outcome.get("telegram_message_id") and (
+        outcome.get("provider_delivery_confirmed") is True
+        or (outcome.get("success") is True and int(outcome.get("telegram_edits") or 0) == 1)))
     return {**outcome, "delivery_confirmed": confirmed,
             "success": outcome.get("success") is True and confirmed}
 
