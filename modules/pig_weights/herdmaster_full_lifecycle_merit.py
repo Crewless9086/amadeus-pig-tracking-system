@@ -13,6 +13,11 @@ from statistics import median
 
 CONTRACT_VERSION = "herdmaster_full_lifecycle_merit_v1"
 CONFIDENCE_RULE_ID = "herdmaster_merit_confidence_v1"
+OFFSPRING_DISPOSITION_RULE_ID = "herdmaster_offspring_disposition_v1"
+OFFSPRING_DISPOSITIONS = (
+    "on_farm", "livestock_sale", "auction_sale", "slaughter_pig_sale",
+    "meat_processed", "deceased", "other_unresolved",
+)
 
 
 def _text(value):
@@ -60,6 +65,91 @@ def _effective(rows, id_key, supersedes_key):
         "event_count": len(rows),
         "superseded_event_ids": sorted(superseded),
         "events": rows,
+    }
+
+
+def _normalized(value):
+    return _text(value).lower().replace("-", "_").replace(" ", "_")
+
+
+def _payload(row):
+    value = row.get("event_payload")
+    return value if isinstance(value, dict) else {}
+
+
+def _offspring_disposition(child, *, sales, processing, lifecycle):
+    """Classify one child from completed canonical facts; ambiguity fails closed."""
+    pig_id = _text(child.get("pig_id"))
+    candidates = defaultdict(list)
+
+    for sale in sales:
+        if _text(sale.get("pig_id")) != pig_id or _normalized(sale.get("sale_status")) != "completed":
+            continue
+        stream = _normalized(sale.get("sale_stream"))
+        channel = _normalized(sale.get("sale_channel"))
+        category = (
+            "auction_sale" if stream == "livestock" and channel == "auction" else
+            "livestock_sale" if stream == "livestock" else
+            "slaughter_pig_sale" if stream == "slaughter" else None
+        )
+        if category:
+            candidates[category].append({
+                "source": "sales_transaction_item",
+                "sale_id": _text(sale.get("sale_id")) or None,
+                "sale_item_id": _text(sale.get("sale_item_id")) or None,
+                "sale_stream": _text(sale.get("sale_stream")) or None,
+                "sale_channel": _text(sale.get("sale_channel")) or None,
+                "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
+            })
+
+    for item in processing:
+        if _text(item.get("pig_id")) != pig_id:
+            continue
+        completed = _normalized(item.get("batch_status")) == "completed" or _normalized(item.get("event_type")) == "completed"
+        if completed:
+            candidates["meat_processed"].append({
+                "source": "meat_processing_batch",
+                "batch_id": _text(item.get("batch_id")) or None,
+                "batch_pig_id": _text(item.get("batch_pig_id")) or None,
+                "completion_event_id": _text(item.get("completion_event_id")) or None,
+                "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
+            })
+
+    for event in lifecycle:
+        if _text(event.get("pig_id")) != pig_id:
+            continue
+        payload = _payload(event)
+        values = {_normalized(event.get("event_note")), _normalized(payload.get("exit_reason")),
+                  _normalized(payload.get("resulting_status")), _normalized(payload.get("status"))}
+        if values & {"dead", "died", "deceased", "died_after_birth"}:
+            candidates["deceased"].append({
+                "source": "pig_lifecycle_event",
+                "lifecycle_event_id": _text(event.get("lifecycle_event_id")) or None,
+                "effective_at": event.get("effective_at"),
+                "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
+            })
+
+    if child.get("on_farm") is True:
+        candidates["on_farm"].append({
+            "source": "current_canonical_pig",
+            "pig_id": pig_id,
+            "on_farm": True,
+            "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
+        })
+
+    categories = sorted(candidates)
+    disposition = categories[0] if len(categories) == 1 else "other_unresolved"
+    evidence = [item for category in categories for item in candidates[category]]
+    evidence.sort(key=lambda item: tuple(_text(item.get(key)) for key in (
+        "source", "sale_id", "sale_item_id", "batch_id", "batch_pig_id",
+        "completion_event_id", "lifecycle_event_id", "pig_id",
+    )))
+    return {
+        "primary_disposition": disposition,
+        "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
+        "evidence_state": "supported" if len(categories) == 1 else ("conflicting" if categories else "unknown"),
+        "candidate_dispositions": categories,
+        "evidence": evidence,
     }
 
 
@@ -112,6 +202,8 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
     matings_all = [dict(row) for row in snapshot.get("matings", [])]
     weights_all = [dict(row) for row in snapshot.get("weights", [])]
     medical_all = [dict(row) for row in snapshot.get("medical", [])]
+    sales_all = [dict(row) for row in snapshot.get("sales", [])]
+    processing_all = [dict(row) for row in snapshot.get("meat_processing", [])]
     if cutoff:
         litters_all = [r for r in litters_raw if _date(r.get("farrowing_date")) and _date(r.get("farrowing_date")) <= cutoff]
         observations_all = [r for r in observations_raw if _date(r.get("observed_at")) and _date(r.get("observed_at")) <= cutoff]
@@ -224,6 +316,20 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
         )
         partners = sorted({_text(r.get("boar_pig_id" if key == "sow_pig_id" else "sow_pig_id")) for r in cohorts if r.get("boar_pig_id" if key == "sow_pig_id" else "sow_pig_id")})
         offspring = [child for litter in cohorts for child in offspring_by_litter[_text(litter.get("litter_id"))]]
+        offspring_dispositions = []
+        for child in sorted(offspring, key=lambda item: _text(item.get("pig_id"))):
+            classified = _offspring_disposition(
+                child, sales=sales_all, processing=processing_all, lifecycle=lifecycle)
+            offspring_dispositions.append({"identity": _identity(child), **classified})
+        disposition_summary = {category: 0 for category in OFFSPRING_DISPOSITIONS}
+        for item in offspring_dispositions:
+            disposition_summary[item["primary_disposition"]] += 1
+        disposition_summary.update({
+            "total_recorded": len(offspring_dispositions),
+            "classified_count": len(offspring_dispositions),
+            "reconciles_to_total": sum(disposition_summary.values()) == len(offspring_dispositions),
+            "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
+        })
         weights = [r for r in weights_all if _text(r.get("pig_id")) in {_text(c.get("pig_id")) for c in offspring} and _number(r.get("weight_kg")) is not None]
         partner_key = "boar_pig_id" if key == "sow_pig_id" else "sow_pig_id"
         pairings = []
@@ -254,7 +360,12 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
                 "missing_outcome_count": len(opportunities) - len(complete_opportunities),
             },
             "time_trend": trend,
-            "offspring": {"sample_size": len(offspring), "pig_ids": sorted(_text(c.get("pig_id")) for c in offspring)},
+            "offspring": {
+                "sample_size": len(offspring),
+                "pig_ids": sorted(_text(c.get("pig_id")) for c in offspring),
+                "dispositions": offspring_dispositions,
+                "disposition_summary": disposition_summary,
+            },
             "offspring_growth": {"observed_weight_count": len(weights), "median_weight_kg": None, "comparable_window": None, "limitation": "Comparable-age or days-since-weaning binding is not yet supported by complete evidence."},
             "partner_pig_ids": partners,
             "partner_comparisons": pairings,

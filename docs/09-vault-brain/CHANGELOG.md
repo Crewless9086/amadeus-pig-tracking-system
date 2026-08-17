@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-17 - HERDMASTER offspring disposition becomes evidence-backed
+
+- Continued existing mission `HMQ-20260813-04` with one read-only backend
+  projection; no duplicate mission, UI implementation or farm write was added.
+- Added mutually exclusive per-offspring dispositions and an exactly reconciled
+  summary from completed item-attributed sales, completed meat processing,
+  effective mortality evidence and explicit canonical on-farm truth.
+- Missing, draft, purpose-only, status-only, `on_farm=false` and contradictory
+  evidence remain `other_unresolved`; human name/tag and Pig ID evidence remain
+  visible in every classification.
+
 ## 2026-08-15 - BEACON Library review gains its missing runtime trigger
 
 - Hierarchical reconciliation corrected the earlier claim: Bella's canonical

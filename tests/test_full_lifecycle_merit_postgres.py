@@ -28,6 +28,11 @@ class FullLifecycleMeritPostgresTests(unittest.TestCase):
             c.execute("create table if not exists public.pig_lifecycle_events(lifecycle_event_id text primary key,pig_id text,effective_at timestamptz,recorded_at timestamptz default now(),supersedes_lifecycle_event_id text)")
             c.execute("create table if not exists public.pig_weight_events(weight_event_id text primary key,pig_id text,weight_date date,weight_kg numeric)")
             c.execute("create table if not exists public.pig_medical_events(medical_event_id text primary key,pig_id text,treatment_date date)")
+            c.execute("create table if not exists public.sales_transactions(sale_id text primary key,sale_date timestamptz,sale_stream text,sale_channel text,sale_status text)")
+            c.execute("create table if not exists public.sales_transaction_items(sale_item_id text primary key,sale_id text,pig_id text)")
+            c.execute("create table if not exists public.meat_processing_batches(batch_id text primary key,status text)")
+            c.execute("create table if not exists public.meat_processing_batch_pigs(batch_pig_id text primary key,batch_id text,pig_id text)")
+            c.execute("create table if not exists public.meat_processing_batch_events(event_id text primary key,batch_id text,pig_id text,event_type text,event_date date,created_at timestamptz default now())")
 
     def setUp(self):
         self.suffix = uuid.uuid4().hex[:10]
@@ -56,7 +61,7 @@ class FullLifecycleMeritPostgresTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertFalse(result["writes_performed"])
         self.assertEqual(result["read_progress"]["connection_count"], 1)
-        self.assertEqual(result["read_progress"]["query_count"], 8)
+        self.assertEqual(result["read_progress"]["query_count"], 10)
         self.assertEqual(result["rows"][0]["identity"]["display_name"], "Bonnie")
         self.assertEqual(result["rows"][0]["confidence"]["label"], "High")
 

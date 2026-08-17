@@ -302,6 +302,23 @@ pending backend capabilities and must stay nullable until implemented:
    lot scope and declares cost coverage.
 9. Versioned pure composer for herd rows and named profiles, deterministic from
    the same evidence cutoff.
+10. One offspring-disposition projection under rule
+    `herdmaster_offspring_disposition_v1`. Every attributable offspring carries
+    `identity`, `primary_disposition`, `rule_id`, `evidence_state`,
+    `candidate_dispositions` and `evidence`. The mutually exclusive values are
+    `on_farm`, `livestock_sale`, `auction_sale`, `slaughter_pig_sale`,
+    `meat_processed`, `deceased` and `other_unresolved`.
+
+The accompanying `disposition_summary` exposes `total_recorded`, every category
+count, `classified_count`, `reconciles_to_total` and `rule_id`. A completed,
+item-attributed canonical sales transaction supports the applicable sale
+category; auction requires its governed Auction channel; completed processing
+supports `meat_processed`; effective mortality evidence supports `deceased`;
+and explicit canonical `on_farm=true` supports `on_farm`. Multiple evidence rows
+for the same category do not double-count. Cross-category evidence is
+contradictory and therefore `other_unresolved`. Purpose, current status,
+`on_farm=false`, draft/open orders, planned processing, missing evidence and an
+unexplained exit never establish a terminal disposition.
 
 The deployed implementation uses service composition, not a new table or
 writable ledger: `herdmaster_full_lifecycle_merit.py`, the bounded snapshot in
