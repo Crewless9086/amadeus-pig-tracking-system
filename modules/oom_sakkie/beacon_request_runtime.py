@@ -123,8 +123,8 @@ def build_protected_campaign_package(packet, *, now=None):
             r"\b(?:enquir|looking for|need)\w*\b", exact_copy, re.I):
         raise ValueError("beacon_campaign_awareness_copy_messages_mismatch")
     if (stock.get("source") != "beacon_opportunity_scanner"
-            or stock.get("status") != "ready_for_owner_review"
-            or int(stock.get("demand_cap") or 0) <= 0
+            or not stock.get("fresh")
+            or not (stock.get("sale_ready_categories") or [])
             or not stock.get("card_id") or not stock.get("observed_at")):
         raise ValueError("beacon_campaign_canonical_sale_stock_required")
     if (sam.get("lane") != "live_stock_sales"
@@ -171,18 +171,29 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
     if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
         raise ValueError("canonical_opportunity_evidence_required")
     cards = [row for row in opportunities.get("cards") or [] if isinstance(row, Mapping)]
-    ready = [row for row in cards if row.get("lane") == "live_stock"
-        and row.get("status") == "ready_for_owner_review"
-        and not (row.get("blockers") or [])
-        and int((row.get("capacity_calculation") or {}).get("demand_cap") or 0) > 0]
+    demand_only_blockers = {"sam_live_stock_demand_unavailable",
+        "unknown_live_stock_demand_quantity", "incompatible_live_stock_demand",
+        "invalid_live_stock_weight_requirement", "invalid_live_stock_sex_requirement",
+        "malformed_live_stock_demand_evidence", "incompatible_live_stock_weight_requirement",
+        "no_quantified_uncommitted_live_stock_demand"}
+    def sale_ready(row):
+        capacity = row.get("capacity_calculation") if isinstance(
+            row.get("capacity_calculation"), Mapping) else {}
+        categories = [str(value).strip() for value in capacity.get("eligible_categories") or []
+            if str(value).strip()]
+        blockers = {str(value) for value in row.get("blockers") or []}
+        freshness = row.get("freshness") if isinstance(row.get("freshness"), Mapping) else {}
+        return (row.get("lane") == "live_stock" and categories
+            and freshness.get("fresh") is True and not (blockers - demand_only_blockers))
+    ready = [row for row in cards if sale_ready(row)]
     if not ready:
         packet = _current_evidence_request(cards, opportunities)
         packet.update({
             "contract_version": "beacon_sale_ready_demand_exception_v1",
             "packet_type": "sale_ready_stock_evidence_request",
             "objective": "Generate qualified livestock enquiries through Facebook messages",
-            "precise_exception": "No current unblocked canonical live-stock opportunity has a positive sale-ready demand cap.",
-            "required_evidence": "A fresh BEACON opportunity card backed by canonical sale-eligible stock and a positive fulfilment cap.",
+            "precise_exception": "No fresh canonical live-stock opportunity proves any sale-ready stock category without a stock-evidence blocker.",
+            "required_evidence": "A fresh BEACON opportunity card backed by canonical sale-eligible stock categories and no availability, freshness or source conflict.",
             "decision_options": ["wait_for_canonical_stock_evidence", "correct"],
             "protected_owner_decision": "None: publication and spend are ineligible until canonical sale-ready stock exists.",
         })
@@ -192,14 +203,22 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
         return packet
     card = ready[0]
     provenance = card.get("provenance") if isinstance(card.get("provenance"), Mapping) else {}
+    capacity = card.get("capacity_calculation") if isinstance(
+        card.get("capacity_calculation"), Mapping) else {}
+    sale_categories = sorted({str(value).strip() for value in
+        capacity.get("eligible_categories") or [] if str(value).strip()})
     stock = {
         "source": "beacon_opportunity_scanner",
         "card_id": str(card.get("card_id") or ""),
         "observed_at": str(provenance.get("observed_at") or observed_at or opportunities.get("generated_at") or ""),
-        "status": "ready_for_owner_review",
+        "status": str(card.get("status") or ""),
         "category": str(card.get("category") or "livestock").replace("_", " "),
         "unit": str(card.get("unit") or "animals"),
         "demand_cap": int((card.get("capacity_calculation") or {}).get("demand_cap") or 0),
+        "sale_ready_categories": sale_categories,
+        "fresh": True,
+        "demand_evidence_status": ("not_yet_quantified" if int(
+            capacity.get("demand_cap") or 0) == 0 else "quantified"),
         "canonical_evidence_digest": _digest({
             "card_id": card.get("card_id"),
             "status": card.get("status"),
@@ -212,18 +231,21 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
             "blockers": sorted(card.get("blockers") or []),
             "observed_at": provenance.get("observed_at"),
         }),
-        "claim_boundary": "Supports taking enquiries only; SAM must re-read canonical stock before any offer or commitment.",
+        "claim_boundary": "Categories support taking enquiries only; no quantity is advertised and SAM must re-read canonical stock before any offer or commitment.",
     }
     if not stock["card_id"] or not stock["observed_at"]:
         raise ValueError("canonical_sale_stock_identity_required")
     category = stock["category"]
-    subject = _public_stock_subject(category)
+    subjects = [_public_stock_subject(value) for value in sale_categories]
+    subject = _natural_list(subjects)
     caption = (f"Looking for {subject}? Amadeus Farm is currently taking livestock enquiries. "
         "Message Amadeus Farm with the type of animal, number needed, intended use and your area. "
         "Our livestock team will check current farm records before any offer or commitment.")
     cta = ("Message Amadeus Farm with the animal type, number needed, intended use and your area "
         "so our livestock team can qualify your enquiry.")
-    media = _public_awareness_media(media_payload, required_tags={category.casefold()})
+    media_tags = {token.casefold().replace(" ", "_") for value in sale_categories
+        for token in (value, *value.split()) if token}
+    media = _public_awareness_media(media_payload, required_tags=media_tags)
     media_plan = media or {
         "status": "text_only",
         "reason": "No current public-use-approved, hash-verified livestock asset is available.",
@@ -235,7 +257,7 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
         "packet_type": "sale_ready_demand_proposal",
         "status": "ready_for_owner_review",
         "campaign_objective": "facebook_messaging_conversations",
-        "objective": f"Generate qualified messages about current {category}",
+        "objective": f"Generate qualified messages about current {subject}",
         "audience": "Local prospective livestock buyers near Riversdale and Albertinia",
         "intended_channel": "Facebook Page organic plus separately approved messages boost",
         "draft_caption": caption,
@@ -266,6 +288,15 @@ def _public_stock_subject(category):
     plurals = {"piglet": "piglets", "weaner": "weaners", "grower": "growers",
         "finisher": "finishers", "animal": "livestock", "animals": "livestock"}
     return plurals.get(value.casefold(), value)
+
+
+def _natural_list(values):
+    values = [str(value).strip() for value in values if str(value).strip()]
+    if not values:
+        return "livestock"
+    if len(values) == 1:
+        return values[0]
+    return ", ".join(values[:-1]) + " or " + values[-1]
 
 
 def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
