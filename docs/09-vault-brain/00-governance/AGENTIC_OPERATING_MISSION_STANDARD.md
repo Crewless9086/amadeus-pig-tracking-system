@@ -54,6 +54,45 @@ Pages, forms, dashboards, ledgers, packets, and canaries are supporting audit, t
 
 Oom Sakkie should become the ordinary owner interface wherever practical. Specialist agents must perform the underlying reconciliation and work rather than sending Charl through multiple disconnected pages and forms.
 
+## Continuous Operations Acceptance Gate
+
+An agent mission is not the delivery of one brief, page, reply, card, proposal,
+scheduled run or hardware action. Those are outputs of a continuing operating
+loop. The mission remains incomplete until the deployed agent:
+
+1. consumes every relevant genuine event and scheduled reassessment through a
+   durable subscription, queue or scheduler;
+2. maintains current context and reconciles the event with canonical evidence;
+3. completes every safe step inside standing authority without a terminal or
+   Charl waking, relaying or monitoring it;
+4. delegates typed work to the responsible specialist and follows that work to
+   a verified outcome or one exact unresolved exception;
+5. records the result, follow-up owner and next trigger durably;
+6. remains supervised and resumes after restart; and
+7. proves a later terminal-independent cycle after the development terminal is
+   closed.
+
+A daily brief is a summary projection of this continuously maintained state. It
+is never the management loop or the acceptance target. An agent that waits for
+the next brief while new evidence, due work or failed dependencies accumulate is
+`scheduler-degraded` or `dormant`, not operational.
+
+Oom Sakkie is the continuously active farm manager and exception coordinator.
+It must ingest new farm, herd, water, device, sales, marketing, provider and
+runtime evidence as it arrives; investigate contradictions; dispatch the correct
+specialist; track unresolved work; reassess at the earliest relevant evidence or
+time trigger; and inform the appropriate family member when a useful result,
+genuine exception or protected decision exists. It must not merely concatenate
+specialist summaries or wait twenty-four hours to notice a change.
+
+Every terminal assigned to an autonomous agent owns the complete deployed
+acceptance journey. A source/PR/merge/deployment stop is permitted only at a
+genuine authority or serialized-release boundary. The handover must then bind a
+durable automatic promotion trigger and exact next owner; otherwise the mission
+is `INCOMPLETE_HANDOFF`, not ready or complete. Control Tower must reject any
+closeout whose target is an artifact rather than the continuing operational
+result.
+
 ## Standing Authority And Owner-Burden Gate
 
 Charl's default operating intent is delegated operation with the least reasonable

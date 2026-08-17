@@ -453,6 +453,64 @@ priority, dependency, dispatch truth, preserved acceptance outcome and whether
 Charl should send anything now. A finding remains until owner-visible completion
 or explicit containment.
 
+## 2026-08-17 Continuous Agent Operations Reset
+
+Mode: `AUTONOMY_RECOVERY_MODE / CONTINUOUS_OPERATION_ENFORCEMENT`.
+
+Owner correction: the useful target is not a once-daily brief or a collection of
+request-driven tools. Oom Sakkie must manage continuously, specialists must wake
+from genuine events or durable schedules, and routine work must continue without
+Charl activating terminals, relaying findings or discovering failures manually.
+
+The previous stage labels are retained as historical engineering evidence but
+do not establish current operational capability. No terminal may claim success
+from source, tests, PR, merge, deployment, health, shadow output, one manual
+invocation or one brief. Each active mission below owns the full loop through a
+fresh genuine trigger, verified result, next trigger and terminal-close proof.
+
+| Agent / development terminal | Current honest operating state | Complete outcome target | Continuous trigger and follow-up | Current acceptance blocker | Owner work removed |
+|---|---|---|---|---|---|
+| CORE / CORE | Source release/staging rail integrated; deployed worker and coherent runtime identity not proven | Durably receive, plan, dispatch, supervise and close bounded software missions, including detecting stalled agents, without Charl pasting prompts or monitoring terminals | Durable mission queue plus supervised runner; every mission retains worker, heartbeat, progress, closeout and next eligible mission | Isolated exact-revision staging, coherent runtime/execution/manifest state, governed restart and later independent cycle remain unproven | Manual prompt relay, terminal checking, recovery and cross-terminal coordination |
+| OOM SAKKIE / OOM SAKKIE | Partial authenticated intake and summaries; continuous manager loop not proven | Continuously ingest material farm/business/runtime events, investigate them, delegate typed specialist work, track it to closure and notify Charl or Anton only with a useful result, genuine exception or protected decision | Event subscriptions plus bounded reassessment scheduler and durable unresolved-work ledger; next trigger is evidence change or earliest due time, not tomorrow's brief | Current branch recovery/PR evidence is fresh only when the restarted terminal returns; deployed all-domain event intake, manager case lifecycle and terminal-independent continuity are absent | Discovering omissions, asking each specialist, repeating facts, chasing failures and waiting until the next morning |
+| ROOTLINE / ROOTLINE | Request/invocation paths exist; current water-energy plan returned `no_current_water_energy_plan`; no current independent decision cycle proven | Continuously refresh water, weather, power, device and irrigation evidence; maintain a current plan; execute routine approved work inside standing authority; verify effects; retry/reassess; escalate one exact exception | Evidence-change events plus durable due-time scheduler; failures remain owned and reassessed automatically | Shared OOM/ROOTLINE claim delivery and reusable device commissioning spine remain incomplete; fresh plan worker/next cycle absent | Manually waking ROOTLINE, asking for irrigation status, repeating valve presence and monitoring retries |
+| HERDMASTER / HERDMASTER | Canonical pig/litter/weight reads are useful; continuous husbandry worklist and follow-through not proven | Continuously maintain the herd work queue for weighing, litter care, treatments, welfare, breeding and sales eligibility; dispatch due work through Oom Sakkie and verify resulting canonical updates | Canonical event subscriptions plus due-date scheduler; every due item has next action, assignee, deadline and reassessment | Molly's due treatment was omitted from the manager output; weighing remained a count rather than an operated workflow; Pig 151 exclusion was silent rather than explained | Finding due animal work, checking lists/pages and diagnosing why an animal is unavailable |
+| SAM / SAM Livestock | Autonomous shadow inbox cycling proven; customer dispatch disabled | Continuously handle every eligible genuine customer event with supported useful responses and follow-ups, escalating only protected commercial decisions | Provider webhook plus durable backlog/follow-up scheduler; unrelated work continues after one quarantine | Narrow source authority was approved but deployed response-class authority and five-customer proof remain absent | Reading the inbox, writing routine replies and remembering follow-ups |
+| BEACON / BEACON | Proposal/publication source exists; no proactive deployed marketing loop or provider publication proof | Continuously reconcile sale-ready stock and current commercial priorities, prepare useful campaigns/media requests, obtain only protected approval, publish exactly once and measure the result | Sale-readiness/material-change events plus campaign cadence and performance reassessment | Frozen expansion classification is superseded where silence blocks the selected sell-ready-animal operating outcome; current terminal state and current-lineage collision must be verified before dispatch | Noticing animals need marketing, requesting campaigns and checking whether anything was posted or worked |
+| DOCUMENTS / DOCUMENTS | Catalogue source only | Generate and deliver authorized documents from canonical requests through the correct channel and track delivery/printing outcome | Canonical document request events and due schedules | Frozen outside the three recovery tracks until it directly blocks an active operating outcome | Finding generators, preparing files and manually delivering/printing |
+| CODEX UI / CODEX UI | Selected deployed pages useful; known silent eligibility presentation defect | Explain current operational state and blockers without becoming a competing business engine | Read-only projection of canonical agent state | Pig 151 is correctly blocked by withdrawal hold through 2026-09-08 but Orders silently omits it; fix is eligible only as the smallest current blocker in the herd/sales journey | Investigating hidden eligibility rules and guessing why an action is unavailable |
+
+### Recovery WIP and sequencing
+
+1. **Slot 1 — CORE operating spine:** stage and restore CORE safely, then prove
+   durable mission receipt, supervision, closeout and a later independent cycle.
+2. **Slot 2 — Continuous farm management spine:** the existing OOM SAKKIE
+   recovery worktree owns Oom Sakkie event intake, manager-case lifecycle and
+   shared ROOTLINE protected/reassessment boundaries. ROOTLINE and HERDMASTER
+   review their typed domain contracts; they do not create competing manager
+   loops.
+3. **Slot 3 — Revenue operating spine:** SAM's genuine customer loop remains the
+   implementation priority. BEACON's sale-ready-stock trigger and protected
+   proposal/publication journey are part of this same revenue outcome and may
+   be prepared only after fresh terminal/collision verification, without opening
+   a fourth implementation track.
+
+Frozen work remains preserved. A newly reported daily-operational defect is
+folded into the relevant continuous loop; it must not become a disconnected
+animal-, phrase-, card- or page-specific mission.
+
+### Non-negotiable closeout test
+
+For every agent, acceptance requires: exact deployed revision; durable trigger;
+worker identity; fresh heartbeat; one genuine independent cycle; canonical and
+provider/physical readback where applicable; durable unresolved-work ownership;
+the next scheduled/event trigger; and a later cycle after the development
+terminal closes. Missing evidence changes the state to `Unknown`, `dormant`,
+`scheduler-degraded` or `authority-disabled`; it never becomes an owner task.
+
+Charl should send no routine wake-up, status-check or repeated evidence message.
+The only permissible owner interactions are a genuinely unavailable physical
+fact, strategic choice, exception or protected authority expansion.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must

@@ -1356,3 +1356,17 @@
   finance, and `writes_performed:false`; eight canonical counts were unchanged.
 - Recorded that current owner pages still consume the legacy aggregate.
   HMQ-20260813-04 remains `WORKING`; CODEX UI owns the next rendering-only slice.
+# 2026-08-17 — Continuous agent operations acceptance reset
+
+- Clarified that a daily brief is only a projection of continuously maintained
+  management state, never the Oom Sakkie operating loop or acceptance target.
+- Made Oom Sakkie responsible for continuous event intake, investigation,
+  specialist delegation, unresolved-work tracking, reassessment and exception
+  reporting.
+- Required every autonomous-agent terminal mission to remain bound through
+  genuine deployed trigger, verified outcome, next trigger and terminal-close
+  continuity; artifact-only closeouts without an automatic promotion owner are
+  now `INCOMPLETE_HANDOFF`.
+- Replaced stale component-stage goals in the Control Tower register with
+  current honest operating states, complete closed-loop targets, triggers,
+  blockers and the recurring owner work each agent must remove.
