@@ -226,7 +226,6 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
             "idea": selected["idea_id"],
             "copy": exact_copy,
             "asset": (selected_asset or {}).get("asset_id", ""),
-            "generated_at": generated_at,
         },
         sort_keys=True,
     )
