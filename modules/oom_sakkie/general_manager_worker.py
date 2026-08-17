@@ -201,7 +201,8 @@ class PostgresManagerCaseStore:
         finally:
             connection.close()
 
-    def _reconcile(self, cur, candidate, now, *, lease_owner=None):
+    def _reconcile(self, cur, candidate, now, *, lease_owner=None,
+                   replace_delegated_owner=False):
         cur.execute("""select evidence_digest,generation,status,assigned_worker_id,lease_until,
                 evidence_refs
             from app_private.oom_manager_cases where dedupe_key=%s for update""",
@@ -226,8 +227,9 @@ class PostgresManagerCaseStore:
         # lifecycle finishes.  An expired lease may be reclaimed only for that
         # same generation; it must never permit a newer generation while an old
         # process could still resume at the provider boundary.
-        if (prior and prior[2] == "delegated"
-                and str(prior[3] or "") != str(lease_owner or "")):
+        if (prior and prior[2] == "delegated" and (
+                str(prior[3] or "") != str(lease_owner or "")
+                or not replace_delegated_owner)):
             return "replayed"
         generation = int(prior[1]) + 1 if prior else 1
         cur.execute("""insert into app_private.oom_manager_cases
@@ -304,7 +306,8 @@ class PostgresManagerCaseStore:
                         or str(ownership[2] or "") != cycle_id
                         or not ownership[3] or ownership[3] < now):
                     return None
-                self._reconcile(cur, candidate, now, lease_owner=cycle_id)
+                self._reconcile(cur, candidate, now, lease_owner=cycle_id,
+                    replace_delegated_owner=claimed.get("status") != "delegated")
                 cur.execute("""select case_id,dedupe_key,specialist,urgency,status,evidence_digest,
                         evidence_refs,unknowns,summary,next_action,next_reassessment_at,generation,
                         last_delivery_digest
@@ -315,8 +318,9 @@ class PostgresManagerCaseStore:
                     assigned_worker_id=%s,lease_until=%s,last_heartbeat_at=%s,
                     status='delegated',updated_at=%s where case_id=%s""",
                     (cycle_id, now + LEASE, now, now, current["case_id"]))
-                refreshed_generation = (int(current["generation"])
-                                        != int(claimed["generation"]))
+                refreshed_generation = (
+                    int(current["generation"]) != int(claimed["generation"])
+                    or current["evidence_digest"] != candidate["evidence_digest"])
                 if refreshed_generation:
                     self._event(cur, current, "claimed", now, cycle_id=cycle_id)
                     self._event(cur, current, "delegated", now, cycle_id=cycle_id,

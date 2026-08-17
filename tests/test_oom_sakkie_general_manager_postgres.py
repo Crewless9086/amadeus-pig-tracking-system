@@ -89,6 +89,30 @@ def test_expired_lease_resumes_after_restart():
         assert row[2] == now + timedelta(minutes=5)
 
 
+def test_reclaimed_delegated_generation_contains_changed_refresh_before_provider():
+    now = datetime.now(timezone.utc) + timedelta(minutes=2, seconds=30)
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    current = normalize_candidate(candidate("event:two", now), now=now)
+    changed = candidate("event:new-after-expired-delegation", now,
+        summary="Canonical evidence changed while the prior lease was outstanding.")
+    with connect() as db:
+        db.execute("""update app_private.oom_manager_cases set status='delegated',
+            assigned_worker_id='expired-cycle',lease_until=%s,next_reassessment_at=%s
+            where dedupe_key='rootline:current-plan'""",
+            (now - timedelta(seconds=1), now - timedelta(seconds=1)))
+    delivered = []
+    result = store.run_cycle([candidate("event:two", now)], now=now,
+        source_revision="test", refresh=lambda claimed: changed,
+        deliver=lambda case: delivered.append(case))
+    assert delivered == []
+    assert result["case_results"][0]["outcome_status"] == (
+        "manager_delivery_refreshed_generation_deferred")
+    with connect() as db:
+        row = db.execute("""select evidence_digest,status,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where dedupe_key='rootline:current-plan'""").fetchone()
+    assert row == (current["evidence_digest"], "waiting_reassessment", None, None)
+
+
 def test_changed_case_refresh_supersedes_stale_generation_then_stable_cycle_delivers():
     now = datetime.now(timezone.utc) + timedelta(minutes=3)
     stale = candidate("event:stale-weight", now,
