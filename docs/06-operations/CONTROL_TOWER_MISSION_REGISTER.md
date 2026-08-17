@@ -1472,3 +1472,59 @@ Retain this as an ADDENDUM for FARM's next complete handover, then allocate the
 collision-free ROOTLINE typed-source correction within the same serialized Slot 2.
 The completed read-only ROOTLINE audit terminal was closed after its handover;
 deployed schedules continue independently.
+
+### P0 Revenue addendum — truthful multi-line livestock quote — 2026-08-17
+
+Charl has a current customer request that the manual Order journey cannot represent
+truthfully without repeated manual stock searching and premature animal selection.
+Correct the punctuation lost in the intake before any implementation or quote:
+the request is **10 female piglets at 5–6 kg; 10 male piglets at 5–6 kg; one
+female piglet around 15 kg; and one male piglet around 15 kg**, total 22. It is not
+a request for 56 kg animals. Similarly, snapshot ranges rendered as `1025` and
+`1519` mean 10–25 kg and 15–19 kg.
+
+Classify this as a `CURRENT_BLOCKER / P0 REVENUE SLOT 3 ADDENDUM`, not a new order
+engine or duplicate mission. Current source already contains validated structured
+`requested_items[]`, order-line synchronization and revision contracts. The owner
+UI still exposes one aggregate request header and Order Detail couples quote lines
+to individually selected sale-eligible pigs. The required reusable journey must
+separate: customer request; HERDMASTER recommendation; protected purpose decision;
+actual reservation; and final collection. A draft quote may describe requested
+quantities before reservation only with explicit confirmed/partial/projected/
+unavailable wording and without promising specific animals.
+
+The 2026-08-17 read-only availability snapshot reported 26 selectable animals.
+Relevant selectable evidence was male tag 123 at 5.6 kg and males 98, 86 and 83 at
+16.0, 18.8 and 19.0 kg. Exact 5–6 kg canonical candidates included females 143,
+145, 142 and 129 and males 126, 144, 123, 150, 128 and 132; all except 123 had
+purpose Unknown. No active female candidate was found in the 10–25 kg snapshot.
+This is time-bound matching evidence, not authority to change purpose, reserve,
+promise or sell any animal. Even approving every plausible Unknown-purpose animal
+would leave a current shortfall against ten of each sex.
+
+The bounded backend contract must accept and preserve the four request lines
+without animal allocation; return exact, near, projected-growth and shortfall
+groups from fresh canonical stock; expose weight date, purpose, reservation,
+health and conflict evidence; prepare one grouped OP-004 purpose-review preview
+for plausible Unknown-purpose candidates; and keep all purpose changes and
+reservations behind exact protected confirmation. HERDMASTER must do the matching
+and ranking rather than requiring Charl to search or reclassify pigs manually.
+
+Reconcile the live-stock medical rule as a business-policy correction, not a broad
+removal of safety holds. Food-chain meat withdrawal must be disclosed on live-
+animal quotes and movement/health documents and must not alone become a generic
+live-sale exclusion. Genuine animal-health, treatment follow-up, quarantine,
+movement restriction and explicit sale holds remain blocking. Tag 151 is regression
+evidence for the over-broad current selector; it is not a match for this request and
+must not be selected or altered as part of acceptance.
+
+Ownership order: Revenue/SAM owns requested-items, quote truth and order-state
+contract; HERDMASTER/OP-004 owns matching evidence and purpose-review preparation;
+CODEX UI implements the multi-line editor and local owner preview only after those
+contracts are accepted. Revenue's current terminal has fresh integrated source
+through authoritative main `d8f4c0734646421e2852dd0570ba850fb2b26242e` but has
+not returned a completion handover. Retain this addendum until that safe boundary;
+never prompt or duplicate the active Revenue terminal. Then dispatch one bounded
+read-only reconciliation/contract packet followed by implementation, local owner
+desktop/mobile preview and this exact four-line acceptance journey. No production
+order, quote send, purpose change or reservation is authorized by this entry.
