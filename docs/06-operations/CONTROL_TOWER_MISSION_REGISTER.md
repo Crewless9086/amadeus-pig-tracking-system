@@ -297,11 +297,14 @@ Detailed HERDMASTER evidence remains in
   routed it correctly, but Render lacked the BEACON activation configuration
   and the shared gateway let generic owner context run before typed media.
   Repair, reviewed release, bounded recovery and fresh deployed proof remain.
-- `BMQ-20260813-03` — `deployed-awaiting-owner` private Library/public-use separation.
-  It reuses the completed eight-photo Bella album and one canonical append-only
-  media decision rail. Exact merge/schema/Render and authenticated eight-photo
-  contact-sheet readback are proven; a genuine owner button/readback remains;
-  the terminal must not manufacture the decision. BMQ-20260813-05 follows.
+- `BMQ-20260813-03` — `business-complete` private Library/public-use separation.
+  Charl's genuine callback `6127564955095599565` accepted Bella album
+  `BEACON-INTAKE-GROUP-CA51E98A7B4ABC3D5369DB73` into the Private Library
+  exactly once. Canonical readback proves one completed claim, one album action,
+  eight ordered private asset events, eight retained originals and thumbnails,
+  and provider-confirmed acknowledgement message `3663`. Public Use, Campaign
+  Review and Publication remain unauthorized. Do not replay the callback.
+  BMQ-20260813-05 follows when it is the next collision-free BEACON mission.
 - `BMQ-20260813-04` — `business-complete`; deployed Oom Sakkie returned one
   current text-only awareness proposal exactly once with zero publication,
   spend, customer, farm, hardware, n8n or Sheets effect. Retain its identities

@@ -1,6 +1,6 @@
 # BMQ-20260813-03 — Private Media Library Review
 
-Status: OWNER_HOLD
+Status: BUSINESS_COMPLETE
 
 ## Outcome
 
@@ -66,7 +66,7 @@ campaign or publication. Campaign Review and Publication remain later locked
 actions. This mission performs no public post, schedule, customer contact,
 spend, farm write, hardware command, n8n mutation or Google Sheets mutation.
 
-## Owner hold and remaining acceptance
+## Owner decision and completed acceptance
 
 Authenticated production readback proves the deployed Farm App resolves
 Bella's genuine packet: eight ordered members, eight valid content hashes,
@@ -83,9 +83,19 @@ message `3637` presents Accept into Private Library / Decline album for Private
 Library and the separate authority boundary. A later
 poll produced no additional lifecycle, claim, storage or provider effect.
 
-Canonical readback remains eight members, eight distinct originals, eight hash
-readbacks, eight thumbnails, retained Bella context and zero Library decision
-events. BMQ-20260813-03 is therefore OWNER_HOLD on Charl's natural choice in
-Telegram message `3637`. Business completion still requires the deployed
-callback, exactly-once decision readback and visible acknowledgement. The
-terminal must not press or replay either button.
+Charl's genuine callback query `6127564955095599565`, received at
+2026-08-16T08:13:00Z, resolved through the owner/private-chat-bound claim on
+Telegram message `3637`. It accepted exact album
+`BEACON-INTAKE-GROUP-CA51E98A7B4ABC3D5369DB73` into the Private Library.
+
+Canonical delayed readback proves exactly one completed protected claim, one
+album-level Library action, eight ordered `beacon_private_album_review_v1`
+asset events, eight retained private originals, eight private thumbnails and
+valid storage-readback SHA-256 evidence. Telegram provider chronology proves
+exactly one delivered acknowledgement as message `3663`. No callback replay or
+terminal mutation occurred.
+
+Public Use approvals, Campaign Reviews, Publication bindings and Publication
+authorizations remain zero. Library acceptance granted none of those separate
+authorities. BMQ-20260813-03 is therefore BUSINESS_COMPLETE. The callback must
+not be replayed.

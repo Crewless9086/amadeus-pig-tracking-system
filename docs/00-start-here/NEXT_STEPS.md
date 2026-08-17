@@ -642,12 +642,12 @@ complete.
   provider clock. The reviewed follow-up adds one Render UTC cron at 04:45,
   targeting the authenticated deployed entry point while retaining Supabase as
   the one daily claim and the in-process loop only as restart-safe redundancy.
-# BMQ-20260813-03 owner-visible Library decision — 2026-08-16
+# BMQ-20260813-03 Private Library decision complete — 2026-08-16
 
-- The deployed worker provider-confirmed Bella's exact Private Library choice
-  on existing Telegram message `3637`; delayed replay was effect-free.
-- Keep the mission OWNER_HOLD. Do not press or replay either button from a
-  terminal. Wait for Charl's natural Accept/Decline choice in message `3637`.
-- Business completion requires deployed callback execution, exactly-once
-  canonical decision readback and one visible acknowledgement, with Public Use,
-  Campaign Review and Publication still separate.
+- Charl's genuine callback `6127564955095599565` accepted Bella album
+  `BEACON-INTAKE-GROUP-CA51E98A7B4ABC3D5369DB73` into the Private Library.
+- Delayed canonical readback remained exactly one completed protected claim,
+  one album-level Library action, eight ordered private asset events, eight
+  originals and thumbnails, and one delivered acknowledgement (`3663`).
+- Do not replay the callback. Public Use, Campaign Review and Publication remain
+  separate and unauthorized. BMQ-20260813-03 is BUSINESS_COMPLETE.
