@@ -160,6 +160,24 @@ class RuntimeStagingTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeStagingError, "sealed_receipt_digest_mismatch"):
             self._plan(receipt_sha256="0" * 64)
 
+    def test_staging_accepts_only_after_recovered_failure_is_reconciled(self):
+        self._write("watchdog.json", {
+            "status": "provider_identity_incomplete",
+            "recovery": {"success": True, "status": "activation_recovered"},
+        })
+        with self.assertRaisesRegex(RuntimeStagingError, "watchdog_governed_stop_not_active"):
+            self._plan()
+        self._write("watchdog.json", {
+            "version": "charlie_activation_recovery_projection_v1",
+            "status": "governed_stop_active",
+            "recovered_activation_id": "1" * 32,
+            "historical_failure_sha256": "2" * 64,
+            "recovered_packet_sha256": "3" * 64,
+            "rollback_sha256": "4" * 64,
+        })
+        with self.assertRaisesRegex(RuntimeStagingError, "watchdog_recovery_projection_key_unavailable"):
+            self._plan()
+
     def test_plan_rejects_forged_receipt_even_with_matching_digest(self):
         receipt = json.loads(self.receipt.read_text())
         receipt["full_suite_passed"] = 999
@@ -268,6 +286,13 @@ class RuntimeStagingTests(unittest.TestCase):
             stage_runtime(plan, task_reader=self._task, runner=self.git,
                           git_safety_checker=self._safe_git)
         self.assertFalse((self.state / "release-staging.lock").exists())
+
+    def test_stage_rechecks_reconciliation_lane_after_plan(self):
+        plan = self._plan()
+        self._write("activation-reconciliation.lock", {"status": "owned"})
+        with self.assertRaisesRegex(RuntimeStagingError, "activation_lane_active"):
+            stage_runtime(plan, task_reader=self._task, runner=self.git,
+                          git_safety_checker=self._safe_git)
 
     def test_execution_failure_recovers_both_heads_and_manifest(self):
         original_manifest = (self.state / "runtime-manifest.json").read_bytes()
