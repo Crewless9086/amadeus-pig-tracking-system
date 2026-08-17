@@ -1076,3 +1076,39 @@ accepted as a current implementation authorization. It also wrote an untracked
 handover in the dirty owner workspace; preserve it as evidence but do not commit,
 move or delete it from that workspace. Runtime observations remain admissible
 because they were freshly read from current deployed revision `a0038c42`.
+
+### Recovery Slot 2 deployed manager and stale weighing correction — 2026-08-17
+
+PR #1041 source `ff1568f0` merged as authoritative main
+`b9919133faea1ce1d5ba7db5ec8499f0a7d707e6` and is loaded by the Render web
+service, the five-minute `oom-sakkie-morning-scheduler`, and the fifteen-minute
+ROOTLINE reassessment schedule. Worker `oom-sakkie-general-manager-v1` completed
+provider-origin cycles `OOM-MANAGER-CYCLE-20260817T125014102507Z` and
+`OOM-MANAGER-CYCLE-20260817T125525532646Z` after development work ended. The
+first cycle delivered owner Telegram messages 3705–3707; the next cycle retained
+the cases and suppressed unchanged duplicate delivery. This is fresh proof of
+terminal-independent discovery, durable case ownership, owner-only delivery and
+reassessment. The old FARM development terminal is released; an open shell or
+historical process is not operational ownership.
+
+The Prince physical-observation request and Pig 151 withdrawal/sales hold remain
+supported. The weighing card is not supported by current canonical truth. Fresh
+read-only production evidence found bulk batch
+`69086c13-4436-4548-8ab0-bed5453f6000`, source `app_bulk_weight`, containing 79
+distinct weight events for 2026-08-17 created between 09:21:09 and 09:24:07 UTC.
+Against the same 81-pig eligible cohort, current coverage is exactly 79/81 and
+the only missing tags are 123 and 151. Charl must not repeat or re-upload the 79
+successful records. Telegram message 3707's 0/81 statement is classified as a
+stale retained-case delivery, not as canonical evidence and not as a new owner
+work item.
+
+Classify Recovery Slot 2 as `WORKING / OPERATIONAL_DEGRADED /
+STALE_CASE_DELIVERY_DEFECT`. Preserve the live schedules and one existing
+manager/case/delivery spine. The next bounded correction must refresh canonical
+collector evidence immediately before an owner delivery, bind the outgoing
+payload to the refreshed evidence generation/digest, supersede rather than
+deliver a stale retained payload, and produce one deployed-agent correction for
+the affected weighing case. It must retain replay suppression and may neither
+delete the successful batch nor manufacture weights. Completion requires the
+deployed manager to report 79/81 with only tags 123 and 151 missing, followed by
+a later provider-origin cycle that stays silent while evidence is unchanged.
