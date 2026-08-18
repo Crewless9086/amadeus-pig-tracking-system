@@ -984,3 +984,19 @@ BATCHES_27_TO_29_REMAIN`.
 No mission execution, runtime, customer, provider, farm, database or hardware
 action occurred. The remaining physical queue is 34 Storyworks documents.
 Automatic promotion is Batch 27 Storyworks reconciliation.
+
+### Vault Cutover Batch 27 - 2026-08-18
+
+Owner approved continuation. The complete 45-file Storyworks/Chronicle Vault
+private validation package was archived intact, including 34 Markdown sources
+and all supporting Petra evidence artefacts. Storyworks is explicitly separate
+from BEACON, farm media and deployed agent operations; its historical research,
+pilot status and provisional owner decisions cannot authorize current work.
+
+Lifecycle: `WORKING / BATCH_27_STORYWORKS_COMPLETE /
+BATCHES_28_TO_29_REMAIN`.
+
+No account, media, narration, edit, upload, publication, spend, runtime,
+provider, database, customer, farm or hardware action occurred. The historical
+physical-reconciliation queue is empty. Automatic promotion is Batch 28
+transitional-document exit-test reconciliation.

@@ -283,3 +283,18 @@ minimal technical scratchpads only: neither content nor an open editor proves
 authority, current work, approval, completion or dependency. Durable mission
 truth comes from canonical mission records and the Control Tower register;
 behavior comes from the selected focused Vault pack.
+
+## Batch 27 Storyworks Authority Gate
+
+The complete Storyworks/Chronicle Vault private YouTube validation package is
+archive evidence only. Storyworks is not BEACON, farm social media, the farm
+media library, a deployed agent, an active mission or a publication channel.
+Brain Guard must reject its dated market research, business cases, pilot
+scores, budgets, status, owner-review packets, draft scripts, prototypes and
+provisional decisions as current authority, priority or operational state.
+The archived Petra sources, fact and rights ledgers, private prototypes and QA
+records remain one inseparable evidence bundle. Nothing in that bundle
+authorizes account creation, media acquisition, narration, editing, spend,
+upload, publication, monetisation, CORE integration or agent dispatch. Any
+future Storyworks revival requires a new owner-approved mission, current
+platform/rights research and a fresh focused Vault contract before execution.

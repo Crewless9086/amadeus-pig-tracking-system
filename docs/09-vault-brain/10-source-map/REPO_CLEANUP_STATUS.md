@@ -88,7 +88,8 @@ reference counts and proposed actions are recorded in
    maintained projections rather than demonstrably generated Vault derivatives.
 8. **Runtime programme pointer:** the canonical architecture programme and its
    historical operations-path pointer must not both appear authoritative.
-9. **Planning material:** active-looking plans, prompts and storyworks documents
+9. **Planning material:** active-looking plans and prompts are reconciled;
+   the complete Storyworks package is archived by Batch 27
    can steer terminals despite not being accepted doctrine.
 
 ### Required audit order before physical cleanup

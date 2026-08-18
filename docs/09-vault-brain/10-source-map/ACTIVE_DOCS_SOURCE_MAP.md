@@ -180,6 +180,11 @@ family. No tracked legacy AI document remains active. See
 
 ## Archived After Migration
 
+Batch 27 archived the complete private Storyworks/Chronicle Vault validation
+package under `docs/99-archive/vault-cutover/planning/storyworks/`. It is
+historical evidence only and is not BEACON, farm media, active agent doctrine,
+current mission state or publication authority.
+
 Batch 20 archived sixteen general-operations plans, dated evidence/checklists,
 configuration migrations and placeholder runbooks under
 `docs/99-archive/vault-cutover/docs/06-operations/`. Current testing, release,

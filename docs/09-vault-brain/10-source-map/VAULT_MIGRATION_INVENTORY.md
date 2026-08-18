@@ -33,7 +33,7 @@ Classification values:
 | `docs/06-operations/*.md` | migrated + review_queue | `07-standards/*`, `05-playbooks/*`, `10-source-map/*` | Standards/playbooks migrated; raw evidence logs still need later cleanup. |
 | `static/assets/agents/*/agent.md` | migrated + active_reference | `02-agents/*`, `02-agents/AGENT_REGISTRY.md` | Runtime/static asset notes remain; Vault is canonical doctrine. |
 | `planning/CODEX_CHAT.md` and `planning/ToDoList.md` | active technical scratchpads | canonical mission records, Control Tower register, focused Vault packs | Batch 26 archived historical contents; active paths are minimal non-doctrine/non-durable compatibility files. |
-| `planning/storyworks/**/*.md` | review_queue | relevant focused business/workflow/rights docs | Batch 27 reconciliation; do not treat planning labels as authority. |
+| `planning/storyworks/**/*.md` | migrated + archived | `10-source-map/VAULT_CUTOVER_BATCH27_RECONCILIATION.md` | Batch 27 archived the complete private validation/evidence package; Storyworks is not active agent or publication authority. |
 | `planning/CHAT.md` | migrated + archived | `04-workflows/N8N_WORKFLOW_SUITE.md`, `07-standards/CUSTOMER_RESPONSE_STANDARD.md` | Archived to `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`. |
 | `docs/99-archive/**` | review_queue | Archive only | Already archive, but may contain historical decisions worth extracting later. |
 | `external_sources/**/*.md` | review_queue | Relevant business/architecture docs | External briefs should be classified one by one when reused. |
