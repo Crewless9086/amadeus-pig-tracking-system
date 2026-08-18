@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from threading import Barrier
 
 from modules.oom_sakkie.manager_case_sources import (
     collect_manager_candidate, collect_manager_candidates)
@@ -27,6 +28,20 @@ def test_collector_failure_becomes_one_owned_runtime_case():
     assert case["urgency"] == "urgent"
     assert case["evidence_refs"] == ["collector:beacon:RuntimeError"]
     assert "secret detail" not in str(case)
+
+
+def test_multiple_collectors_run_concurrently_but_preserve_declared_order():
+    barrier = Barrier(2)
+    def first(_now):
+        barrier.wait(timeout=1)
+        return [{"dedupe_key": "rootline:first", "specialist": "ROOTLINE"}]
+    def second(_now):
+        barrier.wait(timeout=1)
+        return [{"dedupe_key": "herdmaster:second", "specialist": "HERDMASTER"}]
+
+    result = collect_manager_candidates(now=NOW, collectors=(first, second))
+    assert [row["dedupe_key"] for row in result] == [
+        "rootline:first", "herdmaster:second"]
 
 
 def test_single_case_refresh_invokes_only_owning_collector(monkeypatch):
