@@ -286,3 +286,13 @@ The legacy runner, mission protocol and deployment SOP now point to focused
 current Vault contracts. Required runner and release procedures were first
 consolidated into those existing files. No runtime, activation, deployment,
 provider, production-data or authority change occurred.
+
+## Vault Cutover Batch 12 - Current-State And Roadmap Projections
+
+Status: `SLICE_COMPLETE / TWO POINTERS / ZERO DELETIONS`.
+
+The legacy current-state dashboard and next-steps roadmap now point to the
+durable Control Tower register and focused Vault mission workflow. Their dated
+content remains in Git history, and the `NEXT_STEPS.md` compatibility fallback
+cannot offer obsolete missions. `PRODUCT_VISION.md` remains for a later bounded
+reconciliation. No runtime or production effect occurred.

@@ -221,3 +221,12 @@ pointers only. Brain Guard must require the current Mission Workflow, Runtime
 Programme, Deployment Standard and Release Workflow. A compatibility consumer
 may load an old path, but its former duplicated or dated instructions cannot
 select authority, execution, release or operational state.
+
+## Batch 12 Current-State And Roadmap Pointer Gate
+
+`docs/00-start-here/CURRENT_STATE.md` and `NEXT_STEPS.md` are compatibility
+pointers only. Brain Guard must reject their former dated status, roadmap,
+branch, deployment, incident and priority content as current evidence or
+doctrine. Current mission truth comes from the durable Control Tower register
+plus fresh attributable runtime/provider evidence; execution rules come from
+the selected Vault workflow pack.
