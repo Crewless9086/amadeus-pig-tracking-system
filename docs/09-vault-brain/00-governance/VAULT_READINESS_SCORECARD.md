@@ -99,14 +99,16 @@ PHYSICAL_CUTOVER_MANIFEST_PENDING`.
 Promotion to physical cleanup requires an exact file manifest derived from the
 Batch 1 ledger and Batch 3 remediation queue, followed by owner approval.
 
-## Batch 3 Enforcement Result - 2026-08-18
+## Batch 4 Physical-Cutover Manifest Result - 2026-08-18
 
-Deterministic source enforcement and the common/principal-agent contradiction
-audit are complete. Missing packs, incomplete Documents doctrine and prohibited
-legacy authority now fail closed in source and tests.
+The exact owner-review manifest now covers all 513 tracked source Markdown/MDX
+documents from the Batch 4 baseline. It records current full SHA-256, physical
+line count, all-tracked-text exact references, exact disposition, destination or
+replacement, blockers and `physical_change_authorized: false` for every entry.
 
-Current honest state: `SOURCE_ENFORCED / DEPLOYED_BRAIN_GUARD_UNPROVEN /
-PHYSICAL_CUTOVER_MANIFEST_PENDING`.
+Current honest state: `MANIFEST_COMPLETE / ZERO_PHYSICAL_CHANGES /
+OWNER_EXECUTION_APPROVAL_PENDING / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 
-Promotion to physical cleanup requires an exact file manifest derived from the
-Batch 1 ledger and Batch 3 remediation queue, followed by owner approval.
+No file currently qualifies for deletion. Physical execution requires a later
+owner-approved bounded batch, current-main regeneration, reference validation
+and the entry-specific extraction, exit-test or projection blocker to be closed.

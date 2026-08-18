@@ -126,6 +126,19 @@ Current honest state: source enforcement is tested; deployed Brain Guard worker,
 heartbeat, periodic audit and terminal-independent runtime acceptance remain
 unproven. Source completion must not be reported as an autonomous steward.
 
+## Batch 4 Manifest State
+
+The non-destructive physical-cutover manifest covers every tracked source
+Markdown/MDX document and records exact disposition, destination/replacement,
+references and blockers. Brain Guard must reject a physical cleanup proposal
+when the manifest is stale, incomplete, authorizes physical change by itself,
+removes a transitional source before its exit test, or deletes a referenced
+source without an exact accepted replacement.
+
+Current honest state: manifest generation and validation are source-tested;
+physical execution and deployed periodic Brain Guard acceptance remain separate
+owner-reviewed missions.
+
 ## Runtime Enforcement v2
 
 The second runtime pass adds stronger operating rails:

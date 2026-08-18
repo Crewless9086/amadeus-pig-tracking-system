@@ -161,9 +161,20 @@ They are not agent doctrine and must not enter a mandatory pack.
 - `modules/charlie/vault_store.py`
 - `modules/charlie/execution_bridge.py`
 - `modules/charlie/improvement_analyst.py`
+- `scripts/build_vault_cutover_manifest.py` - deterministic, non-destructive
+  physical-cutover manifest builder and validator.
 - `static/js/charlieMissionControl.js`
 - `templates/charlie.html`
 - `tests/test_charlie_*.py`
+- `tests/test_vault_cutover_manifest.py`
+
+Owner-review cutover artifacts:
+
+- `docs/09-vault-brain/10-source-map/VAULT_PHYSICAL_CUTOVER_MANIFEST.md`
+- `docs/09-vault-brain/10-source-map/VAULT_PHYSICAL_CUTOVER_MANIFEST.json`
+
+These artifacts propose future physical disposition only. They are not doctrine
+and never authorize a move, archive, deletion or pointer rewrite.
 
 ## Archived After Migration
 

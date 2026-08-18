@@ -625,3 +625,25 @@ PHYSICAL_MANIFEST_AND_DEPLOYED_ACCEPTANCE_PENDING`.
 No document was moved or deleted and no production data/provider action was
 performed. Next eligible work is the exact physical cutover manifest and
 deployed Brain Guard acceptance, each behind its own reviewed boundary.
+
+### Vault Cutover Batch 4 - 2026-08-18
+
+Owner approved the exact physical-cutover manifest only. The resulting
+machine-readable and human-reviewable manifests cover all 513 tracked source
+Markdown/MDX files from baseline `66d4667d`, with current full digests,
+all-tracked-text exact references, exact dispositions, destinations or
+replacements, blockers and `physical_change_authorized: false`.
+
+Lifecycle: `WORKING / BATCH_4_MANIFEST_COMPLETE /
+PHYSICAL_EXECUTION_AND_DEPLOYED_ACCEPTANCE_PENDING`.
+
+Disposition totals: 203 retained canonical/current/technical sources, 72
+transitional sources retained behind exit tests, 15 existing archive files, 9
+generated projections to reconcile, 18 future pointers, 117 extraction/archive
+items, 73 runbook/history splits, 6 archive candidates and zero delete
+candidates. No move, archive, deletion, pointer rewrite, runtime action,
+provider action or production mutation occurred.
+
+Automatic promotion requires owner approval of a bounded physical execution
+batch. That later batch must regenerate against current main and close every
+entry-specific blocker before changing the corresponding source.
