@@ -263,7 +263,7 @@
   `tests/test_oom_sakkie_family_message_lifecycle.py` and
   `tests/test_herdmaster_health_loss_recording.py`.
 - Production/recovery contract:
-  `docs/06-operations/OOM_SAKKIE_OWNER_REQUEST_AGENT_LIFECYCLE_HANDOVER.md`.
+  `docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md`.
 - Rule: a deployed agent needs target-specific acknowledgement and fresh
   activity before Oom Sakkie reports execution. A terminal is manual and a
   specialist role is broader than any current adapter. Neither a release nor
@@ -283,8 +283,8 @@
 - Focused tests:
   `tests/test_oom_sakkie_owner_attention_queue.py`,
   `tests/test_oom_sakkie_owner_attention_adapter.py`
-- Source-ready shared-adapter handover:
-  `docs/06-operations/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_SOURCE_HANDOVER.md`
+- Current shared-adapter workflow:
+  `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`
 - Existing later integration surfaces, unchanged by this source slice:
   `modules/sales/sam_live_stock_launch_control.py`,
   `modules/oom_sakkie/telegram_direct.py`, GateKeeper's existing SAM callback

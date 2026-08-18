@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 21 HERDMASTER reconciliation complete; no further physical change authorized.
+Status: Batch 22 OOM SAKKIE reconciliation complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v18`
-Baseline: `e3ed8f4c99bf61645d59698f184aacd64ceea8f5`
-Generated from HEAD: `e3ed8f4c99bf61645d59698f184aacd64ceea8f5`
-Tracked Markdown/MDX files covered: **529**
+Version: `vault_physical_cutover_manifest_v19`
+Baseline: `7660bd7b6ce9477f275e49468d485b9980cfe917`
+Generated from HEAD: `7660bd7b6ce9477f275e49468d485b9980cfe917`
+Tracked Markdown/MDX files covered: **530**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 21 and schedules later
+This manifest records completed Batches 5 through 22 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,21 +17,21 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `EXTRACT_THEN_ARCHIVE` | 81 |
-| `KEEP_ARCHIVE` | 107 |
+| `EXTRACT_THEN_ARCHIVE` | 55 |
+| `KEEP_ARCHIVE` | 137 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_GENERATED_PROJECTION` | 9 |
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 188 |
-| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 19 |
+| `KEEP_VAULT` | 189 |
+| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 15 |
 
 ## Remaining execution schedule
 
-The remaining 100 physical-reconciliation entries are assigned
-to exactly one of Batches 22 through 27. Batch 28 owns the 72 transitional
+The remaining 70 physical-reconciliation entries are assigned
+to exactly one of Batches 23 through 27. Batch 28 owns the 72 transitional
 exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
@@ -44,7 +44,7 @@ This schedule is an ordering contract, not physical-change authority.
 | 19 | `core_operating_spine` | COMPLETE (18) |
 | 20 | `general_operations` | COMPLETE (16) |
 | 21 | `herdmaster` | COMPLETE (22) |
-| 22 | `oom_sakkie` | 30 |
+| 22 | `oom_sakkie` | COMPLETE (30) |
 | 23 | `rootline` | 13 |
 | 24 | `sam_revenue` | 5 |
 | 25 | `business_modules` | 10 |
@@ -81,36 +81,6 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Planned batch | Destination / replacement | Exact refs | Blockers |
 | --- | --- | ---: | --- | ---: | --- |
-| `docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/OOM_SAKKIE_AUTOMATIC_REASSESSMENT_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_AUTOMATIC_REASSESSMENT_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_BREEDING_ROUTING_TASK_RETIREMENT_HANDOVER_20260811.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_BREEDING_ROUTING_TASK_RETIREMENT_HANDOVER_20260811.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md` | 2 | runbook_history_split_required |
-| `docs/06-operations/OOM_SAKKIE_CONTEXTUAL_SPECIALIST_FOLLOWUP_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_CONTEXTUAL_SPECIALIST_FOLLOWUP_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_DAILY_FARM_MANAGER_LOOP_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_DAILY_FARM_MANAGER_LOOP_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_DURABLE_MORNING_RUNTIME_HANDOVER_20260813.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_DURABLE_MORNING_RUNTIME_HANDOVER_20260813.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md` | 2 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_FARM_MANAGER_ROUND_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_FARM_MANAGER_ROUND_HANDOVER.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SOURCE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SOURCE_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SPINE_SCORECARD_20260809.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SPINE_SCORECARD_20260809.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/OOM_SAKKIE_GENERIC_FAMILY_MESSAGE_LIFECYCLE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_GENERIC_FAMILY_MESSAGE_LIFECYCLE_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_HERDMASTER_MANAGEMENT_CONSUMER_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_HERDMASTER_MANAGEMENT_CONSUMER_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_HERDMASTER_MORTALITY_CONSUMPTION_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_HERDMASTER_MORTALITY_CONSUMPTION_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_LLM_SEMANTIC_FRONT_DOOR_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_LLM_SEMANTIC_FRONT_DOOR_HANDOVER.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_MANAGER_QUALITY_COMPOSER_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_MANAGER_QUALITY_COMPOSER_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_SOURCE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_SOURCE_HANDOVER.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_OWNER_OPERATIONAL_CONTINUATION_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_OWNER_OPERATIONAL_CONTINUATION_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_OWNER_REQUEST_AGENT_LIFECYCLE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_OWNER_REQUEST_AGENT_LIFECYCLE_HANDOVER.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_P0_NATURAL_PREVIEW_CORRECTION_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_P0_NATURAL_PREVIEW_CORRECTION_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_P0_OPERATIONAL_INTAKE_RECOVERY_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_P0_OPERATIONAL_INTAKE_RECOVERY_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_P0_PIG125_LIFECYCLE_REENTRY_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_P0_PIG125_LIFECYCLE_REENTRY_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_PROTECTED_ACTION_RECOVERY_HANDOVER_20260811.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_PROTECTED_ACTION_RECOVERY_HANDOVER_20260811.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_RELAY_PROVIDER_CHRONOLOGY_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_RELAY_PROVIDER_CHRONOLOGY_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_ROOTLINE_DAILY_PRESENTATION_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_ROOTLINE_DAILY_PRESENTATION_HANDOVER.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_ROOTLINE_OPERATIONAL_INTAKE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_ROOTLINE_OPERATIONAL_INTAKE_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_SENTINEL_SINGLE_SHOT_RUNBOOK.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_SENTINEL_SINGLE_SHOT_RUNBOOK.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/OOM_SAKKIE_SPECIALIST_DISPATCH_ACK_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_SPECIALIST_DISPATCH_ACK_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_SPECIALIST_OWNER_DECISION_BINDING_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_SPECIALIST_OWNER_DECISION_BINDING_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/OOM_SAKKIE_WITHDRAWAL_RELAY_RECOVERY_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_WITHDRAWAL_RELAY_RECOVERY_HANDOVER.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md` | 1 | runbook_history_split_required |
 | `docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md` | 0 | runbook_history_split_required |

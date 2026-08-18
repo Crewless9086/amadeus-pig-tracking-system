@@ -734,7 +734,7 @@ Repeat the check only when material evidence, scope, risk, or owner intent chang
 
 The immediate program is to make the Oom Sakkie specialist team genuinely useful before returning to broad CORE/CHARLIE autonomy work.
 
-As of 2026-08-02, the controlling P0 is the Oom Sakkie operational spine in `docs/06-operations/OOM_SAKKIE_P0_OPERATIONAL_SPINE_MISSION_20260802.md`. No isolated specialist capability, source-ready PR, deployment, healthy endpoint, internal packet, or safe containment closes this goal. One genuine natural Telegram case must complete visible acknowledgement, deployed specialist dispatch, retained follow-up, consolidated preview, governed confirmation/write, replay proof, specialist reassessment and manager status without Charl copying prompts between terminals. The preserved Pig 125 found-dead report is the first acceptance case.
+The controlling Oom Sakkie operating-spine outcome is defined by `docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md` and `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`. No isolated specialist capability, source-ready PR, deployment, healthy endpoint, internal packet, or safe containment closes this goal. One genuine natural Telegram case must complete visible acknowledgement, deployed specialist dispatch, retained follow-up, consolidated preview, governed confirmation/write, replay proof, specialist reassessment and manager status without Charl copying prompts between terminals. A dated incident may provide acceptance evidence but never becomes current doctrine or a replay instruction.
 
 The target roles are:
 

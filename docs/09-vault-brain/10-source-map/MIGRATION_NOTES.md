@@ -62,3 +62,10 @@
 - Removed active maps and owner decisions from dated operations wrappers.
 - Archived twenty-two HERDMASTER plans and handovers intact; dated cases and
   runtime receipts are historical evidence only.
+
+2026-08-18 - Vault Cutover Batch 22:
+
+- Consolidated OOM SAKKIE manager dialogue, scheduling, family access,
+  specialist dispatch, protected action, delivery and browser contracts.
+- Repointed active implementation and UI references to focused Vault files.
+- Archived thirty OOM SAKKIE plans, handovers, scorecards and runbooks intact.
