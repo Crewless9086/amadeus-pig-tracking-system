@@ -797,3 +797,20 @@ BATCHES_15_TO_29_REMAIN`.
 No source document was moved, deleted or rewritten in this scheduling batch. No
 runtime, provider, production-data, customer, farm or hardware action occurred.
 Automatic promotion is Batch 15 generated-agent-projection reconciliation.
+
+### Vault Cutover Batch 15 - 2026-08-18
+
+Owner approved the generated-agent-projection slice. Nine handwritten static
+agent notes were replaced in place by deterministic, digest-bound projections
+from the exact Vault agent doctrine, per-agent JSON and central asset registry.
+Beacon's inconsistent local `Posts` label was reconciled to `Marketing Lead`.
+
+The generator and its fail-closed check are integrated into the standard Vault
+alignment audit. Static cards cannot grant authority or claim runtime status.
+
+Lifecycle: `WORKING / BATCH_15_GENERATED_PROJECTIONS_COMPLETE /
+BATCHES_16_TO_29_REMAIN`.
+
+No deletion, archive, runtime, activation, deployment, provider, production-data,
+customer, farm or hardware change occurred. The remaining physical queue is 181
+documents. Automatic promotion is Batch 16 decisions-and-migration-index reconciliation.

@@ -215,3 +215,16 @@ Current honest state: `EXECUTION_SCHEDULE_COMPLETE / 190 PHYSICAL ITEMS /
 
 This schedule authorizes no physical or runtime change. Full cutover requires
 completion of Batches 15-29 and a final zero-unresolved manifest.
+
+## Batch 15 Generated Agent Projections - 2026-08-18
+
+All nine static agent cards are deterministic, digest-bound, non-doctrine
+projections of focused Vault agent files plus registered asset metadata. Manual
+card edits, missing cards, extra cards, source drift and registry disagreement
+now fail the Vault alignment audit.
+
+Current honest state: `NINE_GENERATED_PROJECTIONS_COMPLETE / 181 PHYSICAL ITEMS /
+72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No runtime or agent operation was activated. Full cutover now continues with
+Batches 16-29.

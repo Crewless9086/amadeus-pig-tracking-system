@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from modules.charlie.vault_retrieval import COMMON_MANDATORY_DOCS, MANDATORY_MISSION_PACKS
+from modules.charlie.agent_card_projection import projection_findings
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -136,6 +137,14 @@ def evaluate_vault_alignment(repo_root: Path | str | None = None) -> dict:
     for relative in REQUIRED_CURRENT_DOCS:
         if relative not in active_map:
             findings.append(f"current document absent from active source map: {relative}")
+
+    # Some proportional mission tests intentionally construct a minimal Vault
+    # fixture without runtime/UI assets. Enforce card integrity whenever the
+    # asset surface is present; the full repository audit always contains it.
+    if (root / "static/assets/agents").exists():
+        projection_issues, projection_files = projection_findings(root)
+        findings.extend(projection_issues)
+        checked.extend(projection_files)
 
     current_map = active_map.split("## Archived After Migration", 1)[0]
     for relative in re.findall(r"`((?:docs|modules|scripts|static|templates|tests|config)/[^`]+)`", current_map):

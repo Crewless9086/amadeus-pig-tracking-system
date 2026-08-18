@@ -99,8 +99,16 @@ Static agent cards under `static/assets/agents/*/agent.md` are runtime/UI asset 
 When a visual identity, voice, role cue, or final voice ID changes:
 
 - update the relevant Vault agent file;
-- update the static asset note;
 - update `static/assets/agents/agent_registry.json` where applicable;
+- update the matching `agent.json` asset metadata;
+- regenerate all static agent-card projections with
+  `python scripts/build_agent_card_projections.py`;
+- require `python scripts/build_agent_card_projections.py --check` and the Vault
+  alignment audit to pass;
 - record the source/change in the Vault changelog.
+
+Never hand-edit `static/assets/agents/*/agent.md`. Each card is a generated,
+digest-bound, non-doctrine projection and grants no authority or operational
+status. Source or asset drift fails closed in Brain Guard's alignment audit.
 
 Current shared visual family: semi-realistic premium South African farm command team.
