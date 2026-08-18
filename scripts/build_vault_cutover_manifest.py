@@ -27,8 +27,8 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v3"
-BASELINE = "fdd208bab45947badbc4c48f9b1dd0b9bc168bf8"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v4"
+BASELINE = "69d710d0414a5aed8cbe578a779a41e8f388d54e"
 
 CONTROLLING_EXCEPTIONS = {
     "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
@@ -262,7 +262,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 6 archived only the four reconciled agent-specific docs/05-ai files; no deletion, runtime, provider, authority, or production change",
+        "owner_boundary": "Batch 7 archived only two zero-reference superseded external UI briefs; no deletion, doctrine rewrite, runtime, provider, authority, or production change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -308,7 +308,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: regenerated after approved Batch 6 slice; no further physical change authorized.",
+        "Status: regenerated after approved Batch 7 slice; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -316,7 +316,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records the completed Batch 5 and 6 archive slices and proposes later",
+        "This manifest records the completed Batch 5, 6 and 7 archive slices and proposes later",
         "dispositions only. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
@@ -337,6 +337,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "- Pointer conversion requires unique-fact reconciliation first.",
         "- Static agent cards require a proven generated projection before replacement.",
         "- All nine reconciled `docs/05-ai` files are now preserved intact in the archive.",
+        "- The two superseded external UI briefs are preserved intact in the archive.",
         "- No later physical change is authorized by this regenerated manifest.",
         "",
         "## Exact non-keep review queue",

@@ -182,6 +182,10 @@ family. No tracked legacy AI document remains active. See
 
 ## Archived After Migration
 
+Batch 7 archived two superseded external UI briefs. They are historical design
+evidence only; current UI authority remains the mandatory Facelift and UI
+Dashboard standards. See `VAULT_CUTOVER_BATCH7_RECONCILIATION.md`.
+
 - `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (historical review evidence;
   excluded from current architecture/review authority pending Phase 0 register)
 - `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`

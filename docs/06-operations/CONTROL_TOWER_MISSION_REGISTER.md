@@ -678,3 +678,18 @@ NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
 No deletion, runtime, provider, production-data or authority change occurred.
 Automatic promotion requires a fresh bounded owner authorization using the
 regenerated manifest.
+
+### Vault Cutover Batch 7 - 2026-08-18
+
+Owner authorized the next bounded no-deletion slice. Two superseded,
+zero-reference external UI briefs were preserved intact under
+`docs/99-archive/vault-cutover/external_sources/`. Current UI authority remains
+the mandatory Facelift and UI Dashboard standards plus the owning-agent pack.
+
+Lifecycle: `WORKING / BATCH_7_EXTERNAL_UI_BRIEFS_ARCHIVED /
+NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
+
+The external-source index and current telemetry/provider documentation remain
+in place. No deletion, doctrine rewrite, runtime, provider, production-data or
+authority change occurred. Automatic promotion requires a fresh bounded owner
+authorization using the regenerated manifest.

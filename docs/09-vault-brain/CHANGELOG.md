@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-08-18 - Vault cutover Batch 7 external UI brief archive
+
+- Archived two superseded external UI design briefs intact; no deletion was performed.
+- Preserved current external-source, forecast, Sunsynk and carcass documentation.
+- Kept UI authority in the mandatory Facelift and UI Dashboard standards.
+- Added exact reconciliation evidence and regenerated the physical manifest.
+- Performed no doctrine rewrite, runtime, provider, production-data or authority change.
+
 ## 2026-08-18 - Vault cutover Batch 6 remaining AI archive
 
 - Archived the remaining three BEACON legacy documents and SAM v3 build plan

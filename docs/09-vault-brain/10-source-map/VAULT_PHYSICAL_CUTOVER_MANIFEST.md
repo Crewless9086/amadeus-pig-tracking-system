@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: regenerated after approved Batch 6 slice; no further physical change authorized.
+Status: regenerated after approved Batch 7 slice; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v3`
-Baseline: `fdd208bab45947badbc4c48f9b1dd0b9bc168bf8`
-Generated from HEAD: `fdd208bab45947badbc4c48f9b1dd0b9bc168bf8`
-Tracked Markdown/MDX files covered: **515**
+Version: `vault_physical_cutover_manifest_v4`
+Baseline: `69d710d0414a5aed8cbe578a779a41e8f388d54e`
+Generated from HEAD: `69d710d0414a5aed8cbe578a779a41e8f388d54e`
+Tracked Markdown/MDX files covered: **516**
 Validation: **PASS**
 
-This manifest records the completed Batch 5 and 6 archive slices and proposes later
+This manifest records the completed Batch 5, 6 and 7 archive slices and proposes later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,14 +17,14 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `ARCHIVE_CANDIDATE` | 6 |
+| `ARCHIVE_CANDIDATE` | 4 |
 | `EXTRACT_THEN_ARCHIVE` | 108 |
-| `KEEP_ARCHIVE` | 24 |
+| `KEEP_ARCHIVE` | 26 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_TECHNICAL` | 27 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 174 |
+| `KEEP_VAULT` | 175 |
 | `POINTER_AFTER_RECONCILIATION` | 18 |
 | `RECONCILE_GENERATED_PROJECTION` | 9 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
@@ -37,6 +37,7 @@ keeps `physical_change_authorized: false`.
 - Pointer conversion requires unique-fact reconciliation first.
 - Static agent cards require a proven generated projection before replacement.
 - All nine reconciled `docs/05-ai` files are now preserved intact in the archive.
+- The two superseded external UI briefs are preserved intact in the archive.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -205,10 +206,8 @@ entry whose physical disposition needs later work or owner review.
 | `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | 3 | unique_fact_extraction_required |
 | `docs/MIGRATION_INDEX.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md` | 1 | unique_fact_extraction_required |
 | `external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md` | 6 | owner_approval_required |
-| `external_sources/CODEX_FARM_UI_RESET_BRIEF.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/CODEX_FARM_UI_RESET_BRIEF.md` | 0 | owner_approval_required |
-| `external_sources/CODEX_FARM_UI_TARGET_SPECIALIST_WORKSPACE_BRIEF.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/CODEX_FARM_UI_TARGET_SPECIALIST_WORKSPACE_BRIEF.md` | 0 | owner_approval_required |
-| `external_sources/README.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/README.md` | 0 | owner_approval_required |
-| `external_sources/telemetry/forecast/amadeus-forecast-logger/README.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/telemetry/forecast/amadeus-forecast-logger/README.md` | 0 | owner_approval_required |
+| `external_sources/README.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/README.md` | 1 | owner_approval_required |
+| `external_sources/telemetry/forecast/amadeus-forecast-logger/README.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/telemetry/forecast/amadeus-forecast-logger/README.md` | 1 | owner_approval_required |
 | `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md` | 1 | owner_approval_required |
 | `planning/CHARLIE_CORE_EXTENDED_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md` | 1 | unique_fact_extraction_required |
 | `planning/CODEX_CHAT.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CODEX_CHAT.md` | 22 | unique_fact_extraction_required |

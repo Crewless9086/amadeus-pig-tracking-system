@@ -236,3 +236,15 @@ tests, provider evidence and the Implementation Source Map.
 
 No runtime or production effect occurred. The regenerated manifest grants no
 further physical authority.
+
+## Vault Cutover Batch 7 - Superseded External UI Briefs
+
+Status: `SLICE_COMPLETE / TWO UI BRIEFS ARCHIVED / ZERO DELETIONS`.
+
+Two zero-reference external UI briefs were preserved intact in the Vault
+cutover archive. Their accepted direction is governed by the mandatory
+Facelift and UI Dashboard standards rather than by historical build prompts.
+
+The external-source index and current forecast, Sunsynk and carcass documents
+remain in place. No doctrine rewrite, runtime or production effect occurred.
+The regenerated manifest grants no further physical authority.
