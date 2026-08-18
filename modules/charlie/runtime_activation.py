@@ -201,8 +201,12 @@ def consume_provider_activation(*, state_root, starter, task_controller,
     packet_path = state_root / "activation-packet.json"
     packet = _read_json(packet_path, "activation_packet_invalid")
     _validate_packet(packet, state_root, task_reader, git_runner=git_runner, now=now)
+    inspector = provider_inspector or (lambda pid: inspect_current_provider_chain(
+        pid, activation_id=packet["activation_id"],
+        activation_prepared_at=packet["prepared_at"],
+    ))
     provider = verify_provider_origin(
-        provider_inspector or inspect_current_provider_chain,
+        inspector,
         expected_task=packet["task_ownership"],
     )
     if not provider.get("authorized"):
@@ -944,7 +948,8 @@ def verify_provider_origin(inspector, *, expected_task):
 
 
 def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_identity=None,
-                                   provider_identity=None):
+                                   provider_identity=None, activation_id=None,
+                                   activation_prepared_at=None):
     """Inspect this process locally and only its exact parent PIDs through CIM."""
     requested_pid = int(pid or os.getpid())
     if current_identity is not None:
@@ -960,7 +965,9 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
         return {"inspection_complete": False, "reason": "provider_identity_unreadable"}
 
     provider_reader = provider_identity or (
-        (lambda: _inspect_windows_task_scheduler_provider(requested_pid, runner=runner))
+        (lambda: _inspect_windows_task_scheduler_provider(
+            requested_pid, runner=runner, activation_id=activation_id,
+            activation_prepared_at=activation_prepared_at))
         if os.name == "nt" else lambda: {"inspection_complete": False}
     )
     provider = provider_reader()
@@ -988,6 +995,8 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
                 "system_root",
                 "engine_pid", "instance_guid", "task_path", "current_action",
                 "action_execute", "action_arguments", "action_working_directory",
+                "evidence_source", "event_record_id", "event_time",
+                "event_activity_id", "activation_id",
             )
             if (not _valid_task_scheduler_provider(provider_again) or any(
                     str(provider_again.get(field) or "").casefold()
@@ -1040,7 +1049,9 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
 
 
 def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
-                                             process_creation_time=None):
+                                             process_creation_time=None,
+                                             activation_id=None,
+                                             activation_prepared_at=None):
     """Bind this PID to one Task Scheduler instance and its exact service.
 
     Task Scheduler can start the action before its COM running-instance view
@@ -1064,10 +1075,25 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "do{$instances=@($task.GetInstances(0)|Where-Object {[int]$_.EnginePID-eq" + str(int(engine_pid)) + "});"
         "if($instances.Count-eq 0-and[DateTime]::UtcNow-lt$deadline){Start-Sleep -Milliseconds 100}}"
         "while($instances.Count-eq 0-and[DateTime]::UtcNow-lt$deadline);"
-        "if($instances.Count-eq 0){exit 6};if($instances.Count-ne 1){exit 8};"
-        "$instance=$instances[0];$instance.Refresh();"
+        "$instance=$null;$evidenceSource='running_instance';$eventRecordId=0;$eventTime='';$eventActivity='';"
+        "if($instances.Count-ne 0){if($instances.Count-ne 1){exit 8};$instance=$instances[0];$instance.Refresh()}"
+        "else{"
+        "$log=Get-WinEvent -ListLog 'Microsoft-Windows-TaskScheduler/Operational' -ErrorAction Stop;"
+        "if(-not$log.IsEnabled){exit 9};"
+        "$prepared=[DateTime]::Parse('" + str(activation_prepared_at or "").replace("'", "''") + "').ToUniversalTime();"
+        "$now=[DateTime]::UtcNow;"
+        "$matches=@(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational';Id=200;StartTime=$prepared.AddSeconds(-2)} -ErrorAction Stop|Where-Object {"
+        "$xml=[xml]$_.ToXml();$d=@{};foreach($x in $xml.Event.EventData.Data){$d[[string]$x.Name]=[string]$x.'#text'};"
+        "([string]$d.TaskName).Equals('\\" + TASK_NAME.replace("'", "''") + "',[StringComparison]::OrdinalIgnoreCase)-and"
+        "([int]$d.EnginePID-eq" + str(int(engine_pid)) + ")-and$_.TimeCreated.ToUniversalTime()-ge$prepared-and$_.TimeCreated.ToUniversalTime()-le$now.AddSeconds(2)"
+        "});if($matches.Count-eq 0){exit 6};if($matches.Count-ne 1){exit 10};"
+        "$m=$matches[0];$mx=[xml]$m.ToXml();$md=@{};foreach($x in $mx.Event.EventData.Data){$md[[string]$x.Name]=[string]$x.'#text'};"
+        "$eventInstance=if($md.TaskInstanceId){$md.TaskInstanceId}else{$md.InstanceId};"
+        "$instance=[pscustomobject]@{EnginePID=[int]$md.EnginePID;InstanceGuid=[string]$eventInstance;Path=[string]$md.TaskName;CurrentAction=[string]$md.ActionName};"
+        "$evidenceSource='operational_event';$eventRecordId=[long]$m.RecordId;$eventTime=$m.TimeCreated.ToUniversalTime().ToString('o');$eventActivity=[string]$mx.Event.System.Correlation.ActivityID}"
         "$actions=@($task.Definition.Actions);if($actions.Count-ne 1-or[int]$actions[0].Type-ne 0){exit 7};"
         "$action=$actions[0];"
+        "if($evidenceSource-eq'operational_event'-and-not([string]$instance.CurrentAction).Equals([string]$action.Path,[StringComparison]::OrdinalIgnoreCase)){exit 11};"
         "$dll=(Get-ItemProperty -LiteralPath "
         "'Registry::HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Schedule\\Parameters' "
         "-Name ServiceDll).ServiceDll;"
@@ -1080,7 +1106,9 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "TaskPath=[string]$instance.Path;CurrentAction=[string]$instance.CurrentAction;"
         "ActionExecute=[string]$action.Path;ActionArguments=[string]$action.Arguments;"
         "ActionWorkingDirectory=[string]$action.WorkingDirectory;"
-        "ServiceDll=[Environment]::ExpandEnvironmentVariables($dll);SystemRoot=$root}"
+        "ServiceDll=[Environment]::ExpandEnvironmentVariables($dll);SystemRoot=$root;"
+        "EvidenceSource=$evidenceSource;EventRecordId=$eventRecordId;EventTime=$eventTime;EventActivityId=$eventActivity;"
+        "ActivationId='" + str(activation_id or "").replace("'", "''") + "'}"
         "|ConvertTo-Json -Compress"
     )
     try:
@@ -1099,6 +1127,9 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
             6: "task_instance_visibility_timeout",
             7: "task_action_identity_invalid",
             8: "task_instance_identity_ambiguous",
+            9: "task_scheduler_operational_log_disabled",
+            10: "task_event_identity_ambiguous",
+            11: "task_event_action_mismatch",
         }
         return {"inspection_complete": False,
                 "reason": reasons.get(completed.returncode, "provider_identity_unreadable")}
@@ -1129,6 +1160,11 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
             "action_arguments": str(row.get("ActionArguments") or ""),
             "action_working_directory": str(row.get("ActionWorkingDirectory") or ""),
             "provider_identity_verified": True,
+            "evidence_source": str(row.get("EvidenceSource") or ""),
+            "event_record_id": int(row.get("EventRecordId") or 0),
+            "event_time": str(row.get("EventTime") or ""),
+            "event_activity_id": str(row.get("EventActivityId") or ""),
+            "activation_id": str(row.get("ActivationId") or ""),
         }
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return {"inspection_complete": False}
@@ -1147,8 +1183,18 @@ def _valid_task_scheduler_provider(value):
     binary_tokens = _command_tokens(value.get("service_binary_path"))
     expected_executable = Path(str(value["system_root"])) / "System32" / "svchost.exe"
     expected_dll = Path(str(value["system_root"])) / "System32" / "schedsvc.dll"
+    evidence_source = str(value.get("evidence_source") or "running_instance")
+    event_identity_valid = evidence_source == "running_instance" or bool(
+        evidence_source == "operational_event"
+        and int(value.get("event_record_id") or 0) > 0
+        and str(value.get("event_time") or "")
+        and str(value.get("activation_id") or "")
+        and str(value.get("event_activity_id") or "").strip("{}").casefold()
+        == str(value.get("instance_guid") or "").strip("{}").casefold()
+    )
     return bool(
         value.get("provider_identity_verified")
+        and event_identity_valid
         and str(value["service_name"]).casefold() == "schedule"
         and str(value["service_state"]).casefold() == "running"
         and str(value["start_name"]).casefold() in {"localsystem", "local system"}

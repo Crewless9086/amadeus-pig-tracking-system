@@ -539,6 +539,61 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["reason"], "task_instance_identity_ambiguous")
         self.assertEqual(len(calls), 1)
 
+    def test_windows_provider_event_fallback_is_exact_activation_bound(self):
+        row = self.task[0]
+        provider_json = {
+            "ProcessId": 50, "Name": "Schedule", "State": "Running",
+            "StartName": "LocalSystem",
+            "PathName": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+            "EnginePID": 100, "InstanceGuid": "11111111-1111-1111-1111-111111111111",
+            "TaskPath": "\\CHARLIE CORE Runner Watchdog", "CurrentAction": row["execute"],
+            "ActionExecute": row["execute"], "ActionArguments": row["arguments"],
+            "ActionWorkingDirectory": row["working_directory"],
+            "ServiceDll": "C:/Windows/System32/schedsvc.dll", "SystemRoot": "C:/Windows",
+            "EvidenceSource": "operational_event", "EventRecordId": 456,
+            "EventTime": "2026-08-18T08:00:00.0000000Z",
+            "EventActivityId": "11111111-1111-1111-1111-111111111111",
+            "ActivationId": "activation-current",
+        }
+        calls = []
+        result = _inspect_windows_task_scheduler_provider(
+            100,
+            runner=lambda command, **_kwargs: (
+                calls.append(command) or subprocess.CompletedProcess(
+                    command, 0, json.dumps(provider_json), "")
+            ),
+            process_creation_time=lambda _pid: "provider-created",
+            activation_id="activation-current",
+            activation_prepared_at="2026-08-18T07:59:59+00:00",
+        )
+        self.assertTrue(result["inspection_complete"])
+        self.assertEqual(result["evidence_source"], "operational_event")
+        self.assertEqual(result["event_record_id"], 456)
+        script = calls[0][-1]
+        self.assertIn("Id=200", script)
+        self.assertIn("EnginePID-eq100", script)
+        self.assertIn("TaskName).Equals('\\CHARLIE CORE Runner Watchdog'", script)
+        self.assertIn("TimeCreated.ToUniversalTime()-ge$prepared", script)
+
+    def test_event_fallback_rejects_disabled_ambiguous_or_missing_evidence(self):
+        expected = {
+            6: "task_instance_visibility_timeout",
+            9: "task_scheduler_operational_log_disabled",
+            10: "task_event_identity_ambiguous",
+            11: "task_event_action_mismatch",
+        }
+        for return_code, reason in expected.items():
+            with self.subTest(return_code=return_code):
+                result = _inspect_windows_task_scheduler_provider(
+                    100,
+                    runner=lambda command, **_kwargs: subprocess.CompletedProcess(
+                        command, return_code, "", ""),
+                    activation_id="activation-current",
+                    activation_prepared_at="2026-08-18T07:59:59+00:00",
+                )
+                self.assertFalse(result["inspection_complete"])
+                self.assertEqual(result["reason"], reason)
+
     def test_provider_origin_preserves_fail_closed_inspector_reason(self):
         result = verify_provider_origin(
             lambda _pid: {"inspection_complete": False,
