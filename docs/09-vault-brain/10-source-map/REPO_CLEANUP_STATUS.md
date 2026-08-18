@@ -248,3 +248,14 @@ Facelift and UI Dashboard standards rather than by historical build prompts.
 The external-source index and current forecast, Sunsynk and carcass documents
 remain in place. No doctrine rewrite, runtime or production effect occurred.
 The regenerated manifest grants no further physical authority.
+
+## Vault Cutover Batch 8 - External Candidate Reconciliation
+
+Status: `RECONCILIATION_COMPLETE / ARCHIVE_CANDIDATES_ZERO / ZERO DELETIONS`.
+
+The four remaining external archive candidates were reviewed and retained as
+current technical/source evidence. The carcass standard remains consumed by
+meat workflows and tests; the external index retains secret-handling rules; the
+forecast and Sunsynk READMEs retain current provider/ingest contracts.
+
+Vault doctrine remains authoritative. No physical or runtime effect occurred.

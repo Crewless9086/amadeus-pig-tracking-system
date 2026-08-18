@@ -142,3 +142,11 @@ remain active technical evidence.
 
 Current honest state: `EXTERNAL_UI_BRIEFS_ARCHIVED / ZERO_DELETIONS /
 DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+## Batch 8 External Candidate Reconciliation - 2026-08-18
+
+All four remaining external archive candidates were reviewed and retained as
+current technical/source evidence. None passed the strict deletion test.
+
+Current honest state: `ARCHIVE_CANDIDATE_QUEUE_EMPTY /
+CURRENT_EXTERNAL_REFERENCES_PRESERVED / ZERO_DELETIONS`.

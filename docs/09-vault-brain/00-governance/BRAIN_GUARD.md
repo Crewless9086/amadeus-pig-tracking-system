@@ -154,6 +154,14 @@ Brain Guard must reject legacy scope, storage or SAM build-plan evidence as
 current doctrine and route missions only through focused Vault packs. No later
 move or deletion is authorized by this completed slice.
 
+## Batch 8 External-Reference Classification State
+
+The half-carcass source standard, external-source index and forecast/Sunsynk
+logger READMEs remain current technical/source evidence. Brain Guard must not
+allow them to override Vault doctrine, but must preserve them while current
+code, provider contracts or business workflows depend on them. The external
+archive-candidate queue is now empty.
+
 ## Batch 7 Physical Slice State
 
 Two superseded external UI design briefs are archived intact. Brain Guard must

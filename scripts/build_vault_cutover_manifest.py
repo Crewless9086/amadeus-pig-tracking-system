@@ -27,8 +27,15 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v4"
-BASELINE = "69d710d0414a5aed8cbe578a779a41e8f388d54e"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v5"
+BASELINE = "6e1c058a6f41551916e5bb61830b817c0829230b"
+
+CURRENT_EXTERNAL_TECHNICAL_REFERENCES = {
+    "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
+    "external_sources/README.md",
+    "external_sources/telemetry/forecast/amadeus-forecast-logger/README.md",
+    "external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md",
+}
 
 CONTROLLING_EXCEPTIONS = {
     "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
@@ -196,6 +203,8 @@ def _disposition(path: str, row: dict | None, exact_refs: list[str], lines: int)
         return "POINTER_AFTER_RECONCILIATION", "docs/09-vault-brain/00-governance/OWNER_DECISIONS.md", "legacy ADR index becomes a pointer to canonical owner decisions", ["unique_fact_reconciliation_required"]
     if path.startswith("docs/99-archive/"):
         return "KEEP_ARCHIVE", path, "already physically archived", []
+    if path in CURRENT_EXTERNAL_TECHNICAL_REFERENCES:
+        return "KEEP_TECHNICAL", path, "current external implementation/source evidence; Vault doctrine remains authoritative", []
 
     action = (row or {}).get("action", "classify_manually")
     lifecycle = (row or {}).get("lifecycle", "review_queue")
@@ -262,7 +271,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 7 archived only two zero-reference superseded external UI briefs; no deletion, doctrine rewrite, runtime, provider, authority, or production change",
+        "owner_boundary": "Batch 8 resolved four remaining external archive candidates as current technical references; no move, deletion, doctrine expansion, runtime, provider, authority, or production change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -308,7 +317,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: regenerated after approved Batch 7 slice; no further physical change authorized.",
+        "Status: regenerated after approved Batch 8 reconciliation; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -316,7 +325,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records the completed Batch 5, 6 and 7 archive slices and proposes later",
+        "This manifest records completed Batches 5 through 8 and proposes later",
         "dispositions only. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
@@ -338,6 +347,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "- Static agent cards require a proven generated projection before replacement.",
         "- All nine reconciled `docs/05-ai` files are now preserved intact in the archive.",
         "- The two superseded external UI briefs are preserved intact in the archive.",
+        "- The four remaining external candidates are retained as current technical/source evidence; the archive-candidate queue is empty.",
         "- No later physical change is authorized by this regenerated manifest.",
         "",
         "## Exact non-keep review queue",

@@ -693,3 +693,17 @@ The external-source index and current telemetry/provider documentation remain
 in place. No deletion, doctrine rewrite, runtime, provider, production-data or
 authority change occurred. Automatic promotion requires a fresh bounded owner
 authorization using the regenerated manifest.
+
+### Vault Cutover Batch 8 - 2026-08-18
+
+Owner authorized reconciliation and deletion where the strict test passed. The
+four remaining external archive candidates were completely reviewed. None
+passed the archive or deletion test: all retain current technical, provider,
+secret-handling or meat-source value.
+
+Lifecycle: `WORKING / BATCH_8_EXTERNAL_CANDIDATES_RESOLVED /
+NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
+
+The manifest now contains zero `ARCHIVE_CANDIDATE` entries. Vault doctrine
+remains authoritative over the retained technical/source evidence. No move,
+deletion, runtime, provider, production-data or authority change occurred.
