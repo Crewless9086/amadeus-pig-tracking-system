@@ -53,7 +53,10 @@ def test_partial_lists_only_missing_eligible_tagged_pigs():
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
     assert packet["weight"]["current_snapshot"]["covered"] == 1
     assert [row["tag"] for row in packet["weight"]["missing_eligible_tagged"]] == ["2"]
-    assert result.work_items[0].next_action == "Weigh only these missing eligible tags: 2."
+    assert result.work_items[0].title == "Weighing: 1 of 2 recorded; 1 tag(s) need status reconciliation"
+    assert result.work_items[0].next_action == (
+        "Reconcile sale/order or other canonical status for tags 2; "
+        "do not classify them for reweighing until that evidence exists.")
 
 
 def test_breeding_animals_are_excluded_unless_individually_scheduled():
@@ -121,9 +124,25 @@ def test_early_current_week_bulk_upload_is_included_in_current_snapshot():
         window_weights=[weight("P1", day="2026-08-17")], prior_weights=[],
         analysis_date=date(2026, 8, 17))
     assert packet["weight"]["window"] == {
-        "start": "2026-08-17", "end": "2026-08-19", "timezone": "Africa/Johannesburg"}
+        "start": "2026-08-11", "end": "2026-08-17", "timezone": "Africa/Johannesburg"}
     assert packet["weight"]["current_snapshot"]["covered"] == 1
     assert [row["tag"] for row in packet["weight"]["missing_eligible_tagged"]] == ["151"]
+
+
+def test_monday_keeps_just_finished_weekend_upload_in_current_snapshot():
+    pigs = [pig(f"P{number}", str(number)) for number in range(1, 82)]
+    weights = [weight(f"P{number}", day="2026-08-16", event=f"W{number}")
+               for number in range(1, 80)]
+    packet = build_daily_manager_evidence(pigs=pigs, window_weights=weights,
+        prior_weights=[], analysis_date=date(2026, 8, 17))
+    snapshot = packet["weight"]["current_snapshot"]
+    assert packet["weight"]["window"] == {
+        "start": "2026-08-11", "end": "2026-08-17",
+        "timezone": "Africa/Johannesburg"}
+    assert snapshot["covered"] == 79 and snapshot["eligible_tagged"] == 81
+    item = consume_daily_manager_evidence(packet, observed_at=NOW).work_items[0]
+    assert "79 of 81 recorded" in item.title
+    assert "do not classify them for reweighing" in item.next_action
 
 
 def test_conflicting_same_day_values_fail_closed():

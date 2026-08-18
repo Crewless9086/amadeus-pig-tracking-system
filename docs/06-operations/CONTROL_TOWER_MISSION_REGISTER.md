@@ -2,6 +2,27 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-18 - Slot 2 OOM SAKKIE morning-truth recovery
+
+Fresh owner evidence showed materially unchanged ROOTLINE recommendations sent
+repeatedly although no irrigation executed, a simultaneous manager brief saying
+ROOTLINE refresh was unavailable, Monday weight coverage regressing from the
+provider-confirmed 79/81 to 0/81, and an overlong machine-like farm plan. Charl
+reports tags 123 and 151 were sold on Sunday, but Orders/Sales selection cannot
+yet preserve that fact canonically. It remains owner-reported pending commercial
+evidence, not a recorded sale or completed commercial fact.
+
+Continue the existing shared OOM/ROOTLINE Slot 2 spine. Preserve weekend weights
+in Monday's just-finished governed window; route uncovered tags to canonical
+sale/order/status reconciliation without classifying them for reweighing; store
+fresher unchanged ROOTLINE generations silently under the same date/material
+plan identity; reserve Recommendation, Authorized, Started, Completed, Held and
+Failed for exact lifecycle evidence; and render one short prioritized morning
+plan. No weight rewrite, inferred sale, Telegram send or hardware actuation is
+authorized. Source acceptance requires independent authority/replay review, one
+serialized PR/merge/deploy, then one genuine scheduled concise result and a
+later unchanged silent cycle.
+
 ## Purpose
 
 This is the canonical planning and dispatch ledger for the visible development

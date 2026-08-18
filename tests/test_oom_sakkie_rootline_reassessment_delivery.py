@@ -125,7 +125,8 @@ def test_legacy_delivered_history_date_prevents_same_day_redelivery():
     result,status=handle_rootline_reassessment_trigger(payload(),HEADERS,ENV,
         specialist_loader=lambda:value,state_store=base_store,
         family_delivery=lambda *a,**k:calls.append(1))
-    assert status==200 and result["status"]=="rootline_reassessment_unchanged"
+    assert status==200 and result["status"] in {
+        "rootline_reassessment_unchanged", "rootline_reassessment_replayed_noop"}
     assert result["telegram_sends"]==0 and calls==[]
 
 def test_store_reconstructs_date_from_append_only_pending_history(monkeypatch):

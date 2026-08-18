@@ -36,10 +36,12 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
         return _contained("rootline_reassessment_observation_unproven")
     delivered = state_store("load_delivered", f"{owner_user_id}|{chat_id}", None) or {}
     current_identity = state_store("load_identity", identity, None) or {}
+    # A fresher generation remains durable observation evidence, but is not
+    # owner-notification material by itself. Daily and change rails share the
+    # date + material identity and stay silent when the supported action did
+    # not change.
     if (delivered.get("material_digest") == material
             and str(delivered.get("operating_date") or "") == operating_date
-            and str(delivered.get("result_id") or "") == result_id
-            and str(delivered.get("evidence_generation") or "") == evidence_generation
             and str(delivered.get("provider_message_id") or "")):
         return {**_result("rootline_reassessment_unchanged", material, notify=False),
                 "operating_date": operating_date,

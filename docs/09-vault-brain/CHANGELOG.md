@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-08-18 - Slot 2 morning truth and notification materiality
+
+- Preserved the just-finished weekly weighing window on Monday so valid weekend
+  weights do not regress to zero before the next weighing window opens.
+- Required uncovered current tags to enter canonical sale/order/status
+  reconciliation before any reweigh instruction. The owner's report that tags
+  123 and 151 were sold remains pending evidence, not a recorded sale.
+- Bound ROOTLINE change notification to operating date plus material plan state:
+  fresher unchanged evidence is recorded silently, while execution wording is
+  reserved for provider/canonical lifecycle readback.
+- Shortened the morning projection to three numbered priorities, one genuine
+  question when required, and one next-check line.
+
 ## 2026-08-17 - OP-004 live-transfer contract integrated for multi-line Orders consumption
 
 - Integrated PR #1001 on current authoritative main as `355f1154`, preserving typed,

@@ -145,7 +145,7 @@ def _fresh_result(result: Any, now: datetime) -> bool:
 def _decision(value: Any, af: bool) -> str:
     text = str(value or "").casefold()
     if text in {"recommend", "run", "proceed", "eligible"} or text.startswith("run "):
-        return "Run"
+        return "Aanbeveling - besproei" if af else "Recommendation - irrigate"
     if text in {"hold", "do not run", "do_not_run", "completed"}:
         return "Hou" if af else "Hold"
     return "Data nodig" if af else "Needs Data"
