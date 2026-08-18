@@ -373,7 +373,12 @@ Every finding must record `scope_relation`, `introduced_by_current_diff`, `block
 
 Provider-specific stages must use the provider-aware runner path. If Claude/Anthropic fails transiently, CHARLIE may fall back to the local Codex provider for that stage and must record the fallback in runner evidence instead of blocking only because the provider was unavailable.
 
-`planning/CODEX_CHAT.md` is the laptop-friendly active scratchpad. Supabase mission records are the durable queue. The Vault Brain is the doctrine layer that tells agents what rules and context to follow.
+`planning/CODEX_CHAT.md` is a laptop-friendly technical projection and
+scratchpad. Supabase mission records are the durable queue. The Control Tower
+register is current-state evidence. The Vault Brain is the doctrine layer.
+Content, timestamps, status or an open editor at the scratchpad path never
+prove authority, active execution or completion. A governed writer may replace
+the file, and stale contents may be discarded after durable reconciliation.
 
 ## Historical Implementation Evidence
 
@@ -381,7 +386,7 @@ Provider-specific stages must use the provider-aware runner path. If Claude/Anth
 - `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`
 - archived Build Relay and Mission Loop evidence under
   `docs/99-archive/vault-cutover/docs/06-operations/`
-- `planning/CHARLIE_CORE_EXTENDED_PLAN.md`
+- archived historical CORE planning under `docs/99-archive/vault-cutover/planning/`
 - `docs/09-vault-brain/00-governance/BRAIN_GUARD.md`
 ### Revision-scoped correction budgets
 

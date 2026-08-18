@@ -40,7 +40,7 @@ Future work must connect:
 
 ## Source References
 
-- `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
+- `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md`
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/05-playbooks/SAM_LIVE_STOCK_HUMAN_SALES_PLAYBOOK.md`

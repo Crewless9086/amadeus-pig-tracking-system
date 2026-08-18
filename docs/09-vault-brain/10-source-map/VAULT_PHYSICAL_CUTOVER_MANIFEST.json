@@ -1,19 +1,19 @@
 {
-  "version": "vault_physical_cutover_manifest_v22",
-  "baseline": "19e21ebcce73de2c51dcd21e9ddcc37242246b38",
-  "generated_from_head": "19e21ebcce73de2c51dcd21e9ddcc37242246b38",
-  "owner_boundary": "Batch 25 archives ten reconciled farm-calendar and meat/pork/SAM business-module documents after retaining current calendar, production, commercial, campaign, payment, allocation and knowledge boundaries in focused Vault files; it authorizes no customer send, public post, provider action, order, reservation, payment, stock, farm, database or runtime change",
-  "entry_count": 534,
+  "version": "vault_physical_cutover_manifest_v23",
+  "baseline": "a79085afdfeded06c329caa1ea079013d1bb10f3",
+  "generated_from_head": "a79085afdfeded06c329caa1ea079013d1bb10f3",
+  "owner_boundary": "Batch 26 archives eight historical planning/inbox sources intact, retains only minimal non-doctrine CODEX_CHAT and ToDoList compatibility scratchpads, and routes durable mission, CORE and SAM authority to focused Vault/register sources; it authorizes no mission execution, runtime, customer, provider, farm, database or hardware change",
+  "entry_count": 537,
   "counts": {
-    "EXTRACT_THEN_ARCHIVE": 42,
-    "KEEP_ARCHIVE": 165,
+    "EXTRACT_THEN_ARCHIVE": 34,
+    "KEEP_ARCHIVE": 173,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
     "KEEP_GENERATED_PROJECTION": 9,
     "KEEP_POINTER": 18,
-    "KEEP_TECHNICAL": 31,
+    "KEEP_TECHNICAL": 33,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 193
+    "KEEP_VAULT": 194
   },
   "entries": [
     {
@@ -124,11 +124,11 @@
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH11_RECONCILIATION.md",
         "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md",
         "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
+        "docs/99-archive/vault-cutover/planning/ToDoList.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
-        "planning/ToDoList.md",
         "scripts/build_vault_cutover_manifest.py",
         "scripts/charlie_mission_pickup.py",
         "tests/test_vault_cutover_manifest.py"
@@ -185,15 +185,15 @@
         "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/99-archive/vault-cutover/docs/06-operations/MISSION_LOOP_CONTRACT.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
+        "docs/99-archive/vault-cutover/planning/ToDoList.md",
+        "docs/99-archive/vault-cutover/planning/inbox/README.md",
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
         "modules/oom_sakkie/learning_packet.py",
-        "planning/CODEX_CHAT.md",
-        "planning/ToDoList.md",
-        "planning/inbox/README.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "scripts/build_vault_cutover_manifest.py",
         "scripts/charlie_mission_pickup.py",
         "scripts/verify_mission.ps1",
@@ -221,11 +221,11 @@
         "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH11_RECONCILIATION.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "scripts/build_vault_cutover_manifest.py",
         "scripts/charlie_mission_pickup.py",
         "tests/test_vault_cutover_manifest.py"
@@ -299,16 +299,16 @@
         "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md",
         "docs/99-archive/vault-cutover/docs/08-business-modules/README.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
+        "docs/99-archive/vault-cutover/planning/ToDoList.md",
+        "docs/99-archive/vault-cutover/planning/inbox/README.md",
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
         "modules/oom_sakkie/learning_packet.py",
         "modules/oom_sakkie/tools.py",
-        "planning/CODEX_CHAT.md",
-        "planning/ToDoList.md",
-        "planning/inbox/README.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "scripts/build_vault_cutover_manifest.py",
         "scripts/charlie_mission_pickup.py",
         "scripts/codex_next_steps.py",
@@ -352,9 +352,9 @@
       "exact_reference_count": 6,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "modules/charlie/mission_store.py",
-        "planning/CODEX_CHAT.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
       ],
@@ -423,8 +423,8 @@
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH9_RECONCILIATION.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "modules/charlie/vault_retrieval.py",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
       ],
@@ -446,11 +446,11 @@
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH9_RECONCILIATION.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "scripts/build_vault_cutover_manifest.py",
         "scripts/charlie_mission_pickup.py",
         "tests/test_vault_cutover_manifest.py"
@@ -602,7 +602,7 @@
     },
     {
       "path": "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
-      "sha256": "aa007787ec56328e9e098258096f034ea8ccbbcf3c18cd506584fd87d8a65297",
+      "sha256": "87803cec53196c19f6b3b0d11aee61f730b7e4a573bc358fa5fffdf79b7a6466",
       "physical_lines": 373,
       "batch1_lifecycle": "active_reference",
       "batch1_action": "split_doctrine_from_technical",
@@ -887,7 +887,7 @@
     },
     {
       "path": "docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md",
-      "sha256": "3719654db2358e7fe22559d7a41fa0ca2218321ea33702d90784ea82db45b229",
+      "sha256": "0fcd3f7415fe0c6c6a6ad49ab046cf02bd568cc9eb29ed12b00a7e28b4a513fe",
       "physical_lines": 416,
       "batch1_lifecycle": "active_reference",
       "batch1_action": "keep_technical_review",
@@ -1453,8 +1453,8 @@
         "docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md",
         "docs/09-vault-brain/08-business-rules/AMADEUS_FARM_PUBLIC_KNOWLEDGE.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-        "modules/charlie/source_map.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
+        "modules/charlie/source_map.py"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1478,8 +1478,8 @@
         "docs/09-vault-brain/08-business-rules/AMADEUS_FARM_PUBLIC_KNOWLEDGE.md",
         "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-        "modules/charlie/source_map.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
+        "modules/charlie/source_map.py"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1537,8 +1537,8 @@
       "exact_references": [
         "docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "tests/test_charlie_source_map.py"
       ],
       "reason": "runtime dependency requires named retirement exit test",
@@ -1856,8 +1856,8 @@
       "exact_references": [
         "docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "tests/test_charlie_execution_bridge.py",
         "tests/test_charlie_source_map.py",
         "tests/test_frontend_route_contracts.py"
@@ -2417,8 +2417,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "9ba45a0c2c0dd99594d06d8ee4f1d744e9fdb6c1ee0dc4d1ea4f723468e857b0",
-      "physical_lines": 972,
+      "sha256": "1e9cb9d53ea8fbd47969829af534b7785a97726b7a0846db8987a5572e160937",
+      "physical_lines": 986,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -2628,8 +2628,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "7a0810a92c7d50f1bec1212502b159c2693fb133087500e7374927ee31dc1be2",
-      "physical_lines": 273,
+      "sha256": "606912969a131470809708846c8dbf5b52fe06aafc852146d3523afdf1833735",
+      "physical_lines": 285,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -2641,12 +2641,12 @@
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_alignment.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -2715,7 +2715,7 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/OPEN_QUESTIONS.md",
-      "sha256": "a467c941ebe096924058f868c20ff7b1b8152bcd73a34f2b31490b370160bfc1",
+      "sha256": "b7a352210bbbef66cefa18cfacba67355e640cedc1311c190c531a391873e993",
       "physical_lines": 167,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -2784,11 +2784,11 @@
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
         "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -2809,11 +2809,11 @@
       "exact_references": [
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -2823,8 +2823,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "04f902a4061fa1656b0b7a3dd68b0e7eb3c51b0fffbd659357d37be38c17e227",
-      "physical_lines": 367,
+      "sha256": "afacef4004791a8303054955be819f88eda71a02f743e1e0e894ab4ade3f8d55",
+      "physical_lines": 380,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -2867,10 +2867,10 @@
       "exact_references": [
         "docs/09-vault-brain/02-agents/charlie-core/IDEA_EXPANDER.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
         "tests/test_charlie_executive_doctrine.py",
         "tests/test_vault_cutover_manifest.py"
       ],
@@ -2894,11 +2894,11 @@
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/07-standards/SECURITY_AND_SECRETS_STANDARD.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
         "tests/test_build_relay_telegram_buttons.py",
         "tests/test_charlie_executive_doctrine.py",
         "tests/test_vault_cutover_manifest.py"
@@ -2956,10 +2956,10 @@
       "exact_reference_count": 5,
       "exact_references": [
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -2983,12 +2983,12 @@
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
         "scripts/build_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -3622,7 +3622,7 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/marketing/BEACON.md",
-      "sha256": "c3c534f8b2ded83c5736093ae6d8a3dc79ac5db4f26c481e09242df8c8181e15",
+      "sha256": "23d1d07aa5d854cd47ced4bd3494a63b5ff50eb540028438626dc34d52209b9f",
       "physical_lines": 117,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -3807,9 +3807,9 @@
         "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
         "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -3854,12 +3854,12 @@
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/agent_card_projection.py",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "scripts/build_vault_cutover_manifest.py",
         "static/assets/agents/sam/agent.md",
         "tests/test_charlie_execution_bridge.py",
@@ -3931,7 +3931,7 @@
     },
     {
       "path": "docs/09-vault-brain/03-business/AMADEUS_FARM.md",
-      "sha256": "0eb522aac488045407eb18fa398acf18991c4bdee60fa34740e14cf1352833ae",
+      "sha256": "3daa05f3ac14ab557f3cb3bcfa7a24006ab3a11df934e07f8eee3ef5cd24e68d",
       "physical_lines": 52,
       "batch1_lifecycle": "retired",
       "batch1_action": "archive_or_delete_review",
@@ -4035,7 +4035,7 @@
     },
     {
       "path": "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
-      "sha256": "e70273ae3deb7f8256cb3bce477ddcd459246564f81d4a8c223922148cd9bfc9",
+      "sha256": "748a55f1c15690c5be9ec7dcd6b2f5b0d3b1b14c3e564934ba5835aa05b857ae",
       "physical_lines": 48,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4046,10 +4046,10 @@
         "docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md",
         "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -4059,7 +4059,7 @@
     },
     {
       "path": "docs/09-vault-brain/03-business/MEAT_SALES.md",
-      "sha256": "f49143ce8d6d2a5928ff4ce07b8749a320e9575d758d38d75c88cc860bf578bd",
+      "sha256": "57b35abad164a5ff22f2568b3775ef74b0fcfebfe7d556d169586db9e32e0be6",
       "physical_lines": 154,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4167,9 +4167,9 @@
       "exact_reference_count": 6,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "tests/test_charlie_source_map.py",
         "tests/test_charlie_vault_retrieval.py"
       ],
@@ -4202,8 +4202,8 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
-      "sha256": "d0ccf1f88ab6fb54a12c0979a0e1903cefcbb5c48ff701d3503cbf494bbceac3",
-      "physical_lines": 415,
+      "sha256": "cfaaa9d433ee5c864c6ae4bf4b287f65cd9c0b20f6c39e12e9de3b57ff14a011",
+      "physical_lines": 420,
       "batch1_lifecycle": "authoritative",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4215,11 +4215,11 @@
         "docs/09-vault-brain/07-standards/SECURITY_AND_SECRETS_STANDARD.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "docs/99-archive/vault-cutover/docs/06-operations/CODEX_CHAT_WORKFLOW.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_build_relay_telegram_buttons.py",
         "tests/test_charlie_execution_bridge.py",
@@ -4273,7 +4273,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
-      "sha256": "a6e7727e9a8f6317f421282f9598a4f0e1f48dd553c340b7c13dad708025e7da",
+      "sha256": "27a83df6539026c00efd584293daedc44bd633e40826930a3b45f3c1bbac8422",
       "physical_lines": 21,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4449,7 +4449,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
-      "sha256": "3c4d077cef2afe3f851c47e878a425acbcbad88c073a4359e82304a8d9e11943",
+      "sha256": "70b166b9002aa8c132e1ecb5ae5657c8e8e4392ecbd667074c157d598a5b7b32",
       "physical_lines": 284,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4466,9 +4466,9 @@
         "docs/09-vault-brain/08-business-rules/AMADEUS_FARM_PUBLIC_KNOWLEDGE.md",
         "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "tests/test_charlie_execution_bridge.py",
         "tests/test_charlie_source_map.py",
         "tests/test_vault_cutover_manifest.py"
@@ -4737,9 +4737,9 @@
         "docs/09-vault-brain/02-agents/sales/SAM.md",
         "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -4828,7 +4828,7 @@
     },
     {
       "path": "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
-      "sha256": "e04167bd38a084f1c8f062b70788b9779c619db270d30e87368e01dfef44c900",
+      "sha256": "02ade1385c519689ff2c25e87e19e70b448c387b661297c9608a569c371b0134",
       "physical_lines": 84,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4897,10 +4897,10 @@
       "destination_or_replacement": "docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md",
       "exact_reference_count": 4,
       "exact_references": [
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5120,11 +5120,11 @@
         "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5205,11 +5205,11 @@
         "docs/09-vault-brain/02-agents/charlie-core/TECHNICAL_ARCHITECT.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
         "tests/test_charlie_execution_bridge.py",
         "tests/test_vault_cutover_manifest.py"
       ],
@@ -5271,7 +5271,7 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/FARM_RULES.md",
-      "sha256": "503ba4182680975ac7da7fc39dedd9d2df877d36f1bea99a6200cfaa0b8656ab",
+      "sha256": "21233e5e18f5d07a05a9e965ce912c885b7a3d21af7c0fbfca85623109b75d59",
       "physical_lines": 13,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5325,9 +5325,9 @@
         "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "tests/test_charlie_execution_bridge.py",
         "tests/test_charlie_source_map.py"
       ],
@@ -5358,7 +5358,7 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
-      "sha256": "07b2c1981d277fbb0b57baebff969da57bcc5a6c3db2ad34a37c4e0dbd477d72",
+      "sha256": "73756a5c8545bc4c0690ca0cc6fa886b8f1746ddb972f48c3a9e3f57a285bf5e",
       "physical_lines": 163,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5372,9 +5372,9 @@
         "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
         "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -5407,7 +5407,7 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md",
-      "sha256": "08d0a5f47addb83027aa134dd464d30822831fd3e8117b756b45bb6e450c5b00",
+      "sha256": "2dc6cf057758a1f28e1b6940f4ec203085e3efbec075af88bb052bc2255b260a",
       "physical_lines": 37,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5430,7 +5430,7 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
-      "sha256": "60bdd134f53705b83e68cae87fd9af9c93a83ab08f8fccdfa5272c1ba2dfd6e3",
+      "sha256": "91d628c879b0b33f5f364a3ce33cfa0f65bc112f77c4ef484905b729e4b01b6c",
       "physical_lines": 80,
       "batch1_lifecycle": "retired",
       "batch1_action": "archive_or_delete_review",
@@ -5498,7 +5498,7 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
-      "sha256": "4221134a12dece61ea4b795537a30cfe996caf3d7eefaa7e56ef00d2156a8872",
+      "sha256": "846ad870a2eb047f46690e3e60c6a86409db3b467d0c1ee883ce2042102b60dc",
       "physical_lines": 61,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5511,10 +5511,10 @@
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
         "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "tests/test_frontend_route_contracts.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -5736,9 +5736,9 @@
         "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
         "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5772,8 +5772,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "c25315173b2932fe26561402b9cbd68de01c0e6064b761237bbbbc7a4c3deb77",
-      "physical_lines": 234,
+      "sha256": "8ca38f6ab2e82ae4358997f4c80b60b881eeb252ddf635a8430dd80c79590a53",
+      "physical_lines": 239,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -5821,7 +5821,7 @@
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
       ],
@@ -5833,8 +5833,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
-      "sha256": "62c2608735b79aaaee7923462a8572d48eef1de7f9f5793521319e5d87188f6a",
-      "physical_lines": 97,
+      "sha256": "b38750eb305e6b27e7b6acad097e85ebddf5d5d0907e4014c7831d3f27a2b208",
+      "physical_lines": 106,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -5865,7 +5865,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-      "sha256": "0587f1936d41fb0bbdb16d974173574112cf66f720b4d21e2871c53eeb9eb8c6",
+      "sha256": "ee1da84740ade622908df8be66a4e753da834138547202d0f92d0cc73182bc33",
       "physical_lines": 305,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
@@ -6121,12 +6121,28 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH25_RECONCILIATION.md",
-      "sha256": "91adcaff23783e3483a31061896163fcedd258ec24621cd0fa19a28341fc7a6c",
+      "sha256": "400dd72128869c929200949e22013af8e16d7e6b64ef56dbe8826bc4aba67f1c",
       "physical_lines": 31,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH25_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH26_RECONCILIATION.md",
+      "sha256": "149b2512fa67c3d139504b21426709b431fab9da485c50eff35c81ae17e6c854",
+      "physical_lines": 28,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH26_RECONCILIATION.md",
       "exact_reference_count": 0,
       "exact_references": [],
       "reason": "canonical Vault doctrine/reference",
@@ -6219,8 +6235,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_MIGRATION_INVENTORY.md",
-      "sha256": "6605fb09755ef7d49c1d92ed2474c84a9ccc39997dbbe1e5ffa646e0a73b2f5c",
-      "physical_lines": 656,
+      "sha256": "1ebdc9ebe51676d7dad2858be20ea80005751cc4d3fcd9ba19177a3789e31f5c",
+      "physical_lines": 657,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -6261,10 +6277,10 @@
       "destination_or_replacement": "docs/09-vault-brain/INDEX.md",
       "exact_reference_count": 6,
       "exact_references": [
+        "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md",
         "tests/test_charlie_execution_bridge.py",
         "tests/test_charlie_vault_retrieval.py"
       ],
@@ -6343,8 +6359,8 @@
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
         "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-        "modules/charlie/source_map.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
+        "modules/charlie/source_map.py"
       ],
       "reason": "already physically archived",
       "blockers": [],
@@ -6458,7 +6474,7 @@
       "destination_or_replacement": "docs/99-archive/old-screenshots-index.md",
       "exact_reference_count": 1,
       "exact_references": [
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
       ],
       "reason": "already physically archived",
       "blockers": [],
@@ -6573,7 +6589,7 @@
       "exact_reference_count": 2,
       "exact_references": [
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
       ],
       "reason": "already physically archived",
       "blockers": [],
@@ -7384,7 +7400,7 @@
       "exact_reference_count": 2,
       "exact_references": [
         "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
-        "planning/ToDoList.md"
+        "docs/99-archive/vault-cutover/planning/ToDoList.md"
       ],
       "reason": "already physically archived",
       "blockers": [],
@@ -8282,7 +8298,7 @@
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",
       "exact_reference_count": 1,
       "exact_references": [
-        "planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md"
+        "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md"
       ],
       "reason": "already physically archived",
       "blockers": [],
@@ -8983,6 +8999,134 @@
       "reconciliation_family": null
     },
     {
+      "path": "docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md",
+      "sha256": "058a0565824526c66cfb3c4d420dc5629623d9c373097c5675ee4212da2ff904",
+      "physical_lines": 1225,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
+      "sha256": "ca294eaaa1d77905da92b5113b177366d63bd8027de86a7200b79a55a18135b6",
+      "physical_lines": 185,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
+      "sha256": "5e217dab3659579824176191b810b61902da8147b1e2d8b2f7fcd64adcc6cd33",
+      "physical_lines": 643,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/planning/ToDoList.md",
+      "sha256": "1f734ce3dca6933304a37de1a4512104a3f23dd55339bcc06afb09780fe2681d",
+      "physical_lines": 45,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/ToDoList.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/planning/inbox/README.md",
+      "sha256": "14679f2b3a98bb9176e111705d893b2ff930166b10604eabf917a03819058198",
+      "physical_lines": 23,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/inbox/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
+      "sha256": "b0bc542fa62e6cab748d884250824d2d65a38842ce23a31ab55c89f39f878211",
+      "physical_lines": 22,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
+      "sha256": "4c783f4f4d9cac9a2994dcc7a77ffac488c05515b61fb4cb2f6c881928721abd",
+      "physical_lines": 27,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
+      "sha256": "e3f9b33df08f2ef5ada6a97b6755919a6b49f415f770883790c526599fa4a968",
+      "physical_lines": 341,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
       "path": "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
       "sha256": "1a9ac67b961cdbe0e08f9aa79f0d536f84843dbca91c566da6e483ae6a525666",
       "physical_lines": 607,
@@ -9069,47 +9213,32 @@
       "reconciliation_family": null
     },
     {
-      "path": "planning/CHARLIE_CORE_EXTENDED_PLAN.md",
-      "sha256": "058a0565824526c66cfb3c4d420dc5629623d9c373097c5675ee4212da2ff904",
-      "physical_lines": 1225,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 26,
-      "reconciliation_family": "planning_and_inbox"
-    },
-    {
       "path": "planning/CODEX_CHAT.md",
-      "sha256": "ca294eaaa1d77905da92b5113b177366d63bd8027de86a7200b79a55a18135b6",
-      "physical_lines": 185,
+      "sha256": "cd14df0eed1c50cfc3f9ef1c4890d2e5fb4d4c9dc72c0ab2bc049634ff932027",
+      "physical_lines": 26,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
-      "exact_reference_count": 20,
+      "disposition": "KEEP_TECHNICAL",
+      "destination_or_replacement": "planning/CODEX_CHAT.md",
+      "exact_reference_count": 26,
       "exact_references": [
+        "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
         "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
         "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
         "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH26_RECONCILIATION.md",
         "docs/99-archive/vault-cutover/docs/06-operations/BUILD_RELAY.md",
         "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md",
         "docs/99-archive/vault-cutover/docs/06-operations/CODEX_CHAT_WORKFLOW.md",
         "docs/99-archive/vault-cutover/docs/06-operations/MISSION_LOOP_CONTRACT.md",
         "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
+        "docs/99-archive/vault-cutover/planning/ToDoList.md",
         "modules/charlie/build_relay.py",
         "modules/charlie/concurrency_control.py",
         "modules/charlie/execution_bridge.py",
-        "planning/ToDoList.md",
+        "scripts/build_vault_cutover_manifest.py",
         "scripts/charlie_mission_pickup.py",
         "scripts/charlie_runner_supervisor.py",
         "scripts/codex_next_steps.py",
@@ -9117,141 +9246,46 @@
         "tests/test_charlie_concurrency_control.py",
         "tests/test_charlie_execution_bridge.py",
         "tests/test_charlie_mission_pickup.py",
-        "tests/test_charlie_runner_supervisor.py"
+        "tests/test_charlie_runner_supervisor.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
+      "reason": "minimal non-doctrine, non-durable technical scratchpad retained for current tooling",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 26,
-      "reconciliation_family": "planning_and_inbox"
-    },
-    {
-      "path": "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
-      "sha256": "5e217dab3659579824176191b810b61902da8147b1e2d8b2f7fcd64adcc6cd33",
-      "physical_lines": 643,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
-      "exact_reference_count": 4,
-      "exact_references": [
-        "docs/09-vault-brain/00-governance/OPEN_QUESTIONS.md",
-        "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
-        "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
-        "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 26,
-      "reconciliation_family": "planning_and_inbox"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "planning/ToDoList.md",
-      "sha256": "1f734ce3dca6933304a37de1a4512104a3f23dd55339bcc06afb09780fe2681d",
-      "physical_lines": 45,
+      "sha256": "b33444e865dacef0a2bb42db0c6513606dfcca37411da0d2fcdcbedf24695108",
+      "physical_lines": 17,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/ToDoList.md",
-      "exact_reference_count": 8,
+      "disposition": "KEEP_TECHNICAL",
+      "destination_or_replacement": "planning/ToDoList.md",
+      "exact_reference_count": 15,
       "exact_references": [
+        "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
         "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH26_RECONCILIATION.md",
         "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",
         "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
-        "planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
-        "planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
+        "docs/99-archive/vault-cutover/planning/ToDoList.md",
+        "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
+        "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
+        "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
+      "reason": "minimal non-doctrine, non-durable technical scratchpad retained for current tooling",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 26,
-      "reconciliation_family": "planning_and_inbox"
-    },
-    {
-      "path": "planning/inbox/README.md",
-      "sha256": "14679f2b3a98bb9176e111705d893b2ff930166b10604eabf917a03819058198",
-      "physical_lines": 23,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/inbox/README.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 26,
-      "reconciliation_family": "planning_and_inbox"
-    },
-    {
-      "path": "planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
-      "sha256": "b0bc542fa62e6cab748d884250824d2d65a38842ce23a31ab55c89f39f878211",
-      "physical_lines": 22,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 26,
-      "reconciliation_family": "planning_and_inbox"
-    },
-    {
-      "path": "planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
-      "sha256": "4c783f4f4d9cac9a2994dcc7a77ffac488c05515b61fb4cb2f6c881928721abd",
-      "physical_lines": 27,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "planning/ToDoList.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 26,
-      "reconciliation_family": "planning_and_inbox"
-    },
-    {
-      "path": "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
-      "sha256": "e3f9b33df08f2ef5ada6a97b6755919a6b49f415f770883790c526599fa4a968",
-      "physical_lines": 341,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 26,
-      "reconciliation_family": "planning_and_inbox"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "planning/storyworks/BUSINESS_STATE_LADDER.md",

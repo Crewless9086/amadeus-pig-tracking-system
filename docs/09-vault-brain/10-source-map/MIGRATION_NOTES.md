@@ -95,3 +95,12 @@
   from the retired business-module paths.
 - Archived all ten `docs/08-business-modules/` sources intact; no legacy
   business-module document remains in the active tree.
+
+2026-08-18 - Vault Cutover Batch 26:
+
+- Archived eight historical CORE/SAM planning, mission-template, scratch,
+  inbox, processed-note and cleanup-prompt sources intact.
+- Retained `planning/CODEX_CHAT.md` and `planning/ToDoList.md` only as short,
+  explicit non-doctrine technical compatibility scratchpads.
+- Removed active focused-document citations to the historical CORE and SAM
+  plans; durable mission and behavior authority remains canonical.

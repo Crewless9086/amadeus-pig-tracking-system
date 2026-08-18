@@ -18,8 +18,8 @@ Goal: make the repo clean without deleting operational memory, workflow contract
 | `docs/06-operations/` | Runbooks, test evidence, migration reports. | Keep; extract standards/playbooks into Vault. Archive only superseded reports after owner approval. |
 | `docs/08-business-modules/` | Physically retired in Batch 25. | Originals preserved under `docs/99-archive/vault-cutover/`; focused Vault packs are authoritative. |
 | `docs/99-archive/` | Archive. | Keep. Use for old scratch/plans. |
-| `planning/CODEX_CHAT.md` | Active runner scratchpad. | Keep. Do not commit incidental runner dirt unless mission requires it. |
-| `planning/ToDoList.md` | Owner scratch/inbox. | Keep as live scratchpad. |
+| `planning/CODEX_CHAT.md` | Technical runtime projection; non-doctrine and non-durable. | Keep minimal compatibility path; never infer mission activity or authority. |
+| `planning/ToDoList.md` | Technical owner scratchpad; non-doctrine and non-durable. | Keep minimal and untriaged only; durable outcomes use governed intake/register paths. |
 | `planning/CHAT.md` | Old n8n sales-agent rewire scratch. | Archived to `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`. |
 | `external_sources/` | Imported external context/source projects. | Keep; review one by one before reuse or deletion. |
 | `static/assets/agents/` | Runtime/UI agent asset notes. | Keep; canonical doctrine is Vault agent docs. |

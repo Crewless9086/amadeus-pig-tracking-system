@@ -1,11 +1,11 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 25 business-module reconciliation complete; no further physical change authorized.
+Status: Batch 26 planning/inbox reconciliation complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v22`
-Baseline: `19e21ebcce73de2c51dcd21e9ddcc37242246b38`
-Generated from HEAD: `19e21ebcce73de2c51dcd21e9ddcc37242246b38`
-Tracked Markdown/MDX files covered: **534**
+Version: `vault_physical_cutover_manifest_v23`
+Baseline: `a79085afdfeded06c329caa1ea079013d1bb10f3`
+Generated from HEAD: `a79085afdfeded06c329caa1ea079013d1bb10f3`
+Tracked Markdown/MDX files covered: **537**
 Validation: **PASS**
 
 This manifest records completed Batches 5 through 24 and schedules later
@@ -17,15 +17,15 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `EXTRACT_THEN_ARCHIVE` | 42 |
-| `KEEP_ARCHIVE` | 165 |
+| `EXTRACT_THEN_ARCHIVE` | 34 |
+| `KEEP_ARCHIVE` | 173 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_GENERATED_PROJECTION` | 9 |
 | `KEEP_POINTER` | 18 |
-| `KEEP_TECHNICAL` | 31 |
+| `KEEP_TECHNICAL` | 33 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 193 |
+| `KEEP_VAULT` | 194 |
 
 ## Remaining execution schedule
 
@@ -46,7 +46,6 @@ This schedule is an ordering contract, not physical-change authority.
 | 22 | `oom_sakkie` | COMPLETE (30) |
 | 23 | `rootline` | COMPLETE (13) |
 | 24 | `sam_revenue` | COMPLETE (5) |
-| 26 | `planning_and_inbox` | 8 |
 | 27 | `storyworks` | 34 |
 | 28 | `transitional_exit_tests` | 72 |
 | 29 | `deployed_brain_guard_acceptance` | operational proof |
@@ -79,14 +78,6 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Planned batch | Destination / replacement | Exact refs | Blockers |
 | --- | --- | ---: | --- | ---: | --- |
-| `planning/CHARLIE_CORE_EXTENDED_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md` | 1 | unique_fact_extraction_required |
-| `planning/CODEX_CHAT.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/CODEX_CHAT.md` | 20 | unique_fact_extraction_required |
-| `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | 4 | unique_fact_extraction_required |
-| `planning/ToDoList.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/ToDoList.md` | 8 | unique_fact_extraction_required |
-| `planning/inbox/README.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/inbox/README.md` | 0 | unique_fact_extraction_required |
-| `planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md` | 1 | unique_fact_extraction_required |
-| `planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md` | 1 | unique_fact_extraction_required |
-| `planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/BUSINESS_STATE_LADDER.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/BUSINESS_STATE_LADDER.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/DECISION_LOG.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/DECISION_LOG.md` | 0 | unique_fact_extraction_required |

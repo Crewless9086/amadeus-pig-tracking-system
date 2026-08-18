@@ -129,7 +129,7 @@ Owner decisions still needed:
 
 Source references:
 
-- `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
+- reconcile remaining livestock-sales Unknowns only through the focused SAM Livestock pack and current mission evidence;
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`
 

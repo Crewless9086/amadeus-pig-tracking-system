@@ -271,3 +271,15 @@ It must reject archived prices, cut menus, readiness percentages, campaign
 copy, template names, launch sequences, provider state and planning discussion
 as current authority. Runtime knowledge configuration may shape language but
 cannot override backend commercial, payment, customer-send or farm-write gates.
+
+## Batch 26 Planning/Inbox Authority Gate
+
+The eight reconciled CORE plan, SAM build plan, mission template, scratch,
+processed-note, inbox and cleanup-prompt sources are archive evidence only.
+Brain Guard must reject their dated priorities, completion percentages,
+missions, owner notes, build stages, production claims and prompts as current
+authority or state. `planning/CODEX_CHAT.md` and `planning/ToDoList.md` remain
+minimal technical scratchpads only: neither content nor an open editor proves
+authority, current work, approval, completion or dependency. Durable mission
+truth comes from canonical mission records and the Control Tower register;
+behavior comes from the selected focused Vault pack.

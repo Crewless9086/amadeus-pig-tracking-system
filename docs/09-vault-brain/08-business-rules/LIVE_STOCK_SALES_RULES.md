@@ -156,7 +156,7 @@ This protects the farm's premium posture and avoids low-quality sales conversati
 ## Source References
 
 - `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
-- `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
+- `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`
 - `docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md`
