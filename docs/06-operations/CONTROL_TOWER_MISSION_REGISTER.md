@@ -2,6 +2,63 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-19 - Overnight operating-outcome recovery
+
+Owner priority: tomorrow's four-line livestock quote must be usable, while
+ROOTLINE and the BEACON/SAM revenue loop continue toward genuine deployed-agent
+outcomes. GENERAL's read-only finding is reconciled into the existing livestock
+Orders/SAM/HERDMASTER journey; it is not a new OP-004, selector, order engine or
+clearance workflow.
+
+The controlling livestock distinction is now the immediate doctrine-repair
+input for the existing journey: a recorded food-chain medicine withdrawal does
+not by itself prohibit a live-animal quote or transfer. It blocks slaughter or
+food-chain entry until the recorded date and must be disclosed compactly. An
+actual recorded health, welfare, quarantine, movement or explicit sale hold
+remains a blocker. Missing formal clearance fields must not be invented as
+positive clearance and must not create a clearance regime the farm does not
+operate. Sold, dead, off-farm, reserved, terminal and source-conflicted animals
+remain genuine blockers. This is an owner operating rule, not a statutory or
+veterinary claim.
+
+Recovery WIP remains capped at three implementation tracks:
+
+1. **Slot 1 - SALES / HERDMASTER livestock order completion
+   (`CURRENT_BLOCKER`)**: continue the existing multi-line requested-items and
+   OP-004 lineage in one fresh current-main worktree. Reconcile the contradictory
+   livestock doctrine first, then simplify the existing live-transfer contract,
+   matching, quote preview, Orders presentation and livestock document
+   disclosure. Acceptance is the owner's exact four-line request represented
+   once, with truthful recommendations/shortfalls and no premature reservation,
+   purpose change, customer send or fabricated clearance.
+2. **Slot 2 - ROOTLINE operational irrigation (`OPERATING_SPINE`)**: continue
+   the existing ROOTLINE/Oom Sakkie spine from current main. The terminal may
+   repair, review, integrate, deploy and observe; only deployed ROOTLINE may
+   operate hardware, and only inside current canonical standing authority with
+   fresh provider/safety evidence. B/C, fertiliser mixer, fertiliser injection
+   and borehole remain separate commissioning/authority classes.
+3. **Slot 3 - REVENUE BEACON/SAM closed loop (`OPERATING_SPINE`)**: continue the
+   existing campaign/card lineage without touching Orders implementation.
+   BEACON Meta content must use the sow's human name, tell a farm-life story,
+   make no availability/sales/price/booking/urgency/contact call-to-action and
+   use only exact public-use media or a precise missing-media exception. SAM
+   activates only from genuine attributed inbound after protected publication.
+
+The deployed Oom Sakkie manager and Brain Guard continue independently and do
+not consume a development WIP slot. Manager timeout repair PRs #1100-#1103 are
+contained in deployed revision `181543e7`. Natural cycles at 22:20 and 22:25
+UTC completed after Brain Guard; the later cycle confirmed one material delivery
+and suppressed fourteen duplicates. CORE remains frozen outside the three
+overnight tracks until a slot releases or a proven cross-track incident requires
+containment.
+
+Automatic promotion: each development lane continues through source, tests,
+review, normal integration, deployment and genuine deployed-agent acceptance,
+stopping only at a real protected, physical, external or serialized-release
+boundary. Released clean worktrees must be closed promptly. Every lane must
+return `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`; open processes and older
+waits are not activity or dependency proof.
+
 ## 2026-08-18 - Slot 2 OOM SAKKIE morning-truth recovery
 
 Fresh owner evidence showed materially unchanged ROOTLINE recommendations sent

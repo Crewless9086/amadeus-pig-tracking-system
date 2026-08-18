@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - Oom Sakkie timeout closure and overnight outcome recovery
+
+- Reconciled the deployed post-Brain-Guard manager timeout repair: two natural
+  provider cycles completed after the 118-input audit on revision `181543e7`.
+- Consolidated GENERAL's livestock quote finding into the existing
+  Orders/SAM/HERDMASTER journey and recorded the owner-directed distinction
+  between food-chain withdrawal disclosure and live-animal transfer eligibility.
+- Registered three bounded overnight WIP lanes for livestock Orders, ROOTLINE
+  and BEACON/SAM; CORE remains frozen until a slot releases.
+
 ## 2026-08-18 - Vault cutover Batch 8 external candidate reconciliation
 
 - Reviewed all four remaining external archive candidates completely.
