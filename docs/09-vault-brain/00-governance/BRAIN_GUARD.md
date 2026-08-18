@@ -34,10 +34,16 @@ digest `a15295c1cb713ccbbe870460c1909426c9ea1713a06104cc37706ea198e6dd24`.
 Brain Guard is operational as a scheduled knowledge-integrity guard. It is not
 an independent release agent and has no business, provider or farm authority.
 
-The surrounding manager case phase failed after both accepted audit checkpoints.
-That separate timeout is an explicit operating-spine defect; it does not erase
-the durable audit, and the audit pass does not imply the manager business cycle
-completed.
+The surrounding manager-case timeout was repaired on 18 August 2026 without
+weakening the audit. The manager now uses a separate post-audit database
+connection, retains the registered cycle-status vocabulary, records bounded
+failure classifications, collects independent read-only specialist evidence in
+parallel and refreshes only the owner-card specialists immediately before
+delivery. Two later provider-origin cycles on revision `181543e7` completed
+after Brain Guard at 22:20 and 22:25 UTC. Both checked 118 governed inputs; the
+later cycle claimed 15 cases, confirmed one material delivery and suppressed 14
+duplicates. Brain Guard remains a prerequisite gate; a pass still does not by
+itself prove any individual manager case or business outcome.
 
 ## Authority
 
