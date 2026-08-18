@@ -241,3 +241,17 @@ ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 
 No runtime, provider, production-data, customer, farm or hardware change
 occurred. Full cutover now continues with Batches 17-29.
+
+## Batch 17 Google Sheets Migration Reconciliation - 2026-08-18
+
+Twelve dated migration plans/reports were archived intact after current
+Supabase-first, migration-integrity, conflict-quarantine, fallback and
+fallback-retirement rules were consolidated into focused Vault files. Dated
+counts and route observations can no longer masquerade as current state.
+
+Current honest state: `TWELVE_SHEETS_MIGRATION_SOURCES_ARCHIVED / 166 PHYSICAL
+ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No migration, data write, route cutover, fallback retirement, deployment,
+provider, customer, farm or hardware action occurred. Full cutover continues
+with Batches 18-29.

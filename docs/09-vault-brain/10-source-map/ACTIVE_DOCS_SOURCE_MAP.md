@@ -129,8 +129,10 @@ They are not agent doctrine and must not enter a mandatory pack.
 - `docs/06-operations/TESTING_CHECKLIST.md`
 - `docs/06-operations/RELEASE_CHECKLIST.md`
 - `docs/06-operations/TROUBLESHOOTING.md`
-- `docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md`
-- `docs/06-operations/GS_MIG_FINAL_AUDIT.md`
+- `docs/09-vault-brain/04-workflows/SUPABASE_MIGRATION_WORKFLOW.md`
+- `docs/09-vault-brain/05-playbooks/DATA_MIGRATION.md`
+- `docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md`
+- `docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md`
 - `docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md`
 - `docs/06-operations/OOM_SAKKIE_ROOTLINE_DAILY_PRESENTATION_HANDOVER.md`
 

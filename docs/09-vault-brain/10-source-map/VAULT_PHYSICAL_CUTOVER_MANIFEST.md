@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 16 decisions-and-migration-index reconciliation complete; no further physical change authorized.
+Status: Batch 17 Google Sheets migration reconciliation complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v13`
-Baseline: `fc195acab2db88aba7c759ea31bcdc6674a94fe1`
-Generated from HEAD: `fc195acab2db88aba7c759ea31bcdc6674a94fe1`
-Tracked Markdown/MDX files covered: **525**
+Version: `vault_physical_cutover_manifest_v14`
+Baseline: `f7237d83e846eb91dfda7cade39a2647b26c732c`
+Generated from HEAD: `f7237d83e846eb91dfda7cade39a2647b26c732c`
+Tracked Markdown/MDX files covered: **526**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 16 and schedules later
+This manifest records completed Batches 5 through 17 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,21 +17,21 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `EXTRACT_THEN_ARCHIVE` | 105 |
-| `KEEP_ARCHIVE` | 29 |
+| `EXTRACT_THEN_ARCHIVE` | 98 |
+| `KEEP_ARCHIVE` | 41 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_GENERATED_PROJECTION` | 9 |
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 184 |
-| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
+| `KEEP_VAULT` | 185 |
+| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 68 |
 
 ## Remaining execution schedule
 
-The remaining 178 physical-reconciliation entries are assigned
-to exactly one of Batches 17 through 27. Batch 28 owns the 72 transitional
+The remaining 166 physical-reconciliation entries are assigned
+to exactly one of Batches 18 through 27. Batch 28 owns the 72 transitional
 exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
@@ -39,7 +39,7 @@ This schedule is an ordering contract, not physical-change authority.
 | ---: | --- | ---: |
 | 15 | `generated_agent_projections` | COMPLETE (9) |
 | 16 | `decisions_and_migration_index` | COMPLETE (3) |
-| 17 | `sheets_migration` | 12 |
+| 17 | `sheets_migration` | COMPLETE (12) |
 | 18 | `core_missions` | 10 |
 | 19 | `core_operating_spine` | 18 |
 | 20 | `general_operations` | 16 |
@@ -69,6 +69,7 @@ This schedule is an ordering contract, not physical-change authority.
 - Two stale current-state/roadmap projections are compatibility pointers to the durable register and Vault mission workflow.
 - The final legacy product-vision projection is a compatibility pointer after durable Oom Sakkie experience rules moved into focused Vault files.
 - Two dated ADR wrappers and the completed legacy migration index are archived after their durable facts were reconciled into focused Vault governance, CORE identity and deployment standards.
+- Twelve Google Sheets migration plans/reports are archived intact after current migration, conflict-quarantine, Supabase-first fallback and fallback-retirement rules moved into focused Vault files.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -109,18 +110,6 @@ entry whose physical disposition needs later work or owner review.
 | `docs/06-operations/CONTINUOUS_AGENT_ALIGNMENT_AUDIT_20260817.md` | `EXTRACT_THEN_ARCHIVE` | 20 | `docs/99-archive/vault-cutover/docs/06-operations/CONTINUOUS_AGENT_ALIGNMENT_AUDIT_20260817.md` | 1 | unique_fact_extraction_required |
 | `docs/06-operations/CORE_PROVIDER_ORIGIN_ACTIVATION_RAIL.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 19 | `docs/99-archive/vault-cutover/docs/06-operations/CORE_PROVIDER_ORIGIN_ACTIVATION_RAIL.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/FARM_OPERATING_DASHBOARD_V2_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 20 | `docs/99-archive/vault-cutover/docs/06-operations/FARM_OPERATING_DASHBOARD_V2_PLAN.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md` | `EXTRACT_THEN_ARCHIVE` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/GS_MIG_2_RECONCILIATION_REPORT.md` | `EXTRACT_THEN_ARCHIVE` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_2_RECONCILIATION_REPORT.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/GS_MIG_3A_DATA_ISSUE_REVIEW.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3A_DATA_ISSUE_REVIEW.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/GS_MIG_3B_IMPORT_POLICY_DECISIONS.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3B_IMPORT_POLICY_DECISIONS.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/GS_MIG_3_BACKFILL_VERIFIER_REPORT.md` | `EXTRACT_THEN_ARCHIVE` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3_BACKFILL_VERIFIER_REPORT.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md` | `EXTRACT_THEN_ARCHIVE` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/GS_MIG_5_INITIAL_IMPORT_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_INITIAL_IMPORT_PLAN.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md` | `EXTRACT_THEN_ARCHIVE` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md` | `EXTRACT_THEN_ARCHIVE` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/GS_MIG_FINAL_AUDIT.md` | `EXTRACT_THEN_ARCHIVE` | 17 | `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_FINAL_AUDIT.md` | 3 | unique_fact_extraction_required |
 | `docs/06-operations/HERDMASTER_AUCTION_SALE_SOURCE_HANDOVER_20260808.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_AUCTION_SALE_SOURCE_HANDOVER_20260808.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/HERDMASTER_BREEDING_ATTENTION_UI_RECOVERY_PLAN_20260811.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_ATTENTION_UI_RECOVERY_PLAN_20260811.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/HERDMASTER_BREEDING_EVIDENCE_QUALIFIED_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_EVIDENCE_QUALIFIED_HANDOVER.md` | 0 | unique_fact_extraction_required |

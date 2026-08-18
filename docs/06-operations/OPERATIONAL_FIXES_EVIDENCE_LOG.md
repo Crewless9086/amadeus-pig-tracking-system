@@ -530,7 +530,7 @@ Mode: read-only Supabase/Google Sheets reconciliation. No writes or app route cu
 
 Generated report:
 
-- `docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md`
+- `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md`
 
 Reconciliation result:
 
@@ -680,7 +680,7 @@ Mode: final route cutover audit plus a narrow route-facing read closeout. No mig
 
 Audit output:
 
-- Added `docs/06-operations/GS_MIG_FINAL_AUDIT.md`.
+- Added `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_FINAL_AUDIT.md` (later archived intact by Vault Cutover Batch 17).
 - Classified remaining Google Sheets callers as safe fallback only, import/export/admin script, legacy/reference only, or tests.
 - No remaining caller is classified as an active route that must still be migrated after this branch.
 

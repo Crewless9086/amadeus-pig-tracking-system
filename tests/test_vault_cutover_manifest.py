@@ -60,6 +60,20 @@ BATCH16_ARCHIVED_FILES = {
     "docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md",
     "docs/MIGRATION_INDEX.md",
 }
+BATCH17_ARCHIVED_FILES = {
+    "docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md",
+    "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
+    "docs/06-operations/GS_MIG_2_RECONCILIATION_REPORT.md",
+    "docs/06-operations/GS_MIG_3A_DATA_ISSUE_REVIEW.md",
+    "docs/06-operations/GS_MIG_3B_IMPORT_POLICY_DECISIONS.md",
+    "docs/06-operations/GS_MIG_3_BACKFILL_VERIFIER_REPORT.md",
+    "docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md",
+    "docs/06-operations/GS_MIG_5_INITIAL_IMPORT_PLAN.md",
+    "docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md",
+    "docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md",
+    "docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md",
+    "docs/06-operations/GS_MIG_FINAL_AUDIT.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -220,16 +234,28 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("`CORE_*`", core)
         self.assertIn("normalized values must agree or startup fails closed", deployment)
 
+    def test_batch17_archives_sheets_migration_history_after_rule_reconciliation(self):
+        for source in BATCH17_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        contracts = (ROOT / "docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md").read_text(encoding="utf-8")
+        legacy = (ROOT / "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md").read_text(encoding="utf-8")
+        active = (ROOT / "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md").read_text(encoding="utf-8")
+        self.assertIn("Conflicting same-animal/date weight values remain excluded", contracts)
+        self.assertIn("Retire a fallback only after fresh route inventory", legacy)
+        self.assertNotIn("docs/06-operations/GS_MIG_FINAL_AUDIT.md", active)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 178)
-        self.assertTrue(all(17 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 166)
+        self.assertTrue(all(18 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(17, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(18, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {17: 12, 18: 10, 19: 18, 20: 16, 21: 22,
+        expected = {18: 10, 19: 18, 20: 16, 21: 22,
                     22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}
