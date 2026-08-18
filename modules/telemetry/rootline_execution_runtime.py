@@ -334,22 +334,40 @@ def _canonical_standing_authority_proven(database_url, artifact):
         with connect() as connection:
             with connection.cursor() as cursor:
                 envelope = envelopes[0]
-                cursor.execute("""select issuer,policy_payload from
+                cursor.execute("""select issuer,policy_payload,policy_sha256,active,revoked,
+                    not exists(select 1 from app_private.rootline_authority_events e where
+                      e.standing_authority_id=%s and e.version=%s and
+                      e.event_type in ('revoked','superseded')) from
                     app_private.rootline_standing_authorities where
                     standing_authority_id=%s and version=%s""",
-                    (envelope.get("standing_authority_id"), envelope.get("version")))
+                    (envelope.get("standing_authority_id"), envelope.get("version"),
+                     envelope.get("standing_authority_id"), envelope.get("version")))
                 row = cursor.fetchone()
-        if not row or str(row[0]) != str(envelope.get("issuer") or ""):
+        if (not row or str(row[0]) != str(envelope.get("issuer") or "")
+                or row[3] is not True or row[4] is True or row[5] is not True
+                or str(row[2]) != str(envelope.get("policy_sha256") or "")):
             return False
         policy = row[1] if isinstance(row[1], dict) else {}
         return (policy.get("contract_version") == "rootline_bc_standing_authority.v1"
             and set(policy.get("device_keys") or ()) == set(keys)
             and set(policy.get("zone_ids") or ()) == {"B12345", "C12345"}
+            and set(policy.get("allowed_channels") or ()) == {1, 2}
+            and policy.get("provider") == "ifttt_ewelink"
+            and policy.get("provider_account_binding") == "ewelink_owner_account"
+            and policy.get("device_id") == "100204e9bc"
             and type(policy.get("maximum_runtime_seconds")) is int
             and 0 < policy["maximum_runtime_seconds"] <= 3599
             and type((artifact or {}).get("maximum_duration_seconds")) is int
             and 0 < artifact["maximum_duration_seconds"] <= policy["maximum_runtime_seconds"]
             and policy.get("simultaneous_outputs_allowed") is False
+            and policy.get("mutual_exclusion_required") is True
+            and policy.get("fresh_reservoir_storage_required") is True
+            and policy.get("fresh_weather_and_rain_hold_required") is True
+            and policy.get("current_plan_identity_required") is True
+            and policy.get("application_timeout_required") is True
+            and policy.get("provider_on_off_readback_required") is True
+            and set(policy.get("explicit_exclusions") or ()) == {
+                "fertilizer_injection", "fertilizer_mixing", "borehole_pump"}
             and bool(str(policy.get("emergency_off_owner") or "").strip())
             and bool(str(policy.get("emergency_off_procedure") or "").strip())
             and policy.get("provider_fail_stop_proven") is True

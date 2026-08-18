@@ -113,7 +113,8 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
         decision = _decision(row.get("status") or row.get("recommendation"), af)
         window = _human_window(row.get("preferred_window"))
         suffix = f" · {html.escape(window)}" if window and window.lower() not in {"unavailable", "unknown"} else ""
-        lines.append(f"• <b>{label}:</b> {decision}{suffix}")
+        prefix = "Aanbeveling: " if af else "Recommendation: "
+        lines.append(f"• <b>{label}:</b> {prefix}{decision}{suffix}")
         reason = str(row.get("reason") or "").strip()
         if reason and reason not in reasons:
             reasons.append(reason)
@@ -121,7 +122,16 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
     question = str(brief.get("family_fact_needed") or "").strip()
     next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result), now_hint=result.get("evidence_cutoff"))
-    lines.extend(["", f"<b>{'Hoekom' if af else 'Why'}:</b> {html.escape(why)}",
+    execution = ("<b>Uitvoering:</b> Nog nie gemagtig of begin nie; ROOTLINE toets "
+                 "varsheid, veiligheidsgrense en staande magtiging voor enige AAN-opdrag."
+                 if af else "<b>Execution:</b> Not yet authorized or started; ROOTLINE checks "
+                 "freshness, safety gates and standing authority before any ON command.")
+    lifecycle = ("<b>Lewensiklus:</b> Aanbeveling aangeteken · Gemagtig: wag · Begin: nee "
+                 "· Voltooi: nee · Gehou: veiligheidshekke · Misluk: nee" if af else
+                 "<b>Lifecycle:</b> Recommendation recorded · Authorized: pending · Started: no "
+                 "· Completed: no · Held: safety gates · Failed: no")
+    lines.extend(["", execution, lifecycle,
+        f"<b>{'Hoekom' if af else 'Why'}:</b> {html.escape(why)}",
         f"<b>{'Wat ek van jou nodig het' if af else 'What I need from you'}:</b> " +
         (html.escape(question) if question else ("Niks" if af else "Nothing")),
         f"<b>{'Volgende outomatiese herbeoordeling' if af else 'Next automatic reassessment'}:</b> " +

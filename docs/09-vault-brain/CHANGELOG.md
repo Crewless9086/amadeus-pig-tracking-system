@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-18 - Narrow B/C standing authority source set
+
+- Added one revocable `ROOTLINE-BC-IRRIGATION-AUTO` version 1 policy migration,
+  bound only to canonical generation-2 supervised B/C relay evidence.
+- Preserved exact device/channel, sequential mutual exclusion, fresh water,
+  weather/rain and plan gates, native/application timeouts, provider ON/OFF
+  readback, emergency OFF ownership and replay silence.
+- Clarified Telegram `Run` as Recommendation, not Authorized or Started.
+- Fertiliser and Borehole MINI R4 remain unauthorized; exact remaining
+  commissioning packets are recorded separately.
+
 ## 2026-08-17 - OP-004 live-transfer contract integrated for multi-line Orders consumption
 
 - Integrated PR #1001 on current authoritative main as `355f1154`, preserving typed,
