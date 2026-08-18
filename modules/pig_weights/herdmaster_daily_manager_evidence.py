@@ -320,6 +320,11 @@ def _day(value):
 def _weight_window(analysis_date):
     """Include an early current-week upload without changing the governed close."""
     scheduled_start = analysis_date - timedelta(days=analysis_date.weekday()) + timedelta(days=1)
+    # Monday belongs to the just-finished weighing cycle until the new
+    # Tuesday/Wednesday capture window opens. Advancing the lower bound to
+    # Monday hid valid weekend uploads and could turn 79/81 into 0/81.
+    if analysis_date.weekday() == 0:
+        return scheduled_start - timedelta(days=7), analysis_date
     return min(analysis_date, scheduled_start), scheduled_start + timedelta(days=1)
 
 

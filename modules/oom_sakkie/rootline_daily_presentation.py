@@ -113,7 +113,9 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
         decision = _decision(row.get("status") or row.get("recommendation"), af)
         window = _human_window(row.get("preferred_window"))
         suffix = f" · {html.escape(window)}" if window and window.lower() not in {"unavailable", "unknown"} else ""
-        prefix = "Aanbeveling: " if af else "Recommendation: "
+        already_recommendation = decision.casefold().startswith(
+            "aanbeveling" if af else "recommendation")
+        prefix = "" if already_recommendation else ("Aanbeveling: " if af else "Recommendation: ")
         lines.append(f"• <b>{label}:</b> {prefix}{decision}{suffix}")
         reason = str(row.get("reason") or "").strip()
         if reason and reason not in reasons:
@@ -155,7 +157,7 @@ def _fresh_result(result: Any, now: datetime) -> bool:
 def _decision(value: Any, af: bool) -> str:
     text = str(value or "").casefold()
     if text in {"recommend", "run", "proceed", "eligible"} or text.startswith("run "):
-        return "Run"
+        return "Aanbeveling - besproei" if af else "Recommendation - irrigate"
     if text in {"hold", "do not run", "do_not_run", "completed"}:
         return "Hou" if af else "Hold"
     return "Data nodig" if af else "Needs Data"

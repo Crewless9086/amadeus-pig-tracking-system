@@ -46,11 +46,14 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
         tags = ", ".join(str(row["tag"]) for row in missing)
         items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":weight-missing",
             dedupe_key="herdmaster:weekly-weight-evidence", domain="herd",
-            title=f"Weekly weighing: {len(missing)} eligible tagged pig(s) missing",
+            title=(f"Weighing: {snapshot['covered']} of {snapshot['eligible_tagged']} recorded; "
+                   f"{len(missing)} tag(s) need status reconciliation"),
             why=(f"Current-snapshot coverage is {snapshot['covered']}/{snapshot['eligible_tagged']}. "
                  "Breeding, untagged, inactive/off-farm and Unknown eligibility remain separate."),
-            next_action=f"Weigh only these missing eligible tags: {tags}.", assignee="charl",
-            state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
+            next_action=(f"Reconcile sale/order or other canonical status for tags {tags}; "
+                         "do not classify them for reweighing until that evidence exists."),
+            assignee="charl", state=WorkState.WAITING_EVIDENCE,
+            authority=Authority.READ_ONLY,
             provenance=provenance, business_value=110))
     elif snapshot["status"] == "complete":
         finding_text = _findings(findings)
