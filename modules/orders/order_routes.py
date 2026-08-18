@@ -63,7 +63,7 @@ from modules.orders.order_validation import (
     validate_update_order_line_payload,
     validate_sync_order_lines_payload,
 )
-from modules.orders.livestock_quote_preview import build_livestock_quote_preview
+from modules.orders.livestock_quote_preview import build_livestock_quote_preview, build_already_sold_recording_preview
 from modules.pig_weights.herdmaster_live_transfer_contract import (
     build_live_transfer_preview_contract,
 )
@@ -264,6 +264,24 @@ def livestock_quote_preview():
     except Exception as exc:
         logger.exception("Livestock quote preview failed")
         return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
+
+
+@orders_bp.route("/orders/already-sold-preview", methods=["POST"])
+def already_sold_preview():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "errors": ["JSON body must be an object."], "writes_performed": False}), 400
+    try:
+        packet = build_live_transfer_preview_contract()
+        if not isinstance(packet, dict) or not packet.get("packet_digest"):
+            raise RuntimeError("canonical packet unavailable")
+        return jsonify(build_already_sold_recording_preview(payload, packet)), 200
+    except Exception:
+        logger.exception("Already-sold recording preview failed")
+        return jsonify({"success": False, "errors": ["Protected sale evidence is currently unavailable."], "writes_performed": False}), 503
 
 
 @orders_bp.route("/orders/<order_id>/reserve", methods=["POST"])
