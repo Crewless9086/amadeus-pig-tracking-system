@@ -119,6 +119,34 @@ def test_audit_commit_uses_separate_connection_from_manager_work():
     assert len({id(connection) for connection in connections}) == 3
 
 
+def test_audit_checkpoint_uses_existing_started_status_vocabulary():
+    commands = []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchall(self): return []
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+        def close(self): pass
+
+    audit = build_scheduled_brain_guard_audit(
+        source_revision="abc123", now=NOW,
+        alignment_result={"version": "alignment.v1", "passed": True,
+                          "findings": [], "checked_files": ["one.md"]})
+    result = PostgresManagerCaseStore(connect_factory=Connection).run_cycle(
+        [], now=NOW, source_revision="abc123", brain_guard_audit=audit)
+    assert result["success"] is True
+    checkpoint = next(params for sql, params in commands
+                      if "next_cycle_at,status,case_counts" in sql)
+    assert checkpoint[-2] == "started"
+    assert "brain_guard_alignment_passed" in checkpoint[-1]
+
+
 def _candidate(**changes):
     value = {
         "dedupe_key": "rootline:current-plan",
