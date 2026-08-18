@@ -53,3 +53,23 @@ CHARLIE CORE can now be used for controlled serious missions if:
 - owner review remains mandatory before release, public posting, customer sends, payments, reservations, migrations, or lifecycle changes.
 
 It is not yet safe to let CHARLIE CORE self-approve or run broad money/customer/public actions without owner review.
+
+## Current Batch 1 Cutover Evidence — 2026-08-18
+
+The historical percentage above remains superseded. Batch 1 measured the
+current documentation estate instead of assigning a new subjective percentage:
+
+- 513 tracked Markdown/MDX files;
+- 172 inside the intended live Vault and 341 outside it;
+- no byte-identical duplicates, but nine material semantic conflict families;
+- 163 files still requiring manual lifecycle classification;
+- current Brain Guard alignment audit required before any physical cutover.
+
+Current honest state: `NOT CUT OVER / GOVERNANCE_ALIGNMENT_HOLD`.
+
+Readiness will become measurable only when every agent has one deterministic
+mandatory Vault pack, outside doctrine is pointer/technical/history-only, runtime
+agent projections are derived from Vault authority, contradiction checks fail
+closed, and the archive/delete manifest has passed owner review. The complete
+Batch 1 evidence is in `../10-source-map/VAULT_MIGRATION_INVENTORY.md` and the
+ordered conflict review is in `../10-source-map/REPO_CLEANUP_STATUS.md`.

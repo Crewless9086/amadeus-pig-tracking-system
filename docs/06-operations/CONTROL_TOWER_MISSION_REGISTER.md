@@ -563,3 +563,32 @@ Automatic prompt delivery to every visible terminal is not proven. Charl must
 paste a prompt unless target-specific delivery and acknowledgement are evidenced.
 The target is the durable CORE queue/runner. Until then, queued, delivered,
 started and deployed-runtime-active remain distinct states.
+
+## Vault Cutover Governance Hold — 2026-08-18
+
+Mission: `VAULT-CUTOVER-20260818`, governance alignment programme.
+
+Owner decision: **APPROVE VAULT CUTOVER BATCH 1 — inventory and classification
+only; no moves, deletions, doctrine rewrites, or runtime changes.**
+
+Batch 1 ran against authoritative baseline
+`59c34f961c2c84bfa182b783987c806ac838fabe` in a clean isolated worktree. It
+inventoried 513 tracked Markdown/MDX files: 172 inside `docs/09-vault-brain` and
+341 outside. No byte-identical duplicate group exists. The risk is semantic
+overlap, ambiguous lifecycle and competing authority. The durable file ledger
+and proposed actions are recorded in `VAULT_MIGRATION_INVENTORY.md`; no proposed
+action is execution authority.
+
+Lifecycle: `WORKING / BATCH_1_CLASSIFICATION / GOVERNANCE_ALIGNMENT_HOLD`.
+
+Control boundary: no new agent feature mission may treat unresolved legacy docs,
+planning files, evidence logs or static agent assets as normative doctrine.
+Existing production agents are not stopped by this documentation batch, but no
+runtime change or new protected authority is granted. Batch 2 may begin only
+after owner review of the Batch 1 conflict/action summary. Physical moves,
+archive operations and deletions require their own approved manifest.
+
+Next ordered work: governance routing; common agent contract; CORE/Oom Sakkie;
+ROOTLINE/HERDMASTER; BEACON/SAM with Meta safety; CODEX UI with the mandatory
+Facelift Standard; Documents/remaining specialists; data/workflow authority;
+then an owner-approved archive/delete manifest.

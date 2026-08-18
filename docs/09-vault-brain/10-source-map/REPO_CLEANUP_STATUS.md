@@ -43,3 +43,67 @@ Next cleanup targets:
 2. Review `docs/08-business-modules/*` with owner; archive business drafts only after owner accepts Vault replacements.
 3. Review `external_sources/` and mark each source as keep/reference/archive/delete.
 4. Add deprecation headers to docs that are superseded by Vault but still kept for history.
+
+## Vault Cutover Batch 1 — 2026-08-18
+
+Status: `INVENTORY_COMPLETE / CLASSIFICATION_PROPOSED / NO_PHYSICAL_CHANGE`.
+
+Owner-approved boundary: inventory and classification only. This batch did not
+move or delete a file, rewrite doctrine, alter runtime configuration, invoke an
+agent, or change production state.
+
+Exact baseline: authoritative main `59c34f961c2c84bfa182b783987c806ac838fabe`
+in clean worktree `C:\tmp\vault-cutover-batch1-20260818`.
+
+### Measured repository position
+
+- 513 tracked Markdown/MDX documents.
+- 172 documents inside `docs/09-vault-brain`.
+- 341 documents outside the intended live Vault.
+- 0 byte-identical duplicate-content groups.
+- 163 documents require manual lifecycle classification.
+- 96 planning documents are proposed for extraction before archive/delete review.
+- 75 operational documents are proposed for separation of current runbook from history.
+- 72 transitional documents must remain until their explicit exit tests pass.
+- 9 static agent assets require generation/reconciliation from Vault authority.
+
+The complete file-by-file ledger, content hashes, declared lifecycle signals,
+reference counts and proposed actions are recorded in
+`VAULT_MIGRATION_INVENTORY.md`. A proposed action is not deletion authority.
+
+### Priority conflict families for Batch 2 review
+
+1. **Competing doctrine authority:** `ACTIVE_DOCS_SOURCE_MAP.md` and legacy
+   start/architecture/AI documents still allow non-Vault files to steer missions.
+2. **Agent standing orders:** CORE, Oom Sakkie, ROOTLINE, HERDMASTER, SAM and
+   BEACON rules are split between Vault agent files, operations evidence,
+   architecture documents, business modules and runtime assets.
+3. **BEACON/Meta safety:** farm-awareness storytelling rules and livestock-sales
+   implementation history can be read as competing publication doctrine.
+4. **Operational status duplication:** current-state, next-step, mission-register,
+   handover and evidence-log files mix durable rules with dated state.
+5. **UI/FACELIFT routing:** the Vault Facelift Standard exists, but every UI
+   mission does not yet have one deterministic mandatory pack.
+6. **Data authority:** Supabase canonical truth, Google Sheets transitional
+   fallback and historical n8n write paths require explicit non-competing labels.
+7. **Runtime projections:** `static/assets/agents/*/agent.md` are manually
+   maintained projections rather than demonstrably generated Vault derivatives.
+8. **Runtime programme pointer:** the canonical architecture programme and its
+   historical operations-path pointer must not both appear authoritative.
+9. **Planning material:** active-looking plans, prompts and storyworks documents
+   can steer terminals despite not being accepted doctrine.
+
+### Required audit order before physical cleanup
+
+1. Governance and authority routing.
+2. Cross-agent common operating contract.
+3. CORE and Oom Sakkie.
+4. ROOTLINE and HERDMASTER.
+5. BEACON and SAM, including Meta safety.
+6. CODEX UI and mandatory Facelift pack.
+7. Documents and remaining specialist packs.
+8. Data/workflow authority and runtime-derived assets.
+9. Historical extraction, archive and deletion proposals for owner approval.
+
+Until those audits finish, `GOVERNANCE_ALIGNMENT_HOLD` remains active: no new
+feature implementation should use unresolved legacy doctrine as mission authority.
