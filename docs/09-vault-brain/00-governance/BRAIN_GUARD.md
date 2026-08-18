@@ -154,6 +154,14 @@ Brain Guard must reject legacy scope, storage or SAM build-plan evidence as
 current doctrine and route missions only through focused Vault packs. No later
 move or deletion is authorized by this completed slice.
 
+## Batch 7 Physical Slice State
+
+Two superseded external UI design briefs are archived intact. Brain Guard must
+treat those files as historical evidence only and route every UI mission through
+the mandatory Facelift Standard, UI Dashboard Standard and owning-agent pack.
+Current external provider/runbook material remains outside this slice. No later
+move or deletion is authorized by this completed slice.
+
 ## Runtime Enforcement v2
 
 The second runtime pass adds stronger operating rails:

@@ -133,3 +133,12 @@ implementation reference.
 
 Current honest state: `DOCS_05_AI_ARCHIVED / ZERO_DELETIONS /
 DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+## Batch 7 External UI Brief Archive Result - 2026-08-18
+
+Two superseded external UI briefs with zero exact references were archived
+intact. The external-source index and current telemetry/provider documentation
+remain active technical evidence.
+
+Current honest state: `EXTERNAL_UI_BRIEFS_ARCHIVED / ZERO_DELETIONS /
+DEPLOYED_BRAIN_GUARD_UNPROVEN`.

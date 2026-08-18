@@ -17,6 +17,10 @@ BATCH6_AGENT_AI_FILES = {
     "agents/beacon/README.md",
     "agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md",
 }
+BATCH7_EXTERNAL_UI_FILES = {
+    "CODEX_FARM_UI_RESET_BRIEF.md",
+    "CODEX_FARM_UI_TARGET_SPECIALIST_WORKSPACE_BRIEF.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -90,6 +94,18 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
             self.assertIn(archived, self.entries)
             self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
         self.assertFalse(any(path.startswith("docs/05-ai/") for path in self.entries))
+
+    def test_batch7_archives_only_the_two_superseded_external_ui_briefs(self):
+        for name in BATCH7_EXTERNAL_UI_FILES:
+            self.assertNotIn(f"external_sources/{name}", self.entries)
+            archived = f"docs/99-archive/vault-cutover/external_sources/{name}"
+            self.assertIn(archived, self.entries)
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        self.assertIn("external_sources/README.md", self.entries)
+        self.assertIn(
+            "external_sources/telemetry/forecast/amadeus-forecast-logger/README.md",
+            self.entries,
+        )
 
 
 if __name__ == "__main__":
