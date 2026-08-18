@@ -31,6 +31,11 @@ Current-state evidence, never reusable doctrine:
 - `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
 - `docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md`
 
+Technical scratchpads, never durable state or doctrine:
+
+- `planning/CODEX_CHAT.md`
+- `planning/ToDoList.md`
+
 Compatibility pointers, never current state or doctrine:
 
 - `docs/00-start-here/README.md`

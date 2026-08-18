@@ -274,7 +274,7 @@ Reservation rule:
 
 - `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
 - `docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md`
-- `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
+- `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`
 - `docs/09-vault-brain/02-agents/sales/SAM.md`
 - `docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md`
 - `docs/09-vault-brain/03-business/LIVE_PIG_SALES.md`

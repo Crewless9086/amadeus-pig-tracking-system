@@ -365,3 +365,16 @@ Current honest state: `TEN_BUSINESS_MODULE_SOURCES_ARCHIVED / 42 PHYSICAL ITEMS
 No customer send, public post, provider action, order, reservation, payment,
 stock, farm, database or runtime action occurred. Full cutover continues with
 Batches 26-29.
+
+## Batch 26 Planning/Inbox Reconciliation - 2026-08-18
+
+Eight historical planning/inbox sources were archived intact. Two runtime-used
+paths were replaced with minimal non-doctrine scratchpads; durable mission,
+CORE and SAM authority remains in canonical records, the Control Tower register
+and focused Vault packs.
+
+Current honest state: `EIGHT_PLANNING_SOURCES_ARCHIVED / 34 PHYSICAL ITEMS /
+72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No mission execution, runtime, customer, provider, farm, database or hardware
+action occurred. Full cutover continues with Batches 27-29.

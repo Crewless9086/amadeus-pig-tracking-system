@@ -970,3 +970,17 @@ BATCHES_26_TO_29_REMAIN`.
 No customer send, public post, provider action, order, reservation, payment,
 stock, farm, database or runtime action occurred. The remaining physical queue
 is 42 documents. Automatic promotion is Batch 26 planning/inbox reconciliation.
+
+### Vault Cutover Batch 26 - 2026-08-18
+
+Owner approved continuation. Eight historical planning/inbox sources were
+archived intact. The active `CODEX_CHAT.md` and `ToDoList.md` paths were reduced
+to minimal non-doctrine technical scratchpads so current tooling remains
+compatible without retaining stale missions or priorities.
+
+Lifecycle: `WORKING / BATCH_26_PLANNING_INBOX_COMPLETE /
+BATCHES_27_TO_29_REMAIN`.
+
+No mission execution, runtime, customer, provider, farm, database or hardware
+action occurred. The remaining physical queue is 34 Storyworks documents.
+Automatic promotion is Batch 27 Storyworks reconciliation.

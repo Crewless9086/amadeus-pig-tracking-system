@@ -214,6 +214,16 @@ BATCH25_ARCHIVED_FILES = {
     "docs/08-business-modules/README.md",
     "docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md",
 }
+BATCH26_ARCHIVED_FILES = {
+    "planning/CHARLIE_CORE_EXTENDED_PLAN.md",
+    "planning/CODEX_CHAT.md",
+    "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
+    "planning/ToDoList.md",
+    "planning/inbox/README.md",
+    "planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
+    "planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
+    "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -487,16 +497,30 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("Canonical Batch Flow And Metrics", production)
         self.assertNotIn("docs/08-business-modules/", active)
 
+    def test_batch26_archives_planning_history_and_retains_minimal_scratchpads(self):
+        for source in BATCH26_ARCHIVED_FILES:
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        for source in BATCH26_ARCHIVED_FILES - MODULE.BATCH26_TECHNICAL_SCRATCHPADS:
+            self.assertNotIn(source, self.entries)
+        for source in MODULE.BATCH26_TECHNICAL_SCRATCHPADS:
+            self.assertEqual(self.entries[source]["disposition"], "KEEP_TECHNICAL")
+            text = (ROOT / source).read_text(encoding="utf-8")
+            self.assertIn("NON-DOCTRINE", text)
+            self.assertLessEqual(len(text.splitlines()), 30)
+        workflow = (ROOT / "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md").read_text(encoding="utf-8")
+        self.assertIn("never\nprove authority, active execution or completion", workflow)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 42)
-        self.assertTrue(all(26 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 34)
+        self.assertTrue(all(entry["planned_batch"] == 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(26, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, {27})
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {26: 8, 27: 34}
+        expected = {27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}
         self.assertEqual(actual, expected)
