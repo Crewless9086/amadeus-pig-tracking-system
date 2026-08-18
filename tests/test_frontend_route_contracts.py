@@ -266,7 +266,7 @@ class FrontendRouteContractTests(unittest.TestCase):
 
     def test_oom_sakkie_audit_rail_ci_and_browser_checklist_are_documented(self):
         workflow = Path(".github/workflows/oom-sakkie-audit-rails.yml").read_text(encoding="utf-8")
-        checklist = Path("docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md").read_text(encoding="utf-8")
+        checklist = Path("docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md").read_text(encoding="utf-8")
         playwright_workflow = Path(".github/workflows/oom-sakkie-browser-behavior.yml").read_text(encoding="utf-8")
         playwright_spec = Path("tests/oom_sakkie_playwright_behavior.spec.js").read_text(encoding="utf-8")
         playwright_config = Path("playwright.config.js").read_text(encoding="utf-8")
@@ -365,11 +365,11 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("dispatch_enabled", telegram_daily_brief)
         self.assertIn('DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}', service)
 
-        self.assertIn("No specialist dispatch.", checklist)
-        self.assertIn("No Background Polling", checklist)
-        self.assertIn("Accepted agent learning", checklist)
-        self.assertIn("Voice loop 5 of 5", checklist)
-        self.assertIn("Every dry-run/result/event action is owner-clicked.", checklist)
+        self.assertIn("Dry-run work cannot dispatch tools or", checklist)
+        self.assertIn("no hidden POST or", checklist)
+        self.assertIn("timer-style background polling", checklist)
+        self.assertIn("bounded continuation", checklist)
+        self.assertIn("Direct actions require a", checklist)
 
         self.assertIn("Playwright real-browser behavior gate", playwright_workflow)
         self.assertIn('python-version: "3.12"', playwright_workflow)

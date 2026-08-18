@@ -148,6 +148,38 @@ BATCH21_ARCHIVED_FILES = {
     "docs/06-operations/HERDMASTER_WHOLE_HERD_NEXT_ROUND_HANDOVER.md",
     "docs/06-operations/HERDMASTER_ZIGAY_REVISED_SUPERSESSION_PREVIEW.md",
 }
+BATCH22_ARCHIVED_FILES = {
+    "docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md",
+    "docs/06-operations/OOM_SAKKIE_AUTOMATIC_REASSESSMENT_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_BREEDING_ROUTING_TASK_RETIREMENT_HANDOVER_20260811.md",
+    "docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md",
+    "docs/06-operations/OOM_SAKKIE_CONTEXTUAL_SPECIALIST_FOLLOWUP_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_DAILY_FARM_MANAGER_LOOP_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_DURABLE_MORNING_RUNTIME_HANDOVER_20260813.md",
+    "docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_FARM_MANAGER_ROUND_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SOURCE_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SPINE_SCORECARD_20260809.md",
+    "docs/06-operations/OOM_SAKKIE_GENERIC_FAMILY_MESSAGE_LIFECYCLE_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_HERDMASTER_MANAGEMENT_CONSUMER_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_HERDMASTER_MORTALITY_CONSUMPTION_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_LLM_SEMANTIC_FRONT_DOOR_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_MANAGER_QUALITY_COMPOSER_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_SOURCE_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_OWNER_OPERATIONAL_CONTINUATION_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_OWNER_REQUEST_AGENT_LIFECYCLE_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_P0_NATURAL_PREVIEW_CORRECTION_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_P0_OPERATIONAL_INTAKE_RECOVERY_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_P0_PIG125_LIFECYCLE_REENTRY_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_PROTECTED_ACTION_RECOVERY_HANDOVER_20260811.md",
+    "docs/06-operations/OOM_SAKKIE_RELAY_PROVIDER_CHRONOLOGY_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_ROOTLINE_DAILY_PRESENTATION_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_ROOTLINE_OPERATIONAL_INTAKE_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_SENTINEL_SINGLE_SHOT_RUNBOOK.md",
+    "docs/06-operations/OOM_SAKKIE_SPECIALIST_DISPATCH_ACK_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_SPECIALIST_OWNER_DECISION_BINDING_HANDOVER.md",
+    "docs/06-operations/OOM_SAKKIE_WITHDRAWAL_RELAY_RECOVERY_HANDOVER.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -373,16 +405,28 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("Unified Capture And Transition Contract", breeding)
         self.assertIn("Unknown-cause counts separately", health)
 
+    def test_batch22_archives_oom_history_after_contract_reconciliation(self):
+        for source in BATCH22_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        oom = (ROOT / "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md").read_text(encoding="utf-8")
+        attention = (ROOT / "docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md").read_text(encoding="utf-8")
+        ui = (ROOT / "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md").read_text(encoding="utf-8")
+        self.assertIn("Manager Dialogue And Scheduling Contract", oom)
+        self.assertIn("Context, Specialist And Recovery Ordering", attention)
+        self.assertIn("Oom Sakkie Browser Acceptance", ui)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 100)
-        self.assertTrue(all(22 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 70)
+        self.assertTrue(all(23 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(22, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(23, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
+        expected = {23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}
         self.assertEqual(actual, expected)

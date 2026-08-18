@@ -2113,8 +2113,8 @@ def agent_runtime_readiness_handler(_args):
         "summary": summary,
         "links": [
             {
-                "label": "Browser Behavior Checklist",
-                "href": "docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md",
+                "label": "Oom Sakkie UI Standard",
+                "href": "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md",
             }
         ],
         "stale_warnings": [],

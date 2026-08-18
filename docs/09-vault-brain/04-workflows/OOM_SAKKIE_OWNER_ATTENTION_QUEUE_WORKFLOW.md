@@ -106,3 +106,23 @@ due; partial receipt retains the actual lesser amount. Only confirmation
 changes receipt state/amount/method/date, and it does not rewrite BKB invoice,
 VAT, commission, settlement-payable or item-price facts. Telegram describes
 payment-evidence review until canonical readback exists.
+
+## Context, Specialist And Recovery Ordering
+
+Authenticated intake resolves exact callback/confirmation, reply-to lifecycle,
+one unambiguous active contextual question and explicit entity/domain intent
+before broad manager interpretation. Notification receipts enrich chronology
+but never replace the waiting lifecycle. Completed or superseded cases cannot
+capture later unrelated text.
+
+New facts create a new evidence generation. Natural corrections invalidate the
+prior preview without deleting it and prepare a fresh deterministic preview.
+Stale confirmations fail closed. Protected grouped actions lock affected
+records, revalidate eligibility and commit atomically when promised; partial
+failure rolls back and exact replay changes zero rows.
+
+Manager composition consumes typed specialist facts, not rendered prose. One
+unavailable specialist blocks only dependent conclusions. Priorities favour
+welfare, time-sensitive farm work and money/customer exceptions over internal
+housekeeping. Every surfaced item names its usable completion path or states
+truthfully that no current action exists.

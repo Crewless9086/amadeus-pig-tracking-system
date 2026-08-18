@@ -113,3 +113,39 @@ Source references: `docs/09-vault-brain/01-identity/OOM_SAKKIE.md`,
   after SAM releases production.
 - **Evidence/handover:**
   `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`.
+
+## Manager Dialogue And Scheduling Contract
+
+- Scheduled plan, broad brief and direct specialist answer are distinct.
+  Specific irrigation, herd, sales or marketing questions route to the
+  responsible specialist first; unavailable evidence yields one exact exception.
+- The daily plan normally has at most three `Do today`, three `Watch`, one
+  grouped question and one readable next check. Names and outcomes lead; IDs
+  and provenance remain in details.
+- Replies bind exact reply/card where present, otherwise one unambiguous
+  owner/chat/specialist/domain chronology. Multiple candidates ask one
+  clarification. Known partial facts are retained and not requested again.
+- One durable SAST daily identity owns plan or bounded failure for that date.
+  Provider scheduling, never a terminal or arbitrary startup, owns invocation.
+  Same-date replay is silent and ambiguous provider effects are quarantined.
+- Automatic reassessment is read-only without a separately governed specialist
+  action. Unchanged results send and edit nothing; timestamps and formatting
+  alone are not material change.
+- Semantic interpretation may select an allowlisted domain, language, entities
+  and one clarification from bounded private context. It grants no protected
+  record, customer, publication, payment or hardware authority.
+
+## Specialist And Delivery Truth
+
+A release is not delivery, acknowledgement is not start, process existence is
+not activity and containment is not completion. Start needs exact mission,
+worker and release binding plus fresh attributable activity; completion also
+needs an immutable outcome artifact. Timeout creates one deduplicated systemic
+exception and never claims terminal work or automatic resumption.
+
+Every owner lifecycle records attempt before provider I/O and requires an exact
+provider message identity for delivered state. Safe continuation edits the same
+card. Interrupted or ambiguous attempts are reconciled before any new attempt.
+Protected decisions bind owner, private chat, card, specialist, action,
+evidence generation, payload digest and expiry; completion edits once, removes
+controls and makes exact replay a no-op.

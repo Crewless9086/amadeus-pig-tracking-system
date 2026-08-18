@@ -129,8 +129,9 @@ They are not agent doctrine and must not enter a mandatory pack.
 - `docs/09-vault-brain/05-playbooks/DATA_MIGRATION.md`
 - `docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md`
 - `docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md`
-- `docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md`
-- `docs/06-operations/OOM_SAKKIE_ROOTLINE_DAILY_PRESENTATION_HANDOVER.md`
+- `docs/09-vault-brain/01-identity/OOM_SAKKIE.md`
+- `docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md`
+- `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`
 
 ## Static Agent Assets
 
@@ -198,6 +199,12 @@ breeding, exposure, litter, weaning, health, loss, purpose, allocation and
 lifecycle-analytics authority remains only in focused Vault agent, workflow,
 business-rule, data and UI files. See
 `VAULT_CUTOVER_BATCH21_RECONCILIATION.md`.
+
+Batch 22 archived thirty OOM SAKKIE plans, handovers, scorecards and runbooks.
+Current manager, family-access, dialogue, scheduling, specialist, protected-
+action, provider-delivery and browser authority remains only in focused Vault
+identity, agent, workflow and standards files. See
+`VAULT_CUTOVER_BATCH22_RECONCILIATION.md`.
 
 Batch 7 archived two superseded external UI briefs. They are historical design
 evidence only; current UI authority remains the mandatory Facelift and UI

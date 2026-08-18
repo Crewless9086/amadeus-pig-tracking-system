@@ -103,3 +103,12 @@ Beacon surfaces must show:
 - spend recommendation and cap;
 - manual/public post evidence;
 - performance evidence.
+
+## Oom Sakkie Browser Acceptance
+
+Prove loaded, empty, error and contained states. Direct actions require a
+deliberate owner click; no hidden POST or timer-style background polling is
+permitted. Dry-run work cannot dispatch tools or write. Voice starts only after
+a click, visibly stops, honours cancel phrases and has a bounded continuation
+loop. Console errors, page overflow, missing mobile controls or authority text
+that contradicts the backend block release.
