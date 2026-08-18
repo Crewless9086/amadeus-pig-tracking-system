@@ -60,6 +60,28 @@ through an approved Oom Sakkie interface only when identity, digest, expiry and
 authority bind exactly. The owner must not repeat facts because the channel
 changed.
 
+## Preview, claim and execution identity
+
+The payload shown to the owner is the payload authorized for execution. Its
+normalized bytes and digest must bind the durable protected claim and the
+canonical executor without a channel-specific reconstruction. Serialization
+must be stable for Unicode and other non-ASCII values. `Unknown` is evidence
+state, never a database identifier or permission to infer a value.
+
+A protected confirmation binds the exact owner, approved private channel and
+provider card or interaction, canonical action identity, payload digest,
+evidence generation and expiry. The executor recomputes the digest, rejects a
+stale or mismatched claim, locks the claim and affected records, and revalidates
+current canonical eligibility immediately before effect. Completed exact replay
+is a no-op; competing, expired, changed or ambiguous input fails closed.
+
+Grouped actions commit all protected effects in one canonical transaction when
+the contract promises atomicity. A partial failure rolls the group back. A
+resumable application staging workflow may intentionally use row or chunk
+progress, but its interface and evidence must say so; it must not be described
+as equivalent to an atomic protected executor merely because both share a
+preview builder.
+
 ## Ownership
 
 The specialist owns business semantics and decision evidence. The application

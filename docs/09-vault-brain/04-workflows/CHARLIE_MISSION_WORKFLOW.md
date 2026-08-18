@@ -20,6 +20,38 @@ SAM conversation learning is grouped by conversation and classified before reach
 
 ## Mission Contract
 
+### Portfolio admission and execution eligibility
+
+Business lifecycle, portfolio eligibility and execution status are separate
+facts. A mission can remain `WORKING` while execution is `paused` and
+non-runnable. Finding evidence is not itself a mission: promotion requires an
+independent owner outcome, acceptance criteria, authority boundary, owner and
+current evidence. Duplicate scope is reconciled into the existing identity.
+
+Bootstrap admission uses one exact opaque mission identity and a structured,
+versioned admission contract. Exact replay is a no-write success; a differing
+replay conflicts. Admission alone grants no scheduling, pickup, recovery,
+dispatch, release or provider authority. Only explicitly admitted current
+missions may enter those rails.
+
+Current board, visible-terminal board and historical library are projections of
+one canonical mission and event contract. A register, worktree, shell, process
+or old wait is planning or collision evidence, never current activity proof
+without a fresh attributable heartbeat or result.
+
+### Shadow Control Tower observation
+
+Shadow Control Tower is disabled by default, observe-only and proposal-before-
+decision. It may consume sealed authenticated owner-private input and existing
+operational events, but receives no mission-pickup, execution, provider, merge,
+deployment or production-write credentials. It cannot dispatch, start a
+terminal, send a message, create a mission or manufacture a decision.
+
+Every observation, proposal and later human decision has an exact durable
+identity. Exact replay is a no-op; changed replay conflicts. Comparative
+learning uses distinct genuine proposal/decision pairs and never fabricates a
+comparison from historical chronology.
+
 Every mission must resolve to:
 
 - mission id;

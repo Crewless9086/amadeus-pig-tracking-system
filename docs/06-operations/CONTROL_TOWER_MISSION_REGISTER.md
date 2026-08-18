@@ -845,3 +845,19 @@ No deletion, migration, import, Sheets/Supabase write, route cutover, fallback
 retirement, deployment, provider, customer, farm or hardware action occurred.
 The remaining physical queue is 166 documents. Automatic promotion is Batch 18
 CORE mission-evidence reconciliation.
+
+### Vault Cutover Batch 18 - 2026-08-18
+
+Owner approved the ten-file CORE mission-evidence reconciliation slice. The
+reusable portfolio-admission, execution-eligibility, current/historical
+projection, Shadow observation, grouped preview, protected-claim, digest,
+atomic-execution and replay rules were consolidated into focused Vault files.
+All ten dated CMQ sources were archived intact and removed from active doctrine.
+
+Lifecycle: `WORKING / BATCH_18_CORE_MISSION_EVIDENCE_COMPLETE /
+BATCHES_19_TO_29_REMAIN`.
+
+No deletion, mission admission, classification, dispatch, execution, runtime,
+deployment, provider, customer, farm, database or hardware action occurred.
+The remaining physical queue is 156 documents. Automatic promotion is Batch 19
+sales-and-order mission-evidence reconciliation.

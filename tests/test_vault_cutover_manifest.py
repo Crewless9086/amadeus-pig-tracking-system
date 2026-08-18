@@ -74,6 +74,18 @@ BATCH17_ARCHIVED_FILES = {
     "docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md",
     "docs/06-operations/GS_MIG_FINAL_AUDIT.md",
 }
+BATCH18_ARCHIVED_FILES = {
+    "docs/06-operations/CMQ_20260813_03_APPLICATION_PREVIEW_WIRING_HANDOVER.md",
+    "docs/06-operations/CMQ_20260813_03_CANONICAL_CLAIM_EXECUTOR_COMPATIBILITY.md",
+    "docs/06-operations/CMQ_20260813_03_CANONICAL_PREVIEW_SOURCE_HANDOVER.md",
+    "docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md",
+    "docs/06-operations/CMQ_20260813_03_OOM_TYPED_PREVIEW_WIRING_HANDOVER.md",
+    "docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md",
+    "docs/06-operations/CMQ_20260813_05_CURRENT_PORTFOLIO_BASELINE_PLAN.md",
+    "docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md",
+    "docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md",
+    "docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -246,16 +258,29 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("Retire a fallback only after fresh route inventory", legacy)
         self.assertNotIn("docs/06-operations/GS_MIG_FINAL_AUDIT.md", active)
 
+    def test_batch18_archives_core_mission_evidence_after_rule_reconciliation(self):
+        for source in BATCH18_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        workflow = (ROOT / "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md").read_text(encoding="utf-8")
+        action = (ROOT / "docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md").read_text(encoding="utf-8")
+        source_map = (ROOT / "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md").read_text(encoding="utf-8")
+        self.assertIn("Portfolio admission and execution eligibility", workflow)
+        self.assertIn("Preview, claim and execution identity", action)
+        for source in BATCH18_ARCHIVED_FILES:
+            self.assertNotIn(f"`{source}`", source_map)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 166)
-        self.assertTrue(all(18 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 156)
+        self.assertTrue(all(19 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(18, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(19, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {18: 10, 19: 18, 20: 16, 21: 22,
+        expected = {19: 18, 20: 16, 21: 22,
                     22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}

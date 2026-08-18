@@ -17,10 +17,11 @@
 
 - Source contract: `modules/charlie/shadow_control_tower.py`.
 - Focused zero-authority tests: `tests/test_shadow_control_tower.py`.
-- Operating handover: `docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md`.
+- Governing mission/admission/Shadow rules: `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md`.
+- Historical operating handover: `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md`.
 - Storage: existing Supabase `operational_events` fabric at authority tier `observe`; no new queue, scheduler, agent, terminal fleet, schema or ledger.
 - Default state: disabled unless `CHARLIE_SHADOW_CONTROL_TOWER_ENABLED` is explicitly true. Human Control Tower remains sole dispatcher and decision authority.
-- Private observation input: `modules/charlie/shadow_control_tower_input.py`, registered only as the internal `observe_shadow_control_tower` private tool. `modules/charlie/private_runtime.py` supplies it through the existing authenticated structured-action boundary, using the sealed context defined by `modules/charlie/private_policy.py`. See `docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md`; no parser, route, delivery or runtime enablement is added.
+- Private observation input: `modules/charlie/shadow_control_tower_input.py`, registered only as the internal `observe_shadow_control_tower` private tool. `modules/charlie/private_runtime.py` supplies it through the existing authenticated structured-action boundary, using the sealed context defined by `modules/charlie/private_policy.py`. Historical evidence: `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md`; no parser, route, delivery or runtime enablement is added.
 - Input tests: `tests/test_shadow_control_tower_input.py` cover authentication, disabled state, mission binding, replay/conflict propagation and zero effects.
 - Canonical feedback ingress and subscription: `modules/charlie/control_tower_feedback.py`
   accepts only sealed owner-private `reconcile_control_tower_feedback` actions,
@@ -49,24 +50,25 @@
   release or Shadow scoring. Tests:
   `tests/test_private_opaque_mission_creation.py` and
   `tests/test_private_opaque_mission_creation_postgres.py`.
-- Bootstrap implementation handover:
-  `docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md`.
+- Bootstrap implementation evidence:
+  `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md`.
 - Legacy portfolio classification: `modules/charlie/portfolio_classification.py`
   implements the sealed exact-baseline/exact-set atomic operation documented in
-  `docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` and tested by
+  `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` and tested by
   `tests/test_portfolio_classification.py`. It is a non-admission dimension;
   generic events and all classified legacy runtime work remain fail closed.
 
 ## CMQ-20260813-03 grouped weights and movements
 
-- Discovery-only reconciliation: `docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md`
-- Unwired pure preview source handover: `docs/06-operations/CMQ_20260813_03_CANONICAL_PREVIEW_SOURCE_HANDOVER.md`
+- Governing channel/preview/claim/execution rules: `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
+- Historical discovery reconciliation: `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md`
+- Historical unwired pure preview source handover: `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_CANONICAL_PREVIEW_SOURCE_HANDOVER.md`
 - Pure contract: `modules/pig_weights/canonical_grouped_preview.py`
-- Application-only adapter wiring handover: `docs/06-operations/CMQ_20260813_03_APPLICATION_PREVIEW_WIRING_HANDOVER.md`
+- Historical application-only adapter wiring handover: `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_APPLICATION_PREVIEW_WIRING_HANDOVER.md`
 - Application adapter: `modules/pig_weights/application_grouped_preview_adapter.py`; only `pig_weights_controller.preview_bulk_weight_entries` is wired.
-- Typed OOM preview wiring handover: `docs/06-operations/CMQ_20260813_03_OOM_TYPED_PREVIEW_WIRING_HANDOVER.md`
+- Historical typed OOM preview wiring handover: `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_OOM_TYPED_PREVIEW_WIRING_HANDOVER.md`
 - Typed OOM adapter boundary: only `modules/oom_sakkie/grouped_weight_runtime.py` calls the pure contract after its existing natural interpretation and readiness preflight.
-- Canonical claim/executor compatibility: `docs/06-operations/CMQ_20260813_03_CANONICAL_CLAIM_EXECUTOR_COMPATIBILITY.md`; the displayed canonical digest, durable claim and grouped executor bind the same canonical payload while retaining exact legacy-claim compatibility.
+- Historical canonical claim/executor compatibility evidence: `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_CANONICAL_CLAIM_EXECUTOR_COMPATIBILITY.md`; the displayed canonical digest, durable claim and grouped executor bind the same canonical payload while retaining exact legacy-claim compatibility.
 - Control Tower separately cleared the pure contract, application preview adapter and typed OOM preview boundaries recorded above. This entry grants no executor, protected-action, deployment or runtime authority; every further adapter or execution integration requires a separately cleared file boundary.
 
 ## Agentic farm runtime and legacy retirement
