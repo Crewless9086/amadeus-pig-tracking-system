@@ -1,14 +1,9 @@
-# Decisions
+# Legacy Decision-Index Pointer
 
-## Purpose
+Lifecycle: `POINTER_ONLY / NON_DOCTRINE`.
 
-This folder records approved architecture and documentation decisions.
-
-## Rule
-
-Use ADRs for decisions that future agents or developers should not have to rediscover.
-
-## Register
-
-- `ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md`
-- `ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md` — Phase 0 terminology and configuration ownership.
+Current owner decisions are recorded in
+`../09-vault-brain/00-governance/OWNER_DECISIONS.md`. Files retained in this
+directory are dated decision evidence only and cannot override current Vault
+doctrine. New agent-facing decisions belong in the relevant existing Vault file
+and its changelog/history, not in a competing ADR authority tree.

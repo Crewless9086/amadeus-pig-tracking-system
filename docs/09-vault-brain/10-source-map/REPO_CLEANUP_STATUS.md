@@ -259,3 +259,12 @@ meat workflows and tests; the external index retains secret-handling rules; the
 forecast and Sunsynk READMEs retain current provider/ingest contracts.
 
 Vault doctrine remains authoritative. No physical or runtime effect occurred.
+
+## Vault Cutover Batch 9 - Legacy Navigation Pointers
+
+Status: `SLICE_COMPLETE / SEVEN POINTERS / ZERO DELETIONS`.
+
+Seven small legacy navigation/process files now contain only compatibility
+pointers to focused Vault authority. Their original content remains in Git
+history. Referenced CORE paths were retained, and no runtime, provider,
+production-data or authority change occurred.

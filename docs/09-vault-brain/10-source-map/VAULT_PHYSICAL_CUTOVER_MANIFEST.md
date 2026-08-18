@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: regenerated after approved Batch 8 reconciliation; no further physical change authorized.
+Status: regenerated after approved Batch 9 pointer cutover; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v5`
-Baseline: `6e1c058a6f41551916e5bb61830b817c0829230b`
-Generated from HEAD: `6e1c058a6f41551916e5bb61830b817c0829230b`
-Tracked Markdown/MDX files covered: **517**
+Version: `vault_physical_cutover_manifest_v6`
+Baseline: `0f765f921eab75c136c4dc12a799811bc794b15e`
+Generated from HEAD: `0f765f921eab75c136c4dc12a799811bc794b15e`
+Tracked Markdown/MDX files covered: **518**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 8 and proposes later
+This manifest records completed Batches 5 through 9 and proposes later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -21,10 +21,11 @@ keeps `physical_change_authorized: false`.
 | `KEEP_ARCHIVE` | 26 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
+| `KEEP_POINTER` | 7 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 176 |
-| `POINTER_AFTER_RECONCILIATION` | 18 |
+| `KEEP_VAULT` | 177 |
+| `POINTER_AFTER_RECONCILIATION` | 11 |
 | `RECONCILE_GENERATED_PROJECTION` | 9 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
 
@@ -38,6 +39,7 @@ keeps `physical_change_authorized: false`.
 - All nine reconciled `docs/05-ai` files are now preserved intact in the archive.
 - The two superseded external UI briefs are preserved intact in the archive.
 - The four remaining external candidates are retained as current technical/source evidence; the archive-candidate queue is empty.
+- Seven legacy navigation/process paths are minimal non-doctrine compatibility pointers to the Vault.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -48,23 +50,17 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Destination / replacement | Exact refs | Blockers |
 | --- | --- | --- | ---: | --- |
-| `CLAUDE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 3 | unique_fact_reconciliation_required |
+| `CLAUDE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 2 | unique_fact_reconciliation_required |
 | `docs/00-start-here/AGENT_ASSET_REGISTER.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 1 | unique_fact_reconciliation_required |
-| `docs/00-start-here/AGENT_PORTFOLIO_STATUS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 1 | unique_fact_reconciliation_required |
+| `docs/00-start-here/AGENT_PORTFOLIO_STATUS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 0 | unique_fact_reconciliation_required |
 | `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md` | 6 | unique_fact_reconciliation_required |
-| `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md` | 15 | unique_fact_reconciliation_required |
-| `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 8 | unique_fact_reconciliation_required |
-| `docs/00-start-here/CURRENT_STATE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 26 | unique_fact_reconciliation_required |
-| `docs/00-start-here/DEPLOYMENT_SOP.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md` | 11 | unique_fact_reconciliation_required |
-| `docs/00-start-here/GLOSSARY.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 0 | unique_fact_reconciliation_required |
-| `docs/00-start-here/HOW_WE_WORK.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 1 | unique_fact_reconciliation_required |
-| `docs/00-start-here/NEXT_STEPS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 31 | unique_fact_reconciliation_required |
-| `docs/00-start-here/OPERATING_STATUS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 1 | unique_fact_reconciliation_required |
-| `docs/00-start-here/OWNER_INBOX_GUIDE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 4 | unique_fact_reconciliation_required |
+| `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md` | 14 | unique_fact_reconciliation_required |
+| `docs/00-start-here/CURRENT_STATE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 24 | unique_fact_reconciliation_required |
+| `docs/00-start-here/DEPLOYMENT_SOP.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md` | 10 | unique_fact_reconciliation_required |
+| `docs/00-start-here/NEXT_STEPS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 28 | unique_fact_reconciliation_required |
+| `docs/00-start-here/OPERATING_STATUS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 0 | unique_fact_reconciliation_required |
+| `docs/00-start-here/OWNER_INBOX_GUIDE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 3 | unique_fact_reconciliation_required |
 | `docs/00-start-here/PRODUCT_VISION.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 6 | unique_fact_reconciliation_required |
-| `docs/00-start-here/PROJECT_OVERVIEW.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 1 | unique_fact_reconciliation_required |
-| `docs/00-start-here/README.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 8 | unique_fact_reconciliation_required |
-| `docs/00-start-here/WORKFLOW.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 9 | unique_fact_reconciliation_required |
 | `docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md` | 3 | runbook_history_split_required |
@@ -129,7 +125,7 @@ entry whose physical disposition needs later work or owner review.
 | `docs/06-operations/HERDMASTER_WEIGHING_BATCH_INTELLIGENCE_SOURCE_HANDOVER_20260811.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_WEIGHING_BATCH_INTELLIGENCE_SOURCE_HANDOVER_20260811.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/HERDMASTER_WHOLE_HERD_NEXT_ROUND_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_WHOLE_HERD_NEXT_ROUND_HANDOVER.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/HERDMASTER_ZIGAY_REVISED_SUPERSESSION_PREVIEW.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_ZIGAY_REVISED_SUPERSESSION_PREVIEW.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/MISSION_LOOP_CONTRACT.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/MISSION_LOOP_CONTRACT.md` | 3 | runbook_history_split_required |
+| `docs/06-operations/MISSION_LOOP_CONTRACT.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/MISSION_LOOP_CONTRACT.md` | 2 | runbook_history_split_required |
 | `docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md` | 1 | runbook_history_split_required |
 | `docs/06-operations/OOM_SAKKIE_AUTOMATIC_REASSESSMENT_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_AUTOMATIC_REASSESSMENT_HANDOVER.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/OOM_SAKKIE_BREEDING_ROUTING_TASK_RETIREMENT_HANDOVER_20260811.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_BREEDING_ROUTING_TASK_RETIREMENT_HANDOVER_20260811.md` | 1 | unique_fact_extraction_required |
@@ -193,8 +189,7 @@ entry whose physical disposition needs later work or owner review.
 | `docs/06-operations/goals/README.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/goals/README.md` | 0 | runbook_history_split_required |
 | `docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md` | 1 | unique_fact_extraction_required |
 | `docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md` | 1 | unique_fact_extraction_required |
-| `docs/07-decisions/README.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/00-governance/OWNER_DECISIONS.md` | 1 | unique_fact_reconciliation_required |
-| `docs/08-business-modules/FARM_CALENDAR_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/FARM_CALENDAR_PLAN.md` | 1 | unique_fact_extraction_required |
+| `docs/08-business-modules/FARM_CALENDAR_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/FARM_CALENDAR_PLAN.md` | 0 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` | 6 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md` | 2 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` | 9 | unique_fact_extraction_required |
@@ -206,9 +201,9 @@ entry whose physical disposition needs later work or owner review.
 | `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | 3 | unique_fact_extraction_required |
 | `docs/MIGRATION_INDEX.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md` | 1 | unique_fact_extraction_required |
 | `planning/CHARLIE_CORE_EXTENDED_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md` | 1 | unique_fact_extraction_required |
-| `planning/CODEX_CHAT.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CODEX_CHAT.md` | 22 | unique_fact_extraction_required |
+| `planning/CODEX_CHAT.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CODEX_CHAT.md` | 21 | unique_fact_extraction_required |
 | `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | 4 | unique_fact_extraction_required |
-| `planning/ToDoList.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/ToDoList.md` | 15 | unique_fact_extraction_required |
+| `planning/ToDoList.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/ToDoList.md` | 12 | unique_fact_extraction_required |
 | `planning/inbox/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/inbox/README.md` | 0 | unique_fact_extraction_required |
 | `planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md` | 1 | unique_fact_extraction_required |
 | `planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md` | 1 | unique_fact_extraction_required |
@@ -221,7 +216,7 @@ entry whose physical disposition needs later work or owner review.
 | `planning/storyworks/PHASE_0_VALIDATION_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_VALIDATION_PLAN.md` | 1 | unique_fact_extraction_required |
 | `planning/storyworks/PILOT_SCORECARD.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PILOT_SCORECARD.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/PRODUCTION_PLAYBOOK.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PRODUCTION_PLAYBOOK.md` | 1 | unique_fact_extraction_required |
-| `planning/storyworks/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/README.md` | 2 | unique_fact_extraction_required |
+| `planning/storyworks/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/README.md` | 1 | unique_fact_extraction_required |
 | `planning/storyworks/RIGHTS_AND_PROVENANCE_POLICY.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/RIGHTS_AND_PROVENANCE_POLICY.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/STATUS.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/STATUS.md` | 1 | unique_fact_extraction_required |
 | `planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md` | 1 | unique_fact_extraction_required |

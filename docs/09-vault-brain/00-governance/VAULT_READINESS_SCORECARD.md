@@ -150,3 +150,13 @@ current technical/source evidence. None passed the strict deletion test.
 
 Current honest state: `ARCHIVE_CANDIDATE_QUEUE_EMPTY /
 CURRENT_EXTERNAL_REFERENCES_PRESERVED / ZERO_DELETIONS`.
+
+## Batch 9 Legacy Navigation Pointers - 2026-08-18
+
+Seven competing start-here/process/decision-index documents were reconciled and
+reduced to non-doctrine compatibility pointers. Current commands and contracts
+route to focused Vault workflows and standards; dated priorities and obsolete
+n8n/Sheets assumptions were not promoted.
+
+Current honest state: `SEVEN_COMPATIBILITY_POINTERS /
+ZERO_DELETIONS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.

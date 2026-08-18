@@ -197,3 +197,11 @@ or ambiguous attempts, or mark owner-card cleanup as customer completion.
 ## Agentic Architecture Gate
 
 Brain Guard must enforce `../07-standards/AGENTIC_ARCHITECTURE_STANDARD.md`. A mission may not add a question-specific CHARLIE handler when the outcome belongs to a domain agent. Review evidence must identify the owning agent and explain why new code is deterministic calculation, validation, governance or execution infrastructure rather than substituted domain intelligence.
+
+## Batch 9 Compatibility-Pointer Gate
+
+The seven reconciled legacy start-here/decision-index paths are compatibility
+pointers only. Brain Guard must reject them as doctrine sources and require the
+focused Vault file named by each pointer. Their continued presence preserves
+CORE consumers and links; it does not restore their former phase, architecture,
+review, priority, glossary or ADR authority.

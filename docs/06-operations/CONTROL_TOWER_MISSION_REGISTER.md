@@ -707,3 +707,17 @@ NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
 The manifest now contains zero `ARCHIVE_CANDIDATE` entries. Vault doctrine
 remains authoritative over the retained technical/source evidence. No move,
 deletion, runtime, provider, production-data or authority change occurred.
+
+### Vault Cutover Batch 9 - 2026-08-18
+
+Owner approved the legacy navigation/process pointer slice. Seven files were
+read completely, reference-audited and reduced to short compatibility pointers
+after their durable rules were confirmed in focused Vault files.
+
+Lifecycle: `WORKING / BATCH_9_LEGACY_POINTERS_COMPLETE /
+NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
+
+No path was deleted because CORE consumers and historical references still use
+some of them. No runtime, provider, production-data or authority change
+occurred. Automatic promotion requires a fresh bounded owner authorization
+using the regenerated manifest.

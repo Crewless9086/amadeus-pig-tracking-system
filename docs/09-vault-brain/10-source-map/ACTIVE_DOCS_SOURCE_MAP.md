@@ -190,6 +190,10 @@ Batch 8 retained the remaining external candidates as technical/source evidence
 after complete review. They cannot act as agent doctrine. See
 `VAULT_CUTOVER_BATCH8_RECONCILIATION.md`.
 
-- `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (historical review evidence;
-  excluded from current architecture/review authority pending Phase 0 register)
+Batch 9 reduced seven legacy start-here/process/decision-index paths to minimal
+compatibility pointers. They remain loadable but are never active doctrine. See
+`VAULT_CUTOVER_BATCH9_RECONCILIATION.md`.
+
+- `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (non-doctrine compatibility
+  pointer to current Vault review standards)
 - `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`

@@ -4,10 +4,11 @@
 
 1. Latest direct owner instruction.
 2. Supabase/runtime records for live state.
-3. Vault Brain after owner review.
-4. Active `docs/00-start-here/`.
-5. Module-specific active docs.
-6. Planning scratchpads and archived docs.
+3. Current Control Tower Mission Register and canonical Runtime Programme.
+4. Current focused Vault Brain doctrine under the lifecycle standard.
+5. Current technical/runtime evidence, used only inside the doctrine boundary.
+6. Planning, handovers, compatibility pointers, static projections, superseded
+   evidence and archives; never authority.
 
 ## Operating Truth
 
