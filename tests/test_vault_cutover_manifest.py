@@ -11,6 +11,12 @@ BATCH5_TOP_LEVEL_AI_FILES = {
     "README.md",
     "RESPONSE_RULES.md",
 }
+BATCH6_AGENT_AI_FILES = {
+    "agents/beacon/BEACON_SCOPE.md",
+    "agents/beacon/MEDIA_STORAGE_DECISION.md",
+    "agents/beacon/README.md",
+    "agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -76,6 +82,14 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         )
         active_section = active_map.split("## Archived After Migration", 1)[0]
         self.assertNotIn("docs/99-archive/vault-cutover/docs/05-ai/", active_section)
+
+    def test_batch6_removes_remaining_ai_docs_from_active_tree(self):
+        for relative in BATCH6_AGENT_AI_FILES:
+            self.assertNotIn(f"docs/05-ai/{relative}", self.entries)
+            archived = f"docs/99-archive/vault-cutover/docs/05-ai/{relative}"
+            self.assertIn(archived, self.entries)
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        self.assertFalse(any(path.startswith("docs/05-ai/") for path in self.entries))
 
 
 if __name__ == "__main__":

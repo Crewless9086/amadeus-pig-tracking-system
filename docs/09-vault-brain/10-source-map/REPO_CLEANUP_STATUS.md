@@ -14,7 +14,7 @@ Goal: make the repo clean without deleting operational memory, workflow contract
 | `docs/02-backend/` | Active technical contracts and migration plans. | Keep active beside code; migrate doctrine into Vault. |
 | `docs/03-google-sheets/` | Legacy/runtime schema truth. | Keep while Sheets remain fallback/reference. |
 | `docs/04-n8n/` | Active workflow/runtime contracts. | Keep beside n8n exports; Vault carries doctrine. |
-| `docs/05-ai/` | Agent-specific legacy implementation references only. | Top-level governance archived in Batch 5; reconcile the remaining BEACON/SAM files in later bounded slices. |
+| `docs/05-ai/` | No tracked documents remain after Batches 5 and 6. | Legacy files are preserved under the Vault cutover archive; runtime retrieval must not load them as current sources. |
 | `docs/06-operations/` | Runbooks, test evidence, migration reports. | Keep; extract standards/playbooks into Vault. Archive only superseded reports after owner approval. |
 | `docs/08-business-modules/` | Business source docs. | Keep as active references until owner accepts Vault replacements. |
 | `docs/99-archive/` | Archive. | Keep. Use for old scratch/plans. |
@@ -219,7 +219,20 @@ were reconciled, moved intact to
 `docs/99-archive/vault-cutover/docs/05-ai/`, and removed from active doctrine
 and active-reference routing.
 
-The agent-specific BEACON and SAM files remain physically in `docs/05-ai`.
+At the end of Batch 5, the agent-specific BEACON and SAM files remained
+physically in `docs/05-ai`.
 No runtime, provider, production-data, authority or deployed-agent behavior
 changed. The regenerated manifest is the source for the next owner-reviewed
 slice and grants no further physical authority.
+
+## Vault Cutover Batch 6 - Remaining AI References
+
+Status: `SLICE_COMPLETE / DOCS_05_AI_FULLY_ARCHIVED / ZERO DELETIONS`.
+
+The three BEACON documents and one SAM v3 build plan that remained under
+`docs/05-ai` were reconciled and archived intact. Current authority resolves to
+focused Vault packs; current technical truth resolves to code, migrations,
+tests, provider evidence and the Implementation Source Map.
+
+No runtime or production effect occurred. The regenerated manifest grants no
+further physical authority.

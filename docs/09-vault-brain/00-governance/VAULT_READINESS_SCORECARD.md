@@ -124,3 +124,12 @@ DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 
 Further cleanup remains owner-bounded. The regenerated manifest authorizes no
 additional move or deletion.
+
+## Batch 6 Agent-Specific AI Archive Result - 2026-08-18
+
+The remaining four agent-specific `docs/05-ai` documents are archived intact.
+The active tree no longer exposes that legacy AI folder as doctrine or an
+implementation reference.
+
+Current honest state: `DOCS_05_AI_ARCHIVED / ZERO_DELETIONS /
+DEPLOYED_BRAIN_GUARD_UNPROVEN`.

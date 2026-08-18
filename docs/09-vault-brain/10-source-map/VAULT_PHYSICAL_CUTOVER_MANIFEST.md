@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: regenerated after approved Batch 5 slice; no further physical change authorized.
+Status: regenerated after approved Batch 6 slice; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v2`
-Baseline: `5865cc7c6300edc2f0e47d4780c05cbd3a8be020`
-Generated from HEAD: `5865cc7c6300edc2f0e47d4780c05cbd3a8be020`
-Tracked Markdown/MDX files covered: **514**
+Version: `vault_physical_cutover_manifest_v3`
+Baseline: `fdd208bab45947badbc4c48f9b1dd0b9bc168bf8`
+Generated from HEAD: `fdd208bab45947badbc4c48f9b1dd0b9bc168bf8`
+Tracked Markdown/MDX files covered: **515**
 Validation: **PASS**
 
-This manifest records the completed Batch 5 archive slice and proposes later
+This manifest records the completed Batch 5 and 6 archive slices and proposes later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -18,13 +18,13 @@ keeps `physical_change_authorized: false`.
 | Disposition | Count |
 | --- | ---: |
 | `ARCHIVE_CANDIDATE` | 6 |
-| `EXTRACT_THEN_ARCHIVE` | 112 |
-| `KEEP_ARCHIVE` | 20 |
+| `EXTRACT_THEN_ARCHIVE` | 108 |
+| `KEEP_ARCHIVE` | 24 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_TECHNICAL` | 27 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 173 |
+| `KEEP_VAULT` | 174 |
 | `POINTER_AFTER_RECONCILIATION` | 18 |
 | `RECONCILE_GENERATED_PROJECTION` | 9 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
@@ -36,7 +36,7 @@ keeps `physical_change_authorized: false`.
 - A delete candidate requires zero exact path references, an exact replacement, a tiny retired/superseded source, and later owner approval.
 - Pointer conversion requires unique-fact reconciliation first.
 - Static agent cards require a proven generated projection before replacement.
-- Five reconciled top-level `docs/05-ai` files are now preserved intact in the archive.
+- All nine reconciled `docs/05-ai` files are now preserved intact in the archive.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -64,10 +64,6 @@ entry whose physical disposition needs later work or owner review.
 | `docs/00-start-here/PROJECT_OVERVIEW.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 1 | unique_fact_reconciliation_required |
 | `docs/00-start-here/README.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 8 | unique_fact_reconciliation_required |
 | `docs/00-start-here/WORKFLOW.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 9 | unique_fact_reconciliation_required |
-| `docs/05-ai/agents/beacon/BEACON_SCOPE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/BEACON_SCOPE.md` | 11 | unique_fact_extraction_required |
-| `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md` | 7 | unique_fact_extraction_required |
-| `docs/05-ai/agents/beacon/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/README.md` | 0 | unique_fact_extraction_required |
-| `docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md` | 3 | unique_fact_extraction_required |
 | `docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md` | 3 | runbook_history_split_required |
@@ -200,7 +196,7 @@ entry whose physical disposition needs later work or owner review.
 | `docs/08-business-modules/FARM_CALENDAR_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/FARM_CALENDAR_PLAN.md` | 1 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` | 6 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md` | 2 | unique_fact_extraction_required |
-| `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` | 8 | unique_fact_extraction_required |
+| `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` | 9 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_SALES_STRESS_TEST_REPORT.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_STRESS_TEST_REPORT.md` | 0 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md` | 2 | unique_fact_extraction_required |
 | `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md` | 8 | unique_fact_extraction_required |

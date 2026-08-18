@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-18 - Vault cutover Batch 6 remaining AI archive
+
+- Archived the remaining three BEACON legacy documents and SAM v3 build plan
+  intact; no deletion was performed.
+- Retired the legacy BEACON README claim that those files were source of truth.
+- Redirected active doctrine to focused Vault packs and technical references to
+  current implementation truth or explicit archive evidence.
+- Added a unique-fact reconciliation record and regenerated the manifest.
+- Performed no runtime, provider, production-data or authority change.
+
 ## 2026-08-18 - Vault cutover Batch 5 first physical slice
 
 - Reconciled and archived the five top-level `docs/05-ai` governance files

@@ -76,7 +76,7 @@ repository-root path.
 | Code/tests/schema/provider records | No; implementation/runtime truth only | Keep near implementation |
 | Technical runbooks | No; procedure only under Vault rules | Keep active technical reference |
 | n8n/Sheets documents | No; transitional evidence only | Retain until named exit test, then archive review |
-| `docs/05-ai`, business modules and legacy architecture | No after focused Vault reconciliation | Agent-audit queue; pointer/archive/delete proposal later |
+| Retired legacy AI folder, business modules and legacy architecture | No after focused Vault reconciliation | Agent-audit queue; pointer/archive/delete proposal later |
 | Planning, prompts and inbox material | Never | Extract unique decisions, then archive/delete proposal |
 | Handovers and evidence logs | Never | Split durable rule from dated evidence; retain history |
 | Static agent asset notes | Never | Replace with generated/reconciled Vault projections |
@@ -110,9 +110,6 @@ architecture. Their use is bounded by the Agentic Farm Runtime Programme.
 The files in this section are active implementation/history references only.
 They are not agent doctrine and must not enter a mandatory pack.
 
-- `docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md`
-- `docs/05-ai/agents/beacon/BEACON_SCOPE.md`
-- `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md`
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
 - `docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md`
 - `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
@@ -174,10 +171,14 @@ Owner-review cutover artifacts:
 These artifacts propose future physical disposition only. They are not doctrine
 and never authorize a move, archive, deletion or pointer rewrite.
 
-Batch 5 archived the five reconciled top-level `docs/05-ai` governance files
+Batch 5 archived the five reconciled top-level legacy AI governance files
 intact. Their active role, prompt and response authority now resolves only
 through the focused Vault packs. See `VAULT_CUTOVER_BATCH5_RECONCILIATION.md`
 for the unique-fact disposition and archive evidence.
+
+Batch 6 archived the remaining BEACON and SAM documents from that legacy
+family. No tracked legacy AI document remains active. See
+`VAULT_CUTOVER_BATCH6_RECONCILIATION.md` for the unique-fact disposition.
 
 ## Archived After Migration
 

@@ -377,8 +377,6 @@ IMPLEMENTATION_SOURCE_MAP = {
             "supabase/migrations/202606180006_extend_beacon_facebook_post_execution_statuses.sql",
         ],
         "legacy_sources": [
-            "docs/05-ai/agents/beacon/BEACON_SCOPE.md",
-            "docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md",
             "docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
         ],
         "must_inspect_before_advice": True,

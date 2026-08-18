@@ -664,3 +664,17 @@ changed. No deletion occurred. The agent-specific BEACON and SAM legacy files
 remain in place. Automatic promotion requires a fresh owner approval for one
 next coherent slice selected from the regenerated manifest; every deletion
 continues to require a separate exact deletion approval.
+
+### Vault Cutover Batch 6 - 2026-08-18
+
+Owner authorized continuation as the next bounded no-deletion slice. The four
+remaining agent-specific files under `docs/05-ai` were reconciled and archived
+intact. Active BEACON and SAM authority now resolves only through focused Vault
+packs; dated scope, storage and implementation plans remain archive evidence.
+
+Lifecycle: `WORKING / BATCH_6_DOCS_05_AI_ARCHIVED /
+NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
+
+No deletion, runtime, provider, production-data or authority change occurred.
+Automatic promotion requires a fresh bounded owner authorization using the
+regenerated manifest.

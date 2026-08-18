@@ -65,7 +65,9 @@ Qualification comes from explicit SAM lead status, orders require a resolvable `
 5. A prepared entry is an immutable owner-review evidence snapshot. It is not a timer, runnable job, queue item, webhook, post, send, boost, reservation, order, stock action, or farm write.
 6. Revocation and pauses block current use without rewriting historical preparation evidence.
 
-Source reference: `docs/05-ai/agents/beacon/BEACON_SCOPE.md`.
+Authority source: `../02-agents/marketing/BEACON.md`,
+`../08-business-rules/MARKETING_RULES.md` and
+`../08-business-rules/MEDIA_PRIVACY_RULES.md`.
 
 ## Creative Studio Evaluation Lane
 
