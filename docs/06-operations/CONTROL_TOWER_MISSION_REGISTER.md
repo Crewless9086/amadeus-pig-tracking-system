@@ -2189,6 +2189,13 @@ fresh progress proof. SALES and Revenue are released; BEACON is dependency-idle
 on its live protected card; deployed schedules are operational but outcomes remain
 partial.
 
+`SALES + HERDMASTER - ORDER RECORDING FINISH` was additionally dispatched in a
+fresh current-main worktree. It owns the protected draft/selection/reservation/
+completion UI and downstream cohort reconciliation needed to record owner-reported
+Sunday sales of tags 123 and 151. The terminal may deploy and prove a zero-write
+journey, but may not create the real order/sale or infer missing buyer, movement or
+commercial facts; final mutation remains one explicit protected confirmation.
+
 Existing Slot 2 was immediately resumed as `ROOTLINE - PLAN AND AUTHORITY
 RECOVERY`. It must consume Charl's already recorded 18:03 SAST Telegram evidence
 “Reservoir is full”, reconcile the one authoritative plan and Oom Sakkie delivery,
