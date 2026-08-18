@@ -2,7 +2,7 @@
 
 from datetime import date, datetime, timedelta, timezone
 
-CONTRACT_VERSION = "livestock_quote_preview_v2"
+CONTRACT_VERSION = "livestock_quote_preview_v3"
 SALE_RECORDING_PREVIEW_VERSION = "livestock_sale_recording_preview_v1"
 WEIGHT_RANGES = {
     "2_to_4_Kg": (2, 4), "5_to_6_Kg": (5, 6), "7_to_9_Kg": (7, 9),
@@ -67,6 +67,8 @@ def build_livestock_quote_preview(requested_items, herdmaster_packet, observed_a
         shortfall = max(0, quantity - supported)
         status = ("unavailable" if shortfall == quantity else "partial" if shortfall
                   else "projected" if counts["projected_growth"] else "supported")
+        priced = [candidate for candidate in rendered if candidate.get("unit_price") is not None]
+        unit_prices = sorted({candidate["unit_price"] for candidate in priced})
         recommendations.append({
             "request_item_key": item.get("request_item_key"),
             "category": item.get("category"), "weight_range": band, "sex": sex,
@@ -75,6 +77,11 @@ def build_livestock_quote_preview(requested_items, herdmaster_packet, observed_a
             "near_match_count": counts["near_match"],
             "projected_count": counts["projected_growth"],
             "supported_count": supported, "shortfall_quantity": shortfall,
+            "available_quantity": supported,
+            "unit_price": unit_prices[0] if len(unit_prices) == 1 else None,
+            "priced_quantity": len(priced),
+            "recommended_subtotal": (sum(candidate["unit_price"] for candidate in priced)
+                                     if priced else None),
             "candidates": rendered,
             "purpose_or_evidence_review_count": len(review),
         })
@@ -122,8 +129,6 @@ def build_already_sold_recording_preview(payload, herdmaster_packet, observed_at
         "buyer_name": "Buyer name is required; it cannot be inferred from the owner report.",
         "sale_channel": "Sale channel is required.",
         "movement_destination": "Movement destination is required.",
-        "movement_evidence_reference": "Movement evidence reference is required.",
-        "health_evidence_reference": "Health/transport evidence reference is required.",
     }
     missing_fields = []
     for field, message in required.items():
@@ -153,7 +158,7 @@ def build_already_sold_recording_preview(payload, herdmaster_packet, observed_at
     }
     import hashlib, json
     preview_digest = hashlib.sha256(json.dumps(digest_input, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    ready = not errors and len(pigs) == len(tags)
+    ready = False
     return {
         "success": True,
         "contract_version": SALE_RECORDING_PREVIEW_VERSION,
@@ -167,10 +172,13 @@ def build_already_sold_recording_preview(payload, herdmaster_packet, observed_at
         "errors": errors,
         "ready_for_protected_confirmation": ready,
         "preview_digest": preview_digest,
-        "confirmation_scope": (
-            "Create or reuse one Livestock order, attach only these explicitly selected pigs, "
-            "complete the sale, append lifecycle/audit evidence, and reconcile downstream eligibility atomically."
-        ),
+        "confirmation_scope": "This preview cannot record a sale. Use the existing protected Livestock order completion rail.",
+        "next_protected_action": {
+            "surface": "/orders/new then the exact order detail",
+            "action": "Create or reuse one Livestock order, add only the evidenced sold pigs as explicit lines, record actual price/payment and handover facts, then complete the order through the protected lifecycle action.",
+            "required_evidence": ["exact pig tags", "sale date", "buyer", "sale channel", "movement destination", "actual per-line price", "payment state", "handover/collection fact"],
+            "not_required_unless_actually_recorded": ["veterinary certificate", "quarantine clearance", "infectious-disease clearance", "transport-fitness certificate", "movement-clearance reference"],
+        },
         "correction_available_after_recording": True,
         "writes_performed": False,
         "creates_order": False,
@@ -180,7 +188,7 @@ def build_already_sold_recording_preview(payload, herdmaster_packet, observed_at
         "changes_pig_state": False,
         "generates_document": False,
         "sends_customer_message": False,
-        "authority_boundary": "Owner-reported sale evidence remains a preview until one explicit protected confirmation.",
+        "authority_boundary": "Owner conversation alone does not mark pigs sold. The canonical protected Livestock order completion rail requires the actual commercial and handover facts.",
     }
 
 
@@ -218,6 +226,16 @@ def _render_candidate(authority, match_state, projected_target_date=None):
             "reason": "Latest weight evidence is missing, future-dated, or older than 14 days at the packet cutoff.",
             "evidence_ids": [str(current.get("latest_weight_date") or "missing_weight_date")],
         }
+    price_rule = ((authority.get("price_band_compatibility") or {}).get("separate_price_rule") or {})
+    food_chain = authority.get("food_chain_eligibility") or {}
+    disclosure = authority.get("treatment_disclosure")
+    medicine_indicator = (
+        f"Food-chain restriction through {disclosure.get('withdrawal_end_date')}"
+        if disclosure else
+        "No current recorded food-chain restriction"
+        if food_chain.get("state") != "blocked" else
+        "Recorded food-chain status unavailable"
+    )
     return {
         "pig_id": str(identity.get("pig_id") or ""),
         "tag_number": str(identity.get("tag_number") or ""),
@@ -226,8 +244,14 @@ def _render_candidate(authority, match_state, projected_target_date=None):
         "weight_date": current.get("latest_weight_date"), "match_state": match_state,
         "projected_target_date": projected_target_date,
         "purpose": current.get("purpose"),
+        "unit_price": _number(price_rule.get("unit_price")),
+        "currency": price_rule.get("currency") or "ZAR",
+        "weight_confidence": ("fresh" if _weight_is_fresh(current.get("latest_weight_date"),
+                                                            _date(authority.get("evidence_cutoff_date")))
+                              else "fresh_weight_requested"),
+        "medicine_indicator": medicine_indicator,
         "recommendable": _recommendable(authority) and match_state != "weight_evidence_review",
-        "treatment_disclosure": authority.get("treatment_disclosure"),
+        "treatment_disclosure": disclosure,
         "authority_axes": axes,
     }
 
@@ -252,11 +276,14 @@ def _add_grouped_review(groups, candidate):
 
 def _candidate_state(weight, low, high, average_daily_gain, latest_weight_date, cutoff):
     measured = _date(latest_weight_date)
-    if not measured or not 0 <= (cutoff - measured).days <= MAX_WEIGHT_AGE_DAYS:
+    if not measured or (cutoff - measured).days < 0:
         distance = 0 if low <= weight <= high else low - weight if weight < low else weight - high
         return "weight_evidence_review", distance, None
     if low <= weight <= high:
         return "exact_match", 0, None
+    if (cutoff - measured).days > MAX_WEIGHT_AGE_DAYS:
+        distance = low - weight if weight < low else weight - high
+        return "weight_evidence_review", distance, None
     distance = low - weight if weight < low else weight - high
     if 0 < distance <= 2:
         gain = _number(average_daily_gain) or 0
@@ -294,3 +321,9 @@ def _number(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _weight_is_fresh(value, cutoff):
+    measured = _date(value)
+    cutoff = cutoff or date.today()
+    return bool(measured and 0 <= (cutoff - measured).days <= MAX_WEIGHT_AGE_DAYS)

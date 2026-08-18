@@ -40,7 +40,9 @@ def candidate(pig_id, tag, sex, weight, *, transfer="eligible_on_current_evidenc
         "active_on_farm_eligibility": axis("eligible"),
         "current_order_eligibility": axis("candidate_not_added"),
         "order_line_duplication_protection": axis("no_existing_line"),
-        "price_band_compatibility": axis("compatible"),
+        "price_band_compatibility": {"state": "compatible", "reason": "supported",
+                                     "evidence_ids": [], "separate_price_rule":
+                                     {"unit_price": 650, "currency": "ZAR"}},
         "canonical_dependency_evidence": {}, "canonical_treatment_events": [],
         "treatment_disclosure": disclosure,
     }
@@ -59,14 +61,15 @@ class LivestockQuotePreviewTests(unittest.TestCase):
             packet([candidate("P123", "123", "Male", 5.6), candidate("P151", "151", "Male", 4.0)]),
         )
         self.assertFalse(result["ready_for_protected_confirmation"])
-        self.assertEqual(set(result["missing_fields"]), {"buyer_name", "sale_channel", "movement_destination", "movement_evidence_reference", "health_evidence_reference"})
+        self.assertEqual(set(result["missing_fields"]), {"buyer_name", "sale_channel", "movement_destination"})
         self.assertFalse(result["writes_performed"])
         self.assertFalse(result["changes_pig_state"])
 
     def test_already_sold_complete_form_binds_exact_pigs(self):
         payload = {"tag_numbers":["123","151"], "sold_date":"2026-08-16", "buyer_name":"Named buyer", "sale_channel":"Farm gate", "movement_destination":"Named destination", "movement_evidence_reference":"MOVE-REF", "health_evidence_reference":"HEALTH-REF"}
         result = build_already_sold_recording_preview(payload, packet([candidate("P123", "123", "Male", 5.6), candidate("P151", "151", "Male", 4.0)]))
-        self.assertTrue(result["ready_for_protected_confirmation"])
+        self.assertFalse(result["ready_for_protected_confirmation"])
+        self.assertIn("protected Livestock order completion rail", result["confirmation_scope"])
         self.assertEqual([row["tag_number"] for row in result["selected_pigs"]], ["123", "151"])
         self.assertRegex(result["preview_digest"], r"^[0-9a-f]{64}$")
         self.assertFalse(result["creates_order"])
@@ -84,6 +87,10 @@ class LivestockQuotePreviewTests(unittest.TestCase):
         self.assertEqual(len(set(selected)), 22)
         self.assertFalse(result["writes_performed"])
         self.assertEqual(result["reservation_state"], "not_reserved")
+        self.assertTrue(all(row["recommended_subtotal"] is not None
+                            for row in result["recommendations"]))
+        self.assertTrue(all(pig["medicine_indicator"]
+                            for row in result["recommendations"] for pig in row["candidates"]))
 
     def test_exact_near_projected_and_shortfall_are_separate(self):
         pigs = [candidate("E", "1", "Male", 5.5), candidate("N", "2", "Male", 6.8, adg=0),
@@ -116,14 +123,15 @@ class LivestockQuotePreviewTests(unittest.TestCase):
                              if group["blocking_axis"] == "weight_evidence")
         self.assertEqual({row["pig_id"] for row in weight_review["candidates"]}, {"OLD", "FUT"})
 
-    def test_stale_exact_weight_is_review_only(self):
+    def test_stale_exact_weight_is_recommended_with_fresh_weight_request(self):
         stale = candidate("OLD-EXACT", "OE", "Male", 5.5)
         stale["current_state"]["latest_weight_date"] = "2026-07-01"
         result = build_livestock_quote_preview([
             {"request_item_key": "m", "category": "Piglet", "weight_range": "5_to_6_Kg", "sex": "Male", "quantity": 1}
         ], packet([stale]))
-        self.assertEqual(result["recommendations"][0]["supported_count"], 0)
-        self.assertEqual(result["recommendations"][0]["shortfall_quantity"], 1)
+        self.assertEqual(result["recommendations"][0]["supported_count"], 1)
+        self.assertEqual(result["recommendations"][0]["shortfall_quantity"], 0)
+        self.assertEqual(result["recommendations"][0]["candidates"][0]["weight_confidence"], "fresh_weight_requested")
 
     def test_unknown_and_non_sale_are_grouped_and_never_counted(self):
         disclosure = {"medical_event_id": "MED-1", "safe_buyer_wording": "Food-chain withdrawal applies."}

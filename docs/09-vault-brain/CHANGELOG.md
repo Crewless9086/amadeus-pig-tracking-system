@@ -1,5 +1,12 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - Livestock quote and live-transfer doctrine reconciled
+
+- Separated live-animal sale/transfer from slaughter and food-chain medicine withdrawal.
+- Made only genuinely recorded health, welfare, quarantine, movement, sale and lifecycle restrictions live-sale blockers; absent clearance records are not manufactured.
+- Allowed requested-items draft quotes to retain partial or `Unavailable` recommendations with no allocation or reservation, while stale weight lowers confidence.
+- Bound already-completed sale recording to the existing protected Livestock order-completion rail instead of inventing veterinary or movement-clearance evidence.
+
 ## 2026-08-19 - Oom Sakkie timeout closure and overnight outcome recovery
 
 - Reconciled the deployed post-Brain-Guard manager timeout repair: two natural
