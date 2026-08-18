@@ -955,3 +955,18 @@ BATCHES_25_TO_29_REMAIN`.
 No customer send, provider action, order, reservation, payment, stock, farm,
 database or runtime action occurred. The remaining physical queue is 52
 documents. Automatic promotion is Batch 25 business-module reconciliation.
+
+### Vault Cutover Batch 25 - 2026-08-18
+
+Owner approved continuation. The exact manifest family contained ten
+farm-calendar and meat/pork/SAM business-module sources. Their durable calendar,
+production, commercial, cutting, payment, campaign, knowledge and allocation
+rules were consolidated into focused Vault authority; all ten sources were
+archived intact.
+
+Lifecycle: `WORKING / BATCH_25_BUSINESS_MODULES_COMPLETE /
+BATCHES_26_TO_29_REMAIN`.
+
+No customer send, public post, provider action, order, reservation, payment,
+stock, farm, database or runtime action occurred. The remaining physical queue
+is 42 documents. Automatic promotion is Batch 26 planning/inbox reconciliation.

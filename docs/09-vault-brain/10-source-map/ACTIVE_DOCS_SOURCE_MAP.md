@@ -102,18 +102,11 @@ architecture. Their use is bounded by the Agentic Farm Runtime Programme.
 - `docs/04-n8n/DATA_FLOW.md`
 - `docs/04-n8n/NODE_RESPONSIBILITIES.md`
 
-## Legacy Agent And Business References
+## Current Business Implementation References
 
-The files in this section are active implementation/history references only.
-They are not agent doctrine and must not enter a mandatory pack.
+These configuration and focused-rule files support implementation but do not
+replace the applicable mandatory agent pack.
 
-- `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
-- `docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md`
-- `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
-- `docs/08-business-modules/PORK_SALES_MODEL.md`
-- `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md`
-- `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md`
-- `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md`
 - `config/sam_farm_knowledge.json`
 - `docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md`
 - `docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md`

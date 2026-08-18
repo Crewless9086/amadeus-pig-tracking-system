@@ -16,7 +16,7 @@ Goal: make the repo clean without deleting operational memory, workflow contract
 | `docs/04-n8n/` | Active workflow/runtime contracts. | Keep beside n8n exports; Vault carries doctrine. |
 | `docs/05-ai/` | No tracked documents remain after Batches 5 and 6. | Legacy files are preserved under the Vault cutover archive; runtime retrieval must not load them as current sources. |
 | `docs/06-operations/` | Runbooks, test evidence, migration reports. | Keep; extract standards/playbooks into Vault. Archive only superseded reports after owner approval. |
-| `docs/08-business-modules/` | Business source docs. | Keep as active references until owner accepts Vault replacements. |
+| `docs/08-business-modules/` | Physically retired in Batch 25. | Originals preserved under `docs/99-archive/vault-cutover/`; focused Vault packs are authoritative. |
 | `docs/99-archive/` | Archive. | Keep. Use for old scratch/plans. |
 | `planning/CODEX_CHAT.md` | Active runner scratchpad. | Keep. Do not commit incidental runner dirt unless mission requires it. |
 | `planning/ToDoList.md` | Owner scratch/inbox. | Keep as live scratchpad. |

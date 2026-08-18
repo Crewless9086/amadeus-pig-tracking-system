@@ -75,6 +75,6 @@ Butcher may recommend matches and warn about overbooking. It cannot book slaught
 
 ## Source References
 
-- `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
-- `docs/08-business-modules/PORK_SALES_MODEL.md`
-- `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
+- `docs/09-vault-brain/03-business/MEAT_SALES.md`
+- `docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`
+- `docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md`

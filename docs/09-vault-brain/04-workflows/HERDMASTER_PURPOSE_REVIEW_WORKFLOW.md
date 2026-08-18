@@ -18,4 +18,4 @@ the governed correction rail; HERDMASTER never chooses which event to retain.
 Food-chain withdrawal and live-transfer eligibility remain separate as defined
 in `LIVE_STOCK_SALES_RULES.md`.
 
-Source reference: `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`.
+Focused authority: `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md` and `docs/09-vault-brain/06-data/FARM_DATA_MODEL.md`.

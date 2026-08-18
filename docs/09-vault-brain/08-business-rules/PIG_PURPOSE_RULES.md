@@ -58,4 +58,4 @@ Herdmaster can recommend purpose review, explain growth/litter signals, and prep
 
 ## Source References
 
-- `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
+- `docs/09-vault-brain/06-data/FARM_DATA_MODEL.md`

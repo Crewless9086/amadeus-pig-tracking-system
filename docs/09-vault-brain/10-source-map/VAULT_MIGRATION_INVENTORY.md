@@ -16,10 +16,10 @@ Classification values:
 
 | Source bucket | Classification | Vault targets | Notes |
 | --- | --- | --- | --- |
-| `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` | migrated + active_reference | `03-business/MEAT_SALES.md`, `08-business-rules/MEAT_SALES_RULES.md`, `04-workflows/SAM_MEAT_SALES_WORKFLOW.md`, `02-agents/sales/SAM.md` | Active launch status and implementation gates remain useful as reference. |
-| `docs/08-business-modules/PORK_SALES_MODEL.md` | migrated + active_reference | `03-business/MEAT_SALES.md`, `08-business-rules/MEAT_SALES_RULES.md` | Deep business model, pricing philosophy, loyalty, cold-chain, and open planning questions. |
-| `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md` | migrated + active_reference | `03-business/AMADEUS_FARM.md`, `08-business-rules/PIG_PURPOSE_RULES.md` | Allocation/purpose rules and one-pig-one-truth operating principle. |
-| `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | migrated + active_reference | `02-agents/sales/SAM.md`, `04-workflows/SAM_MEAT_SALES_WORKFLOW.md` | Runtime knowledge still lives in `config/sam_farm_knowledge.json`. |
+| `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` | migrated + archived | `03-business/MEAT_SALES.md`, `08-business-rules/MEAT_SALES_RULES.md`, `04-workflows/SAM_MEAT_SALES_WORKFLOW.md`, `02-agents/sales/SAM.md` | Batch 25 retained focused launch and implementation gates; the original is history. |
+| `docs/08-business-modules/PORK_SALES_MODEL.md` | migrated + archived | `03-business/MEAT_SALES.md`, `08-business-rules/MEAT_SALES_RULES.md`, `03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md` | Focused commercial authority retained; the long planning discussion is history. |
+| `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md` | migrated + archived | `03-business/AMADEUS_FARM.md`, `08-business-rules/PIG_PURPOSE_RULES.md`, `06-data/FARM_DATA_MODEL.md` | Focused allocation/purpose and one-pig-one-truth rules retained. |
+| `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | migrated + archived | `02-agents/sales/SAM.md`, `04-workflows/SAM_MEAT_SALES_WORKFLOW.md` | Runtime wording configuration remains `config/sam_farm_knowledge.json`; it is not doctrine. |
 | Owner-added Amadeus Private Transfers proposal | migrated | `03-business/AMADEUS_PRIVATE_TRANSFERS.md`, `02-agents/transport/FRED.md`, `08-business-rules/TRANSPORT_RULES.md` | Converted from raw paste into structured business doctrine. |
 | `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md` | migrated + active_reference | `03-business/AMADEUS_FARM.md`, `06-data/*`, `04-workflows/SUPABASE_MIGRATION_WORKFLOW.md` | Architecture and data ownership source. |
 | `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md` | migrated + active_reference | `01-identity/AGENT_ORGANOGRAM.md`, `02-agents/*`, `02-agents/AGENT_REGISTRY.md` | Specialist roster and approval rules. |

@@ -323,7 +323,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("MEAT PREORDER RULES (CRITICAL)", sales_agent_system)
         self.assertIn("Do not ask for a live-pig weight range", sales_agent_system)
         self.assertIn("Do not quote price/kg", sales_agent_system)
-        self.assertIn("Approved cut menu source: docs/08-business-modules/PORK_SALES_MODEL.md rows 246-303", sales_agent_system)
+        self.assertIn("Approved cut menu source: docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md", sales_agent_system)
         self.assertIn("Set A Family Freezer Pack", sales_agent_system)
         self.assertIn("Set B Braai Pack", sales_agent_system)
         self.assertIn("Set C Lean Pack", sales_agent_system)

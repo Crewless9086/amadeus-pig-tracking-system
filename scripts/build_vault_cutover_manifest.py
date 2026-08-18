@@ -27,8 +27,8 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v21"
-BASELINE = "7b1c82765267f349ec44f4a9ca85872f99eb8dbd"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v22"
+BASELINE = "19e21ebcce73de2c51dcd21e9ddcc37242246b38"
 
 BATCH9_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
@@ -362,7 +362,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 24 archives five reconciled SAM/revenue launch, inbox, completion, manager-summary and smoke documents after retaining current provider-isolation, claim-boundary, aggregate-summary, reply-graduation and Meat tracking-only rules in focused Vault files; it authorizes no customer send, provider action, order, reservation, payment, stock, farm, database or runtime change",
+        "owner_boundary": "Batch 25 archives ten reconciled farm-calendar and meat/pork/SAM business-module documents after retaining current calendar, production, commercial, campaign, payment, allocation and knowledge boundaries in focused Vault files; it authorizes no customer send, public post, provider action, order, reservation, payment, stock, farm, database or runtime change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -413,7 +413,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: Batch 24 SAM/revenue reconciliation complete; no further physical change authorized.",
+        "Status: Batch 25 business-module reconciliation complete; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",

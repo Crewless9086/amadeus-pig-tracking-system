@@ -252,7 +252,7 @@ IMPLEMENTATION_SOURCE_MAP = {
             "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
             "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
             "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md",
-            "docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md",
+            "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md",
             "docs/09-vault-brain/02-agents/sales/SAM.md",
             "docs/09-vault-brain/02-agents/sales/MEAT_SALES_AGENT.md",
             "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
@@ -377,7 +377,7 @@ IMPLEMENTATION_SOURCE_MAP = {
             "supabase/migrations/202606180006_extend_beacon_facebook_post_execution_statuses.sql",
         ],
         "legacy_sources": [
-            "docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
+            "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
         ],
         "must_inspect_before_advice": True,
     },

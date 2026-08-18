@@ -79,7 +79,7 @@ Delivery-status accepted auth:
 - or `X-Amadeus-Meat-Delivery-Webhook-Key: <token>`
 - or URL token for webhook tools that cannot send custom headers: `?token=<token>`
 
-Closed-window recovery: if the service window is stale or unknown, the route returns `estimated_quote_template_required` and does not send the PDF. The template must already be approved in WhatsApp/Meta. Pilot template names and suggested wording are logged in `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md`.
+Closed-window recovery: if the service window is stale or unknown, the route returns `estimated_quote_template_required` and does not send the PDF. The template must already be approved in WhatsApp/Meta; template identity and provider approval are runtime evidence, not documentation authority.
 
 Sam inbound accepted auth:
 
@@ -371,7 +371,7 @@ These fields are stored on the lead interest JSON and may also create an append-
 
 ## Cut Menu Boundary
 
-Sam may recognize and describe the approved cut sets from `docs/08-business-modules/PORK_SALES_MODEL.md` rows 246-303.
+Sam may recognize and describe only the approved collections in `docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`.
 
 Sam must not invent extra cuts or treat cut-set selection as price, availability, deposit, or booking approval. Those remain owner/Ledger gated.
 

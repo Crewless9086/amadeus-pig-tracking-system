@@ -1,19 +1,19 @@
 {
-  "version": "vault_physical_cutover_manifest_v21",
-  "baseline": "7b1c82765267f349ec44f4a9ca85872f99eb8dbd",
-  "generated_from_head": "7b1c82765267f349ec44f4a9ca85872f99eb8dbd",
-  "owner_boundary": "Batch 24 archives five reconciled SAM/revenue launch, inbox, completion, manager-summary and smoke documents after retaining current provider-isolation, claim-boundary, aggregate-summary, reply-graduation and Meat tracking-only rules in focused Vault files; it authorizes no customer send, provider action, order, reservation, payment, stock, farm, database or runtime change",
-  "entry_count": 532,
+  "version": "vault_physical_cutover_manifest_v22",
+  "baseline": "19e21ebcce73de2c51dcd21e9ddcc37242246b38",
+  "generated_from_head": "19e21ebcce73de2c51dcd21e9ddcc37242246b38",
+  "owner_boundary": "Batch 25 archives ten reconciled farm-calendar and meat/pork/SAM business-module documents after retaining current calendar, production, commercial, campaign, payment, allocation and knowledge boundaries in focused Vault files; it authorizes no customer send, public post, provider action, order, reservation, payment, stock, farm, database or runtime change",
+  "entry_count": 534,
   "counts": {
-    "EXTRACT_THEN_ARCHIVE": 52,
-    "KEEP_ARCHIVE": 155,
+    "EXTRACT_THEN_ARCHIVE": 42,
+    "KEEP_ARCHIVE": 165,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
     "KEEP_GENERATED_PROJECTION": 9,
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 191
+    "KEEP_VAULT": 193
   },
   "entries": [
     {
@@ -288,8 +288,6 @@
       "exact_references": [
         "docs/02-backend/ORDER_VERIFICATION_MATRIX.md",
         "docs/04-n8n/workflows/2.1 - Amadeus Weather Sub-Agent/README.md",
-        "docs/08-business-modules/PORK_SALES_MODEL.md",
-        "docs/08-business-modules/README.md",
         "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH12_RECONCILIATION.md",
@@ -298,6 +296,8 @@
         "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/99-archive/vault-cutover/docs/06-operations/MISSION_LOOP_CONTRACT.md",
         "docs/99-archive/vault-cutover/docs/06-operations/goals/README.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/README.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
@@ -602,7 +602,7 @@
     },
     {
       "path": "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
-      "sha256": "b7ace94fe3c1b71a6c2aed5704529b253148269b94b37dedfa6f01b031bf4e42",
+      "sha256": "aa007787ec56328e9e098258096f034ea8ccbbcf3c18cd506584fd87d8a65297",
       "physical_lines": 373,
       "batch1_lifecycle": "active_reference",
       "batch1_action": "split_doctrine_from_technical",
@@ -887,7 +887,7 @@
     },
     {
       "path": "docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md",
-      "sha256": "c0578c72aae1c1f45a43a92ba0b92ccabe1a6ff20c153f4d8169850604f42c98",
+      "sha256": "3719654db2358e7fe22559d7a41fa0ca2218321ea33702d90784ea82db45b229",
       "physical_lines": 416,
       "batch1_lifecycle": "active_reference",
       "batch1_action": "keep_technical_review",
@@ -1637,10 +1637,10 @@
       "destination_or_replacement": "docs/04-n8n/CHATWOOT_ATTRIBUTES.md",
       "exact_reference_count": 4,
       "exact_references": [
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
         "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -2417,8 +2417,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "25fb2c42b084d39bbd9c591e23d3aea8d9ad1da73e9389d69f23f5440e4ad43b",
-      "physical_lines": 957,
+      "sha256": "9ba45a0c2c0dd99594d06d8ee4f1d744e9fdb6c1ee0dc4d1ea4f723468e857b0",
+      "physical_lines": 972,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -2485,227 +2485,6 @@
       "physical_change_authorized": false,
       "planned_batch": null,
       "reconciliation_family": null
-    },
-    {
-      "path": "docs/08-business-modules/FARM_CALENDAR_PLAN.md",
-      "sha256": "cd9032b21fdf3268855e2f4320e70d49f74d9e8a2e7b41378a444cb8bd0c004c",
-      "physical_lines": 201,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/FARM_CALENDAR_PLAN.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
-      "sha256": "bcf516d42988603179e746fe65840217062297fe072925de34e90a0d9867def6",
-      "physical_lines": 176,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
-      "exact_reference_count": 6,
-      "exact_references": [
-        "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
-        "docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/README.md",
-        "modules/charlie/source_map.py"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md",
-      "sha256": "74ffe15a373518e2d594c486662379154677eb5b0cfb3e510a367357470747a6",
-      "physical_lines": 70,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md",
-      "exact_reference_count": 2,
-      "exact_references": [
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "modules/charlie/source_map.py"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
-      "sha256": "20e29903fff9b68001d10b654558d1f279ee4a3ba2fc507b3a1c4cef66dcdcc8",
-      "physical_lines": 411,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
-      "exact_reference_count": 7,
-      "exact_references": [
-        "docs/09-vault-brain/00-governance/OPEN_QUESTIONS.md",
-        "docs/09-vault-brain/02-agents/marketing/BEACON.md",
-        "docs/09-vault-brain/03-business/MEAT_SALES.md",
-        "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
-        "tests/test_charlie_vault_retrieval.py"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/MEAT_SALES_STRESS_TEST_REPORT.md",
-      "sha256": "c7ddaed02116179d89eda93ccabf4615536c605a06b10e661ce4be7de752f409",
-      "physical_lines": 64,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_STRESS_TEST_REPORT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md",
-      "sha256": "f85ffaa93953bd4765b7ed20c01e94e6627b17f6c2860a8a61461d531c71460c",
-      "physical_lines": 40,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md",
-      "exact_reference_count": 2,
-      "exact_references": [
-        "docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md",
-      "sha256": "d9379db35696f6de1f27b1f0d1f2ad11952d5d322e9dfc91e9b485eefbfe79a9",
-      "physical_lines": 337,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md",
-      "exact_reference_count": 8,
-      "exact_references": [
-        "docs/09-vault-brain/03-business/AMADEUS_FARM.md",
-        "docs/09-vault-brain/03-business/MEAT_SALES.md",
-        "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
-        "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
-        "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
-        "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "tests/test_frontend_route_contracts.py"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/PORK_SALES_MODEL.md",
-      "sha256": "c7fcf245cd00496c1397f05293c2a4a0342cf1bf1f71b38d1b187fe89521af9a",
-      "physical_lines": 7082,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md",
-      "exact_reference_count": 8,
-      "exact_references": [
-        "docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md",
-        "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json",
-        "docs/09-vault-brain/03-business/MEAT_SALES.md",
-        "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/99-archive/vault-cutover/docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
-        "templates/meat-sales-reference.html",
-        "tests/test_workflow_contracts.py"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/README.md",
-      "sha256": "0be7ad403d0ea5e25cba73e35cf6197525020e2189a1719a2b44378d3670bc2d",
-      "physical_lines": 19,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/README.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
-    },
-    {
-      "path": "docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md",
-      "sha256": "a503dec9deb5b4db7ad07d1c09be04e892d443214f493bf65ed0ce7941f8efe7",
-      "physical_lines": 102,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 25,
-      "reconciliation_family": "business_modules"
     },
     {
       "path": "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
@@ -2849,8 +2628,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "169235b59ebcff4ced47f60a5c6ef64a267a99d0d6fcadcac91ed11d53353c5e",
-      "physical_lines": 262,
+      "sha256": "7a0810a92c7d50f1bec1212502b159c2693fb133087500e7374927ee31dc1be2",
+      "physical_lines": 273,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -2936,7 +2715,7 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/OPEN_QUESTIONS.md",
-      "sha256": "a8f912c516d6fd67c7e8c035776a0b424a124f4faa038bd6b29e84f7c0757530",
+      "sha256": "a467c941ebe096924058f868c20ff7b1b8152bcd73a34f2b31490b370160bfc1",
       "physical_lines": 167,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -3044,8 +2823,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "57dd4383056f714355c85018968c4dc78ed843fc0d8a26434252fd8d745b1770",
-      "physical_lines": 354,
+      "sha256": "04f902a4061fa1656b0b7a3dd68b0e7eb3c51b0fffbd659357d37be38c17e227",
+      "physical_lines": 367,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -3198,12 +2977,12 @@
       "destination_or_replacement": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
       "exact_reference_count": 13,
       "exact_references": [
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/02-agents/charlie-core/IDEA_EXPANDER.md",
         "docs/09-vault-brain/02-agents/sales/SAM.md",
         "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
@@ -3843,7 +3622,7 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/marketing/BEACON.md",
-      "sha256": "a6ac488c5857e74483729da9fe153625ff2df2088b2ba2ba4169266764f67951",
+      "sha256": "c3c534f8b2ded83c5736093ae6d8a3dc79ac5db4f26c481e09242df8c8181e15",
       "physical_lines": 117,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -3852,9 +3631,9 @@
       "exact_reference_count": 12,
       "exact_references": [
         "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "modules/beacon/marketing_operating_contract.py",
         "modules/charlie/agent_card_projection.py",
         "modules/charlie/execution_bridge.py",
@@ -4060,7 +3839,7 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/SAM.md",
-      "sha256": "1d42018c810ffdf6d5860515f0be46efcb9b1899623265e016ebb9b4d628db4e",
+      "sha256": "558f4f41cdcd0695cda6637b828a706b8e9e6a3797b1b45a07a77c13e8b228ad",
       "physical_lines": 153,
       "batch1_lifecycle": "quarantined",
       "batch1_action": "archive_or_delete_review",
@@ -4068,13 +3847,13 @@
       "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/SAM.md",
       "exact_reference_count": 17,
       "exact_references": [
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
         "docs/09-vault-brain/03-business/MEAT_SALES.md",
         "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
         "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "modules/charlie/agent_card_projection.py",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
@@ -4152,7 +3931,7 @@
     },
     {
       "path": "docs/09-vault-brain/03-business/AMADEUS_FARM.md",
-      "sha256": "9d95dffbdc41793ced74c7d509e6bb70806097c4fdcd01564717865c2707cba2",
+      "sha256": "0eb522aac488045407eb18fa398acf18991c4bdee60fa34740e14cf1352833ae",
       "physical_lines": 52,
       "batch1_lifecycle": "retired",
       "batch1_action": "archive_or_delete_review",
@@ -4177,13 +3956,17 @@
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md",
-      "exact_reference_count": 5,
+      "exact_reference_count": 9,
       "exact_references": [
         "docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md",
-        "docs/08-business-modules/PORK_SALES_MODEL.md",
+        "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json",
+        "docs/09-vault-brain/03-business/MEAT_SALES.md",
         "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
+        "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-        "templates/meat-sales-reference.html"
+        "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md",
+        "templates/meat-sales-reference.html",
+        "tests/test_workflow_contracts.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -4276,14 +4059,15 @@
     },
     {
       "path": "docs/09-vault-brain/03-business/MEAT_SALES.md",
-      "sha256": "0d8acd68db014f43bacab27a508f271c852588635612578f850ab1ea3463dbb0",
-      "physical_lines": 155,
+      "sha256": "f49143ce8d6d2a5928ff4ce07b8749a320e9575d758d38d75c88cc860bf578bd",
+      "physical_lines": 154,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/03-business/MEAT_SALES.md",
-      "exact_reference_count": 7,
+      "exact_reference_count": 8,
       "exact_references": [
+        "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
@@ -4357,8 +4141,10 @@
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
-      "exact_reference_count": 4,
+      "exact_reference_count": 6,
       "exact_references": [
+        "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
+        "docs/09-vault-brain/02-agents/marketing/BEACON.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
         "modules/charlie/source_map.py",
@@ -4487,7 +4273,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
-      "sha256": "f75fec563046115e2634531d94d1e74db2b4ef0a670d5f9b1ad6c8f8bc78a829",
+      "sha256": "a6e7727e9a8f6317f421282f9598a4f0e1f48dd553c340b7c13dad708025e7da",
       "physical_lines": 21,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4663,7 +4449,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
-      "sha256": "0da45fa09ceed19b37d0a28dc161c88ed05ea894bbb328c1f95b3a291bfb3aef",
+      "sha256": "3c4d077cef2afe3f851c47e878a425acbcbad88c073a4359e82304a8d9e11943",
       "physical_lines": 284,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4695,7 +4481,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
-      "sha256": "a7a39e844351dc35968ec0976f5b3cf6b8fa2ed7a1d9931d0e79a4a5e5385a40",
+      "sha256": "9213eeb25081284bb4ebb5c02dd9960e0d84d2db0a921bfe0caf7afe8cbf609c",
       "physical_lines": 116,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5042,15 +4828,18 @@
     },
     {
       "path": "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
-      "sha256": "aa6d4b63d9851c9a8cf9b3277e015f9c5d54d55c5e286790cbeaa8b2bbfcddf0",
+      "sha256": "e04167bd38a084f1c8f062b70788b9779c619db270d30e87368e01dfef44c900",
       "physical_lines": 84,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
-      "exact_reference_count": 6,
+      "exact_reference_count": 9,
       "exact_references": [
+        "docs/09-vault-brain/03-business/AMADEUS_FARM.md",
+        "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
+        "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
@@ -5482,16 +5271,17 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/FARM_RULES.md",
-      "sha256": "eb014dd6ab28dee73e509494cb8723053320afa13ab624c9d596c731efeafe22",
-      "physical_lines": 5,
+      "sha256": "503ba4182680975ac7da7fc39dedd9d2df877d36f1bea99a6200cfaa0b8656ab",
+      "physical_lines": 13,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/08-business-rules/FARM_RULES.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 3,
       "exact_references": [
         "modules/charlie/execution_bridge.py",
-        "modules/charlie/vault_retrieval.py"
+        "modules/charlie/vault_retrieval.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5617,17 +5407,20 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md",
-      "sha256": "d3adda3b9c20b793f925251ebe711431b72e21aaca8738628bbbb6831123396a",
-      "physical_lines": 30,
+      "sha256": "08d0a5f47addb83027aa134dd464d30822831fd3e8117b756b45bb6e450c5b00",
+      "physical_lines": 37,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md",
-      "exact_reference_count": 3,
+      "exact_reference_count": 6,
       "exact_references": [
+        "docs/09-vault-brain/03-business/MEAT_SALES.md",
+        "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-        "modules/charlie/source_map.py"
+        "modules/charlie/source_map.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5637,7 +5430,7 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
-      "sha256": "c5e615f2bca96da32d85895043d81025afd69433d607fc2ff95b9a9b13831b3d",
+      "sha256": "60bdd134f53705b83e68cae87fd9af9c93a83ab08f8fccdfa5272c1ba2dfd6e3",
       "physical_lines": 80,
       "batch1_lifecycle": "retired",
       "batch1_action": "archive_or_delete_review",
@@ -5705,21 +5498,24 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
-      "sha256": "e75d8f8ab73b6881fa7fda750044b19e1c9c4b749b7c363c4f8eb802d98a85ce",
+      "sha256": "4221134a12dece61ea4b795537a30cfe996caf3d7eefaa7e56ef00d2156a8872",
       "physical_lines": 61,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
-      "exact_reference_count": 7,
+      "exact_reference_count": 10,
       "exact_references": [
+        "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
+        "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
         "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md"
+        "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
+        "tests/test_frontend_route_contracts.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5976,8 +5772,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "3d0bdd53b1529b74ffae3215932941bc702c83544eac1599efbe52a2a04ce8e2",
-      "physical_lines": 241,
+      "sha256": "c25315173b2932fe26561402b9cbd68de01c0e6064b761237bbbbc7a4c3deb77",
+      "physical_lines": 234,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -6021,10 +5817,10 @@
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
       "exact_reference_count": 7,
       "exact_references": [
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/02-agents/charlie-core/SOURCE_MAPPER.md",
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
@@ -6037,8 +5833,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
-      "sha256": "5d711de4a0b72c1afcf22884b23e24817273bebffd7eb7c39f67421e4e99b5e6",
-      "physical_lines": 87,
+      "sha256": "62c2608735b79aaaee7923462a8572d48eef1de7f9f5793521319e5d87188f6a",
+      "physical_lines": 97,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -6069,7 +5865,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-      "sha256": "9de3c1051efe30a17b34c3816ba45fc64a495128b00a486fe76d5d5f75cf5730",
+      "sha256": "0587f1936d41fb0bbdb16d974173574112cf66f720b4d21e2871c53eeb9eb8c6",
       "physical_lines": 305,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
@@ -6308,6 +6104,38 @@
       "reconciliation_family": null
     },
     {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH24_RECONCILIATION.md",
+      "sha256": "3056f299278c68797f8ece548eb41e6d701ac6f0c9661f1ce515c3d33f39f08f",
+      "physical_lines": 32,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH24_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH25_RECONCILIATION.md",
+      "sha256": "91adcaff23783e3483a31061896163fcedd258ec24621cd0fa19a28341fc7a6c",
+      "physical_lines": 31,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH25_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md",
       "sha256": "0a3788d1963120fc682d48bac999bd79b2b8de4d0819ef2874497b44a3435dca",
       "physical_lines": 38,
@@ -6391,7 +6219,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_MIGRATION_INVENTORY.md",
-      "sha256": "9c35bfa4be2f5dda12c5b5d3e63668a646b9481f43a61d6f89395ec39f05b515",
+      "sha256": "6605fb09755ef7d49c1d92ed2474c84a9ccc39997dbbe1e5ffa646e0a73b2f5c",
       "physical_lines": 656,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -6409,7 +6237,7 @@
     },
     {
       "path": "docs/09-vault-brain/CHANGELOG.md",
-      "sha256": "287089b324def8f4ef54eb27275719112f6089a8bbfc0d9e69c335d75db02e49",
+      "sha256": "9059c0a073ff3feee9b84244381f4116c8e1d4ce3de1698526cad7542af0f715",
       "physical_lines": 1523,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -8945,6 +8773,168 @@
       "reconciliation_family": null
     },
     {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/FARM_CALENDAR_PLAN.md",
+      "sha256": "cd9032b21fdf3268855e2f4320e70d49f74d9e8a2e7b41378a444cb8bd0c004c",
+      "physical_lines": 201,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/FARM_CALENDAR_PLAN.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
+      "sha256": "bcf516d42988603179e746fe65840217062297fe072925de34e90a0d9867def6",
+      "physical_lines": 176,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md",
+      "sha256": "74ffe15a373518e2d594c486662379154677eb5b0cfb3e510a367357470747a6",
+      "physical_lines": 70,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
+      "sha256": "20e29903fff9b68001d10b654558d1f279ee4a3ba2fc507b3a1c4cef66dcdcc8",
+      "physical_lines": 411,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "tests/test_charlie_vault_retrieval.py"
+      ],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_STRESS_TEST_REPORT.md",
+      "sha256": "c7ddaed02116179d89eda93ccabf4615536c605a06b10e661ce4be7de752f409",
+      "physical_lines": 64,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_STRESS_TEST_REPORT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md",
+      "sha256": "f85ffaa93953bd4765b7ed20c01e94e6627b17f6c2860a8a61461d531c71460c",
+      "physical_lines": 40,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md",
+      "sha256": "d9379db35696f6de1f27b1f0d1f2ad11952d5d322e9dfc91e9b485eefbfe79a9",
+      "physical_lines": 337,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md",
+      "sha256": "c7fcf245cd00496c1397f05293c2a4a0342cf1bf1f71b38d1b187fe89521af9a",
+      "physical_lines": 7082,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/README.md",
+      "sha256": "0be7ad403d0ea5e25cba73e35cf6197525020e2189a1719a2b44378d3670bc2d",
+      "physical_lines": 19,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md",
+      "sha256": "a503dec9deb5b4db7ad07d1c09be04e892d443214f493bf65ed0ce7941f8efe7",
+      "physical_lines": 102,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
       "path": "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
       "sha256": "9b8b0d712975861c6a077a8df6d0def7bbaf640b859c7e37f80fc797d9e8d612",
       "physical_lines": 42,
@@ -9002,10 +8992,10 @@
       "destination_or_replacement": "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
       "exact_reference_count": 8,
       "exact_references": [
-        "docs/08-business-modules/PORK_SALES_MODEL.md",
         "docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH8_RECONCILIATION.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md",
         "scripts/build_vault_cutover_manifest.py",
         "templates/meat-sales-reference.html",
         "tests/test_sam_meat_commercial_frontend.py",
@@ -9170,10 +9160,10 @@
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/ToDoList.md",
       "exact_reference_count": 8,
       "exact_references": [
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
         "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",
+        "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
         "planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
@@ -9877,7 +9867,7 @@
     },
     {
       "path": "static/assets/agents/beacon/agent.md",
-      "sha256": "f452fcdf6bc021b2b4b6db9fa9e9123e4339d568e2fd33a017e79d823540c074",
+      "sha256": "8623d1dc7c87c1f2dcbf6495fb8ca3cd6b8a4c8f7ca5d481950ff8f60da7f8ee",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9896,7 +9886,7 @@
     },
     {
       "path": "static/assets/agents/butcher/agent.md",
-      "sha256": "0a575c2fbbc2fd174fa6de87424b3d8609a822195252edfe3f378b59fd76c469",
+      "sha256": "8a91c7359f97b7fd9b339672b808820c12c74d7ace7b15917007fba2d32cea09",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9914,7 +9904,7 @@
     },
     {
       "path": "static/assets/agents/gatekeeper/agent.md",
-      "sha256": "7569bd4066f861ab9dff906a00c3b124f61bfa4566c0baf3cbc04dd0f2568730",
+      "sha256": "e6629407bc10a15d7c11ed7410f1e91fbdcd7ffe6735cad426a04ab8a85f6c24",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9932,7 +9922,7 @@
     },
     {
       "path": "static/assets/agents/herdmaster/agent.md",
-      "sha256": "5fbbe913b49dd82c23a4f28f5e566060d4c8b2e8da459e7b191843da1f9a64a7",
+      "sha256": "07142c4271dae71f5ea52351d601f784b9caad002b2959b9de1dceb04701fcc1",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9950,7 +9940,7 @@
     },
     {
       "path": "static/assets/agents/ledger/agent.md",
-      "sha256": "36e041810bc56298e117a6f8992a6541908c82f99633272e55f4439226d86237",
+      "sha256": "4f4acdb0e971ada5456b563c9526264593a95bf49e1025de6bdb7c178f40ddfd",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9968,7 +9958,7 @@
     },
     {
       "path": "static/assets/agents/oom-sakkie/agent.md",
-      "sha256": "2f0538b449d24278042b801a318c325586d6e88ec3818bc42403f634b0fbad58",
+      "sha256": "27411d34290805b17caad86f0ade3006f719fed9e3d9634b924bd4ccc32626d8",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9986,7 +9976,7 @@
     },
     {
       "path": "static/assets/agents/quartermaster/agent.md",
-      "sha256": "2425cf1e926da9ffb8fbc96d34ad7251786ca37cc3359db99bdcb26d25de3746",
+      "sha256": "00ae64e1d97d4c0367b337a49c83ffe3b26c804ef4e8fee2b32f644ec9618dc7",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10004,7 +9994,7 @@
     },
     {
       "path": "static/assets/agents/rootline/agent.md",
-      "sha256": "ad9701258ed6b9e43f780f66ebfe4638c5eccadd71142e6f0dbb8f13d7002110",
+      "sha256": "076f20c56f56aedef63ba04a678bad9faa04448689744d43746d68e1b15e536e",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10022,7 +10012,7 @@
     },
     {
       "path": "static/assets/agents/sam/agent.md",
-      "sha256": "37b6d0742d722cf73f2097044f08c1571f2c5a9e0b507e61bdaf28c1f1849046",
+      "sha256": "52201808c46886fd7339342ed2be76cc563ba28df9a6303d0a230d86ebc01769",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",

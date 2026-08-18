@@ -162,6 +162,6 @@ Current recommendation:
 
 Owner review needed:
 
-- confirm whether `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`, `PORK_SALES_MODEL.md`, and related campaign docs should remain active references after Vault business review;
+- confirm future Meat launch graduation only from focused SAM/BEACON/Meat doctrine and fresh operational evidence; legacy business-module drafts were archived in Batch 25;
 - confirm whether old operation evidence logs should be compressed into monthly archive summaries;
 - confirm whether external source folders are still needed locally or can be archived/deleted after useful context is captured.
