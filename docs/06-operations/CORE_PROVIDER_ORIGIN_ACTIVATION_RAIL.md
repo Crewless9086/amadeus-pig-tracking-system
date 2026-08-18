@@ -10,6 +10,18 @@ The activation terminal first runs `dry-run`, then `prepare`. Preparation acquir
 
 The scheduled watchdog consumes the packet. It accepts only a `pythonw.exe` instance whose exact parent chain begins at a Windows scheduled-task provider and contains no Codex, terminal, command-shell, or interactive PowerShell boundary. Inspection queries only the current PID and each exact parent PID; it does not take a host process snapshot. A create-new consumption record makes replay and concurrent starts fail closed. The provider passes the activation ID into the governed runner-control startup, and that ID is carried through supervisor state, signed acknowledgements, and runner heartbeat.
 
+The bounded activation lane may enable the
+Microsoft-Windows-TaskScheduler/Operational channel and retain its exact prior
+channel state plus rollback command. When the COM running-instance view no
+longer contains the short-lived watchdog, exactly one post-preparation Event
+200 may authenticate it. That record must bind the exact task path, current
+EnginePID, task-instance/activity identity, action, record ID and timestamp to
+the sealed activation ID. The current Schedule service identity, configured
+single action and working directory, and twice-read current process ancestry
+remain mandatory. Disabled, missing, stale, pre-activation, duplicate,
+ambiguous, mismatched or substituted event evidence fails closed. Historical
+failed activation epochs are never eligible evidence.
+
 `verify` accepts activation only when the immutable revision and observe-only mode agree across the packet, signed supervisor/runner evidence and heartbeat; both live trees revalidate; the heartbeat is fresh; and the activation ID agrees throughout. Before verification succeeds, a failure disables only the exact authorized task and restores the exact governed-stop bytes under the same lane. Incomplete recovery retains contradictory evidence and must be manually assessed; broad cleanup is prohibited.
 
 ## Trust boundary and remaining acceptance

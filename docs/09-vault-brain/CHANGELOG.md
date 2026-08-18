@@ -13,6 +13,19 @@
 - Shortened the morning projection to three numbered priorities, one genuine
   question when required, and one next-check line.
 
+## 2026-08-18 - CORE exact Task Scheduler audit-provider binding
+
+- Added the provider-owned Task Scheduler Operational Event 200 as a bounded
+  second identity source for the existing exact CORE watchdog instance when
+  the COM running-instance view has already expired.
+- Bound one unique post-preparation record, task path, EnginePID, instance and
+  activity IDs, action, timestamp and sealed activation ID to the unchanged
+  Schedule service, configured task action/working directory and twice-read
+  current ancestry.
+- Kept disabled, missing, stale, pre-activation, duplicate, ambiguous,
+  mismatched and substituted evidence fail closed. Earlier failed activation
+  epochs remain immutable and non-replayable.
+
 ## 2026-08-17 - OP-004 live-transfer contract integrated for multi-line Orders consumption
 
 - Integrated PR #1001 on current authoritative main as `355f1154`, preserving typed,
