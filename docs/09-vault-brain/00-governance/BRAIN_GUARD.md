@@ -249,3 +249,14 @@ runtime flag, provider state or commissioning packet as current authority or
 operational proof without fresh canonical/provider evidence. B/C, fertiliser
 mixing, fertiliser injection and borehole are independent device classes; no
 authority or commissioning transfers between them.
+
+## Batch 24 SAM/Revenue Authority Gate
+
+The five reconciled SAM launch, inbox, completion, manager-summary and smoke
+documents are archive evidence only. Brain Guard must require the focused SAM
+agent plus the applicable Livestock or Meat workflow and rules. It must reject
+dated readiness percentages, smoke results, provider conversations, deployment
+receipts and manager digests as current authority or operational state.
+Conversation isolation may never weaken exact claim, chronology, delivery or
+commercial gates; only fresh evidence proving a prior claim boundary was not
+crossed can permit later eligibility.

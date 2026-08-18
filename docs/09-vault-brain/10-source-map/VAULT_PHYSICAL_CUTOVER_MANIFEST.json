@@ -1,20 +1,19 @@
 {
-  "version": "vault_physical_cutover_manifest_v20",
-  "baseline": "73f1638fbea49e53fb8f3c983bf671742a13e450",
-  "generated_from_head": "73f1638fbea49e53fb8f3c983bf671742a13e450",
-  "owner_boundary": "Batch 23 archives thirteen reconciled ROOTLINE plans, inventories, canaries, onboarding notes, contracts and commissioning packets after retaining current planning, device-class, authority, execution and provider/physical-verification rules in focused Vault files; it authorizes no runtime, message, provider, database, farm, irrigation, fertiliser, borehole or hardware change",
-  "entry_count": 531,
+  "version": "vault_physical_cutover_manifest_v21",
+  "baseline": "7b1c82765267f349ec44f4a9ca85872f99eb8dbd",
+  "generated_from_head": "7b1c82765267f349ec44f4a9ca85872f99eb8dbd",
+  "owner_boundary": "Batch 24 archives five reconciled SAM/revenue launch, inbox, completion, manager-summary and smoke documents after retaining current provider-isolation, claim-boundary, aggregate-summary, reply-graduation and Meat tracking-only rules in focused Vault files; it authorizes no customer send, provider action, order, reservation, payment, stock, farm, database or runtime change",
+  "entry_count": 532,
   "counts": {
-    "EXTRACT_THEN_ARCHIVE": 54,
-    "KEEP_ARCHIVE": 150,
+    "EXTRACT_THEN_ARCHIVE": 52,
+    "KEEP_ARCHIVE": 155,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
     "KEEP_GENERATED_PROJECTION": 9,
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 190,
-    "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 3
+    "KEEP_VAULT": 191
   },
   "entries": [
     {
@@ -2418,8 +2417,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "16cab393660f050a8a7efdb79f5bd6dcad4709bc5bbc6caabf3524bb75bb8d43",
-      "physical_lines": 941,
+      "sha256": "25fb2c42b084d39bbd9c591e23d3aea8d9ad1da73e9389d69f23f5440e4ad43b",
+      "physical_lines": 957,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -2466,100 +2465,6 @@
       "physical_change_authorized": false,
       "planned_batch": null,
       "reconciliation_family": null
-    },
-    {
-      "path": "docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md",
-      "sha256": "3faae756943457447fcc71de334dab21fb0707c2a918516f4760e2712b65fbde",
-      "physical_lines": 136,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 24,
-      "reconciliation_family": "sam_revenue"
-    },
-    {
-      "path": "docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md",
-      "sha256": "bf57d8a01c858049a158703c86bfd5522e3cafd66556c7b76efe1d1fd86f6679",
-      "physical_lines": 35,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/09-vault-brain/CHANGELOG.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 24,
-      "reconciliation_family": "sam_revenue"
-    },
-    {
-      "path": "docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md",
-      "sha256": "209cfe6fbb9b9dd8320e036c17565c8d76a061480f70a7748967a369893e9c2a",
-      "physical_lines": 49,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 24,
-      "reconciliation_family": "sam_revenue"
-    },
-    {
-      "path": "docs/06-operations/SAM_MANAGER_SUMMARY_PR691_HANDOVER.md",
-      "sha256": "f1de878649db9864bdaeb55589a6bacb29783a546920487bb7fd4b3421c91e0a",
-      "physical_lines": 52,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_MANAGER_SUMMARY_PR691_HANDOVER.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 24,
-      "reconciliation_family": "sam_revenue"
-    },
-    {
-      "path": "docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
-      "sha256": "b0736f77d6e4da158ee3554afd79a34aaa2dd4c6c2c06f0092a653961e88593d",
-      "physical_lines": 132,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "tests/test_frontend_route_contracts.py"
-      ],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 24,
-      "reconciliation_family": "sam_revenue"
     },
     {
       "path": "docs/07-decisions/README.md",
@@ -2653,13 +2558,11 @@
       "batch1_action": "consolidate_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
-      "exact_reference_count": 9,
+      "exact_reference_count": 7,
       "exact_references": [
         "docs/09-vault-brain/00-governance/OPEN_QUESTIONS.md",
         "docs/09-vault-brain/02-agents/marketing/BEACON.md",
-        "docs/09-vault-brain/02-agents/sales/SAM.md",
         "docs/09-vault-brain/03-business/MEAT_SALES.md",
-        "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
         "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
@@ -2751,10 +2654,10 @@
       "exact_references": [
         "docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md",
         "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json",
-        "docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
         "docs/09-vault-brain/03-business/MEAT_SALES.md",
         "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
         "templates/meat-sales-reference.html",
         "tests/test_workflow_contracts.py"
       ],
@@ -2792,10 +2695,8 @@
       "batch1_action": "consolidate_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md",
-      "exact_reference_count": 3,
+      "exact_reference_count": 1,
       "exact_references": [
-        "docs/09-vault-brain/02-agents/sales/SAM.md",
-        "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
       "reason": "extract unique durable facts, then preserve dated evidence",
@@ -2948,8 +2849,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "13bd0183c63acce7b5d8765b6784c4eff6c89f6354655e3ccb52fb56647f3f3c",
-      "physical_lines": 251,
+      "sha256": "169235b59ebcff4ced47f60a5c6ef64a267a99d0d6fcadcac91ed11d53353c5e",
+      "physical_lines": 262,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -3143,8 +3044,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "84d0d439c7be4cabb6357b9dc6e0c45164c393bad0970a435b448d105e6757a8",
-      "physical_lines": 341,
+      "sha256": "57dd4383056f714355c85018968c4dc78ed843fc0d8a26434252fd8d745b1770",
+      "physical_lines": 354,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -3917,7 +3818,7 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/ROOTLINE.md",
-      "sha256": "d9d52a8ab9936cb611a1c0a845469c32652d7452b26a593ae2dde8807f58b40f",
+      "sha256": "79d27766fdc806a132303563b56dc49b8d8956aee02bd3df9518abda9471647b",
       "physical_lines": 125,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4159,13 +4060,13 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/SAM.md",
-      "sha256": "4c0d5f6a0b9e54e284c2196b609f649893529eaf6282e9990e385dc7b74618bd",
-      "physical_lines": 124,
+      "sha256": "1d42018c810ffdf6d5860515f0be46efcb9b1899623265e016ebb9b4d628db4e",
+      "physical_lines": 153,
       "batch1_lifecycle": "quarantined",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/SAM.md",
-      "exact_reference_count": 16,
+      "exact_reference_count": 17,
       "exact_references": [
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
@@ -4182,7 +4083,8 @@
         "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "scripts/build_vault_cutover_manifest.py",
         "static/assets/agents/sam/agent.md",
-        "tests/test_charlie_execution_bridge.py"
+        "tests/test_charlie_execution_bridge.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -4701,7 +4603,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md",
-      "sha256": "554541a7d6510511e4024b8a5845679f362c8b391650d71110b00496539035ac",
+      "sha256": "bac776dc957198e27c8ca0fcbc2227ce9bb34bffeb0f76abf18991fd107548ea",
       "physical_lines": 312,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
@@ -4761,13 +4663,13 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
-      "sha256": "7e2327e57b941b8ed043b0cba075656b4380f271cb04bf1b484f0e6c9ab549e9",
-      "physical_lines": 275,
+      "sha256": "0da45fa09ceed19b37d0a28dc161c88ed05ea894bbb328c1f95b3a291bfb3aef",
+      "physical_lines": 284,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
-      "exact_reference_count": 14,
+      "exact_reference_count": 15,
       "exact_references": [
         "docs/09-vault-brain/00-governance/OPEN_QUESTIONS.md",
         "docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md",
@@ -4782,7 +4684,8 @@
         "modules/charlie/vault_retrieval.py",
         "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "tests/test_charlie_execution_bridge.py",
-        "tests/test_charlie_source_map.py"
+        "tests/test_charlie_source_map.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -4792,13 +4695,13 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
-      "sha256": "abe4b43aadbf1fda0e5c4a52f601dd10bbbbad776f356f903f6a7362e11e30cf",
-      "physical_lines": 96,
+      "sha256": "a7a39e844351dc35968ec0976f5b3cf6b8fa2ed7a1d9931d0e79a4a5e5385a40",
+      "physical_lines": 116,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 12,
       "exact_references": [
         "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
         "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
@@ -4809,7 +4712,9 @@
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "scripts/build_vault_cutover_manifest.py"
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_frontend_route_contracts.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5732,8 +5637,8 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
-      "sha256": "8bbd654ae4ac50d0828e02947640bdcaca0d53beab78190defacdcbcf56b21de",
-      "physical_lines": 77,
+      "sha256": "c5e615f2bca96da32d85895043d81025afd69433d607fc2ff95b9a9b13831b3d",
+      "physical_lines": 80,
       "batch1_lifecycle": "retired",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -5824,7 +5729,7 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md",
-      "sha256": "7c2f4546689f373c6968deaa83b69289e20ec8cd0ae50293cac156a02c35f8b4",
+      "sha256": "54f9ab9d1a02681c35bdd9b9b287fd8a1334d42c07159f5dacf7106b77e938e7",
       "physical_lines": 444,
       "batch1_lifecycle": "authoritative",
       "batch1_action": "keep_review",
@@ -6108,7 +6013,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-      "sha256": "fd48e2519330eb73f6827c32e97f7c36a12b3a26bb47ac06acb785d2ba337d0f",
+      "sha256": "7716b75778f9815414ff5876a637c8f3e82dee4ec38962dfdbfaffe2f3b041da",
       "physical_lines": 866,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
@@ -6132,8 +6037,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
-      "sha256": "0af63efb0b334f39073248418206db016d8fff8f0bb85f5f93cf6764cd3ab3a3",
-      "physical_lines": 79,
+      "sha256": "5d711de4a0b72c1afcf22884b23e24817273bebffd7eb7c39f67421e4e99b5e6",
+      "physical_lines": 87,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -6387,6 +6292,22 @@
       "reconciliation_family": null
     },
     {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH23_RECONCILIATION.md",
+      "sha256": "98b01c6dc6e7ffdd3666588e3c8e82179695324c47a578a376fb0aa8eeab4ad0",
+      "physical_lines": 31,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH23_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md",
       "sha256": "0a3788d1963120fc682d48bac999bd79b2b8de4d0819ef2874497b44a3435dca",
       "physical_lines": 38,
@@ -6488,8 +6409,8 @@
     },
     {
       "path": "docs/09-vault-brain/CHANGELOG.md",
-      "sha256": "428e371e381cae327085335231f4ba383506196ddd0153b1c773bf8204aa0608",
-      "physical_lines": 1522,
+      "sha256": "287089b324def8f4ef54eb27275719112f6089a8bbfc0d9e69c335d75db02e49",
+      "physical_lines": 1523,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -8862,6 +8783,88 @@
       "reconciliation_family": null
     },
     {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md",
+      "sha256": "3faae756943457447fcc71de334dab21fb0707c2a918516f4760e2712b65fbde",
+      "physical_lines": 136,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md",
+      "sha256": "bf57d8a01c858049a158703c86bfd5522e3cafd66556c7b76efe1d1fd86f6679",
+      "physical_lines": 35,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "docs/09-vault-brain/CHANGELOG.md"
+      ],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md",
+      "sha256": "209cfe6fbb9b9dd8320e036c17565c8d76a061480f70a7748967a369893e9c2a",
+      "physical_lines": 49,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_MANAGER_SUMMARY_PR691_HANDOVER.md",
+      "sha256": "f1de878649db9864bdaeb55589a6bacb29783a546920487bb7fd4b3421c91e0a",
+      "physical_lines": 52,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_MANAGER_SUMMARY_PR691_HANDOVER.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
+      "sha256": "b0736f77d6e4da158ee3554afd79a34aaa2dd4c6c2c06f0092a653961e88593d",
+      "physical_lines": 132,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/TESTING_CHECKLIST.md",
       "sha256": "cdc520cacc8015dea630f6161eb9d645ad1ee1d62761d04733776b18c5795471",
       "physical_lines": 2170,
@@ -10001,7 +10004,7 @@
     },
     {
       "path": "static/assets/agents/rootline/agent.md",
-      "sha256": "f65f4dc2d1aec73a7350523fc7102de9cf0ba2677d0ab6cf375aa7b4fde87f45",
+      "sha256": "ad9701258ed6b9e43f780f66ebfe4638c5eccadd71142e6f0dbb8f13d7002110",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",

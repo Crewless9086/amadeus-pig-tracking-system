@@ -77,3 +77,11 @@
 - Removed active references to dated ROOTLINE operations documents.
 - Archived thirteen ROOTLINE plans, inventories, canaries, onboarding notes,
   contracts and commissioning packets intact.
+
+2026-08-18 - Vault Cutover Batch 24:
+
+- Consolidated SAM inbox isolation, claim-boundary recovery, aggregate manager
+  summaries, reply-class graduation and Meat tracking-only acceptance.
+- Repointed the live smoke contract test to focused SAM Meat workflow doctrine.
+- Archived five SAM/revenue launch, handover, programme and checklist files
+  intact.

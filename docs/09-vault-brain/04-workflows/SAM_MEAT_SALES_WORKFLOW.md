@@ -82,12 +82,32 @@ and never promises slaughter or delivery timing.
 - A pig cannot move to slaughter booking until the whole carcass is committed
   and all required deposits are bank-confirmed.
 
-## Source References
+## Tracking-Only Intake And Acceptance
+
+Until Meat graduates beyond `interest_capture_only`, an intake may authenticate
+the configured backend boundary and append one tracking lead/fact event only.
+It sends no customer message, calls no Chatwoot/n8n delivery path, creates no
+order, changes no stock, reserves nothing and performs no financial action.
+Tokens remain secret, environment-provided and at least 32 characters; they are
+never stored in workflow JSON or documentation.
+
+Acceptance must prove a bad token returns `403`, the exact lead identity is
+stable across follow-up, known conversation facts are carried forward, and
+meat intent cannot fall into the live-pig order path. Stop immediately if SAM
+quotes unsupported price, promises timing/availability, asks for payment,
+creates an order, reserves/allocates stock or crosses a customer-send boundary.
+Smoke records are evidence and must be closed append-only when not genuine
+leads; they never establish launch readiness.
+
+First public/customer launch remains blocked until the full Meat Sales Rules,
+approved channel/template, media, pricing, quote/document, bank-confirmed money,
+stock/carcass, fulfilment and delivery gates pass. A manual owner-reviewed
+draft or direct outreach does not activate automation or public posting.
+
+## Focused Sources
 
 - `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
 - `docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md`
-- `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
-- `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md`
 - `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`
 - `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md`
 - `docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md`

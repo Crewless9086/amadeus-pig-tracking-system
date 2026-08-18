@@ -939,3 +939,19 @@ BATCHES_24_TO_29_REMAIN`.
 No runtime, provider, message, database, farm, irrigation, fertiliser,
 borehole or other hardware action occurred. The remaining physical queue is 57
 documents. Automatic promotion is Batch 24 SAM/revenue reconciliation.
+
+### Vault Cutover Batch 24 - 2026-08-18
+
+Owner approved continuation. The exact manifest family contained five
+SAM/revenue launch, inbox, completion, manager-summary and smoke documents.
+Durable provider isolation, claim-boundary recovery, aggregate summary,
+reply-class graduation and Meat tracking-only rules were consolidated into the
+focused SAM agent, Livestock/Meat workflows and Meat rules; all five sources
+were archived intact.
+
+Lifecycle: `WORKING / BATCH_24_SAM_REVENUE_COMPLETE /
+BATCHES_25_TO_29_REMAIN`.
+
+No customer send, provider action, order, reservation, payment, stock, farm,
+database or runtime action occurred. The remaining physical queue is 52
+documents. Automatic promotion is Batch 25 business-module reconciliation.
