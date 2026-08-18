@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - BEACON litter-story correction candidate
+
+- Reconciled the active awareness workflow against Charl's stricter Meta rule:
+  sow-human-name public identity, warm farm-life copy, no sales, availability,
+  price, booking, urgency or contact language, and exact litter-linked current
+  Public Use media.
+- Replaced the scheduled sales/messages card composition with a concise organic
+  story card and protected Approve/Correct/Decline controls. Missing exact media
+  now yields one precise governed exception and no approval card.
+- Publication remains unproven and disabled at this checkpoint: the callback
+  records authorization only, and no deployed BEACON worker has yet consumed
+  the corrected approval through Meta with readback.
+
 ## 2026-08-19 - Oom Sakkie timeout closure and overnight outcome recovery
 
 - Reconciled the deployed post-Brain-Guard manager timeout repair: two natural

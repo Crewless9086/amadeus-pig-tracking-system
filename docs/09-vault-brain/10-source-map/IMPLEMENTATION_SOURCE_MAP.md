@@ -699,6 +699,16 @@ Current built gated surface:
   digest/order/type/scope evidence to historical-compatible events. Public Use
   is organic-awareness-only and grants no campaign/publication authority;
 - code: `modules/beacon/media_library.py`, `modules/beacon/media_intake.py`, `modules/beacon/creative_providers.py`, `modules/beacon/creative_studio.py`, `modules/beacon/organic_media_intelligence.py`, `modules/beacon/organic_publication_binding.py`, `modules/beacon/organic_publication_authorization.py`, `modules/beacon/weekly_owner_review.py`, `modules/beacon/weekly_owner_review_decisions.py`, `modules/oom_sakkie/telegram_gateway.py`, `modules/oom_sakkie/telegram_direct.py`, `modules/oom_sakkie/family_message_lifecycle.py`, `modules/oom_sakkie/routes.py`, `modules/sales/beacon_campaign.py`, `modules/sales/sales_transaction_routes.py`;
+- current litter-awareness composer/card source:
+  `modules/oom_sakkie/beacon_request_runtime.py`. The scheduled BEACON case
+  joins the scanner litter event to the canonical litter overview for the sow's
+  human name, selects only exact litter/pig/event-linked current Public Use
+  media, and creates no protected card when that evidence is absent. Public
+  copy is organic farm life with no commerce term or CTA; the compact private
+  card binds exact media previews and only Approve/Correct/Decline. Approval is
+  still authorization-only until a deployed BEACON worker consumes it through
+  the one canonical Meta execution spine; source/card completion is not
+  publication proof.
 - UI: `templates/beacon-media.html`, `static/js/beaconMedia.js`, `static/css/beaconMedia.css`;
 - tests: `tests/test_beacon_media_library.py`, `tests/test_beacon_media_intake.py`, `tests/test_beacon_media_intake_routes.py`, `tests/test_beacon_media_intake_postgres.py`, `tests/test_oom_sakkie_owner_task_gateway.py`, `tests/test_oom_sakkie_gatekeeper_media_forwarding.py`, `tests/test_oom_sakkie_routes.py`, `tests/test_beacon_creative_studio.py`, `tests/test_beacon_creative_studio_migration.py`, `tests/test_beacon_campaign.py`, `tests/test_beacon_organic_media_intelligence.py`, `tests/test_beacon_organic_media_intelligence_postgres.py`, `tests/test_beacon_weekly_owner_review.py`, `tests/test_beacon_weekly_owner_review_decisions.py`;
 - migrations: `supabase/migrations/202606180002_create_beacon_media_library.sql`, `202606180003_create_beacon_manual_post_events.sql`, `202606180004_create_beacon_campaign_performance_events.sql`, `202606180005_create_beacon_facebook_post_execution_events.sql`, `202606180006_extend_beacon_facebook_post_execution_statuses.sql`, `202607130002_create_beacon_creative_studio.sql`, `202607130003_enable_beacon_creative_studio_rls.sql`, `202607250001_create_beacon_weekly_review_decisions.sql`, `202607260003_create_beacon_publication_bindings.sql`, `202607260005_create_beacon_publication_authorizations.sql`, `202607260008_create_beacon_organic_media_learning.sql`, `202607270001_create_beacon_media_intake.sql` (deployed), `202608150003_allow_beacon_album_finish_protected_claims.sql` (deployed), `202608150007_allow_beacon_media_review_claims.sql` and `202608150008_add_beacon_album_review_envelope.sql` (deployed for BMQ-20260813-03);
