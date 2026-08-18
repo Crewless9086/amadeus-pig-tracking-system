@@ -1,17 +1,9 @@
-# Claude Review Handoff — historical pointer
+# Legacy Review Handoff Pointer
 
-Classification: historical.
+Lifecycle: `POINTER_ONLY / NON_DOCTRINE`.
 
-This file is retained temporarily at its original path for rollback and Git
-history. It is not current review input and grants no runtime, review, prompt,
-provider, mission, customer, farm, hardware, release, or deployment authority.
-
-Current CORE mission and review truth is the Supabase-backed mission/readback
-surface exposed to the owner at `/charlie`. Oom Sakkie reads its bounded typed
-identity projection through `modules/oom_sakkie/canonical_review_readback.py`.
-
-If canonical readback is unavailable, the runtime reports `Unknown`; it must not
-reconstruct current truth from this historical file.
-
-Rollback: restore the preceding Git blob and consumer revision together. Do not
-restore this document alone as operating authority.
+Current review and approval rules are in
+`../09-vault-brain/00-governance/REVIEW_AND_APPROVAL_RULES.md`; evidence quality
+is governed by `../09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md`.
+This compatibility path grants no prompt, reviewer, runtime, provider, mission,
+release, customer, farm, hardware, or deployment authority.

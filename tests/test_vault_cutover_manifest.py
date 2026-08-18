@@ -27,6 +27,15 @@ BATCH8_CURRENT_EXTERNAL_REFERENCES = {
     "external_sources/telemetry/forecast/amadeus-forecast-logger/README.md",
     "external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md",
 }
+BATCH9_COMPATIBILITY_POINTERS = {
+    "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
+    "docs/00-start-here/GLOSSARY.md",
+    "docs/00-start-here/HOW_WE_WORK.md",
+    "docs/00-start-here/PROJECT_OVERVIEW.md",
+    "docs/00-start-here/README.md",
+    "docs/00-start-here/WORKFLOW.md",
+    "docs/07-decisions/README.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -119,6 +128,15 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertFalse(
             any(entry["disposition"] == "ARCHIVE_CANDIDATE" for entry in self.entries.values())
         )
+
+    def test_batch9_replaces_legacy_navigation_with_minimal_pointers(self):
+        for path in BATCH9_COMPATIBILITY_POINTERS:
+            entry = self.entries[path]
+            self.assertEqual(entry["disposition"], "KEEP_POINTER")
+            self.assertLessEqual(entry["physical_lines"], 15)
+            text = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn("POINTER_ONLY / NON_DOCTRINE", text)
+            self.assertIn("09-vault-brain", text)
 
 
 if __name__ == "__main__":
