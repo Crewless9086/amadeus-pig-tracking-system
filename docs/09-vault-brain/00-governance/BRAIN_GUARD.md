@@ -114,6 +114,18 @@ The existing alignment audit currently proves only a subset of this gate. Batch
 2 records the required contract; source enforcement and runtime acceptance must
 be completed in the next separately reviewed enforcement batch.
 
+## Batch 3 Enforcement State
+
+The source gate now implements deterministic common and mission-specific packs,
+missing/incomplete-pack blockers, forbidden-doctrine detection and repository
+pack registration checks. It excludes current-state projections, handovers,
+scorecards, examples, changelogs, planning, archives, legacy AI/business docs,
+external sources and static agent cards from doctrine authority.
+
+Current honest state: source enforcement is tested; deployed Brain Guard worker,
+heartbeat, periodic audit and terminal-independent runtime acceptance remain
+unproven. Source completion must not be reported as an autonomous steward.
+
 ## Runtime Enforcement v2
 
 The second runtime pass adds stronger operating rails:

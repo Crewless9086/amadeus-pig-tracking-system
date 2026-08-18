@@ -1,5 +1,30 @@
 # Vault Brain Changelog
 
+## 2026-08-18 - Vault cutover Batch 3 enforcement
+
+- Added deterministic common and mission-specific Vault packs for principal
+  agents, BEACON/Meta awareness, UI/FACELIFT and Documents.
+- Made missing and incomplete packs fail closed in Brain Guard source coverage.
+- Prevented legacy, planning, archive, handover, current-state, scorecard,
+  example, changelog, external-source and static-agent files from doctrine.
+- Extended repository alignment to validate every mandatory pack file and
+  authority-map registration.
+- Recorded the principal-agent contradiction audit and remediation queue.
+- Performed no physical document move/deletion or production data mutation.
+
+## 2026-08-18 - Vault cutover Batch 3 enforcement
+
+- Added deterministic common and mission-specific Vault packs for principal
+  agents, BEACON/Meta awareness, UI/FACELIFT and Documents.
+- Made missing and incomplete packs fail closed in Brain Guard source coverage.
+- Prevented legacy, planning, archive, handover, current-state, scorecard,
+  example, changelog, external-source and static-agent files from acting as
+  doctrine.
+- Extended repository alignment to validate every mandatory pack file and
+  authority-map registration.
+- Recorded the principal-agent contradiction audit and remediation queue.
+- Performed no physical document move/deletion or production data mutation.
+
 ## 2026-08-18 - Vault cutover Batch 2 authority routing
 
 - Established `docs/09-vault-brain/` as the only normative agent-doctrine root.

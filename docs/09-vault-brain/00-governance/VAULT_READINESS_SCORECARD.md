@@ -86,3 +86,27 @@ Current honest state: `AUTHORITY_DESIGN_COMPLETE / ENFORCEMENT_PENDING`.
 No new readiness percentage is assigned. Promotion requires source enforcement,
 tests proving missing/wrong packs fail closed, the ordered agent contradiction
 audit and an owner-approved physical cutover manifest.
+
+## Batch 3 Enforcement Result - 2026-08-18
+
+Deterministic source enforcement and the common/principal-agent contradiction
+audit are complete. Missing packs, incomplete Documents doctrine and prohibited
+legacy authority now fail closed in source and tests.
+
+Current honest state: `SOURCE_ENFORCED / DEPLOYED_BRAIN_GUARD_UNPROVEN /
+PHYSICAL_CUTOVER_MANIFEST_PENDING`.
+
+Promotion to physical cleanup requires an exact file manifest derived from the
+Batch 1 ledger and Batch 3 remediation queue, followed by owner approval.
+
+## Batch 3 Enforcement Result - 2026-08-18
+
+Deterministic source enforcement and the common/principal-agent contradiction
+audit are complete. Missing packs, incomplete Documents doctrine and prohibited
+legacy authority now fail closed in source and tests.
+
+Current honest state: `SOURCE_ENFORCED / DEPLOYED_BRAIN_GUARD_UNPROVEN /
+PHYSICAL_CUTOVER_MANIFEST_PENDING`.
+
+Promotion to physical cleanup requires an exact file manifest derived from the
+Batch 1 ledger and Batch 3 remediation queue, followed by owner approval.

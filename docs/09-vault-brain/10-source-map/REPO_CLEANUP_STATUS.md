@@ -134,3 +134,39 @@ Decisions:
 Remaining before physical cleanup: implement deterministic pack enforcement;
 complete the ordered agent-by-agent contradiction audit; produce the exact
 pointer/archive/delete manifest; obtain owner approval for that manifest.
+
+## Vault Cutover Batch 3 - Enforcement And Principal-Agent Audit
+
+Status: `SOURCE_ENFORCEMENT_COMPLETE / DEPLOYED_ACCEPTANCE_PENDING`.
+
+Machine enforcement now:
+
+- classifies missions into additive CORE, Oom Sakkie, ROOTLINE, HERDMASTER,
+  SAM livestock, SAM meat, BEACON campaign, BEACON livestock-awareness, UI and
+  Documents packs;
+- loads common and matched pack files at mandatory priority;
+- reports missing mandatory files and incomplete packs;
+- blocks legacy, planning, archive, external-source and static-agent documents
+  when claimed as doctrine;
+- blocks current-state registers, start-here projections, handovers, scorecards,
+  examples and changelogs when claimed as doctrine;
+- preserves only the two registered outside-Vault controlling exceptions; and
+- validates every pack file and authority-map registration in the deterministic
+  repository alignment audit.
+
+### Principal-agent contradiction audit
+
+| Pack | Competing material found | Binding Batch 3 disposition | Remaining remediation |
+| --- | --- | --- | --- |
+| Common governance | `docs/00-start-here/*`, mission/current-state registers and historical governance handovers | Current-state or evidence only; never reusable doctrine | Reconcile projections, then pointer/archive review |
+| CORE | planning master plans and numerous `docs/06-operations/CHARLIE*` recovery/runtime records | Technical or historical evidence only | Extract the few current runtime procedures into focused runbooks; retire stale plans |
+| Oom Sakkie | architecture roster/prompt library, n8n routing plans and many operational handovers | Vault pack governs; external files are technical/transitional/history | Classify exact handovers and retain only current provider/runbook evidence |
+| ROOTLINE | device, commissioning, irrigation and operating-policy documents across operations/n8n | Vault pack governs decisions; hardware/provider contracts remain technical evidence | Separate current device runbooks from dated commissioning history |
+| HERDMASTER | breeding, litter, weighing, mortality and sales handovers under operations and Vault governance | Handovers excluded from doctrine; focused agent/workflow/rules govern | Extract accepted husbandry rules and reconcile gaps agent by agent |
+| SAM | `docs/05-ai`, business modules, backend contracts, n8n workflows and build plans | Vault sales packs govern; backend is technical; n8n/Sheets are transitional | Reconcile unique live channel/data facts, then pointer/archive review |
+| BEACON | old Vault handovers, `docs/05-ai` scope/media files and launch packets | Handovers excluded; exact campaign/awareness pack governs | Extract any unique provider/media facts; prohibit sales drift in awareness lane |
+| UI | legacy page plans and dashboard guidance outside the focused standards | Owning agent pack plus Facelift/UI standards governs every UI mission | Review legacy UI plans for unique examples only |
+| Documents | catalogue architecture and n8n/Sheets delivery workflows without a focused Documents agent/workflow pack | Fail closed | Create one owner-reviewed Vault Documents pack before autonomous use |
+
+The file-level Batch 1 ledger remains the exact remediation source. This audit
+does not authorize moving or deleting any listed file.

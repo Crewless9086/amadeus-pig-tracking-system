@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from modules.charlie.vault_retrieval import COMMON_MANDATORY_DOCS, MANDATORY_MISSION_PACKS
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -54,6 +56,23 @@ REQUIRED_MARKERS = {
     ),
 }
 
+AUTHORITY_ROUTING_MARKERS = {
+    "docs/09-vault-brain/README.md": (
+        "## Single-Authority Rule",
+        "## Mandatory Mission Packs",
+    ),
+    "docs/09-vault-brain/00-governance/BRAIN_GUARD.md": (
+        "## Batch 2 Authority-Routing Gate",
+        "AMADEUS_FARM_UI_FACELIFT_STANDARD.md",
+        "BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md",
+    ),
+    "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md": (
+        "## Common Mandatory Governance Pack",
+        "## Deterministic Agent Packs",
+        "## Authority Classes And Cutover Disposition",
+    ),
+}
+
 
 def evaluate_vault_alignment(repo_root: Path | str | None = None) -> dict:
     root = Path(repo_root) if repo_root is not None else REPO_ROOT
@@ -85,9 +104,33 @@ def evaluate_vault_alignment(repo_root: Path | str | None = None) -> dict:
             if marker not in text:
                 findings.append(f"required alignment marker missing from {relative}: {marker}")
 
+    for relative, markers in AUTHORITY_ROUTING_MARKERS.items():
+        path = root / relative
+        checked.append(relative)
+        text = _read(path)
+        for marker in markers:
+            if marker not in text:
+                findings.append(f"authority-routing marker missing from {relative}: {marker}")
+
     active_map_path = root / "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
     checked.append("docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md")
     active_map = _read(active_map_path)
+    mandatory_docs = sorted(set(
+        COMMON_MANDATORY_DOCS
+        + [path for paths in MANDATORY_MISSION_PACKS.values() for path in paths]
+    ))
+    for relative in mandatory_docs:
+        checked.append(relative)
+        if not (root / relative).is_file():
+            findings.append(f"mandatory mission-pack document missing: {relative}")
+        vault_relative = relative.removeprefix("docs/09-vault-brain/")
+        if relative not in active_map and f"`{vault_relative}`" not in active_map:
+            findings.append(f"mandatory mission-pack document absent from authority map: {relative}")
+        if not relative.startswith("docs/09-vault-brain/") and relative not in {
+            "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
+            "docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md",
+        }:
+            findings.append(f"unregistered doctrine outside Vault: {relative}")
     for relative in REQUIRED_CURRENT_DOCS:
         if relative not in active_map:
             findings.append(f"current document absent from active source map: {relative}")

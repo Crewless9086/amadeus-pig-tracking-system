@@ -609,3 +609,19 @@ No files moved or deleted; no runtime, provider, production data or agent
 authority changed. The next eligible batch is deterministic source enforcement
 plus the ordered common/agent contradiction audit. Physical cutover remains
 behind a separate owner-reviewed manifest.
+
+### Vault Cutover Batch 3 - 2026-08-18
+
+Owner approved deterministic enforcement and the principal-agent contradiction
+audit. The existing Vault retrieval/Brain Guard path now loads canonical packs,
+fails on missing or incomplete packs and rejects legacy/current-state/handover
+material when claimed as doctrine. UI and BEACON/Meta policy overlays are
+machine-selected. Documents remains deliberately blocked pending a canonical
+agent/workflow pack.
+
+Lifecycle: `WORKING / BATCH_3_SOURCE_ENFORCED /
+PHYSICAL_MANIFEST_AND_DEPLOYED_ACCEPTANCE_PENDING`.
+
+No document was moved or deleted and no production data/provider action was
+performed. Next eligible work is the exact physical cutover manifest and
+deployed Brain Guard acceptance, each behind its own reviewed boundary.

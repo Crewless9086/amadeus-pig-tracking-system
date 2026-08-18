@@ -152,6 +152,10 @@ They are not agent doctrine and must not enter a mandatory pack.
 
 ## Runtime/Code Sources
 
+- `modules/charlie/vault_retrieval.py` - canonical mandatory-pack registry,
+  mission classification and forbidden-doctrine source coverage.
+- `modules/charlie/vault_alignment.py` - deterministic repository and authority-map
+  validation for every mandatory pack.
 - `modules/charlie/source_map.py`
 - `modules/charlie/mission_store.py`
 - `modules/charlie/vault_store.py`
