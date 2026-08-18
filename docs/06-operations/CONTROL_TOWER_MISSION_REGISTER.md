@@ -2159,6 +2159,36 @@ and standing authority are not yet canonical; fertiliser and borehole retain
 additional physical fail-safe dependencies. The completed ROOTLINE wrapper was
 closed.
 
+### Morning operational reality and corrective dispatch - 2026-08-18
+
+Overnight outcomes were material but incomplete. CORE merged PRs #1060/#1062 and
+staged `e52b24fe`, but fresh activation epochs failed safe because Windows exposed
+no approved per-instance Task Scheduler PID evidence; CORE remains stopped.
+ROOTLINE merged PR #1063 and deployed `bd860293`: five device identities, B/C
+historical supervised evidence and Telegram observation 3717 are canonical, but
+no standing authority exists and no irrigation ran. SALES/HERDMASTER deployed the
+four-line preview through `6e7454f5` with zero-write acceptance. BEACON merged PRs
+#1058/#1059 and autonomously delivered G12 with protected buttons and replay
+silence; Meta/SAM remain behind Charl's exact card decision and missing-public-use-
+photo exception.
+
+Fresh messages after midnight prove Oom Sakkie/ROOTLINE scheduling, but expose
+defects: unchanged ROOTLINE recommendations repeated without execution; the
+morning digest contradicted ROOTLINE; weekly weighing regressed from confirmed
+79/81 to false 0/81; and the digest is too verbose. Charl reports tags 123 and 151
+were sold Sunday but cannot yet record that state through Orders. This owner report
+is not a canonical sale write and cannot infer fulfilment.
+
+Three current-blocker continuations are active: FARM owns weighing truth, concise
+briefs, shared-plan consistency and duplicate suppression; ROOTLINE owns one
+narrow reviewed B/C authority policy or exact protected decision, never
+fertiliser/borehole authority; CORE is authorized to enable the bounded reversible
+Task Scheduler Operational audit channel and complete fresh provider activation
+proof. All have fresh process/worktree bindings. CODEX UI's old processes lack
+fresh progress proof. SALES and Revenue are released; BEACON is dependency-idle
+on its live protected card; deployed schedules are operational but outcomes remain
+partial.
+
 Existing Slot 2 was immediately resumed as `ROOTLINE - PLAN AND AUTHORITY
 RECOVERY`. It must consume Charl's already recorded 18:03 SAST Telegram evidence
 “Reservoir is full”, reconcile the one authoritative plan and Oom Sakkie delivery,
