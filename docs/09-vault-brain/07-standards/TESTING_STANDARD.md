@@ -56,7 +56,22 @@ For live operational paths, include at least one failure/edge case where practic
 - service unavailable or not configured;
 - user sends vague/short input.
 
-## Source References
+For operational write paths, pressure tests must also prove the submitted,
+accepted, processed, succeeded, skipped/duplicate, blocked and failed counts;
+every row or item needs attributable status. Partial completion must never be
+reported as plain success. Retry tests use one durable operation identity and
+must not repeat successful effects.
 
-- `docs/06-operations/TESTING_CHECKLIST.md`
+For data cutovers, test reads and writes separately. A successful schema,
+import, comparison or read endpoint does not prove that a write route, fallback
+retirement or scheduler is ready. Current production acceptance needs fresh
+route/provider evidence, not a dated checklist result.
+
+For lifecycle and order paths, include terminal-state guards, duplicate active
+membership, reservation release, incomplete availability, stale/missing
+evidence and repeated submission. Formula or projection stores must not be
+edited to conceal a source or backend defect.
+
+## Source Reference
+
 - `docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md`

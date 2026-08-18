@@ -1,6 +1,7 @@
 # ToDoList 2026-06-28 Operational Notes
 
-Status: processed into `docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md` during OP-1.
+Status: processed into historical OP-1 evidence, now archived at
+`docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md`.
 
 Raw owner notes copied from `planning/ToDoList.md`:
 

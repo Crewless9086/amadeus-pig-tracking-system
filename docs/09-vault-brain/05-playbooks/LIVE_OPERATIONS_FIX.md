@@ -29,3 +29,14 @@ Treat as P0/P1 when live operations are blocked. Verify active process, branch, 
 ## Rule
 
 Do not treat symptoms as solved until the user-visible path is verified or the remaining blocker is clearly named.
+
+For bulk or multi-row owner work, preserve the full owner input before a network
+call. Use a durable operation and row ledger, bounded chunks, resumable
+processing and idempotent retry. Only complete confirmed success may clear the
+recoverable draft. HTML/non-JSON provider failures become a clear resumable
+state; backend mechanics, raw exception tokens and contradictory counts do not
+belong in the owner-facing message.
+
+One failed source or row must not erase already attributable results or make an
+unrelated surface unavailable. Report partial completion explicitly and retain
+the exact remaining work.

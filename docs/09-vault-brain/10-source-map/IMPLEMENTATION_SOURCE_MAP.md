@@ -106,8 +106,10 @@
   `docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md`. GENERAL investigates
   and scopes reusable end-to-end defects; it never implements or substitutes
   for Control Tower, CORE or a deployed agent.
-- Alignment audit and relevant-worktree governance status:
-  `docs/06-operations/CONTINUOUS_AGENT_ALIGNMENT_AUDIT_20260817.md`.
+- Alignment authority and current terminal/worktree truth:
+  `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` and
+  `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`. Dated alignment audits
+  are historical evidence only.
 - Mandatory cross-system terminal/agent truth template:
   `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. It requires
   separate web/API, worker, trigger, heartbeat, last/next cycle, authority,

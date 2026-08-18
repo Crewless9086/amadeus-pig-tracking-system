@@ -284,3 +284,17 @@ PHYSICAL ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 
 No runtime, task, provider, mission, migration, deployment, customer, farm,
 database or hardware action occurred. Full cutover continues with Batches 20-29.
+
+## Batch 20 General-Operations Reconciliation - 2026-08-18
+
+Sixteen operations plans, evidence/checklist ledgers, configuration migrations,
+UI/lifecycle plans and placeholder runbooks were archived intact after their
+reusable testing, release, live-fix, UI, migration and livestock-disclosure
+rules were consolidated into focused Vault authority.
+
+Current honest state: `SIXTEEN_GENERAL_OPERATIONS_SOURCES_ARCHIVED / 122
+PHYSICAL ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No runtime, mission, configuration, migration, deployment, provider, customer,
+farm, database or hardware action occurred. Full cutover continues with Batches
+21-29.

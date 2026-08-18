@@ -45,3 +45,12 @@
 - Removed active tests and maps from dated operations documents.
 - Archived eighteen roadmap, implementation, provider-inventory, relay,
   recovery and activation sources intact as historical evidence.
+
+2026-08-18 - Vault Cutover Batch 20:
+
+- Consolidated current general testing, release, deployment, recoverable
+  live-fix, UI lifecycle and livestock disclosure rules into focused Vault
+  authorities.
+- Removed active tests and maps from dated operations/checklist sources.
+- Archived sixteen general-operations plans, evidence ledgers, configuration
+  migrations, checklists and placeholder runbooks intact.

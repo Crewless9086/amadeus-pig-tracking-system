@@ -37,12 +37,10 @@ Goal: make the repo clean without deleting operational memory, workflow contract
 - Repo documentation control: `70-75%`.
 - Physical repo cleanup: `25-30%`, because many source docs remain active references by design.
 
-Next cleanup targets:
-
-1. Review `docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md` and split durable lessons from raw evidence.
-2. Review `docs/08-business-modules/*` with owner; archive business drafts only after owner accepts Vault replacements.
-3. Review `external_sources/` and mark each source as keep/reference/archive/delete.
-4. Add deprecation headers to docs that are superseded by Vault but still kept for history.
+Next cleanup targets are governed by the exact remaining batches in
+`VAULT_PHYSICAL_CUTOVER_MANIFEST.md`. Batch 20 completed the general-operations
+split; Batches 21-27 own the remaining domain/history families, Batch 28 owns
+transitional exit tests, and Batch 29 owns deployed Brain Guard acceptance.
 
 ## Vault Cutover Batch 1 — 2026-08-18
 

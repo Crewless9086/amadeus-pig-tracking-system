@@ -18,6 +18,17 @@ All Amadeus Farm operational-page facelifts must also follow `AMADEUS_FARM_UI_FA
 - For UI missions, follow `docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md`.
 - Dashboard work is not review-ready until real desktop/laptop and mobile visual evidence exists for the changed page.
 - Attached reference screenshots must be cited and compared against the built screen.
+- Load independent panels independently with bounded timeouts; one unavailable
+  source must not keep unrelated current truth in a global loading state.
+- Keep repeated specialist packets off overview pages. Show one compact current
+  summary and link to the deeper evidence surface.
+- Compose animal and litter pages as understandable life records: identity and
+  current state first, one best next action, role/stage-specific sections,
+  completed-section summaries and exceptional correction/history tools behind
+  progressive disclosure.
+- Existing canonical facts are prefilled and never requested again merely
+  because a different UI workflow needs them. Missing evidence blocks only the
+  unsupported field or action.
 
 ## CHARLIE Dashboard Requirements
 
