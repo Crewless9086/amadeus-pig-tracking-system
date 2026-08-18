@@ -21,6 +21,12 @@ BATCH7_EXTERNAL_UI_FILES = {
     "CODEX_FARM_UI_RESET_BRIEF.md",
     "CODEX_FARM_UI_TARGET_SPECIALIST_WORKSPACE_BRIEF.md",
 }
+BATCH8_CURRENT_EXTERNAL_REFERENCES = {
+    "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
+    "external_sources/README.md",
+    "external_sources/telemetry/forecast/amadeus-forecast-logger/README.md",
+    "external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -105,6 +111,13 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn(
             "external_sources/telemetry/forecast/amadeus-forecast-logger/README.md",
             self.entries,
+        )
+
+    def test_batch8_resolves_remaining_external_candidates_as_technical(self):
+        for path in BATCH8_CURRENT_EXTERNAL_REFERENCES:
+            self.assertEqual(self.entries[path]["disposition"], "KEEP_TECHNICAL")
+        self.assertFalse(
+            any(entry["disposition"] == "ARCHIVE_CANDIDATE" for entry in self.entries.values())
         )
 
 

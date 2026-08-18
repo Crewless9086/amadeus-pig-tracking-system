@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-08-18 - Vault cutover Batch 8 external candidate reconciliation
+
+- Reviewed all four remaining external archive candidates completely.
+- Retained the carcass source standard, external index, forecast README and Sunsynk README as current technical/source evidence.
+- Reduced the manifest archive-candidate queue to zero.
+- Confirmed that none passed the strict deletion test.
+- Performed no move, deletion, doctrine expansion, runtime, provider, production-data or authority change.
+
 ## 2026-08-18 - Vault cutover Batch 7 external UI brief archive
 
 - Archived two superseded external UI design briefs intact; no deletion was performed.

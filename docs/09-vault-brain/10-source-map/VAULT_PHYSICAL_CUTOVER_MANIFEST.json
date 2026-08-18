@@ -1,18 +1,17 @@
 {
-  "version": "vault_physical_cutover_manifest_v4",
-  "baseline": "69d710d0414a5aed8cbe578a779a41e8f388d54e",
-  "generated_from_head": "69d710d0414a5aed8cbe578a779a41e8f388d54e",
-  "owner_boundary": "Batch 7 archived only two zero-reference superseded external UI briefs; no deletion, doctrine rewrite, runtime, provider, authority, or production change",
-  "entry_count": 516,
+  "version": "vault_physical_cutover_manifest_v5",
+  "baseline": "6e1c058a6f41551916e5bb61830b817c0829230b",
+  "generated_from_head": "6e1c058a6f41551916e5bb61830b817c0829230b",
+  "owner_boundary": "Batch 8 resolved four remaining external archive candidates as current technical references; no move, deletion, doctrine expansion, runtime, provider, authority, or production change",
+  "entry_count": 517,
   "counts": {
-    "ARCHIVE_CANDIDATE": 4,
     "EXTRACT_THEN_ARCHIVE": 108,
     "KEEP_ARCHIVE": 26,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
-    "KEEP_TECHNICAL": 27,
+    "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 175,
+    "KEEP_VAULT": 176,
     "POINTER_AFTER_RECONCILIATION": 18,
     "RECONCILE_GENERATED_PROJECTION": 9,
     "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 73
@@ -2700,8 +2699,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "fa25796925f309f714b3d96dc575f81ecf90083b87f0f8558c2a78843debdc0d",
-      "physical_lines": 695,
+      "sha256": "7cc5e0f86bcf1f64fd53e920a53c8e3b86e68e534622db77121a460fc181b0b2",
+      "physical_lines": 709,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -4781,8 +4780,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "14d634e699d20030aee1769d0e982a88c80e559d16030ec98317261f471850d7",
-      "physical_lines": 191,
+      "sha256": "f501aba8f968744ea40e60cab1069a9fc34d786488d7c01a42bb02640f4700fc",
+      "physical_lines": 199,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4958,8 +4957,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "ffea1b1b92e40a4552c1af56c7622b1088db1b0d5b6fde4664390d0e19e4006f",
-      "physical_lines": 144,
+      "sha256": "fbf7dd8804b6b958b67688003a5a1812960076b43cdd3d345b375073e5f78265",
+      "physical_lines": 152,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7525,8 +7524,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "c219df591d1528842c1516c31320814c6d2108a71295ab3a6f32c8035718e1f5",
-      "physical_lines": 191,
+      "sha256": "36809342301968bb1032185e44fa6304c84e0b2125f0f3742fd8aa4958eea542",
+      "physical_lines": 195,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7606,8 +7605,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-      "sha256": "fa789a0acc79ad6d8940313fadf7a1e0a443b1dd8bb2d1d189950fdf987a0e51",
-      "physical_lines": 250,
+      "sha256": "0d8ded8009c91a413635af7ab34b0c2b9107075834cf00770b441b314bf06ca4",
+      "physical_lines": 261,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7650,12 +7649,26 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH7_RECONCILIATION.md",
-      "sha256": "b617731225038df0abecad991cb66f72a57bbb2ed555b36c6077a941c3adbfc6",
+      "sha256": "dededd85cfe31e775d7ad56000557c4beeda1be35a8955a638b590b53c560fd4",
       "physical_lines": 26,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH7_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH8_RECONCILIATION.md",
+      "sha256": "9ccd9c4d575102f31e054c854b9bd645e92467b38124e67b824452dc89f835b4",
+      "physical_lines": 27,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH8_RECONCILIATION.md",
       "exact_reference_count": 0,
       "exact_references": [],
       "reason": "canonical Vault doctrine/reference",
@@ -7680,8 +7693,8 @@
     },
     {
       "path": "docs/09-vault-brain/CHANGELOG.md",
-      "sha256": "681ba1728bdb4460178317b3dc18fd0d7aa1d4133105d6b25c4fd1b90edee49a",
-      "physical_lines": 1514,
+      "sha256": "470539d0b5fe190cd447456778d1439114456687edb362c3bc55553d579fb4c8",
+      "physical_lines": 1522,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -8138,21 +8151,22 @@
       "physical_lines": 607,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "archive_or_delete_review",
-      "disposition": "ARCHIVE_CANDIDATE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
-      "exact_reference_count": 6,
+      "disposition": "KEEP_TECHNICAL",
+      "destination_or_replacement": "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
+      "exact_reference_count": 9,
       "exact_references": [
         "docs/00-start-here/NEXT_STEPS.md",
         "docs/08-business-modules/PORK_SALES_MODEL.md",
         "docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH8_RECONCILIATION.md",
+        "scripts/build_vault_cutover_manifest.py",
         "templates/meat-sales-reference.html",
-        "tests/test_sam_meat_commercial_frontend.py"
+        "tests/test_sam_meat_commercial_frontend.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "historical evidence; archive is safer than deletion",
-      "blockers": [
-        "owner_approval_required"
-      ],
+      "reason": "current external implementation/source evidence; Vault doctrine remains authoritative",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
@@ -8161,16 +8175,16 @@
       "physical_lines": 20,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "archive_or_delete_review",
-      "disposition": "ARCHIVE_CANDIDATE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/external_sources/README.md",
-      "exact_reference_count": 1,
+      "disposition": "KEEP_TECHNICAL",
+      "destination_or_replacement": "external_sources/README.md",
+      "exact_reference_count": 3,
       "exact_references": [
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH8_RECONCILIATION.md",
+        "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "historical evidence; archive is safer than deletion",
-      "blockers": [
-        "owner_approval_required"
-      ],
+      "reason": "current external implementation/source evidence; Vault doctrine remains authoritative",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
@@ -8179,16 +8193,16 @@
       "physical_lines": 29,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "archive_or_delete_review",
-      "disposition": "ARCHIVE_CANDIDATE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/external_sources/telemetry/forecast/amadeus-forecast-logger/README.md",
-      "exact_reference_count": 1,
+      "disposition": "KEEP_TECHNICAL",
+      "destination_or_replacement": "external_sources/telemetry/forecast/amadeus-forecast-logger/README.md",
+      "exact_reference_count": 3,
       "exact_references": [
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH8_RECONCILIATION.md",
+        "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "historical evidence; archive is safer than deletion",
-      "blockers": [
-        "owner_approval_required"
-      ],
+      "reason": "current external implementation/source evidence; Vault doctrine remains authoritative",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
@@ -8197,16 +8211,17 @@
       "physical_lines": 23,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "archive_or_delete_review",
-      "disposition": "ARCHIVE_CANDIDATE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md",
-      "exact_reference_count": 1,
+      "disposition": "KEEP_TECHNICAL",
+      "destination_or_replacement": "external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md",
+      "exact_reference_count": 4,
       "exact_references": [
-        "docs/02-backend/SUPABASE_TELEMETRY_PLAN.md"
+        "docs/02-backend/SUPABASE_TELEMETRY_PLAN.md",
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH8_RECONCILIATION.md",
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "historical evidence; archive is safer than deletion",
-      "blockers": [
-        "owner_approval_required"
-      ],
+      "reason": "current external implementation/source evidence; Vault doctrine remains authoritative",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {

@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: regenerated after approved Batch 7 slice; no further physical change authorized.
+Status: regenerated after approved Batch 8 reconciliation; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v4`
-Baseline: `69d710d0414a5aed8cbe578a779a41e8f388d54e`
-Generated from HEAD: `69d710d0414a5aed8cbe578a779a41e8f388d54e`
-Tracked Markdown/MDX files covered: **516**
+Version: `vault_physical_cutover_manifest_v5`
+Baseline: `6e1c058a6f41551916e5bb61830b817c0829230b`
+Generated from HEAD: `6e1c058a6f41551916e5bb61830b817c0829230b`
+Tracked Markdown/MDX files covered: **517**
 Validation: **PASS**
 
-This manifest records the completed Batch 5, 6 and 7 archive slices and proposes later
+This manifest records completed Batches 5 through 8 and proposes later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,14 +17,13 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `ARCHIVE_CANDIDATE` | 4 |
 | `EXTRACT_THEN_ARCHIVE` | 108 |
 | `KEEP_ARCHIVE` | 26 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
-| `KEEP_TECHNICAL` | 27 |
+| `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 175 |
+| `KEEP_VAULT` | 176 |
 | `POINTER_AFTER_RECONCILIATION` | 18 |
 | `RECONCILE_GENERATED_PROJECTION` | 9 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
@@ -38,6 +37,7 @@ keeps `physical_change_authorized: false`.
 - Static agent cards require a proven generated projection before replacement.
 - All nine reconciled `docs/05-ai` files are now preserved intact in the archive.
 - The two superseded external UI briefs are preserved intact in the archive.
+- The four remaining external candidates are retained as current technical/source evidence; the archive-candidate queue is empty.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -205,10 +205,6 @@ entry whose physical disposition needs later work or owner review.
 | `docs/08-business-modules/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/README.md` | 0 | unique_fact_extraction_required |
 | `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | 3 | unique_fact_extraction_required |
 | `docs/MIGRATION_INDEX.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md` | 1 | unique_fact_extraction_required |
-| `external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md` | 6 | owner_approval_required |
-| `external_sources/README.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/README.md` | 1 | owner_approval_required |
-| `external_sources/telemetry/forecast/amadeus-forecast-logger/README.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/telemetry/forecast/amadeus-forecast-logger/README.md` | 1 | owner_approval_required |
-| `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md` | `ARCHIVE_CANDIDATE` | `docs/99-archive/vault-cutover/external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md` | 1 | owner_approval_required |
 | `planning/CHARLIE_CORE_EXTENDED_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md` | 1 | unique_fact_extraction_required |
 | `planning/CODEX_CHAT.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CODEX_CHAT.md` | 22 | unique_fact_extraction_required |
 | `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | 4 | unique_fact_extraction_required |
