@@ -27,7 +27,7 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v10"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v11"
 BASELINE = "ffdec62eb5fa986dca8ee648043339aaead0fbce"
 
 BATCH9_COMPATIBILITY_POINTERS = {
@@ -62,6 +62,43 @@ BATCH12_COMPATIBILITY_POINTERS = {
 BATCH13_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/PRODUCT_VISION.md",
 }
+
+REMAINING_PHYSICAL_DISPOSITIONS = {
+    "EXTRACT_THEN_ARCHIVE",
+    "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
+    "RECONCILE_GENERATED_PROJECTION",
+}
+
+
+def _planned_batch(path: str, disposition: str) -> tuple[int | None, str | None]:
+    """Assign every remaining physical item to one collision-bounded batch."""
+    if disposition not in REMAINING_PHYSICAL_DISPOSITIONS:
+        return None, None
+    if path.startswith("static/assets/agents/"):
+        return 15, "generated_agent_projections"
+    if path.startswith("planning/storyworks/"):
+        return 27, "storyworks"
+    if path.startswith("planning/"):
+        return 26, "planning_and_inbox"
+    if path.startswith("docs/08-business-modules/"):
+        return 25, "business_modules"
+    if path.startswith("docs/07-decisions/") or path == "docs/MIGRATION_INDEX.md":
+        return 16, "decisions_and_migration_index"
+    if re.search(r"/(GS_MIG_|GOOGLE_SHEETS_)", path):
+        return 17, "sheets_migration"
+    if "/HERDMASTER_" in path:
+        return 21, "herdmaster"
+    if "/OOM_SAKKIE_" in path:
+        return 22, "oom_sakkie"
+    if "/ROOTLINE_" in path:
+        return 23, "rootline"
+    if "/SAM_" in path:
+        return 24, "sam_revenue"
+    if "/CMQ_" in path:
+        return 18, "core_missions"
+    if re.search(r"/(CHARLIE_|CORE_PROVIDER_|MISSION_LOOP_|AGENTIC_|BUILD_RELAY)", path):
+        return 19, "core_operating_spine"
+    return 20, "general_operations"
 
 CURRENT_EXTERNAL_TECHNICAL_REFERENCES = {
     "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
@@ -286,6 +323,7 @@ def build_manifest() -> dict:
         refs = _exact_references(path, documents)
         lines = _physical_lines(source)
         disposition, destination, reason, blockers = _disposition(path, row, refs, lines)
+        planned_batch, reconciliation_family = _planned_batch(path, disposition)
         entries.append(
             {
                 "path": path,
@@ -300,6 +338,8 @@ def build_manifest() -> dict:
                 "reason": reason,
                 "blockers": blockers,
                 "physical_change_authorized": False,
+                "planned_batch": planned_batch,
+                "reconciliation_family": reconciliation_family,
             }
         )
     counts = Counter(entry["disposition"] for entry in entries)
@@ -307,7 +347,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 13 reconciled the final start-here product projection into focused identity/UI Vault files and retained one minimal compatibility pointer; no deletion, runtime, provider, authority, or production change",
+        "owner_boundary": "Batch 14 schedules every remaining physical-reconciliation item into Batches 15-27; it authorizes no move, deletion, rewrite, runtime, provider, authority, or production change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -346,6 +386,11 @@ def validate_manifest(manifest: dict) -> list[str]:
                 findings.append(f"delete candidate lacks owner gate: {path}")
         if entry.get("disposition") == "KEEP_TRANSITIONAL" and "exit_test_unproven" not in entry.get("blockers", []):
             findings.append(f"transitional file lacks exit-test blocker: {path}")
+        if entry.get("disposition") in REMAINING_PHYSICAL_DISPOSITIONS:
+            if not isinstance(entry.get("planned_batch"), int) or not entry.get("reconciliation_family"):
+                findings.append(f"remaining physical item lacks a planned batch: {path}")
+        elif entry.get("planned_batch") is not None or entry.get("reconciliation_family") is not None:
+            findings.append(f"non-physical item received a physical batch: {path}")
     return findings
 
 
@@ -353,7 +398,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: regenerated after approved Batch 13 final start-here projection cutover; no further physical change authorized.",
+        "Status: Batch 14 remaining-work schedule complete; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -361,7 +406,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records completed Batches 5 through 13 and proposes later",
+        "This manifest records completed Batches 5 through 14 and schedules later",
         "dispositions only. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
@@ -372,6 +417,31 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "| --- | ---: |",
     ]
     lines.extend(f"| `{key}` | {value} |" for key, value in manifest["counts"].items())
+    schedule_counts = Counter(
+        (entry["planned_batch"], entry["reconciliation_family"])
+        for entry in manifest["entries"]
+        if entry["planned_batch"] is not None
+    )
+    lines.extend([
+        "",
+        "## Remaining execution schedule",
+        "",
+        "Every one of the 190 remaining physical-reconciliation entries is assigned",
+        "to exactly one of Batches 15 through 27. Batch 28 owns the 72 transitional",
+        "exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.",
+        "This schedule is an ordering contract, not physical-change authority.",
+        "",
+        "| Batch | Family | Entries |",
+        "| ---: | --- | ---: |",
+    ])
+    lines.extend(
+        f"| {batch} | `{family}` | {count} |"
+        for (batch, family), count in sorted(schedule_counts.items())
+    )
+    lines.extend([
+        "| 28 | `transitional_exit_tests` | 72 |",
+        "| 29 | `deployed_brain_guard_acceptance` | operational proof |",
+    ])
     lines.extend([
         "",
         "## Safety gates",
@@ -397,15 +467,15 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "Markdown report excludes itself). This table lists every",
         "entry whose physical disposition needs later work or owner review.",
         "",
-        "| Source | Disposition | Destination / replacement | Exact refs | Blockers |",
-        "| --- | --- | --- | ---: | --- |",
+        "| Source | Disposition | Planned batch | Destination / replacement | Exact refs | Blockers |",
+        "| --- | --- | ---: | --- | ---: | --- |",
     ])
     for entry in manifest["entries"]:
         if entry["disposition"].startswith("KEEP_"):
             continue
         blockers = ", ".join(entry["blockers"]) or "none"
         lines.append(
-            f"| `{entry['path']}` | `{entry['disposition']}` | "
+            f"| `{entry['path']}` | `{entry['disposition']}` | {entry['planned_batch'] or '-'} | "
             f"`{entry['destination_or_replacement']}` | {entry['exact_reference_count']} | {blockers} |"
         )
     lines.extend(["", "## Validation findings", ""])

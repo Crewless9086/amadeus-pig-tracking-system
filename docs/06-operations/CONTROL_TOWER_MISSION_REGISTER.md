@@ -778,3 +778,22 @@ Duplicated agent bibles, authority rules, build phases, voice-provider notes,
 asset proposals and open questions were not promoted as competing doctrine.
 They remain in Git history. No deletion, runtime, activation, deployment,
 provider, production-data or authority change occurred.
+
+### Vault Cutover Batch 14 - 2026-08-18
+
+Owner directed the programme to continue through complete repository alignment.
+All 190 remaining physical-reconciliation entries were deterministically assigned
+to Batches 15-27: 9 projections, 3 decision/index files, 12 Sheets-migration
+files, 10 CORE mission files, 18 CORE operating files, 16 general operations
+files, 22 HERDMASTER files, 30 Oom Sakkie files, 13 ROOTLINE files, 5 SAM/Revenue
+files, 10 business-module files, 8 planning/inbox files and 34 Storyworks files.
+
+Batch 28 is reserved for the 72 production-exit-tested transitional documents.
+Batch 29 is reserved for deployed, scheduled Brain Guard acceptance.
+
+Lifecycle: `WORKING / BATCH_14_EXECUTION_SCHEDULE_COMPLETE /
+BATCHES_15_TO_29_REMAIN`.
+
+No source document was moved, deleted or rewritten in this scheduling batch. No
+runtime, provider, production-data, customer, farm or hardware action occurred.
+Automatic promotion is Batch 15 generated-agent-projection reconciliation.
