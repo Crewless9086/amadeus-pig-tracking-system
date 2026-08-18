@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 17 Google Sheets migration reconciliation complete; no further physical change authorized.
+Status: Batch 18 CORE mission-evidence reconciliation complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v14`
-Baseline: `f7237d83e846eb91dfda7cade39a2647b26c732c`
-Generated from HEAD: `f7237d83e846eb91dfda7cade39a2647b26c732c`
-Tracked Markdown/MDX files covered: **526**
+Version: `vault_physical_cutover_manifest_v15`
+Baseline: `786e529f08202425761725db8e0bcbb57a9fcf41`
+Generated from HEAD: `786e529f08202425761725db8e0bcbb57a9fcf41`
+Tracked Markdown/MDX files covered: **527**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 17 and schedules later
+This manifest records completed Batches 5 through 18 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,21 +17,21 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `EXTRACT_THEN_ARCHIVE` | 98 |
-| `KEEP_ARCHIVE` | 41 |
+| `EXTRACT_THEN_ARCHIVE` | 95 |
+| `KEEP_ARCHIVE` | 51 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_GENERATED_PROJECTION` | 9 |
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 185 |
-| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 68 |
+| `KEEP_VAULT` | 186 |
+| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 61 |
 
 ## Remaining execution schedule
 
-The remaining 166 physical-reconciliation entries are assigned
-to exactly one of Batches 18 through 27. Batch 28 owns the 72 transitional
+The remaining 156 physical-reconciliation entries are assigned
+to exactly one of Batches 19 through 27. Batch 28 owns the 72 transitional
 exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
@@ -40,7 +40,7 @@ This schedule is an ordering contract, not physical-change authority.
 | 15 | `generated_agent_projections` | COMPLETE (9) |
 | 16 | `decisions_and_migration_index` | COMPLETE (3) |
 | 17 | `sheets_migration` | COMPLETE (12) |
-| 18 | `core_missions` | 10 |
+| 18 | `core_missions` | COMPLETE (10) |
 | 19 | `core_operating_spine` | 18 |
 | 20 | `general_operations` | 16 |
 | 21 | `herdmaster` | 22 |
@@ -96,16 +96,6 @@ entry whose physical disposition needs later work or owner review.
 | `docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_INTERFACE.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 19 | `docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_INTERFACE.md` | 1 | runbook_history_split_required |
 | `docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_MASTER_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 19 | `docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_MASTER_PLAN.md` | 1 | runbook_history_split_required |
 | `docs/06-operations/CHARLIE_SHARED_AGENT_RUNTIME.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 19 | `docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_SHARED_AGENT_RUNTIME.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/CMQ_20260813_03_APPLICATION_PREVIEW_WIRING_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_APPLICATION_PREVIEW_WIRING_HANDOVER.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/CMQ_20260813_03_CANONICAL_CLAIM_EXECUTOR_COMPATIBILITY.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_CANONICAL_CLAIM_EXECUTOR_COMPATIBILITY.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/CMQ_20260813_03_CANONICAL_PREVIEW_SOURCE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_CANONICAL_PREVIEW_SOURCE_HANDOVER.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/CMQ_20260813_03_OOM_TYPED_PREVIEW_WIRING_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_OOM_TYPED_PREVIEW_WIRING_HANDOVER.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/CMQ_20260813_05_CURRENT_PORTFOLIO_BASELINE_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_CURRENT_PORTFOLIO_BASELINE_PLAN.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 18 | `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` | 1 | runbook_history_split_required |
 | `docs/06-operations/CODEX_CHAT_WORKFLOW.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 20 | `docs/99-archive/vault-cutover/docs/06-operations/CODEX_CHAT_WORKFLOW.md` | 1 | runbook_history_split_required |
 | `docs/06-operations/CONTINUOUS_AGENT_ALIGNMENT_AUDIT_20260817.md` | `EXTRACT_THEN_ARCHIVE` | 20 | `docs/99-archive/vault-cutover/docs/06-operations/CONTINUOUS_AGENT_ALIGNMENT_AUDIT_20260817.md` | 1 | unique_fact_extraction_required |
 | `docs/06-operations/CORE_PROVIDER_ORIGIN_ACTIVATION_RAIL.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 19 | `docs/99-archive/vault-cutover/docs/06-operations/CORE_PROVIDER_ORIGIN_ACTIVATION_RAIL.md` | 0 | runbook_history_split_required |

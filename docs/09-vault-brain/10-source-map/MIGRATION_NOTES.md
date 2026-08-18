@@ -27,3 +27,12 @@
 - Removed two dated migration documents from the active source map.
 - Archived all 12 GS-MIG plans/reports intact; none is current doctrine or live
   state evidence after this cutover.
+
+2026-08-18 - Vault Cutover Batch 18:
+
+- Reconciled reusable CORE portfolio-admission, execution-eligibility and
+  zero-authority Shadow observation rules into the focused mission workflow.
+- Reconciled grouped preview, protected claim, canonical digest, atomic
+  execution and replay rules into the channel-invariant action standard.
+- Archived ten dated CMQ mission plans and implementation handovers intact;
+  current source ownership remains in the implementation source map.

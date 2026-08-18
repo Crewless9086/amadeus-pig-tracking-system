@@ -255,3 +255,18 @@ ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 No migration, data write, route cutover, fallback retirement, deployment,
 provider, customer, farm or hardware action occurred. Full cutover continues
 with Batches 18-29.
+
+## Batch 18 CORE Mission-Evidence Reconciliation - 2026-08-18
+
+Ten dated CMQ plans, compatibility reports and implementation handovers were
+archived intact after reusable portfolio admission, execution eligibility,
+Shadow observation and canonical grouped-action rules were consolidated into
+focused Vault authority. Dated classifications and implementation state can no
+longer masquerade as current operational truth.
+
+Current honest state: `TEN_CORE_MISSION_EVIDENCE_SOURCES_ARCHIVED / 156 PHYSICAL
+ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No mission admission, dispatch, execution, runtime, deployment, provider,
+customer, farm, database or hardware action occurred. Full cutover continues
+with Batches 19-29.
