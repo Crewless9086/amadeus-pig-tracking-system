@@ -1,16 +1,15 @@
 # Vault Brain Changelog
 
-## 2026-08-18 - Vault cutover Batch 3 enforcement
+## 2026-08-18 - Vault cutover Batch 4 physical manifest
 
-- Added deterministic common and mission-specific Vault packs for principal
-  agents, BEACON/Meta awareness, UI/FACELIFT and Documents.
-- Made missing and incomplete packs fail closed in Brain Guard source coverage.
-- Prevented legacy, planning, archive, handover, current-state, scorecard,
-  example, changelog, external-source and static-agent files from doctrine.
-- Extended repository alignment to validate every mandatory pack file and
-  authority-map registration.
-- Recorded the principal-agent contradiction audit and remediation queue.
-- Performed no physical document move/deletion or production data mutation.
+- Added deterministic machine-readable and owner-readable physical-cutover
+  manifests covering all 513 tracked source Markdown/MDX documents.
+- Recorded exact destinations/replacements, all-tracked-text references,
+  extraction/exit-test/projection blockers and false physical authorization.
+- Resolved the five remaining manual classifications without deleting evidence.
+- Found zero documents that currently satisfy the strict deletion test.
+- Performed no move, archive, deletion, pointer rewrite, doctrine rewrite,
+  runtime action or production mutation.
 
 ## 2026-08-18 - Vault cutover Batch 3 enforcement
 

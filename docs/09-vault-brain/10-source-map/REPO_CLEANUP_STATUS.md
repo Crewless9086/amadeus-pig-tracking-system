@@ -170,3 +170,41 @@ Machine enforcement now:
 
 The file-level Batch 1 ledger remains the exact remediation source. This audit
 does not authorize moving or deleting any listed file.
+
+## Vault Cutover Batch 4 - Exact Physical-Cutover Manifest
+
+Status: `MANIFEST_COMPLETE / NO_PHYSICAL_CHANGE / OWNER_EXECUTION_APPROVAL_PENDING`.
+
+The deterministic manifest covers all 513 tracked source Markdown/MDX files at
+baseline `66d4667d6ecc4eda9c59c3ff06795494cda0a53b`. Every entry records its
+full current digest, physical line count, exact references across all tracked
+UTF-8 text, disposition, exact destination or replacement, blockers and an
+explicit false physical-authorization flag.
+
+| Disposition | Count |
+| --- | ---: |
+| Keep canonical Vault | 172 |
+| Keep controlling exception | 2 |
+| Keep current state | 2 |
+| Keep technical | 27 |
+| Keep transitional until exit test | 72 |
+| Keep existing archive | 15 |
+| Reconcile generated projection | 9 |
+| Convert to pointer after reconciliation | 18 |
+| Extract unique facts, then archive | 117 |
+| Split current runbook, then archive history | 73 |
+| Archive candidate awaiting later approval | 6 |
+| Delete candidate | 0 |
+
+No document currently meets the strict deletion test. Historical evidence
+defaults to archive; transitional n8n/Sheets material remains blocked by exit
+tests; static agent cards remain until generated projections are proven; and
+pointer candidates retain their full source until unique facts reconcile.
+
+Review artifacts:
+
+- `VAULT_PHYSICAL_CUTOVER_MANIFEST.md`
+- `VAULT_PHYSICAL_CUTOVER_MANIFEST.json`
+- `scripts/build_vault_cutover_manifest.py`
+
+This batch does not move, archive, delete or rewrite any source document.
