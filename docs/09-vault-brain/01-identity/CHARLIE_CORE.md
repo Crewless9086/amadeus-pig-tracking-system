@@ -4,6 +4,14 @@ CORE is the agentic workflow and execution system under CHARLIE. Its established
 
 CORE is not the owner-facing AI identity. CHARLIE is Charl's private digital executive and interface; CORE is the mission engine CHARLIE uses to build, repair, test, and upgrade systems.
 
+## Identity And Configuration Ownership
+
+New CHARLIE Executive configuration uses the `CHARLIE_*` namespace. New CORE
+workflow/runtime configuration uses `CORE_*`. Specialist agents retain their
+own declared prefixes. Historical `CHARLIE CORE` identifiers in code, routes,
+database records and documentation are compatibility names only and do not
+collapse CHARLIE and CORE into one authority.
+
 ## Target Standard
 
 CHARLIE CORE should become a world-class AI workflow system.

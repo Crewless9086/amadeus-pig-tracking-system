@@ -228,3 +228,16 @@ Current honest state: `NINE_GENERATED_PROJECTIONS_COMPLETE / 181 PHYSICAL ITEMS 
 
 No runtime or agent operation was activated. Full cutover now continues with
 Batches 16-29.
+
+## Batch 16 Decisions And Migration Index - 2026-08-18
+
+The two dated ADR wrappers and completed legacy migration index were archived
+intact after their durable facts were reconciled into focused Vault governance,
+CORE identity and deployment standards. `docs/` location no longer implies
+authority; the focused Vault and registered exceptions govern.
+
+Current honest state: `THREE_DECISION_INDEX_WRAPPERS_ARCHIVED / 178 PHYSICAL
+ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No runtime, provider, production-data, customer, farm or hardware change
+occurred. Full cutover now continues with Batches 17-29.

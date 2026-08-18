@@ -1,5 +1,21 @@
 # Source Of Truth Rules
 
+## Documentation Authority
+
+The historical decision to consolidate approved documentation under `docs/`
+made the repository easier to navigate, but the directory itself is not an
+authority boundary. Current reusable agent doctrine lives only in focused
+files under `docs/09-vault-brain/`, subject to the registered controlling
+exceptions in the Vault root README. Other `docs/` files are technical,
+current-state, transitional or historical evidence according to the active
+source map and lifecycle standard; their location alone never makes them
+normative.
+
+`planning/` remains non-authoritative working material. Legacy material may be
+used only as evidence during reconciliation and must not override a focused
+Vault rule. A legacy file is archived only after its unique facts are retained
+in the correct focused authority or explicitly classified as history.
+
 ## Conflict Order
 
 1. Latest direct owner instruction.
