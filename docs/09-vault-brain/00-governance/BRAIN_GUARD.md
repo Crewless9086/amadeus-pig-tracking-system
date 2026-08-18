@@ -213,3 +213,11 @@ discovery aids only. Brain Guard must reject their former architecture, phase,
 portfolio, live-status, approval and inbox semantics as doctrine or current
 state. Basic local commands and runtime asset locations may be used only as
 technical evidence inside the selected Vault pack.
+
+## Batch 11 Technical-Contract Pointer Gate
+
+The legacy runner, mission-protocol and deployment paths are compatibility
+pointers only. Brain Guard must require the current Mission Workflow, Runtime
+Programme, Deployment Standard and Release Workflow. A compatibility consumer
+may load an old path, but its former duplicated or dated instructions cannot
+select authority, execution, release or operational state.

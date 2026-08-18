@@ -1,26 +1,26 @@
 {
-  "version": "vault_physical_cutover_manifest_v7",
-  "baseline": "c73c6d868f2b8c4a765e5c2f95886f0b2096f9ff",
-  "generated_from_head": "c73c6d868f2b8c4a765e5c2f95886f0b2096f9ff",
-  "owner_boundary": "Batch 10 replaced five reconciled root/status/navigation documents with minimal compatibility pointers; no deletion, runtime, provider, authority, or production change",
-  "entry_count": 519,
+  "version": "vault_physical_cutover_manifest_v8",
+  "baseline": "008527b8f7151ac6dc7ade72993cc252a06b1792",
+  "generated_from_head": "008527b8f7151ac6dc7ade72993cc252a06b1792",
+  "owner_boundary": "Batch 11 reconciled three technical operating contracts into focused Vault workflow/standard files and retained minimal compatibility pointers; no deletion, runtime, provider, authority, or production change",
+  "entry_count": 520,
   "counts": {
     "EXTRACT_THEN_ARCHIVE": 108,
     "KEEP_ARCHIVE": 26,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
-    "KEEP_POINTER": 12,
+    "KEEP_POINTER": 15,
     "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 178,
-    "POINTER_AFTER_RECONCILIATION": 6,
+    "KEEP_VAULT": 179,
+    "POINTER_AFTER_RECONCILIATION": 3,
     "RECONCILE_GENERATED_PROJECTION": 9,
     "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 73
   },
   "entries": [
     {
       "path": "CLAUDE.md",
-      "sha256": "0d21d65328356114306b4b01f8e6a0068fa0b97897648e1849910604e0f02cc7",
+      "sha256": "0f65d3861c2d1610655d3136594ea7e3324eacfc89f8f0e8c01eacfbf9f78598",
       "physical_lines": 13,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "classify_manually",
@@ -39,7 +39,7 @@
     },
     {
       "path": "docs/00-start-here/AGENT_ASSET_REGISTER.md",
-      "sha256": "dfe78b36bf784950767a0e1b99f220e21f2d0e10f4d241d5da08250ac8d79df4",
+      "sha256": "472d186ac4189674e52dc0788ed9c4eec85a018599b4fd18a9328315b99ee9b5",
       "physical_lines": 12,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
@@ -58,7 +58,7 @@
     },
     {
       "path": "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md",
-      "sha256": "0a886cc8fd1cd0b9e9b2de6c8de00620bfa16e9491abf5aacf04d6c7d1229e8e",
+      "sha256": "13d7509006c7b9c0af0278a19894c9577e4a620bece40033c3daa85c591b04be",
       "physical_lines": 12,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
@@ -76,36 +76,38 @@
     },
     {
       "path": "docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md",
-      "sha256": "9b95697ce266efbb4c3390a6f0e6a459fe162504a5de03cb6f08467e1bc9c3ba",
-      "physical_lines": 215,
+      "sha256": "87adee0dc7848d65ec84a8e8a31bc909e7d799c7ffbf6d883068d7a1f96b58c9",
+      "physical_lines": 12,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
-      "disposition": "POINTER_AFTER_RECONCILIATION",
+      "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
-      "exact_reference_count": 6,
+      "exact_reference_count": 10,
       "exact_references": [
         "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH11_RECONCILIATION.md",
         "modules/charlie/execution_bridge.py",
+        "scripts/build_vault_cutover_manifest.py",
         "tests/test_charlie_adaptive_orchestration.py",
         "tests/test_charlie_adaptive_orchestration_postgres.py",
-        "tests/test_charlie_mission_store.py"
+        "tests/test_charlie_mission_store.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "retain a short pointer only after unique facts reconcile",
-      "blockers": [
-        "unique_fact_reconciliation_required"
-      ],
+      "reason": "minimal compatibility pointer; cannot govern agents",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
       "path": "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
-      "sha256": "dd29565dc93f2695eb06c13ba766878d6c9e6dbb2ff6d1d5537037f61306a5b1",
-      "physical_lines": 393,
+      "sha256": "eb8097f46d296c7c113f966bc1355bd1ed343caa2c4ff8f7d3154c22aefa9c82",
+      "physical_lines": 12,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
-      "disposition": "POINTER_AFTER_RECONCILIATION",
+      "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
-      "exact_reference_count": 14,
+      "exact_reference_count": 17,
       "exact_references": [
         "docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md",
         "docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
@@ -115,17 +117,18 @@
         "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
         "docs/09-vault-brain/04-workflows/RELEASE_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH11_RECONCILIATION.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_retrieval.py",
         "planning/CODEX_CHAT.md",
         "planning/ToDoList.md",
-        "scripts/charlie_mission_pickup.py"
+        "scripts/build_vault_cutover_manifest.py",
+        "scripts/charlie_mission_pickup.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "retain a short pointer only after unique facts reconcile",
-      "blockers": [
-        "unique_fact_reconciliation_required"
-      ],
+      "reason": "minimal compatibility pointer; cannot govern agents",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
@@ -160,9 +163,8 @@
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "POINTER_AFTER_RECONCILIATION",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 22,
+      "exact_reference_count": 21,
       "exact_references": [
-        "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
         "docs/06-operations/CODEX_CHAT_WORKFLOW.md",
         "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
@@ -193,29 +195,29 @@
     },
     {
       "path": "docs/00-start-here/DEPLOYMENT_SOP.md",
-      "sha256": "31c47a94997d346e57b84ce08c497f59d8f89674cff8cca5937db45467b18256",
-      "physical_lines": 84,
+      "sha256": "f7a3846013859412198781d0905b5bae0af24e604285bbbf320c7b186cc35fc5",
+      "physical_lines": 11,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
-      "disposition": "POINTER_AFTER_RECONCILIATION",
+      "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 12,
       "exact_references": [
-        "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/09-vault-brain/04-workflows/RELEASE_WORKFLOW.md",
         "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH11_RECONCILIATION.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_retrieval.py",
         "planning/CODEX_CHAT.md",
         "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
-        "scripts/charlie_mission_pickup.py"
+        "scripts/build_vault_cutover_manifest.py",
+        "scripts/charlie_mission_pickup.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "retain a short pointer only after unique facts reconcile",
-      "blockers": [
-        "unique_fact_reconciliation_required"
-      ],
+      "reason": "minimal compatibility pointer; cannot govern agents",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
@@ -262,9 +264,8 @@
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "POINTER_AFTER_RECONCILIATION",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 26,
+      "exact_reference_count": 25,
       "exact_references": [
-        "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/02-backend/ORDER_VERIFICATION_MATRIX.md",
         "docs/04-n8n/workflows/2.1 - Amadeus Weather Sub-Agent/README.md",
         "docs/06-operations/BUILD_RELAY.md",
@@ -299,7 +300,7 @@
     },
     {
       "path": "docs/00-start-here/OPERATING_STATUS.md",
-      "sha256": "d19293105475ebd71804deb2bb2e80399df2eb863488f4edee640442287c467b",
+      "sha256": "547cec477adfc78501620e82f69ac17f6eb7be893c5a1262f2cfae4390542990",
       "physical_lines": 11,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
@@ -317,7 +318,7 @@
     },
     {
       "path": "docs/00-start-here/OWNER_INBOX_GUIDE.md",
-      "sha256": "09d3f8771185de5910caf42fe8d757254e4d23698819d6205df4461653f4e944",
+      "sha256": "0a9f621b7d4e54520bf868fbea63eded3e732dd74f48d251d7ad1fd202582752",
       "physical_lines": 12,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
@@ -385,9 +386,8 @@
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 9,
       "exact_references": [
-        "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/09-vault-brain/01-identity/CHARLIE.md",
         "docs/09-vault-brain/01-identity/OWNER_CHARL.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
@@ -410,9 +410,8 @@
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 11,
+      "exact_reference_count": 10,
       "exact_references": [
-        "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH9_RECONCILIATION.md",
         "modules/charlie/execution_bridge.py",
@@ -2682,8 +2681,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "883da5eb8a9f03f92ab0159b880117b662bbda732edc8562944ea870739045ed",
-      "physical_lines": 737,
+      "sha256": "a416df516a4e9e222153852c47562a160eee00f09251ad111a11abc6b6e1c877",
+      "physical_lines": 750,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -4759,8 +4758,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "617f39adfb4329381386d5cfa96de074902f1357d1fbf516c4115ae73092e3b7",
-      "physical_lines": 215,
+      "sha256": "c3d284d76e7496bcb90bc7b7eab7b5b2170120fca8847a4cb281112a2f4926f7",
+      "physical_lines": 223,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4936,8 +4935,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "dde5f4efd8ded6bff3522877f0d7e3dc47c3da19262afc223b6d470cf2b01a3f",
-      "physical_lines": 172,
+      "sha256": "ec13448d6aadd30d63b567558cd4a19a7d7ed226ed7fdf86dc7a4ab374767da0",
+      "physical_lines": 182,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -4966,7 +4965,7 @@
     },
     {
       "path": "docs/09-vault-brain/01-identity/CHARLIE.md",
-      "sha256": "64ccc8b8cb78d894d01628c9904bda82b7afd1ef1ccbc46c7cfaaef57f518c85",
+      "sha256": "fd6ae596989e3e13b6c01fd699a814a0aaeb62fcc97a5dc0e8ccb60345684009",
       "physical_lines": 82,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5026,7 +5025,7 @@
     },
     {
       "path": "docs/09-vault-brain/01-identity/OWNER_CHARL.md",
-      "sha256": "a458d151a4e941ad1ea1cdea47acbd460b7f53df16d9e616a62591a8e9e8202e",
+      "sha256": "ff3e70fea89709c6a0676098f52bb29a8b4e18f4d4606ddcf770c9334a85a824",
       "physical_lines": 58,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5707,8 +5706,8 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/owner-command/CHARLIE.md",
-      "sha256": "23c362e689924737d0093e0a710a08aee671840ed4664be01489f08254f95ecd",
-      "physical_lines": 67,
+      "sha256": "703e8bacf6297a442b8f6d7e450904cecf4b73492ced5f68a481ab84c9662fd6",
+      "physical_lines": 68,
       "batch1_lifecycle": "authoritative",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -6132,13 +6131,13 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
-      "sha256": "c58d884242ab2e2fb9ecc82fc224f89d9d766acd633e18aac5c443d8c37766db",
-      "physical_lines": 287,
+      "sha256": "c679612f17ef0e3b7851b51d2ea1f1cd7c073dc305f1e9f5905a16bcd1d872fc",
+      "physical_lines": 347,
       "batch1_lifecycle": "authoritative",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
-      "exact_reference_count": 9,
+      "exact_reference_count": 10,
       "exact_references": [
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
@@ -6148,7 +6147,8 @@
         "modules/charlie/vault_retrieval.py",
         "planning/CODEX_CHAT.md",
         "scripts/build_vault_cutover_manifest.py",
-        "tests/test_charlie_execution_bridge.py"
+        "tests/test_charlie_execution_bridge.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -6272,8 +6272,8 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/RELEASE_WORKFLOW.md",
-      "sha256": "415e7a8309384ea70f351b5747119a89355e30c88ccd9e58af510c36bc5d1a79",
-      "physical_lines": 9,
+      "sha256": "9c7cb6517f3dea268c4beb52455bb1ced820c261ef85fbd551e0b2619372c6c3",
+      "physical_lines": 10,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -6897,18 +6897,19 @@
     },
     {
       "path": "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
-      "sha256": "641daa9d5e25e608b62101a57577992623797bf705164b2c4cb58e6c1f4489d9",
-      "physical_lines": 37,
+      "sha256": "8824d523dfdcc24ffcaf30b7940c3341fd500ed42038485a0881dd8cfe20d787",
+      "physical_lines": 56,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
-      "exact_reference_count": 4,
+      "exact_reference_count": 5,
       "exact_references": [
         "docs/09-vault-brain/02-agents/charlie-core/TECHNICAL_ARCHITECT.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/vault_retrieval.py",
-        "scripts/build_vault_cutover_manifest.py"
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -7502,8 +7503,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "8258aaff7b3feedb6c4e0b625e3948102dcfc29c8f63d82874cd0cbaad8a39db",
-      "physical_lines": 204,
+      "sha256": "aad7ae17d22456e55162bcbf0fab83ce1c07f43f8f8a64cbeb3bf4135b704b7c",
+      "physical_lines": 212,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7534,8 +7535,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-      "sha256": "943e95c4e7570ca9ba0ae94e17b0181684579b663a67a98107ad3734d73432dd",
-      "physical_lines": 863,
+      "sha256": "c6bc33a75c13e53e93fa64315ee373ed8c5ff3c7f29397bb31909f7a6d1a435b",
+      "physical_lines": 865,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7583,8 +7584,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-      "sha256": "3ba47a59413979eae607b8f4e51d2ead8bf9e6b5d15b8c886804bcab45991ac5",
-      "physical_lines": 279,
+      "sha256": "42e074665dc889459cede706a4ee7d5d0b0e81eb5399c92ce9ac9d233bb5c529",
+      "physical_lines": 288,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7597,12 +7598,26 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
-      "sha256": "917a77f40ad315cfe91db3b66dcbe1cecd4a19fb03ec2f270ab3c2a7ab622cb8",
+      "sha256": "ee3643af167737edfe98f7fef0acf1521158d5dbcddecaa79d81634896711dff",
       "physical_lines": 35,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH11_RECONCILIATION.md",
+      "sha256": "4535b3caf12b201fca0faa51020ae430415c415dbfeda83b2548a890effc376e",
+      "physical_lines": 35,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH11_RECONCILIATION.md",
       "exact_reference_count": 0,
       "exact_references": [],
       "reason": "canonical Vault doctrine/reference",
@@ -8256,9 +8271,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
-      "exact_reference_count": 21,
+      "exact_reference_count": 20,
       "exact_references": [
-        "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/00-start-here/CURRENT_STATE.md",
         "docs/00-start-here/NEXT_STEPS.md",
         "docs/06-operations/BUILD_RELAY.md",
@@ -8315,9 +8329,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/ToDoList.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 9,
       "exact_references": [
-        "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/00-start-here/NEXT_STEPS.md",
         "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",

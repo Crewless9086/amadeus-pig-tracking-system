@@ -30,16 +30,20 @@ Current-state evidence, never reusable doctrine:
 
 - `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
 - `docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md`
-- `docs/00-start-here/README.md`
 - `docs/00-start-here/CURRENT_STATE.md`
 - `docs/00-start-here/NEXT_STEPS.md`
+- `docs/00-start-here/PRODUCT_VISION.md`
+
+The three `docs/00-start-here/*` files above remain transitional owner/operator
+projections. They must be reconciled to the Vault but cannot override it.
+
+Compatibility pointers, never current state or doctrine:
+
+- `docs/00-start-here/README.md`
 - `docs/00-start-here/WORKFLOW.md`
 - `docs/00-start-here/DEPLOYMENT_SOP.md`
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
-- `docs/00-start-here/PRODUCT_VISION.md`
-
-The `docs/00-start-here/*` files above remain transitional owner/operator
-projections. They must be reconciled to the Vault but cannot override it.
+- `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`
 
 The similarly named
 `docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` is a historical
@@ -198,6 +202,10 @@ Batch 10 reduced the root Claude guidance and four legacy status/navigation
 paths to minimal compatibility pointers. Technical commands/asset locations do
 not grant doctrine or live-state authority. See
 `VAULT_CUTOVER_BATCH10_RECONCILIATION.md`.
+
+Batch 11 consolidated current runner, mission and deployment procedures into
+focused Vault files and reduced their three legacy paths to compatibility
+pointers. See `VAULT_CUTOVER_BATCH11_RECONCILIATION.md`.
 
 - `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (non-doctrine compatibility
   pointer to current Vault review standards)

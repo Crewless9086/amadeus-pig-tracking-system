@@ -39,6 +39,66 @@ Every mission must resolve to:
 - owner decisions needed;
 - review/debrief packet.
 
+## Runner And Orchestration Contract
+
+CORE selects the smallest sufficient workflow for each new mission generation.
+Persisted workflows remain frozen unless materially changed evidence creates a
+new durable generation. Unknown high-consequence evidence raises the workflow
+tier or blocks; scoring never overrides a protected trigger.
+
+- `T0`: read-only inspection or advice; no Builder or external mutation.
+- `T1`: small reversible mutation; Builder, Tester and Reviewer.
+- `T2`: standard bounded feature; add source/architecture work where justified.
+- `T3`: cross-module/elevated work; relevant specialists and QA Red Team.
+- `T4`: protected/high-consequence work; mandatory governance, owner gates and
+  exact operational proof.
+
+UI, security/authentication, schema/migration, customer delivery, money,
+hardware/irrigation, publication/spend, and legal/privacy triggers select their
+mandatory specialist and review overlays. Every selected agent records its
+reason, authority, allowed/prohibited actions, evidence output and bounded
+attempt/time budget. Repository writers remain serialized; only independent
+read-only work may run concurrently.
+
+Each stage produces a structured artifact with summary, inspected files,
+commands, relevant output tails, stage evidence and next handoff. Tester needs
+passing tests; QA needs passing red-team status and no high/critical unresolved
+risk; Reviewer needs the required evidence and an owner decision recommendation.
+Missing evidence blocks advancement.
+
+Tester failure returns to Builder. Other findings return to the smallest
+responsible stage. Backflow is bounded per stage, semantic finding family and
+mission, and its fingerprint is durable across runner restarts. Exhausted
+in-scope acceptance failures become an honest owner block; adjacent/pre-existing
+work becomes a deduplicated, non-auto-approved child mission. Red-zone findings
+always stop at the owner gate.
+
+Implementation, deployment, runtime promotion and natural provider-origin proof
+are separate states. None implies another.
+
+## Local Operator Commands
+
+Telegram and `/charlie` record authority but never execute shell commands.
+Current local entry points are:
+
+```text
+python scripts/charlie_mission_pickup.py [--dry-run | --watch ...]
+python scripts/charlie_codex_execution_bridge.py --mission-id <id> [--execute-codex]
+python scripts/charlie_release_bridge.py --mission-id <id> [--merge-pr | --complete-no-release]
+python scripts/charlie_runner_control.py status|start|stop
+```
+
+Preparation modes create artifacts only. Execution requires the explicit flag,
+recorded mission authority and current gates. Release requires
+`release_approved`, a reviewed PR reference and the release workflow. These
+tools never implicitly authorize migrations, customer sends, public posts,
+payments, reservations, stock/farm writes or hardware actions.
+
+The runner heartbeat and artifacts live under `.charlie_runner/`. Operational
+acceptance requires exact worker/provider ownership, heartbeat, result, next
+trigger and later terminal-independent continuity; an open terminal or process
+is not that proof.
+
 CHARLIE CORE must not run every agent for every mission. Intake must classify the mission and select the smallest capable agent team. UI missions use the UI council. Income-stream missions use business, risk, and evidence agents. Simple bugfixes should not wait on business or marketing agents unless the bug touches those areas.
 
 For UI missions, the selected team must include Visual Reference Interpreter, Creative UI Designer, UX Interaction Designer, Frontend Design Implementer, and Visual QA Reviewer when screenshots, dashboard redesigns, approval flows, command centers, or visual references are involved.
@@ -248,7 +308,7 @@ Provider-specific stages must use the provider-aware runner path. If Claude/Anth
 
 `planning/CODEX_CHAT.md` is the laptop-friendly active scratchpad. Supabase mission records are the durable queue. The Vault Brain is the doctrine layer that tells agents what rules and context to follow.
 
-## Source References
+## Historical Implementation Evidence
 
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
 - `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`

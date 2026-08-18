@@ -161,6 +161,16 @@ n8n/Sheets assumptions were not promoted.
 Current honest state: `SEVEN_COMPATIBILITY_POINTERS /
 ZERO_DELETIONS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 
+## Batch 11 Technical Operating Contracts - 2026-08-18
+
+Three legacy runner/mission/deployment contracts were consolidated into focused
+Vault workflow and standard files, then reduced to compatibility pointers.
+Current orchestration, backflow, local commands, staging, forbidden-file and
+live-verification rules are now available without the duplicated phase history.
+
+Current honest state: `FIFTEEN_TOTAL_COMPATIBILITY_POINTERS /
+ZERO_DELETIONS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
 ## Batch 10 Root/Status Navigation Pointers - 2026-08-18
 
 Five root/status/navigation files were reduced to minimal compatibility

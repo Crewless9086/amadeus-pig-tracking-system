@@ -75,7 +75,7 @@ Current boundary:
 
 CHARLIE is for Charl. Other people may interact with business-specific agents only where the owner has approved that access, such as Oom Sakkie for the farm team.
 
-## Source References
+## Historical Source Evidence
 
 - `docs/00-start-here/README.md`
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
