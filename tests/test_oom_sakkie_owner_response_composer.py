@@ -148,12 +148,12 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
     assert unchanged["notify_owner"] is False and unchanged["telegram_sends"]==0
     observations=[row for row in rows.values() if row.get("delivery_state")=="observation_only"]
     assert len(observations)==2
-    assert changed["notify_owner"] is True and "C Camp:</b> Run" in changed["answer"]
+    assert changed["notify_owner"] is True and "C Camp:</b> Recommendation - irrigate" in changed["answer"]
     assert replay["notify_owner"] is False and len(rows)==4
     assert all(item["hardware_commands"]==0 for item in (first,unchanged,changed,replay))
 
 
-def test_later_result_generation_requires_new_delivery_even_when_material_is_stable():
+def test_later_result_generation_updates_observation_silently_when_material_is_stable():
     rows,state=store()
     first_packet=rootline()
     first_packet["next_reassessment"]={"trigger":"new_canonical_evidence",
@@ -170,8 +170,10 @@ def test_later_result_generation_requires_new_delivery_even_when_material_is_sta
             "at":"2026-08-04T10:40:41+02:00"}}
     changed=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
         specialist_loader=lambda:later_packet,state_store=state)
-    assert changed["status"]=="rootline_reassessment_changed"
-    assert changed["notify_owner"] is True and changed["telegram_sends"]==0
+    assert changed["status"]=="rootline_reassessment_unchanged"
+    assert changed["notify_owner"] is False and changed["telegram_sends"]==0
+    assert any(row.get("result_id") == "R2" and row.get("delivery_state") == "observation_only"
+               for row in rows.values())
 
 
 def test_fixed_reassessment_deadline_change_remains_material():

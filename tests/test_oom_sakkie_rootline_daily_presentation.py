@@ -69,6 +69,12 @@ def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     assert "No action required from you" in text and "<b>What I need from you:</b> Nothing" in text
 
 
+def test_recommendation_never_claims_irrigation_executed():
+    text = compose_daily_rootline_plan(result(b="Recommend", c="Run"))
+    assert "Recommendation - irrigate" in text
+    assert ">Run<" not in text and ":</b> Run" not in text
+
+
 def test_volatile_cutoff_and_formatting_never_change_material_decision_content():
     from modules.oom_sakkie.rootline_reassessment_lifecycle import _material_digest
     a = result(cutoff="2026-08-09T06:55:00+02:00")

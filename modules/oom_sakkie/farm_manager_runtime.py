@@ -512,8 +512,11 @@ def _load_rootline(now):
     state = WorkState.WAITING_EVIDENCE if "needs data" in recommendation.lower() else WorkState.PLANNED
     item = SpecialistWorkItem(
         item_id=result_id + "-plan", dedupe_key="rootline:daily-plan", domain="water_energy",
-        title=f"ROOTLINE: {recommendation}", why="Current power, weather, water and irrigation evidence determine today's safe plan.",
-        next_action=str((raw.get("owner_brief") or {}).get("reassess") or "Reassess when canonical evidence changes."),
+        title=f"Irrigation: Recommendation - {recommendation}",
+        why="The current canonical ROOTLINE plan determines the recommendation; it is not execution evidence.",
+        next_action=("Automatic authority is not active from this brief. ROOTLINE owns the next check: "
+            + str((raw.get("owner_brief") or {}).get("reassess") or
+                  "when canonical evidence changes.")),
         assignee="charl", state=state, authority=Authority.ADVISORY, provenance=provenance,
         business_value=80, genuine_question=str((raw.get("owner_brief") or {}).get("family_fact_needed") or ""),
         question_for="charl" if (raw.get("owner_brief") or {}).get("family_fact_needed") else "",

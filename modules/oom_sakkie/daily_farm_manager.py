@@ -350,27 +350,22 @@ def _load_answered_questions(binding):
 
 def _render(priorities, watch, question, now, language):
     af = str(language).lower().startswith("af")
-    lines = ["<b>🌅 OOM SAKKIE — VANDAG SE PLAASPLAN</b>" if af
-             else "<b>🌅 OOM SAKKIE — TODAY'S FARM PLAN</b>", "",
-             "<b>DOEN NOU / VANDAG</b>" if af else "<b>DO NOW / DO TODAY</b>"]
+    lines = ["<b>GOEIE MORE - PLAASPRIORITEITE</b>" if af
+             else "<b>GOOD MORNING - FARM PRIORITIES</b>"]
     if priorities:
-        next_label = "Volgende" if af else "Next"
-        lines.extend(f"• <b>{html.escape(row.title)}</b> — {html.escape(_compact(row.why, 180))} "
-                     f"<i>{next_label}:</i> {html.escape(_compact(row.next_action, 140))}"
-                     for row in priorities)
+        lines.extend(f"{index}. <b>{html.escape(_compact(row.title, 110))}</b> "
+                     f"{html.escape(_compact(row.next_action, 170))}"
+                     for index, row in enumerate(priorities, 1))
     else:
-        lines.append("• Geen nuwe aksie nodig nie." if af else "• No new action is required.")
-    if watch:
-        lines.extend(("", "<b>KOMENDE / HOU DOP</b>" if af else "<b>COMING UP / WATCH</b>"))
-        lines.extend(f"• {html.escape(row.title)} — {html.escape(_compact(row.why, 150))}" for row in watch)
+        lines.append("1. Geen nuwe aksie nodig nie." if af else "1. No new action is required.")
     if question:
         lines.extend(("", "<b>EEN VRAAG</b>" if af else "<b>ONE QUESTION</b>",
                       html.escape(question)))
     else:
         lines.extend(("", "Geen aksie word nou van jou benodig nie."
                       if af else "No action required from you."))
-    lines.extend(("", ("Volgende outomatiese kontrole: binne 15 minute of wanneer kernbewyse verander."
-                       if af else "Next automatic check: within 15 minutes or when material evidence changes.")))
+    lines.extend(("", ("Volgende kontrole: binne 15 minute of wanneer kernbewyse verander."
+                       if af else "Next check: within 15 minutes or when material evidence changes.")))
     return "\n".join(lines)
 
 
