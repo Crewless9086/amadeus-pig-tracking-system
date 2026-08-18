@@ -27,8 +27,8 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v17"
-BASELINE = "c3f872a5704c9038862c75249cc7ff35be82ef71"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v18"
+BASELINE = "e3ed8f4c99bf61645d59698f184aacd64ceea8f5"
 
 BATCH9_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
@@ -362,7 +362,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 20 archives sixteen reconciled general-operations plans, evidence/checklists and placeholder runbooks after retaining current testing, release, deployment, UI, migration, livestock and live-fix contracts in focused Vault files; it authorizes no runtime, mission, provider, business, farm, customer or hardware change",
+        "owner_boundary": "Batch 21 archives twenty-two reconciled HERDMASTER plans and handovers after retaining current breeding, exposure, litter, weaning, health, loss, allocation, sales and lifecycle-analytics contracts in focused Vault files; it authorizes no runtime, animal, health, breeding, litter, order, sale, farm or customer change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -413,7 +413,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: Batch 20 general-operations reconciliation complete; no further physical change authorized.",
+        "Status: Batch 21 HERDMASTER reconciliation complete; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -421,7 +421,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records completed Batches 5 through 20 and schedules later",
+        "This manifest records completed Batches 5 through 21 and schedules later",
         "dispositions only. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
@@ -441,8 +441,8 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "",
         "## Remaining execution schedule",
         "",
-        "The remaining 122 physical-reconciliation entries are assigned",
-        "to exactly one of Batches 21 through 27. Batch 28 owns the 72 transitional",
+        "The remaining 100 physical-reconciliation entries are assigned",
+        "to exactly one of Batches 22 through 27. Batch 28 owns the 72 transitional",
         "exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.",
         "This schedule is an ordering contract, not physical-change authority.",
         "",
@@ -454,6 +454,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "| 18 | `core_missions` | COMPLETE (10) |",
         "| 19 | `core_operating_spine` | COMPLETE (18) |",
         "| 20 | `general_operations` | COMPLETE (16) |",
+        "| 21 | `herdmaster` | COMPLETE (22) |",
     ])
     lines.extend(
         f"| {batch} | `{family}` | {count} |"

@@ -193,6 +193,12 @@ executive, runtime-recovery, activation and dependency-retirement evidence under
 in the focused CHARLIE/CORE identities, mission workflow and deployment
 standard; archived provider inventories are never current state.
 
+Batch 21 archived twenty-two HERDMASTER plans and handovers. Current animal,
+breeding, exposure, litter, weaning, health, loss, purpose, allocation and
+lifecycle-analytics authority remains only in focused Vault agent, workflow,
+business-rule, data and UI files. See
+`VAULT_CUTOVER_BATCH21_RECONCILIATION.md`.
+
 Batch 7 archived two superseded external UI briefs. They are historical design
 evidence only; current UI authority remains the mandatory Facelift and UI
 Dashboard standards. See `VAULT_CUTOVER_BATCH7_RECONCILIATION.md`.

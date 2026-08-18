@@ -157,12 +157,40 @@ Unknown and does not degrade or duplicate the litter.
 
 Natural exposure capture through the application, typed Oom Sakkie, Telegram
 and voice follows
-`../../07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md` and
-`../../../06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md`.
+`../../07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md` and this
+workflow.
 Every channel normalizes into the grouped exposure preview/execution contract.
 Normal 17-day exposure is not an exact mating/service date. Pen movement is an
 optional separately visible effect, and individual sow records retain a shared
 group identity for later capacity and outcome analysis.
+
+## Unified Capture And Transition Contract
+
+All channels normalize the same exact animals, exposure start, planned removal,
+actual removal, evidence cutoff and optional separately approved movement into
+one preview. Execution uses one protected claim and idempotency identity.
+Application, Telegram and voice may not implement different biological rules.
+
+Exposure removal may make the cycle eligible for later reassessment, but it
+does not create a service, pregnancy or due date. A subsequent exact service or
+governed reproductive observation creates its own event. Recovery holds remain
+explicit: a low body-condition observation can establish a hold, while a fresh
+recovery observation plus separate owner confirmation is required to clear it.
+
+## Litter, Weaning And Offspring Follow-Through
+
+One effective, non-superseded litter owns current attention. Supersession is an
+append-only correction with before/after preview, exact reference allowlist and
+replay-safe claim; it never deletes or rewrites history.
+
+Planned weaning is a future boundary, not current work and not proof of a
+completed event. At the boundary HERDMASTER prepares one exact preview of the
+piglets, tag/identity, sex, weight, observation and optional movement. Missing
+facts remain Unknown. Confirmation records the grouped canonical action once;
+backlog recovery uses the same contract and never reconstructs unsupported
+facts. After weaning each breeding female remains visibly in active cycle,
+nursing/recovery, observation, allocation, sequenced-next-group or genuine hold
+until attributable evidence changes that state.
 
 ## Delivery order and acceptance
 

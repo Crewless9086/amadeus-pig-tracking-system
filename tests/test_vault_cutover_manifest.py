@@ -124,6 +124,30 @@ BATCH20_ARCHIVED_FILES = {
     "docs/06-operations/TROUBLESHOOTING.md",
     "docs/06-operations/goals/README.md",
 }
+BATCH21_ARCHIVED_FILES = {
+    "docs/06-operations/HERDMASTER_AUCTION_SALE_SOURCE_HANDOVER_20260808.md",
+    "docs/06-operations/HERDMASTER_BREEDING_ATTENTION_UI_RECOVERY_PLAN_20260811.md",
+    "docs/06-operations/HERDMASTER_BREEDING_EVIDENCE_QUALIFIED_HANDOVER.md",
+    "docs/06-operations/HERDMASTER_BREEDING_EXPOSURE_RECOVERY_AND_UNKNOWN_PARENT_PLAN_20260812.md",
+    "docs/06-operations/HERDMASTER_BREEDING_EXPOSURE_RECOVERY_SOURCE_HANDOVER_20260812.md",
+    "docs/06-operations/HERDMASTER_EXPOSURE_CYCLE_TRANSITION_HANDOVER_20260812.md",
+    "docs/06-operations/HERDMASTER_FULL_LIFECYCLE_GENETIC_MERIT_DATA_UX_CONTRACT_20260813.md",
+    "docs/06-operations/HERDMASTER_LITTER_SUPERSESSION_SOURCE_HANDOVER.md",
+    "docs/06-operations/HERDMASTER_LITTER_WEANING_RECOVERY_LIT-2026-322B.md",
+    "docs/06-operations/HERDMASTER_MORTALITY_FIRST_REAL_ASSESSMENT_20260803.md",
+    "docs/06-operations/HERDMASTER_MORTALITY_INTELLIGENCE_HANDOVER.md",
+    "docs/06-operations/HERDMASTER_NATURAL_HEALTH_LOSS_SOURCE_HANDOVER.md",
+    "docs/06-operations/HERDMASTER_OP004_SALES_MULTILINE_INTEGRATION_HANDOFF_20260817.md",
+    "docs/06-operations/HERDMASTER_PIGLET_WEANING_OBSERVATION_PLAN_20260812.md",
+    "docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md",
+    "docs/06-operations/HERDMASTER_PROACTIVE_MANAGEMENT_ROUND_HANDOVER.md",
+    "docs/06-operations/HERDMASTER_SAM_REVIEW_HISTORY_ALLOWLIST_HANDOVER.md",
+    "docs/06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md",
+    "docs/06-operations/HERDMASTER_WEANING_LED_MATING_RECOVERY_PLAN_20260811.md",
+    "docs/06-operations/HERDMASTER_WEIGHING_BATCH_INTELLIGENCE_SOURCE_HANDOVER_20260811.md",
+    "docs/06-operations/HERDMASTER_WHOLE_HERD_NEXT_ROUND_HANDOVER.md",
+    "docs/06-operations/HERDMASTER_ZIGAY_REVISED_SUPERSESSION_PREVIEW.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -337,16 +361,28 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("durable operation and row ledger", live_fix)
         self.assertIn("does not by itself prove or prohibit live transfer", livestock)
 
+    def test_batch21_archives_herdmaster_history_after_contract_reconciliation(self):
+        for source in BATCH21_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        herdmaster = (ROOT / "docs/09-vault-brain/02-agents/farm/HERDMASTER.md").read_text(encoding="utf-8")
+        breeding = (ROOT / "docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md").read_text(encoding="utf-8")
+        health = (ROOT / "docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md").read_text(encoding="utf-8")
+        self.assertIn("Lifecycle And Evidence Contract", herdmaster)
+        self.assertIn("Unified Capture And Transition Contract", breeding)
+        self.assertIn("Unknown-cause counts separately", health)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 122)
-        self.assertTrue(all(21 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 100)
+        self.assertTrue(all(22 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(21, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(22, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {21: 22, 22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
+        expected = {22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}
         self.assertEqual(actual, expected)

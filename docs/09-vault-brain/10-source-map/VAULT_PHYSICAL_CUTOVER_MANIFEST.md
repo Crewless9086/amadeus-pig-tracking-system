@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 20 general-operations reconciliation complete; no further physical change authorized.
+Status: Batch 21 HERDMASTER reconciliation complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v17`
-Baseline: `c3f872a5704c9038862c75249cc7ff35be82ef71`
-Generated from HEAD: `c3f872a5704c9038862c75249cc7ff35be82ef71`
-Tracked Markdown/MDX files covered: **528**
+Version: `vault_physical_cutover_manifest_v18`
+Baseline: `e3ed8f4c99bf61645d59698f184aacd64ceea8f5`
+Generated from HEAD: `e3ed8f4c99bf61645d59698f184aacd64ceea8f5`
+Tracked Markdown/MDX files covered: **529**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 20 and schedules later
+This manifest records completed Batches 5 through 21 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,21 +17,21 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `EXTRACT_THEN_ARCHIVE` | 92 |
-| `KEEP_ARCHIVE` | 85 |
+| `EXTRACT_THEN_ARCHIVE` | 81 |
+| `KEEP_ARCHIVE` | 107 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_GENERATED_PROJECTION` | 9 |
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 187 |
-| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 30 |
+| `KEEP_VAULT` | 188 |
+| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 19 |
 
 ## Remaining execution schedule
 
-The remaining 122 physical-reconciliation entries are assigned
-to exactly one of Batches 21 through 27. Batch 28 owns the 72 transitional
+The remaining 100 physical-reconciliation entries are assigned
+to exactly one of Batches 22 through 27. Batch 28 owns the 72 transitional
 exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
@@ -43,7 +43,7 @@ This schedule is an ordering contract, not physical-change authority.
 | 18 | `core_missions` | COMPLETE (10) |
 | 19 | `core_operating_spine` | COMPLETE (18) |
 | 20 | `general_operations` | COMPLETE (16) |
-| 21 | `herdmaster` | 22 |
+| 21 | `herdmaster` | COMPLETE (22) |
 | 22 | `oom_sakkie` | 30 |
 | 23 | `rootline` | 13 |
 | 24 | `sam_revenue` | 5 |
@@ -81,28 +81,6 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Planned batch | Destination / replacement | Exact refs | Blockers |
 | --- | --- | ---: | --- | ---: | --- |
-| `docs/06-operations/HERDMASTER_AUCTION_SALE_SOURCE_HANDOVER_20260808.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_AUCTION_SALE_SOURCE_HANDOVER_20260808.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_BREEDING_ATTENTION_UI_RECOVERY_PLAN_20260811.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_ATTENTION_UI_RECOVERY_PLAN_20260811.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_BREEDING_EVIDENCE_QUALIFIED_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_EVIDENCE_QUALIFIED_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_BREEDING_EXPOSURE_RECOVERY_AND_UNKNOWN_PARENT_PLAN_20260812.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_EXPOSURE_RECOVERY_AND_UNKNOWN_PARENT_PLAN_20260812.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_BREEDING_EXPOSURE_RECOVERY_SOURCE_HANDOVER_20260812.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_EXPOSURE_RECOVERY_SOURCE_HANDOVER_20260812.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_EXPOSURE_CYCLE_TRANSITION_HANDOVER_20260812.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_EXPOSURE_CYCLE_TRANSITION_HANDOVER_20260812.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_FULL_LIFECYCLE_GENETIC_MERIT_DATA_UX_CONTRACT_20260813.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_FULL_LIFECYCLE_GENETIC_MERIT_DATA_UX_CONTRACT_20260813.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_LITTER_SUPERSESSION_SOURCE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_LITTER_SUPERSESSION_SOURCE_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_LITTER_WEANING_RECOVERY_LIT-2026-322B.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_LITTER_WEANING_RECOVERY_LIT-2026-322B.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_MORTALITY_FIRST_REAL_ASSESSMENT_20260803.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_MORTALITY_FIRST_REAL_ASSESSMENT_20260803.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_MORTALITY_INTELLIGENCE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_MORTALITY_INTELLIGENCE_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_NATURAL_HEALTH_LOSS_SOURCE_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_NATURAL_HEALTH_LOSS_SOURCE_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_OP004_SALES_MULTILINE_INTEGRATION_HANDOFF_20260817.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_OP004_SALES_MULTILINE_INTEGRATION_HANDOFF_20260817.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_PIGLET_WEANING_OBSERVATION_PLAN_20260812.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_PIGLET_WEANING_OBSERVATION_PLAN_20260812.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md` | 3 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_PROACTIVE_MANAGEMENT_ROUND_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_PROACTIVE_MANAGEMENT_ROUND_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_SAM_REVIEW_HISTORY_ALLOWLIST_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_SAM_REVIEW_HISTORY_ALLOWLIST_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_WEANING_LED_MATING_RECOVERY_PLAN_20260811.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_WEANING_LED_MATING_RECOVERY_PLAN_20260811.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/HERDMASTER_WEIGHING_BATCH_INTELLIGENCE_SOURCE_HANDOVER_20260811.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_WEIGHING_BATCH_INTELLIGENCE_SOURCE_HANDOVER_20260811.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_WHOLE_HERD_NEXT_ROUND_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_WHOLE_HERD_NEXT_ROUND_HANDOVER.md` | 0 | unique_fact_extraction_required |
-| `docs/06-operations/HERDMASTER_ZIGAY_REVISED_SUPERSESSION_PREVIEW.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 21 | `docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_ZIGAY_REVISED_SUPERSESSION_PREVIEW.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/OOM_SAKKIE_AUTOMATIC_REASSESSMENT_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_AUTOMATIC_REASSESSMENT_HANDOVER.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/OOM_SAKKIE_BREEDING_ROUTING_TASK_RETIREMENT_HANDOVER_20260811.md` | `EXTRACT_THEN_ARCHIVE` | 22 | `docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_BREEDING_ROUTING_TASK_RETIREMENT_HANDOVER_20260811.md` | 1 | unique_fact_extraction_required |

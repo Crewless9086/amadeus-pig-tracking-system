@@ -185,8 +185,8 @@
 
 ## HERDMASTER full-lifecycle genetic merit analytics
 
-- Authoritative page-specific data/UX contract:
-  `docs/06-operations/HERDMASTER_FULL_LIFECYCLE_GENETIC_MERIT_DATA_UX_CONTRACT_20260813.md`.
+- Authoritative semantics: `docs/09-vault-brain/02-agents/farm/HERDMASTER.md`
+  and `docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md`.
 - Current surfaces: `templates/breeding-analytics.html`,
   `templates/breeding-analytics-detail.html`, `static/js/breedingAnalytics.js`,
   `static/js/breedingAnalyticsDetail.js`; current routes/readers are
@@ -302,7 +302,7 @@
 - Binding genetic-selection rule:
   `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`
 - Practical owner journey:
-  `docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md`
+  `docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md`
 - Workflow:
   `docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md`
 - Evidence reconciliation and pair recommendation:
@@ -339,9 +339,8 @@
   Application, typed Oom Sakkie, Telegram and voice normalize equivalent intent
   into one specialist-owned canonical preview/execute/readback service; no new
   channel-specific mutation path is permitted.
-- Unified breeding capture mission:
-  `docs/06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md`.
-  It makes grouped exposure the shared action for normal natural placement,
+- Unified breeding capture contract is retained in the Breeding Attention
+  workflow. It makes grouped exposure the shared action for normal natural placement,
   keeps exact service separate, treats movement as explicit and preserves
   group identity for conservative HERDMASTER analysis.
 - Owner surfaces:
@@ -353,9 +352,8 @@
   capacity. A low service count means less proven, not genetically superior;
   new boars receive controlled trials. Recommendations have zero mating or
   movement authority.
-- Owner-approved piglet weaning-observation mission:
-  `docs/06-operations/HERDMASTER_PIGLET_WEANING_OBSERVATION_PLAN_20260812.md`.
-  It extends the existing litter Weaning Day workflow with exact-pig positive
+- Owner-approved piglet weaning-observation contract is retained in the
+  Breeding Attention workflow. It extends the existing litter Weaning Day workflow with exact-pig positive
   observation capture, reuses `pig_observation_events`, and adds a separate
   historical paper-note path. Codex owns the capture UI/backend integration;
   HERDMASTER owns cited advisory consumption. It creates no second observation

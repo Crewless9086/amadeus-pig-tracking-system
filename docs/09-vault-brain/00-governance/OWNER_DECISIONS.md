@@ -14,7 +14,7 @@ HERDMASTER must select matings to improve litter survival, healthy comparable-ag
 
 ## 2026-08-10: HERDMASTER practical mating selection
 
-Charl clarified that physical pen location is not reproductive status: D3 currently contains several idle females but is not a universal mating or resting pen. HERDMASTER must determine eligibility from active litter, mating/pregnancy cycle, breeding purpose, lifecycle, and genuine health/welfare/owner holds. For foundation breeders, missing dam/sire ancestry must be disclosed but must not universally block evidence-backed recommendations. Known relationships remain hard exclusions. Pair ranking must use attributable service, litter, survival, growth, repeat-pair, workload, health, and known relationship evidence. Full operating detail: `docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md`.
+Charl clarified that physical pen location is not reproductive status: D3 currently contains several idle females but is not a universal mating or resting pen. HERDMASTER must determine eligibility from active litter, mating/pregnancy cycle, breeding purpose, lifecycle, and genuine health/welfare/owner holds. For foundation breeders, missing dam/sire ancestry must be disclosed but must not universally block evidence-backed recommendations. Known relationships remain hard exclusions. Pair ranking must use attributable service, litter, survival, growth, repeat-pair, workload, health, and known relationship evidence. Full operating detail: `docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md` and `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`.
 
 Status: owner-reviewed governance decisions captured on 2026-07-02.
 
