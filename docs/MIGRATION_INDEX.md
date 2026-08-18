@@ -32,8 +32,8 @@ Tracks legacy documentation sources and their new canonical homes.
 | `project-memory/WORKFLOW CONTROL/NODE_RESPONSIBILITIES.md` | `docs/04-n8n/NODE_RESPONSIBILITIES.md` | Removed after migration |
 | `project-memory/WORKFLOW CONTROL/DO_NOT_CHANGE.md` | `docs/04-n8n/DO_NOT_CHANGE.md` | Removed after migration |
 | `project-memory/WORKFLOW CONTROL/CHANGELOG.md` | `docs/04-n8n/CHANGELOG.md` | Removed after migration |
-| `project-memory/AI/AGENT_ROLES.md` | `docs/05-ai/AGENT_ROLES.md` | Removed after migration |
-| `project-memory/AI/PROMPT_RULES.md` | `docs/05-ai/PROMPT_RULES.md` | Removed after migration |
+| `project-memory/AI/AGENT_ROLES.md` | `docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md` | Archived after Vault reconciliation in Batch 5 |
+| `project-memory/AI/PROMPT_RULES.md` | `docs/99-archive/vault-cutover/docs/05-ai/PROMPT_RULES.md` | Archived after Vault reconciliation in Batch 5 |
 | `project-memory/n8n_Current_Workflow.md` | `docs/04-n8n/workflows/sales-agent-chatwoot/workflow.json` | Removed after migration |
 | `planning/ToDoList.md` | `docs/00-start-here/NEXT_STEPS.md` | Planning pointer only; use NEXT_STEPS |
 

@@ -120,5 +120,5 @@ Until the live-stock backend runtime is built and owner-approved, SAM may classi
 - `docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md`
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`
-- `docs/05-ai/AGENT_ROLES.md`
-- `docs/05-ai/RESPONSE_RULES.md`
+- `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md`
+- `docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md`

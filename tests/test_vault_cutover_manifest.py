@@ -4,6 +4,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+BATCH5_TOP_LEVEL_AI_FILES = {
+    "AGENT_PORTFOLIO_REVIEW.md",
+    "AGENT_ROLES.md",
+    "PROMPT_RULES.md",
+    "README.md",
+    "RESPONSE_RULES.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -53,6 +60,22 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         cards = [entry for path, entry in self.entries.items() if path.startswith("static/assets/agents/")]
         self.assertTrue(cards)
         self.assertTrue(all(entry["disposition"] == "RECONCILE_GENERATED_PROJECTION" for entry in cards))
+
+    def test_batch5_slice_is_archived_without_deletion(self):
+        for name in BATCH5_TOP_LEVEL_AI_FILES:
+            self.assertNotIn(f"docs/05-ai/{name}", self.entries)
+            archived = f"docs/99-archive/vault-cutover/docs/05-ai/{name}"
+            self.assertIn(archived, self.entries)
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+
+    def test_batch5_reconciliation_is_canonical_and_active_map_exposes_no_archive(self):
+        reconciliation = ROOT / "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md"
+        self.assertTrue(reconciliation.is_file())
+        active_map = (ROOT / "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md").read_text(
+            encoding="utf-8"
+        )
+        active_section = active_map.split("## Archived After Migration", 1)[0]
+        self.assertNotIn("docs/99-archive/vault-cutover/docs/05-ai/", active_section)
 
 
 if __name__ == "__main__":

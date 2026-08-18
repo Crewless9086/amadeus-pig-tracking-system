@@ -14,7 +14,7 @@ Goal: make the repo clean without deleting operational memory, workflow contract
 | `docs/02-backend/` | Active technical contracts and migration plans. | Keep active beside code; migrate doctrine into Vault. |
 | `docs/03-google-sheets/` | Legacy/runtime schema truth. | Keep while Sheets remain fallback/reference. |
 | `docs/04-n8n/` | Active workflow/runtime contracts. | Keep beside n8n exports; Vault carries doctrine. |
-| `docs/05-ai/` | Active agent/prompt/runtime references. | Keep while runtime agents and prompt plans depend on them. |
+| `docs/05-ai/` | Agent-specific legacy implementation references only. | Top-level governance archived in Batch 5; reconcile the remaining BEACON/SAM files in later bounded slices. |
 | `docs/06-operations/` | Runbooks, test evidence, migration reports. | Keep; extract standards/playbooks into Vault. Archive only superseded reports after owner approval. |
 | `docs/08-business-modules/` | Business source docs. | Keep as active references until owner accepts Vault replacements. |
 | `docs/99-archive/` | Archive. | Keep. Use for old scratch/plans. |
@@ -208,3 +208,18 @@ Review artifacts:
 - `scripts/build_vault_cutover_manifest.py`
 
 This batch does not move, archive, delete or rewrite any source document.
+
+## Vault Cutover Batch 5 - First Physical Cleanup Slice
+
+Status: `SLICE_COMPLETE / FIVE FILES ARCHIVED / ZERO DELETIONS`.
+
+Owner approved one bounded physical slice with a separate exact approval still
+required for every deletion. The five top-level `docs/05-ai` governance files
+were reconciled, moved intact to
+`docs/99-archive/vault-cutover/docs/05-ai/`, and removed from active doctrine
+and active-reference routing.
+
+The agent-specific BEACON and SAM files remain physically in `docs/05-ai`.
+No runtime, provider, production-data, authority or deployed-agent behavior
+changed. The regenerated manifest is the source for the next owner-reviewed
+slice and grants no further physical authority.

@@ -1,13 +1,13 @@
 {
-  "version": "vault_physical_cutover_manifest_v1",
-  "baseline": "66d4667d6ecc4eda9c59c3ff06795494cda0a53b",
-  "generated_from_head": "66d4667d6ecc4eda9c59c3ff06795494cda0a53b",
-  "owner_boundary": "review manifest only; no move, archive, deletion, pointer rewrite, doctrine rewrite, or runtime change",
+  "version": "vault_physical_cutover_manifest_v2",
+  "baseline": "5865cc7c6300edc2f0e47d4780c05cbd3a8be020",
+  "generated_from_head": "5865cc7c6300edc2f0e47d4780c05cbd3a8be020",
+  "owner_boundary": "Batch 5 archived only the five reconciled top-level docs/05-ai files; no deletion, runtime, provider, authority, or production change",
   "entry_count": 513,
   "counts": {
     "ARCHIVE_CANDIDATE": 6,
-    "EXTRACT_THEN_ARCHIVE": 117,
-    "KEEP_ARCHIVE": 15,
+    "EXTRACT_THEN_ARCHIVE": 112,
+    "KEEP_ARCHIVE": 20,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
     "KEEP_TECHNICAL": 27,
@@ -389,7 +389,7 @@
     },
     {
       "path": "docs/00-start-here/README.md",
-      "sha256": "ccaf8edf839852aa4f36c96cde3822499a3ecb8aba8498d2d5c60bc380f4e66c",
+      "sha256": "2b20b705982f6fd5ffbb7e3cb235d1ba004c39a843083a4552d44cbfe72d26a8",
       "physical_lines": 63,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
@@ -573,14 +573,13 @@
       "batch1_action": "split_doctrine_from_technical",
       "disposition": "KEEP_TECHNICAL",
       "destination_or_replacement": "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
-      "exact_reference_count": 7,
+      "exact_reference_count": 6,
       "exact_references": [
-        "docs/05-ai/AGENT_ROLES.md",
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/01-identity/OOM_SAKKIE.md",
         "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md",
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
         "modules/charlie/source_map.py"
       ],
       "reason": "retain beside implementation; cannot govern agents",
@@ -2180,101 +2179,6 @@
       "physical_change_authorized": false
     },
     {
-      "path": "docs/05-ai/AGENT_PORTFOLIO_REVIEW.md",
-      "sha256": "da60633d50ecd213277df1e799916696b495c41c9531b52f82915897d69794bc",
-      "physical_lines": 153,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_PORTFOLIO_REVIEW.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false
-    },
-    {
-      "path": "docs/05-ai/AGENT_ROLES.md",
-      "sha256": "f1f5a452b09fa2d004d4895f6db1245c669d5512a85fbe6827944c373f4a508d",
-      "physical_lines": 92,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
-      "exact_reference_count": 8,
-      "exact_references": [
-        "docs/00-start-here/README.md",
-        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
-        "docs/09-vault-brain/02-agents/sales/SAM.md",
-        "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/MIGRATION_INDEX.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
-        "tests/test_charlie_vault_retrieval.py"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false
-    },
-    {
-      "path": "docs/05-ai/PROMPT_RULES.md",
-      "sha256": "52fe68883650a486ac69910f523a690ad2611fc20a28c570e2388cb278b131d5",
-      "physical_lines": 7,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/PROMPT_RULES.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/MIGRATION_INDEX.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false
-    },
-    {
-      "path": "docs/05-ai/README.md",
-      "sha256": "676e9b50755138039bb742ba055a95bf13db32f0156965697d07eb7b38bce0e2",
-      "physical_lines": 8,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/README.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false
-    },
-    {
-      "path": "docs/05-ai/RESPONSE_RULES.md",
-      "sha256": "e9366fd0bd5ed7a7870a11746da1d04d0d889b09f1c36e03bde4e2f2b4aecc21",
-      "physical_lines": 12,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "consolidate_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/RESPONSE_RULES.md",
-      "exact_reference_count": 3,
-      "exact_references": [
-        "docs/09-vault-brain/02-agents/sales/SAM.md",
-        "docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false
-    },
-    {
       "path": "docs/05-ai/agents/beacon/BEACON_SCOPE.md",
       "sha256": "96b9585838c39289742ed078a4b42211b6449bfd01eaef36d1e4ae8358a73e16",
       "physical_lines": 316,
@@ -2282,10 +2186,9 @@
       "batch1_action": "consolidate_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/BEACON_SCOPE.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 11,
       "exact_references": [
         "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
-        "docs/05-ai/AGENT_ROLES.md",
         "docs/05-ai/agents/beacon/README.md",
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/02-agents/marketing/BEACON.md",
@@ -2293,7 +2196,9 @@
         "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-        "modules/charlie/source_map.py"
+        "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
+        "modules/charlie/source_map.py",
+        "tests/test_charlie_vault_retrieval.py"
       ],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
@@ -2311,12 +2216,12 @@
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md",
       "exact_reference_count": 7,
       "exact_references": [
-        "docs/05-ai/AGENT_ROLES.md",
         "docs/05-ai/agents/beacon/BEACON_SCOPE.md",
         "docs/05-ai/agents/beacon/README.md",
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
         "modules/charlie/source_map.py"
       ],
       "reason": "extract unique durable facts, then preserve dated evidence",
@@ -2351,9 +2256,9 @@
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md",
       "exact_reference_count": 3,
       "exact_references": [
-        "docs/05-ai/AGENT_ROLES.md",
         "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md"
       ],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
@@ -2883,8 +2788,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "03e34583fcb7e140aaff2a08d62b9929702ee619cf3e8ecb7b8458f3373cdb8f",
-      "physical_lines": 649,
+      "sha256": "32c77a496342dd9927fe1d85cb8ca5dd735146d2d03948de897cd14bae5f9ec9",
+      "physical_lines": 666,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -4660,10 +4565,10 @@
       "exact_reference_count": 6,
       "exact_references": [
         "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
-        "docs/05-ai/AGENT_ROLES.md",
         "docs/05-ai/agents/beacon/README.md",
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
         "modules/charlie/source_map.py"
       ],
       "reason": "extract unique durable facts, then preserve dated evidence",
@@ -4693,22 +4598,22 @@
     },
     {
       "path": "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
-      "sha256": "613b570309a69f521b0b6929add7e33b1ed8523bf4583b9cb72ef3e474e224e9",
-      "physical_lines": 401,
+      "sha256": "8ef33e318b580dffb336e7344046149f8d3c90f8fa73c354e0485869f62a8f9c",
+      "physical_lines": 404,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
       "exact_reference_count": 8,
       "exact_references": [
-        "docs/05-ai/AGENT_ROLES.md",
         "docs/09-vault-brain/00-governance/OPEN_QUESTIONS.md",
         "docs/09-vault-brain/02-agents/marketing/BEACON.md",
         "docs/09-vault-brain/02-agents/sales/SAM.md",
         "docs/09-vault-brain/03-business/MEAT_SALES.md",
         "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
         "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md"
       ],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
@@ -4963,8 +4868,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "6b81ba9c11a226c5c9bb1a37b3174d0039d31397406ee521a87168e9e05e3fb7",
-      "physical_lines": 168,
+      "sha256": "065a0a3836d243d6f7f0b1afe0f1e92d4901ab125a8b8dad75a0ef814a05a949",
+      "physical_lines": 176,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -5140,8 +5045,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "51a4272a86b55e69d90eaf08b14431ba1ac57ef9df43dd34bc08b6264dd40ad8",
-      "physical_lines": 114,
+      "sha256": "9f496de9a920adac3f2268b1b7e8f8f5913dfe71918fbdcd046f2bc482fb6559",
+      "physical_lines": 126,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -5270,10 +5175,13 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
-      "exact_reference_count": 11,
+      "exact_reference_count": 14,
       "exact_references": [
+        "docs/00-start-here/README.md",
+        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/02-agents/charlie-core/IDEA_EXPANDER.md",
         "docs/09-vault-brain/02-agents/sales/SAM.md",
+        "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "modules/charlie/execution_bridge.py",
@@ -6013,14 +5921,15 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/SAM.md",
-      "sha256": "1d402927ebb72f1da7ce206feadf0a438378205ee594bf5d2b77c704bd6cb032",
+      "sha256": "c73fcba7328d1b61080b8f453cf505ec0a1f81ede3bb6cdbf93a471310350e86",
       "physical_lines": 124,
       "batch1_lifecycle": "quarantined",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/SAM.md",
-      "exact_reference_count": 13,
+      "exact_reference_count": 14,
       "exact_references": [
+        "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
         "docs/09-vault-brain/03-business/MEAT_SALES.md",
         "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
@@ -6566,7 +6475,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
-      "sha256": "8e23bd2fc2f9915397c4b575defc37f1fe848cdb9cd685805e5a4c3fcea073a9",
+      "sha256": "49d883e9745b6b31e2e803e89dcf59d5bf3ea0dd9c4aaed5fee21e3ae314e19a",
       "physical_lines": 96,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -7077,14 +6986,15 @@
     },
     {
       "path": "docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md",
-      "sha256": "9144e6a32f9cb9b67344c0d1b2f200db71b163e2833cb93c2d9d1135ddd74c66",
-      "physical_lines": 31,
+      "sha256": "8b79edd60902e3ab2e36160969ba3884c3741be82ae7a4cb25f262d58ab67dc1",
+      "physical_lines": 33,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md",
-      "exact_reference_count": 1,
+      "exact_reference_count": 2,
       "exact_references": [
+        "docs/09-vault-brain/02-agents/sales/SAM.md",
         "modules/charlie/vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -7696,16 +7606,17 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "c6ac7aef9f5e45a456de155898f87884dd6935d66d27c6b64dd4f8d6f822cbee",
-      "physical_lines": 183,
+      "sha256": "89c3b545880c2b96b338c2f27feb6714aa2c3f1992031192f58130f847558faf",
+      "physical_lines": 186,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 3,
       "exact_references": [
         "modules/charlie/vault_alignment.py",
-        "tests/test_vault_alignment.py"
+        "tests/test_vault_alignment.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -7775,8 +7686,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-      "sha256": "fc6b9cf89d60820a7ea6f32a16087fd9ab927e6c12a6e791eb6cefab64f97703",
-      "physical_lines": 210,
+      "sha256": "69cd444eaddb57c396ecd77e9d1d5f86193f8466028f84155dc4d601501a6ad8",
+      "physical_lines": 225,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7805,8 +7716,8 @@
     },
     {
       "path": "docs/09-vault-brain/CHANGELOG.md",
-      "sha256": "710cb214183654155c480aa8e89f359dfc890d312b63932db38af0f150fdc598",
-      "physical_lines": 1486,
+      "sha256": "9e50501474a3d379ad1326224e91054161519fba71690dcf916483c45f8ea790",
+      "physical_lines": 1496,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -8078,8 +7989,85 @@
       "physical_change_authorized": false
     },
     {
+      "path": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_PORTFOLIO_REVIEW.md",
+      "sha256": "da60633d50ecd213277df1e799916696b495c41c9531b52f82915897d69794bc",
+      "physical_lines": 153,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_PORTFOLIO_REVIEW.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
+      "sha256": "f1f5a452b09fa2d004d4895f6db1245c669d5512a85fbe6827944c373f4a508d",
+      "physical_lines": 92,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
+      "exact_reference_count": 2,
+      "exact_references": [
+        "docs/MIGRATION_INDEX.md",
+        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
+      ],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/05-ai/PROMPT_RULES.md",
+      "sha256": "52fe68883650a486ac69910f523a690ad2611fc20a28c570e2388cb278b131d5",
+      "physical_lines": 7,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/PROMPT_RULES.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "docs/MIGRATION_INDEX.md"
+      ],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/05-ai/README.md",
+      "sha256": "676e9b50755138039bb742ba055a95bf13db32f0156965697d07eb7b38bce0e2",
+      "physical_lines": 8,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/05-ai/RESPONSE_RULES.md",
+      "sha256": "e9366fd0bd5ed7a7870a11746da1d04d0d889b09f1c36e03bde4e2f2b4aecc21",
+      "physical_lines": 12,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/RESPONSE_RULES.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md"
+      ],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
       "path": "docs/MIGRATION_INDEX.md",
-      "sha256": "e8d576b449f1dadcc5c4a43bc3be945b1e6cab3ce18b1209d9c7fd9d091e9f66",
+      "sha256": "f7f690208528ca92a78910648a699b91a7199efdad8437c2806c6745b9e1cd6e",
       "physical_lines": 42,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "classify_manually",
@@ -8364,7 +8352,7 @@
     },
     {
       "path": "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
-      "sha256": "966c525d8328fdca097ff58bfcb6cb4f973265b655dd08df649937a9cfd963a4",
+      "sha256": "58d6e7dc2e047eb00fbdc2c3f4a1be4cb78a7da60d2eea68f3cab78f4491ac17",
       "physical_lines": 341,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "extract_then_archive_or_delete",

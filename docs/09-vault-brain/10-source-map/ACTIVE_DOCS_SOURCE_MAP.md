@@ -110,8 +110,6 @@ architecture. Their use is bounded by the Agentic Farm Runtime Programme.
 The files in this section are active implementation/history references only.
 They are not agent doctrine and must not enter a mandatory pack.
 
-- `docs/05-ai/AGENT_ROLES.md`
-- `docs/05-ai/RESPONSE_RULES.md`
 - `docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md`
 - `docs/05-ai/agents/beacon/BEACON_SCOPE.md`
 - `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md`
@@ -175,6 +173,11 @@ Owner-review cutover artifacts:
 
 These artifacts propose future physical disposition only. They are not doctrine
 and never authorize a move, archive, deletion or pointer rewrite.
+
+Batch 5 archived the five reconciled top-level `docs/05-ai` governance files
+intact. Their active role, prompt and response authority now resolves only
+through the focused Vault packs. See `VAULT_CUTOVER_BATCH5_RECONCILIATION.md`
+for the unique-fact disposition and archive evidence.
 
 ## Archived After Migration
 

@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-18 - Vault cutover Batch 5 first physical slice
+
+- Reconciled and archived the five top-level `docs/05-ai` governance files
+  intact; no deletion was performed.
+- Redirected active role and response references to focused Vault authority.
+- Preserved dated portfolio, phase and migration material as archive evidence.
+- Added an exact unique-fact reconciliation record and regenerated the physical
+  manifest for the remaining repository.
+- Performed no runtime, provider, production-data or authority change.
+
 ## 2026-08-18 - Vault cutover Batch 4 physical manifest
 
 - Added deterministic machine-readable and owner-readable physical-cutover

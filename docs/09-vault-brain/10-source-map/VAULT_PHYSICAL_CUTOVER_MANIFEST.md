@@ -1,24 +1,25 @@
 # Vault Physical Cutover Manifest
 
-Status: owner-review manifest; no physical change authorized.
+Status: regenerated after approved Batch 5 slice; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v1`
-Baseline: `66d4667d6ecc4eda9c59c3ff06795494cda0a53b`
-Generated from HEAD: `66d4667d6ecc4eda9c59c3ff06795494cda0a53b`
+Version: `vault_physical_cutover_manifest_v2`
+Baseline: `5865cc7c6300edc2f0e47d4780c05cbd3a8be020`
+Generated from HEAD: `5865cc7c6300edc2f0e47d4780c05cbd3a8be020`
 Tracked Markdown/MDX files covered: **513**
 Validation: **PASS**
 
-This manifest proposes exact dispositions only. It does not authorize a move,
-archive, deletion, pointer rewrite, doctrine rewrite, deployment, runtime action
-or production change. Every entry keeps `physical_change_authorized: false`.
+This manifest records the completed Batch 5 archive slice and proposes later
+dispositions only. It does not authorize another move, archive, deletion, pointer
+rewrite, deployment, runtime action or production change. Every remaining entry
+keeps `physical_change_authorized: false`.
 
 ## Disposition totals
 
 | Disposition | Count |
 | --- | ---: |
 | `ARCHIVE_CANDIDATE` | 6 |
-| `EXTRACT_THEN_ARCHIVE` | 117 |
-| `KEEP_ARCHIVE` | 15 |
+| `EXTRACT_THEN_ARCHIVE` | 112 |
+| `KEEP_ARCHIVE` | 20 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_TECHNICAL` | 27 |
@@ -35,7 +36,8 @@ or production change. Every entry keeps `physical_change_authorized: false`.
 - A delete candidate requires zero exact path references, an exact replacement, a tiny retired/superseded source, and later owner approval.
 - Pointer conversion requires unique-fact reconciliation first.
 - Static agent cards require a proven generated projection before replacement.
-- Current files remain physically present throughout this batch.
+- Five reconciled top-level `docs/05-ai` files are now preserved intact in the archive.
+- No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
 
@@ -62,12 +64,7 @@ entry whose physical disposition needs later work or owner review.
 | `docs/00-start-here/PROJECT_OVERVIEW.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 1 | unique_fact_reconciliation_required |
 | `docs/00-start-here/README.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 8 | unique_fact_reconciliation_required |
 | `docs/00-start-here/WORKFLOW.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 9 | unique_fact_reconciliation_required |
-| `docs/05-ai/AGENT_PORTFOLIO_REVIEW.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/AGENT_PORTFOLIO_REVIEW.md` | 0 | unique_fact_extraction_required |
-| `docs/05-ai/AGENT_ROLES.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md` | 8 | unique_fact_extraction_required |
-| `docs/05-ai/PROMPT_RULES.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/PROMPT_RULES.md` | 1 | unique_fact_extraction_required |
-| `docs/05-ai/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/README.md` | 0 | unique_fact_extraction_required |
-| `docs/05-ai/RESPONSE_RULES.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/RESPONSE_RULES.md` | 3 | unique_fact_extraction_required |
-| `docs/05-ai/agents/beacon/BEACON_SCOPE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/BEACON_SCOPE.md` | 10 | unique_fact_extraction_required |
+| `docs/05-ai/agents/beacon/BEACON_SCOPE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/BEACON_SCOPE.md` | 11 | unique_fact_extraction_required |
 | `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md` | 7 | unique_fact_extraction_required |
 | `docs/05-ai/agents/beacon/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/README.md` | 0 | unique_fact_extraction_required |
 | `docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md` | 3 | unique_fact_extraction_required |

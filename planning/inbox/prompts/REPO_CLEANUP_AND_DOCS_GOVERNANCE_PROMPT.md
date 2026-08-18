@@ -142,7 +142,7 @@ docs/01-architecture/CHARLIE_CORE_ARCHITECTURE.md
 docs/01-architecture/AGENT_COLLABORATION_LEDGER.md
 docs/08-business-modules/SAM_MEAT_SALES_RECOVERY_PLAN.md
 docs/08-business-modules/FRED_TRANSPORT_MODULE_PLAN.md
-docs/05-ai/AGENT_ROLES.md
+docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md
 ```
 
 If any are missing, propose them.

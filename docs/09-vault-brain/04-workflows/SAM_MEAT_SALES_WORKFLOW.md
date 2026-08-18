@@ -89,7 +89,7 @@ and never promises slaughter or delivery timing.
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
 - `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md`
 - `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`
-- `docs/05-ai/AGENT_ROLES.md`
+- `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md`
 - `docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md`
 - `docs/09-vault-brain/05-playbooks/SAM_MEAT_HUMAN_SALES_PLAYBOOK.md`
 - `docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md`

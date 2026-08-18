@@ -112,3 +112,15 @@ OWNER_EXECUTION_APPROVAL_PENDING / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 No file currently qualifies for deletion. Physical execution requires a later
 owner-approved bounded batch, current-main regeneration, reference validation
 and the entry-specific extraction, exit-test or projection blocker to be closed.
+
+## Batch 5 First Physical Slice Result - 2026-08-18
+
+The five top-level legacy `docs/05-ai` governance files were reconciled and
+archived intact. Active references now resolve to focused Vault authority or an
+explicit archive-evidence path. No deletion or runtime change occurred.
+
+Current honest state: `FIRST_SLICE_COMPLETE / ACTIVE_DOCTRINE_REDUCED /
+DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+Further cleanup remains owner-bounded. The regenerated manifest authorizes no
+additional move or deletion.
