@@ -160,3 +160,13 @@ n8n/Sheets assumptions were not promoted.
 
 Current honest state: `SEVEN_COMPATIBILITY_POINTERS /
 ZERO_DELETIONS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+## Batch 10 Root/Status Navigation Pointers - 2026-08-18
+
+Five root/status/navigation files were reduced to minimal compatibility
+pointers. Required local startup and agent-asset technical facts were retained;
+obsolete architecture, phase and July operational claims were removed from
+active interpretation.
+
+Current honest state: `TWELVE_TOTAL_COMPATIBILITY_POINTERS /
+ZERO_DELETIONS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.

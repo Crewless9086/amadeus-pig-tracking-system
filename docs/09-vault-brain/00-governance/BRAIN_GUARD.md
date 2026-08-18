@@ -205,3 +205,11 @@ pointers only. Brain Guard must reject them as doctrine sources and require the
 focused Vault file named by each pointer. Their continued presence preserves
 CORE consumers and links; it does not restore their former phase, architecture,
 review, priority, glossary or ADR authority.
+
+## Batch 10 Root/Status Pointer Gate
+
+The five reconciled root/status/navigation paths are compatibility and technical
+discovery aids only. Brain Guard must reject their former architecture, phase,
+portfolio, live-status, approval and inbox semantics as doctrine or current
+state. Basic local commands and runtime asset locations may be used only as
+technical evidence inside the selected Vault pack.

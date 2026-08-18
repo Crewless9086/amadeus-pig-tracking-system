@@ -268,3 +268,12 @@ Seven small legacy navigation/process files now contain only compatibility
 pointers to focused Vault authority. Their original content remains in Git
 history. Referenced CORE paths were retained, and no runtime, provider,
 production-data or authority change occurred.
+
+## Vault Cutover Batch 10 - Root/Status Navigation Pointers
+
+Status: `SLICE_COMPLETE / FIVE POINTERS / ZERO DELETIONS`.
+
+The root Claude guidance, asset register, two dated status files and owner inbox
+guide now contain only minimal compatibility/technical routing. Their original
+content remains in Git history. No runtime, provider, production-data or
+authority change occurred.
