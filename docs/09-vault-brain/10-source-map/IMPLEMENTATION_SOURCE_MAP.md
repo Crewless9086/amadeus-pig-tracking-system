@@ -77,15 +77,16 @@
   `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`.
 - Controlling architecture:
   `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`.
-- Historical path pointer:
-  `docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` records the mistaken
-  operations pathname and must not be treated as a second controlling copy.
+- Historical path-pointer evidence is archived under
+  `docs/99-archive/vault-cutover/docs/06-operations/` and is not a second
+  controlling copy.
 - Documentation lifecycle:
   `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`.
 - Historical review handoff: `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` is
   evidence only and must not govern current architecture or review.
-- Phase 0 dependency and retirement truth:
-  `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`.
+- Current dependency-retirement and scheduler-singularity rules:
+  `docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md`. The dated Phase 0
+  provider inventory is archived evidence and requires fresh readback.
 - Canonical owner-facing development dispatch and feedback ledger:
   `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`. Visible terminals are
   temporary development workers, not deployed agents. Every pasted terminal

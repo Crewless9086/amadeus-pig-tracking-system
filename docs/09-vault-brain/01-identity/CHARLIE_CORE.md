@@ -52,6 +52,31 @@ and command roles, parentage, creation identity, exact revision, and startup
 nonce must be complete and must match the signed durable acknowledgement.
 Self-inspection by a starting child is not sufficient authority.
 
+## Mission, command and execution planes
+
+Supabase mission records are the sole durable queue. Telegram, dashboard,
+Build Relay and `planning/CODEX_CHAT.md` are command, presentation or explicit
+manual fallback surfaces; none may become a second mission system. An owner
+decision changes only the governed mission state permitted by its current
+compare-and-set transition. It never grants shell, merge, deploy, migration,
+customer, public-post, payment, reservation or farm-write authority by itself.
+
+The hosted CHARLIE command plane and local CORE execution plane are separate
+health domains. A Telegram reply or healthy web route does not prove the local
+worker, promoted revision, supervisor, runner, heartbeat or next cycle. The
+owner checkout is not an execution runtime. A clean detached promoted runtime,
+exact manifest, governed stop and controller-authenticated process tree are
+required independently.
+
+## Shared agent and evidence boundary
+
+CORE coordinates engineering missions; it does not replace specialist business
+reasoning. Domain agents use one typed request/evidence envelope with source,
+freshness, confidence, facts, gaps and authority. A successful tool call is not
+complete evidence. Missing evidence receives one bounded repair pass and then
+an honest gap. New business questions extend the owning specialist rather than
+adding question-specific executive handlers.
+
 The canonical stop marker is authoritative at every startup, recovery, and
 pickup entry point. No startup path may remove it implicitly. Watchdog
 enablement and stop-marker removal are separate, explicit owner-authorized

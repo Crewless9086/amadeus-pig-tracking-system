@@ -36,3 +36,12 @@
   execution and replay rules into the channel-invariant action standard.
 - Archived ten dated CMQ mission plans and implementation handovers intact;
   current source ownership remains in the implementation source map.
+
+2026-08-18 - Vault Cutover Batch 19:
+
+- Consolidated current CHARLIE private-executive, CORE mission/runtime,
+  liveness/recovery, relay and provider-origin activation rules into existing
+  focused Vault identity, workflow and deployment files.
+- Removed active tests and maps from dated operations documents.
+- Archived eighteen roadmap, implementation, provider-inventory, relay,
+  recovery and activation sources intact as historical evidence.

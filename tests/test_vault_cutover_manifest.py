@@ -86,6 +86,26 @@ BATCH18_ARCHIVED_FILES = {
     "docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md",
     "docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md",
 }
+BATCH19_ARCHIVED_FILES = {
+    "docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md",
+    "docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md",
+    "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
+    "docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
+    "docs/06-operations/AGENTIC_OPERATING_SYSTEM_PROGRAM.md",
+    "docs/06-operations/BUILD_RELAY.md",
+    "docs/06-operations/CHARLIE_AGENT_WORKFORCE.md",
+    "docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md",
+    "docs/06-operations/CHARLIE_CORE_KERNEL_RELIABILITY.md",
+    "docs/06-operations/CHARLIE_CORE_RUNTIME_RECOVERY.md",
+    "docs/06-operations/CHARLIE_EXECUTIVE_CONTROL_PLANE.md",
+    "docs/06-operations/CHARLIE_EXECUTIVE_LIVENESS_CONTRACT.md",
+    "docs/06-operations/CHARLIE_LIVE_EXECUTIVE_V1.md",
+    "docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_INTERFACE.md",
+    "docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_MASTER_PLAN.md",
+    "docs/06-operations/CHARLIE_SHARED_AGENT_RUNTIME.md",
+    "docs/06-operations/CORE_PROVIDER_ORIGIN_ACTIVATION_RAIL.md",
+    "docs/06-operations/MISSION_LOOP_CONTRACT.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -271,16 +291,30 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         for source in BATCH18_ARCHIVED_FILES:
             self.assertNotIn(f"`{source}`", source_map)
 
+    def test_batch19_archives_core_operating_evidence_after_contract_reconciliation(self):
+        for source in BATCH19_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        charlie = (ROOT / "docs/09-vault-brain/01-identity/CHARLIE.md").read_text(encoding="utf-8")
+        core = (ROOT / "docs/09-vault-brain/01-identity/CHARLIE_CORE.md").read_text(encoding="utf-8")
+        workflow = (ROOT / "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md").read_text(encoding="utf-8")
+        deployment = (ROOT / "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md").read_text(encoding="utf-8")
+        self.assertIn("Private Executive Interface Contract", charlie)
+        self.assertIn("Mission, command and execution planes", core)
+        self.assertIn("Executive liveness and recovery", workflow)
+        self.assertIn("Dependency retirement and scheduler singularity", deployment)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 156)
-        self.assertTrue(all(19 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 138)
+        self.assertTrue(all(20 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(19, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(20, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {19: 18, 20: 16, 21: 22,
+        expected = {20: 16, 21: 22,
                     22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}

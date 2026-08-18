@@ -13,7 +13,7 @@ Supabase `charlie_missions` and CHARLIE CORE are authoritative. Telegram `/next`
 - Fallback/planning menu: `docs/00-start-here/NEXT_STEPS.md`
 - Manual laptop handoff file: `planning/CODEX_CHAT.md`
 - Current truth: `docs/00-start-here/CURRENT_STATE.md`
-- Contract: `docs/06-operations/MISSION_LOOP_CONTRACT.md`
+- Contract: `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md`
 
 ## Local Helper
 

@@ -69,3 +69,39 @@ After `main` changes that should deploy:
 After merge, fetch authoritative main, record the exact merge/revision and check
 available CI/deployment evidence. A healthy URL alone does not prove the changed
 business path. If no deployment is expected, say so explicitly.
+
+## CORE promotion and activation
+
+Source validation, merge, hosted deployment, local staging, activation and
+terminal-independent operation are separate gates. The owner checkout is never
+the CORE execution runtime. Staging uses a clean detached runtime, exact source
+revision, signed isolated-validation receipt, manifest, rollback tuple,
+governed-stop readback and a serialized non-stealable release lane. It does not
+clear the stop, enable a task or start CORE.
+
+Activation requires a new short-lived authority bound to the exact revision,
+manifest, validation receipt, governed-stop digest, scheduled-task action,
+mode and expiry. The provider task, not a terminal, starts the worker. Acceptance
+requires authenticated provider ancestry, controller-observed supervisor and
+runner identities, signed acknowledgement, fresh heartbeat, independent result,
+next trigger and a later terminal-independent cycle. Historical or failed
+activation identities are immutable and never retried.
+
+Failure disables only the exact authorized task and restores the exact stop and
+rollback state. Broad PID/name matching, process snapshots, ancestry alone,
+stale PIDs and inferred stale locks grant no mutation or termination authority.
+
+## Dependency retirement and scheduler singularity
+
+Documented, runtime-loaded, provider-verified, OS-observed and physical evidence
+are distinct. A committed export or an `active` field does not prove current
+provider ownership, application loading, useful execution or physical effect.
+Unknown never means disabled.
+
+Before retiring a scheduler, webhook, callback, relay, legacy workflow or data
+fallback, record its exact owner, callers, disable impact, canonical replacement,
+rollback and provider-backed exit proof. Prove sole trigger/endpoint ownership,
+fresh canonical and provider readback, replay silence and at least one reversible
+observation window. Disabling a scheduled task does not stop an already-loaded
+process. Missing or contradictory proof retains the dependency; dated inventory
+must be refreshed rather than reused as current truth.

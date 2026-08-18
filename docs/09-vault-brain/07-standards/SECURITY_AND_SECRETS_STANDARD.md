@@ -26,5 +26,6 @@ If a route could expose customer/farm data, fail closed and require owner/securi
 
 ## Source References
 
-- `docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md`
+- `docs/09-vault-brain/01-identity/CHARLIE_CORE.md`
+- `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md`
 - `docs/09-vault-brain/00-governance/REVIEW_AND_APPROVAL_RULES.md`
