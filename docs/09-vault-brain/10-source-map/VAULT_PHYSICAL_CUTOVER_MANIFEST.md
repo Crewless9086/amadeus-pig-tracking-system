@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: regenerated after approved Batch 9 pointer cutover; no further physical change authorized.
+Status: regenerated after approved Batch 10 pointer cutover; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v6`
-Baseline: `0f765f921eab75c136c4dc12a799811bc794b15e`
-Generated from HEAD: `0f765f921eab75c136c4dc12a799811bc794b15e`
-Tracked Markdown/MDX files covered: **518**
+Version: `vault_physical_cutover_manifest_v7`
+Baseline: `c73c6d868f2b8c4a765e5c2f95886f0b2096f9ff`
+Generated from HEAD: `c73c6d868f2b8c4a765e5c2f95886f0b2096f9ff`
+Tracked Markdown/MDX files covered: **519**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 9 and proposes later
+This manifest records completed Batches 5 through 10 and proposes later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -21,11 +21,11 @@ keeps `physical_change_authorized: false`.
 | `KEEP_ARCHIVE` | 26 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
-| `KEEP_POINTER` | 7 |
+| `KEEP_POINTER` | 12 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 177 |
-| `POINTER_AFTER_RECONCILIATION` | 11 |
+| `KEEP_VAULT` | 178 |
+| `POINTER_AFTER_RECONCILIATION` | 6 |
 | `RECONCILE_GENERATED_PROJECTION` | 9 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
 
@@ -40,6 +40,7 @@ keeps `physical_change_authorized: false`.
 - The two superseded external UI briefs are preserved intact in the archive.
 - The four remaining external candidates are retained as current technical/source evidence; the archive-candidate queue is empty.
 - Seven legacy navigation/process paths are minimal non-doctrine compatibility pointers to the Vault.
+- Five root/status/navigation paths are minimal non-doctrine compatibility pointers with required technical facts retained.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -50,17 +51,12 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Destination / replacement | Exact refs | Blockers |
 | --- | --- | --- | ---: | --- |
-| `CLAUDE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 2 | unique_fact_reconciliation_required |
-| `docs/00-start-here/AGENT_ASSET_REGISTER.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 1 | unique_fact_reconciliation_required |
-| `docs/00-start-here/AGENT_PORTFOLIO_STATUS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 0 | unique_fact_reconciliation_required |
 | `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md` | 6 | unique_fact_reconciliation_required |
 | `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md` | 14 | unique_fact_reconciliation_required |
-| `docs/00-start-here/CURRENT_STATE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 24 | unique_fact_reconciliation_required |
+| `docs/00-start-here/CURRENT_STATE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 22 | unique_fact_reconciliation_required |
 | `docs/00-start-here/DEPLOYMENT_SOP.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md` | 10 | unique_fact_reconciliation_required |
-| `docs/00-start-here/NEXT_STEPS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 28 | unique_fact_reconciliation_required |
-| `docs/00-start-here/OPERATING_STATUS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 0 | unique_fact_reconciliation_required |
-| `docs/00-start-here/OWNER_INBOX_GUIDE.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 3 | unique_fact_reconciliation_required |
-| `docs/00-start-here/PRODUCT_VISION.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 6 | unique_fact_reconciliation_required |
+| `docs/00-start-here/NEXT_STEPS.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 26 | unique_fact_reconciliation_required |
+| `docs/00-start-here/PRODUCT_VISION.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 5 | unique_fact_reconciliation_required |
 | `docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md` | 3 | runbook_history_split_required |
@@ -203,24 +199,24 @@ entry whose physical disposition needs later work or owner review.
 | `planning/CHARLIE_CORE_EXTENDED_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md` | 1 | unique_fact_extraction_required |
 | `planning/CODEX_CHAT.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/CODEX_CHAT.md` | 21 | unique_fact_extraction_required |
 | `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | 4 | unique_fact_extraction_required |
-| `planning/ToDoList.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/ToDoList.md` | 12 | unique_fact_extraction_required |
+| `planning/ToDoList.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/ToDoList.md` | 10 | unique_fact_extraction_required |
 | `planning/inbox/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/inbox/README.md` | 0 | unique_fact_extraction_required |
 | `planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md` | 1 | unique_fact_extraction_required |
 | `planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md` | 1 | unique_fact_extraction_required |
 | `planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/BUSINESS_STATE_LADDER.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/BUSINESS_STATE_LADDER.md` | 1 | unique_fact_extraction_required |
-| `planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md` | 1 | unique_fact_extraction_required |
+| `planning/storyworks/BUSINESS_STATE_LADDER.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/BUSINESS_STATE_LADDER.md` | 0 | unique_fact_extraction_required |
+| `planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/DECISION_LOG.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/DECISION_LOG.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/MARKET_VALIDATION.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/MARKET_VALIDATION.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md` | 1 | unique_fact_extraction_required |
-| `planning/storyworks/PHASE_0_VALIDATION_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_VALIDATION_PLAN.md` | 1 | unique_fact_extraction_required |
+| `planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md` | 0 | unique_fact_extraction_required |
+| `planning/storyworks/PHASE_0_VALIDATION_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_VALIDATION_PLAN.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/PILOT_SCORECARD.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PILOT_SCORECARD.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/PRODUCTION_PLAYBOOK.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PRODUCTION_PLAYBOOK.md` | 1 | unique_fact_extraction_required |
-| `planning/storyworks/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/README.md` | 1 | unique_fact_extraction_required |
+| `planning/storyworks/PRODUCTION_PLAYBOOK.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/PRODUCTION_PLAYBOOK.md` | 0 | unique_fact_extraction_required |
+| `planning/storyworks/README.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/README.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/RIGHTS_AND_PROVENANCE_POLICY.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/RIGHTS_AND_PROVENANCE_POLICY.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/STATUS.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/STATUS.md` | 1 | unique_fact_extraction_required |
-| `planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md` | 1 | unique_fact_extraction_required |
-| `planning/storyworks/UNIT_ECONOMICS.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/UNIT_ECONOMICS.md` | 1 | unique_fact_extraction_required |
+| `planning/storyworks/STATUS.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/STATUS.md` | 0 | unique_fact_extraction_required |
+| `planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md` | 0 | unique_fact_extraction_required |
+| `planning/storyworks/UNIT_ECONOMICS.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/UNIT_ECONOMICS.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/YOUTUBE_POLICY_RESEARCH.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/YOUTUBE_POLICY_RESEARCH.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/pilots/petra/OWNER_REVIEW_PACKET.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/OWNER_REVIEW_PACKET.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/pilots/petra/PREPRODUCTION_DECISION_CANDIDATE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/PREPRODUCTION_DECISION_CANDIDATE.md` | 0 | unique_fact_extraction_required |

@@ -194,6 +194,11 @@ Batch 9 reduced seven legacy start-here/process/decision-index paths to minimal
 compatibility pointers. They remain loadable but are never active doctrine. See
 `VAULT_CUTOVER_BATCH9_RECONCILIATION.md`.
 
+Batch 10 reduced the root Claude guidance and four legacy status/navigation
+paths to minimal compatibility pointers. Technical commands/asset locations do
+not grant doctrine or live-state authority. See
+`VAULT_CUTOVER_BATCH10_RECONCILIATION.md`.
+
 - `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (non-doctrine compatibility
   pointer to current Vault review standards)
 - `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`

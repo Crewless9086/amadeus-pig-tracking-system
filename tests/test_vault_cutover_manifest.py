@@ -36,6 +36,13 @@ BATCH9_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/WORKFLOW.md",
     "docs/07-decisions/README.md",
 }
+BATCH10_COMPATIBILITY_POINTERS = {
+    "CLAUDE.md",
+    "docs/00-start-here/AGENT_ASSET_REGISTER.md",
+    "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md",
+    "docs/00-start-here/OPERATING_STATUS.md",
+    "docs/00-start-here/OWNER_INBOX_GUIDE.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -137,6 +144,19 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
             text = (ROOT / path).read_text(encoding="utf-8")
             self.assertIn("POINTER_ONLY / NON_DOCTRINE", text)
             self.assertIn("09-vault-brain", text)
+
+    def test_batch10_replaces_root_status_navigation_with_minimal_pointers(self):
+        for path in BATCH10_COMPATIBILITY_POINTERS:
+            entry = self.entries[path]
+            self.assertEqual(entry["disposition"], "KEEP_POINTER")
+            self.assertLessEqual(entry["physical_lines"], 15)
+            text = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn("POINTER_ONLY / NON_DOCTRINE", text)
+        self.assertIn("python app.py", (ROOT / "CLAUDE.md").read_text(encoding="utf-8"))
+        self.assertIn(
+            "static/assets/agents/",
+            (ROOT / "docs/00-start-here/AGENT_ASSET_REGISTER.md").read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":

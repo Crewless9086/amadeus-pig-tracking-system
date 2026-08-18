@@ -1,74 +1,77 @@
 {
-  "version": "vault_physical_cutover_manifest_v6",
-  "baseline": "0f765f921eab75c136c4dc12a799811bc794b15e",
-  "generated_from_head": "0f765f921eab75c136c4dc12a799811bc794b15e",
-  "owner_boundary": "Batch 9 replaced seven reconciled legacy navigation/process documents with minimal compatibility pointers; no deletion, runtime, provider, authority, or production change",
-  "entry_count": 518,
+  "version": "vault_physical_cutover_manifest_v7",
+  "baseline": "c73c6d868f2b8c4a765e5c2f95886f0b2096f9ff",
+  "generated_from_head": "c73c6d868f2b8c4a765e5c2f95886f0b2096f9ff",
+  "owner_boundary": "Batch 10 replaced five reconciled root/status/navigation documents with minimal compatibility pointers; no deletion, runtime, provider, authority, or production change",
+  "entry_count": 519,
   "counts": {
     "EXTRACT_THEN_ARCHIVE": 108,
     "KEEP_ARCHIVE": 26,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
-    "KEEP_POINTER": 7,
+    "KEEP_POINTER": 12,
     "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 177,
-    "POINTER_AFTER_RECONCILIATION": 11,
+    "KEEP_VAULT": 178,
+    "POINTER_AFTER_RECONCILIATION": 6,
     "RECONCILE_GENERATED_PROJECTION": 9,
     "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 73
   },
   "entries": [
     {
       "path": "CLAUDE.md",
-      "sha256": "0a568aef6515bb2cb9a4e1b7b48e06bbc19ef767036a5a6ef72eed863cb11a2f",
-      "physical_lines": 161,
+      "sha256": "0d21d65328356114306b4b01f8e6a0068fa0b97897648e1849910604e0f02cc7",
+      "physical_lines": 13,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "classify_manually",
-      "disposition": "POINTER_AFTER_RECONCILIATION",
+      "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 4,
       "exact_references": [
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
         "docs/MIGRATION_INDEX.md",
-        "scripts/build_vault_cutover_manifest.py"
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "obsolete root guidance must become a short Vault pointer after unique developer commands are retained",
-      "blockers": [
-        "unique_fact_reconciliation_required"
-      ],
+      "reason": "minimal compatibility pointer; cannot govern agents",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
       "path": "docs/00-start-here/AGENT_ASSET_REGISTER.md",
-      "sha256": "bc66514621b487859bef37b318442f5eb53f782e33af544f0aa67b7b537d86ee",
-      "physical_lines": 83,
+      "sha256": "dfe78b36bf784950767a0e1b99f220e21f2d0e10f4d241d5da08250ac8d79df4",
+      "physical_lines": 12,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
-      "disposition": "POINTER_AFTER_RECONCILIATION",
+      "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 1,
+      "exact_reference_count": 4,
       "exact_references": [
-        "tests/test_frontend_route_contracts.py"
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_frontend_route_contracts.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "retain a short pointer only after unique facts reconcile",
-      "blockers": [
-        "unique_fact_reconciliation_required"
-      ],
+      "reason": "minimal compatibility pointer; cannot govern agents",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
       "path": "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md",
-      "sha256": "b691745ac8154d115d3443eaf27bc992a9ddad68bb5c96808c9fdf397cb7432b",
-      "physical_lines": 218,
+      "sha256": "0a886cc8fd1cd0b9e9b2de6c8de00620bfa16e9491abf5aacf04d6c7d1229e8e",
+      "physical_lines": 12,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
-      "disposition": "POINTER_AFTER_RECONCILIATION",
+      "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain a short pointer only after unique facts reconcile",
-      "blockers": [
-        "unique_fact_reconciliation_required"
+      "exact_reference_count": 3,
+      "exact_references": [
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
+      "reason": "minimal compatibility pointer; cannot govern agents",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
@@ -127,15 +130,14 @@
     },
     {
       "path": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
-      "sha256": "af8415f7e7cd1d187df571374a4dc015bd54484ffd4b384a6f5253e7d746b306",
+      "sha256": "77666babcb200f53aeb55ab75beb3947dbe27d4aa7a85cff48b5fe23c8cb40cd",
       "physical_lines": 9,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 9,
       "exact_references": [
-        "CLAUDE.md",
         "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
         "docs/06-operations/OOM_SAKKIE_SENTINEL_SINGLE_SHOT_RUNBOOK.md",
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
@@ -158,11 +160,9 @@
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "POINTER_AFTER_RECONCILIATION",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 24,
+      "exact_reference_count": 22,
       "exact_references": [
-        "CLAUDE.md",
         "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
-        "docs/00-start-here/OWNER_INBOX_GUIDE.md",
         "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
         "docs/06-operations/CODEX_CHAT_WORKFLOW.md",
         "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
@@ -220,7 +220,7 @@
     },
     {
       "path": "docs/00-start-here/GLOSSARY.md",
-      "sha256": "7c2c3d41c725e075196299261900b649c2b37e8beeb150fddf722771d75f03d6",
+      "sha256": "7f04ff34a326b884a823448e450efcc2ce371dd2d904854c03e6b7929e2977cd",
       "physical_lines": 8,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
@@ -238,15 +238,14 @@
     },
     {
       "path": "docs/00-start-here/HOW_WE_WORK.md",
-      "sha256": "4c7b66687e3b2ee5cfc585501f7525044546ada1916ca90546df40793b1df8db",
+      "sha256": "b1004199d804cbd08727f62932cf92d0f438b0216ef52e0da6c100a4b21901c3",
       "physical_lines": 9,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 4,
+      "exact_reference_count": 3,
       "exact_references": [
-        "CLAUDE.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH9_RECONCILIATION.md",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
@@ -263,11 +262,9 @@
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "POINTER_AFTER_RECONCILIATION",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 28,
+      "exact_reference_count": 26,
       "exact_references": [
-        "CLAUDE.md",
         "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
-        "docs/00-start-here/OWNER_INBOX_GUIDE.md",
         "docs/02-backend/ORDER_VERIFICATION_MATRIX.md",
         "docs/04-n8n/workflows/2.1 - Amadeus Weather Sub-Agent/README.md",
         "docs/06-operations/BUILD_RELAY.md",
@@ -302,38 +299,41 @@
     },
     {
       "path": "docs/00-start-here/OPERATING_STATUS.md",
-      "sha256": "eb91d558b49fca088ec2807481e1ceabbff2e277f81b1ed1af0e7c377092ce8e",
-      "physical_lines": 178,
+      "sha256": "d19293105475ebd71804deb2bb2e80399df2eb863488f4edee640442287c467b",
+      "physical_lines": 11,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
-      "disposition": "POINTER_AFTER_RECONCILIATION",
+      "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain a short pointer only after unique facts reconcile",
-      "blockers": [
-        "unique_fact_reconciliation_required"
+      "exact_reference_count": 3,
+      "exact_references": [
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
+      "reason": "minimal compatibility pointer; cannot govern agents",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
       "path": "docs/00-start-here/OWNER_INBOX_GUIDE.md",
-      "sha256": "aea463745bfb5bec1e1c57d818877f06a6b12fd060f7e90c064177618aa5d501",
-      "physical_lines": 54,
+      "sha256": "09d3f8771185de5910caf42fe8d757254e4d23698819d6205df4461653f4e944",
+      "physical_lines": 12,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
-      "disposition": "POINTER_AFTER_RECONCILIATION",
+      "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 3,
+      "exact_reference_count": 6,
       "exact_references": [
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
         "modules/charlie/mission_store.py",
         "planning/CODEX_CHAT.md",
-        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
+        "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
+        "scripts/build_vault_cutover_manifest.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
-      "reason": "retain a short pointer only after unique facts reconcile",
-      "blockers": [
-        "unique_fact_reconciliation_required"
-      ],
+      "reason": "minimal compatibility pointer; cannot govern agents",
+      "blockers": [],
       "physical_change_authorized": false
     },
     {
@@ -344,9 +344,8 @@
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "POINTER_AFTER_RECONCILIATION",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 6,
+      "exact_reference_count": 5,
       "exact_references": [
-        "docs/00-start-here/AGENT_ASSET_REGISTER.md",
         "docs/09-vault-brain/01-identity/OOM_SAKKIE.md",
         "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
@@ -361,7 +360,7 @@
     },
     {
       "path": "docs/00-start-here/PROJECT_OVERVIEW.md",
-      "sha256": "6c435dfbe962440a81f9c2aeaab94890c7fa000e80094886197fdf1261ccc943",
+      "sha256": "ebfa3fdb241052c8cfdcb3e3fb5b571e26e8d9580586810b7dc8cb8fdff9da59",
       "physical_lines": 8,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
@@ -380,15 +379,14 @@
     },
     {
       "path": "docs/00-start-here/README.md",
-      "sha256": "c11a627a428ba78b818cadbfd50d268b978cfd9f3868eb10b7504e9bfeb7b383",
+      "sha256": "4933fe6c62a22270d8ed3a66a4462f387f2a44c53a9d449d9e0cbf2738572a23",
       "physical_lines": 11,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
       "disposition": "KEEP_POINTER",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 11,
+      "exact_reference_count": 10,
       "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md",
         "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/09-vault-brain/01-identity/CHARLIE.md",
         "docs/09-vault-brain/01-identity/OWNER_CHARL.md",
@@ -406,7 +404,7 @@
     },
     {
       "path": "docs/00-start-here/WORKFLOW.md",
-      "sha256": "fca272f0d632dbdd8235b429672aff9ee2ffceed96b5094e2577193ad82c30a9",
+      "sha256": "8496a106f0b3a9cf68250292585b3636f386dbcd0666f6db62ef69ba5c0d3701",
       "physical_lines": 11,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "consolidate_then_pointer_or_delete",
@@ -614,9 +612,8 @@
       "batch1_action": "split_doctrine_from_technical",
       "disposition": "KEEP_TECHNICAL",
       "destination_or_replacement": "docs/01-architecture/SYSTEM_ARCHITECTURE.md",
-      "exact_reference_count": 3,
+      "exact_reference_count": 2,
       "exact_references": [
-        "CLAUDE.md",
         "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
         "docs/MIGRATION_INDEX.md"
       ],
@@ -632,9 +629,8 @@
       "batch1_action": "keep_technical_review",
       "disposition": "KEEP_TECHNICAL",
       "destination_or_replacement": "docs/02-backend/API_STRUCTURE.md",
-      "exact_reference_count": 5,
+      "exact_reference_count": 4,
       "exact_references": [
-        "CLAUDE.md",
         "docs/04-n8n/WORKFLOW_RULES.md",
         "docs/04-n8n/workflows/OOM_SAKKIE_ORDER_LOOKUP_PLAN.md",
         "docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md",
@@ -714,9 +710,8 @@
       "batch1_action": "keep_technical_review",
       "disposition": "KEEP_TECHNICAL",
       "destination_or_replacement": "docs/02-backend/ORDER_LOGIC.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 1,
       "exact_references": [
-        "CLAUDE.md",
         "docs/MIGRATION_INDEX.md"
       ],
       "reason": "retain beside implementation; cannot govern agents",
@@ -904,9 +899,8 @@
       "batch1_action": "keep_until_exit_test",
       "disposition": "KEEP_TRANSITIONAL",
       "destination_or_replacement": "docs/03-google-sheets/BUSINESS_RULES.md",
-      "exact_reference_count": 3,
+      "exact_reference_count": 2,
       "exact_references": [
-        "CLAUDE.md",
         "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
         "docs/MIGRATION_INDEX.md"
       ],
@@ -994,9 +988,8 @@
       "batch1_action": "keep_until_exit_test",
       "disposition": "KEEP_TRANSITIONAL",
       "destination_or_replacement": "docs/03-google-sheets/SHEET_SCHEMA.md",
-      "exact_reference_count": 6,
+      "exact_reference_count": 5,
       "exact_references": [
-        "CLAUDE.md",
         "docs/03-google-sheets/sheets/PIG_MASTER.md",
         "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
         "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
@@ -1512,9 +1505,8 @@
       "batch1_action": "keep_until_exit_test",
       "disposition": "KEEP_TRANSITIONAL",
       "destination_or_replacement": "docs/04-n8n/DATA_FLOW.md",
-      "exact_reference_count": 6,
+      "exact_reference_count": 5,
       "exact_references": [
-        "CLAUDE.md",
         "docs/01-architecture/DATA_FLOW_OVERVIEW.md",
         "docs/03-google-sheets/BUSINESS_RULES.md",
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
@@ -1627,9 +1619,8 @@
       "batch1_action": "keep_until_exit_test",
       "disposition": "KEEP_TRANSITIONAL",
       "destination_or_replacement": "docs/04-n8n/WORKFLOW_MAP.md",
-      "exact_reference_count": 6,
+      "exact_reference_count": 5,
       "exact_references": [
-        "CLAUDE.md",
         "docs/04-n8n/OOM_SAKKIE_ROUTING_ARCHITECTURE_PLAN.md",
         "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
@@ -1650,9 +1641,8 @@
       "batch1_action": "keep_until_exit_test",
       "disposition": "KEEP_TRANSITIONAL",
       "destination_or_replacement": "docs/04-n8n/WORKFLOW_RULES.md",
-      "exact_reference_count": 4,
+      "exact_reference_count": 3,
       "exact_references": [
-        "CLAUDE.md",
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/MIGRATION_INDEX.md"
@@ -2692,15 +2682,14 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "f68d137bfd1e56d4cf317a6873171acc147a0a1b872365b49901f6b036c9d33d",
-      "physical_lines": 723,
+      "sha256": "883da5eb8a9f03f92ab0159b880117b662bbda732edc8562944ea870739045ed",
+      "physical_lines": 737,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
       "destination_or_replacement": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "exact_reference_count": 11,
+      "exact_reference_count": 10,
       "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md",
         "docs/00-start-here/NEXT_STEPS.md",
         "docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
@@ -4423,7 +4412,7 @@
     },
     {
       "path": "docs/07-decisions/README.md",
-      "sha256": "e447a446bba4709762a6c9dbd2bdb4b2f36e1ef2ec25669ae5dd6fd9026125e1",
+      "sha256": "50daae83360d6bff50e4fb98eaa20ce049132a0d5be36577104982ff9bf7a752",
       "physical_lines": 9,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "classify_manually",
@@ -4770,8 +4759,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "a2facbb633efa81506046cc0805bd3dabe4ecd35f51218c1212b78f37b4f20af",
-      "physical_lines": 207,
+      "sha256": "617f39adfb4329381386d5cfa96de074902f1357d1fbf516c4115ae73092e3b7",
+      "physical_lines": 215,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4900,7 +4889,7 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
-      "sha256": "aafb9b7fc398854cb1e12426bddbb4c5765d48704139e78148dde2e0ce080648",
+      "sha256": "505e3555c50017d53c1728def824587bca8d49a0149241a329bddf82464c8f6b",
       "physical_lines": 29,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4947,8 +4936,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "863a9d7dc2f8b09920eea30b6777cd32f74c086bb0c548579b10d8a83fa61170",
-      "physical_lines": 162,
+      "sha256": "dde5f4efd8ded6bff3522877f0d7e3dc47c3da19262afc223b6d470cf2b01a3f",
+      "physical_lines": 172,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7513,8 +7502,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "df91a5f1a6947c43587d4ab35bcee1984d538c43d34a443f5cf3e3bf559d9b0f",
-      "physical_lines": 199,
+      "sha256": "8258aaff7b3feedb6c4e0b625e3948102dcfc29c8f63d82874cd0cbaad8a39db",
+      "physical_lines": 204,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -7594,12 +7583,26 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-      "sha256": "72ff926b6299b9ddb1616f9df59f2604fdcd84105d3ffdac4dd91a537ccffd8a",
-      "physical_lines": 270,
+      "sha256": "3ba47a59413979eae607b8f4e51d2ead8bf9e6b5d15b8c886804bcab45991ac5",
+      "physical_lines": 279,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
+      "sha256": "917a77f40ad315cfe91db3b66dcbe1cecd4a19fb03ec2f270ab3c2a7ab622cb8",
+      "physical_lines": 35,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
       "exact_reference_count": 0,
       "exact_references": [],
       "reason": "canonical Vault doctrine/reference",
@@ -7666,7 +7669,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH9_RECONCILIATION.md",
-      "sha256": "947e2701863c00f7546efd7ca9aa6ff212d47e68aa554ca75544b5a7f432b8af",
+      "sha256": "e01f0f99f98ce4643e69e87cefd274e7a7b2236fbe31e12bd390c683c357f4ec",
       "physical_lines": 41,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
@@ -7737,8 +7740,9 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 4,
+      "exact_reference_count": 5,
       "exact_references": [
+        "CLAUDE.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md",
         "modules/charlie/vault_alignment.py",
         "scripts/build_vault_cutover_manifest.py",
@@ -8311,12 +8315,10 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/ToDoList.md",
-      "exact_reference_count": 12,
+      "exact_reference_count": 10,
       "exact_references": [
-        "CLAUDE.md",
         "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
         "docs/00-start-here/NEXT_STEPS.md",
-        "docs/00-start-here/OWNER_INBOX_GUIDE.md",
         "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
@@ -8408,10 +8410,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/BUSINESS_STATE_LADDER.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"
@@ -8426,10 +8426,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"
@@ -8476,10 +8474,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"
@@ -8494,10 +8490,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_VALIDATION_PLAN.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"
@@ -8528,10 +8522,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/PRODUCTION_PLAYBOOK.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"
@@ -8546,10 +8538,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/README.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"
@@ -8580,10 +8570,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/STATUS.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"
@@ -8598,10 +8586,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"
@@ -8616,10 +8602,8 @@
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "EXTRACT_THEN_ARCHIVE",
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/storyworks/UNIT_ECONOMICS.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md"
-      ],
+      "exact_reference_count": 0,
+      "exact_references": [],
       "reason": "extract unique durable facts, then preserve dated evidence",
       "blockers": [
         "unique_fact_extraction_required"

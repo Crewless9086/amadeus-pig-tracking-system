@@ -721,3 +721,17 @@ No path was deleted because CORE consumers and historical references still use
 some of them. No runtime, provider, production-data or authority change
 occurred. Automatic promotion requires a fresh bounded owner authorization
 using the regenerated manifest.
+
+### Vault Cutover Batch 10 - 2026-08-18
+
+Owner approved the bounded root/status/navigation pointer slice. Five files
+were read completely, reference-audited and reduced to short compatibility
+pointers while retaining required local startup and agent-asset technical facts.
+
+Lifecycle: `WORKING / BATCH_10_ROOT_STATUS_POINTERS_COMPLETE /
+NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
+
+No path was deleted because compatibility and technical consumers remain. No
+runtime, provider, production-data or authority change occurred. Automatic
+promotion requires a fresh bounded owner authorization using the regenerated
+manifest.
