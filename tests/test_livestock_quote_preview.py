@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from modules.orders.livestock_quote_preview import build_livestock_quote_preview
+from modules.orders.livestock_quote_preview import build_livestock_quote_preview, build_already_sold_recording_preview
 from modules.orders.order_routes import orders_bp
 
 
@@ -53,6 +53,24 @@ def packet(pigs):
 
 
 class LivestockQuotePreviewTests(unittest.TestCase):
+    def test_already_sold_report_requires_irreducible_fields_without_writes(self):
+        result = build_already_sold_recording_preview(
+            {"tag_numbers": ["123", "151"], "sold_date": "2026-08-16"},
+            packet([candidate("P123", "123", "Male", 5.6), candidate("P151", "151", "Male", 4.0)]),
+        )
+        self.assertFalse(result["ready_for_protected_confirmation"])
+        self.assertEqual(set(result["missing_fields"]), {"buyer_name", "sale_channel", "movement_destination", "movement_evidence_reference", "health_evidence_reference"})
+        self.assertFalse(result["writes_performed"])
+        self.assertFalse(result["changes_pig_state"])
+
+    def test_already_sold_complete_form_binds_exact_pigs(self):
+        payload = {"tag_numbers":["123","151"], "sold_date":"2026-08-16", "buyer_name":"Named buyer", "sale_channel":"Farm gate", "movement_destination":"Named destination", "movement_evidence_reference":"MOVE-REF", "health_evidence_reference":"HEALTH-REF"}
+        result = build_already_sold_recording_preview(payload, packet([candidate("P123", "123", "Male", 5.6), candidate("P151", "151", "Male", 4.0)]))
+        self.assertTrue(result["ready_for_protected_confirmation"])
+        self.assertEqual([row["tag_number"] for row in result["selected_pigs"]], ["123", "151"])
+        self.assertRegex(result["preview_digest"], r"^[0-9a-f]{64}$")
+        self.assertFalse(result["creates_order"])
+
     def test_exact_four_lines_total_22_and_candidates_never_repeat(self):
         pigs = []
         for sex, prefix in (("Female", "F"), ("Male", "M")):
@@ -181,6 +199,19 @@ class LivestockQuotePreviewRouteTests(unittest.TestCase):
         self.assertFalse(body["generates_document"])
         for mocked in prohibited.values():
             mocked.assert_not_called()
+
+    def test_already_sold_preview_is_owner_read_guarded_and_zero_write(self):
+        payload = {"tag_numbers": ["123", "151"], "sold_date": "2026-08-16"}
+        with patch("modules.orders.order_routes.require_owner_read_access", return_value=None), patch(
+            "modules.orders.order_routes.build_live_transfer_preview_contract",
+            return_value=packet([candidate("P123", "123", "Male", 5.6), candidate("P151", "151", "Male", 4.0)]),
+        ):
+            response = self.client.post("/api/orders/already-sold-preview", json=payload)
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(body["writes_performed"])
+        self.assertFalse(body["ready_for_protected_confirmation"])
+        self.assertEqual([row["tag_number"] for row in body["selected_pigs"]], ["123", "151"])
 
 
 if __name__ == "__main__":

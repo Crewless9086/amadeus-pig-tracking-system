@@ -10,7 +10,24 @@ document.addEventListener("DOMContentLoaded", () => {
   initial.forEach(addRequestLine);
   document.getElementById("add_request_line")?.addEventListener("click", () => addRequestLine({ quantity: 1, sex: "Any", weight_range: "5_to_6_Kg" }));
   document.getElementById("addOrderForm")?.addEventListener("submit", previewRequest);
+  document.getElementById("alreadySoldForm")?.addEventListener("submit", previewAlreadySold);
 });
+
+async function previewAlreadySold(event) {
+  event.preventDefault();
+  const value = id => document.getElementById(id).value;
+  const payload = {tag_numbers:value("sold_tags").split(",").map(v=>v.trim()).filter(Boolean), sold_date:value("sold_date"), buyer_name:value("sold_buyer"), sale_channel:value("sold_channel"), movement_destination:value("sold_destination"), movement_evidence_reference:value("sold_movement_evidence"), health_evidence_reference:value("sold_health_evidence"), owner_reported_evidence:value("sold_owner_report")};
+  const message=document.getElementById("already_sold_message");
+  try {
+    const response=await fetch("/api/orders/already-sold-preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}); const result=await response.json();
+    if(!response.ok) throw new Error((result.errors||["Preview failed."]).join(" "));
+    message.className="message-box message-success"; message.textContent="Protected preview built. No sale, order, allocation, reservation, pig-state change, document, or message was created.";
+    const host=document.getElementById("already_sold_preview"); host.classList.remove("hidden");
+    const pigs=result.selected_pigs.map(p=>`<li><strong>Tag ${esc(p.tag_number)}</strong> · ${esc(p.current_weight_kg)} kg · purpose ${esc(p.purpose)}${treatmentDisclosure(p)}</li>`).join("");
+    const gaps=result.errors.map(v=>`<li>${esc(v)}</li>`).join("");
+    host.innerHTML=`<h3>${result.ready_for_protected_confirmation?"Ready for one protected confirmation":"Missing irreducible sale evidence"}</h3><p>${esc(result.authority_boundary)}</p><ul>${pigs}</ul>${gaps?`<h4>Required before confirmation</h4><ul>${gaps}</ul>`:""}<p class="field-helper">Preview ${esc(result.preview_digest)} · writes performed: no · customer send: no</p>`;
+  } catch(error) { message.className="message-box message-error"; message.textContent=error.message; }
+}
 
 function addRequestLine(value) {
   const host = document.getElementById("requested_items_editor");

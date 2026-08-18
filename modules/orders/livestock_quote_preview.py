@@ -3,6 +3,7 @@
 from datetime import date, datetime, timedelta, timezone
 
 CONTRACT_VERSION = "livestock_quote_preview_v2"
+SALE_RECORDING_PREVIEW_VERSION = "livestock_sale_recording_preview_v1"
 WEIGHT_RANGES = {
     "2_to_4_Kg": (2, 4), "5_to_6_Kg": (5, 6), "7_to_9_Kg": (7, 9),
     "10_to_14_Kg": (10, 14), "15_to_19_Kg": (15, 19),
@@ -96,6 +97,90 @@ def build_livestock_quote_preview(requested_items, herdmaster_packet, observed_a
         "authority_boundary": (
             "No pig is attached, allocated, reserved, promised, re-purposed or sold by this preview."
         ),
+    }
+
+
+def build_already_sold_recording_preview(payload, herdmaster_packet, observed_at=None):
+    """Prepare one protected correction request without manufacturing sale facts."""
+    payload = payload if isinstance(payload, dict) else {}
+    tags = []
+    for value in payload.get("tag_numbers") or []:
+        tag = str(value or "").strip()
+        if tag and tag not in tags:
+            tags.append(tag)
+    errors = []
+    if not tags:
+        errors.append("Select at least one exact pig tag.")
+    if len(tags) > 20:
+        errors.append("A protected sale recording is limited to 20 pigs.")
+    sold_date = _date(payload.get("sold_date"))
+    if sold_date is None:
+        errors.append("Exact sale date is required.")
+    elif sold_date > date.today():
+        errors.append("Sale date cannot be in the future.")
+    required = {
+        "buyer_name": "Buyer name is required; it cannot be inferred from the owner report.",
+        "sale_channel": "Sale channel is required.",
+        "movement_destination": "Movement destination is required.",
+        "movement_evidence_reference": "Movement evidence reference is required.",
+        "health_evidence_reference": "Health/transport evidence reference is required.",
+    }
+    missing_fields = []
+    for field, message in required.items():
+        if not str(payload.get(field) or "").strip():
+            missing_fields.append(field)
+            errors.append(message)
+    candidates_by_tag = {
+        str((row.get("identity") or {}).get("tag_number") or ""): row
+        for row in list((herdmaster_packet or {}).get("pigs") or [])
+    }
+    pigs = []
+    for tag in tags:
+        authority = candidates_by_tag.get(tag)
+        if not authority:
+            errors.append(f"Tag {tag} is not present in the current canonical HERDMASTER packet.")
+            continue
+        rendered = _render_candidate(authority, "owner_reported_sold_pending_recording")
+        rendered["selection_state"] = "explicit_owner_selection"
+        rendered["sale_recording_state"] = "pending_protected_confirmation"
+        pigs.append(rendered)
+    digest_input = {
+        "version": SALE_RECORDING_PREVIEW_VERSION,
+        "packet_digest": (herdmaster_packet or {}).get("packet_digest"),
+        "tags": tags,
+        "sold_date": sold_date.isoformat() if sold_date else None,
+        **{field: str(payload.get(field) or "").strip() for field in required},
+    }
+    import hashlib, json
+    preview_digest = hashlib.sha256(json.dumps(digest_input, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    ready = not errors and len(pigs) == len(tags)
+    return {
+        "success": True,
+        "contract_version": SALE_RECORDING_PREVIEW_VERSION,
+        "herdmaster_contract_version": (herdmaster_packet or {}).get("contract_version"),
+        "herdmaster_packet_digest": (herdmaster_packet or {}).get("packet_digest"),
+        "observed_at": observed_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "owner_reported_evidence": str(payload.get("owner_reported_evidence") or "").strip(),
+        "selected_pigs": pigs,
+        "provided_fields": digest_input,
+        "missing_fields": missing_fields,
+        "errors": errors,
+        "ready_for_protected_confirmation": ready,
+        "preview_digest": preview_digest,
+        "confirmation_scope": (
+            "Create or reuse one Livestock order, attach only these explicitly selected pigs, "
+            "complete the sale, append lifecycle/audit evidence, and reconcile downstream eligibility atomically."
+        ),
+        "correction_available_after_recording": True,
+        "writes_performed": False,
+        "creates_order": False,
+        "creates_order_line": False,
+        "creates_reservation": False,
+        "creates_allocation": False,
+        "changes_pig_state": False,
+        "generates_document": False,
+        "sends_customer_message": False,
+        "authority_boundary": "Owner-reported sale evidence remains a preview until one explicit protected confirmation.",
     }
 
 
