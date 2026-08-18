@@ -203,3 +203,15 @@ or product brief remains in the active authority map.
 Current honest state: `EIGHTEEN_TOTAL_COMPATIBILITY_POINTERS /
 ZERO_START_HERE_PROJECTIONS_REMAIN / ZERO_DELETIONS /
 DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+## Batch 14 Remaining-Work Schedule - 2026-08-18
+
+Every one of the 190 remaining physical-reconciliation entries is assigned to
+exactly one collision-bounded Batch 15-27. Batch 28 owns 72 transitional exit
+tests, and Batch 29 owns deployed Brain Guard acceptance.
+
+Current honest state: `EXECUTION_SCHEDULE_COMPLETE / 190 PHYSICAL ITEMS /
+72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+This schedule authorizes no physical or runtime change. Full cutover requires
+completion of Batches 15-29 and a final zero-unresolved manifest.

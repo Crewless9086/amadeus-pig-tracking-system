@@ -203,6 +203,21 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("normal daily workflow fits one calm", dashboard)
         self.assertIn("Voice, typed commands", dashboard)
 
+    def test_batch14_schedules_every_remaining_physical_item_once(self):
+        remaining = [entry for entry in self.entries.values()
+                     if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
+        self.assertEqual(len(remaining), 190)
+        self.assertTrue(all(15 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(15, 28)))
+
+    def test_batch14_schedule_has_exact_family_counts(self):
+        expected = {15: 9, 16: 3, 17: 12, 18: 10, 19: 18, 20: 16, 21: 22,
+                    22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
+        actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
+                  for batch in expected}
+        self.assertEqual(actual, expected)
+
 
 if __name__ == "__main__":
     unittest.main()
