@@ -43,9 +43,14 @@ Rootline should use weather forecasts, live weather station data, power/Sunsynk 
 - explain what ran, what paused, and what still needs to run;
 - alert Oom Sakkie when water, power, pump, or weather signals need attention.
 
-## Future Control Direction
+## Governed Control Direction
 
-When approved safe hardware-control workflows exist, Rootline should be the controller for smart irrigation and water/power-related automation.
+ROOTLINE is the sole domain controller for smart irrigation and water/power
+automation. Planning may continue with partial evidence; actuation is eligible
+only inside the exact commissioned and explicitly enabled standing envelope in
+the focused Water And Energy Rules. Missing evidence blocks only the dependent
+claim or action. An LLM, channel adapter, terminal, schedule or provider
+acceptance can never grant authority or mark a physical outcome complete.
 
 Examples of future approved behavior:
 
@@ -75,31 +80,46 @@ The daily brief is owner-only and advisory. Its deterministic authority flags
 must keep hardware control, schedule mutation, telemetry/farm writes, alert
 sends, and Telegram actions false.
 
-The permanent control boundary, staged authority model, safety interlocks, and
-roadmap are defined in the
+The permanent control boundary, staged authority model and safety interlocks are
+defined in the
 [`ROOTLINE Control Architecture`](../../04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
 Durable device-class policy and current authority constraints are defined in
-the [`ROOTLINE Agentic Device Management Plan`](../../../06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md)
-and [`ROOTLINE Water And Energy Rules`](../../08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md).
+the [`ROOTLINE Water And Energy Rules`](../../08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md).
 The deployed Daily Brief component is Level 1 observe-and-advise only; it does not prove the continuous contract and does not grant
 IFTTT activation, physical hardware control, or autonomous irrigation.
 
-## Operating Knowledge Register And Daily Advisor
+## Planning, Execution And Device Contract
 
-The approved initial operating policy is maintained in the
-[`ROOTLINE Operating Knowledge Register`](../../../06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md).
-The owner-only Daily Advisor may combine that policy with the existing Daily
-Brief to explain B12345 and C12345 eligibility, weather freshness, advice,
-evidence gaps, and unresolved owner decisions.
+The owner-only Daily Advisor may combine the focused Water And Energy Rules
+with current canonical evidence to explain B12345 and C12345 eligibility,
+weather freshness, advice, evidence gaps and unresolved owner decisions.
 
 Unknown seasonal boundaries, operating windows, runtime limits, crop-need
 bands, or forecast-rain thresholds remain visibly `Unknown`. When material,
 they suppress eligibility and runtime conclusions. Legacy planned minutes,
 observed runtime, and measured delivery remain separate.
 
-The single supervised C12345 channel-2 canary proved the intended valve
-opened, the intended vegetable drippers flowed, OFF was accepted, the valve
-closed, and new full-pressure supply stopped. Residual drainage diminished,
-but its decay time remains `Unavailable`. This is one physical
-identity-and-shutdown proof, not routine irrigation, transport, command,
-scheduling, or autonomous-control authority.
+Every device follows one typed loop: observe, decide need, rank, plan, validate
+authority, claim, execute deterministically, verify provider and required
+physical outcome, learn and notify only material change. B/C irrigation,
+fertiliser mixing, fertiliser injection and borehole pumping are separate
+device classes; no commissioning or authority transfers between them.
+
+- B/C segments are sequential, independently claimed, bounded by the native
+  fail-stop and same-zone/day guard, and require verified shutdown before any
+  fresh second-segment decision.
+- Fertiliser mixing and injection require separate typed commissioning,
+  deterministic OFF and physical recirculation/flow/flush evidence. Injection
+  additionally requires exactly one eligible irrigation zone with proven
+  clean-water pre-flow.
+- Borehole electrical state, motor operation, water movement and tank outcome
+  are separate facts. Its strict profile requires exact provider identity,
+  tank-full, dry-run, pump protection, manual isolation, power-restoration OFF
+  and physical start/flow/stop proof.
+- Provider acceptance never proves movement, flow, delivery or completion.
+  Ambiguous ON is never retried automatically; safe OFF may be repeated only
+  within the bounded recovery contract while shutdown remains unverified.
+
+Detailed dated plans, inventories, canaries, onboarding notes and commissioning
+packets are archived evidence. They cannot govern a new mission or establish
+current runtime state without fresh canonical/provider proof.

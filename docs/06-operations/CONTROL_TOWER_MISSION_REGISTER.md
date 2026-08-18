@@ -923,3 +923,19 @@ BATCHES_23_TO_29_REMAIN`.
 No runtime, message, provider, customer, payment, animal, farm, database or
 hardware action occurred. The remaining physical queue is 70 documents.
 Automatic promotion is Batch 23 ROOTLINE reconciliation.
+
+### Vault Cutover Batch 23 - 2026-08-18
+
+Owner approved continuation. The exact manifest family contained thirteen
+ROOTLINE plans, inventories, canaries, onboarding notes, contracts and
+commissioning packets. Durable planning, device-class graduation, execution,
+provider/physical verification and authority rules were consolidated into the
+focused ROOTLINE agent, Control Architecture and Water And Energy Rules; all
+thirteen sources were archived intact.
+
+Lifecycle: `WORKING / BATCH_23_ROOTLINE_COMPLETE /
+BATCHES_24_TO_29_REMAIN`.
+
+No runtime, provider, message, database, farm, irrigation, fertiliser,
+borehole or other hardware action occurred. The remaining physical queue is 57
+documents. Automatic promotion is Batch 24 SAM/revenue reconciliation.

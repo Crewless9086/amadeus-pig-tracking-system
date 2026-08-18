@@ -1,5 +1,19 @@
 # ROOTLINE Water And Energy Rules
 
+## Authority And Evidence Precedence
+
+This file is the single durable policy source for ROOTLINE water, irrigation,
+fertiliser and borehole decisions. The ROOTLINE agent and Control Architecture
+define role and execution structure. Code, schemas and provider records prove
+implementation/runtime facts. Dated plans, inventories, canaries, onboarding
+notes, handovers and commissioning packets are archived evidence only and may
+not override these rules or establish current state.
+
+Current eligibility always requires fresh canonical and provider evidence.
+Historical device identities and commissioning receipts remain immutable
+evidence but are not replayable execution authority. Unknown stays Unknown and
+blocks only the dependent action or claim.
+
 Status: owner-confirmed operating knowledge
 
 Last governance reconciliation: 2026-08-12

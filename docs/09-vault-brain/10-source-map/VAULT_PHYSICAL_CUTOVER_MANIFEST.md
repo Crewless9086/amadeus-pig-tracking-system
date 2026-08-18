@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 22 OOM SAKKIE reconciliation complete; no further physical change authorized.
+Status: Batch 23 ROOTLINE reconciliation complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v19`
-Baseline: `7660bd7b6ce9477f275e49468d485b9980cfe917`
-Generated from HEAD: `7660bd7b6ce9477f275e49468d485b9980cfe917`
-Tracked Markdown/MDX files covered: **530**
+Version: `vault_physical_cutover_manifest_v20`
+Baseline: `73f1638fbea49e53fb8f3c983bf671742a13e450`
+Generated from HEAD: `73f1638fbea49e53fb8f3c983bf671742a13e450`
+Tracked Markdown/MDX files covered: **531**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 22 and schedules later
+This manifest records completed Batches 5 through 23 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,21 +17,21 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `EXTRACT_THEN_ARCHIVE` | 55 |
-| `KEEP_ARCHIVE` | 137 |
+| `EXTRACT_THEN_ARCHIVE` | 54 |
+| `KEEP_ARCHIVE` | 150 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_GENERATED_PROJECTION` | 9 |
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 189 |
-| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 15 |
+| `KEEP_VAULT` | 190 |
+| `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 3 |
 
 ## Remaining execution schedule
 
-The remaining 70 physical-reconciliation entries are assigned
-to exactly one of Batches 23 through 27. Batch 28 owns the 72 transitional
+The remaining 57 physical-reconciliation entries are assigned
+to exactly one of Batches 24 through 27. Batch 28 owns the 72 transitional
 exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
@@ -45,7 +45,7 @@ This schedule is an ordering contract, not physical-change authority.
 | 20 | `general_operations` | COMPLETE (16) |
 | 21 | `herdmaster` | COMPLETE (22) |
 | 22 | `oom_sakkie` | COMPLETE (30) |
-| 23 | `rootline` | 13 |
+| 23 | `rootline` | COMPLETE (13) |
 | 24 | `sam_revenue` | 5 |
 | 25 | `business_modules` | 10 |
 | 26 | `planning_and_inbox` | 8 |
@@ -81,19 +81,6 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Planned batch | Destination / replacement | Exact refs | Blockers |
 | --- | --- | ---: | --- | ---: | --- |
-| `docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_C12345_CANARY_PREFLIGHT.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_C12345_CANARY_PREFLIGHT.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md` | `EXTRACT_THEN_ARCHIVE` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md` | 1 | unique_fact_extraction_required |
-| `docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md` | 1 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_OPERATING_POLICY_REVIEW.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_POLICY_REVIEW.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_PHASE_B_HARDWARE_INVENTORY.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_PHASE_B_HARDWARE_INVENTORY.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_REMAINING_COMMISSIONING_PACKETS_20260818.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_REMAINING_COMMISSIONING_PACKETS_20260818.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_SONOFF_IRRIGATION_EXECUTION_CONTRACT.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SONOFF_IRRIGATION_EXECUTION_CONTRACT.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md` | 0 | runbook_history_split_required |
-| `docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 23 | `docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 24 | `docs/99-archive/vault-cutover/docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md` | `EXTRACT_THEN_ARCHIVE` | 24 | `docs/99-archive/vault-cutover/docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md` | 1 | unique_fact_extraction_required |
 | `docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 24 | `docs/99-archive/vault-cutover/docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md` | 0 | runbook_history_split_required |

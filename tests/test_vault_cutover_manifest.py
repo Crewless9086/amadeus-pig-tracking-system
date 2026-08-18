@@ -180,6 +180,21 @@ BATCH22_ARCHIVED_FILES = {
     "docs/06-operations/OOM_SAKKIE_SPECIALIST_OWNER_DECISION_BINDING_HANDOVER.md",
     "docs/06-operations/OOM_SAKKIE_WITHDRAWAL_RELAY_RECOVERY_HANDOVER.md",
 }
+BATCH23_ARCHIVED_FILES = {
+    "docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md",
+    "docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md",
+    "docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md",
+    "docs/06-operations/ROOTLINE_C12345_CANARY_PREFLIGHT.md",
+    "docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md",
+    "docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md",
+    "docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md",
+    "docs/06-operations/ROOTLINE_OPERATING_POLICY_REVIEW.md",
+    "docs/06-operations/ROOTLINE_PHASE_B_HARDWARE_INVENTORY.md",
+    "docs/06-operations/ROOTLINE_REMAINING_COMMISSIONING_PACKETS_20260818.md",
+    "docs/06-operations/ROOTLINE_SONOFF_IRRIGATION_EXECUTION_CONTRACT.md",
+    "docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md",
+    "docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -417,16 +432,28 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("Context, Specialist And Recovery Ordering", attention)
         self.assertIn("Oom Sakkie Browser Acceptance", ui)
 
+    def test_batch23_archives_rootline_history_after_contract_reconciliation(self):
+        for source in BATCH23_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        rootline = (ROOT / "docs/09-vault-brain/02-agents/farm/ROOTLINE.md").read_text(encoding="utf-8")
+        architecture = (ROOT / "docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md").read_text(encoding="utf-8")
+        rules = (ROOT / "docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md").read_text(encoding="utf-8")
+        self.assertIn("Planning, Execution And Device Contract", rootline)
+        self.assertIn("Device-Class Graduation And Execution", architecture)
+        self.assertIn("Authority And Evidence Precedence", rules)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 70)
-        self.assertTrue(all(23 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 57)
+        self.assertTrue(all(24 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(23, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(24, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
+        expected = {24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}
         self.assertEqual(actual, expected)

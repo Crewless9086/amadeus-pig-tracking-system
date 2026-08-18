@@ -69,3 +69,11 @@
   specialist dispatch, protected action, delivery and browser contracts.
 - Repointed active implementation and UI references to focused Vault files.
 - Archived thirty OOM SAKKIE plans, handovers, scorecards and runbooks intact.
+
+2026-08-18 - Vault Cutover Batch 23:
+
+- Consolidated ROOTLINE planning, device-class graduation, commissioning,
+  execution, provider/physical verification and authority precedence.
+- Removed active references to dated ROOTLINE operations documents.
+- Archived thirteen ROOTLINE plans, inventories, canaries, onboarding notes,
+  contracts and commissioning packets intact.

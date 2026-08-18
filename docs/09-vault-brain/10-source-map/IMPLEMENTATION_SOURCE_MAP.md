@@ -139,8 +139,6 @@
 ## ROOTLINE durable device doctrine and canonical action boundary
 
 - Agent doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`.
-- Device-management plan:
-  `docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md`.
 - Water, energy, irrigation, fertilizer and Borehole 1 rules:
   `docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`.
 - Control architecture:
@@ -163,7 +161,8 @@
 
 ## ROOTLINE canonical irrigation status and owner access
 
-- Mission: `docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md`.
+- Current behavior and access authority: the focused ROOTLINE agent, Control
+  Architecture, Water And Energy Rules and Source Of Truth Rules.
 - Legacy hybrid status: `modules/telemetry/irrigation_service.py`, `/api/telemetry/irrigation/status`; `auto` falls back to `Amadeus_Irrigation_Logs` when no Supabase daily plan rows exist.
 - Canonical ROOTLINE endpoints: daily advisor, daily brief, daily irrigation plan, water-energy plan and operating policy in `modules/telemetry/telemetry_routes.py` and their services.
 - Owner access: `modules/auth/owner_access.py`, `/owner/login`, `/owner/logout`, `/owner/status`, `templates/owner-login.html` and shared `templates/_farm_nav.html`.
@@ -395,8 +394,7 @@
 
 ### Rootline Operating Knowledge And Daily Advisor candidate
 
-- Operating register:
-  `docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md`
+- Operating policy: `docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`
 - Read-only advisor:
   `modules/telemetry/rootline_daily_advisor.py`
 - Owner-only route:
@@ -432,7 +430,7 @@
 - Routes: `modules/telemetry/telemetry_routes.py`
 - Migration: `supabase/migrations/202608060001_create_rootline_ewelink_oauth_vault.sql`
 - Tests: `tests/test_rootline_ewelink_oauth.py`
-- Operations: `docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md`
+- Governing boundary: `docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md`
 - Authority is limited to owner-authenticated authorization start, a
   HMAC-bound single-use callback, encrypted persistence and three allowlisted
   provider GETs. Readback and autonomous B/C activation remain disabled; no
