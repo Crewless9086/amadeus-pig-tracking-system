@@ -68,3 +68,22 @@ def test_exact_historical_bc_acceptance_advances_commissioning_without_authority
         assert policy["simultaneous_outputs_allowed"] is False
         assert set(policy["explicit_exclusions"]) == {
             "fertilizer_injection", "fertilizer_mixing", "borehole_pump"}
+
+        db.execute((ROOT / "supabase/migrations/202608190001_reconcile_rootline_bc_water_evidence_policy.sql").read_text())
+        active = db.execute("""select device_key,commissioning_stage,registry_generation,
+            standing_authority_id,standing_authority_version,device_record->>'standing_authority'
+            from app_private.rootline_device_registry
+            where standing_authority_id='ROOTLINE-BC-IRRIGATION-AUTO' order by device_key""").fetchall()
+        assert active == [
+            ("ifttt_ewelink:ewelink_owner_account:100204e9bc:1", "standing_active", 4,
+             "ROOTLINE-BC-IRRIGATION-AUTO", "2", "true"),
+            ("ifttt_ewelink:ewelink_owner_account:100204e9bc:2", "standing_active", 4,
+             "ROOTLINE-BC-IRRIGATION-AUTO", "2", "true")]
+        policy = db.execute("""select policy_payload from app_private.rootline_standing_authorities
+            where standing_authority_id='ROOTLINE-BC-IRRIGATION-AUTO' and version='2'""").fetchone()[0]
+        assert policy["missing_or_stale_reservoir_observation_is_hold"] is False
+        assert policy["fresh_adverse_reservoir_evidence_is_hold"] is True
+        assert policy["unproven_reservoir_water_credit_litres"] == 0
+        assert db.execute("""select count(*) from app_private.rootline_authority_events where
+            standing_authority_id='ROOTLINE-BC-IRRIGATION-AUTO' and version='1'
+            and event_type='superseded'""").fetchone()[0] == 1

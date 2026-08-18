@@ -348,7 +348,14 @@ def _canonical_standing_authority_proven(database_url, artifact):
                 or str(row[2]) != str(envelope.get("policy_sha256") or "")):
             return False
         policy = row[1] if isinstance(row[1], dict) else {}
-        return (policy.get("contract_version") == "rootline_bc_standing_authority.v1"
+        return _bc_authority_policy_proven(policy, artifact, keys)
+    except Exception:
+        return False
+
+
+def _bc_authority_policy_proven(policy, artifact, keys):
+    """Validate the exact, scope-preserving B/C standing-authority policy."""
+    return (policy.get("contract_version") == "rootline_bc_standing_authority.v2"
             and set(policy.get("device_keys") or ()) == set(keys)
             and set(policy.get("zone_ids") or ()) == {"B12345", "C12345"}
             and set(policy.get("allowed_channels") or ()) == {1, 2}
@@ -361,7 +368,9 @@ def _canonical_standing_authority_proven(database_url, artifact):
             and 0 < artifact["maximum_duration_seconds"] <= policy["maximum_runtime_seconds"]
             and policy.get("simultaneous_outputs_allowed") is False
             and policy.get("mutual_exclusion_required") is True
-            and policy.get("fresh_reservoir_storage_required") is True
+            and policy.get("missing_or_stale_reservoir_observation_is_hold") is False
+            and policy.get("fresh_adverse_reservoir_evidence_is_hold") is True
+            and policy.get("unproven_reservoir_water_credit_litres") == 0
             and policy.get("fresh_weather_and_rain_hold_required") is True
             and policy.get("current_plan_identity_required") is True
             and policy.get("application_timeout_required") is True
@@ -374,8 +383,6 @@ def _canonical_standing_authority_proven(database_url, artifact):
             and policy.get("physical_fail_safe_proven") is True
             and policy.get("power_restoration_off_proven") is True
             and policy.get("automatic_on_retry") is False)
-    except Exception:
-        return False
 
 
 def _safe(status):
