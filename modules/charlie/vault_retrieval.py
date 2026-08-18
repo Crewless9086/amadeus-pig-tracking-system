@@ -7,7 +7,7 @@ from modules.charlie.source_map import implementation_source_packet
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VAULT_ROOT = REPO_ROOT / "docs" / "09-vault-brain"
-VAULT_RETRIEVAL_VERSION = "charlie_vault_retrieval_v1"
+VAULT_RETRIEVAL_VERSION = "charlie_vault_retrieval_v2"
 OWNER_PREFERENCE_VERSION = "charlie_owner_preferences_v1"
 
 BASE_REQUIRED_DOCS = [
@@ -29,6 +29,115 @@ BASE_REQUIRED_DOCS = [
     "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
     "docs/09-vault-brain/09-examples/README.md",
 ]
+
+COMMON_MANDATORY_DOCS = [
+    "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
+    "docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md",
+    "docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md",
+    "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
+    "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
+    "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
+    "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
+    "docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md",
+]
+
+MANDATORY_MISSION_PACKS = {
+    "core": [
+        "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+        "docs/09-vault-brain/02-agents/owner-command/CHARLIE.md",
+        "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+        "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
+        "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
+        "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
+    ],
+    "oom_sakkie": [
+        "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md",
+        "docs/09-vault-brain/03-business/AMADEUS_FARM.md",
+        "docs/09-vault-brain/08-business-rules/FARM_RULES.md",
+    ],
+    "rootline": [
+        "docs/09-vault-brain/02-agents/farm/ROOTLINE.md",
+        "docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md",
+        "docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md",
+        "docs/09-vault-brain/08-business-rules/FARM_RULES.md",
+    ],
+    "herdmaster": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
+        "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
+        "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
+        "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
+    ],
+    "sam_livestock": [
+        "docs/09-vault-brain/02-agents/sales/SAM.md",
+        "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
+        "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
+        "docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md",
+        "docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md",
+        "docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md",
+    ],
+    "sam_meat": [
+        "docs/09-vault-brain/02-agents/sales/SAM.md",
+        "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
+        "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
+        "docs/09-vault-brain/08-business-rules/PAYMENT_RULES.md",
+        "docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md",
+        "docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md",
+    ],
+    "beacon_campaign": [
+        "docs/09-vault-brain/02-agents/marketing/BEACON.md",
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/08-business-rules/MARKETING_RULES.md",
+        "docs/09-vault-brain/08-business-rules/MEDIA_PRIVACY_RULES.md",
+    ],
+    "beacon_livestock_awareness": [
+        "docs/09-vault-brain/02-agents/marketing/BEACON.md",
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md",
+        "docs/09-vault-brain/08-business-rules/MARKETING_RULES.md",
+        "docs/09-vault-brain/08-business-rules/MEDIA_PRIVACY_RULES.md",
+    ],
+    "ui": [
+        "docs/09-vault-brain/07-standards/AMADEUS_FARM_UI_FACELIFT_STANDARD.md",
+        "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md",
+        "docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md",
+        "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
+        "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
+    ],
+    "documents": [
+        "docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md",
+    ],
+}
+
+INCOMPLETE_MISSION_PACKS = {
+    "documents": "canonical Documents agent/workflow doctrine is not yet owner-reviewed",
+}
+
+FORBIDDEN_DOCTRINE_PREFIXES = (
+    "planning/",
+    "docs/99-archive/",
+    "docs/05-ai/",
+    "docs/08-business-modules/",
+    "static/assets/agents/",
+    "external_sources/",
+)
+
+FORBIDDEN_DOCTRINE_EXACT = {
+    "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
+    "docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md",
+    "docs/00-start-here/README.md",
+    "docs/00-start-here/CURRENT_STATE.md",
+    "docs/00-start-here/NEXT_STEPS.md",
+    "docs/00-start-here/WORKFLOW.md",
+    "docs/00-start-here/DEPLOYMENT_SOP.md",
+    "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
+    "docs/00-start-here/PRODUCT_VISION.md",
+}
+
+ALLOWED_OUTSIDE_VAULT_DOCTRINE = {
+    "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
+    "docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md",
+}
 
 TEMPLATE_REQUIRED_DOCS = {
     "software_build": [
@@ -152,15 +261,36 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
     tokens = _tokens(query)
     template = _workflow_template(mission)
     agent_docs = _agent_required_docs(agent)
-    required = _unique(BASE_REQUIRED_DOCS + agent_docs + TEMPLATE_REQUIRED_DOCS.get(template, []))
+    mission_pack_keys = classify_mission_packs(mission)
+    mandatory_pack_docs = _unique(
+        COMMON_MANDATORY_DOCS
+        + [path for key in mission_pack_keys for path in MANDATORY_MISSION_PACKS.get(key, [])]
+    )
+    pack_blockers = [
+        {"pack": key, "reason": INCOMPLETE_MISSION_PACKS[key]}
+        for key in mission_pack_keys
+        if key in INCOMPLETE_MISSION_PACKS
+    ]
+    required = _unique(
+        BASE_REQUIRED_DOCS
+        + agent_docs
+        + TEMPLATE_REQUIRED_DOCS.get(template, [])
+        + mandatory_pack_docs
+    )
     candidates = {path: {"path": path, "reasons": ["required_base_or_template"], "score": 40} for path in required}
+    for path in mandatory_pack_docs:
+        candidates[path]["reasons"] = ["mandatory_mission_pack"]
+        candidates[path]["score"] = 120
+    for path in agent_docs:
+        candidates[path]["reasons"] = ["active_stage_agent_doctrine"]
+        candidates[path]["score"] = max(130, candidates[path]["score"])
     authority_priority = {
-        "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md": 100,
-        "docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md": 95,
-        "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md": 90,
-        "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md": 85,
-        "docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md": 80,
-        "docs/09-vault-brain/INDEX.md": 75,
+        "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md": 200,
+        "docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md": 195,
+        "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md": 190,
+        "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md": 185,
+        "docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md": 180,
+        "docs/09-vault-brain/INDEX.md": 175,
     }
     for path, score in authority_priority.items():
         if path in candidates:
@@ -184,7 +314,8 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
         if overlap:
             candidates[path] = {"path": path, "reasons": [f"token_overlap:{overlap}"], "score": min(25, overlap * 3)}
 
-    ranked = sorted(candidates.values(), key=lambda item: (-item["score"], item["path"]))[:limit]
+    effective_limit = min(30, max(limit, len(_unique(mandatory_pack_docs + agent_docs))))
+    ranked = sorted(candidates.values(), key=lambda item: (-item["score"], item["path"]))[:effective_limit]
     for item in ranked:
         text = _read_repo_text(item["path"])
         item["status"] = "loaded" if text else "missing"
@@ -194,14 +325,50 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
         "query": query,
         "agent": agent,
         "agent_doctrine_docs": agent_docs,
+        "mission_pack_keys": mission_pack_keys,
+        "mandatory_pack_docs": mandatory_pack_docs,
+        "pack_blockers": pack_blockers,
         "workflow_template": template,
         "selected_count": len(ranked),
         "required_docs": required,
         "sources": ranked,
         "implementation_sources": implementation_source_packet(mission),
         "missing_docs": [item["path"] for item in ranked if item["status"] != "loaded"],
-        "selection_rule": "base doctrine + workflow template + keyword mapping + local token overlap",
+        "missing_mandatory_docs": [
+            item["path"]
+            for item in ranked
+            if item["path"] in mandatory_pack_docs and item["status"] != "loaded"
+        ],
+        "selection_rule": "mandatory mission packs + workflow template + keyword mapping + local token overlap",
     }
+
+
+def classify_mission_packs(mission):
+    """Return deterministic, additive doctrine packs for the complete mission."""
+    text = _mission_query(mission).lower().replace("_", " ").replace("-", " ")
+    packs = []
+
+    def has(*terms):
+        return any(term in text for term in terms)
+
+    if has("charlie core", "control tower", "mission queue", "runner", "watchdog"):
+        packs.append("core")
+    if has("oom sakkie", "farm manager"):
+        packs.append("oom_sakkie")
+    if has("rootline", "irrigation", "borehole", "fertiliser", "water plan", "valve"):
+        packs.append("rootline")
+    if has("herdmaster", "herd master", "pig allocation", "purpose review", "weaning", "farrowing", "breeding", "litter care", "welfare case"):
+        packs.append("herdmaster")
+    if has("sam", "livestock order", "live pig", "pig order"):
+        packs.append("sam_meat" if has("meat", "pork", "butcher", "carcass") else "sam_livestock")
+    if has("beacon"):
+        awareness = has("livestock", "piglet", "litter", "farm awareness", "facebook", "meta")
+        packs.append("beacon_livestock_awareness" if awareness else "beacon_campaign")
+    if has(" ui ", "user interface", "frontend", "dashboard", "facelift", "page layout", "mobile layout") or text.startswith("ui "):
+        packs.append("ui")
+    if has("document catalogue", "document delivery", "generate pdf", "printer job", "sales document"):
+        packs.append("documents")
+    return _unique(packs)
 
 
 def _agent_required_docs(agent):
@@ -248,13 +415,23 @@ def evaluate_vault_source_coverage(artifacts, retrieval_packet):
     retrieval_packet = retrieval_packet if isinstance(retrieval_packet, dict) else {}
     required = set(retrieval_packet.get("required_docs") if isinstance(retrieval_packet.get("required_docs"), list) else [])
     selected = {item.get("path") for item in retrieval_packet.get("sources", []) if isinstance(item, dict)}
+    missing_mandatory = sorted(set(
+        retrieval_packet.get("missing_mandatory_docs")
+        if isinstance(retrieval_packet.get("missing_mandatory_docs"), list)
+        else []
+    ))
+    pack_blockers = retrieval_packet.get("pack_blockers") if isinstance(retrieval_packet.get("pack_blockers"), list) else []
     cited = set()
     uncited_agents = []
+    forbidden_doctrine_sources = set()
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
             continue
         sources = set(_artifact_vault_sources(artifact))
         cited.update(sources)
+        for source in _artifact_declared_vault_sources(artifact):
+            if _is_forbidden_doctrine_source(source):
+                forbidden_doctrine_sources.add(source)
         if not any(source.startswith("docs/09-vault-brain/") for source in sources):
             uncited_agents.append(agent)
     missing_required = sorted(required - cited)
@@ -266,16 +443,58 @@ def evaluate_vault_source_coverage(artifacts, retrieval_packet):
         score -= min(35, len(missing_required) * 4)
     if selected_not_cited:
         score -= min(20, len(selected_not_cited) * 2)
+    if missing_mandatory or pack_blockers or forbidden_doctrine_sources:
+        score = 0
     score = max(0, score)
     return {
         "version": "charlie_vault_source_coverage_v1",
         "score": score,
-        "passed": score >= 45 and not uncited_agents and bool(cited.intersection(selected or required)),
+        "passed": (
+            score >= 45
+            and not uncited_agents
+            and not missing_mandatory
+            and not pack_blockers
+            and not forbidden_doctrine_sources
+            and bool(cited.intersection(selected or required))
+        ),
         "cited_sources": sorted(cited),
         "uncited_agents": sorted(uncited_agents),
         "missing_required_docs": missing_required,
         "selected_not_cited": selected_not_cited,
+        "missing_mandatory_docs": missing_mandatory,
+        "pack_blockers": pack_blockers,
+        "forbidden_doctrine_sources": sorted(forbidden_doctrine_sources),
     }
+
+
+def _artifact_declared_vault_sources(artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    sources = artifact.get("vault_sources_used")
+    if isinstance(sources, str):
+        sources = [sources]
+    if not isinstance(sources, list):
+        sources = []
+    return [
+        str(source or "").strip().replace(chr(92), "/")
+        for source in sources
+        if str(source or "").strip()
+    ]
+
+
+def _is_forbidden_doctrine_source(source):
+    normalized = str(source or "").strip().replace(chr(92), "/")
+    if normalized in ALLOWED_OUTSIDE_VAULT_DOCTRINE:
+        return False
+    lower = normalized.lower()
+    name = lower.rsplit("/", 1)[-1]
+    return (
+        normalized in FORBIDDEN_DOCTRINE_EXACT
+        or normalized.startswith(FORBIDDEN_DOCTRINE_PREFIXES)
+        or "handover" in name
+        or "/09-examples/" in lower
+        or name == "changelog.md"
+        or "scorecard" in name
+    )
 
 
 def _artifact_vault_sources(artifact):
@@ -374,6 +593,8 @@ def _vault_markdown_files():
 def _eligible_current_vault_text(path, text):
     """Keep superseded evidence out of ordinary current-world retrieval."""
     normalized_path = str(path or "").replace("\\", "/").lower()
+    if _is_forbidden_doctrine_source(normalized_path):
+        return False
     if "/09-examples/" in normalized_path or normalized_path.endswith("/changelog.md"):
         return False
     header = str(text or "")[:1200].lower()
