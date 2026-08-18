@@ -111,5 +111,7 @@ An eligible result may create an owner-review candidate only.
 
 ## Source References
 
-- `docs/05-ai/agents/beacon/BEACON_SCOPE.md`
+- `docs/09-vault-brain/03-business/BEACON_MARKETING.md`
+- `docs/09-vault-brain/08-business-rules/MARKETING_RULES.md`
+- `docs/09-vault-brain/08-business-rules/MEDIA_PRIVACY_RULES.md`
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`

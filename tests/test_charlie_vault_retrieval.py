@@ -124,14 +124,14 @@ class CharlieVaultRetrievalTests(unittest.TestCase):
     def test_legacy_document_cannot_be_claimed_as_doctrine(self):
         retrieval = retrieve_vault_sources({"title": "ordinary source audit"}, limit=30, excerpt_chars=0)
         result = evaluate_vault_source_coverage(
-            {"planner": {"vault_sources_used": ["docs/05-ai/agents/beacon/BEACON_SCOPE.md"]}},
+            {"planner": {"vault_sources_used": ["docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md"]}},
             retrieval,
         )
 
         self.assertFalse(result["passed"])
         self.assertEqual(
             result["forbidden_doctrine_sources"],
-            ["docs/05-ai/agents/beacon/BEACON_SCOPE.md"],
+            ["docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md"],
         )
 
     def test_current_state_and_vault_handover_cannot_be_claimed_as_doctrine(self):

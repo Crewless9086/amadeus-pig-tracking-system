@@ -96,7 +96,11 @@ Implementation status:
 
 Naming note: existing docs use `Beacon` for public/social content and `Prism` for UI/design. The owner sometimes says `Prisma` for the marketing/social role. Until renamed deliberately, treat `Prisma/Beacon` as the marketing demand-generation role.
 
-Full Beacon scope note: Beacon's long-term role is larger than the Phase 11N launch packet. The future media library, sale-readiness scanning, campaign planning, scheduling, paid promotion, monitoring, and optimization scope is logged in `docs/05-ai/agents/beacon/BEACON_SCOPE.md`. Phase 11P created the private media-library foundation only; posting, scheduling, spend, and automatic public media use remain parked until approval rules are proven.
+Full Beacon scope note: Beacon's long-term role is larger than the Phase 11N
+launch packet. Current authority is defined by the focused Vault BEACON agent,
+campaign workflow, awareness workflow, marketing rules and media privacy rules.
+Phase 11P created the private media-library foundation only; posting,
+scheduling, spend, and automatic public media use remain governed separately.
 
 ## Next Build Sequence
 
@@ -190,7 +194,8 @@ Implemented outcome:
 - No post/send automation until owner approval and channel rules are explicit.
 - `modules/sales/beacon_campaign.py` builds the canonical draft-only launch packet.
 - `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` contains the owner-review copy packet.
-- `docs/05-ai/agents/beacon/BEACON_SCOPE.md` logs the full future Beacon vision so it can be built later in controlled phases.
+- `docs/09-vault-brain/02-agents/marketing/BEACON.md` and its focused Vault pack
+  define Beacon's current governed role.
 - Tests prove Beacon has no authority to post publicly, send customer messages, call Chatwoot/Meta/n8n, create orders, create quotes/invoices, reserve carcasses, change stock, book slaughter/butchery, or confirm payment.
 
 Owner review before using the copy:
@@ -231,7 +236,9 @@ Implemented outcome:
 - Append-only media asset metadata and event history for source, tags, sale-stream relevance, quality, privacy/safety, owner approval, and campaign usage.
 - Backend APIs expose policy, list/register, small-file upload, and asset event recording under `/api/sales/beacon/*`.
 - Standard upload is capped at 6MB until a later resumable/TUS upload build exists.
-- `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md` records the bucket, env, upload, and authority rules.
+- `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md` maps the
+  current media code, migrations and provider evidence; the Vault BEACON and
+  media-privacy rules define authority.
 - No Meta, public posting, scheduling, paid spend, customer messaging, quote, invoice, order, stock, reservation, dispatch, prompt/runtime, or automatic media-use authority is added.
 
 Next gate:

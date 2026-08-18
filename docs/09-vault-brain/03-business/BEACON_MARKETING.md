@@ -30,7 +30,9 @@ Campaign demand targets fail closed unless fresh fulfilment evidence identifies 
 
 The contract grants no posting, scheduling, spend, customer-send, Meta/Chatwoot call, order, reservation, stock, farm-lifecycle, or approval-executes-action authority.
 
-Source reference: `docs/05-ai/agents/beacon/BEACON_SCOPE.md`.
+Authority source: the focused Vault BEACON agent, campaign/awareness workflows,
+marketing rules and media-privacy rules. Legacy scope history is preserved only
+as archive evidence recorded by the cutover reconciliation.
 
 ## Fulfilment-Aware Opportunity Scanner
 

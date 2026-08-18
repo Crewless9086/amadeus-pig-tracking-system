@@ -109,4 +109,5 @@ separate deployment and operational proof.
 - `docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md`
-- `docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md`
+- `docs/09-vault-brain/02-agents/sales/SAM.md`
+- `docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md`

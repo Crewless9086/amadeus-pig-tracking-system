@@ -147,6 +147,13 @@ Vault. Brain Guard must treat those archive paths as evidence only and must
 reject any attempt to restore them as active doctrine. The regenerated manifest
 does not authorize another move or any deletion.
 
+## Batch 6 Physical Slice State
+
+The remaining four agent-specific `docs/05-ai` documents are archived intact.
+Brain Guard must reject legacy scope, storage or SAM build-plan evidence as
+current doctrine and route missions only through focused Vault packs. No later
+move or deletion is authorized by this completed slice.
+
 ## Runtime Enforcement v2
 
 The second runtime pass adds stronger operating rails:
