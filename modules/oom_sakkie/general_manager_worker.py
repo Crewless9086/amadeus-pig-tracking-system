@@ -18,6 +18,7 @@ from typing import Any, Callable, Iterable, Mapping
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
 
 CONTRACT_VERSION = "oom_sakkie_general_manager_worker.v1"
+BRAIN_GUARD_AUDIT_VERSION = "scheduled_brain_guard_audit.v1"
 WORKER_ID = "oom-sakkie-general-manager-v1"
 TRIGGER_IDENTITY = "oom-sakkie-morning-scheduler:general-manager"
 CADENCE = timedelta(minutes=5)
@@ -30,6 +31,32 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
 
 class ManagerCaseError(ValueError):
     pass
+
+
+def build_scheduled_brain_guard_audit(*, source_revision: str, now: datetime,
+                                      alignment_result: Mapping[str, Any] | None = None):
+    """Build a read-only, revision-bound Vault alignment result for one cycle."""
+    if alignment_result is None:
+        from modules.charlie.vault_alignment import evaluate_vault_alignment
+        alignment_result = evaluate_vault_alignment()
+    findings = sorted(str(value) for value in alignment_result.get("findings") or ())
+    checked_files = sorted(str(value) for value in alignment_result.get("checked_files") or ())
+    material = {
+        "contract_version": BRAIN_GUARD_AUDIT_VERSION,
+        "alignment_version": str(alignment_result.get("version") or "unknown"),
+        "source_revision": str(source_revision or "unknown"),
+        "passed": alignment_result.get("passed") is True,
+        "findings": findings,
+        "checked_files": checked_files,
+    }
+    return {
+        **material,
+        "status": ("brain_guard_alignment_passed" if material["passed"]
+                   else "brain_guard_alignment_failed"),
+        "observed_at": _aware(now).isoformat(),
+        "evidence_digest": _digest(material),
+        "checked_count": len(checked_files),
+    }
 
 
 def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, Any]:
@@ -77,8 +104,11 @@ class PostgresManagerCaseStore:
 
     def run_cycle(self, candidates: Iterable[Mapping[str, Any]], *, now: datetime,
                   source_revision: str, deliver: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
-                  refresh: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None):
+                  refresh: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
+                  brain_guard_audit: Mapping[str, Any] | None = None):
         now = _aware(now)
+        brain_guard = dict(brain_guard_audit or build_scheduled_brain_guard_audit(
+            source_revision=source_revision, now=now))
         cycle_id = ("OOM-MANAGER-CYCLE-" + now.strftime("%Y%m%dT%H%M%S%fZ-")
                     + uuid.uuid4().hex.upper())
         next_cycle = now + CADENCE
@@ -92,6 +122,8 @@ class PostgresManagerCaseStore:
                         (cycle_id,worker_id,trigger_identity,source_revision,started_at,heartbeat_at,
                          next_cycle_at,status) values(%s,%s,%s,%s,%s,%s,%s,'started')""",
                         (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, now, next_cycle))
+                    if brain_guard.get("passed") is not True:
+                        raise ManagerCaseError("scheduled_brain_guard_alignment_failed")
                     for raw in candidates:
                         candidate = normalize_candidate(raw, now=now)
                         result = self._reconcile(cur, candidate, now)
@@ -170,7 +202,7 @@ class PostgresManagerCaseStore:
             counts = {"candidates_created": created, "candidates_changed": changed,
                 "candidate_replays": replayed, "cases_claimed": len(claimed),
                 "deliveries_confirmed": delivered, "deliveries_suppressed": suppressed,
-                "exceptions": exceptions}
+                "exceptions": exceptions, "brain_guard": brain_guard}
             with self.connect_factory() as cycle_connection:
                 with cycle_connection.cursor() as cur:
                     cur.execute("""update app_private.oom_manager_worker_cycles set heartbeat_at=%s,
@@ -182,22 +214,26 @@ class PostgresManagerCaseStore:
                 "next_cycle_at": next_cycle.isoformat(), "case_results": case_results,
                 **counts, **_zero_effects()}
         except Exception as exc:
+            failure_counts = {"brain_guard": brain_guard}
             try:
                 with self.connect_factory() as failure_connection:
                     with failure_connection.cursor() as cur:
                         cur.execute("""insert into app_private.oom_manager_worker_cycles
                             (cycle_id,worker_id,trigger_identity,source_revision,started_at,heartbeat_at,
                              next_cycle_at,status,case_counts,completed_at)
-                            values(%s,%s,%s,%s,%s,%s,%s,'failed','{}'::jsonb,%s)
+                            values(%s,%s,%s,%s,%s,%s,%s,'failed',%s::jsonb,%s)
                             on conflict(cycle_id) do update set status='failed',heartbeat_at=excluded.heartbeat_at,
-                              next_cycle_at=excluded.next_cycle_at,completed_at=excluded.completed_at""",
-                            (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, now, next_cycle, now))
+                              next_cycle_at=excluded.next_cycle_at,case_counts=excluded.case_counts,
+                              completed_at=excluded.completed_at""",
+                            (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, now,
+                             next_cycle, json.dumps(failure_counts), now))
             except Exception:
                 pass
             return {"success": False, "status": "general_manager_cycle_failed",
                 "failure_kind": exc.__class__.__name__,
                 "worker_id": WORKER_ID, "cycle_id": cycle_id,
                 "heartbeat_at": now.isoformat(), "next_cycle_at": next_cycle.isoformat(),
+                "brain_guard": brain_guard,
                 **_zero_effects()}
         finally:
             connection.close()
@@ -354,9 +390,10 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                 dedupe_key=case["dedupe_key"], specialist=case["specialist"],
                 collectors=collectors)
     revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
+    brain_guard = build_scheduled_brain_guard_audit(source_revision=revision, now=now)
     return (store or PostgresManagerCaseStore()).run_cycle(
         candidates, now=now, source_revision=revision, deliver=deliver,
-        refresh=refresh)
+        refresh=refresh, brain_guard_audit=brain_guard)
 
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None):
