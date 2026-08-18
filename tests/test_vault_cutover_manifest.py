@@ -270,6 +270,18 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         })
         self.assertTrue((ROOT / "docs/09-vault-brain/10-source-map/TRANSITIONAL_EXIT_TEST_REGISTER.md").is_file())
 
+    def test_batch29_is_locked_with_deployed_continuity_and_named_exceptions(self):
+        acceptance = (ROOT / "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH29_ACCEPTANCE.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("29 OF 29", acceptance)
+        self.assertIn("OOM-MANAGER-CYCLE-20260818T210530837745Z", acceptance)
+        self.assertIn("OOM-MANAGER-CYCLE-20260818T211029805199Z", acceptance)
+        self.assertIn("a15295c1cb713ccbbe870460c1909426c9ea1713a06104cc37706ea198e6dd24", acceptance)
+        self.assertIn("operating-spine defect", acceptance)
+        self.assertEqual(self.manifest["version"], "vault_physical_cutover_manifest_v26")
+        self.assertIn("deployed scheduled Brain Guard continuity", self.manifest["owner_boundary"])
+
     def test_delete_candidates_are_tiny_unreferenced_and_owner_gated(self):
         for entry in self.entries.values():
             if entry["disposition"] != "DELETE_CANDIDATE":

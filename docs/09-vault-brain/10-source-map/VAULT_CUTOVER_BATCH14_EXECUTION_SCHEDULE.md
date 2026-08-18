@@ -43,5 +43,8 @@ for individual paths; this schedule fixes the ordering and acceptance boundary.
 ## Completion Definition
 
 The Vault cutover programme is complete only when Batch 29 passes and the
-manifest has zero unresolved physical items, zero unproven transitional exits,
-no competing active doctrine, and a deployed Brain Guard continuity receipt.
+manifest has zero unresolved physical items, zero unnamed or unowned
+transitional exits, no competing active doctrine, and a deployed Brain Guard
+continuity receipt. A named exit may remain blocked only when its current
+runtime dependency, owner, test and prohibition on premature retirement are
+all explicit in the transitional exit-test register.

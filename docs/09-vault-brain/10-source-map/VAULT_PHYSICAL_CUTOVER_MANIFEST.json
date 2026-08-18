@@ -1,9 +1,9 @@
 {
-  "version": "vault_physical_cutover_manifest_v25",
-  "baseline": "3819db4a27fd2680d57242742b7b7f8490d4008a",
-  "generated_from_head": "3819db4a27fd2680d57242742b7b7f8490d4008a",
-  "owner_boundary": "Batch 28 binds all 72 current Google Sheets and n8n technical documents to explicit retirement tests; both tests remain blocked by proven runtime dependencies, so no transitional source is archived or elevated to doctrine; no runtime, provider, database, customer, farm or hardware change is authorized",
-  "entry_count": 538,
+  "version": "vault_physical_cutover_manifest_v26",
+  "baseline": "5d27e4afe2c546963196ed93753cf88aad92ba2b",
+  "generated_from_head": "5d27e4afe2c546963196ed93753cf88aad92ba2b",
+  "owner_boundary": "Batch 29 completes the 29-batch cutover with deployed scheduled Brain Guard continuity; all 72 transitional Google Sheets and n8n technical documents remain bounded behind two named, owned, blocked runtime exit tests and are neither doctrine nor retirement-authorized",
+  "entry_count": 539,
   "counts": {
     "KEEP_ARCHIVE": 207,
     "KEEP_CONTROLLING_EXCEPTION": 2,
@@ -12,7 +12,7 @@
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 33,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 195
+    "KEEP_VAULT": 196
   },
   "entries": [
     {
@@ -2650,8 +2650,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "e989d821f85621c262f7cf8d9b1b411dad6dad4b8bfcd8283dc0bc781333cd4e",
-      "physical_lines": 1019,
+      "sha256": "397f197d15103770dea60221955e8f0dc360eef7668d4ff6d539b8a27cc86b75",
+      "physical_lines": 1037,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -2883,8 +2883,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "6658684e26504847ae8f79943e012dcd3885471c262952cb8657cd760af52e4e",
-      "physical_lines": 313,
+      "sha256": "fb967a13f8c5d7825fc54a4fbff8eda04b9c31a1ee9a89e9efebd3fc7c32d8cd",
+      "physical_lines": 322,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -3097,7 +3097,7 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "b6c32ff1dc2b5613d5cc3fbdccc6dd73e6c0e2a7964197c9d8c60b3a4d6b81e4",
+      "sha256": "8b80146bfdc32228615cead9370a61358a186f3557bf4f7344b771c7e02ee3b2",
       "physical_lines": 408,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
@@ -4714,7 +4714,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
-      "sha256": "95c317e8c549a2d50ea973cbb28e80276429dca9680787ced3e4fa1024344c0d",
+      "sha256": "2c651d102d39705c35bfc45c998d84845e9aee27d5ec1e0259371ead7b1a6adf",
       "physical_lines": 77,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5330,7 +5330,7 @@
     },
     {
       "path": "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
-      "sha256": "fb9a0ee8fdf5ea194a665f438d5d1613b4e52231360711c6b6bbf6f2e10543fd",
+      "sha256": "00660a88b3d044cf4fa7814e360706a7eca23204fd72ba015f04b68ce40c2c64",
       "physical_lines": 57,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -6336,7 +6336,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "afa045956484c107ad77cf8d526011b858eced1b17850f5b87a041f3b409446d",
+      "sha256": "648024e38366833cbf7d2ac74936e7db5b53ce3f67d03d2d698e7d4ceb513aac",
       "physical_lines": 249,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
@@ -6403,7 +6403,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
-      "sha256": "72e5e0e8f425317fd1772d3977a3e2c37a4f315f29f49a17368807168ea6bc88",
+      "sha256": "53d7af8e91d5f59171cd58d3e7a00a483c91a8effe6d4a2c5545ba1a5879019f",
       "physical_lines": 125,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -6439,7 +6439,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-      "sha256": "c64e09775901e305556e67b46dafe92feb08e69626ee2db842d1b99fa4826c63",
+      "sha256": "213ba6f7260120054ce5955e7fd1e99adfcc2bc1f7d66718272bf6f6aaad2d31",
       "physical_lines": 308,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
@@ -6447,6 +6447,26 @@
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
       "exact_reference_count": 0,
       "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/TRANSITIONAL_EXIT_TEST_REGISTER.md",
+      "sha256": "c042b8f5199711fbe2a966e9f73e228577ac952e5731272bab1f1e82271093e7",
+      "physical_lines": 64,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/TRANSITIONAL_EXIT_TEST_REGISTER.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "tests/test_vault_cutover_manifest.py"
+      ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
       "physical_change_authorized": false,
@@ -6529,8 +6549,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH14_EXECUTION_SCHEDULE.md",
-      "sha256": "d8c6ca1aafca9f7536d3841bb532178311043e5a100da1a6c5c602af9abf7da1",
-      "physical_lines": 47,
+      "sha256": "4905f7016a0be2ffdc6e01aeb6b997ea813f11bd360e9bb0fd296d232f9c8efa",
+      "physical_lines": 50,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
       "disposition": "KEEP_VAULT",

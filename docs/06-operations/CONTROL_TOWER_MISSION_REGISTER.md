@@ -1017,3 +1017,21 @@ BATCH_29_FINAL_ACCEPTANCE_REMAINS`.
 No workflow, Sheet, runtime, provider, database, customer, farm or hardware
 action occurred. Automatic promotion is Batch 29 final repository audit,
 deployed Brain Guard acceptance and cutover lock.
+
+### Vault Cutover Batch 29 - 2026-08-18
+
+Owner approved final continuation. PRs #1097 and #1098 merged the read-only,
+revision-bound Brain Guard audit into the existing Oom Sakkie five-minute
+manager schedule. Render cron `crn-d9us4d3ncjis73adehrg` and web service
+`srv-d6sijjkhg0os73f7regg` loaded exact revision `5d27e4af`. Two independent
+provider-origin cycles at 21:05 and 21:10 UTC each checked 118 files, found zero
+alignment defects, recorded heartbeat and next-audit time, and produced stable
+digest `a15295c1cb713ccbbe870460c1909426c9ea1713a06104cc37706ea198e6dd24`.
+
+Lifecycle: `COMPLETE / VAULT_CUTOVER_29_OF_29 /
+DEPLOYED_BRAIN_GUARD_CONTINUITY_PROVEN`.
+
+The later manager case phase failed in both cycles. That pre-existing
+operating-spine timeout remains a separate current defect; Brain Guard audit
+success does not claim a completed manager business cycle. The 72 transitional
+documents remain safely retained behind the two named Batch 28 exit tests.
