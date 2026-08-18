@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-08-18 - Vault cutover Batch 2 authority routing
+
+- Established `docs/09-vault-brain/` as the only normative agent-doctrine root.
+- Retained only the canonical Runtime Programme and Control Tower feedback
+  template as narrow controlling exceptions outside the Vault.
+- Classified mission state, technical references, legacy docs, planning,
+  handovers, evidence logs and static agent cards as non-doctrine evidence.
+- Added deterministic common and agent mission packs, including mandatory
+  Facelift coverage for UI and livestock-awareness policy for BEACON/Meta.
+- Recorded that Documents has no complete canonical agent/workflow pack and must
+  fail closed until that focused doctrine is owner-reviewed.
+- Performed no move, deletion, runtime activation or production mutation.
+
 ## 2026-08-18 - Narrow B/C standing authority source set
 
 - Added one revocable `ROOTLINE-BC-IRRIGATION-AUTO` version 1 policy migration,

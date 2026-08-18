@@ -592,3 +592,20 @@ Next ordered work: governance routing; common agent contract; CORE/Oom Sakkie;
 ROOTLINE/HERDMASTER; BEACON/SAM with Meta safety; CODEX UI with the mandatory
 Facelift Standard; Documents/remaining specialists; data/workflow authority;
 then an owner-approved archive/delete manifest.
+
+### Vault Cutover Batch 2 - 2026-08-18
+
+Owner approved Batch 2. Authority-routing design now establishes
+`docs/09-vault-brain/` as the only normative agent-doctrine root, with only the
+canonical Runtime Programme and Control Tower feedback template retained as
+narrow controlling exceptions. Mission-state records and all technical,
+planning, handover, evidence, static-asset and legacy documents are explicitly
+non-doctrine unless later promoted through Vault governance.
+
+Lifecycle: `WORKING / BATCH_2_AUTHORITY_DESIGN_COMPLETE /
+ENFORCEMENT_AND_AGENT_AUDIT_PENDING`.
+
+No files moved or deleted; no runtime, provider, production data or agent
+authority changed. The next eligible batch is deterministic source enforcement
+plus the ordered common/agent contradiction audit. Physical cutover remains
+behind a separate owner-reviewed manifest.
