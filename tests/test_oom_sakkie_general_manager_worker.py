@@ -81,6 +81,8 @@ def test_failed_brain_guard_is_persisted_and_blocks_case_delivery():
                       if "status,case_counts,completed_at" in sql]
     assert len(failure_writes) == 1
     assert "brain_guard_alignment_failed" in failure_writes[0][1][-2]
+    assert '"kind": "ManagerCaseError"' in failure_writes[0][1][-2]
+    assert '"code": "scheduled_brain_guard_alignment_failed"' in failure_writes[0][1][-2]
 
 
 def test_audit_commit_uses_separate_connection_from_manager_work():

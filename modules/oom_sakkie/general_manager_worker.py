@@ -220,7 +220,13 @@ class PostgresManagerCaseStore:
                 "next_cycle_at": next_cycle.isoformat(), "case_results": case_results,
                 **counts, **_zero_effects()}
         except Exception as exc:
-            failure_counts = {"brain_guard": brain_guard}
+            failure = {"kind": exc.__class__.__name__}
+            sqlstate = str(getattr(exc, "sqlstate", "") or "").strip()
+            if sqlstate:
+                failure["sqlstate"] = sqlstate
+            if isinstance(exc, ManagerCaseError):
+                failure["code"] = str(exc)
+            failure_counts = {"brain_guard": brain_guard, "failure": failure}
             try:
                 with self.connect_factory() as failure_connection:
                     with failure_connection.cursor() as cur:
