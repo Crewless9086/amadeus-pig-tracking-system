@@ -103,7 +103,7 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
     def test_static_agent_cards_require_projection_reconciliation(self):
         cards = [entry for path, entry in self.entries.items() if path.startswith("static/assets/agents/")]
         self.assertTrue(cards)
-        self.assertTrue(all(entry["disposition"] == "RECONCILE_GENERATED_PROJECTION" for entry in cards))
+        self.assertTrue(all(entry["disposition"] == "KEEP_GENERATED_PROJECTION" for entry in cards))
 
     def test_batch5_slice_is_archived_without_deletion(self):
         for name in BATCH5_TOP_LEVEL_AI_FILES:
@@ -206,13 +206,13 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
     def test_batch14_schedules_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 190)
-        self.assertTrue(all(15 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 181)
+        self.assertTrue(all(16 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(15, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(16, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {15: 9, 16: 3, 17: 12, 18: 10, 19: 18, 20: 16, 21: 22,
+        expected = {16: 3, 17: 12, 18: 10, 19: 18, 20: 16, 21: 22,
                     22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}

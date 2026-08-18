@@ -1,19 +1,19 @@
 {
-  "version": "vault_physical_cutover_manifest_v11",
+  "version": "vault_physical_cutover_manifest_v12",
   "baseline": "ffdec62eb5fa986dca8ee648043339aaead0fbce",
   "generated_from_head": "ffdec62eb5fa986dca8ee648043339aaead0fbce",
-  "owner_boundary": "Batch 14 schedules every remaining physical-reconciliation item into Batches 15-27; it authorizes no move, deletion, rewrite, runtime, provider, authority, or production change",
-  "entry_count": 523,
+  "owner_boundary": "Batch 15 reconciles nine static agent cards as deterministic non-doctrine projections with drift detection; it authorizes no runtime, provider, business, farm, customer, or hardware change",
+  "entry_count": 524,
   "counts": {
     "EXTRACT_THEN_ARCHIVE": 108,
     "KEEP_ARCHIVE": 26,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
+    "KEEP_GENERATED_PROJECTION": 9,
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 182,
-    "RECONCILE_GENERATED_PROJECTION": 9,
+    "KEEP_VAULT": 183,
     "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 73
   },
   "entries": [
@@ -2959,8 +2959,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "1fde6796f4d50de99119acd77afb87c7f81bdfde2e7cdfedd0cae1ab3fe8f731",
-      "physical_lines": 799,
+      "sha256": "efd1ab938cda572e9931ba80c3c3a380f1986b8d2677a4b6d43441dd0bb30380",
+      "physical_lines": 816,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -5458,8 +5458,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "f0934fd21aeec5f0b3bd3546eda5e06ff8a00e35454d1d20ddbd8c9011f7f731",
-      "physical_lines": 217,
+      "sha256": "28d889ea0cb5eee318f947bb0c90157dc160dac02db3a257736b9bd33bff6192",
+      "physical_lines": 230,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -5599,8 +5599,8 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
-      "sha256": "78eae649293f4a14244c35130cfa2434fee6497ebd5bb7f02163767c0a88c6c6",
-      "physical_lines": 106,
+      "sha256": "34990d91e933a8415bacc71b166bf967a718b0cde1ea7df37aef312b5bb45c86",
+      "physical_lines": 114,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -6134,9 +6134,12 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/GATEKEEPER.md",
-      "exact_reference_count": 1,
+      "exact_reference_count": 4,
       "exact_references": [
-        "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md"
+        "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
+        "modules/charlie/agent_card_projection.py",
+        "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/gatekeeper/agent.md"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -6152,15 +6155,17 @@
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
-      "exact_reference_count": 8,
+      "exact_reference_count": 10,
       "exact_references": [
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "modules/charlie/agent_card_projection.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
         "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/herdmaster/agent.md",
         "tests/test_charlie_execution_bridge.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -6177,16 +6182,18 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md",
-      "exact_reference_count": 8,
+      "exact_reference_count": 10,
       "exact_references": [
         "docs/00-start-here/PRODUCT_VISION.md",
         "docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "modules/charlie/agent_card_projection.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
-        "scripts/build_vault_cutover_manifest.py"
+        "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/oom-sakkie/agent.md"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -6202,8 +6209,12 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/QUARTERMASTER.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
+      "exact_reference_count": 3,
+      "exact_references": [
+        "modules/charlie/agent_card_projection.py",
+        "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/quartermaster/agent.md"
+      ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
       "physical_change_authorized": false,
@@ -6218,12 +6229,14 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/ROOTLINE.md",
-      "exact_reference_count": 5,
+      "exact_reference_count": 7,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "modules/charlie/agent_card_projection.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
         "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/rootline/agent.md",
         "tests/test_charlie_vault_retrieval.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -6240,18 +6253,20 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/marketing/BEACON.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 12,
       "exact_references": [
         "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
         "modules/beacon/marketing_operating_contract.py",
+        "modules/charlie/agent_card_projection.py",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
-        "scripts/build_vault_cutover_manifest.py"
+        "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/beacon/agent.md"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -6350,10 +6365,13 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/BUTCHER.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 5,
       "exact_references": [
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
-        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "modules/charlie/agent_card_projection.py",
+        "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/butcher/agent.md"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -6387,9 +6405,12 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/LEDGER.md",
-      "exact_reference_count": 1,
+      "exact_reference_count": 4,
       "exact_references": [
-        "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md"
+        "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
+        "modules/charlie/agent_card_projection.py",
+        "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/ledger/agent.md"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -6449,7 +6470,7 @@
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/SAM.md",
-      "exact_reference_count": 14,
+      "exact_reference_count": 16,
       "exact_references": [
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
@@ -6458,12 +6479,14 @@
         "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "modules/charlie/agent_card_projection.py",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
         "planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
         "scripts/build_vault_cutover_manifest.py",
+        "static/assets/agents/sam/agent.md",
         "tests/test_charlie_execution_bridge.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -8492,12 +8515,28 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH14_EXECUTION_SCHEDULE.md",
-      "sha256": "42ab5af80bc02a81c268c25230188c00bf646e4b75b352cdac162cabbef04de4",
+      "sha256": "d8c6ca1aafca9f7536d3841bb532178311043e5a100da1a6c5c602af9abf7da1",
       "physical_lines": 47,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH14_EXECUTION_SCHEDULE.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH15_RECONCILIATION.md",
+      "sha256": "0a1e8a5652f8ca6a2c222da972f6a72e0448455c124923884fd873c43fb52c5c",
+      "physical_lines": 35,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH15_RECONCILIATION.md",
       "exact_reference_count": 0,
       "exact_references": [],
       "reason": "canonical Vault doctrine/reference",
@@ -10003,183 +10042,166 @@
     },
     {
       "path": "static/assets/agents/beacon/agent.md",
-      "sha256": "a427eefb576b6e79bb11de4f0377e4925e2df3be640180946afbea8d2b9f6694",
-      "physical_lines": 7,
+      "sha256": "9cc73c0f68f2b503cd4aa426af8f95e3dc20b37d8ff1d5e32f64969ca96fa33d",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
+      "disposition": "KEEP_GENERATED_PROJECTION",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/marketing/BEACON.md",
-      "exact_reference_count": 1,
+      "exact_reference_count": 2,
       "exact_references": [
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "tests/test_agent_card_projections.py"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "static/assets/agents/butcher/agent.md",
-      "sha256": "638686d5fdb73069bbc32455a2b029ee4ed148a146d0f1407d7ee0ad6d7dc307",
-      "physical_lines": 7,
+      "sha256": "8a91c7359f97b7fd9b339672b808820c12c74d7ace7b15917007fba2d32cea09",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
-      "destination_or_replacement": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
+      "disposition": "KEEP_GENERATED_PROJECTION",
+      "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/BUTCHER.md",
       "exact_reference_count": 1,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "static/assets/agents/gatekeeper/agent.md",
-      "sha256": "24cd4b98829be5314e80d3079e87d75471fe8170498da0b17dfb9b5f438ff189",
-      "physical_lines": 7,
+      "sha256": "e6629407bc10a15d7c11ed7410f1e91fbdcd7ffe6735cad426a04ab8a85f6c24",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
-      "destination_or_replacement": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
+      "disposition": "KEEP_GENERATED_PROJECTION",
+      "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/GATEKEEPER.md",
       "exact_reference_count": 1,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "static/assets/agents/herdmaster/agent.md",
-      "sha256": "13b64d773da2b707f383ac51e1e85d915656b912ce725ca10a8a7f358d51def4",
-      "physical_lines": 7,
+      "sha256": "5c578fdffa00531208019e20aa29b2bee1e984bb2f5ff8d8a5b22075f2cb51be",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
+      "disposition": "KEEP_GENERATED_PROJECTION",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
       "exact_reference_count": 1,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "static/assets/agents/ledger/agent.md",
-      "sha256": "645202a6adf8b58c3555a6e31ccf6e0de6a1dd06963190c179cae7ac8fa32d9f",
-      "physical_lines": 7,
+      "sha256": "4f4acdb0e971ada5456b563c9526264593a95bf49e1025de6bdb7c178f40ddfd",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
-      "destination_or_replacement": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
+      "disposition": "KEEP_GENERATED_PROJECTION",
+      "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/LEDGER.md",
       "exact_reference_count": 1,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "static/assets/agents/oom-sakkie/agent.md",
-      "sha256": "fea64193192676d419abeb7c2257f8d4849b3c43aef4800e3cd760f70f3773f7",
-      "physical_lines": 7,
+      "sha256": "3aab2c6aeb0a05bb4622d3af325f2617262e56e6e2867d3a96e312fa23aeba02",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
+      "disposition": "KEEP_GENERATED_PROJECTION",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md",
       "exact_reference_count": 1,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "static/assets/agents/quartermaster/agent.md",
-      "sha256": "1f1039cd40a5105ae0accaf26aa8405621d694edee17e8250b47b2326deac9b6",
-      "physical_lines": 7,
+      "sha256": "00ae64e1d97d4c0367b337a49c83ffe3b26c804ef4e8fee2b32f644ec9618dc7",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
-      "destination_or_replacement": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
+      "disposition": "KEEP_GENERATED_PROJECTION",
+      "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/QUARTERMASTER.md",
       "exact_reference_count": 1,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "static/assets/agents/rootline/agent.md",
-      "sha256": "4718ca4d53f40680c74495ca95da8962cb628cefbde848926073af06774c5469",
-      "physical_lines": 7,
+      "sha256": "10fae18f59901e7936c638d1d1f30e25e585f86b0a67d20db02bfae904e591cd",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
+      "disposition": "KEEP_GENERATED_PROJECTION",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/ROOTLINE.md",
       "exact_reference_count": 1,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "static/assets/agents/sam/agent.md",
-      "sha256": "5c7933a903aa2b492617c4403b158e5f2475c4b51c859cec5eb69eae7893fcb8",
-      "physical_lines": 7,
+      "sha256": "e5b52b4229da3dffe706d7f66080012752ff1882c18f1e59305f1b104288bc1d",
+      "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
-      "disposition": "RECONCILE_GENERATED_PROJECTION",
+      "disposition": "KEEP_GENERATED_PROJECTION",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/sales/SAM.md",
       "exact_reference_count": 1,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
       ],
-      "reason": "replace manual projection from Vault authority",
-      "blockers": [
-        "projection_generation_unproven"
-      ],
+      "reason": "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata",
+      "blockers": [],
       "physical_change_authorized": false,
-      "planned_batch": 15,
-      "reconciliation_family": "generated_agent_projections"
+      "planned_batch": null,
+      "reconciliation_family": null
     },
     {
       "path": "supabase/migrations/README.md",

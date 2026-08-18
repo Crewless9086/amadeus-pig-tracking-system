@@ -27,7 +27,7 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v11"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v12"
 BASELINE = "ffdec62eb5fa986dca8ee648043339aaead0fbce"
 
 BATCH9_COMPATIBILITY_POINTERS = {
@@ -61,6 +61,14 @@ BATCH12_COMPATIBILITY_POINTERS = {
 
 BATCH13_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/PRODUCT_VISION.md",
+}
+
+BATCH15_GENERATED_PROJECTIONS = {
+    f"static/assets/agents/{agent}/agent.md"
+    for agent in (
+        "beacon", "butcher", "gatekeeper", "herdmaster", "ledger",
+        "oom-sakkie", "quartermaster", "rootline", "sam",
+    )
 }
 
 REMAINING_PHYSICAL_DISPOSITIONS = {
@@ -123,6 +131,7 @@ ALLOWED_DISPOSITIONS = {
     "KEEP_CURRENT_STATE",
     "KEEP_TECHNICAL",
     "KEEP_POINTER",
+    "KEEP_GENERATED_PROJECTION",
     "KEEP_TRANSITIONAL",
     "KEEP_ARCHIVE",
     "RECONCILE_GENERATED_PROJECTION",
@@ -236,8 +245,12 @@ def _vault_target(path: str) -> str:
         agent = path.split("/")[3]
         mapping = {
             "beacon": "docs/09-vault-brain/02-agents/marketing/BEACON.md",
+            "butcher": "docs/09-vault-brain/02-agents/sales/BUTCHER.md",
+            "gatekeeper": "docs/09-vault-brain/02-agents/farm/GATEKEEPER.md",
             "herdmaster": "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+            "ledger": "docs/09-vault-brain/02-agents/sales/LEDGER.md",
             "oom-sakkie": "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md",
+            "quartermaster": "docs/09-vault-brain/02-agents/farm/QUARTERMASTER.md",
             "rootline": "docs/09-vault-brain/02-agents/farm/ROOTLINE.md",
             "sam": "docs/09-vault-brain/02-agents/sales/SAM.md",
         }
@@ -264,6 +277,8 @@ def _disposition(path: str, row: dict | None, exact_refs: list[str], lines: int)
         return "KEEP_CURRENT_STATE", path, "durable current-state record; history split is later work", []
     if path in BATCH9_COMPATIBILITY_POINTERS | BATCH10_COMPATIBILITY_POINTERS | BATCH11_COMPATIBILITY_POINTERS | BATCH12_COMPATIBILITY_POINTERS | BATCH13_COMPATIBILITY_POINTERS:
         return "KEEP_POINTER", _vault_target(path), "minimal compatibility pointer; cannot govern agents", []
+    if path in BATCH15_GENERATED_PROJECTIONS:
+        return "KEEP_GENERATED_PROJECTION", _vault_target(path), "deterministic digest-bound runtime/UI projection from Vault doctrine and asset metadata", []
     if path == "CLAUDE.md":
         return "POINTER_AFTER_RECONCILIATION", "docs/09-vault-brain/README.md", "obsolete root guidance must become a short Vault pointer after unique developer commands are retained", ["unique_fact_reconciliation_required"]
     if path in {
@@ -347,7 +362,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 14 schedules every remaining physical-reconciliation item into Batches 15-27; it authorizes no move, deletion, rewrite, runtime, provider, authority, or production change",
+        "owner_boundary": "Batch 15 reconciles nine static agent cards as deterministic non-doctrine projections with drift detection; it authorizes no runtime, provider, business, farm, customer, or hardware change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -398,7 +413,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: Batch 14 remaining-work schedule complete; no further physical change authorized.",
+        "Status: Batch 15 generated-agent projections complete; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -406,7 +421,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records completed Batches 5 through 14 and schedules later",
+        "This manifest records completed Batches 5 through 15 and schedules later",
         "dispositions only. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
@@ -426,13 +441,14 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "",
         "## Remaining execution schedule",
         "",
-        "Every one of the 190 remaining physical-reconciliation entries is assigned",
-        "to exactly one of Batches 15 through 27. Batch 28 owns the 72 transitional",
+        "The remaining 181 physical-reconciliation entries are assigned",
+        "to exactly one of Batches 16 through 27. Batch 28 owns the 72 transitional",
         "exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.",
         "This schedule is an ordering contract, not physical-change authority.",
         "",
         "| Batch | Family | Entries |",
         "| ---: | --- | ---: |",
+        "| 15 | `generated_agent_projections` | COMPLETE (9) |",
     ])
     lines.extend(
         f"| {batch} | `{family}` | {count} |"

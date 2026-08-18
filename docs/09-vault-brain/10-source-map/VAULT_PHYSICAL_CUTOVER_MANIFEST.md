@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 14 remaining-work schedule complete; no further physical change authorized.
+Status: Batch 15 generated-agent projections complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v11`
+Version: `vault_physical_cutover_manifest_v12`
 Baseline: `ffdec62eb5fa986dca8ee648043339aaead0fbce`
 Generated from HEAD: `ffdec62eb5fa986dca8ee648043339aaead0fbce`
-Tracked Markdown/MDX files covered: **523**
+Tracked Markdown/MDX files covered: **524**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 14 and schedules later
+This manifest records completed Batches 5 through 15 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -21,23 +21,23 @@ keeps `physical_change_authorized: false`.
 | `KEEP_ARCHIVE` | 26 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
+| `KEEP_GENERATED_PROJECTION` | 9 |
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 182 |
-| `RECONCILE_GENERATED_PROJECTION` | 9 |
+| `KEEP_VAULT` | 183 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
 
 ## Remaining execution schedule
 
-Every one of the 190 remaining physical-reconciliation entries is assigned
-to exactly one of Batches 15 through 27. Batch 28 owns the 72 transitional
+The remaining 181 physical-reconciliation entries are assigned
+to exactly one of Batches 16 through 27. Batch 28 owns the 72 transitional
 exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
 | Batch | Family | Entries |
 | ---: | --- | ---: |
-| 15 | `generated_agent_projections` | 9 |
+| 15 | `generated_agent_projections` | COMPLETE (9) |
 | 16 | `decisions_and_migration_index` | 3 |
 | 17 | `sheets_migration` | 12 |
 | 18 | `core_missions` | 10 |
@@ -259,15 +259,6 @@ entry whose physical disposition needs later work or owner review.
 | `planning/storyworks/pilots/petra/script.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/script.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/pilots/petra/sources.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/sources.md` | 0 | unique_fact_extraction_required |
 | `planning/storyworks/pilots/petra/time_cost_report.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/time_cost_report.md` | 0 | unique_fact_extraction_required |
-| `static/assets/agents/beacon/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/marketing/BEACON.md` | 1 | projection_generation_unproven |
-| `static/assets/agents/butcher/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md` | 1 | projection_generation_unproven |
-| `static/assets/agents/gatekeeper/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md` | 1 | projection_generation_unproven |
-| `static/assets/agents/herdmaster/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/farm/HERDMASTER.md` | 1 | projection_generation_unproven |
-| `static/assets/agents/ledger/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md` | 1 | projection_generation_unproven |
-| `static/assets/agents/oom-sakkie/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md` | 1 | projection_generation_unproven |
-| `static/assets/agents/quartermaster/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md` | 1 | projection_generation_unproven |
-| `static/assets/agents/rootline/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/farm/ROOTLINE.md` | 1 | projection_generation_unproven |
-| `static/assets/agents/sam/agent.md` | `RECONCILE_GENERATED_PROJECTION` | 15 | `docs/09-vault-brain/02-agents/sales/SAM.md` | 1 | projection_generation_unproven |
 
 ## Validation findings
 
