@@ -258,8 +258,17 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
 
     def test_transitional_files_remain_exit_test_blocked(self):
         transitional = [entry for entry in self.entries.values() if entry["disposition"] == "KEEP_TRANSITIONAL"]
-        self.assertTrue(transitional)
+        self.assertEqual(len(transitional), 72)
         self.assertTrue(all("exit_test_unproven" in entry["blockers"] for entry in transitional))
+        counts = {}
+        for entry in transitional:
+            counts[entry["exit_test_id"]] = counts.get(entry["exit_test_id"], 0) + 1
+            self.assertEqual(entry["exit_test_status"], "BLOCKED_CURRENT_RUNTIME_DEPENDENCY")
+        self.assertEqual(counts, {
+            "GS-LEGACY-RETIREMENT-V1": 32,
+            "N8N-LEGACY-RETIREMENT-V1": 40,
+        })
+        self.assertTrue((ROOT / "docs/09-vault-brain/10-source-map/TRANSITIONAL_EXIT_TEST_REGISTER.md").is_file())
 
     def test_delete_candidates_are_tiny_unreferenced_and_owner_gated(self):
         for entry in self.entries.values():

@@ -180,6 +180,11 @@ family. No tracked legacy AI document remains active. See
 
 ## Archived After Migration
 
+The 72 Google Sheets/n8n documents are not archive material yet. Batch 28 binds
+them to the two blocked retirement tests in
+`TRANSITIONAL_EXIT_TEST_REGISTER.md`. They are technical compatibility sources
+only and cannot govern agents or prove current provider state.
+
 Batch 27 archived the complete private Storyworks/Chronicle Vault validation
 package under `docs/99-archive/vault-cutover/planning/storyworks/`. It is
 historical evidence only and is not BEACON, farm media, active agent doctrine,

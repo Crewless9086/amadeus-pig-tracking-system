@@ -1000,3 +1000,20 @@ No account, media, narration, edit, upload, publication, spend, runtime,
 provider, database, customer, farm or hardware action occurred. The historical
 physical-reconciliation queue is empty. Automatic promotion is Batch 28
 transitional-document exit-test reconciliation.
+
+### Vault Cutover Batch 28 - 2026-08-18
+
+Owner approved continuation. All 72 transitional documents received exact
+retirement ownership: 32 Google Sheets documents are bound to
+`GS-LEGACY-RETIREMENT-V1`; 40 n8n documents are bound to
+`N8N-LEGACY-RETIREMENT-V1`. Fresh repository evidence proves current fallback,
+administrator, workflow, webhook, script and customer-channel consumers, so
+both exits remain `BLOCKED_CURRENT_RUNTIME_DEPENDENCY`. Retaining them is a
+bounded technical exception, not doctrine or permission for new legacy logic.
+
+Lifecycle: `WORKING / BATCH_28_TRANSITIONAL_EXITS_RECONCILED /
+BATCH_29_FINAL_ACCEPTANCE_REMAINS`.
+
+No workflow, Sheet, runtime, provider, database, customer, farm or hardware
+action occurred. Automatic promotion is Batch 29 final repository audit,
+deployed Brain Guard acceptance and cutover lock.

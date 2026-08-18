@@ -298,3 +298,16 @@ authorizes account creation, media acquisition, narration, editing, spend,
 upload, publication, monetisation, CORE integration or agent dispatch. Any
 future Storyworks revival requires a new owner-approved mission, current
 platform/rights research and a fresh focused Vault contract before execution.
+
+## Batch 28 Transitional Exit-Test Gate
+
+The 32 Google Sheets and 40 n8n Markdown sources are retained technical
+implementation references behind `GS-LEGACY-RETIREMENT-V1` and
+`N8N-LEGACY-RETIREMENT-V1`. Brain Guard must load the focused Vault data or
+workflow contract first and may retrieve a transitional file only to inspect
+an existing compatibility surface. Transitional content cannot define agent
+identity, business policy, current mission state, authority, priority or proof
+that a provider workflow is live. New business logic, canonical writes and
+agent memory are prohibited in both families. Retirement requires the complete
+named evidence test; absence of recent errors or an apparently unused file is
+not retirement proof.

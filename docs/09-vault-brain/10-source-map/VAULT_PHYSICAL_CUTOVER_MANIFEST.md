@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 27 Storyworks reconciliation complete; no further physical change authorized.
+Status: Batch 28 transitional exit-test reconciliation complete; no physical retirement authorized.
 
-Version: `vault_physical_cutover_manifest_v24`
-Baseline: `d612c520f51931404d91126078337261596a03ef`
-Generated from HEAD: `d612c520f51931404d91126078337261596a03ef`
-Tracked Markdown/MDX files covered: **537**
+Version: `vault_physical_cutover_manifest_v25`
+Baseline: `3819db4a27fd2680d57242742b7b7f8490d4008a`
+Generated from HEAD: `3819db4a27fd2680d57242742b7b7f8490d4008a`
+Tracked Markdown/MDX files covered: **538**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 27 and schedules later
+This manifest records completed Batches 5 through 28 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -24,12 +24,12 @@ keeps `physical_change_authorized: false`.
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 33 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 194 |
+| `KEEP_VAULT` | 195 |
 
 ## Remaining execution schedule
 
-The historical physical-reconciliation queue is complete. Batch 28 owns the 72 transitional
-exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
+The historical physical-reconciliation queue is complete. Batch 28 binds all 72 transitional
+documents to named blocked exit tests; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
 | Batch | Family | Entries |
@@ -47,12 +47,13 @@ This schedule is an ordering contract, not physical-change authority.
 | 25 | `business_modules` | COMPLETE (10) |
 | 26 | `planning_and_inbox` | COMPLETE (8) |
 | 27 | `storyworks` | COMPLETE (34 Markdown / 45-package files) |
-| 28 | `transitional_exit_tests` | 72 |
+| 28 | `transitional_exit_tests` | COMPLETE: 72 retained behind 2 blocked named exits |
 | 29 | `deployed_brain_guard_acceptance` | operational proof |
 
 ## Safety gates
 
-- Transitional n8n and Google Sheets references remain until their named exit tests pass.
+- The 32 Google Sheets references remain behind `GS-LEGACY-RETIREMENT-V1`; current fallback/admin/runtime consumers prove retirement is unsafe.
+- The 40 n8n references remain behind `N8N-LEGACY-RETIREMENT-V1`; current provider/workflow/customer integration consumers prove retirement is unsafe.
 - Historical evidence defaults to archive, not deletion.
 - A delete candidate requires zero exact path references, an exact replacement, a tiny retired/superseded source, and later owner approval.
 - Pointer conversion requires unique-fact reconciliation first.

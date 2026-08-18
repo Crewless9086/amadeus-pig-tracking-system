@@ -36,6 +36,11 @@ fallback is still needed or that a historic conflict is still unresolved.
 
 ## Cleanup Direction
 
+Retirement test: `GS-LEGACY-RETIREMENT-V1`, defined in
+`10-source-map/TRANSITIONAL_EXIT_TEST_REGISTER.md`. Current status is
+`BLOCKED_CURRENT_RUNTIME_DEPENDENCY`; this is a bounded technical exception,
+not permission for new Sheets authority.
+
 - Do not delete legacy sheets or sheet docs until the matching Supabase/backend route is accepted and verified.
 - Once a route is fully migrated, keep the sheet docs as archive/reference until owner approves deletion.
 - When a sheet becomes read-only/archive, mark that in the source map and migration inventory.

@@ -113,3 +113,13 @@
   agent operations; no historical pilot state can dispatch or authorize work.
 - Completed the historical physical-reconciliation queue. Batch 28 now owns
   transitional-document exit tests and Batch 29 final deployed acceptance.
+
+2026-08-18 - Vault Cutover Batch 28:
+
+- Bound all 32 Google Sheets technical documents to
+  `GS-LEGACY-RETIREMENT-V1` and all 40 n8n technical documents to
+  `N8N-LEGACY-RETIREMENT-V1`.
+- Recorded current source consumers that keep both exits honestly blocked and
+  prohibited either family from acting as doctrine or receiving new logic.
+- Preserved both complete compatibility families pending their exact provider,
+  route, equivalence, rollback and stability evidence.
