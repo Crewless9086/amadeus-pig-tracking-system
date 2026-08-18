@@ -161,7 +161,9 @@ class PostgresManagerCaseStore:
             case_results = []
             for case in claimed:
                 current_case = case
-                if (deliver and case.get("last_delivery_digest") != case["evidence_digest"]):
+                refresh_eligible = case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
+                if (deliver and refresh_eligible
+                        and case.get("last_delivery_digest") != case["evidence_digest"]):
                     current_case = (self._refresh_claim(case, refresh(case),
                         _aware(datetime.now(timezone.utc)), cycle_id) if refresh else None)
                 if current_case is None:

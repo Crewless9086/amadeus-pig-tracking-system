@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -13,20 +14,31 @@ from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 def collect_manager_candidates(*, now: datetime, collectors=None):
     selected = collectors or (_rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime)
-    result = []
-    for collector in selected:
+    selected = tuple(selected)
+
+    def collect(collector):
         try:
             rows = collector(now)
-            result.extend(dict(row) for row in rows or ())
+            return [dict(row) for row in rows or ()]
         except Exception as exc:
             name = getattr(collector, "__name__", "collector").strip("_") or "collector"
-            result.append(_candidate(
+            return [_candidate(
                 dedupe_key=f"runtime:collector:{name}", specialist="RUNTIME", urgency="urgent",
                 refs=[f"collector:{name}:{exc.__class__.__name__}"],
                 unknowns=[f"current_{name}_specialist_evidence"],
                 summary=f"Oom Sakkie could not load current {name} evidence.",
                 next_action=f"Retry the canonical {name} collector; retain the case until evidence loads or one precise dependency is recorded.",
-                next_at=now + timedelta(minutes=5)))
+                next_at=now + timedelta(minutes=5))]
+
+    if len(selected) <= 1:
+        groups = [collect(value) for value in selected]
+    else:
+        with ThreadPoolExecutor(max_workers=min(6, len(selected)),
+                                thread_name_prefix="oom-manager-read") as executor:
+            groups = list(executor.map(collect, selected))
+    result = []
+    for group in groups:
+        result.extend(group)
     return result
 
 
