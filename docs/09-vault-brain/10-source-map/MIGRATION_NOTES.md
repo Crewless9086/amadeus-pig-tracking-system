@@ -104,3 +104,12 @@
   explicit non-doctrine technical compatibility scratchpads.
 - Removed active focused-document citations to the historical CORE and SAM
   plans; durable mission and behavior authority remains canonical.
+
+2026-08-18 - Vault Cutover Batch 27:
+
+- Archived the complete 45-file Storyworks/Chronicle Vault private validation
+  package intact, including all 34 Markdown sources and supporting evidence.
+- Recorded that Storyworks is separate from BEACON, farm media and active
+  agent operations; no historical pilot state can dispatch or authorize work.
+- Completed the historical physical-reconciliation queue. Batch 28 now owns
+  transitional-document exit tests and Batch 29 final deployed acceptance.

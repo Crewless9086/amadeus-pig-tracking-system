@@ -378,3 +378,17 @@ Current honest state: `EIGHT_PLANNING_SOURCES_ARCHIVED / 34 PHYSICAL ITEMS /
 
 No mission execution, runtime, customer, provider, farm, database or hardware
 action occurred. Full cutover continues with Batches 27-29.
+
+## Batch 27 Storyworks Reconciliation - 2026-08-18
+
+The complete 45-file Storyworks/Chronicle Vault private validation package was
+archived intact, including 34 Markdown documents and all supporting Petra
+evidence artefacts. Its historical research, provisional decisions and pilot
+work cannot govern BEACON, farm media, CORE or any current agent mission.
+
+Current honest state: `PHYSICAL_RECONCILIATION_QUEUE_EMPTY /
+72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No account, media, narration, edit, upload, publication, spend, runtime,
+provider, database, customer, farm or hardware action occurred. Full cutover
+continues with Batches 28-29.

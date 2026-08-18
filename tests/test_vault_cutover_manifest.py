@@ -224,6 +224,7 @@ BATCH26_ARCHIVED_FILES = {
     "planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
     "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
 }
+BATCH27_ARCHIVE_ROOT = ROOT / "docs/99-archive/vault-cutover/planning/storyworks"
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -514,16 +515,23 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 34)
-        self.assertTrue(all(entry["planned_batch"] == 27 for entry in remaining))
-        self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, {27})
+        self.assertEqual(remaining, [])
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {27: 34}
-        actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
-                  for batch in expected}
-        self.assertEqual(actual, expected)
+        self.assertFalse(any(entry["planned_batch"] is not None for entry in self.entries.values()))
+
+    def test_batch27_archives_complete_storyworks_package(self):
+        self.assertFalse((ROOT / "planning/storyworks").exists())
+        self.assertTrue(BATCH27_ARCHIVE_ROOT.is_dir())
+        archived_files = [path for path in BATCH27_ARCHIVE_ROOT.rglob("*") if path.is_file()]
+        archived_markdown = [path for path in archived_files if path.suffix.lower() == ".md"]
+        self.assertEqual(len(archived_files), 45)
+        self.assertEqual(len(archived_markdown), 34)
+        for path in archived_markdown:
+            relative = path.relative_to(ROOT).as_posix()
+            self.assertEqual(self.entries[relative]["disposition"], "KEEP_ARCHIVE")
+        brain_guard = (ROOT / "docs/09-vault-brain/00-governance/BRAIN_GUARD.md").read_text(encoding="utf-8")
+        self.assertIn("Batch 27 Storyworks Authority Gate", brain_guard)
 
 
 if __name__ == "__main__":

@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 26 planning/inbox reconciliation complete; no further physical change authorized.
+Status: Batch 27 Storyworks reconciliation complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v23`
-Baseline: `a79085afdfeded06c329caa1ea079013d1bb10f3`
-Generated from HEAD: `a79085afdfeded06c329caa1ea079013d1bb10f3`
+Version: `vault_physical_cutover_manifest_v24`
+Baseline: `d612c520f51931404d91126078337261596a03ef`
+Generated from HEAD: `d612c520f51931404d91126078337261596a03ef`
 Tracked Markdown/MDX files covered: **537**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 24 and schedules later
+This manifest records completed Batches 5 through 27 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,8 +17,7 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `EXTRACT_THEN_ARCHIVE` | 34 |
-| `KEEP_ARCHIVE` | 173 |
+| `KEEP_ARCHIVE` | 207 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_GENERATED_PROJECTION` | 9 |
@@ -29,8 +28,7 @@ keeps `physical_change_authorized: false`.
 
 ## Remaining execution schedule
 
-The remaining 52 physical-reconciliation entries are assigned
-to exactly one of Batches 25 through 27. Batch 28 owns the 72 transitional
+The historical physical-reconciliation queue is complete. Batch 28 owns the 72 transitional
 exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
@@ -46,7 +44,9 @@ This schedule is an ordering contract, not physical-change authority.
 | 22 | `oom_sakkie` | COMPLETE (30) |
 | 23 | `rootline` | COMPLETE (13) |
 | 24 | `sam_revenue` | COMPLETE (5) |
-| 27 | `storyworks` | 34 |
+| 25 | `business_modules` | COMPLETE (10) |
+| 26 | `planning_and_inbox` | COMPLETE (8) |
+| 27 | `storyworks` | COMPLETE (34 Markdown / 45-package files) |
 | 28 | `transitional_exit_tests` | 72 |
 | 29 | `deployed_brain_guard_acceptance` | operational proof |
 
@@ -68,6 +68,7 @@ This schedule is an ordering contract, not physical-change authority.
 - Two dated ADR wrappers and the completed legacy migration index are archived after their durable facts were reconciled into focused Vault governance, CORE identity and deployment standards.
 - Twelve Google Sheets migration plans/reports are archived intact after current migration, conflict-quarantine, Supabase-first fallback and fallback-retirement rules moved into focused Vault files.
 - Sixteen general-operations plans, evidence/checklist ledgers, configuration migrations and placeholder runbooks are archived intact after current rules moved into focused Vault files.
+- The complete 45-file Storyworks/Chronicle Vault private validation package is archived intact; it is not BEACON, farm media, an active agent, a current mission or publication authority.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -78,40 +79,6 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Planned batch | Destination / replacement | Exact refs | Blockers |
 | --- | --- | ---: | --- | ---: | --- |
-| `planning/storyworks/BUSINESS_STATE_LADDER.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/BUSINESS_STATE_LADDER.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/DECISION_LOG.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/DECISION_LOG.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/MARKET_VALIDATION.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/MARKET_VALIDATION.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/PHASE_0_VALIDATION_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_VALIDATION_PLAN.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/PILOT_SCORECARD.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/PILOT_SCORECARD.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/PRODUCTION_PLAYBOOK.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/PRODUCTION_PLAYBOOK.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/README.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/README.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/RIGHTS_AND_PROVENANCE_POLICY.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/RIGHTS_AND_PROVENANCE_POLICY.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/STATUS.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/STATUS.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/UNIT_ECONOMICS.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/UNIT_ECONOMICS.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/YOUTUBE_POLICY_RESEARCH.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/YOUTUBE_POLICY_RESEARCH.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/OWNER_REVIEW_PACKET.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/OWNER_REVIEW_PACKET.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/PREPRODUCTION_DECISION_CANDIDATE.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/PREPRODUCTION_DECISION_CANDIDATE.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/PRONUNCIATION_REVIEW_SHEET.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/PRONUNCIATION_REVIEW_SHEET.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/SYNTHETIC_NARRATION_EVALUATION.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/SYNTHETIC_NARRATION_EVALUATION.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/brief.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/brief.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/copyright_reuse_review.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/copyright_reuse_review.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/description.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/description.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/disclosure_review.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/disclosure_review.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/edit_plan.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/edit_plan.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/fact_check.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/fact_check.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/measurement_plan.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/measurement_plan.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/music_rights.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/music_rights.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/narration_plan.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/narration_plan.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/packaging.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/packaging.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/prototypes/QA.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/prototypes/QA.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/qa_report.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/qa_report.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/rights_evidence_index.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/rights_evidence_index.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/script.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/script.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/sources.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/sources.md` | 0 | unique_fact_extraction_required |
-| `planning/storyworks/pilots/petra/time_cost_report.md` | `EXTRACT_THEN_ARCHIVE` | 27 | `docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/time_cost_report.md` | 0 | unique_fact_extraction_required |
 
 ## Validation findings
 
