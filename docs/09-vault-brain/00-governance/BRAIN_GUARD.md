@@ -24,11 +24,20 @@ leakage, absent continuous-agent contracts and unsupported operational claims.
 It opens one durable knowledge-reconciliation finding owned through correction,
 verification and the next audit.
 
-Current honest state: only a partial in-process CORE review gate is implemented.
-No independent Brain Guard scheduler, worker, heartbeat, full-repository audit,
-post-deployment reconciliation or terminal-independent cycle is proven. Brain
-Guard is therefore dormant as an autonomous steward and must not be represented
-as continuously protecting the Vault.
+Current honest state: the deterministic full-repository audit is attached to
+the existing provider-owned Oom Sakkie five-minute manager schedule. Each cycle
+commits the exact source revision, heartbeat, next audit, checked-file set,
+findings and stable evidence digest before manager case work. A failed audit
+blocks case queries and delivery. Batch 29 proved two terminal-independent
+cycles on revision `5d27e4af` with 118 files checked, zero findings and identical
+digest `a15295c1cb713ccbbe870460c1909426c9ea1713a06104cc37706ea198e6dd24`.
+Brain Guard is operational as a scheduled knowledge-integrity guard. It is not
+an independent release agent and has no business, provider or farm authority.
+
+The surrounding manager case phase failed after both accepted audit checkpoints.
+That separate timeout is an explicit operating-spine defect; it does not erase
+the durable audit, and the audit pass does not imply the manager business cycle
+completed.
 
 ## Authority
 

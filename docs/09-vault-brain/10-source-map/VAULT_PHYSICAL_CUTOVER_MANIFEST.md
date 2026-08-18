@@ -1,15 +1,15 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 28 transitional exit-test reconciliation complete; no physical retirement authorized.
+Status: Batch 29 deployed Brain Guard acceptance complete; Vault cutover locked.
 
-Version: `vault_physical_cutover_manifest_v25`
-Baseline: `3819db4a27fd2680d57242742b7b7f8490d4008a`
-Generated from HEAD: `3819db4a27fd2680d57242742b7b7f8490d4008a`
-Tracked Markdown/MDX files covered: **538**
+Version: `vault_physical_cutover_manifest_v26`
+Baseline: `5d27e4afe2c546963196ed93753cf88aad92ba2b`
+Generated from HEAD: `5d27e4afe2c546963196ed93753cf88aad92ba2b`
+Tracked Markdown/MDX files covered: **539**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 28 and schedules later
-dispositions only. It does not authorize another move, archive, deletion, pointer
+This manifest records completed Batches 5 through 29 and the bounded transitional
+exceptions. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
 
@@ -24,12 +24,12 @@ keeps `physical_change_authorized: false`.
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 33 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 195 |
+| `KEEP_VAULT` | 196 |
 
 ## Remaining execution schedule
 
-The historical physical-reconciliation queue is complete. Batch 28 binds all 72 transitional
-documents to named blocked exit tests; Batch 29 owns deployed Brain Guard acceptance.
+The physical-reconciliation queue and Batch 29 deployed acceptance are complete. All 72
+transitional documents remain behind two named, owned, blocked runtime exit tests.
 This schedule is an ordering contract, not physical-change authority.
 
 | Batch | Family | Entries |

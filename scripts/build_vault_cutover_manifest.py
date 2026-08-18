@@ -27,8 +27,8 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v25"
-BASELINE = "3819db4a27fd2680d57242742b7b7f8490d4008a"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v26"
+BASELINE = "5d27e4afe2c546963196ed93753cf88aad92ba2b"
 
 TRANSITIONAL_EXIT_TESTS = {
     "docs/03-google-sheets/": "GS-LEGACY-RETIREMENT-V1",
@@ -382,7 +382,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 28 binds all 72 current Google Sheets and n8n technical documents to explicit retirement tests; both tests remain blocked by proven runtime dependencies, so no transitional source is archived or elevated to doctrine; no runtime, provider, database, customer, farm or hardware change is authorized",
+        "owner_boundary": "Batch 29 completes the 29-batch cutover with deployed scheduled Brain Guard continuity; all 72 transitional Google Sheets and n8n technical documents remain bounded behind two named, owned, blocked runtime exit tests and are neither doctrine nor retirement-authorized",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -440,7 +440,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: Batch 28 transitional exit-test reconciliation complete; no physical retirement authorized.",
+        "Status: Batch 29 deployed Brain Guard acceptance complete; Vault cutover locked.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -448,8 +448,8 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records completed Batches 5 through 28 and schedules later",
-        "dispositions only. It does not authorize another move, archive, deletion, pointer",
+        "This manifest records completed Batches 5 through 29 and the bounded transitional",
+        "exceptions. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
         "",
@@ -468,8 +468,8 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "",
         "## Remaining execution schedule",
         "",
-        "The historical physical-reconciliation queue is complete. Batch 28 binds all 72 transitional",
-        "documents to named blocked exit tests; Batch 29 owns deployed Brain Guard acceptance.",
+        "The physical-reconciliation queue and Batch 29 deployed acceptance are complete. All 72",
+        "transitional documents remain behind two named, owned, blocked runtime exit tests.",
         "This schedule is an ordering contract, not physical-change authority.",
         "",
         "| Batch | Family | Entries |",
