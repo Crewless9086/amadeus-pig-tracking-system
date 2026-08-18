@@ -55,6 +55,11 @@ BATCH12_COMPATIBILITY_POINTERS = {
 BATCH13_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/PRODUCT_VISION.md",
 }
+BATCH16_ARCHIVED_FILES = {
+    "docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md",
+    "docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md",
+    "docs/MIGRATION_INDEX.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -203,16 +208,28 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("normal daily workflow fits one calm", dashboard)
         self.assertIn("Voice, typed commands", dashboard)
 
-    def test_batch14_schedules_every_remaining_physical_item_once(self):
+    def test_batch16_archives_decision_wrappers_after_fact_reconciliation(self):
+        for source in BATCH16_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        source_truth = (ROOT / "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md").read_text(encoding="utf-8")
+        core = (ROOT / "docs/09-vault-brain/01-identity/CHARLIE_CORE.md").read_text(encoding="utf-8")
+        deployment = (ROOT / "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md").read_text(encoding="utf-8")
+        self.assertIn("their location alone never makes them", source_truth)
+        self.assertIn("`CORE_*`", core)
+        self.assertIn("normalized values must agree or startup fails closed", deployment)
+
+    def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 181)
-        self.assertTrue(all(16 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 178)
+        self.assertTrue(all(17 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(16, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(17, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {16: 3, 17: 12, 18: 10, 19: 18, 20: 16, 21: 22,
+        expected = {17: 12, 18: 10, 19: 18, 20: 16, 21: 22,
                     22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}

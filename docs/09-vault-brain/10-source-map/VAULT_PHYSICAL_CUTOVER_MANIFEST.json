@@ -1,19 +1,19 @@
 {
-  "version": "vault_physical_cutover_manifest_v12",
-  "baseline": "ffdec62eb5fa986dca8ee648043339aaead0fbce",
-  "generated_from_head": "ffdec62eb5fa986dca8ee648043339aaead0fbce",
-  "owner_boundary": "Batch 15 reconciles nine static agent cards as deterministic non-doctrine projections with drift detection; it authorizes no runtime, provider, business, farm, customer, or hardware change",
-  "entry_count": 524,
+  "version": "vault_physical_cutover_manifest_v13",
+  "baseline": "fc195acab2db88aba7c759ea31bcdc6674a94fe1",
+  "generated_from_head": "fc195acab2db88aba7c759ea31bcdc6674a94fe1",
+  "owner_boundary": "Batch 16 archives three reconciled decision/index wrappers after retaining their durable facts in focused Vault files; it authorizes no runtime, provider, business, farm, customer, or hardware change",
+  "entry_count": 525,
   "counts": {
-    "EXTRACT_THEN_ARCHIVE": 108,
-    "KEEP_ARCHIVE": 26,
+    "EXTRACT_THEN_ARCHIVE": 105,
+    "KEEP_ARCHIVE": 29,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
     "KEEP_GENERATED_PROJECTION": 9,
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 183,
+    "KEEP_VAULT": 184,
     "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 73
   },
   "entries": [
@@ -28,7 +28,7 @@
       "exact_reference_count": 4,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
-        "docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
       ],
@@ -185,7 +185,7 @@
         "docs/09-vault-brain/02-agents/owner-command/CHARLIE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH12_RECONCILIATION.md",
-        "docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_alignment.py",
@@ -299,7 +299,7 @@
         "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH12_RECONCILIATION.md",
-        "docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
         "modules/charlie/vault_alignment.py",
@@ -399,7 +399,7 @@
       "exact_reference_count": 4,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH9_RECONCILIATION.md",
-        "docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_vault_cutover_manifest.py"
       ],
@@ -423,7 +423,7 @@
         "docs/09-vault-brain/01-identity/OWNER_CHARL.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH9_RECONCILIATION.md",
-        "docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "modules/charlie/vault_retrieval.py",
         "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
         "scripts/build_vault_cutover_manifest.py",
@@ -667,7 +667,7 @@
       "exact_reference_count": 2,
       "exact_references": [
         "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "retain beside implementation; cannot govern agents",
       "blockers": [],
@@ -688,7 +688,7 @@
         "docs/04-n8n/WORKFLOW_RULES.md",
         "docs/04-n8n/workflows/OOM_SAKKIE_ORDER_LOOKUP_PLAN.md",
         "docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "retain beside implementation; cannot govern agents",
       "blockers": [],
@@ -776,7 +776,7 @@
       "destination_or_replacement": "docs/02-backend/ORDER_LOGIC.md",
       "exact_reference_count": 1,
       "exact_references": [
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "retain beside implementation; cannot govern agents",
       "blockers": [],
@@ -988,7 +988,7 @@
       "exact_reference_count": 2,
       "exact_references": [
         "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1030,7 +1030,7 @@
       "exact_references": [
         "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
         "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1090,7 +1090,7 @@
         "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
         "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
         "docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1618,7 +1618,7 @@
       "destination_or_replacement": "docs/04-n8n/CHANGELOG.md",
       "exact_reference_count": 1,
       "exact_references": [
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1665,7 +1665,7 @@
         "docs/03-google-sheets/BUSINESS_RULES.md",
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1687,7 +1687,7 @@
       "exact_references": [
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1709,7 +1709,7 @@
       "exact_references": [
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1791,7 +1791,7 @@
         "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -1813,7 +1813,7 @@
       "exact_references": [
         "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "runtime dependency requires named retirement exit test",
       "blockers": [
@@ -2959,8 +2959,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "efd1ab938cda572e9931ba80c3c3a380f1986b8d2677a4b6d43441dd0bb30380",
-      "physical_lines": 816,
+      "sha256": "94cb7878f2b3d2b1f773d128383a51de87bd56034c219597b3709ee29c1b334e",
+      "physical_lines": 831,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -4838,46 +4838,6 @@
       "reconciliation_family": "general_operations"
     },
     {
-      "path": "docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md",
-      "sha256": "524f0002bf41705dab69f700f911649e9b7a5be28a1f1465ad2d19b78b8f359d",
-      "physical_lines": 22,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "classify_manually",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "scripts/build_vault_cutover_manifest.py"
-      ],
-      "reason": "dated migration/decision evidence; extract accepted facts and archive",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 16,
-      "reconciliation_family": "decisions_and_migration_index"
-    },
-    {
-      "path": "docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md",
-      "sha256": "31d63746f45f00887b8a5eedf4604d533686102e52aa828118f7388d7d993b15",
-      "physical_lines": 40,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "classify_manually",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "scripts/build_vault_cutover_manifest.py"
-      ],
-      "reason": "dated migration/decision evidence; extract accepted facts and archive",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 16,
-      "reconciliation_family": "decisions_and_migration_index"
-    },
-    {
       "path": "docs/07-decisions/README.md",
       "sha256": "50daae83360d6bff50e4fb98eaa20ce049132a0d5be36577104982ff9bf7a752",
       "physical_lines": 9,
@@ -5407,13 +5367,13 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
-      "sha256": "505e3555c50017d53c1728def824587bca8d49a0149241a329bddf82464c8f6b",
-      "physical_lines": 29,
+      "sha256": "fb453e97d05c688f31f7ee1f254339a8bd48356ab1aabd84c8a40c7498a8bf87",
+      "physical_lines": 45,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 11,
       "exact_references": [
         "docs/09-vault-brain/02-agents/charlie-core/RISK_AGENT.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
@@ -5424,7 +5384,8 @@
         "modules/charlie/mission_store.py",
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
-        "planning/CODEX_CHAT.md"
+        "planning/CODEX_CHAT.md",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5458,8 +5419,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "28d889ea0cb5eee318f947bb0c90157dc160dac02db3a257736b9bd33bff6192",
-      "physical_lines": 230,
+      "sha256": "8e0aab19fec4b6d031461d4b8bd34911e850a12766249b2e5de7d6e17c5d1aec",
+      "physical_lines": 243,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -5516,13 +5477,13 @@
     },
     {
       "path": "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
-      "sha256": "6ad131f6532d637f4cad86aadceec015eb5369fcbe7fc29c40b0b90ac7e6e477",
-      "physical_lines": 165,
+      "sha256": "b186e2ba3ebc9a8302ca2a3bafffba2535ecd32e74a213e3deb72e5c2f7f9953",
+      "physical_lines": 173,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
-      "exact_reference_count": 9,
+      "exact_reference_count": 10,
       "exact_references": [
         "docs/09-vault-brain/02-agents/charlie-core/IDEA_EXPANDER.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
@@ -5532,7 +5493,8 @@
         "modules/charlie/source_map.py",
         "modules/charlie/vault_retrieval.py",
         "planning/CODEX_CHAT.md",
-        "tests/test_charlie_executive_doctrine.py"
+        "tests/test_charlie_executive_doctrine.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5599,7 +5561,7 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
-      "sha256": "34990d91e933a8415bacc71b166bf967a718b0cde1ea7df37aef312b5bb45c86",
+      "sha256": "bb6d773359ee76e2d9c1eeefcd908cf09e6668554268843769f86abab5604703",
       "physical_lines": 114,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -7670,8 +7632,8 @@
     },
     {
       "path": "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
-      "sha256": "2ececc26a3898b50ea87d1a84d290609196851bbd3b14ededc8aa5b9e9ca56d1",
-      "physical_lines": 56,
+      "sha256": "1a3fcbc37b98c1cb22622c3339571c276562f46160746c646fa79d1d099aaa00",
+      "physical_lines": 71,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -8403,8 +8365,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
-      "sha256": "20d7372bbe3321cc7bc06ba4d2067cc248ae5fd28f53bde1ab354cf9cd2a1d3f",
-      "physical_lines": 11,
+      "sha256": "424315f49969e16d1dd7d96b7a87747564d3e2d7c1ed30da24cb10b6d0390808",
+      "physical_lines": 21,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -8531,12 +8493,28 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH15_RECONCILIATION.md",
-      "sha256": "0a1e8a5652f8ca6a2c222da972f6a72e0448455c124923884fd873c43fb52c5c",
+      "sha256": "68b1a79a941814098d6e0afdb549a7d6daa89f6c2824e0429d8105ac3605448e",
       "physical_lines": 35,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH15_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH16_RECONCILIATION.md",
+      "sha256": "c5c6847787f4305d95c9096ab9002eb0b977a87226909fbd6d43d7f584c02671",
+      "physical_lines": 36,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH16_RECONCILIATION.md",
       "exact_reference_count": 0,
       "exact_references": [],
       "reason": "canonical Vault doctrine/reference",
@@ -8982,7 +8960,7 @@
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
       "exact_reference_count": 2,
       "exact_references": [
-        "docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
       ],
       "reason": "already physically archived",
@@ -9001,7 +8979,7 @@
       "destination_or_replacement": "docs/99-archive/vault-cutover/docs/05-ai/PROMPT_RULES.md",
       "exact_reference_count": 1,
       "exact_references": [
-        "docs/MIGRATION_INDEX.md"
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md"
       ],
       "reason": "already physically archived",
       "blockers": [],
@@ -9108,6 +9086,54 @@
       "reconciliation_family": null
     },
     {
+      "path": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md",
+      "sha256": "524f0002bf41705dab69f700f911649e9b7a5be28a1f1465ad2d19b78b8f359d",
+      "physical_lines": 22,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md",
+      "sha256": "31d63746f45f00887b8a5eedf4604d533686102e52aa828118f7388d7d993b15",
+      "physical_lines": 40,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
+      "sha256": "9b8b0d712975861c6a077a8df6d0def7bbaf640b859c7e37f80fc797d9e8d612",
+      "physical_lines": 42,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
       "path": "docs/99-archive/vault-cutover/external_sources/CODEX_FARM_UI_RESET_BRIEF.md",
       "sha256": "9d2f836838ae748b2a84e9c2f9957874822a133765d3a72b4aa2d9609f4af0b5",
       "physical_lines": 221,
@@ -9138,26 +9164,6 @@
       "physical_change_authorized": false,
       "planned_batch": null,
       "reconciliation_family": null
-    },
-    {
-      "path": "docs/MIGRATION_INDEX.md",
-      "sha256": "9b8b0d712975861c6a077a8df6d0def7bbaf640b859c7e37f80fc797d9e8d612",
-      "physical_lines": 42,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "classify_manually",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "scripts/build_vault_cutover_manifest.py"
-      ],
-      "reason": "dated migration/decision evidence; extract accepted facts and archive",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 16,
-      "reconciliation_family": "decisions_and_migration_index"
     },
     {
       "path": "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
@@ -9339,7 +9345,7 @@
         "docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-        "docs/MIGRATION_INDEX.md",
+        "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
         "planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
         "planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md"
@@ -10042,7 +10048,7 @@
     },
     {
       "path": "static/assets/agents/beacon/agent.md",
-      "sha256": "9cc73c0f68f2b503cd4aa426af8f95e3dc20b37d8ff1d5e32f64969ca96fa33d",
+      "sha256": "f452fcdf6bc021b2b4b6db9fa9e9123e4339d568e2fd33a017e79d823540c074",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10061,7 +10067,7 @@
     },
     {
       "path": "static/assets/agents/butcher/agent.md",
-      "sha256": "8a91c7359f97b7fd9b339672b808820c12c74d7ace7b15917007fba2d32cea09",
+      "sha256": "0a575c2fbbc2fd174fa6de87424b3d8609a822195252edfe3f378b59fd76c469",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10079,7 +10085,7 @@
     },
     {
       "path": "static/assets/agents/gatekeeper/agent.md",
-      "sha256": "e6629407bc10a15d7c11ed7410f1e91fbdcd7ffe6735cad426a04ab8a85f6c24",
+      "sha256": "7569bd4066f861ab9dff906a00c3b124f61bfa4566c0baf3cbc04dd0f2568730",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10097,7 +10103,7 @@
     },
     {
       "path": "static/assets/agents/herdmaster/agent.md",
-      "sha256": "5c578fdffa00531208019e20aa29b2bee1e984bb2f5ff8d8a5b22075f2cb51be",
+      "sha256": "53411a1f86c202d212abb2ac5b9d72c972b065d4da050c08c0db329ee5f39649",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10115,7 +10121,7 @@
     },
     {
       "path": "static/assets/agents/ledger/agent.md",
-      "sha256": "4f4acdb0e971ada5456b563c9526264593a95bf49e1025de6bdb7c178f40ddfd",
+      "sha256": "36e041810bc56298e117a6f8992a6541908c82f99633272e55f4439226d86237",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10133,7 +10139,7 @@
     },
     {
       "path": "static/assets/agents/oom-sakkie/agent.md",
-      "sha256": "3aab2c6aeb0a05bb4622d3af325f2617262e56e6e2867d3a96e312fa23aeba02",
+      "sha256": "9092ff1f5f9f370e333871a26ae8e1fe4b376a86212d029e7bbfb1d9e9c9afc6",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10151,7 +10157,7 @@
     },
     {
       "path": "static/assets/agents/quartermaster/agent.md",
-      "sha256": "00ae64e1d97d4c0367b337a49c83ffe3b26c804ef4e8fee2b32f644ec9618dc7",
+      "sha256": "2425cf1e926da9ffb8fbc96d34ad7251786ca37cc3359db99bdcb26d25de3746",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10169,7 +10175,7 @@
     },
     {
       "path": "static/assets/agents/rootline/agent.md",
-      "sha256": "10fae18f59901e7936c638d1d1f30e25e585f86b0a67d20db02bfae904e591cd",
+      "sha256": "f65f4dc2d1aec73a7350523fc7102de9cf0ba2677d0ab6cf375aa7b4fde87f45",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10187,7 +10193,7 @@
     },
     {
       "path": "static/assets/agents/sam/agent.md",
-      "sha256": "e5b52b4229da3dffe706d7f66080012752ff1882c18f1e59305f1b104288bc1d",
+      "sha256": "37b6d0742d722cf73f2097044f08c1571f2c5a9e0b507e61bdaf28c1f1849046",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",

@@ -814,3 +814,18 @@ BATCHES_16_TO_29_REMAIN`.
 No deletion, archive, runtime, activation, deployment, provider, production-data,
 customer, farm or hardware change occurred. The remaining physical queue is 181
 documents. Automatic promotion is Batch 16 decisions-and-migration-index reconciliation.
+
+### Vault Cutover Batch 16 - 2026-08-18
+
+Owner approved continuation into the decisions-and-migration-index slice. The
+accepted source-of-truth decision and durable CHARLIE/CORE configuration rules
+were reconciled into focused Vault governance, identity and deployment files.
+The two dated ADR wrappers and completed migration index were then archived
+intact; the physical-cutover manifest is the current migration ledger.
+
+Lifecycle: `WORKING / BATCH_16_DECISIONS_INDEX_COMPLETE /
+BATCHES_17_TO_29_REMAIN`.
+
+No deletion, runtime, activation, deployment, provider, production-data,
+customer, farm or hardware change occurred. The remaining physical queue is 178
+documents. Automatic promotion is Batch 17 Sheets-migration reconciliation.

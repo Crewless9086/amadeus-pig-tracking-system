@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: Batch 15 generated-agent projections complete; no further physical change authorized.
+Status: Batch 16 decisions-and-migration-index reconciliation complete; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v12`
-Baseline: `ffdec62eb5fa986dca8ee648043339aaead0fbce`
-Generated from HEAD: `ffdec62eb5fa986dca8ee648043339aaead0fbce`
-Tracked Markdown/MDX files covered: **524**
+Version: `vault_physical_cutover_manifest_v13`
+Baseline: `fc195acab2db88aba7c759ea31bcdc6674a94fe1`
+Generated from HEAD: `fc195acab2db88aba7c759ea31bcdc6674a94fe1`
+Tracked Markdown/MDX files covered: **525**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 15 and schedules later
+This manifest records completed Batches 5 through 16 and schedules later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -17,28 +17,28 @@ keeps `physical_change_authorized: false`.
 
 | Disposition | Count |
 | --- | ---: |
-| `EXTRACT_THEN_ARCHIVE` | 108 |
-| `KEEP_ARCHIVE` | 26 |
+| `EXTRACT_THEN_ARCHIVE` | 105 |
+| `KEEP_ARCHIVE` | 29 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_GENERATED_PROJECTION` | 9 |
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 183 |
+| `KEEP_VAULT` | 184 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
 
 ## Remaining execution schedule
 
-The remaining 181 physical-reconciliation entries are assigned
-to exactly one of Batches 16 through 27. Batch 28 owns the 72 transitional
+The remaining 178 physical-reconciliation entries are assigned
+to exactly one of Batches 17 through 27. Batch 28 owns the 72 transitional
 exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.
 This schedule is an ordering contract, not physical-change authority.
 
 | Batch | Family | Entries |
 | ---: | --- | ---: |
 | 15 | `generated_agent_projections` | COMPLETE (9) |
-| 16 | `decisions_and_migration_index` | 3 |
+| 16 | `decisions_and_migration_index` | COMPLETE (3) |
 | 17 | `sheets_migration` | 12 |
 | 18 | `core_missions` | 10 |
 | 19 | `core_operating_spine` | 18 |
@@ -68,6 +68,7 @@ This schedule is an ordering contract, not physical-change authority.
 - Three legacy runner/mission/deployment paths are compatibility pointers after current procedures were consolidated into focused Vault files.
 - Two stale current-state/roadmap projections are compatibility pointers to the durable register and Vault mission workflow.
 - The final legacy product-vision projection is a compatibility pointer after durable Oom Sakkie experience rules moved into focused Vault files.
+- Two dated ADR wrappers and the completed legacy migration index are archived after their durable facts were reconciled into focused Vault governance, CORE identity and deployment standards.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -204,8 +205,6 @@ entry whose physical disposition needs later work or owner review.
 | `docs/06-operations/TESTING_CHECKLIST.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 20 | `docs/99-archive/vault-cutover/docs/06-operations/TESTING_CHECKLIST.md` | 2 | runbook_history_split_required |
 | `docs/06-operations/TROUBLESHOOTING.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 20 | `docs/99-archive/vault-cutover/docs/06-operations/TROUBLESHOOTING.md` | 1 | runbook_history_split_required |
 | `docs/06-operations/goals/README.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 20 | `docs/99-archive/vault-cutover/docs/06-operations/goals/README.md` | 0 | runbook_history_split_required |
-| `docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md` | `EXTRACT_THEN_ARCHIVE` | 16 | `docs/99-archive/vault-cutover/docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md` | 1 | unique_fact_extraction_required |
-| `docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md` | `EXTRACT_THEN_ARCHIVE` | 16 | `docs/99-archive/vault-cutover/docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md` | 1 | unique_fact_extraction_required |
 | `docs/08-business-modules/FARM_CALENDAR_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | 25 | `docs/99-archive/vault-cutover/docs/08-business-modules/FARM_CALENDAR_PLAN.md` | 0 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` | `EXTRACT_THEN_ARCHIVE` | 25 | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` | 6 | unique_fact_extraction_required |
 | `docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md` | `EXTRACT_THEN_ARCHIVE` | 25 | `docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md` | 2 | unique_fact_extraction_required |
@@ -216,7 +215,6 @@ entry whose physical disposition needs later work or owner review.
 | `docs/08-business-modules/PORK_SALES_MODEL.md` | `EXTRACT_THEN_ARCHIVE` | 25 | `docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md` | 8 | unique_fact_extraction_required |
 | `docs/08-business-modules/README.md` | `EXTRACT_THEN_ARCHIVE` | 25 | `docs/99-archive/vault-cutover/docs/08-business-modules/README.md` | 0 | unique_fact_extraction_required |
 | `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | `EXTRACT_THEN_ARCHIVE` | 25 | `docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md` | 3 | unique_fact_extraction_required |
-| `docs/MIGRATION_INDEX.md` | `EXTRACT_THEN_ARCHIVE` | 16 | `docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md` | 1 | unique_fact_extraction_required |
 | `planning/CHARLIE_CORE_EXTENDED_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md` | 1 | unique_fact_extraction_required |
 | `planning/CODEX_CHAT.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/CODEX_CHAT.md` | 18 | unique_fact_extraction_required |
 | `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | `EXTRACT_THEN_ARCHIVE` | 26 | `docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md` | 4 | unique_fact_extraction_required |

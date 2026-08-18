@@ -38,6 +38,21 @@ Before release/merge/deploy:
 - rollback or recovery path is known;
 - owner final approval is recorded where required.
 
+## Configuration Planes And Compatibility
+
+- Local owner configuration supplies local CORE and development/operator tools.
+- Hosted backend configuration supplies the application and CHARLIE Executive
+  ingress; it must not be assumed to configure local CORE.
+- CI contains test-only credentials and flags.
+- GitHub stores source and CI metadata, never application secrets.
+- Supabase stores durable operational state, not deployment secrets.
+
+Configuration names are not renamed in place. Compatibility code may accept
+one canonical key and one explicitly declared legacy alias. When both are set,
+their normalized values must agree or startup fails closed. Retirement requires
+a staged rollout: add the canonical key, prove parity locally and in the hosted
+environment, retain rollback, then remove the alias in a later reviewed change.
+
 The release report identifies exact changed files, tracked/untracked state,
 tests and outcomes, migration/data-write status, rollback, and confirmation that
 unrelated owner files were untouched.
