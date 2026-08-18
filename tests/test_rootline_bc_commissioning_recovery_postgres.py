@@ -51,3 +51,20 @@ def test_exact_historical_bc_acceptance_advances_commissioning_without_authority
                         ("supervised", 2, None, "false")]
         assert db.execute("select count(*) from app_private.rootline_device_commissioning_evidence").fetchone()[0] == 2
         assert db.execute("select count(*) from app_private.rootline_standing_authorities").fetchone()[0] == 0
+
+        db.execute((ROOT / "supabase/migrations/202608180001_activate_rootline_bc_standing_authority.sql").read_text())
+        active = db.execute("""select device_key,commissioning_stage,registry_generation,
+            standing_authority_id,standing_authority_version,device_record->>'standing_authority'
+            from app_private.rootline_device_registry
+            where standing_authority_id='ROOTLINE-BC-IRRIGATION-AUTO' order by device_key""").fetchall()
+        assert active == [
+            ("ifttt_ewelink:ewelink_owner_account:100204e9bc:1", "standing_active", 3,
+             "ROOTLINE-BC-IRRIGATION-AUTO", "1", "true"),
+            ("ifttt_ewelink:ewelink_owner_account:100204e9bc:2", "standing_active", 3,
+             "ROOTLINE-BC-IRRIGATION-AUTO", "1", "true")]
+        policy = db.execute("""select policy_payload from app_private.rootline_standing_authorities
+            where standing_authority_id='ROOTLINE-BC-IRRIGATION-AUTO' and version='1'""").fetchone()[0]
+        assert set(policy["zone_ids"]) == {"B12345", "C12345"}
+        assert policy["simultaneous_outputs_allowed"] is False
+        assert set(policy["explicit_exclusions"]) == {
+            "fertilizer_injection", "fertilizer_mixing", "borehole_pump"}

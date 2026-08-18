@@ -173,11 +173,15 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
         raise ValueError("rootline_standing_authority_unproven")
     if record["standing_authority"] is True:
         evidence = record.get("commissioning_evidence")
-        required = ("provider_discovered", "readback_proven", "bounded_actuation_ready",
-            "physical_identity_proven", "fail_stop_proven", "replay_proven",
-            "operational_dependencies_proven", "supervised")
+        required = (("supervised",) if record["device_type"] == "gravity_irrigation_valve"
+            else ("provider_discovered", "readback_proven", "bounded_actuation_ready",
+                "physical_identity_proven", "fail_stop_proven", "replay_proven",
+                "operational_dependencies_proven", "supervised"))
+        historical = record.get("historical_commissioning_evidence")
         if (not isinstance(evidence, Mapping)
-                or any(not _valid_evidence(evidence.get(key)) for key in required)):
+                or any(not _valid_evidence(evidence.get(key)) for key in required)
+                or (record["device_type"] == "gravity_irrigation_valve" and
+                    not isinstance(historical, Mapping))):
             raise ValueError("rootline_standing_authority_evidence_missing")
         if not isinstance(resolver, CanonicalAuthorityResolver) or any(not _resolved_evidence(
                 evidence[key], resolver.evidence(evidence[key])) for key in required):

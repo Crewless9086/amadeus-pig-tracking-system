@@ -90,15 +90,16 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
                     or _number(tanks.get("reservoir_reported_count")) > 0)
     water_current = (water_time is not None and not now < water_time
                      and now-water_time <= timedelta(hours=24))
-    explicit_water_fault = water_current and any(tanks.get(key) is True for key in (
+    if not water_current:
+        return _none("fresh_reservoir_storage_evidence_unavailable")
+    explicit_water_fault = any(tanks.get(key) is True for key in (
         "insufficient_water", "dry_supply", "supply_fault", "evidence_conflict"))
-    explicit_current_shortage = water_current and not reservoir_ok
+    explicit_current_shortage = not reservoir_ok
     if explicit_water_fault or explicit_current_shortage:
         return _none("current_water_shortage_or_fault")
     water_policy = {"contract_version": "rootline_standing_water_policy.v1",
-        "mode": ("fresh_available" if water_current and reservoir_ok
-                 else "standing_owner_policy_no_current_contradiction"),
-        "water_assumed_available": True,
+        "mode": "fresh_available",
+        "water_assumed_available": False,
         "storage_replenishment_assumed_required": True,
         "current_contradictory_evidence": False}
     obligation = task.get("weekly_obligation") if isinstance(task.get("weekly_obligation"), dict) else {}

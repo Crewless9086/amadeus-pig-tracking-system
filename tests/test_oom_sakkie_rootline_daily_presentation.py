@@ -63,7 +63,9 @@ def test_delayed_refresh_waits_without_claim_then_sends_when_fresh():
 
 def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     text = compose_daily_rootline_plan(result())
-    assert "<b>B Camp:</b> Hold" in text and "<b>C Camp:</b> Hold" in text
+    assert "<b>B Camp:</b> Recommendation: Hold" in text
+    assert "<b>C Camp:</b> Recommendation: Hold" in text
+    assert "Not yet authorized or started" in text
     assert "Observed rain supports Hold" in text
     assert "SOC" not in text and "solar" not in text.casefold() and "grid" not in text.casefold()
     assert "No action required from you" in text and "<b>What I need from you:</b> Nothing" in text

@@ -149,6 +149,7 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
     observations=[row for row in rows.values() if row.get("delivery_state")=="observation_only"]
     assert len(observations)==2
     assert changed["notify_owner"] is True and "C Camp:</b> Recommendation - irrigate" in changed["answer"]
+    assert "Not yet authorized or started" in changed["answer"]
     assert replay["notify_owner"] is False and len(rows)==4
     assert all(item["hardware_commands"]==0 for item in (first,unchanged,changed,replay))
 
