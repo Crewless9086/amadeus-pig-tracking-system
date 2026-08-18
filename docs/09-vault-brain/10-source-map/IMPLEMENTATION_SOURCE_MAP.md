@@ -2,6 +2,11 @@
 
 ## ROOTLINE water-credit lifecycle
 
+- Current B/C authority evidence semantics: append-only authority version `2`
+  in `supabase/migrations/202608190001_reconcile_rootline_bc_water_evidence_policy.sql`,
+  enforced before execution by `modules/telemetry/rootline_execution_runtime.py`.
+  Version `1` is retained as immutable superseded evidence; authority scope and
+  independent mixer, injection and borehole classes are unchanged.
 - Canonical contract/projection: `modules/telemetry/rootline_water_credit.py`.
 - Canonical execution-history integration:
   `modules/telemetry/rootline_irrigation_history.py`.
