@@ -270,3 +270,17 @@ ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 No mission admission, dispatch, execution, runtime, deployment, provider,
 customer, farm, database or hardware action occurred. Full cutover continues
 with Batches 19-29.
+
+## Batch 19 CORE Operating-Evidence Reconciliation - 2026-08-18
+
+Eighteen dated CORE/CHARLIE operating-system, relay, private-interface,
+dependency-inventory, recovery and activation sources were archived intact
+after their reusable contracts were consolidated into focused identities,
+mission workflow and deployment standards. Dated provider and process evidence
+can no longer masquerade as current runtime truth.
+
+Current honest state: `EIGHTEEN_CORE_OPERATING_EVIDENCE_SOURCES_ARCHIVED / 138
+PHYSICAL ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No runtime, task, provider, mission, migration, deployment, customer, farm,
+database or hardware action occurred. Full cutover continues with Batches 20-29.

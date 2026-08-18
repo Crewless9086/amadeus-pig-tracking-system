@@ -42,10 +42,6 @@ Compatibility pointers, never current state or doctrine:
 - `docs/00-start-here/NEXT_STEPS.md`
 - `docs/00-start-here/PRODUCT_VISION.md`
 
-The similarly named
-`docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` is a historical
-canonical-path pointer only. It is not an active or controlling source.
-
 ## Deterministic Agent Packs
 
 Each row is additive to the common pack. Load only the mission-relevant rows;
@@ -124,7 +120,6 @@ They are not agent doctrine and must not enter a mandatory pack.
 
 ## Operations And Evidence
 
-- `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`
 - `docs/06-operations/RUNBOOK.md`
 - `docs/06-operations/TESTING_CHECKLIST.md`
 - `docs/06-operations/RELEASE_CHECKLIST.md`
@@ -184,6 +179,12 @@ family. No tracked legacy AI document remains active. See
 `VAULT_CUTOVER_BATCH6_RECONCILIATION.md` for the unique-fact disposition.
 
 ## Archived After Migration
+
+Batch 19 archived the dated CORE operating-spine, Build Relay, private
+executive, runtime-recovery, activation and dependency-retirement evidence under
+`docs/99-archive/vault-cutover/docs/06-operations/`. Current authority remains
+in the focused CHARLIE/CORE identities, mission workflow and deployment
+standard; archived provider inventories are never current state.
 
 Batch 7 archived two superseded external UI briefs. They are historical design
 evidence only; current UI authority remains the mandatory Facelift and UI

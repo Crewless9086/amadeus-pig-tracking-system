@@ -200,6 +200,41 @@ Dependencies are executable gates, not display hints. A child remains `waiting_d
 
 Open mission intake is deduplicated by exact intent and by `(root_mission_id, finding_family)` for generated families. Recovery and review may append evidence to an existing mission, but may not create another open mission for the same family/scope.
 
+## Executive liveness and recovery
+
+CHARLIE measures approved, runnable, dependency-blocked and active missions
+separately. Dependency filtering occurs before queue limits. Approved work with
+no runnable or active mission is a queue-deadlock incident, not a healthy idle
+queue. A recovery child never depends on the blocked parent it exists to repair,
+and unrelated eligible mission families continue.
+
+Kernel failures use typed durable results, one canonical repository-operation
+lock and bounded identical-failure budgets. Three identical child exits place
+the supervisor in an infrastructure hold instead of restart churn. Non-empty or
+ambiguous Git operation metadata is never removed automatically. Dirty Builder
+work and candidate-bound evidence are preserved before branch or runtime repair.
+Recovered artifacts for the wrong durable stage are quarantined once.
+
+Every command has an idempotency identity, desired state and verification. An
+existing command is not success until authoritative state proves its intended
+outcome. Completed recovery children return their parent to evidence
+reconciliation. Owner notification uses a durable outbox and only genuine
+decisions, exhausted governed recovery or red-zone authority reach Charl.
+
+## Owner command and relay boundary
+
+Private Telegram and dashboard controls read and mutate the same Supabase
+mission record. Provider updates are claimed before mutation; stale, duplicate,
+non-owner and generation-mismatched callbacks fail closed. Approval controls
+record only legal current-state decisions. They cannot run shell commands,
+start CORE, merge, deploy, migrate, contact customers, publish, pay, reserve or
+change farm records.
+
+`planning/CODEX_CHAT.md` and documentation menus are explicit local/manual
+fallbacks only. They cannot become normal mission intake or runtime truth when
+the canonical mission store is available. Model routing is provider-aware and
+budget/trust governed; no model approves its own work or expands authority.
+
 ## Provider Routing
 
 CHARLIE CORE may route selected specialist/review stages through Claude/Anthropic when `ANTHROPIC_API_KEY` is configured. The temporary typo alias `ANTROPIC_API_KEY` is also accepted so a configured owner environment does not fail closed for spelling alone.
@@ -344,7 +379,8 @@ Provider-specific stages must use the provider-aware runner path. If Claude/Anth
 
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
 - `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`
-- `docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md`
+- archived Build Relay and Mission Loop evidence under
+  `docs/99-archive/vault-cutover/docs/06-operations/`
 - `planning/CHARLIE_CORE_EXTENDED_PLAN.md`
 - `docs/09-vault-brain/00-governance/BRAIN_GUARD.md`
 ### Revision-scoped correction budgets

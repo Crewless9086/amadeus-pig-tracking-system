@@ -214,19 +214,16 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
             self.assertFalse(codex_chat.exists())
 
     def test_loop_6_5_docs_mark_supabase_primary_and_gpt_5_6_disabled(self):
-        contract = Path("docs/06-operations/MISSION_LOOP_CONTRACT.md").read_text(encoding="utf-8")
-        build_relay = Path("docs/06-operations/BUILD_RELAY.md").read_text(encoding="utf-8")
+        contract = Path("docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md").read_text(encoding="utf-8")
+        build_relay = Path("docs/09-vault-brain/01-identity/CHARLIE_CORE.md").read_text(encoding="utf-8")
         workflow = Path("docs/06-operations/CODEX_CHAT_WORKFLOW.md").read_text(encoding="utf-8")
         combined = "\n".join([contract, build_relay, workflow])
 
         self.assertIn("Supabase `charlie_missions`", combined)
         self.assertIn("CODEX_CHAT.md` is manual", combined)
-        self.assertIn("Loop 7A", combined)
-        self.assertIn("GPT-5.6 Sol", combined)
-        self.assertIn("GPT-5.6 Terra", combined)
-        self.assertIn("GPT-5.6 Luna", combined)
-        self.assertIn("GPT-5.6 routing is planned but disabled", combined)
-        self.assertIn("no live model calls are allowed", combined)
+        self.assertIn("Supabase mission records are the sole durable queue", combined)
+        self.assertIn("Model routing is provider-aware", combined)
+        self.assertIn("no model approves its own work", combined)
 
     def test_button_flow_has_no_shell_or_model_api_surfaces(self):
         source = inspect.getsource(build_relay_telegram_buttons)

@@ -861,3 +861,19 @@ No deletion, mission admission, classification, dispatch, execution, runtime,
 deployment, provider, customer, farm, database or hardware action occurred.
 The remaining physical queue is 156 documents. Automatic promotion is Batch 19
 sales-and-order mission-evidence reconciliation.
+
+### Vault Cutover Batch 19 - 2026-08-18
+
+Owner approved continuation. The manifest's exact Batch 19 family contained 18
+CORE operating-spine, Build Relay, private-executive, runtime-recovery,
+activation and dependency-retirement documents. Their reusable rules were
+consolidated into focused CHARLIE/CORE identity, mission workflow and deployment
+authority; all 18 dated sources were archived intact.
+
+Lifecycle: `WORKING / BATCH_19_CORE_OPERATING_EVIDENCE_COMPLETE /
+BATCHES_20_TO_29_REMAIN`.
+
+No deletion, runtime, task, provider, mission, migration, deployment, customer,
+farm, database or hardware action occurred. The remaining physical queue is 138
+documents. Automatic promotion is Batch 20 agent mission-evidence
+reconciliation.
