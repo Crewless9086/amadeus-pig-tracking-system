@@ -5,7 +5,7 @@ Status: regenerated after approved Batch 5 slice; no further physical change aut
 Version: `vault_physical_cutover_manifest_v2`
 Baseline: `5865cc7c6300edc2f0e47d4780c05cbd3a8be020`
 Generated from HEAD: `5865cc7c6300edc2f0e47d4780c05cbd3a8be020`
-Tracked Markdown/MDX files covered: **513**
+Tracked Markdown/MDX files covered: **514**
 Validation: **PASS**
 
 This manifest records the completed Batch 5 archive slice and proposes later
@@ -24,7 +24,7 @@ keeps `physical_change_authorized: false`.
 | `KEEP_CURRENT_STATE` | 2 |
 | `KEEP_TECHNICAL` | 27 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 172 |
+| `KEEP_VAULT` | 173 |
 | `POINTER_AFTER_RECONCILIATION` | 18 |
 | `RECONCILE_GENERATED_PROJECTION` | 9 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
