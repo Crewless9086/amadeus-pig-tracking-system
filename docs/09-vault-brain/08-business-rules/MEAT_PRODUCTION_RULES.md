@@ -21,6 +21,13 @@ Supabase meat processing batches are the source of truth for slaughter-to-packed
 - POP is unverified evidence. Only an explicit `deposit_confirmed_in_bank` event clears the deposit gate for an operational next step.
 - Half/full carcass commitments and promised cut sets must remain visible, and overlapping side/full commitments must fail closed.
 
+## Canonical Batch Flow And Metrics
+
+- A production batch progresses through planned, selected, sent to abattoir, carcass received, at butcher, cutting, packed and completed stages; append-only events prove each transition.
+- Canonical batch records keep pig identity, verified live/carcass weights, provider dates, actual costs, cut/output weights, pack counts, yield inclusion and disposition distinct.
+- Dressing yield is carcass weight divided by live weight. Packed yield is included packed output divided by live or carcass weight. Cost per kilogram uses recorded cost and the matching verified denominator.
+- Head-on carcass weight must be labelled explicitly. Packed yield remains Unknown until butcher outputs are weighed.
+
 ## Learning Rule
 
 Completed owner-verified batches may improve pricing assumptions, expected yield ranges, cut-set design, operating capacity, and SAM Meat context. One pilot is evidence, not a universal rule. Price-book or autonomy changes remain separately reviewed.

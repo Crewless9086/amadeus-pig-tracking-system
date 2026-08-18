@@ -352,3 +352,16 @@ Current honest state: `FIVE_SAM_REVENUE_SOURCES_ARCHIVED / 52 PHYSICAL ITEMS /
 
 No customer send, provider action, order, reservation, payment, stock, farm,
 database or runtime action occurred. Full cutover continues with Batches 25-29.
+
+## Batch 25 Business-Module Reconciliation - 2026-08-18
+
+Ten farm-calendar and meat/pork/SAM business-module documents were archived
+intact after calendar, production, commercial, cutting, payment, campaign,
+knowledge and allocation rules were consolidated into focused Vault authority.
+
+Current honest state: `TEN_BUSINESS_MODULE_SOURCES_ARCHIVED / 42 PHYSICAL ITEMS
+/ 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No customer send, public post, provider action, order, reservation, payment,
+stock, farm, database or runtime action occurred. Full cutover continues with
+Batches 26-29.

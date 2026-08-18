@@ -2497,7 +2497,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         dashboard_template = Path("templates/dashboard.html").read_text(encoding="utf-8")
         dashboard_js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
         css = Path("static/css/main.css").read_text(encoding="utf-8")
-        docs = Path("docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md").read_text(encoding="utf-8")
+        docs = Path("docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md").read_text(encoding="utf-8")
 
         self.assertIn('@app.route("/purpose-review")', app_source)
         self.assertIn('render_template("purpose-review.html")', app_source)
@@ -2539,8 +2539,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/bulk-weights?return_to=", dashboard_js)
         self.assertIn(".purpose-review-actions", css)
         self.assertIn(".purpose-review-recheck", css)
-        self.assertIn("Herdmaster purpose-review decision 2026-06-15", docs)
-        self.assertIn("After this Herdmaster phase is visible and tested", docs)
+        self.assertIn("## Herdmaster Boundary", docs)
+        self.assertIn("It cannot change records without approved backend actions", docs)
 
     def test_meat_planning_page_is_read_only_pipeline_view(self):
         app_source = Path("app.py").read_text(encoding="utf-8")

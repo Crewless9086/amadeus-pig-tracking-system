@@ -260,3 +260,14 @@ receipts and manager digests as current authority or operational state.
 Conversation isolation may never weaken exact claim, chronology, delivery or
 commercial gates; only fresh evidence proving a prior claim boundary was not
 crossed can permit later eligibility.
+
+## Batch 25 Business-Module Authority Gate
+
+The ten reconciled farm-calendar, meat/pork launch, production, campaign,
+stress-test, template, readiness and SAM knowledge documents are archive
+evidence only. Brain Guard must require the focused Farm Rules, Meat Sales,
+Meat Production, SAM, BEACON, payment, purpose/allocation and data contracts.
+It must reject archived prices, cut menus, readiness percentages, campaign
+copy, template names, launch sequences, provider state and planning discussion
+as current authority. Runtime knowledge configuration may shape language but
+cannot override backend commercial, payment, customer-send or farm-write gates.

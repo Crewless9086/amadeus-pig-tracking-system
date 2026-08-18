@@ -85,3 +85,13 @@
 - Repointed the live smoke contract test to focused SAM Meat workflow doctrine.
 - Archived five SAM/revenue launch, handover, programme and checklist files
   intact.
+
+2026-08-18 - Vault Cutover Batch 25:
+
+- Consolidated farm-calendar, production batch, meat commercial, cutting,
+  payment, campaign, SAM knowledge and pig allocation rules into focused Vault
+  authority.
+- Repointed backend, architecture, focused doctrine and contract tests away
+  from the retired business-module paths.
+- Archived all ten `docs/08-business-modules/` sources intact; no legacy
+  business-module document remains in the active tree.

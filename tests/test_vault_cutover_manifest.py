@@ -202,6 +202,18 @@ BATCH24_ARCHIVED_FILES = {
     "docs/06-operations/SAM_MANAGER_SUMMARY_PR691_HANDOVER.md",
     "docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
 }
+BATCH25_ARCHIVED_FILES = {
+    "docs/08-business-modules/FARM_CALENDAR_PLAN.md",
+    "docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
+    "docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md",
+    "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
+    "docs/08-business-modules/MEAT_SALES_STRESS_TEST_REPORT.md",
+    "docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md",
+    "docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md",
+    "docs/08-business-modules/PORK_SALES_MODEL.md",
+    "docs/08-business-modules/README.md",
+    "docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -463,16 +475,28 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("Inventory and chronology reads are bounded", livestock)
         self.assertIn("Tracking-Only Intake And Acceptance", meat)
 
+    def test_batch25_archives_business_modules_after_contract_reconciliation(self):
+        for source in BATCH25_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        farm = (ROOT / "docs/09-vault-brain/08-business-rules/FARM_RULES.md").read_text(encoding="utf-8")
+        production = (ROOT / "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md").read_text(encoding="utf-8")
+        active = (ROOT / "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md").read_text(encoding="utf-8")
+        self.assertIn("Farm Calendar Contract", farm)
+        self.assertIn("Canonical Batch Flow And Metrics", production)
+        self.assertNotIn("docs/08-business-modules/", active)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 52)
-        self.assertTrue(all(25 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 42)
+        self.assertTrue(all(26 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(25, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(26, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {25: 10, 26: 8, 27: 34}
+        expected = {26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}
         self.assertEqual(actual, expected)

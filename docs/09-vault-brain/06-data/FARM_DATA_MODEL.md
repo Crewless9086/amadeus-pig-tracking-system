@@ -79,6 +79,6 @@ The current canonical `pig_current_state`/`pigs` read projection does not supply
 - `docs/03-google-sheets/SHEET_SCHEMA.md`
 - `docs/03-google-sheets/FIELD_DEFINITIONS.md`
 - `docs/03-google-sheets/FORMULA_LOGIC.md`
-- `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
+- `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`
 - `supabase/migrations/202607200001_create_pig_observation_events.sql` (unapplied; application requires explicit owner approval)
 - `supabase/migrations/202607210001_create_pig_lifecycle_events.sql` (unapplied; application requires explicit owner approval)
