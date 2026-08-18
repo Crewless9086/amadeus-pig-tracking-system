@@ -48,11 +48,25 @@ Owner Review cards must show:
 Oom Sakkie must feel like a farm command room, not a generic admin page:
 
 - Oom Sakkie remains central;
+- the normal daily workflow fits one calm, immediately useful screen without a
+  long technical scroll;
 - farm attention is visible immediately;
 - decision rail shows approvals/blocked actions;
 - specialist dock is visible;
 - agents open as specialist panels, not random table pages;
 - system workbench remains secondary.
+
+The experience is warm, grounded, practical and recognizably South African
+farm operations: readable in daylight, premium without corporate blandness,
+and never sci-fi, robotic, militarized or gimmicky. Voice, typed commands,
+Telegram and clicks are presentation adapters to the same canonical capability;
+every important voice action must also be available by click or tap.
+
+Specialist panels summarize who the specialist is, what it is watching, the
+current useful state, priorities, suggestions, protected decisions, prepared
+but unexecuted actions, missing evidence and its authority boundary. Technical
+tables and trace evidence remain available only through deliberate deeper
+workflow or audit access.
 
 ## SAM Dashboard Requirements
 

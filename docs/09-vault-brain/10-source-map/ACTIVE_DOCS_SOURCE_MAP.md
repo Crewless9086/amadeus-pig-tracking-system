@@ -30,10 +30,6 @@ Current-state evidence, never reusable doctrine:
 
 - `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
 - `docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md`
-- `docs/00-start-here/PRODUCT_VISION.md`
-
-`PRODUCT_VISION.md` remains a transitional owner projection. It must be
-reconciled to the Vault but cannot override it.
 
 Compatibility pointers, never current state or doctrine:
 
@@ -44,6 +40,7 @@ Compatibility pointers, never current state or doctrine:
 - `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`
 - `docs/00-start-here/CURRENT_STATE.md`
 - `docs/00-start-here/NEXT_STEPS.md`
+- `docs/00-start-here/PRODUCT_VISION.md`
 
 The similarly named
 `docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` is a historical
@@ -211,6 +208,10 @@ Batch 12 reconciled the stale current-state and roadmap projections, then
 reduced both paths to compatibility pointers. Durable live mission truth now
 resolves only to the Control Tower register and fresh attributable evidence.
 See `VAULT_CUTOVER_BATCH12_RECONCILIATION.md`.
+
+Batch 13 reconciled the final start-here product projection into focused Oom
+Sakkie identity and UI standards, then reduced the legacy path to a
+compatibility pointer. See `VAULT_CUTOVER_BATCH13_RECONCILIATION.md`.
 
 - `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (non-doctrine compatibility
   pointer to current Vault review standards)

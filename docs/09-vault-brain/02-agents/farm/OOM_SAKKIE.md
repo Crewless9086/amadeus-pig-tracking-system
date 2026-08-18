@@ -80,7 +80,9 @@ If the specialist role has no deployed adapter, Oom Sakkie retains the task and
 reports one deduplicated systemic exception requiring development-terminal
 work. It never describes that fallback as automatic execution.
 
-Source references: `docs/00-start-here/PRODUCT_VISION.md`, `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`.
+Source references: `docs/09-vault-brain/01-identity/OOM_SAKKIE.md`,
+`docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md`, and
+`docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`.
 
 ## Active Goal Card — Owner Attention Queue
 

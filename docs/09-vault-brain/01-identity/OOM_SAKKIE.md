@@ -71,5 +71,5 @@ Any physical control, automation, or production write must remain inside explici
 
 ## Source References
 
-- `docs/00-start-here/PRODUCT_VISION.md`
+- `docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`

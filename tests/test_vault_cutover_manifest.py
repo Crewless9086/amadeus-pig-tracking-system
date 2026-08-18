@@ -52,6 +52,9 @@ BATCH12_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/CURRENT_STATE.md",
     "docs/00-start-here/NEXT_STEPS.md",
 }
+BATCH13_COMPATIBILITY_POINTERS = {
+    "docs/00-start-here/PRODUCT_VISION.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -189,6 +192,16 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
             self.assertIn("CONTROL_TOWER_MISSION_REGISTER.md", text)
         fallback = (ROOT / "docs/00-start-here/NEXT_STEPS.md").read_text(encoding="utf-8")
         self.assertIn("P0 compatibility fallback", fallback)
+
+    def test_batch13_reconciles_final_start_here_projection(self):
+        for path in BATCH13_COMPATIBILITY_POINTERS:
+            entry = self.entries[path]
+            self.assertEqual(entry["disposition"], "KEEP_POINTER")
+            self.assertLessEqual(entry["physical_lines"], 15)
+            self.assertIn("POINTER_ONLY / NON_DOCTRINE", (ROOT / path).read_text(encoding="utf-8"))
+        dashboard = (ROOT / "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md").read_text(encoding="utf-8")
+        self.assertIn("normal daily workflow fits one calm", dashboard)
+        self.assertIn("Voice, typed commands", dashboard)
 
 
 if __name__ == "__main__":

@@ -786,18 +786,18 @@ class FrontendRouteContractTests(unittest.TestCase):
     def test_oom_sakkie_product_vision_and_agent_dock_exist(self):
         from app import app
 
-        vision = Path("docs/00-start-here/PRODUCT_VISION.md").read_text(encoding="utf-8")
+        vision = Path("docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md").read_text(encoding="utf-8")
         asset_register = Path("docs/00-start-here/AGENT_ASSET_REGISTER.md").read_text(encoding="utf-8")
         agent_registry = Path("static/assets/agents/agent_registry.json").read_text(encoding="utf-8")
         template = Path("templates/oom-sakkie.html").read_text(encoding="utf-8")
         js = Path("static/js/oomSakkie.js").read_text(encoding="utf-8")
         css = Path("static/css/main.css").read_text(encoding="utf-8")
 
-        self.assertIn("Oom Sakkie is the central farm command presence", vision)
-        self.assertIn("agent dock", vision.lower())
-        self.assertIn("The System Workbench remains useful for audit/admin/developer inspection", vision)
-        self.assertIn("Agent Identity Bible", vision)
-        self.assertIn("live summary cards", vision)
+        self.assertIn("Oom Sakkie remains central", vision)
+        self.assertIn("specialist dock", vision.lower())
+        self.assertIn("system workbench remains secondary", vision.lower())
+        self.assertIn("Voice, typed commands", vision)
+        self.assertIn("current useful state", vision)
         self.assertIn("static/assets/agents/", asset_register)
         self.assertIn('"agent_id": "oom-sakkie"', agent_registry)
         self.assertIn('"voice_id": "3y3q5VpFXdeyf5ooB12e"', agent_registry)
