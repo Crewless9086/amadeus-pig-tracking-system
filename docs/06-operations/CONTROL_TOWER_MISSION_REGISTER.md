@@ -52,6 +52,17 @@ and suppressed fourteen duplicates. CORE remains frozen outside the three
 overnight tracks until a slot releases or a proven cross-track incident requires
 containment.
 
+Owner subsequently authorized additional non-conflicting overnight work. A
+fourth **read-only CORE recovery audit** is selected outside the three
+implementation slots. It may inspect exact current source, registered CORE
+worktrees, task/provider identity evidence, governed-stop state, queue/mission
+truth, historical failed epochs and the next smallest reusable repair. It may
+not edit source or governance, stage or activate CORE, mutate tasks/processes,
+create/admit/dispatch missions, acquire the release lane or perform provider,
+database, farm or customer writes. Its output is one evidence-backed
+continuation packet ready for automatic promotion when an implementation slot
+releases. Process existence and old activation waits remain non-evidence.
+
 Automatic promotion: each development lane continues through source, tests,
 review, normal integration, deployment and genuine deployed-agent acceptance,
 stopping only at a real protected, physical, external or serialized-release

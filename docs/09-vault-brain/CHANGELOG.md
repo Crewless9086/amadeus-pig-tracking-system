@@ -7,6 +7,17 @@
 - Allowed requested-items draft quotes to retain partial or `Unavailable` recommendations with no allocation or reservation, while stale weight lowers confidence.
 - Bound already-completed sale recording to the existing protected Livestock order-completion rail instead of inventing veterinary or movement-clearance evidence.
 
+## 2026-08-19 - ROOTLINE standing B/C water policy enforced
+
+- Removed the runtime-only fresh tank-observation gate that contradicted the
+  owner-approved standing B/C water-availability rule and repeatedly shifted a
+  routine evidence obligation back to Charl.
+- Missing or stale tank counts now preserve `Unknown` tank details and create no
+  litres or water credit, while fresh shortage, dry-supply, supply-fault and
+  conflict evidence still fail B/C eligibility closed.
+- The change does not enable authority, actuate hardware or transfer B/C
+  commissioning or authority to fertiliser mixing, injection or Borehole 1.
+
 ## 2026-08-19 - Oom Sakkie timeout closure and overnight outcome recovery
 
 - Reconciled the deployed post-Brain-Guard manager timeout repair: two natural
