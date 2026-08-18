@@ -75,13 +75,19 @@ def test_rain_hold_stale_weather_and_debt_create_no_authority():
         assert value["eligible"] is False and value["command_authority"] is False
 
 
-def test_missing_or_stale_tank_evidence_fails_closed_without_inventing_volume():
+def test_missing_or_stale_tank_evidence_uses_standing_availability_without_inventing_volume():
     for tanks in ({}, {"observed_at":(NOW-timedelta(hours=25)).isoformat()}):
         plan,evidence,controller=inputs(); evidence["tanks"]=tanks
         value=build_execution_eligibility(plan=plan,evidence=evidence,
                                            controller=controller,now=NOW)
-        assert value["status"] == "fresh_reservoir_storage_evidence_unavailable"
-        assert value["eligible"] is False and value["command_authority"] is False
+        assert value["eligible"] is True and value["command_authority"] is True
+        assert value["water_evidence"]["observed_at"] is None
+        assert value["water_evidence"]["reservoir_state"] is None
+        assert value["water_evidence"]["standing_policy"] == {
+            "contract_version":"rootline_standing_water_policy.v1",
+            "mode":"standing_available_unobserved","water_assumed_available":True,
+            "storage_replenishment_assumed_required":True,
+            "current_contradictory_evidence":False}
 
 
 def test_fresh_shortage_or_explicit_supply_fault_still_fails_closed():
@@ -97,14 +103,14 @@ def test_fresh_shortage_or_explicit_supply_fault_still_fails_closed():
         assert value["eligible"] is False and value["hardware_control"] is False
 
 
-def test_stale_fault_flag_cannot_substitute_for_current_water_truth():
+def test_stale_fault_flag_cannot_override_current_standing_water_policy():
     plan,evidence,controller=inputs()
     evidence["tanks"]={"observed_at":(NOW-timedelta(hours=25)).isoformat(),
                        "dry_supply":True}
     value=build_execution_eligibility(plan=plan,evidence=evidence,
                                        controller=controller,now=NOW)
-    assert value["status"] == "fresh_reservoir_storage_evidence_unavailable"
-    assert value["eligible"] is False and value["command_authority"] is False
+    assert value["eligible"] is True and value["command_authority"] is True
+    assert value["water_evidence"]["standing_policy"]["water_assumed_available"] is True
 
 
 def test_missing_or_unproven_governed_rain_release_creates_no_authority():

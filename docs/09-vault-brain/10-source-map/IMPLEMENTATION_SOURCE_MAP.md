@@ -148,7 +148,10 @@
 - Typed device registry: `modules/telemetry/rootline_device_registry.py`.
 - B/C eligibility and disabled-by-default runtime authority:
   `modules/telemetry/rootline_execution_authority.py` and
-  `modules/telemetry/rootline_execution_runtime.py`.
+  `modules/telemetry/rootline_execution_runtime.py`. Eligibility applies the
+  standing B/C water-availability policy when tank counts are missing or stale,
+  without inventing tank state, litres or water credit; only fresh explicit
+  shortage, dry-supply, supply-fault or conflict evidence blocks that boundary.
 - Execution, provider OFF/native shutdown and same-zone daily consumption:
   `modules/telemetry/rootline_irrigation_coordinator.py` and
   `modules/telemetry/rootline_irrigation_execution_store.py`.
