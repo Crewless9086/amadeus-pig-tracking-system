@@ -6,14 +6,38 @@
 > maintained current plan, outcome/reassessment ownership and terminal-close
 > continuity as defined by ROOTLINE's Continuous Operating Contract.
 
-Status: authoritative target architecture and authority boundary.
+Status: authoritative control architecture and authority boundary.
 
 Evidence cut: `2026-07-25`, repository revision
 [`6123c1e`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/6123c1e54134ccde5b3cc14d607d12ccaecc020d).
 
-This document defines the intended mature ROOTLINE operating model. It does not
-grant hardware authority or claim that planned capabilities are built,
-deployed, configured, or operational.
+This document defines ROOTLINE's durable operating model. Dated evidence below
+is historical context only. Current policy comes from this architecture and
+`../08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`; current operational state
+requires the mission register plus fresh canonical, provider and physical
+readback. This document grants no hardware authority.
+
+## Device-Class Graduation And Execution
+
+Each device class graduates independently through typed registry identity,
+exact provider/account/device/channel binding, safe OFF and restoration state,
+native fail-stop, dependency/interlock proof, supervised physical
+commissioning, canonical authority and separately reviewed activation. A B/C
+valve proof cannot commission fertiliser or borehole equipment.
+
+Every execution must bind the current plan generation, commissioning and
+authority identity/version, exact device/channel, evidence cutoff, maximum
+runtime and idempotency key before ON. ON is attempted once. Ambiguity causes
+containment, never automatic ON retry. OFF is exact-channel and safely
+repeatable only inside bounded recovery until authoritative shutdown is proven.
+Completion requires the device-specific provider and physical outcome; an
+energized relay or accepted request is never enough.
+
+Routine B/C work may use only the explicitly enabled standing envelope in the
+Water And Energy Rules. Fertiliser mixer, injection and borehole remain
+independent protected profiles until their own commissioning and activation
+proof exists. A terminal may repair, test, deploy and observe these rails but
+must never substitute for the deployed ROOTLINE actor or physical outcome.
 
 ## Business Outcome
 

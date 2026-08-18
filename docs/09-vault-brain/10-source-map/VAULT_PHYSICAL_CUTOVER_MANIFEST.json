@@ -1,20 +1,20 @@
 {
-  "version": "vault_physical_cutover_manifest_v19",
-  "baseline": "7660bd7b6ce9477f275e49468d485b9980cfe917",
-  "generated_from_head": "7660bd7b6ce9477f275e49468d485b9980cfe917",
-  "owner_boundary": "Batch 22 archives thirty reconciled OOM SAKKIE plans, runbooks, scorecards and handovers after retaining current manager, dialogue, scheduling, family-access, specialist-dispatch, protected-action, delivery and UI contracts in focused Vault files; it authorizes no runtime, message, provider, customer, farm, payment or hardware change",
-  "entry_count": 530,
+  "version": "vault_physical_cutover_manifest_v20",
+  "baseline": "73f1638fbea49e53fb8f3c983bf671742a13e450",
+  "generated_from_head": "73f1638fbea49e53fb8f3c983bf671742a13e450",
+  "owner_boundary": "Batch 23 archives thirteen reconciled ROOTLINE plans, inventories, canaries, onboarding notes, contracts and commissioning packets after retaining current planning, device-class, authority, execution and provider/physical-verification rules in focused Vault files; it authorizes no runtime, message, provider, database, farm, irrigation, fertiliser, borehole or hardware change",
+  "entry_count": 531,
   "counts": {
-    "EXTRACT_THEN_ARCHIVE": 55,
-    "KEEP_ARCHIVE": 137,
+    "EXTRACT_THEN_ARCHIVE": 54,
+    "KEEP_ARCHIVE": 150,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
     "KEEP_GENERATED_PROJECTION": 9,
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 189,
-    "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 15
+    "KEEP_VAULT": 190,
+    "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 3
   },
   "entries": [
     {
@@ -2418,8 +2418,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "7fd89455b3b461099ff773104b1a60b5f44c706ac5d30a0c9a1ba0f8d35a2cd4",
-      "physical_lines": 925,
+      "sha256": "16cab393660f050a8a7efdb79f5bd6dcad4709bc5bbc6caabf3524bb75bb8d43",
+      "physical_lines": 941,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -2466,248 +2466,6 @@
       "physical_change_authorized": false,
       "planned_batch": null,
       "reconciliation_family": null
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md",
-      "sha256": "44a1612aa54ffc60c78fef80c18fbb89a5c80b3e5c0311c603984574951b54f8",
-      "physical_lines": 130,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md",
-      "sha256": "38eac3ee6480a69c58692ce8451039d613a373c5515506a1bc2c82c396d11bc3",
-      "physical_lines": 92,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
-      ],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md",
-      "sha256": "2936b71c4cc05f5decadae0b205f40de3216a607c92190fc5c9bc5e492ddbf90",
-      "physical_lines": 27,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_C12345_CANARY_PREFLIGHT.md",
-      "sha256": "1dd575d37081c92ae18453a6c1a93e5663aadbab916bf02272aa8639defebfbf",
-      "physical_lines": 154,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_C12345_CANARY_PREFLIGHT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md",
-      "sha256": "71fa3ba5be5b5606c86e3f7ff3f91841d3d3cfcf314af79d60c692b93316f106",
-      "physical_lines": 102,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md",
-      "sha256": "86e9898ec289911b10caf92c724fa44e2c52940b2b2331375b673ba92d6f8f7a",
-      "physical_lines": 63,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
-      ],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md",
-      "sha256": "b5461bb16b5c2f0671afdacb44d5121c756dca706f140e27b59212b74d9baa07",
-      "physical_lines": 135,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
-      ],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_OPERATING_POLICY_REVIEW.md",
-      "sha256": "fd744eb4997fddf9d00aeaa81ab9de6bc5284e94e4920d42c630535cd0611149",
-      "physical_lines": 185,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_POLICY_REVIEW.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_PHASE_B_HARDWARE_INVENTORY.md",
-      "sha256": "01bdf98cc7c27069dfbd432693566be551175476be54d587edee304d6ac46c96",
-      "physical_lines": 375,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_PHASE_B_HARDWARE_INVENTORY.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_REMAINING_COMMISSIONING_PACKETS_20260818.md",
-      "sha256": "2afecd955b0630de498e63bf74f8858d30b461cae6ac4226a88b2e10bb5c6799",
-      "physical_lines": 25,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_REMAINING_COMMISSIONING_PACKETS_20260818.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_SONOFF_IRRIGATION_EXECUTION_CONTRACT.md",
-      "sha256": "8abec362adff19269830940478fc0637e22090746bf7ae02ac20c7723677ee35",
-      "physical_lines": 93,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SONOFF_IRRIGATION_EXECUTION_CONTRACT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md",
-      "sha256": "33a1a6f2285e145c425c7e547695443fdcd6597330a701c205280d7a63aa2570",
-      "physical_lines": 127,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
-    },
-    {
-      "path": "docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md",
-      "sha256": "a77179236ed37f61bae8154abbb96c91c90e84b75afb241486b7e0186ac46423",
-      "physical_lines": 91,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 23,
-      "reconciliation_family": "rootline"
     },
     {
       "path": "docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md",
@@ -3050,7 +2808,7 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
-      "sha256": "5eb16bd5a69a893f2927ec284642873a443691b43f2cdc211cf95d864e72d836",
+      "sha256": "f71e43381099bb08a89ec1de9fca07f124483f0de34ada95820ceb661aeb98f4",
       "physical_lines": 1035,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
@@ -3190,8 +2948,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "1a3f5fc49aaeb6fe9a6c04555fdbfb19c5cc7ccca09d8aa01812a51d91344a45",
-      "physical_lines": 240,
+      "sha256": "13bd0183c63acce7b5d8765b6784c4eff6c89f6354655e3ccb52fb56647f3f3c",
+      "physical_lines": 251,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -3385,8 +3143,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "eef1322bcb6e2a0344abb1f7a1ce91ebd3debfe69fb993b08c3a1c4a82e289e6",
-      "physical_lines": 327,
+      "sha256": "84d0d439c7be4cabb6357b9dc6e0c45164c393bad0970a435b448d105e6757a8",
+      "physical_lines": 341,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -3473,7 +3231,7 @@
     },
     {
       "path": "docs/09-vault-brain/01-identity/OOM_SAKKIE.md",
-      "sha256": "8da704f1a94e76edbc761ac0ffad76e321826a3e8cb588790ef60afe2bc93ce8",
+      "sha256": "590e70f8c1962aea98420230ac063f79b259b9c306f413bb59610a08ec5e32b6",
       "physical_lines": 84,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4109,7 +3867,7 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md",
-      "sha256": "b4d429ff9e887795b11a14c38b37ad1fba8bb6155a68d827c2a2685955e83e1f",
+      "sha256": "758dc88fbcc4e43afa714bb1818ad809b0e063a67784c7b3d6a5db4ebb0c08bf",
       "physical_lines": 151,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -4159,13 +3917,13 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/ROOTLINE.md",
-      "sha256": "8d49085171c756b3728ba4c7460716d85f78c39281023fc878f886c001d2dc23",
-      "physical_lines": 105,
+      "sha256": "d9d52a8ab9936cb611a1c0a845469c32652d7452b26a593ae2dde8807f58b40f",
+      "physical_lines": 125,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/farm/ROOTLINE.md",
-      "exact_reference_count": 7,
+      "exact_reference_count": 8,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
         "modules/charlie/agent_card_projection.py",
@@ -4173,7 +3931,8 @@
         "modules/charlie/vault_retrieval.py",
         "scripts/build_vault_cutover_manifest.py",
         "static/assets/agents/rootline/agent.md",
-        "tests/test_charlie_vault_retrieval.py"
+        "tests/test_charlie_vault_retrieval.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -4866,7 +4625,7 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md",
-      "sha256": "003b136dd5b5069cbf5a34bf9a2f4bd2fbcf5f97fd3f2e5f60e7531208f106f1",
+      "sha256": "685c246f44bbac5eac3093b2624736251a57a651fb975c6df66e2cb8fd64d4bb",
       "physical_lines": 128,
       "batch1_lifecycle": "authoritative",
       "batch1_action": "keep_review",
@@ -4942,16 +4701,17 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md",
-      "sha256": "ef3483acf1f07bb63769e11b3dc7beda7f801e81518a72a25e70b1532adfee6b",
-      "physical_lines": 288,
+      "sha256": "554541a7d6510511e4024b8a5845679f362c8b391650d71110b00496539035ac",
+      "physical_lines": 312,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 3,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-        "modules/charlie/vault_retrieval.py"
+        "modules/charlie/vault_retrieval.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -5767,7 +5527,7 @@
     },
     {
       "path": "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md",
-      "sha256": "183ba7d1d4f1f4a479490ac4524743a826af074f31db142d9a2d20b1eb42dad0",
+      "sha256": "599523d9660c9eba4ebe6988f42ee2f4419108b8e837e0204a901362524adbb4",
       "physical_lines": 114,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -6064,16 +5824,17 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md",
-      "sha256": "b0b622b157fae76dea454323c49973c075dcd95fe3d6a01e70ef109e1e54bb2f",
-      "physical_lines": 430,
+      "sha256": "7c2f4546689f373c6968deaa83b69289e20ec8cd0ae50293cac156a02c35f8b4",
+      "physical_lines": 444,
       "batch1_lifecycle": "authoritative",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 3,
       "exact_references": [
         "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-        "modules/charlie/vault_retrieval.py"
+        "modules/charlie/vault_retrieval.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -6310,7 +6071,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "123a499aefc1acf5272a16b4fac83b08dff46e8839c77cac95c50678ab0b107f",
+      "sha256": "3d0bdd53b1529b74ffae3215932941bc702c83544eac1599efbe52a2a04ce8e2",
       "physical_lines": 241,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
@@ -6347,8 +6108,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-      "sha256": "8786f3f4993de134f8e78bc0730c2d40a1978eee00c8aa1c25859509fca7ea3f",
-      "physical_lines": 868,
+      "sha256": "fd48e2519330eb73f6827c32e97f7c36a12b3a26bb47ac06acb785d2ba337d0f",
+      "physical_lines": 866,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -6371,8 +6132,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
-      "sha256": "c56ecdfa3aaee7d0bd7173a675544fa13a029ed6921773f0944adb89befb64f4",
-      "physical_lines": 71,
+      "sha256": "0af63efb0b334f39073248418206db016d8fff8f0bb85f5f93cf6764cd3ab3a3",
+      "physical_lines": 79,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -6601,6 +6362,22 @@
       "batch1_action": "post_batch1_unclassified",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH21_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH22_RECONCILIATION.md",
+      "sha256": "b12633ada12dae73abe329a6c59363a643251d3bef9cfe6fbc1b3a697b5ea8b0",
+      "physical_lines": 33,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH22_RECONCILIATION.md",
       "exact_reference_count": 0,
       "exact_references": [],
       "reason": "canonical Vault doctrine/reference",
@@ -8861,6 +8638,214 @@
       "reconciliation_family": null
     },
     {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md",
+      "sha256": "44a1612aa54ffc60c78fef80c18fbb89a5c80b3e5c0311c603984574951b54f8",
+      "physical_lines": 130,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md",
+      "sha256": "38eac3ee6480a69c58692ce8451039d613a373c5515506a1bc2c82c396d11bc3",
+      "physical_lines": 92,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md",
+      "sha256": "2936b71c4cc05f5decadae0b205f40de3216a607c92190fc5c9bc5e492ddbf90",
+      "physical_lines": 27,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_C12345_CANARY_PREFLIGHT.md",
+      "sha256": "1dd575d37081c92ae18453a6c1a93e5663aadbab916bf02272aa8639defebfbf",
+      "physical_lines": 154,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_C12345_CANARY_PREFLIGHT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md",
+      "sha256": "71fa3ba5be5b5606c86e3f7ff3f91841d3d3cfcf314af79d60c692b93316f106",
+      "physical_lines": 102,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md",
+      "sha256": "86e9898ec289911b10caf92c724fa44e2c52940b2b2331375b673ba92d6f8f7a",
+      "physical_lines": 63,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md",
+      "sha256": "b5461bb16b5c2f0671afdacb44d5121c756dca706f140e27b59212b74d9baa07",
+      "physical_lines": 135,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_POLICY_REVIEW.md",
+      "sha256": "fd744eb4997fddf9d00aeaa81ab9de6bc5284e94e4920d42c630535cd0611149",
+      "physical_lines": 185,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_POLICY_REVIEW.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_PHASE_B_HARDWARE_INVENTORY.md",
+      "sha256": "01bdf98cc7c27069dfbd432693566be551175476be54d587edee304d6ac46c96",
+      "physical_lines": 375,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_PHASE_B_HARDWARE_INVENTORY.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_REMAINING_COMMISSIONING_PACKETS_20260818.md",
+      "sha256": "2afecd955b0630de498e63bf74f8858d30b461cae6ac4226a88b2e10bb5c6799",
+      "physical_lines": 25,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_REMAINING_COMMISSIONING_PACKETS_20260818.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SONOFF_IRRIGATION_EXECUTION_CONTRACT.md",
+      "sha256": "8abec362adff19269830940478fc0637e22090746bf7ae02ac20c7723677ee35",
+      "physical_lines": 93,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SONOFF_IRRIGATION_EXECUTION_CONTRACT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md",
+      "sha256": "33a1a6f2285e145c425c7e547695443fdcd6597330a701c205280d7a63aa2570",
+      "physical_lines": 127,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md",
+      "sha256": "a77179236ed37f61bae8154abbb96c91c90e84b75afb241486b7e0186ac46423",
+      "physical_lines": 91,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/RUNBOOK.md",
       "sha256": "7d644096ab262489c589a88707e9531984856d2a048898c390ebe706dcc17f8b",
       "physical_lines": 13,
@@ -9889,7 +9874,7 @@
     },
     {
       "path": "static/assets/agents/beacon/agent.md",
-      "sha256": "9cc73c0f68f2b503cd4aa426af8f95e3dc20b37d8ff1d5e32f64969ca96fa33d",
+      "sha256": "f452fcdf6bc021b2b4b6db9fa9e9123e4339d568e2fd33a017e79d823540c074",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9908,7 +9893,7 @@
     },
     {
       "path": "static/assets/agents/butcher/agent.md",
-      "sha256": "8a91c7359f97b7fd9b339672b808820c12c74d7ace7b15917007fba2d32cea09",
+      "sha256": "0a575c2fbbc2fd174fa6de87424b3d8609a822195252edfe3f378b59fd76c469",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9926,7 +9911,7 @@
     },
     {
       "path": "static/assets/agents/gatekeeper/agent.md",
-      "sha256": "e6629407bc10a15d7c11ed7410f1e91fbdcd7ffe6735cad426a04ab8a85f6c24",
+      "sha256": "7569bd4066f861ab9dff906a00c3b124f61bfa4566c0baf3cbc04dd0f2568730",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9944,7 +9929,7 @@
     },
     {
       "path": "static/assets/agents/herdmaster/agent.md",
-      "sha256": "07142c4271dae71f5ea52351d601f784b9caad002b2959b9de1dceb04701fcc1",
+      "sha256": "5fbbe913b49dd82c23a4f28f5e566060d4c8b2e8da459e7b191843da1f9a64a7",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9962,7 +9947,7 @@
     },
     {
       "path": "static/assets/agents/ledger/agent.md",
-      "sha256": "4f4acdb0e971ada5456b563c9526264593a95bf49e1025de6bdb7c178f40ddfd",
+      "sha256": "36e041810bc56298e117a6f8992a6541908c82f99633272e55f4439226d86237",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9980,7 +9965,7 @@
     },
     {
       "path": "static/assets/agents/oom-sakkie/agent.md",
-      "sha256": "27411d34290805b17caad86f0ade3006f719fed9e3d9634b924bd4ccc32626d8",
+      "sha256": "2f0538b449d24278042b801a318c325586d6e88ec3818bc42403f634b0fbad58",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -9998,7 +9983,7 @@
     },
     {
       "path": "static/assets/agents/quartermaster/agent.md",
-      "sha256": "00ae64e1d97d4c0367b337a49c83ffe3b26c804ef4e8fee2b32f644ec9618dc7",
+      "sha256": "2425cf1e926da9ffb8fbc96d34ad7251786ca37cc3359db99bdcb26d25de3746",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10016,7 +10001,7 @@
     },
     {
       "path": "static/assets/agents/rootline/agent.md",
-      "sha256": "10fae18f59901e7936c638d1d1f30e25e585f86b0a67d20db02bfae904e591cd",
+      "sha256": "f65f4dc2d1aec73a7350523fc7102de9cf0ba2677d0ab6cf375aa7b4fde87f45",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10034,7 +10019,7 @@
     },
     {
       "path": "static/assets/agents/sam/agent.md",
-      "sha256": "e5b52b4229da3dffe706d7f66080012752ff1882c18f1e59305f1b104288bc1d",
+      "sha256": "37b6d0742d722cf73f2097044f08c1571f2c5a9e0b507e61bdaf28c1f1849046",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",

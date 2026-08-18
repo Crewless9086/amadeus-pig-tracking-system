@@ -325,3 +325,17 @@ Current honest state: `THIRTY_OOM_SAKKIE_SOURCES_ARCHIVED / 70 PHYSICAL ITEMS /
 
 No runtime, message, provider, customer, payment, farm, database or hardware
 action occurred. Full cutover continues with Batches 23-29.
+
+## Batch 23 ROOTLINE Reconciliation - 2026-08-18
+
+Thirteen ROOTLINE plans, inventories, canaries, onboarding notes, contracts and
+commissioning packets were archived intact after planning, independent
+device-class graduation, execution, provider/physical verification and
+authority precedence were consolidated into focused Vault authority.
+
+Current honest state: `THIRTEEN_ROOTLINE_SOURCES_ARCHIVED / 57 PHYSICAL ITEMS /
+72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No runtime, provider, message, database, farm, irrigation, fertiliser,
+borehole or hardware action occurred. Full cutover continues with Batches
+24-29.

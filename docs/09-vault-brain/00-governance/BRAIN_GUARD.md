@@ -238,3 +238,14 @@ Guard must reject its former agent bible, build prompt, phases, provider notes,
 asset proposal and open questions as doctrine. Oom Sakkie identity comes from
 the focused identity/agent packs; owner-facing experience comes from the UI
 Dashboard and mandatory Facelift standards.
+
+## Batch 23 ROOTLINE Authority Gate
+
+The thirteen reconciled ROOTLINE plans, inventories, canaries, onboarding
+notes, contracts and commissioning packets are archive evidence only. Brain
+Guard must require the focused ROOTLINE agent, Control Architecture and Water
+And Energy Rules. It must reject any dated device identity, canary, schedule,
+runtime flag, provider state or commissioning packet as current authority or
+operational proof without fresh canonical/provider evidence. B/C, fertiliser
+mixing, fertiliser injection and borehole are independent device classes; no
+authority or commissioning transfers between them.
