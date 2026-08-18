@@ -114,10 +114,10 @@ class PostgresManagerCaseStore:
         next_cycle = now + CADENCE
         created = changed = replayed = 0
         claimed: list[dict[str, Any]] = []
-        connection = self.connect_factory()
+        connection = None
         try:
-            with connection:
-                with connection.cursor() as cur:
+            with self.connect_factory() as audit_connection:
+                with audit_connection.cursor() as cur:
                     cur.execute("""insert into app_private.oom_manager_worker_cycles
                         (cycle_id,worker_id,trigger_identity,source_revision,started_at,heartbeat_at,
                          next_cycle_at,status,case_counts) values(%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)""",
@@ -127,6 +127,7 @@ class PostgresManagerCaseStore:
                          json.dumps({"brain_guard": brain_guard})))
             if brain_guard.get("passed") is not True:
                 raise ManagerCaseError("scheduled_brain_guard_alignment_failed")
+            connection = self.connect_factory()
             with connection:
                 with connection.cursor() as cur:
                     for raw in candidates:
@@ -241,7 +242,8 @@ class PostgresManagerCaseStore:
                 "brain_guard": brain_guard,
                 **_zero_effects()}
         finally:
-            connection.close()
+            if connection is not None:
+                connection.close()
 
     def _reconcile(self, cur, candidate, now, *, lease_owner=None,
                    replace_delegated_owner=False):
