@@ -54,3 +54,11 @@
 - Removed active tests and maps from dated operations/checklist sources.
 - Archived sixteen general-operations plans, evidence ledgers, configuration
   migrations, checklists and placeholder runbooks intact.
+
+2026-08-18 - Vault Cutover Batch 21:
+
+- Consolidated HERDMASTER breeding, exposure, litter, weaning, health, loss,
+  allocation, sales and lifecycle-analytics contracts into focused Vault files.
+- Removed active maps and owner decisions from dated operations wrappers.
+- Archived twenty-two HERDMASTER plans and handovers intact; dated cases and
+  runtime receipts are historical evidence only.

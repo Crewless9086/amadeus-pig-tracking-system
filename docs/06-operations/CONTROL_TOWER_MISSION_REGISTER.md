@@ -893,3 +893,18 @@ No deletion, runtime, mission, configuration, migration, deployment, provider,
 customer, farm, database or hardware action occurred. The remaining physical
 queue is 122 documents. Automatic promotion is Batch 21 HERDMASTER
 reconciliation.
+
+### Vault Cutover Batch 21 - 2026-08-18
+
+Owner approved continuation. The exact manifest family contained 22
+HERDMASTER operations plans and handovers. Their reusable breeding, exposure,
+litter, weaning, health, loss, allocation, sales and lifecycle-analytics rules
+were consolidated into focused Vault authority; all 22 sources were archived
+intact.
+
+Lifecycle: `WORKING / BATCH_21_HERDMASTER_COMPLETE /
+BATCHES_22_TO_29_REMAIN`.
+
+No animal, litter, mating, health, purpose, order, customer, farm, runtime,
+provider or database action occurred. The remaining physical queue is 100
+documents. Automatic promotion is Batch 22 OOM SAKKIE reconciliation.

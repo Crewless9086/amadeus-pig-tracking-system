@@ -29,6 +29,14 @@ The owner's exact text, authenticated principal, provider message identity,
 provider time and timezone remain bound to the preview. Unsupported diagnosis,
 ambiguous identity, conflicting chronology, or stale evidence fails closed.
 
+Mortality assessment must reconcile every attributable loss without treating
+an undated or missing-cause record as zero. Show dated, undated, corrected and
+Unknown-cause counts separately. Rank possible contributing factors only as
+hypotheses, never diagnoses, and ask one grouped physical question covering the
+smallest missing weather, housing, feed/water, health or herd-context evidence.
+The answer becomes append-only observation evidence and must be consumed on the
+next assessment rather than requested again.
+
 ## Proportional intake
 
 Resolve identity from canonical Pig ID, tag, name and current context. If the

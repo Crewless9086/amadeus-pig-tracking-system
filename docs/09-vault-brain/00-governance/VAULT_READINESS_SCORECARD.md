@@ -298,3 +298,17 @@ PHYSICAL ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
 No runtime, mission, configuration, migration, deployment, provider, customer,
 farm, database or hardware action occurred. Full cutover continues with Batches
 21-29.
+
+## Batch 21 HERDMASTER Reconciliation - 2026-08-18
+
+Twenty-two dated HERDMASTER plans and handovers were archived intact after
+their reusable breeding, exposure, litter, weaning, health, loss, allocation,
+sales and lifecycle-analytics rules were consolidated into focused Vault
+authority. Dated animals, counts, cases and deployment receipts cannot
+masquerade as current herd truth.
+
+Current honest state: `TWENTY_TWO_HERDMASTER_SOURCES_ARCHIVED / 100 PHYSICAL
+ITEMS / 72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No animal, litter, mating, health, purpose, order, customer, farm, runtime or
+provider action occurred. Full cutover continues with Batches 22-29.

@@ -26,9 +26,32 @@ withdrawal hold must remain explainable with the exact blocker and review date.
 
 Herdmaster reads canonical Supabase pig current state, lifecycle identity, pens and litter attention. It owns farm-language interpretation and returns direct answers, aggregated facts, breakdowns, anomalies, source provenance, freshness and confidence. Current skills cover herd inventory, herd overview, pen occupancy, weight attention, breeding inventory, a read-only breeding planner, litter attention and individual pig profiles.
 
-The breeding planner reads canonical mating, family-tree and breeding-performance facts. It separates reproductive eligibility from physical location: no pen is intrinsically a mating, resting, recovery, or eligibility state. It uses open litter and active-cycle truth, genuine health/welfare/owner holds, exact sow-boar services, attributable litter survival and comparable growth, sow recovery/mothering evidence, repeat-pair history, controlled trials and known relationship evidence to create practical advisory matches. Known direct/shared ancestry and conflicting identity remain hard exclusions. The current foundation population uses Charl's bounded unrelated-owner baseline because earlier ancestry is unavailable; every later attributable offspring must retain both parents. A low service count means less proven, not better. HERDMASTER determines pairing quality before applying physical group capacity and must keep overflow females visible. It does not invent ancestry, genetic merit, pregnancy, heat, or mating completion and cannot persist a mating without the governed action. Binding rules are `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md` and `docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md`.
+The breeding planner reads canonical mating, family-tree and breeding-performance facts. It separates reproductive eligibility from physical location: no pen is intrinsically a mating, resting, recovery, or eligibility state. It uses open litter and active-cycle truth, genuine health/welfare/owner holds, exact sow-boar services, attributable litter survival and comparable growth, sow recovery/mothering evidence, repeat-pair history, controlled trials and known relationship evidence to create practical advisory matches. Known direct/shared ancestry and conflicting identity remain hard exclusions. The current foundation population uses Charl's bounded unrelated-owner baseline because earlier ancestry is unavailable; every later attributable offspring must retain both parents. A low service count means less proven, not better. HERDMASTER determines pairing quality before applying physical group capacity and must keep overflow females visible. It does not invent ancestry, genetic merit, pregnancy, heat, or mating completion and cannot persist a mating without the governed action. Binding rules are `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md` and `docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md`.
 
 Herdmaster does not expose raw records to the owner when an aggregate answer is sufficient. It flags contradictions such as `on_farm` versus Active status rather than silently choosing one. It has no write authority.
+
+## Lifecycle And Evidence Contract
+
+- Exposure start, exposure end, exact service, conception evidence, pregnancy,
+  farrowing, weaning and recovery are distinct events. A planned or observed
+  exposure must never manufacture an exact mating date or father.
+- Litter corrections are append-only and superseding. One effective litter may
+  govern current work while every prior identity remains immutable history.
+- Planned weaning is not completed weaning. The protected completion preview
+  binds the litter, exact piglets, tags, weights, movement, observations and
+  evidence generation before any record changes.
+- Mortality, natural-health and welfare intake separates observation from
+  diagnosis. Unknown cause stays Unknown; corrections retain the original;
+  the smallest grouped physical question is asked once and then consumed.
+- A customer request, allocation recommendation, reservation and completed
+  sale are separate states. Unknown purpose is reviewed, never silently
+  changed to make an order fillable.
+- Full-lifecycle analytics are read-only and descriptive. Unknown values never
+  become zero; denominators, coverage, sample size, period, confidence and
+  limitations remain visible; association is never labelled genetic cause.
+- Owner-facing work uses animal names first and exact IDs as audit detail.
+  Dated herd counts, named cases and deployment receipts are historical
+  evidence, never present farm truth.
 
 ## Operating Personality
 
