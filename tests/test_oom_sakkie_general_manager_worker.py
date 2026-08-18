@@ -3,10 +3,84 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from modules.oom_sakkie.general_manager_worker import (
-    ManagerCaseError, PostgresManagerCaseStore, normalize_candidate)
+    ManagerCaseError, PostgresManagerCaseStore, build_scheduled_brain_guard_audit,
+    normalize_candidate, run_general_manager_cycle)
 
 
 NOW = datetime(2026, 8, 17, 10, 0, tzinfo=timezone.utc)
+
+
+def test_scheduled_brain_guard_audit_is_revision_bound_and_time_stable():
+    result = {"version": "alignment.v1", "passed": True, "findings": [],
+              "checked_files": ["b.md", "a.md"]}
+    first = build_scheduled_brain_guard_audit(
+        source_revision="abc123", now=NOW, alignment_result=result)
+    later = build_scheduled_brain_guard_audit(
+        source_revision="abc123", now=NOW + timedelta(minutes=5), alignment_result=result)
+    assert first["passed"] is True
+    assert first["status"] == "brain_guard_alignment_passed"
+    assert first["checked_files"] == ["a.md", "b.md"]
+    assert first["checked_count"] == 2
+    assert first["evidence_digest"] == later["evidence_digest"]
+    assert first["observed_at"] != later["observed_at"]
+    changed = build_scheduled_brain_guard_audit(
+        source_revision="def456", now=NOW, alignment_result=result)
+    assert changed["evidence_digest"] != first["evidence_digest"]
+
+
+def test_scheduled_brain_guard_audit_preserves_failure_findings():
+    audit = build_scheduled_brain_guard_audit(
+        source_revision="abc123", now=NOW,
+        alignment_result={"version": "alignment.v1", "passed": False,
+                          "findings": ["missing authority"], "checked_files": []})
+    assert audit["passed"] is False
+    assert audit["status"] == "brain_guard_alignment_failed"
+    assert audit["findings"] == ["missing authority"]
+
+
+def test_cycle_wrapper_supplies_current_brain_guard_audit_to_store():
+    class Store:
+        def run_cycle(self, candidates, **kwargs):
+            return {"candidates": list(candidates), **kwargs}
+
+    result = run_general_manager_cycle(
+        candidates=[], now=NOW, source_revision="abc123", store=Store())
+    audit = result["brain_guard_audit"]
+    assert audit["source_revision"] == "abc123"
+    assert audit["passed"] is True
+    assert audit["checked_count"] > 0
+
+
+def test_failed_brain_guard_is_persisted_and_blocks_case_delivery():
+    commands = []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, params): commands.append((sql, params))
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+        def close(self): pass
+
+    delivered = []
+    audit = build_scheduled_brain_guard_audit(
+        source_revision="abc123", now=NOW,
+        alignment_result={"version": "alignment.v1", "passed": False,
+                          "findings": ["conflicting doctrine"], "checked_files": ["bad.md"]})
+    result = PostgresManagerCaseStore(connect_factory=Connection).run_cycle(
+        [_candidate()], now=NOW, source_revision="abc123",
+        deliver=lambda case: delivered.append(case), brain_guard_audit=audit)
+    assert result["success"] is False
+    assert result["brain_guard"]["status"] == "brain_guard_alignment_failed"
+    assert delivered == []
+    assert not any("from app_private.oom_manager_cases" in sql for sql, _ in commands)
+    failure_writes = [(sql, params) for sql, params in commands
+                      if "status,case_counts,completed_at" in sql]
+    assert len(failure_writes) == 1
+    assert "brain_guard_alignment_failed" in failure_writes[0][1][-2]
 
 
 def _candidate(**changes):
