@@ -120,10 +120,15 @@ class PostgresManagerCaseStore:
                 with connection.cursor() as cur:
                     cur.execute("""insert into app_private.oom_manager_worker_cycles
                         (cycle_id,worker_id,trigger_identity,source_revision,started_at,heartbeat_at,
-                         next_cycle_at,status) values(%s,%s,%s,%s,%s,%s,%s,'started')""",
-                        (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, now, next_cycle))
-                    if brain_guard.get("passed") is not True:
-                        raise ManagerCaseError("scheduled_brain_guard_alignment_failed")
+                         next_cycle_at,status,case_counts) values(%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)""",
+                        (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, now,
+                         next_cycle, ("brain_guard_passed" if brain_guard.get("passed") is True
+                                      else "brain_guard_failed"),
+                         json.dumps({"brain_guard": brain_guard})))
+            if brain_guard.get("passed") is not True:
+                raise ManagerCaseError("scheduled_brain_guard_alignment_failed")
+            with connection:
+                with connection.cursor() as cur:
                     for raw in candidates:
                         candidate = normalize_candidate(raw, now=now)
                         result = self._reconcile(cur, candidate, now)
