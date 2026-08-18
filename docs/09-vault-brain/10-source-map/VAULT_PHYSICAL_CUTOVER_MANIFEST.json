@@ -3,7 +3,7 @@
   "baseline": "5865cc7c6300edc2f0e47d4780c05cbd3a8be020",
   "generated_from_head": "5865cc7c6300edc2f0e47d4780c05cbd3a8be020",
   "owner_boundary": "Batch 5 archived only the five reconciled top-level docs/05-ai files; no deletion, runtime, provider, authority, or production change",
-  "entry_count": 513,
+  "entry_count": 514,
   "counts": {
     "ARCHIVE_CANDIDATE": 6,
     "EXTRACT_THEN_ARCHIVE": 112,
@@ -12,7 +12,7 @@
     "KEEP_CURRENT_STATE": 2,
     "KEEP_TECHNICAL": 27,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 172,
+    "KEEP_VAULT": 173,
     "POINTER_AFTER_RECONCILIATION": 18,
     "RECONCILE_GENERATED_PROJECTION": 9,
     "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 73
@@ -7699,6 +7699,22 @@
       "physical_change_authorized": false
     },
     {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md",
+      "sha256": "f3ba33859614da6767448d333f9c38cdfc9af620cd83c5baed8b668fd4410f0b",
+      "physical_lines": 38,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "tests/test_vault_cutover_manifest.py"
+      ],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false
+    },
+    {
       "path": "docs/09-vault-brain/10-source-map/VAULT_MIGRATION_INVENTORY.md",
       "sha256": "9c35bfa4be2f5dda12c5b5d3e63668a646b9481f43a61d6f89395ec39f05b515",
       "physical_lines": 656,
@@ -7757,9 +7773,10 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/README.md",
-      "exact_reference_count": 4,
+      "exact_reference_count": 5,
       "exact_references": [
         "docs/00-start-here/README.md",
+        "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md",
         "modules/charlie/vault_alignment.py",
         "scripts/build_vault_cutover_manifest.py",
         "tests/test_charlie_execution_bridge.py"
