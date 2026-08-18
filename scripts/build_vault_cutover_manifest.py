@@ -27,8 +27,8 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v8"
-BASELINE = "008527b8f7151ac6dc7ade72993cc252a06b1792"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v9"
+BASELINE = "6226c0615e87beb6460e51bf3145a1cbdc5079dd"
 
 BATCH9_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
@@ -52,6 +52,11 @@ BATCH11_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md",
     "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
     "docs/00-start-here/DEPLOYMENT_SOP.md",
+}
+
+BATCH12_COMPATIBILITY_POINTERS = {
+    "docs/00-start-here/CURRENT_STATE.md",
+    "docs/00-start-here/NEXT_STEPS.md",
 }
 
 CURRENT_EXTERNAL_TECHNICAL_REFERENCES = {
@@ -216,7 +221,7 @@ def _disposition(path: str, row: dict | None, exact_refs: list[str], lines: int)
         return "KEEP_CONTROLLING_EXCEPTION", path, "registered cross-system controlling exception", []
     if path in CURRENT_STATE_FILES:
         return "KEEP_CURRENT_STATE", path, "durable current-state record; history split is later work", []
-    if path in BATCH9_COMPATIBILITY_POINTERS | BATCH10_COMPATIBILITY_POINTERS | BATCH11_COMPATIBILITY_POINTERS:
+    if path in BATCH9_COMPATIBILITY_POINTERS | BATCH10_COMPATIBILITY_POINTERS | BATCH11_COMPATIBILITY_POINTERS | BATCH12_COMPATIBILITY_POINTERS:
         return "KEEP_POINTER", _vault_target(path), "minimal compatibility pointer; cannot govern agents", []
     if path == "CLAUDE.md":
         return "POINTER_AFTER_RECONCILIATION", "docs/09-vault-brain/README.md", "obsolete root guidance must become a short Vault pointer after unique developer commands are retained", ["unique_fact_reconciliation_required"]
@@ -298,7 +303,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 11 reconciled three technical operating contracts into focused Vault workflow/standard files and retained minimal compatibility pointers; no deletion, runtime, provider, authority, or production change",
+        "owner_boundary": "Batch 12 reconciled two stale current-state/roadmap projections and retained minimal compatibility pointers; no deletion, runtime, provider, authority, or production change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -344,7 +349,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: regenerated after approved Batch 11 technical-contract cutover; no further physical change authorized.",
+        "Status: regenerated after approved Batch 12 current-state/roadmap cutover; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -352,7 +357,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records completed Batches 5 through 11 and proposes later",
+        "This manifest records completed Batches 5 through 12 and proposes later",
         "dispositions only. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
@@ -378,6 +383,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "- Seven legacy navigation/process paths are minimal non-doctrine compatibility pointers to the Vault.",
         "- Five root/status/navigation paths are minimal non-doctrine compatibility pointers with required technical facts retained.",
         "- Three legacy runner/mission/deployment paths are compatibility pointers after current procedures were consolidated into focused Vault files.",
+        "- Two stale current-state/roadmap projections are compatibility pointers to the durable register and Vault mission workflow.",
         "- No later physical change is authorized by this regenerated manifest.",
         "",
         "## Exact non-keep review queue",

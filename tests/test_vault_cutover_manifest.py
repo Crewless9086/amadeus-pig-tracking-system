@@ -48,6 +48,10 @@ BATCH11_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
     "docs/00-start-here/DEPLOYMENT_SOP.md",
 }
+BATCH12_COMPATIBILITY_POINTERS = {
+    "docs/00-start-here/CURRENT_STATE.md",
+    "docs/00-start-here/NEXT_STEPS.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -174,6 +178,17 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("Runner And Orchestration Contract", workflow)
         self.assertIn("charlie_runner_control.py", workflow)
         self.assertIn("Never use `git add .`", deployment)
+
+    def test_batch12_replaces_stale_state_and_roadmap_with_pointers(self):
+        for path in BATCH12_COMPATIBILITY_POINTERS:
+            entry = self.entries[path]
+            self.assertEqual(entry["disposition"], "KEEP_POINTER")
+            self.assertLessEqual(entry["physical_lines"], 15)
+            text = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn("POINTER_ONLY / NON_DOCTRINE", text)
+            self.assertIn("CONTROL_TOWER_MISSION_REGISTER.md", text)
+        fallback = (ROOT / "docs/00-start-here/NEXT_STEPS.md").read_text(encoding="utf-8")
+        self.assertIn("P0 compatibility fallback", fallback)
 
 
 if __name__ == "__main__":

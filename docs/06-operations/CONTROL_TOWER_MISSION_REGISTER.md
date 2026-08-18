@@ -748,3 +748,18 @@ NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
 No deletion, runtime, activation, deployment, provider, production-data or
 authority change occurred. Automatic promotion requires a fresh bounded owner
 authorization using the regenerated manifest.
+
+### Vault Cutover Batch 12 - 2026-08-18
+
+Owner approved the current-state and roadmap reconciliation slice. The two
+large start-here projections were read completely and reference-audited, then
+reduced to compatibility pointers after current mission truth was confirmed as
+the responsibility of this durable register and fresh runtime evidence.
+
+Lifecycle: `WORKING / BATCH_12_STATE_ROADMAP_POINTERS_COMPLETE /
+NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
+
+No unique doctrine was lost; dated content remains in Git history. No deletion,
+runtime, activation, deployment, provider, production-data or authority change
+occurred. `PRODUCT_VISION.md` is the final start-here projection awaiting a
+separate complete reconciliation.

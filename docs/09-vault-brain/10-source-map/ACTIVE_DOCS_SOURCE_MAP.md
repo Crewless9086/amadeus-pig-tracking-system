@@ -30,12 +30,10 @@ Current-state evidence, never reusable doctrine:
 
 - `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
 - `docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md`
-- `docs/00-start-here/CURRENT_STATE.md`
-- `docs/00-start-here/NEXT_STEPS.md`
 - `docs/00-start-here/PRODUCT_VISION.md`
 
-The three `docs/00-start-here/*` files above remain transitional owner/operator
-projections. They must be reconciled to the Vault but cannot override it.
+`PRODUCT_VISION.md` remains a transitional owner projection. It must be
+reconciled to the Vault but cannot override it.
 
 Compatibility pointers, never current state or doctrine:
 
@@ -44,6 +42,8 @@ Compatibility pointers, never current state or doctrine:
 - `docs/00-start-here/DEPLOYMENT_SOP.md`
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
 - `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`
+- `docs/00-start-here/CURRENT_STATE.md`
+- `docs/00-start-here/NEXT_STEPS.md`
 
 The similarly named
 `docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` is a historical
@@ -206,6 +206,11 @@ not grant doctrine or live-state authority. See
 Batch 11 consolidated current runner, mission and deployment procedures into
 focused Vault files and reduced their three legacy paths to compatibility
 pointers. See `VAULT_CUTOVER_BATCH11_RECONCILIATION.md`.
+
+Batch 12 reconciled the stale current-state and roadmap projections, then
+reduced both paths to compatibility pointers. Durable live mission truth now
+resolves only to the Control Tower register and fresh attributable evidence.
+See `VAULT_CUTOVER_BATCH12_RECONCILIATION.md`.
 
 - `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (non-doctrine compatibility
   pointer to current Vault review standards)

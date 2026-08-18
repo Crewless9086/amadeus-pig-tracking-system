@@ -44,10 +44,12 @@ REQUIRED_MARKERS = {
         "Revenue operating spine",
     ),
     "docs/00-start-here/CURRENT_STATE.md": (
-        "## Current continuous-operation truth",
+        "POINTER_ONLY / NON_DOCTRINE",
+        "CONTROL_TOWER_MISSION_REGISTER.md",
     ),
     "docs/00-start-here/NEXT_STEPS.md": (
-        "## Current priority — continuous deployed agents",
+        "POINTER_ONLY / NON_DOCTRINE",
+        "P0 compatibility fallback",
     ),
     "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md": (
         "Continuous Operations Acceptance Gate",

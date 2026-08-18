@@ -180,3 +180,15 @@ active interpretation.
 
 Current honest state: `TWELVE_TOTAL_COMPATIBILITY_POINTERS /
 ZERO_DELETIONS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+## Batch 12 Current-State And Roadmap Pointers - 2026-08-18
+
+The two large start-here status/roadmap projections were reconciled and reduced
+to compatibility pointers. The durable mission register is now the sole
+repository current-state record, while runtime truth still requires fresh
+attributable evidence. The legacy `/next` fallback can only direct recovery of
+the Supabase mission queue.
+
+Current honest state: `SEVENTEEN_TOTAL_COMPATIBILITY_POINTERS /
+ONE_START_HERE_PROJECTION_REMAINS / ZERO_DELETIONS /
+DEPLOYED_BRAIN_GUARD_UNPROVEN`.
