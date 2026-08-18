@@ -70,6 +70,15 @@ work. Already answered, duplicate, spam, acknowledgement-only, stale, and
 non-sales conversations remain audit evidence but leave the actionable queue.
 `can_reply=false` must be expanded into its exact provider/evidence reason.
 
+Inventory and chronology reads are bounded and conversation-isolated. A failed
+later inventory page may yield explicit partial coverage only for conversations
+whose exact row and complete chronology were loaded. One unavailable history
+quarantines that conversation. First-page loss, duplicate identities,
+account/inbox conflict, changed chronology or systemic binding failure stops the
+cohort. Before claim, revalidate chronology and claim state. After an exception,
+fresh claim-ledger evidence must prove `not_crossed`; `crossed` or
+`indeterminate` boundaries prohibit automatic retry.
+
 ## Required Facts
 
 Before a live-stock draft order can be prepared:

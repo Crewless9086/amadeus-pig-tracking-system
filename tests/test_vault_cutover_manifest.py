@@ -195,6 +195,13 @@ BATCH23_ARCHIVED_FILES = {
     "docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md",
     "docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md",
 }
+BATCH24_ARCHIVED_FILES = {
+    "docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md",
+    "docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md",
+    "docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md",
+    "docs/06-operations/SAM_MANAGER_SUMMARY_PR691_HANDOVER.md",
+    "docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -444,16 +451,28 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("Device-Class Graduation And Execution", architecture)
         self.assertIn("Authority And Evidence Precedence", rules)
 
+    def test_batch24_archives_sam_revenue_history_after_contract_reconciliation(self):
+        for source in BATCH24_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        sam = (ROOT / "docs/09-vault-brain/02-agents/sales/SAM.md").read_text(encoding="utf-8")
+        livestock = (ROOT / "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md").read_text(encoding="utf-8")
+        meat = (ROOT / "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md").read_text(encoding="utf-8")
+        self.assertIn("Inbox, Summary And Graduation Contract", sam)
+        self.assertIn("Inventory and chronology reads are bounded", livestock)
+        self.assertIn("Tracking-Only Intake And Acceptance", meat)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 57)
-        self.assertTrue(all(24 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 52)
+        self.assertTrue(all(25 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(24, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(25, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {24: 5, 25: 10, 26: 8, 27: 34}
+        expected = {25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}
         self.assertEqual(actual, expected)

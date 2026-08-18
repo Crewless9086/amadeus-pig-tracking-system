@@ -7,7 +7,7 @@ Status: `GENERATED / NON_DOCTRINE`
 - UI role label: `Customers`
 - Canonical role: Farm Sales CEO for Amadeus Farm customer/client interaction, starting with meat sales through Chatwoot/WhatsApp.
 - Canonical doctrine: `docs/09-vault-brain/02-agents/sales/SAM.md`
-- Canonical doctrine SHA-256: `5833dda4a84eac822a37b105acf815fc8e5e81f786832bae7447029fc2d6c9fb`
+- Canonical doctrine SHA-256: `8982cd25982837045a11a73e3705c5533c69be853b4a83ccc73ad38ddb496b06`
 - Asset metadata: `static/assets/agents/sam/agent.json`
 - Asset metadata SHA-256: `83324cfb8f7b35fab45010cf808c91a697bebdef72e18ba1a0389b29a4b75a66`
 - Central asset registry: `static/assets/agents/agent_registry.json`

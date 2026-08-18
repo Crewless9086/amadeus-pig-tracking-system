@@ -339,3 +339,16 @@ Current honest state: `THIRTEEN_ROOTLINE_SOURCES_ARCHIVED / 57 PHYSICAL ITEMS /
 No runtime, provider, message, database, farm, irrigation, fertiliser,
 borehole or hardware action occurred. Full cutover continues with Batches
 24-29.
+
+## Batch 24 SAM/Revenue Reconciliation - 2026-08-18
+
+Five SAM/revenue launch, inbox, completion, manager-summary and smoke documents
+were archived intact after provider isolation, claim-boundary recovery,
+aggregate summaries, reply-class graduation and Meat tracking-only acceptance
+were consolidated into focused Vault authority.
+
+Current honest state: `FIVE_SAM_REVENUE_SOURCES_ARCHIVED / 52 PHYSICAL ITEMS /
+72 TRANSITIONAL EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No customer send, provider action, order, reservation, payment, stock, farm,
+database or runtime action occurred. Full cutover continues with Batches 25-29.

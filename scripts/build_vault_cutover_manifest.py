@@ -27,8 +27,8 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v20"
-BASELINE = "73f1638fbea49e53fb8f3c983bf671742a13e450"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v21"
+BASELINE = "7b1c82765267f349ec44f4a9ca85872f99eb8dbd"
 
 BATCH9_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
@@ -362,7 +362,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 23 archives thirteen reconciled ROOTLINE plans, inventories, canaries, onboarding notes, contracts and commissioning packets after retaining current planning, device-class, authority, execution and provider/physical-verification rules in focused Vault files; it authorizes no runtime, message, provider, database, farm, irrigation, fertiliser, borehole or hardware change",
+        "owner_boundary": "Batch 24 archives five reconciled SAM/revenue launch, inbox, completion, manager-summary and smoke documents after retaining current provider-isolation, claim-boundary, aggregate-summary, reply-graduation and Meat tracking-only rules in focused Vault files; it authorizes no customer send, provider action, order, reservation, payment, stock, farm, database or runtime change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -413,7 +413,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: Batch 23 ROOTLINE reconciliation complete; no further physical change authorized.",
+        "Status: Batch 24 SAM/revenue reconciliation complete; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -421,7 +421,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records completed Batches 5 through 23 and schedules later",
+        "This manifest records completed Batches 5 through 24 and schedules later",
         "dispositions only. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
@@ -441,8 +441,8 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "",
         "## Remaining execution schedule",
         "",
-        "The remaining 57 physical-reconciliation entries are assigned",
-        "to exactly one of Batches 24 through 27. Batch 28 owns the 72 transitional",
+        "The remaining 52 physical-reconciliation entries are assigned",
+        "to exactly one of Batches 25 through 27. Batch 28 owns the 72 transitional",
         "exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.",
         "This schedule is an ordering contract, not physical-change authority.",
         "",
@@ -457,6 +457,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "| 21 | `herdmaster` | COMPLETE (22) |",
         "| 22 | `oom_sakkie` | COMPLETE (30) |",
         "| 23 | `rootline` | COMPLETE (13) |",
+        "| 24 | `sam_revenue` | COMPLETE (5) |",
     ])
     lines.extend(
         f"| {batch} | `{family}` | {count} |"
