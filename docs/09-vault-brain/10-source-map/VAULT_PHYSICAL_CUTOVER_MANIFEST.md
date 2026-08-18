@@ -1,14 +1,14 @@
 # Vault Physical Cutover Manifest
 
-Status: regenerated after approved Batch 12 current-state/roadmap cutover; no further physical change authorized.
+Status: regenerated after approved Batch 13 final start-here projection cutover; no further physical change authorized.
 
-Version: `vault_physical_cutover_manifest_v9`
-Baseline: `6226c0615e87beb6460e51bf3145a1cbdc5079dd`
-Generated from HEAD: `6226c0615e87beb6460e51bf3145a1cbdc5079dd`
-Tracked Markdown/MDX files covered: **521**
+Version: `vault_physical_cutover_manifest_v10`
+Baseline: `ffdec62eb5fa986dca8ee648043339aaead0fbce`
+Generated from HEAD: `ffdec62eb5fa986dca8ee648043339aaead0fbce`
+Tracked Markdown/MDX files covered: **522**
 Validation: **PASS**
 
-This manifest records completed Batches 5 through 12 and proposes later
+This manifest records completed Batches 5 through 13 and proposes later
 dispositions only. It does not authorize another move, archive, deletion, pointer
 rewrite, deployment, runtime action or production change. Every remaining entry
 keeps `physical_change_authorized: false`.
@@ -21,11 +21,10 @@ keeps `physical_change_authorized: false`.
 | `KEEP_ARCHIVE` | 26 |
 | `KEEP_CONTROLLING_EXCEPTION` | 2 |
 | `KEEP_CURRENT_STATE` | 2 |
-| `KEEP_POINTER` | 17 |
+| `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 31 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 180 |
-| `POINTER_AFTER_RECONCILIATION` | 1 |
+| `KEEP_VAULT` | 181 |
 | `RECONCILE_GENERATED_PROJECTION` | 9 |
 | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | 73 |
 
@@ -43,6 +42,7 @@ keeps `physical_change_authorized: false`.
 - Five root/status/navigation paths are minimal non-doctrine compatibility pointers with required technical facts retained.
 - Three legacy runner/mission/deployment paths are compatibility pointers after current procedures were consolidated into focused Vault files.
 - Two stale current-state/roadmap projections are compatibility pointers to the durable register and Vault mission workflow.
+- The final legacy product-vision projection is a compatibility pointer after durable Oom Sakkie experience rules moved into focused Vault files.
 - No later physical change is authorized by this regenerated manifest.
 
 ## Exact non-keep review queue
@@ -53,7 +53,6 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Destination / replacement | Exact refs | Blockers |
 | --- | --- | --- | ---: | --- |
-| `docs/00-start-here/PRODUCT_VISION.md` | `POINTER_AFTER_RECONCILIATION` | `docs/09-vault-brain/README.md` | 5 | unique_fact_reconciliation_required |
 | `docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md` | 0 | runbook_history_split_required |
 | `docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md` | `EXTRACT_THEN_ARCHIVE` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md` | 0 | unique_fact_extraction_required |
 | `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md` | `SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY` | `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md` | 2 | runbook_history_split_required |

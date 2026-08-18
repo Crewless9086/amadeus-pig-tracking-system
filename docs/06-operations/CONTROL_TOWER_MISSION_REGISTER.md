@@ -763,3 +763,18 @@ No unique doctrine was lost; dated content remains in Git history. No deletion,
 runtime, activation, deployment, provider, production-data or authority change
 occurred. `PRODUCT_VISION.md` is the final start-here projection awaiting a
 separate complete reconciliation.
+
+### Vault Cutover Batch 13 - 2026-08-18
+
+Owner approved the final start-here projection reconciliation. The complete
+legacy product vision was reviewed; its durable Oom Sakkie experience rules
+were consolidated into focused identity and UI standards before the path was
+reduced to a compatibility pointer.
+
+Lifecycle: `WORKING / BATCH_13_START_HERE_PROJECTIONS_COMPLETE /
+NEXT_MANIFEST_SLICE_OWNER_APPROVAL_REQUIRED`.
+
+Duplicated agent bibles, authority rules, build phases, voice-provider notes,
+asset proposals and open questions were not promoted as competing doctrine.
+They remain in Git history. No deletion, runtime, activation, deployment,
+provider, production-data or authority change occurred.

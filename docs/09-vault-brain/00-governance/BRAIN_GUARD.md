@@ -230,3 +230,11 @@ branch, deployment, incident and priority content as current evidence or
 doctrine. Current mission truth comes from the durable Control Tower register
 plus fresh attributable runtime/provider evidence; execution rules come from
 the selected Vault workflow pack.
+
+## Batch 13 Product-Vision Pointer Gate
+
+`docs/00-start-here/PRODUCT_VISION.md` is a compatibility pointer only. Brain
+Guard must reject its former agent bible, build prompt, phases, provider notes,
+asset proposal and open questions as doctrine. Oom Sakkie identity comes from
+the focused identity/agent packs; owner-facing experience comes from the UI
+Dashboard and mandatory Facelift standards.

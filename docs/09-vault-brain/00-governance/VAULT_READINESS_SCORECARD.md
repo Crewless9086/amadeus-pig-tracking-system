@@ -192,3 +192,14 @@ the Supabase mission queue.
 Current honest state: `SEVENTEEN_TOTAL_COMPATIBILITY_POINTERS /
 ONE_START_HERE_PROJECTION_REMAINS / ZERO_DELETIONS /
 DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+## Batch 13 Final Start-Here Projection - 2026-08-18
+
+The legacy product vision was reconciled into focused Oom Sakkie identity and
+UI standards and reduced to a compatibility pointer. All three former
+start-here projections are now non-doctrine pointers; no live-looking roadmap
+or product brief remains in the active authority map.
+
+Current honest state: `EIGHTEEN_TOTAL_COMPATIBILITY_POINTERS /
+ZERO_START_HERE_PROJECTIONS_REMAIN / ZERO_DELETIONS /
+DEPLOYED_BRAIN_GUARD_UNPROVEN`.

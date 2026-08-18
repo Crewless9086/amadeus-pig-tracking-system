@@ -296,3 +296,12 @@ durable Control Tower register and focused Vault mission workflow. Their dated
 content remains in Git history, and the `NEXT_STEPS.md` compatibility fallback
 cannot offer obsolete missions. `PRODUCT_VISION.md` remains for a later bounded
 reconciliation. No runtime or production effect occurred.
+
+## Vault Cutover Batch 13 - Final Start-Here Projection
+
+Status: `SLICE_COMPLETE / ONE POINTER / ZERO DELETIONS`.
+
+The product-vision path now routes to focused Oom Sakkie identity and UI
+standards. Unique durable experience principles were retained; duplicated
+agent, provider, phase and asset material remains only in Git history. The
+start-here projection queue is empty. No runtime or production effect occurred.
