@@ -877,3 +877,19 @@ No deletion, runtime, task, provider, mission, migration, deployment, customer,
 farm, database or hardware action occurred. The remaining physical queue is 138
 documents. Automatic promotion is Batch 20 agent mission-evidence
 reconciliation.
+
+### Vault Cutover Batch 20 - 2026-08-18
+
+Owner approved continuation. The exact manifest family contained 16 general
+operations sources. Their reusable testing, release, deployment, configuration,
+recoverable bulk-operation, UI lifecycle, purpose-review and livestock
+disclosure rules were consolidated into focused Vault authority; all 16 dated
+or placeholder sources were archived intact.
+
+Lifecycle: `WORKING / BATCH_20_GENERAL_OPERATIONS_COMPLETE /
+BATCHES_21_TO_29_REMAIN`.
+
+No deletion, runtime, mission, configuration, migration, deployment, provider,
+customer, farm, database or hardware action occurred. The remaining physical
+queue is 122 documents. Automatic promotion is Batch 21 HERDMASTER
+reconciliation.

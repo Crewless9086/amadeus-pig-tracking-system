@@ -106,6 +106,24 @@ BATCH19_ARCHIVED_FILES = {
     "docs/06-operations/CORE_PROVIDER_ORIGIN_ACTIVATION_RAIL.md",
     "docs/06-operations/MISSION_LOOP_CONTRACT.md",
 }
+BATCH20_ARCHIVED_FILES = {
+    "docs/06-operations/CODEX_CHAT_WORKFLOW.md",
+    "docs/06-operations/CONTINUOUS_AGENT_ALIGNMENT_AUDIT_20260817.md",
+    "docs/06-operations/FARM_OPERATING_DASHBOARD_V2_PLAN.md",
+    "docs/06-operations/OP004_LIVE_TRANSFER_DISCLOSURE_CONTRACT_20260816.md",
+    "docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
+    "docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",
+    "docs/06-operations/PARINGS_EN_WERPSEL_LIFECYCLE_REDESIGN_PLAN.md",
+    "docs/06-operations/PHASE_0_CONFIGURATION_GOVERNANCE_BASELINE.md",
+    "docs/06-operations/PHASE_1_SAFE_NAMESPACE_MIGRATION.md",
+    "docs/06-operations/PIG_PROFILE_LIFE_RECORD_UI_PLAN_20260811.md",
+    "docs/06-operations/README.md",
+    "docs/06-operations/RELEASE_CHECKLIST.md",
+    "docs/06-operations/RUNBOOK.md",
+    "docs/06-operations/TESTING_CHECKLIST.md",
+    "docs/06-operations/TROUBLESHOOTING.md",
+    "docs/06-operations/goals/README.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -305,17 +323,30 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
         self.assertIn("Executive liveness and recovery", workflow)
         self.assertIn("Dependency retirement and scheduler singularity", deployment)
 
+    def test_batch20_archives_general_operations_after_contract_reconciliation(self):
+        for source in BATCH20_ARCHIVED_FILES:
+            self.assertNotIn(source, self.entries)
+            archived = f"docs/99-archive/vault-cutover/{source}"
+            self.assertEqual(self.entries[archived]["disposition"], "KEEP_ARCHIVE")
+        testing = (ROOT / "docs/09-vault-brain/07-standards/TESTING_STANDARD.md").read_text(encoding="utf-8")
+        release = (ROOT / "docs/09-vault-brain/04-workflows/RELEASE_WORKFLOW.md").read_text(encoding="utf-8")
+        live_fix = (ROOT / "docs/09-vault-brain/05-playbooks/LIVE_OPERATIONS_FIX.md").read_text(encoding="utf-8")
+        livestock = (ROOT / "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md").read_text(encoding="utf-8")
+        self.assertIn("Partial completion must never be", testing)
+        self.assertIn("Required Release Journey", release)
+        self.assertIn("durable operation and row ledger", live_fix)
+        self.assertIn("does not by itself prove or prohibit live transfer", livestock)
+
     def test_batch14_schedule_tracks_every_remaining_physical_item_once(self):
         remaining = [entry for entry in self.entries.values()
                      if entry["disposition"] in MODULE.REMAINING_PHYSICAL_DISPOSITIONS]
-        self.assertEqual(len(remaining), 138)
-        self.assertTrue(all(20 <= entry["planned_batch"] <= 27 for entry in remaining))
+        self.assertEqual(len(remaining), 122)
+        self.assertTrue(all(21 <= entry["planned_batch"] <= 27 for entry in remaining))
         self.assertTrue(all(entry["reconciliation_family"] for entry in remaining))
-        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(20, 28)))
+        self.assertEqual({entry["planned_batch"] for entry in remaining}, set(range(21, 28)))
 
     def test_batch14_schedule_has_exact_family_counts(self):
-        expected = {20: 16, 21: 22,
-                    22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
+        expected = {21: 22, 22: 30, 23: 13, 24: 5, 25: 10, 26: 8, 27: 34}
         actual = {batch: sum(entry["planned_batch"] == batch for entry in self.entries.values())
                   for batch in expected}
         self.assertEqual(actual, expected)

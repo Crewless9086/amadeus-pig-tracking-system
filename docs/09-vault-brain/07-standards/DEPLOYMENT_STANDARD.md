@@ -53,6 +53,13 @@ their normalized values must agree or startup fails closed. Retirement requires
 a staged rollout: add the canonical key, prove parity locally and in the hosted
 environment, retain rollback, then remove the alias in a later reviewed change.
 
+Configuration inventory and diagnostics record key names, ownership, plane and
+status only—never values. Dynamic key families are discovered from the actual
+environment and runtime reader, not an incomplete literal-name scan. A
+successful compatibility rollout retains legacy names through the observation
+window; retirement remains a separate owner-reviewed change with current
+caller and rollback proof.
+
 The release report identifies exact changed files, tracked/untracked state,
 tests and outcomes, migration/data-write status, rollback, and confirmation that
 unrelated owner files were untouched.

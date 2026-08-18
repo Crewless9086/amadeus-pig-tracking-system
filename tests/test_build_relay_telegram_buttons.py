@@ -216,12 +216,11 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
     def test_loop_6_5_docs_mark_supabase_primary_and_gpt_5_6_disabled(self):
         contract = Path("docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md").read_text(encoding="utf-8")
         build_relay = Path("docs/09-vault-brain/01-identity/CHARLIE_CORE.md").read_text(encoding="utf-8")
-        workflow = Path("docs/06-operations/CODEX_CHAT_WORKFLOW.md").read_text(encoding="utf-8")
-        combined = "\n".join([contract, build_relay, workflow])
+        combined = "\n".join([contract, build_relay])
 
-        self.assertIn("Supabase `charlie_missions`", combined)
-        self.assertIn("CODEX_CHAT.md` is manual", combined)
         self.assertIn("Supabase mission records are the sole durable queue", combined)
+        self.assertIn("`planning/CODEX_CHAT.md`", combined)
+        self.assertIn("explicit local/manual", combined)
         self.assertIn("Model routing is provider-aware", combined)
         self.assertIn("no model approves its own work", combined)
 

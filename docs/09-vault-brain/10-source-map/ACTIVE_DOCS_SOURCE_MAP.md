@@ -120,10 +120,11 @@ They are not agent doctrine and must not enter a mandatory pack.
 
 ## Operations And Evidence
 
-- `docs/06-operations/RUNBOOK.md`
-- `docs/06-operations/TESTING_CHECKLIST.md`
-- `docs/06-operations/RELEASE_CHECKLIST.md`
-- `docs/06-operations/TROUBLESHOOTING.md`
+- `docs/09-vault-brain/04-workflows/RELEASE_WORKFLOW.md`
+- `docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md`
+- `docs/09-vault-brain/07-standards/TESTING_STANDARD.md`
+- `docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md`
+- `docs/09-vault-brain/05-playbooks/LIVE_OPERATIONS_FIX.md`
 - `docs/09-vault-brain/04-workflows/SUPABASE_MIGRATION_WORKFLOW.md`
 - `docs/09-vault-brain/05-playbooks/DATA_MIGRATION.md`
 - `docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md`
@@ -179,6 +180,12 @@ family. No tracked legacy AI document remains active. See
 `VAULT_CUTOVER_BATCH6_RECONCILIATION.md` for the unique-fact disposition.
 
 ## Archived After Migration
+
+Batch 20 archived sixteen general-operations plans, dated evidence/checklists,
+configuration migrations and placeholder runbooks under
+`docs/99-archive/vault-cutover/docs/06-operations/`. Current testing, release,
+deployment, UI, migration, livestock-disclosure and live-fix rules now resolve
+only through the focused Vault authorities above.
 
 Batch 19 archived the dated CORE operating-spine, Build Relay, private
 executive, runtime-recovery, activation and dependency-retirement evidence under
