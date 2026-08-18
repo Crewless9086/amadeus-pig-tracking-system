@@ -829,3 +829,19 @@ BATCHES_17_TO_29_REMAIN`.
 No deletion, runtime, activation, deployment, provider, production-data,
 customer, farm or hardware change occurred. The remaining physical queue is 178
 documents. Automatic promotion is Batch 17 Sheets-migration reconciliation.
+
+### Vault Cutover Batch 17 - 2026-08-18
+
+Owner approved the 12-file Google Sheets migration reconciliation slice. The
+current Supabase-first boundary, import lineage, duplicate/conflict handling,
+shadow comparison, route cutover, rollback and fallback-retirement gates were
+consolidated into focused Vault workflow, playbook and data contracts. All 12
+dated GS-MIG sources were archived intact and removed from the active map.
+
+Lifecycle: `WORKING / BATCH_17_SHEETS_MIGRATION_COMPLETE /
+BATCHES_18_TO_29_REMAIN`.
+
+No deletion, migration, import, Sheets/Supabase write, route cutover, fallback
+retirement, deployment, provider, customer, farm or hardware action occurred.
+The remaining physical queue is 166 documents. Automatic promotion is Batch 18
+CORE mission-evidence reconciliation.

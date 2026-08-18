@@ -40,6 +40,6 @@ Write the next concept/problem/improvement here if it is not already in `plannin
 - 2026-06-30: CHARLIE command-console mission protocol moved into active build. Telegram and `planning/CODEX_CHAT.md` will share `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`; approve/pause/reject commands record decisions only.
 - 2026-06-30: CHARLIE mission queue and owner notification helper moved into active build on `charlie-relay-mission-queue`. Supabase mission queue migration was applied; Telegram remains non-executing.
 - 2026-06-30: CHARLIE Build Relay v0 mission accepted from `planning/CODEX_CHAT.md`. Scope is owner-only Telegram command/notification relay with strict safety gates; no dangerous Telegram authority.
-- 2026-06-29: Google Sheets to Supabase migration closeout was logged in `docs/06-operations/GS_MIG_FINAL_AUDIT.md`.
+- 2026-06-29: Google Sheets to Supabase migration closeout evidence is archived at `docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_FINAL_AUDIT.md`; current rules live in the focused Vault migration/data pack.
 - 2026-06-29: PR #39 merged as `66f7f71 Complete Google Sheets migration final audit (#39)`.
 - Current status: no remaining Google Sheets caller is classified as an active app route that still must be migrated. Remaining callers are safe fallback only, import/export/admin tooling, legacy/reference wrappers, or tests.

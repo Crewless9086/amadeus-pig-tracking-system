@@ -19,3 +19,11 @@
   deployment standards.
 - Archived the two dated ADR wrappers and the completed legacy migration index
   intact. The physical-cutover manifest is now the current migration ledger.
+
+2026-08-18 - Vault Cutover Batch 17:
+
+- Consolidated current Sheets/Supabase migration, provenance, conflict,
+  fallback and retirement safeguards into the focused Vault migration/data pack.
+- Removed two dated migration documents from the active source map.
+- Archived all 12 GS-MIG plans/reports intact; none is current doctrine or live
+  state evidence after this cutover.

@@ -1,20 +1,20 @@
 {
-  "version": "vault_physical_cutover_manifest_v13",
-  "baseline": "fc195acab2db88aba7c759ea31bcdc6674a94fe1",
-  "generated_from_head": "fc195acab2db88aba7c759ea31bcdc6674a94fe1",
-  "owner_boundary": "Batch 16 archives three reconciled decision/index wrappers after retaining their durable facts in focused Vault files; it authorizes no runtime, provider, business, farm, customer, or hardware change",
-  "entry_count": 525,
+  "version": "vault_physical_cutover_manifest_v14",
+  "baseline": "f7237d83e846eb91dfda7cade39a2647b26c732c",
+  "generated_from_head": "f7237d83e846eb91dfda7cade39a2647b26c732c",
+  "owner_boundary": "Batch 17 archives twelve reconciled Google Sheets migration plans/reports after retaining current migration, conflict, fallback and retirement rules in focused Vault files; it authorizes no runtime, provider, business, farm, customer or hardware change",
+  "entry_count": 526,
   "counts": {
-    "EXTRACT_THEN_ARCHIVE": 105,
-    "KEEP_ARCHIVE": 29,
+    "EXTRACT_THEN_ARCHIVE": 98,
+    "KEEP_ARCHIVE": 41,
     "KEEP_CONTROLLING_EXCEPTION": 2,
     "KEEP_CURRENT_STATE": 2,
     "KEEP_GENERATED_PROJECTION": 9,
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 31,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 184,
-    "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 73
+    "KEEP_VAULT": 185,
+    "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY": 68
   },
   "entries": [
     {
@@ -178,13 +178,13 @@
       "exact_references": [
         "docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
         "docs/06-operations/CODEX_CHAT_WORKFLOW.md",
-        "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/06-operations/MISSION_LOOP_CONTRACT.md",
         "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
         "docs/09-vault-brain/01-identity/CHARLIE.md",
         "docs/09-vault-brain/02-agents/owner-command/CHARLIE.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH12_RECONCILIATION.md",
+        "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
@@ -291,7 +291,6 @@
         "docs/04-n8n/workflows/2.1 - Amadeus Weather Sub-Agent/README.md",
         "docs/06-operations/BUILD_RELAY.md",
         "docs/06-operations/CODEX_CHAT_WORKFLOW.md",
-        "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/06-operations/MISSION_LOOP_CONTRACT.md",
         "docs/06-operations/goals/README.md",
         "docs/08-business-modules/PORK_SALES_MODEL.md",
@@ -299,6 +298,7 @@
         "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH12_RECONCILIATION.md",
+        "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/mission_store.py",
@@ -2959,8 +2959,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "94cb7878f2b3d2b1f773d128383a51de87bd56034c219597b3709ee29c1b334e",
-      "physical_lines": 831,
+      "sha256": "9291608d3b8677a88f4c37b2e82d591b90ec46284207cdcb54cc6ec6a9a015a8",
+      "physical_lines": 847,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -3043,230 +3043,6 @@
       "physical_change_authorized": false,
       "planned_batch": null,
       "reconciliation_family": null
-    },
-    {
-      "path": "docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md",
-      "sha256": "8157694e6667a340cd79d02aecb1e2e5a9ff21348c1e70b4d2574a478a00ce68",
-      "physical_lines": 367,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
-      ],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
-      "sha256": "40ebbcbcaf77da2ad24fdef1d0a47df86cdd39a2c5ae1008e781701556529c06",
-      "physical_lines": 131,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_2_RECONCILIATION_REPORT.md",
-      "sha256": "6cc3855f46a3ac6e34e4c56a458752dd426da19869f738cd8c9fc91a5cfb9c16",
-      "physical_lines": 170,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_2_RECONCILIATION_REPORT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_3A_DATA_ISSUE_REVIEW.md",
-      "sha256": "4c93ca01ff92f50b192245665d1e097bf61a64e15ce240303f329b44e787a2eb",
-      "physical_lines": 151,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3A_DATA_ISSUE_REVIEW.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_3B_IMPORT_POLICY_DECISIONS.md",
-      "sha256": "9121fbd697a8f3663c6fcc229296ca69b3f5ad397d4ef9641e706ac59161dbe1",
-      "physical_lines": 81,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3B_IMPORT_POLICY_DECISIONS.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_3_BACKFILL_VERIFIER_REPORT.md",
-      "sha256": "293afbc3f6f505552caab8007a2a414268c1d772a1ef2175cba41ab08908b7ca",
-      "physical_lines": 143,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3_BACKFILL_VERIFIER_REPORT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md",
-      "sha256": "d9eff73a1c50c28bef9f9723b92cdbfab7ac4cf16d397a4b5dae701dc1d801ad",
-      "physical_lines": 91,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_5_INITIAL_IMPORT_PLAN.md",
-      "sha256": "3bf4766d391758fe9553c747ce526b4e765d922452f79ba94604e9d7c2a3b7b2",
-      "physical_lines": 157,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_INITIAL_IMPORT_PLAN.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md",
-      "sha256": "60c1cff246e3de2326f351128cdd59d09f29aa8f31897ad201cbdcb10a1c4002",
-      "physical_lines": 136,
-      "batch1_lifecycle": "review_queue",
-      "batch1_action": "split_active_runbook_from_history",
-      "disposition": "SPLIT_RUNBOOK_THEN_ARCHIVE_HISTORY",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md",
-      "exact_reference_count": 1,
-      "exact_references": [
-        "docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md"
-      ],
-      "reason": "retain current procedure and archive dated evidence separately",
-      "blockers": [
-        "runbook_history_split_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md",
-      "sha256": "60b4f93cff7ab8790fa9fdba1e7e80c2885777cfe744093bde0305bcd0da542b",
-      "physical_lines": 84,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md",
-      "sha256": "2b77ccb7a9a2123b3e214861924bf91ee5c8ac2f34537589b659540e5add1497",
-      "physical_lines": 168,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
-    },
-    {
-      "path": "docs/06-operations/GS_MIG_FINAL_AUDIT.md",
-      "sha256": "dbdd79bf338849e61ca8ef98dbdd22d7761d698b6a9d5f7de6cf9ffa28ed24ee",
-      "physical_lines": 173,
-      "batch1_lifecycle": "historical",
-      "batch1_action": "extract_then_archive_or_delete",
-      "disposition": "EXTRACT_THEN_ARCHIVE",
-      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_FINAL_AUDIT.md",
-      "exact_reference_count": 3,
-      "exact_references": [
-        "docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
-        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-        "planning/ToDoList.md"
-      ],
-      "reason": "extract unique durable facts, then preserve dated evidence",
-      "blockers": [
-        "unique_fact_extraction_required"
-      ],
-      "physical_change_authorized": false,
-      "planned_batch": 17,
-      "reconciliation_family": "sheets_migration"
     },
     {
       "path": "docs/06-operations/HERDMASTER_AUCTION_SALE_SOURCE_HANDOVER_20260808.md",
@@ -4273,7 +4049,7 @@
     },
     {
       "path": "docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
-      "sha256": "e0e921733bd4881c5109b1336958d04d4a6235a4af028f1a9b07847216b8fd7d",
+      "sha256": "c92f9880add76a6fa51c0b5f7405be74d8693010e2d5e3d5875447dd3c1bcffa",
       "physical_lines": 772,
       "batch1_lifecycle": "historical",
       "batch1_action": "extract_then_archive_or_delete",
@@ -5367,7 +5143,7 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
-      "sha256": "fb453e97d05c688f31f7ee1f254339a8bd48356ab1aabd84c8a40c7498a8bf87",
+      "sha256": "90d2e0ac6186f6c7f4b79192a8622888a4cf2f36fad8757fa7f2bd6a36416ef8",
       "physical_lines": 45,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -5419,8 +5195,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "8e0aab19fec4b6d031461d4b8bd34911e850a12766249b2e5de7d6e17c5d1aec",
-      "physical_lines": 243,
+      "sha256": "d95e353d1797a42e0e79e7a8c7644aff180585bb0cfa8431d45a10115cc79a69",
+      "physical_lines": 257,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -5477,7 +5253,7 @@
     },
     {
       "path": "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
-      "sha256": "b186e2ba3ebc9a8302ca2a3bafffba2535ecd32e74a213e3deb72e5c2f7f9953",
+      "sha256": "c68e952d94bbc68398c7d55ceac6c6e9cd21a7a76b1e83d464afe84b8052bc85",
       "physical_lines": 173,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -7104,14 +6880,16 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SUPABASE_MIGRATION_WORKFLOW.md",
-      "sha256": "db6493d4e746a5c0b9aedef90c17a92a5179fe6d81ee29ef8f4fa19d2f32859e",
-      "physical_lines": 12,
+      "sha256": "846d4e4c01a8a7215a0241ae11a46256d654fb1d2df874ce7774d897570e3741",
+      "physical_lines": 34,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/SUPABASE_MIGRATION_WORKFLOW.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
+      "exact_reference_count": 1,
+      "exact_references": [
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
+      ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
       "physical_change_authorized": false,
@@ -7187,14 +6965,15 @@
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/DATA_MIGRATION.md",
-      "sha256": "212af84c6cf12d4ea5ffb2195feb07a4330a836ff0688e1c46ca42f63b4f05b5",
-      "physical_lines": 30,
+      "sha256": "cef5033e98cf82f8157f3ebab03a9745944b3f88247dcc91eecc14dfb86754ee",
+      "physical_lines": 36,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/05-playbooks/DATA_MIGRATION.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 3,
       "exact_references": [
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/vault_retrieval.py"
       ],
@@ -7408,14 +7187,17 @@
     },
     {
       "path": "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
-      "sha256": "9b797591f96d013ca7178dfde017c16f42f8cddb6737bece37c3fa3575d7dbdc",
-      "physical_lines": 42,
+      "sha256": "082ad7466cd62164be231a66ff55371f1e3742bd41a6e7925c0bbf6b6c8eb152",
+      "physical_lines": 52,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
-      "exact_reference_count": 0,
-      "exact_references": [],
+      "exact_reference_count": 2,
+      "exact_references": [
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+        "tests/test_vault_cutover_manifest.py"
+      ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
       "physical_change_authorized": false,
@@ -7477,16 +7259,18 @@
     },
     {
       "path": "docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md",
-      "sha256": "53242e65532a2fc36d062d92cafa8831c2ff3622ba08bb9395432ca9aec550ee",
-      "physical_lines": 103,
+      "sha256": "c22fb1910bddf31525820e3b35fa21b90412fde90f6488b68e9e3d90f89d368e",
+      "physical_lines": 124,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md",
-      "exact_reference_count": 2,
+      "exact_reference_count": 4,
       "exact_references": [
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "modules/charlie/execution_bridge.py",
-        "modules/charlie/vault_retrieval.py"
+        "modules/charlie/vault_retrieval.py",
+        "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -7632,7 +7416,7 @@
     },
     {
       "path": "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
-      "sha256": "1a3fcbc37b98c1cb22622c3339571c276562f46160746c646fa79d1d099aaa00",
+      "sha256": "fa746bb0b02c2eb6679daf5d995cfbe618ee2e57a2087b8e99541c27c0522b62",
       "physical_lines": 71,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -8305,8 +8089,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "536ff0263ac87799671a54ca333a9d7b9cf120c435c43f9f941cd270512ff654",
-      "physical_lines": 218,
+      "sha256": "03ab638e2f952c3d59dc2b678d7d388b669188c113dbd49613da30ac3bceea80",
+      "physical_lines": 220,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -8365,8 +8149,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
-      "sha256": "424315f49969e16d1dd7d96b7a87747564d3e2d7c1ed30da24cb10b6d0390808",
-      "physical_lines": 21,
+      "sha256": "781632f81c5715d9514949cd761b5832321972c2c20b6303e549f617eb9dffa8",
+      "physical_lines": 29,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -8509,12 +8293,28 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH16_RECONCILIATION.md",
-      "sha256": "c5c6847787f4305d95c9096ab9002eb0b977a87226909fbd6d43d7f584c02671",
+      "sha256": "9188714b44a80a37568970eb59832a915c258b5bac2d4b31f5ab905f0d14756f",
       "physical_lines": 36,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH16_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH17_RECONCILIATION.md",
+      "sha256": "a25776fe3bb75f894d5fe2649f9e2ae19a9f2bdbaf8facd86d3d3f37aa5b1391",
+      "physical_lines": 36,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH17_RECONCILIATION.md",
       "exact_reference_count": 0,
       "exact_references": [],
       "reason": "canonical Vault doctrine/reference",
@@ -9086,6 +8886,203 @@
       "reconciliation_family": null
     },
     {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md",
+      "sha256": "8157694e6667a340cd79d02aecb1e2e5a9ff21348c1e70b4d2574a478a00ce68",
+      "physical_lines": 367,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
+      "sha256": "40ebbcbcaf77da2ad24fdef1d0a47df86cdd39a2c5ae1008e781701556529c06",
+      "physical_lines": 131,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_2_RECONCILIATION_REPORT.md",
+      "sha256": "6cc3855f46a3ac6e34e4c56a458752dd426da19869f738cd8c9fc91a5cfb9c16",
+      "physical_lines": 170,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_2_RECONCILIATION_REPORT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3A_DATA_ISSUE_REVIEW.md",
+      "sha256": "4c93ca01ff92f50b192245665d1e097bf61a64e15ce240303f329b44e787a2eb",
+      "physical_lines": 151,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3A_DATA_ISSUE_REVIEW.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3B_IMPORT_POLICY_DECISIONS.md",
+      "sha256": "9121fbd697a8f3663c6fcc229296ca69b3f5ad397d4ef9641e706ac59161dbe1",
+      "physical_lines": 81,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3B_IMPORT_POLICY_DECISIONS.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3_BACKFILL_VERIFIER_REPORT.md",
+      "sha256": "293afbc3f6f505552caab8007a2a414268c1d772a1ef2175cba41ab08908b7ca",
+      "physical_lines": 143,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3_BACKFILL_VERIFIER_REPORT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md",
+      "sha256": "d9eff73a1c50c28bef9f9723b92cdbfab7ac4cf16d397a4b5dae701dc1d801ad",
+      "physical_lines": 91,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_INITIAL_IMPORT_PLAN.md",
+      "sha256": "3bf4766d391758fe9553c747ce526b4e765d922452f79ba94604e9d7c2a3b7b2",
+      "physical_lines": 157,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_INITIAL_IMPORT_PLAN.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md",
+      "sha256": "60c1cff246e3de2326f351128cdd59d09f29aa8f31897ad201cbdcb10a1c4002",
+      "physical_lines": 136,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md"
+      ],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md",
+      "sha256": "60b4f93cff7ab8790fa9fdba1e7e80c2885777cfe744093bde0305bcd0da542b",
+      "physical_lines": 84,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md",
+      "sha256": "2b77ccb7a9a2123b3e214861924bf91ee5c8ac2f34537589b659540e5add1497",
+      "physical_lines": 168,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
+      "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_FINAL_AUDIT.md",
+      "sha256": "dbdd79bf338849e61ca8ef98dbdd22d7761d698b6a9d5f7de6cf9ffa28ed24ee",
+      "physical_lines": 173,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_ARCHIVE",
+      "destination_or_replacement": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_FINAL_AUDIT.md",
+      "exact_reference_count": 2,
+      "exact_references": [
+        "docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
+        "planning/ToDoList.md"
+      ],
+      "reason": "already physically archived",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null
+    },
+    {
       "path": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md",
       "sha256": "524f0002bf41705dab69f700f911649e9b7a5be28a1f1465ad2d19b78b8f359d",
       "physical_lines": 22,
@@ -9333,7 +9330,7 @@
     },
     {
       "path": "planning/ToDoList.md",
-      "sha256": "e0eb1185f37b08e289ddb08481e4eb78dc9d30c65fc076b2f9a2877972fc9392",
+      "sha256": "c172eef36b93278d5a71e47102a176c066a16afd9ca77f61623ab29422d5c614",
       "physical_lines": 45,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "extract_then_archive_or_delete",
@@ -9341,10 +9338,10 @@
       "destination_or_replacement": "docs/99-archive/vault-cutover/planning/ToDoList.md",
       "exact_reference_count": 8,
       "exact_references": [
-        "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",
         "docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
         "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
+        "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
         "planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
         "planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
@@ -10219,9 +10216,9 @@
       "destination_or_replacement": "supabase/migrations/README.md",
       "exact_reference_count": 3,
       "exact_references": [
-        "docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
         "docs/06-operations/TESTING_CHECKLIST.md",
-        "docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md"
+        "docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md",
+        "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md"
       ],
       "reason": "retain beside implementation; cannot govern agents",
       "blockers": [],

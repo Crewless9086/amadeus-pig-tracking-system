@@ -16,12 +16,18 @@ Use additive migrations, dry-run/reconciliation, rollback plan, verification que
 10. Cut over reads behind a controlled route/flag only after comparison passes.
 11. Cut over writes only after rollback/operator views are accepted.
 12. Update Vault and source map.
+13. Classify every remaining legacy caller as active route, compatibility
+    fallback, import/export/admin, reference-only or test-only.
+14. Retire fallback only after a fresh stability-window and rollback review;
+    do not treat completed route cutover as automatic deletion authority.
 
 ## Hard Stops
 
 - No destructive migration without exact approval.
 - No production write when the source-of-truth boundary is unclear.
 - No sheet cleanup before backup/import/compare acceptance.
+- No conflicting or identity-ambiguous source row may silently become
+  canonical truth; retain it in governed review/quarantine evidence.
 
 ## Source References
 
