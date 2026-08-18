@@ -450,6 +450,8 @@ For income, SAM, Beacon, order, WhatsApp, Chatwoot, n8n, or live-sales missions,
 Current implementation and review surface:
 
 - operating contract:
+  `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md`;
+- legacy compatibility pointer:
   `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`;
 - scoring and packet construction:
   `modules/charlie/adaptive_orchestration.py`,

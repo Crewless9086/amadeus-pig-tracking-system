@@ -64,4 +64,5 @@ CHARLIE must not:
 
 CHARLIE is for Charl. Telegram or future voice control must remain owner-only unless Charl explicitly approves additional access.
 
-Source references: `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`, `docs/00-start-here/CURRENT_STATE.md`.
+Historical source evidence: `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`,
+`docs/00-start-here/CURRENT_STATE.md`. These paths do not govern this agent.

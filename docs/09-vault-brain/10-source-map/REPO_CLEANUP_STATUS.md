@@ -277,3 +277,12 @@ The root Claude guidance, asset register, two dated status files and owner inbox
 guide now contain only minimal compatibility/technical routing. Their original
 content remains in Git history. No runtime, provider, production-data or
 authority change occurred.
+
+## Vault Cutover Batch 11 - Technical Operating Contracts
+
+Status: `SLICE_COMPLETE / THREE POINTERS / ZERO DELETIONS`.
+
+The legacy runner, mission protocol and deployment SOP now point to focused
+current Vault contracts. Required runner and release procedures were first
+consolidated into those existing files. No runtime, activation, deployment,
+provider, production-data or authority change occurred.

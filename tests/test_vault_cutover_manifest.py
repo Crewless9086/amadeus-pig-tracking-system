@@ -43,6 +43,11 @@ BATCH10_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/OPERATING_STATUS.md",
     "docs/00-start-here/OWNER_INBOX_GUIDE.md",
 }
+BATCH11_COMPATIBILITY_POINTERS = {
+    "docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md",
+    "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
+    "docs/00-start-here/DEPLOYMENT_SOP.md",
+}
 SPEC = importlib.util.spec_from_file_location(
     "build_vault_cutover_manifest",
     ROOT / "scripts" / "build_vault_cutover_manifest.py",
@@ -157,6 +162,18 @@ class VaultPhysicalCutoverManifestTests(unittest.TestCase):
             "static/assets/agents/",
             (ROOT / "docs/00-start-here/AGENT_ASSET_REGISTER.md").read_text(encoding="utf-8"),
         )
+
+    def test_batch11_reconciles_technical_contracts_before_pointer_cutover(self):
+        for path in BATCH11_COMPATIBILITY_POINTERS:
+            entry = self.entries[path]
+            self.assertEqual(entry["disposition"], "KEEP_POINTER")
+            self.assertLessEqual(entry["physical_lines"], 15)
+            self.assertIn("POINTER_ONLY / NON_DOCTRINE", (ROOT / path).read_text(encoding="utf-8"))
+        workflow = (ROOT / "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md").read_text(encoding="utf-8")
+        deployment = (ROOT / "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md").read_text(encoding="utf-8")
+        self.assertIn("Runner And Orchestration Contract", workflow)
+        self.assertIn("charlie_runner_control.py", workflow)
+        self.assertIn("Never use `git add .`", deployment)
 
 
 if __name__ == "__main__":
