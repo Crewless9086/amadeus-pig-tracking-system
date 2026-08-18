@@ -27,8 +27,13 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v24"
-BASELINE = "d612c520f51931404d91126078337261596a03ef"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v25"
+BASELINE = "3819db4a27fd2680d57242742b7b7f8490d4008a"
+
+TRANSITIONAL_EXIT_TESTS = {
+    "docs/03-google-sheets/": "GS-LEGACY-RETIREMENT-V1",
+    "docs/04-n8n/": "N8N-LEGACY-RETIREMENT-V1",
+}
 
 BATCH9_COMPATIBILITY_POINTERS = {
     "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
@@ -110,6 +115,13 @@ def _planned_batch(path: str, disposition: str) -> tuple[int | None, str | None]
     if re.search(r"/(CHARLIE_|CORE_PROVIDER_|MISSION_LOOP_|AGENTIC_|BUILD_RELAY)", path):
         return 19, "core_operating_spine"
     return 20, "general_operations"
+
+
+def _transitional_exit_test(path: str) -> tuple[str | None, str | None]:
+    for prefix, exit_test_id in TRANSITIONAL_EXIT_TESTS.items():
+        if path.startswith(prefix):
+            return exit_test_id, "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
+    return None, None
 
 CURRENT_EXTERNAL_TECHNICAL_REFERENCES = {
     "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
@@ -344,6 +356,7 @@ def build_manifest() -> dict:
         lines = _physical_lines(source)
         disposition, destination, reason, blockers = _disposition(path, row, refs, lines)
         planned_batch, reconciliation_family = _planned_batch(path, disposition)
+        exit_test_id, exit_test_status = _transitional_exit_test(path)
         entries.append(
             {
                 "path": path,
@@ -360,6 +373,8 @@ def build_manifest() -> dict:
                 "physical_change_authorized": False,
                 "planned_batch": planned_batch,
                 "reconciliation_family": reconciliation_family,
+                "exit_test_id": exit_test_id,
+                "exit_test_status": exit_test_status,
             }
         )
     counts = Counter(entry["disposition"] for entry in entries)
@@ -367,7 +382,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "Batch 26 archives eight historical planning/inbox sources intact, retains only minimal non-doctrine CODEX_CHAT and ToDoList compatibility scratchpads, and routes durable mission, CORE and SAM authority to focused Vault/register sources; it authorizes no mission execution, runtime, customer, provider, farm, database or hardware change",
+        "owner_boundary": "Batch 28 binds all 72 current Google Sheets and n8n technical documents to explicit retirement tests; both tests remain blocked by proven runtime dependencies, so no transitional source is archived or elevated to doctrine; no runtime, provider, database, customer, farm or hardware change is authorized",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -404,8 +419,15 @@ def validate_manifest(manifest: dict) -> list[str]:
                 findings.append(f"delete candidate lacks exact replacement: {path}")
             if "owner_approval_required" not in entry.get("blockers", []):
                 findings.append(f"delete candidate lacks owner gate: {path}")
-        if entry.get("disposition") == "KEEP_TRANSITIONAL" and "exit_test_unproven" not in entry.get("blockers", []):
-            findings.append(f"transitional file lacks exit-test blocker: {path}")
+        if entry.get("disposition") == "KEEP_TRANSITIONAL":
+            if "exit_test_unproven" not in entry.get("blockers", []):
+                findings.append(f"transitional file lacks exit-test blocker: {path}")
+            if entry.get("exit_test_id") not in set(TRANSITIONAL_EXIT_TESTS.values()):
+                findings.append(f"transitional file lacks named exit test: {path}")
+            if entry.get("exit_test_status") != "BLOCKED_CURRENT_RUNTIME_DEPENDENCY":
+                findings.append(f"transitional file has dishonest exit status: {path}")
+        elif entry.get("exit_test_id") is not None or entry.get("exit_test_status") is not None:
+            findings.append(f"non-transitional file received an exit test: {path}")
         if entry.get("disposition") in REMAINING_PHYSICAL_DISPOSITIONS:
             if not isinstance(entry.get("planned_batch"), int) or not entry.get("reconciliation_family"):
                 findings.append(f"remaining physical item lacks a planned batch: {path}")
@@ -418,7 +440,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: Batch 27 Storyworks reconciliation complete; no further physical change authorized.",
+        "Status: Batch 28 transitional exit-test reconciliation complete; no physical retirement authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -426,7 +448,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest records completed Batches 5 through 27 and schedules later",
+        "This manifest records completed Batches 5 through 28 and schedules later",
         "dispositions only. It does not authorize another move, archive, deletion, pointer",
         "rewrite, deployment, runtime action or production change. Every remaining entry",
         "keeps `physical_change_authorized: false`.",
@@ -446,8 +468,8 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "",
         "## Remaining execution schedule",
         "",
-        "The historical physical-reconciliation queue is complete. Batch 28 owns the 72 transitional",
-        "exit-test decisions; Batch 29 owns deployed Brain Guard acceptance.",
+        "The historical physical-reconciliation queue is complete. Batch 28 binds all 72 transitional",
+        "documents to named blocked exit tests; Batch 29 owns deployed Brain Guard acceptance.",
         "This schedule is an ordering contract, not physical-change authority.",
         "",
         "| Batch | Family | Entries |",
@@ -471,14 +493,15 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         for (batch, family), count in sorted(schedule_counts.items())
     )
     lines.extend([
-        "| 28 | `transitional_exit_tests` | 72 |",
+        "| 28 | `transitional_exit_tests` | COMPLETE: 72 retained behind 2 blocked named exits |",
         "| 29 | `deployed_brain_guard_acceptance` | operational proof |",
     ])
     lines.extend([
         "",
         "## Safety gates",
         "",
-        "- Transitional n8n and Google Sheets references remain until their named exit tests pass.",
+        "- The 32 Google Sheets references remain behind `GS-LEGACY-RETIREMENT-V1`; current fallback/admin/runtime consumers prove retirement is unsafe.",
+        "- The 40 n8n references remain behind `N8N-LEGACY-RETIREMENT-V1`; current provider/workflow/customer integration consumers prove retirement is unsafe.",
         "- Historical evidence defaults to archive, not deletion.",
         "- A delete candidate requires zero exact path references, an exact replacement, a tiny retired/superseded source, and later owner approval.",
         "- Pointer conversion requires unique-fact reconciliation first.",

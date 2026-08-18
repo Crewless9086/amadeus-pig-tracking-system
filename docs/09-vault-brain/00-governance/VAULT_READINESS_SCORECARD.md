@@ -392,3 +392,17 @@ Current honest state: `PHYSICAL_RECONCILIATION_QUEUE_EMPTY /
 No account, media, narration, edit, upload, publication, spend, runtime,
 provider, database, customer, farm or hardware action occurred. Full cutover
 continues with Batches 28-29.
+
+## Batch 28 Transitional Exit-Test Reconciliation - 2026-08-18
+
+All 72 transitional implementation documents are now bound to explicit named
+retirement tests: 32 Google Sheets documents to `GS-LEGACY-RETIREMENT-V1` and
+40 n8n documents to `N8N-LEGACY-RETIREMENT-V1`. Fresh source evidence proves
+both exits remain blocked by current compatibility/runtime consumers, so no
+unsafe archive or false retirement was performed.
+
+Current honest state: `PHYSICAL_QUEUE_EMPTY / 72 TRANSITIONAL DOCUMENTS BOUND
+TO TWO BLOCKED EXITS / DEPLOYED_BRAIN_GUARD_UNPROVEN`.
+
+No workflow, Sheet, runtime, provider, database, customer, farm or hardware
+action occurred. Full cutover continues with Batch 29 final acceptance.

@@ -62,7 +62,9 @@ in clean worktree `C:\tmp\vault-cutover-batch1-20260818`.
 - 163 documents require manual lifecycle classification.
 - 96 planning documents are proposed for extraction before archive/delete review.
 - 75 operational documents are proposed for separation of current runbook from history.
-- 72 transitional documents must remain until their explicit exit tests pass.
+- 72 transitional documents are reconciled under exactly two named blocked
+  exits in `TRANSITIONAL_EXIT_TEST_REGISTER.md`; they must remain until those
+  complete tests pass.
 - 9 static agent assets require generation/reconciliation from Vault authority.
 
 The complete file-by-file ledger, content hashes, declared lifecycle signals,

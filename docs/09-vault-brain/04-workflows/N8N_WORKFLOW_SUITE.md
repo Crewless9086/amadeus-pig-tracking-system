@@ -3,6 +3,11 @@
 Status: transitional runtime inventory under
 `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`.
 
+Retirement test: `N8N-LEGACY-RETIREMENT-V1`, defined in
+`../10-source-map/TRANSITIONAL_EXIT_TEST_REGISTER.md`. Current status is
+`BLOCKED_CURRENT_RUNTIME_DEPENDENCY`; this is a bounded technical exception,
+not permission for new n8n business logic.
+
 n8n is an integration/orchestration layer, not the source of farm truth.
 It is not the farm brain. No new business rule, canonical write, specialist
 memory, safety decision or durable schedule may be added here. Every retained

@@ -1,9 +1,9 @@
 {
-  "version": "vault_physical_cutover_manifest_v24",
-  "baseline": "d612c520f51931404d91126078337261596a03ef",
-  "generated_from_head": "d612c520f51931404d91126078337261596a03ef",
-  "owner_boundary": "Batch 26 archives eight historical planning/inbox sources intact, retains only minimal non-doctrine CODEX_CHAT and ToDoList compatibility scratchpads, and routes durable mission, CORE and SAM authority to focused Vault/register sources; it authorizes no mission execution, runtime, customer, provider, farm, database or hardware change",
-  "entry_count": 537,
+  "version": "vault_physical_cutover_manifest_v25",
+  "baseline": "3819db4a27fd2680d57242742b7b7f8490d4008a",
+  "generated_from_head": "3819db4a27fd2680d57242742b7b7f8490d4008a",
+  "owner_boundary": "Batch 28 binds all 72 current Google Sheets and n8n technical documents to explicit retirement tests; both tests remain blocked by proven runtime dependencies, so no transitional source is archived or elevated to doctrine; no runtime, provider, database, customer, farm or hardware change is authorized",
+  "entry_count": 538,
   "counts": {
     "KEEP_ARCHIVE": 207,
     "KEEP_CONTROLLING_EXCEPTION": 2,
@@ -12,7 +12,7 @@
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 33,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 194
+    "KEEP_VAULT": 195
   },
   "entries": [
     {
@@ -34,7 +34,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/AGENT_ASSET_REGISTER.md",
@@ -55,7 +57,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/AGENT_PORTFOLIO_STATUS.md",
@@ -75,7 +79,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md",
@@ -102,7 +108,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
@@ -136,7 +144,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
@@ -162,7 +172,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/CURRENT_STATE.md",
@@ -204,7 +216,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/DEPLOYMENT_SOP.md",
@@ -233,7 +247,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/GLOSSARY.md",
@@ -253,7 +269,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/HOW_WE_WORK.md",
@@ -273,7 +291,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/NEXT_STEPS.md",
@@ -318,7 +338,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/OPERATING_STATUS.md",
@@ -338,7 +360,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/OWNER_INBOX_GUIDE.md",
@@ -361,7 +385,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/PRODUCT_VISION.md",
@@ -384,7 +410,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/PROJECT_OVERVIEW.md",
@@ -405,7 +433,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/README.md",
@@ -431,7 +461,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/00-start-here/WORKFLOW.md",
@@ -458,7 +490,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
@@ -488,7 +522,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/CANONICAL_DOCUMENT_CATALOGUE_OWNERSHIP.md",
@@ -506,7 +542,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/COMPONENT_OWNERSHIP.md",
@@ -524,7 +562,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/DATA_FLOW_OVERVIEW.md",
@@ -540,7 +580,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md",
@@ -563,7 +605,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/JARVIS_EXTERNAL_REFERENCE_REVIEW.md",
@@ -579,7 +623,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/OOM_SAKKIE_AGENT_PROMPT_LIBRARY.md",
@@ -597,7 +643,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
@@ -620,7 +668,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md",
@@ -636,7 +686,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/SLACK_ARCHITECTURE_ASSESSMENT.md",
@@ -652,7 +704,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/01-architecture/SYSTEM_ARCHITECTURE.md",
@@ -671,7 +725,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/API_STRUCTURE.md",
@@ -692,7 +748,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/DATABASE_SCALING_PLAN.md",
@@ -711,7 +769,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/DATA_MODELS.md",
@@ -730,7 +790,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/MODULE_STRUCTURE.md",
@@ -746,7 +808,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/ORDER_INTAKE_STATE_DESIGN.md",
@@ -762,7 +826,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/ORDER_LOGIC.md",
@@ -780,7 +846,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/ORDER_VERIFICATION_MATRIX.md",
@@ -798,7 +866,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/PIG_LIFECYCLE_OUTCOME_PLAN.md",
@@ -814,7 +884,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/QUOTE_INVOICE_DESIGN.md",
@@ -832,7 +904,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/README.md",
@@ -848,7 +922,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/REFACTOR_PLAN.md",
@@ -864,7 +940,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/SAM_LIVESTOCK_CONTINUOUS_FOLLOWUP_CONTRACT.md",
@@ -882,7 +960,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md",
@@ -903,7 +983,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/SUPABASE_FOUNDATION_PLAN.md",
@@ -926,7 +1008,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md",
@@ -950,7 +1034,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/02-backend/SUPABASE_TELEMETRY_PLAN.md",
@@ -973,7 +1059,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/03-google-sheets/BUSINESS_RULES.md",
@@ -994,7 +1082,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/FIELD_DEFINITIONS.md",
@@ -1014,7 +1104,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/FORMULA_LOGIC.md",
@@ -1036,7 +1128,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/README.md",
@@ -1054,7 +1148,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/SHEET_CHANGELOG.md",
@@ -1072,7 +1168,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/SHEET_SCHEMA.md",
@@ -1096,7 +1194,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/WRITE_OWNERSHIP.md",
@@ -1119,7 +1219,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/LITTERS.md",
@@ -1137,7 +1239,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/LITTER_OVERVIEW.md",
@@ -1155,7 +1259,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/LOCATION_HISTORY.md",
@@ -1173,7 +1279,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/MATING_LOG.md",
@@ -1191,7 +1299,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/MATING_OVERVIEW.md",
@@ -1209,7 +1319,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/MEDICAL_LOG.md",
@@ -1227,7 +1339,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/ORDER_DOCUMENTS.md",
@@ -1245,7 +1359,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/ORDER_INTAKE_ITEMS.md",
@@ -1265,7 +1381,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/ORDER_INTAKE_STATE.md",
@@ -1285,7 +1403,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/ORDER_LINES.md",
@@ -1303,7 +1423,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/ORDER_MASTER.md",
@@ -1321,7 +1443,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/ORDER_OVERVIEW.md",
@@ -1339,7 +1463,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/ORDER_STATUS_LOG.md",
@@ -1357,7 +1483,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/PEN_REGISTER.md",
@@ -1375,7 +1503,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/PIG_MASTER.md",
@@ -1397,7 +1527,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/PIG_OVERVIEW.md",
@@ -1419,7 +1551,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/PRODUCT_REGISTER.md",
@@ -1437,7 +1571,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/SALES_AVAILABILITY.md",
@@ -1461,7 +1597,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/SALES_PRICING.md",
@@ -1486,7 +1624,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/SALES_STOCK_DETAIL.md",
@@ -1504,7 +1644,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/SALES_STOCK_SUMMARY.md",
@@ -1522,7 +1664,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/SALES_STOCK_TOTALS.md",
@@ -1546,7 +1690,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/SYSTEM_SETTINGS.md",
@@ -1564,7 +1710,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/USERS.md",
@@ -1582,7 +1730,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/03-google-sheets/sheets/WEIGHT_LOG.md",
@@ -1604,7 +1754,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "GS-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/CHANGELOG.md",
@@ -1624,7 +1776,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/CHATWOOT_ATTRIBUTES.md",
@@ -1647,7 +1801,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/DATA_FLOW.md",
@@ -1671,7 +1827,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/DO_NOT_CHANGE.md",
@@ -1693,7 +1851,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/NODE_RESPONSIBILITIES.md",
@@ -1715,7 +1875,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/OOM_SAKKIE_MANUAL_RECOVERY_CHECKLIST.md",
@@ -1735,7 +1897,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/OOM_SAKKIE_ROUTING_ARCHITECTURE_PLAN.md",
@@ -1755,7 +1919,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/README.md",
@@ -1773,7 +1939,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/WORKFLOW_MAP.md",
@@ -1797,7 +1965,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/WORKFLOW_RULES.md",
@@ -1819,7 +1989,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/MEAT_INTAKE_HANDOFF_PLAN.md",
@@ -1841,7 +2013,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md",
@@ -1867,7 +2041,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/extractor-pipeline/README.md",
@@ -1887,7 +2063,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.1 - Sam - sales-agent-escalation-telegram/README.md",
@@ -1905,7 +2083,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.2 - order-steward/README.md",
@@ -1925,7 +2105,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.3 - Sam-sales-agent-media-tool/README.md",
@@ -1943,7 +2125,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.4 - outbound-order-notification/README.md",
@@ -1961,7 +2145,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.5 - outbound-document-delivery/README.md",
@@ -1981,7 +2167,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/1.6 - daily-order-summary/README.md",
@@ -1999,7 +2187,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2 - The GateKeeper/BACKEND_RELAY_WIRING_PLAN.md",
@@ -2017,7 +2207,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2 - The GateKeeper/README.md",
@@ -2035,7 +2227,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/README.md",
@@ -2053,7 +2247,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/README.md",
@@ -2073,7 +2269,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.1 - Amadeus Weather Sub-Agent/README.md",
@@ -2091,7 +2289,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.1.1 - Amadeus Forecast Tool/README.md",
@@ -2109,7 +2309,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.2 - Amadeus Sunsynk Sub-Agent/README.md",
@@ -2127,7 +2329,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.3.1 - Build Daily Irrigation Plan/README.md",
@@ -2145,7 +2349,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.3.2 - Run Irrigation Controller/README.md",
@@ -2163,7 +2369,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.3.3 - Irrigation Status Tool/README.md",
@@ -2181,7 +2389,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.4 - Amadeus Orders Sub Agent/README.md",
@@ -2199,7 +2409,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.4.1 - Test Caller/README.md",
@@ -2217,7 +2429,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.4.2 - Orders Approval Callback Handler/README.md",
@@ -2235,7 +2449,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.4.3 - Order Approval Request Webhook/README.md",
@@ -2253,7 +2469,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.4.4 - Order Lookup Tool/README.md",
@@ -2271,7 +2489,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/2.4.5 - Document Send Callback Handler/README.md",
@@ -2289,7 +2509,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/ALERT - Farm Attention Digest/README.md",
@@ -2307,7 +2529,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/ALERT - Power Backend Delivery/README.md",
@@ -2327,7 +2551,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/ALERT - Weather Backend Delivery/README.md",
@@ -2347,7 +2573,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/OOM_SAKKIE_ORDER_LOOKUP_PLAN.md",
@@ -2365,7 +2593,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/04-n8n/workflows/ORDER_STEWARD_HANDOFF_CONTRACTS.md",
@@ -2386,7 +2616,9 @@
       ],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": "N8N-LEGACY-RETIREMENT-V1",
+      "exit_test_status": "BLOCKED_CURRENT_RUNTIME_DEPENDENCY"
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md",
@@ -2412,12 +2644,14 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "f9c7982c5eef2925a7e5ef63223355d121f45857d39c80d0fdcccb40e21932cc",
-      "physical_lines": 1002,
+      "sha256": "e989d821f85621c262f7cf8d9b1b411dad6dad4b8bfcd8283dc0bc781333cd4e",
+      "physical_lines": 1019,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -2441,7 +2675,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md",
@@ -2463,7 +2699,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/07-decisions/README.md",
@@ -2483,7 +2721,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
@@ -2509,7 +2749,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/BEACON_ACTIVATION_TIMEOUT_HANDOVER_2026-07-29.md",
@@ -2525,7 +2767,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/BEACON_BMQ_20260813_02_HANDOVER.md",
@@ -2541,7 +2785,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/BEACON_BMQ_20260813_03_HANDOVER.md",
@@ -2557,7 +2803,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/BEACON_BMQ_20260813_04_HANDOVER.md",
@@ -2573,7 +2821,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/BEACON_HANDOVER_2026-07-27.md",
@@ -2591,7 +2841,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/BEACON_MARKETING_PROPOSAL_HANDOVER_2026-07-29.md",
@@ -2607,7 +2859,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/BEACON_TRUSTED_SERVER_READBACK_CORRECTION_HANDOVER_2026-08-01.md",
@@ -2623,12 +2877,14 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "76d5cb7eebe202c7f391d00804fa02b6996a4ede5d93e58e2c07b3f8ac24820c",
-      "physical_lines": 300,
+      "sha256": "6658684e26504847ae8f79943e012dcd3885471c262952cb8657cd760af52e4e",
+      "physical_lines": 313,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -2652,7 +2908,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md",
@@ -2674,7 +2932,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md",
@@ -2695,7 +2955,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/HERDMASTER_AUCTION_HANDOVER_2026-07-27.md",
@@ -2711,7 +2973,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/OPEN_QUESTIONS.md",
@@ -2729,7 +2993,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/OWNER_DECISIONS.md",
@@ -2748,7 +3014,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/REVIEW_AND_APPROVAL_RULES.md",
@@ -2767,7 +3035,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
@@ -2795,7 +3065,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/UPDATE_RULES.md",
@@ -2819,12 +3091,14 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/00-governance/VAULT_READINESS_SCORECARD.md",
-      "sha256": "b757de9726e84d1f11b245305810f2dd1f6ae9246871c9d929c2e73835ab2129",
-      "physical_lines": 394,
+      "sha256": "b6c32ff1dc2b5613d5cc3fbdccc6dd73e6c0e2a7964197c9d8c60b3a4d6b81e4",
+      "physical_lines": 408,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -2835,7 +3109,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/01-identity/AGENT_ORGANOGRAM.md",
@@ -2853,7 +3129,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/01-identity/CHARLIE.md",
@@ -2878,7 +3156,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
@@ -2907,7 +3187,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/01-identity/OOM_SAKKIE.md",
@@ -2927,7 +3209,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/01-identity/OWNER_CHARL.md",
@@ -2943,7 +3227,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/01-identity/SYSTEM_HIERARCHY.md",
@@ -2965,7 +3251,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
@@ -2995,7 +3283,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/README.md",
@@ -3011,7 +3301,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/_AGENT_TEMPLATE.md",
@@ -3027,7 +3319,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/ARCHITECT.md",
@@ -3045,7 +3339,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/BRAIN_GUARD.md",
@@ -3061,7 +3357,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/BUILDER.md",
@@ -3079,7 +3377,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/BUSINESS_MODEL_AGENT.md",
@@ -3097,7 +3397,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/BUSINESS_REVIEWER.md",
@@ -3115,7 +3417,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/CONCEPT_STRATEGIST.md",
@@ -3133,7 +3437,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/COUNCIL_SYNTHESIS.md",
@@ -3151,7 +3457,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/CREATIVE_UI_DESIGNER.md",
@@ -3169,7 +3477,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/EVIDENCE_REVIEWER.md",
@@ -3187,7 +3497,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/FRONTEND_DESIGN_IMPLEMENTER.md",
@@ -3205,7 +3517,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/IDEA_EXPANDER.md",
@@ -3223,7 +3537,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/IMPROVEMENT_ANALYST.md",
@@ -3239,7 +3555,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/PLANNER.md",
@@ -3257,7 +3575,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/PRODUCT_ARCHITECT.md",
@@ -3276,7 +3596,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/PRODUCT_REVIEWER.md",
@@ -3294,7 +3616,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/PUBLISHER.md",
@@ -3313,7 +3637,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/QA_RED_TEAM.md",
@@ -3331,7 +3657,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/REVIEWER.md",
@@ -3349,7 +3677,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/RISK_AGENT.md",
@@ -3367,7 +3697,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/SECURITY_REVIEWER.md",
@@ -3385,7 +3717,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/SOURCE_MAPPER.md",
@@ -3404,7 +3738,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/TECHNICAL_ARCHITECT.md",
@@ -3422,7 +3758,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/TESTER.md",
@@ -3440,7 +3778,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/UX_INTERACTION_DESIGNER.md",
@@ -3458,7 +3798,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/VISUAL_QA_REVIEWER.md",
@@ -3476,7 +3818,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/charlie-core/VISUAL_REFERENCE_INTERPRETER.md",
@@ -3494,7 +3838,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/GATEKEEPER.md",
@@ -3515,7 +3861,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
@@ -3543,7 +3891,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md",
@@ -3573,7 +3923,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/QUARTERMASTER.md",
@@ -3593,7 +3945,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/ROOTLINE.md",
@@ -3618,7 +3972,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/marketing/BEACON.md",
@@ -3647,7 +4003,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/marketing/BEACON_CREATIVE.md",
@@ -3663,7 +4021,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/marketing/BEACON_MEDIA_LIBRARIAN.md",
@@ -3679,7 +4039,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/marketing/BEACON_PERFORMANCE_ANALYST.md",
@@ -3695,7 +4057,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/marketing/BEACON_STRATEGY.md",
@@ -3711,7 +4075,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/owner-command/CHARLIE.md",
@@ -3730,7 +4096,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/BUTCHER.md",
@@ -3752,7 +4120,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/BUTCHER_CUSTOM_CUTS_SALES_AGENT.md",
@@ -3770,7 +4140,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/LEDGER.md",
@@ -3791,7 +4163,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md",
@@ -3815,7 +4189,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/MEAT_SALES_AGENT.md",
@@ -3835,7 +4211,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/SAM.md",
@@ -3869,7 +4247,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
@@ -3892,7 +4272,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/sales/SLAUGHTER_ABATTOIR_SALES_AGENT.md",
@@ -3908,7 +4290,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/02-agents/transport/FRED.md",
@@ -3927,7 +4311,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/AMADEUS_FARM.md",
@@ -3946,7 +4332,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md",
@@ -3972,7 +4360,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/AMADEUS_PRIVATE_TRANSFERS.md",
@@ -3993,7 +4383,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/BEACON_MARKETING.md",
@@ -4015,7 +4407,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/FUTURE_BUSINESS_IDEAS.md",
@@ -4031,7 +4425,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
@@ -4055,7 +4451,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/MEAT_SALES.md",
@@ -4080,7 +4478,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/README.md",
@@ -4099,7 +4499,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/SLAUGHTER_ABATTOIR_SALES.md",
@@ -4115,7 +4517,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/03-business/_BUSINESS_TEMPLATE.md",
@@ -4131,7 +4535,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
@@ -4154,7 +4560,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md",
@@ -4177,7 +4585,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md",
@@ -4198,7 +4608,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
@@ -4229,7 +4641,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md",
@@ -4250,7 +4664,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md",
@@ -4269,7 +4685,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
@@ -4290,12 +4708,14 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
-      "sha256": "d9ffb88f4f68e0e750a274fd4556fbd80164776deaef5eebcf6a3bdeb330f79b",
-      "physical_lines": 72,
+      "sha256": "95c317e8c549a2d50ea973cbb28e80276429dca9680787ced3e4fa1024344c0d",
+      "physical_lines": 77,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4309,7 +4729,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md",
@@ -4332,7 +4754,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/OWNER_REVIEW_WORKFLOW.md",
@@ -4350,7 +4774,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/README.md",
@@ -4366,7 +4792,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/RELEASE_WORKFLOW.md",
@@ -4385,7 +4813,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md",
@@ -4405,7 +4835,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
@@ -4429,7 +4861,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_CONTEXTUAL_SALES_WORKFLOW.md",
@@ -4445,7 +4879,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
@@ -4477,7 +4913,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
@@ -4506,7 +4944,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_SALES_AUTONOMY_LEVEL_1.md",
@@ -4522,7 +4962,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SEND_BACK_WORKFLOW.md",
@@ -4538,7 +4980,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SUPABASE_MIGRATION_WORKFLOW.md",
@@ -4556,7 +5000,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/04-workflows/_WORKFLOW_TEMPLATE.md",
@@ -4572,7 +5018,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/AGENT_BUILD.md",
@@ -4591,7 +5039,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/BUGFIX.md",
@@ -4607,7 +5057,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/DASHBOARD_UI.md",
@@ -4623,7 +5075,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/DATA_MIGRATION.md",
@@ -4643,7 +5097,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/FEATURE_BUILD.md",
@@ -4662,7 +5118,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/INCOME_STREAM.md",
@@ -4681,7 +5139,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/LIVE_OPERATIONS_FIX.md",
@@ -4702,7 +5162,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/MARKETING_CAMPAIGN.md",
@@ -4721,7 +5183,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/SAM_LIVE_STOCK_HUMAN_SALES_PLAYBOOK.md",
@@ -4745,7 +5209,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/05-playbooks/SAM_MEAT_HUMAN_SALES_PLAYBOOK.md",
@@ -4769,7 +5235,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/BEACON_DATA_MODEL.md",
@@ -4785,7 +5253,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
@@ -4806,7 +5276,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/CHARLIE_VAULT_TABLES.md",
@@ -4824,7 +5296,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
@@ -4850,12 +5324,14 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/GOOGLE_SHEETS_LEGACY.md",
-      "sha256": "f32cc2ce90b50d3876c79856165a221b6b9c8cfab65df79c5a4d71e39504206a",
-      "physical_lines": 52,
+      "sha256": "fb9a0ee8fdf5ea194a665f438d5d1613b4e52231360711c6b6bbf6f2e10543fd",
+      "physical_lines": 57,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4869,7 +5345,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/MEAT_SALES_DATA_MODEL.md",
@@ -4885,7 +5363,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md",
@@ -4906,7 +5386,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/README.md",
@@ -4922,7 +5404,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md",
@@ -4943,7 +5427,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/06-data/TELEMETRY_DATA_MODEL.md",
@@ -4959,7 +5445,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/AGENTIC_ARCHITECTURE_STANDARD.md",
@@ -4975,7 +5463,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
@@ -4995,7 +5485,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/AMADEUS_FARM_UI_FACELIFT_STANDARD.md",
@@ -5014,7 +5506,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md",
@@ -5033,7 +5527,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md",
@@ -5060,7 +5556,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/CUSTOMER_RESPONSE_STANDARD.md",
@@ -5080,7 +5578,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
@@ -5104,7 +5604,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
@@ -5130,7 +5632,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/OOM_SAKKIE_TELEGRAM_MESSAGE_STANDARD.md",
@@ -5148,7 +5652,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md",
@@ -5171,7 +5677,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/SECURITY_AND_SECRETS_STANDARD.md",
@@ -5190,7 +5698,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
@@ -5217,7 +5727,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md",
@@ -5249,7 +5761,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/AMADEUS_FARM_PUBLIC_KNOWLEDGE.md",
@@ -5267,7 +5781,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/FARM_RULES.md",
@@ -5287,7 +5803,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md",
@@ -5309,7 +5827,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
@@ -5335,7 +5855,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/LEGAL_AND_POPIA_REVIEW.md",
@@ -5354,7 +5876,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
@@ -5381,7 +5905,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MARKETING_RULES.md",
@@ -5403,7 +5929,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md",
@@ -5426,7 +5954,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
@@ -5451,7 +5981,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MEDIA_PRIVACY_RULES.md",
@@ -5474,7 +6006,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/PAYMENT_RULES.md",
@@ -5494,7 +6028,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
@@ -5521,7 +6057,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md",
@@ -5541,7 +6079,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/TRANSPORT_RULES.md",
@@ -5559,7 +6099,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/GOLD_STANDARD_AGENT_CHARTER.md",
@@ -5575,7 +6117,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/GOLD_STANDARD_BUSINESS_PLAN.md",
@@ -5591,7 +6135,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/GOLD_STANDARD_DASHBOARD.md",
@@ -5612,7 +6158,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/GOLD_STANDARD_LITTER_DETAIL_PR90.md",
@@ -5628,7 +6176,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/GOLD_STANDARD_LITTER_SUMMARY_PR89.md",
@@ -5647,7 +6197,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/GOLD_STANDARD_MISSION.md",
@@ -5663,7 +6215,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/GOLD_STANDARD_RECOVERY_PACKET.md",
@@ -5683,7 +6237,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/GOLD_STANDARD_REVIEW_PACKET.md",
@@ -5701,7 +6257,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/README.md",
@@ -5719,7 +6277,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/SAM_LIVE_STOCK_GOLD_STANDARD_REPLIES.md",
@@ -5744,7 +6304,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md",
@@ -5768,12 +6330,14 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "9bd213f8e24c21342d1751840f4793536f964cbe93d8aae4b216f4ccb8d84845",
-      "physical_lines": 244,
+      "sha256": "afa045956484c107ad77cf8d526011b858eced1b17850f5b87a041f3b409446d",
+      "physical_lines": 249,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -5789,7 +6353,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ARCHIVE_REVIEW_QUEUE.md",
@@ -5805,7 +6371,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
@@ -5829,12 +6397,14 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/MIGRATION_NOTES.md",
-      "sha256": "0feab47ae1371ddee511510619bd232dbb3a03ad6dbef74f79c9aa3394c105f3",
-      "physical_lines": 115,
+      "sha256": "72e5e0e8f425317fd1772d3977a3e2c37a4f315f29f49a17368807168ea6bc88",
+      "physical_lines": 125,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -5845,7 +6415,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/README.md",
@@ -5861,12 +6433,14 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/REPO_CLEANUP_STATUS.md",
-      "sha256": "df57f7b6ec8f2229fa297ef8e56924d5bcafe49d4dc806d735be6b562e51fd28",
-      "physical_lines": 306,
+      "sha256": "c64e09775901e305556e67b46dafe92feb08e69626ee2db842d1b99fa4826c63",
+      "physical_lines": 308,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -5877,7 +6451,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH10_RECONCILIATION.md",
@@ -5893,7 +6469,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH11_RECONCILIATION.md",
@@ -5909,7 +6487,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH12_RECONCILIATION.md",
@@ -5925,7 +6505,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH13_RECONCILIATION.md",
@@ -5941,7 +6523,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH14_EXECUTION_SCHEDULE.md",
@@ -5957,7 +6541,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH15_RECONCILIATION.md",
@@ -5973,7 +6559,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH16_RECONCILIATION.md",
@@ -5989,7 +6577,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH17_RECONCILIATION.md",
@@ -6005,7 +6595,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH18_RECONCILIATION.md",
@@ -6021,7 +6613,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH19_RECONCILIATION.md",
@@ -6037,7 +6631,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH20_RECONCILIATION.md",
@@ -6053,7 +6649,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH21_RECONCILIATION.md",
@@ -6069,7 +6667,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH22_RECONCILIATION.md",
@@ -6085,7 +6685,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH23_RECONCILIATION.md",
@@ -6101,7 +6703,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH24_RECONCILIATION.md",
@@ -6117,7 +6721,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH25_RECONCILIATION.md",
@@ -6133,7 +6739,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH26_RECONCILIATION.md",
@@ -6149,7 +6757,27 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH27_RECONCILIATION.md",
+      "sha256": "1750724c3e7535b15e80513bbdecfd285c105d1f5bc84fb1cfaa0cfbe7fe0141",
+      "physical_lines": 36,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH27_RECONCILIATION.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md",
@@ -6167,7 +6795,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH6_RECONCILIATION.md",
@@ -6183,7 +6813,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH7_RECONCILIATION.md",
@@ -6199,7 +6831,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH8_RECONCILIATION.md",
@@ -6215,7 +6849,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH9_RECONCILIATION.md",
@@ -6231,11 +6867,13 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_MIGRATION_INVENTORY.md",
-      "sha256": "ba60efbede1c771831c27fa47083e55cbce431d1391d32ad89c3d4c049a7a74c",
+      "sha256": "696f8a5aa69dd5d6dd2c03a5b01799efdbfc4f358cfa0f8b5b90e83bd86d14f2",
       "physical_lines": 657,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
@@ -6249,7 +6887,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/CHANGELOG.md",
@@ -6265,7 +6905,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/INDEX.md",
@@ -6288,7 +6930,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/09-vault-brain/README.md",
@@ -6310,7 +6954,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/README.md",
@@ -6326,7 +6972,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/legacy/README.md",
@@ -6342,7 +6990,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md",
@@ -6366,7 +7016,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/old-prompts/2026-06/CHARLIE_CORE_MASTER_PLAN_AND_CURSOR_PROMPT.md",
@@ -6382,7 +7034,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/old-prompts/2026-06/CHARLIE_CURSOR_PLANNING_PROMPT_ONLY.md",
@@ -6398,7 +7052,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/old-prompts/2026-06/CHARLIE_CURSOR_PLAN_REVIEW_AND_APPROVAL_PROMPT.md",
@@ -6414,7 +7070,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/old-prompts/2026-06/CURSOR_SINGLE_TERMINAL_RESET_PROMPT.md",
@@ -6430,7 +7088,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/old-prompts/2026-06/README.md",
@@ -6446,7 +7106,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/old-prompts/README.md",
@@ -6462,7 +7124,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/old-screenshots-index.md",
@@ -6480,7 +7144,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/reports/2026-06/CHARLIE_ACTIVE_HANDOVER.md",
@@ -6496,7 +7162,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/reports/2026-06/OVERNIGHT_DEBRIEF_2026-06-28.md",
@@ -6512,7 +7180,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/reports/2026-06/README.md",
@@ -6528,7 +7198,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/reports/README.md",
@@ -6544,7 +7216,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/superseded/README.md",
@@ -6560,7 +7234,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_PORTFOLIO_REVIEW.md",
@@ -6576,7 +7252,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/AGENT_ROLES.md",
@@ -6595,7 +7273,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/PROMPT_RULES.md",
@@ -6613,7 +7293,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/README.md",
@@ -6629,7 +7311,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/RESPONSE_RULES.md",
@@ -6647,7 +7331,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/BEACON_SCOPE.md",
@@ -6663,7 +7349,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md",
@@ -6679,7 +7367,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/agents/beacon/README.md",
@@ -6695,7 +7385,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md",
@@ -6711,7 +7403,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_IMPLEMENTATION_ROADMAP.md",
@@ -6727,7 +7421,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_BUSINESS_OS_PHASE_2_7_EVIDENCE.md",
@@ -6743,7 +7439,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md",
@@ -6759,7 +7457,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
@@ -6775,7 +7475,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_OPERATING_SYSTEM_PROGRAM.md",
@@ -6791,7 +7493,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/BUILD_RELAY.md",
@@ -6807,7 +7511,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_AGENT_WORKFORCE.md",
@@ -6823,7 +7529,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md",
@@ -6839,7 +7547,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_CORE_KERNEL_RELIABILITY.md",
@@ -6855,7 +7565,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_CORE_RUNTIME_RECOVERY.md",
@@ -6871,7 +7583,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_EXECUTIVE_CONTROL_PLANE.md",
@@ -6887,7 +7601,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_EXECUTIVE_LIVENESS_CONTRACT.md",
@@ -6903,7 +7619,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_LIVE_EXECUTIVE_V1.md",
@@ -6919,7 +7637,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_INTERFACE.md",
@@ -6935,7 +7655,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_MASTER_PLAN.md",
@@ -6951,7 +7673,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CHARLIE_SHARED_AGENT_RUNTIME.md",
@@ -6967,7 +7691,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_APPLICATION_PREVIEW_WIRING_HANDOVER.md",
@@ -6985,7 +7711,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_CANONICAL_CLAIM_EXECUTOR_COMPATIBILITY.md",
@@ -7003,7 +7731,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_CANONICAL_PREVIEW_SOURCE_HANDOVER.md",
@@ -7021,7 +7751,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md",
@@ -7039,7 +7771,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_03_OOM_TYPED_PREVIEW_WIRING_HANDOVER.md",
@@ -7057,7 +7791,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md",
@@ -7075,7 +7811,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_CURRENT_PORTFOLIO_BASELINE_PLAN.md",
@@ -7091,7 +7829,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md",
@@ -7109,7 +7849,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md",
@@ -7127,7 +7869,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md",
@@ -7145,7 +7889,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CODEX_CHAT_WORKFLOW.md",
@@ -7161,7 +7907,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CONTINUOUS_AGENT_ALIGNMENT_AUDIT_20260817.md",
@@ -7177,7 +7925,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/CORE_PROVIDER_ORIGIN_ACTIVATION_RAIL.md",
@@ -7193,7 +7943,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/FARM_OPERATING_DASHBOARD_V2_PLAN.md",
@@ -7209,7 +7961,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md",
@@ -7225,7 +7979,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_1_DRY_RUN_REPORT.md",
@@ -7241,7 +7997,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_2_RECONCILIATION_REPORT.md",
@@ -7257,7 +8015,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3A_DATA_ISSUE_REVIEW.md",
@@ -7273,7 +8033,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3B_IMPORT_POLICY_DECISIONS.md",
@@ -7289,7 +8051,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_3_BACKFILL_VERIFIER_REPORT.md",
@@ -7305,7 +8069,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md",
@@ -7321,7 +8087,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_5_INITIAL_IMPORT_PLAN.md",
@@ -7337,7 +8105,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md",
@@ -7355,7 +8125,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md",
@@ -7371,7 +8143,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_7_ROUTE_CUTOVER_REPORT.md",
@@ -7387,7 +8161,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/GS_MIG_FINAL_AUDIT.md",
@@ -7406,7 +8182,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_AUCTION_SALE_SOURCE_HANDOVER_20260808.md",
@@ -7422,7 +8200,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_ATTENTION_UI_RECOVERY_PLAN_20260811.md",
@@ -7438,7 +8218,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_EVIDENCE_QUALIFIED_HANDOVER.md",
@@ -7454,7 +8236,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_EXPOSURE_RECOVERY_AND_UNKNOWN_PARENT_PLAN_20260812.md",
@@ -7470,7 +8254,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_BREEDING_EXPOSURE_RECOVERY_SOURCE_HANDOVER_20260812.md",
@@ -7486,7 +8272,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_EXPOSURE_CYCLE_TRANSITION_HANDOVER_20260812.md",
@@ -7502,7 +8290,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_FULL_LIFECYCLE_GENETIC_MERIT_DATA_UX_CONTRACT_20260813.md",
@@ -7518,7 +8308,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_LITTER_SUPERSESSION_SOURCE_HANDOVER.md",
@@ -7534,7 +8326,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_LITTER_WEANING_RECOVERY_LIT-2026-322B.md",
@@ -7550,7 +8344,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_MORTALITY_FIRST_REAL_ASSESSMENT_20260803.md",
@@ -7566,7 +8362,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_MORTALITY_INTELLIGENCE_HANDOVER.md",
@@ -7582,7 +8380,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_NATURAL_HEALTH_LOSS_SOURCE_HANDOVER.md",
@@ -7598,7 +8398,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_OP004_SALES_MULTILINE_INTEGRATION_HANDOFF_20260817.md",
@@ -7614,7 +8416,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_PIGLET_WEANING_OBSERVATION_PLAN_20260812.md",
@@ -7630,7 +8434,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md",
@@ -7646,7 +8452,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_PROACTIVE_MANAGEMENT_ROUND_HANDOVER.md",
@@ -7662,7 +8470,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_SAM_REVIEW_HISTORY_ALLOWLIST_HANDOVER.md",
@@ -7678,7 +8488,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md",
@@ -7694,7 +8506,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_WEANING_LED_MATING_RECOVERY_PLAN_20260811.md",
@@ -7710,7 +8524,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_WEIGHING_BATCH_INTELLIGENCE_SOURCE_HANDOVER_20260811.md",
@@ -7726,7 +8542,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_WHOLE_HERD_NEXT_ROUND_HANDOVER.md",
@@ -7742,7 +8560,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/HERDMASTER_ZIGAY_REVISED_SUPERSESSION_PREVIEW.md",
@@ -7758,7 +8578,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/MISSION_LOOP_CONTRACT.md",
@@ -7774,7 +8596,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md",
@@ -7790,7 +8614,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_AUTOMATIC_REASSESSMENT_HANDOVER.md",
@@ -7806,7 +8632,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_BREEDING_ROUTING_TASK_RETIREMENT_HANDOVER_20260811.md",
@@ -7822,7 +8650,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md",
@@ -7838,7 +8668,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_CONTEXTUAL_SPECIALIST_FOLLOWUP_HANDOVER.md",
@@ -7854,7 +8686,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_DAILY_FARM_MANAGER_LOOP_HANDOVER.md",
@@ -7870,7 +8704,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_DURABLE_MORNING_RUNTIME_HANDOVER_20260813.md",
@@ -7886,7 +8722,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md",
@@ -7902,7 +8740,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_FARM_MANAGER_ROUND_HANDOVER.md",
@@ -7918,7 +8758,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SOURCE_HANDOVER.md",
@@ -7934,7 +8776,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SPINE_SCORECARD_20260809.md",
@@ -7950,7 +8794,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_GENERIC_FAMILY_MESSAGE_LIFECYCLE_HANDOVER.md",
@@ -7966,7 +8812,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_HERDMASTER_MANAGEMENT_CONSUMER_HANDOVER.md",
@@ -7982,7 +8830,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_HERDMASTER_MORTALITY_CONSUMPTION_HANDOVER.md",
@@ -7998,7 +8848,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_LLM_SEMANTIC_FRONT_DOOR_HANDOVER.md",
@@ -8014,7 +8866,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_MANAGER_QUALITY_COMPOSER_HANDOVER.md",
@@ -8030,7 +8884,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_SOURCE_HANDOVER.md",
@@ -8046,7 +8902,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_OWNER_OPERATIONAL_CONTINUATION_HANDOVER.md",
@@ -8062,7 +8920,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_OWNER_REQUEST_AGENT_LIFECYCLE_HANDOVER.md",
@@ -8078,7 +8938,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_P0_NATURAL_PREVIEW_CORRECTION_HANDOVER.md",
@@ -8094,7 +8956,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_P0_OPERATIONAL_INTAKE_RECOVERY_HANDOVER.md",
@@ -8110,7 +8974,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_P0_PIG125_LIFECYCLE_REENTRY_HANDOVER.md",
@@ -8126,7 +8992,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_PROTECTED_ACTION_RECOVERY_HANDOVER_20260811.md",
@@ -8142,7 +9010,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_RELAY_PROVIDER_CHRONOLOGY_HANDOVER.md",
@@ -8158,7 +9028,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_ROOTLINE_DAILY_PRESENTATION_HANDOVER.md",
@@ -8174,7 +9046,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_ROOTLINE_OPERATIONAL_INTAKE_HANDOVER.md",
@@ -8190,7 +9064,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_SENTINEL_SINGLE_SHOT_RUNBOOK.md",
@@ -8206,7 +9082,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_SPECIALIST_DISPATCH_ACK_HANDOVER.md",
@@ -8222,7 +9100,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_SPECIALIST_OWNER_DECISION_BINDING_HANDOVER.md",
@@ -8238,7 +9118,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OOM_SAKKIE_WITHDRAWAL_RELAY_RECOVERY_HANDOVER.md",
@@ -8254,7 +9136,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OP004_LIVE_TRANSFER_DISCLOSURE_CONTRACT_20260816.md",
@@ -8270,7 +9154,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md",
@@ -8286,7 +9172,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md",
@@ -8304,7 +9192,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/PARINGS_EN_WERPSEL_LIFECYCLE_REDESIGN_PLAN.md",
@@ -8320,7 +9210,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/PHASE_0_CONFIGURATION_GOVERNANCE_BASELINE.md",
@@ -8336,7 +9228,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/PHASE_1_SAFE_NAMESPACE_MIGRATION.md",
@@ -8352,7 +9246,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/PIG_PROFILE_LIFE_RECORD_UI_PLAN_20260811.md",
@@ -8368,7 +9264,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/README.md",
@@ -8384,7 +9282,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/RELEASE_CHECKLIST.md",
@@ -8400,7 +9300,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_ADAPTIVE_IRRIGATION_MANAGEMENT.md",
@@ -8416,7 +9318,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md",
@@ -8432,7 +9336,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_AUGUST1_ESSENTIAL_WATER_PLAN.md",
@@ -8448,7 +9354,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_C12345_CANARY_PREFLIGHT.md",
@@ -8464,7 +9372,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md",
@@ -8480,7 +9390,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md",
@@ -8496,7 +9408,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md",
@@ -8512,7 +9426,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_OPERATING_POLICY_REVIEW.md",
@@ -8528,7 +9444,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_PHASE_B_HARDWARE_INVENTORY.md",
@@ -8544,7 +9462,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_REMAINING_COMMISSIONING_PACKETS_20260818.md",
@@ -8560,7 +9480,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SONOFF_IRRIGATION_EXECUTION_CONTRACT.md",
@@ -8576,7 +9498,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_SPECIALIST_RESULT_CONTRACT.md",
@@ -8592,7 +9516,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md",
@@ -8608,7 +9534,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/RUNBOOK.md",
@@ -8624,7 +9552,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_BEACON_MEAT_FIRST_LAUNCH_READINESS_2026-07-03.md",
@@ -8640,7 +9570,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md",
@@ -8658,7 +9590,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md",
@@ -8674,7 +9608,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_MANAGER_SUMMARY_PR691_HANDOVER.md",
@@ -8690,7 +9626,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md",
@@ -8706,7 +9644,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/TESTING_CHECKLIST.md",
@@ -8722,7 +9662,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/TROUBLESHOOTING.md",
@@ -8738,7 +9680,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/06-operations/goals/README.md",
@@ -8754,7 +9698,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0001_DOCUMENTATION_SOURCE_OF_TRUTH.md",
@@ -8770,7 +9716,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/07-decisions/ADR_0002_CHARLIE_CORE_TERMINOLOGY_AND_CONFIGURATION.md",
@@ -8786,7 +9734,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/FARM_CALENDAR_PLAN.md",
@@ -8802,7 +9752,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
@@ -8818,7 +9770,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md",
@@ -8834,7 +9788,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md",
@@ -8852,7 +9808,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_STRESS_TEST_REPORT.md",
@@ -8868,7 +9826,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md",
@@ -8884,7 +9844,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md",
@@ -8900,7 +9862,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/PORK_SALES_MODEL.md",
@@ -8916,7 +9880,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/README.md",
@@ -8932,7 +9898,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md",
@@ -8948,7 +9916,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/docs/MIGRATION_INDEX.md",
@@ -8964,7 +9934,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/external_sources/CODEX_FARM_UI_RESET_BRIEF.md",
@@ -8980,7 +9952,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/external_sources/CODEX_FARM_UI_TARGET_SPECIALIST_WORKSPACE_BRIEF.md",
@@ -8996,7 +9970,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/CHARLIE_CORE_EXTENDED_PLAN.md",
@@ -9012,7 +9988,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/CODEX_CHAT.md",
@@ -9028,7 +10006,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md",
@@ -9044,7 +10024,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/ToDoList.md",
@@ -9060,7 +10042,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/inbox/README.md",
@@ -9076,7 +10060,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md",
@@ -9092,7 +10078,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md",
@@ -9108,7 +10096,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/inbox/prompts/REPO_CLEANUP_AND_DOCS_GOVERNANCE_PROMPT.md",
@@ -9124,7 +10114,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/BUSINESS_STATE_LADDER.md",
@@ -9140,7 +10132,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md",
@@ -9156,7 +10150,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/DECISION_LOG.md",
@@ -9172,7 +10168,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/MARKET_VALIDATION.md",
@@ -9188,7 +10186,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md",
@@ -9204,7 +10204,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/PHASE_0_VALIDATION_PLAN.md",
@@ -9220,7 +10222,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/PILOT_SCORECARD.md",
@@ -9236,7 +10240,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/PRODUCTION_PLAYBOOK.md",
@@ -9252,7 +10258,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/README.md",
@@ -9268,7 +10276,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/RIGHTS_AND_PROVENANCE_POLICY.md",
@@ -9284,7 +10294,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/STATUS.md",
@@ -9300,7 +10312,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md",
@@ -9316,7 +10330,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/UNIT_ECONOMICS.md",
@@ -9332,7 +10348,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/YOUTUBE_POLICY_RESEARCH.md",
@@ -9348,7 +10366,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/OWNER_REVIEW_PACKET.md",
@@ -9364,7 +10384,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/PREPRODUCTION_DECISION_CANDIDATE.md",
@@ -9380,7 +10402,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/PRONUNCIATION_REVIEW_SHEET.md",
@@ -9396,7 +10420,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/SYNTHETIC_NARRATION_EVALUATION.md",
@@ -9412,7 +10438,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/brief.md",
@@ -9428,7 +10456,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/copyright_reuse_review.md",
@@ -9444,7 +10474,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/description.md",
@@ -9460,7 +10492,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/disclosure_review.md",
@@ -9476,7 +10510,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/edit_plan.md",
@@ -9492,7 +10528,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/fact_check.md",
@@ -9508,7 +10546,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/measurement_plan.md",
@@ -9524,7 +10564,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/music_rights.md",
@@ -9540,7 +10582,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/narration_plan.md",
@@ -9556,7 +10600,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/packaging.md",
@@ -9572,7 +10618,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/prototypes/QA.md",
@@ -9588,7 +10636,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/qa_report.md",
@@ -9604,7 +10654,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/rights_evidence_index.md",
@@ -9620,7 +10672,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/script.md",
@@ -9636,7 +10690,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/sources.md",
@@ -9652,7 +10708,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "docs/99-archive/vault-cutover/planning/storyworks/pilots/petra/time_cost_report.md",
@@ -9668,7 +10726,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md",
@@ -9693,7 +10753,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "external_sources/README.md",
@@ -9713,7 +10775,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "external_sources/telemetry/forecast/amadeus-forecast-logger/README.md",
@@ -9733,7 +10797,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md",
@@ -9754,7 +10820,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "planning/CODEX_CHAT.md",
@@ -9797,7 +10865,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "planning/ToDoList.md",
@@ -9829,7 +10899,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/beacon/agent.md",
@@ -9848,7 +10920,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/butcher/agent.md",
@@ -9866,7 +10940,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/gatekeeper/agent.md",
@@ -9884,7 +10960,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/herdmaster/agent.md",
@@ -9902,7 +10980,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/ledger/agent.md",
@@ -9920,7 +11000,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/oom-sakkie/agent.md",
@@ -9938,7 +11020,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/quartermaster/agent.md",
@@ -9956,7 +11040,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/rootline/agent.md",
@@ -9974,7 +11060,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "static/assets/agents/sam/agent.md",
@@ -9992,7 +11080,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     },
     {
       "path": "supabase/migrations/README.md",
@@ -10012,7 +11102,9 @@
       "blockers": [],
       "physical_change_authorized": false,
       "planned_batch": null,
-      "reconciliation_family": null
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
     }
   ]
 }
