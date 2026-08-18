@@ -73,3 +73,16 @@ agent projections are derived from Vault authority, contradiction checks fail
 closed, and the archive/delete manifest has passed owner review. The complete
 Batch 1 evidence is in `../10-source-map/VAULT_MIGRATION_INVENTORY.md` and the
 ordered conflict review is in `../10-source-map/REPO_CLEANUP_STATUS.md`.
+
+## Batch 2 Authority-Routing Result - 2026-08-18
+
+The authority model is now explicit in source: one Vault doctrine root, two
+narrow cross-system exceptions, evidence-only external classes and deterministic
+mission-pack requirements. This resolves the design ambiguity identified in
+Batch 1 but does not yet prove enforcement.
+
+Current honest state: `AUTHORITY_DESIGN_COMPLETE / ENFORCEMENT_PENDING`.
+
+No new readiness percentage is assigned. Promotion requires source enforcement,
+tests proving missing/wrong packs fail closed, the ordered agent contradiction
+audit and an owner-approved physical cutover manifest.

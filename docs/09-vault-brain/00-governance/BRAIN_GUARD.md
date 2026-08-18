@@ -87,6 +87,33 @@ The deterministic alignment audit in `modules/charlie/vault_alignment.py` must
 also pass. Citation and a free-text `no_vault_update_required` statement cannot
 override a failed repository alignment result.
 
+## Batch 2 Authority-Routing Gate
+
+Brain Guard must distinguish doctrine from evidence. A file is not authoritative
+because it is recent, detailed, cited, near code, listed in a handover, or loaded
+by an older mission.
+
+For every mission Brain Guard must verify:
+
+1. the common governance pack from `ACTIVE_DOCS_SOURCE_MAP.md` was loaded;
+2. exactly the relevant agent pack and overlays were loaded;
+3. every normative instruction came from the Vault or one of the two registered
+   cross-system controlling exceptions;
+4. technical references were used only to inspect implementation/runtime truth;
+5. planning, history, evidence logs, handovers and static agent cards did not
+   supply authority;
+6. UI missions include `AMADEUS_FARM_UI_FACELIFT_STANDARD.md`;
+7. BEACON/Meta livestock-awareness missions include
+   `BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md` and fail on sales, availability,
+   price, booking, urgency or contact calls-to-action;
+8. conflicts produce one durable reconciliation finding and block review-ready;
+9. an absent pack fails closed instead of falling back to a legacy file; and
+10. the exact release head repeats the same pack and conflict checks.
+
+The existing alignment audit currently proves only a subset of this gate. Batch
+2 records the required contract; source enforcement and runtime acceptance must
+be completed in the next separately reviewed enforcement batch.
+
 ## Runtime Enforcement v2
 
 The second runtime pass adds stronger operating rails:

@@ -107,3 +107,30 @@ reference counts and proposed actions are recorded in
 
 Until those audits finish, `GOVERNANCE_ALIGNMENT_HOLD` remains active: no new
 feature implementation should use unresolved legacy doctrine as mission authority.
+
+## Vault Cutover Batch 2 - Authority Routing
+
+Status: `DESIGN_APPLIED / PHYSICAL_CUTOVER_NOT_STARTED`.
+
+Batch 2 establishes one normative doctrine root, two narrow registered
+cross-system exceptions, deterministic mission packs and explicit evidence-only
+classes. It does not move, archive or delete files. It does not activate Brain
+Guard, change production configuration or claim runtime enforcement.
+
+Decisions:
+
+- `docs/09-vault-brain/` is the only normative agent-doctrine root.
+- The canonical Runtime Programme and mandatory Control Tower handover template
+  remain narrow controlling exceptions outside the Vault.
+- The mission register and start-here files are current-state/operator
+  projections, not reusable doctrine.
+- Legacy agent/business/architecture docs, n8n/Sheets docs, planning material,
+  handovers, evidence logs and static agent assets receive explicit non-doctrine
+  dispositions in `ACTIVE_DOCS_SOURCE_MAP.md`.
+- Every UI mission requires the Facelift pack.
+- Every BEACON livestock-awareness/Meta mission requires the awareness workflow
+  and cannot import livestock availability or sales calls-to-action.
+
+Remaining before physical cleanup: implement deterministic pack enforcement;
+complete the ordered agent-by-agent contradiction audit; produce the exact
+pointer/archive/delete manifest; obtain owner approval for that manifest.
