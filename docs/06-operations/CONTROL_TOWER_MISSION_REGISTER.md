@@ -491,8 +491,8 @@ fresh genuine trigger, verified result, next trigger and terminal-close proof.
 
 | Agent / development terminal | Current honest operating state | Complete outcome target | Continuous trigger and follow-up | Current acceptance blocker | Owner work removed |
 |---|---|---|---|---|---|
-| CORE / CORE | Release/staging rail integrated; `ebc661b5` was coherently staged under preserved governed stop, but authoritative main advanced to `f588c276` with the continuous-operation and Brain Guard reset before activation; no deployed worker exists | Durably receive, plan, dispatch, supervise and close bounded software missions, including detecting stalled agents, without Charl pasting prompts or monitoring terminals | Durable mission queue plus supervised runner; every mission retains worker, heartbeat, progress, closeout and next eligible mission | Revalidate and restage exact current authoritative main through the proven isolated rail, then separately govern activation, loaded-revision proof, exact-tree containment, heartbeat, next independent cycle and terminal-close continuity | Manual prompt relay, terminal checking, recovery and cross-terminal coordination |
-| OOM SAKKIE / OOM SAKKIE | PR #1026 at `facb6a32` is source-tested, independently approved and CI-green for protected delivery and typed ROOTLINE device authority, but it was built on `ebc661b5`; no deployed manager loop is proven | Continuously ingest material farm/business/runtime events, investigate them, delegate typed specialist work, track it to closure and notify Charl or Anton only with a useful result, genuine exception or protected decision | Event subscriptions plus bounded reassessment scheduler and durable unresolved-work ledger; next trigger is evidence change or earliest due time, not tomorrow's brief | Reconcile PR #1026 non-destructively with current authoritative main and the Continuous Operations Acceptance Gate, rerun exact-head audit/CI/reviews, then make a serialized integration decision; deployment and genuine terminal-independent manager cycles remain absent | Discovering omissions, asking each specialist, repeating facts, chasing failures and waiting until the next morning |
+| CORE / CORE | Exact current main `e3e35874` is independently validated and coherently staged across runtime, execution, manifest and fresh sealed receipt; governed stop is preserved and no worker exists | Durably receive, plan, dispatch, supervise and close bounded software missions, including detecting stalled agents, without Charl pasting prompts or monitoring terminals | Durable mission queue plus supervised runner; every mission retains worker, heartbeat, progress, closeout and next eligible mission | Separately governed observe-only activation, independently verified loaded revision, exact-tree containment, fresh worker/heartbeat, next independent cycle and terminal-close continuity | Manual prompt relay, terminal checking, recovery and cross-terminal coordination |
+| OOM SAKKIE / OOM SAKKIE | PR #1026 exact head `6a6005b7` is reconciled with current main, Vault-audit clean, source/PostgreSQL tested, independently approved and exact-head CI-green; no deployed manager loop is proven | Continuously ingest material farm/business/runtime events, investigate them, delegate typed specialist work, track it to closure and notify Charl or Anton only with a useful result, genuine exception or protected decision | Event subscriptions plus bounded reassessment scheduler and durable unresolved-work ledger; next trigger is evidence change or earliest due time, not tomorrow's brief | Execute one serialized integration/migration/deployment window, verify exact loaded revision and authority mode, then prove a fresh genuine manager case, durable unresolved-case reassessment and later terminal-independent cycle | Discovering omissions, asking each specialist, repeating facts, chasing failures and waiting until the next morning |
 | ROOTLINE / ROOTLINE | Request/invocation paths exist; current water-energy plan returned `no_current_water_energy_plan`; no current independent decision cycle proven | Continuously refresh water, weather, power, device and irrigation evidence; maintain a current plan; execute routine approved work inside standing authority; verify effects; retry/reassess; escalate one exact exception | Evidence-change events plus durable due-time scheduler; failures remain owned and reassessed automatically | Shared OOM/ROOTLINE claim delivery and reusable device commissioning spine remain incomplete; fresh plan worker/next cycle absent | Manually waking ROOTLINE, asking for irrigation status, repeating valve presence and monitoring retries |
 | HERDMASTER / HERDMASTER | Canonical pig/litter/weight reads are useful; continuous husbandry worklist and follow-through not proven | Continuously maintain the herd work queue for weighing, litter care, treatments, welfare, breeding and sales eligibility; dispatch due work through Oom Sakkie and verify resulting canonical updates | Canonical event subscriptions plus due-date scheduler; every due item has next action, assignee, deadline and reassessment | Molly's due treatment was omitted from the manager output; weighing remained a count rather than an operated workflow; Pig 151 exclusion was silent rather than explained | Finding due animal work, checking lists/pages and diagnosing why an animal is unavailable |
 | SAM / SAM Livestock | Autonomous shadow inbox cycling proven; customer dispatch disabled | Continuously handle every eligible genuine customer event with supported useful responses and follow-ups, escalating only protected commercial decisions | Provider webhook plus durable backlog/follow-up scheduler; unrelated work continues after one quarantine | Narrow source authority was approved but deployed response-class authority and five-customer proof remain absent | Reading the inbox, writing routine replies and remembering follow-ups |
@@ -557,9 +557,1712 @@ have zero file overlap with PR #1026, so the existing released-retain worktree
 is eligible for one non-destructive reconciliation and exact-current-head
 review. Integration is prohibited until that refreshed evidence returns.
 
+### CORE activation readiness — 2026-08-17
+
+Exact authoritative main `e3e3587430f21f05fa49d4a057497ca599bfc17c`
+has been freshly validated in isolation and staged with runtime HEAD, execution
+HEAD, manifest, sealed receipt and archived release lane in exact agreement.
+The scheduled watchdog remains disabled, the governed stop marker is unchanged,
+and no CORE process or heartbeat exists. Slot 1 is `ACTIVATION_READY`, not
+operational. The next bounded action is one serialized observe-only activation
+using the reviewed runner-control rail. Acceptance must independently verify
+the loaded revision and exact owned process tree, then retain a fresh heartbeat,
+next cycle and later terminal-independent cycle. Any identity disagreement,
+unexpected process target, main movement or stop-evidence mismatch fails closed
+without broad cleanup or activation claims.
+
+### BEACON freeze acknowledgement — 2026-08-17
+
+BEACON BMQ-20260813-05 remains `WORKING / FROZEN_STRATEGIC_WIP /
+REVIEWED_PR_PRESERVED`. PR #1024 head `f9c682a3` and its retained worktree are
+untouched. The acknowledgement reported no action and supplied no fresh runtime,
+trigger, worker, campaign, provider-publication or performance evidence. It is
+therefore a preservation receipt only, not a compliant operational handover or
+active-work claim. PR #1024 predates current main and is not eligible for
+reconciliation, merge, deployment or owner preview during the serialized CORE
+activation window. Revenue Slot 3 remains unchanged.
+
+### CORE provider-origin activation blocker — 2026-08-17
+
+The exact `e3e35874` activation preflight completed with zero mutation and
+correctly refused activation. The reviewed governed-resume path archives the
+stop marker and immediately starts the supervisor with `subprocess.Popen()` from
+the invoking terminal, while the scheduled watchdog path refuses persisted
+observe-only recovery. No reviewed path therefore allows the exact scheduled
+provider to originate an observe-only supervisor without terminal ancestry or
+manual stop-marker bypass. CORE remains `ACTIVATION_BLOCKED_SAFE /
+ZERO_MUTATION`; exact staging remains intact. This is a reusable Slot 1 operating-
+spine defect, not a separate business mission. Historical observe-only/startup
+worktrees are over 1,100 commits behind current main and supply no current
+authority. The next bounded source mission must implement a serialized,
+task-digest-bound provider-origin activation contract, fail-closed rollback and
+duplicate-start proof, then reconcile, review, merge, restage and separately
+authorize activation.
+
+### ROOTLINE stale-feedback containment — 2026-08-17
+
+The repeated Mixer packet naming deployed revision `dc0b67ca`, cards 3687/3689
+and expired physical-presence evidence is historical, lacks a new observation
+time and does not satisfy the current feedback template. Fresh provider readback
+shows the web service live at `e3e35874` (`dep-da1bkpou01pc73fo9e1g`), so the
+packet's deployed-revision claim is no longer current. No ROOTLINE development
+terminal or autonomous ROOTLINE cycle was freshly proven. The old wait for
+physical presence is retired as a current dependency; Charl must not press or
+repeat anything from those cards. Slot 2 remains owned by the shared OOM SAKKIE/
+ROOTLINE current-lineage reconciliation. A future Mixer action requires a fresh
+deployed-manager assessment, new current-world evidence and a newly bound
+protected journey after the CORE activation window closes.
+
+### OOM SAKKIE PR #1026 release readiness — 2026-08-17
+
+The existing branch was non-destructively reconciled with exact main
+`e3e35874` at head `6a6005b7`. All implementation and migration blobs remained
+unchanged; Vault alignment, 854 proportional tests, 11 disposable-PostgreSQL
+tests, three renewed independent reviews and all exact-head hosted CI passed.
+PR #1026 is clean and mergeable. The failed CORE activation ended its temporary
+main freeze, and no current release lane was proven. Slot 2 is authorized for
+one serialized integration/migration/deployment assessment. This authority does
+not enable callbacks, hardware, historical-card replay or owner-visible sends.
+Business acceptance remains the deployed continuous-manager loop, not merge or
+health.
+
+### HERDMASTER HMQ-04 stale-feedback containment — 2026-08-17
+
+The repeated HMQ-04 packet is historical evidence observed on 2026-08-16. It
+uses the superseded 986-line Mission Standard, 259-line Control Tower Protocol
+and 208-line handover template, and compares PR #984 head `c665311d` with old
+main `847d616e` rather than current authoritative main `e3e35874`. Fresh GitHub
+readback confirms PR #984 remains open, clean and mergeable at that unchanged
+historical head with its three historical CI checks green. No current
+HERDMASTER terminal process, deployed candidate revision, autonomous worker,
+fresh canonical snapshot, owner preview or terminal-independent cycle was
+proved. The old `UI_UNBLOCK_PENDING_CONTROL_TOWER` wait is therefore retired as
+a current dependency. Preserve PR #984 and its unique worktree, but classify
+HMQ-04 `WORKING / FROZEN_STRATEGIC_WIP / REVIEWED_PR_PRESERVED`; do not dispatch,
+reconcile, merge, deploy or wake CODEX UI during the active Slot 2 release
+sequence. Future eligibility requires Slot 2 closeout plus a fresh current-main,
+collision, governance and owner-workload assessment. Continuous HERDMASTER
+outcomes—the live herd worklist, weighing/litter/welfare follow-through and
+resolving operational blockers such as order eligibility—outrank this analytics
+presentation mission.
+
+### Continuous-agent operational reality gate — 2026-08-17
+
+Fresh production readback confirms that source and scheduler progress has not
+yet produced closed operational agents. ROOTLINE is independently reassessed at
+roughly fifteen-minute intervals, but recent cycles end `zone_contained` with
+zero Telegram sends and zero hardware commands; the owner API returns
+`no_current_water_energy_plan`. HERDMASTER canonical loading produces 17 cases
+and 14 tasks and contains Molly's active 2026-08-11 litter, but no durable worker,
+Oom Sakkie delivery, retained case owner or resolved follow-through was proved.
+Pig 151 remains absent from the order dropdown because the live projection
+retains a withdrawal/medical hold through 2026-09-08; whether that restriction
+is correct remains an unresolved operational case, not a UI defect closure.
+BEACON has no recorded Facebook execution after 2026-08-01 and no campaign-
+performance event after 2026-07-25; a visible development process is not an
+operational BEACON cycle. Oom Sakkie health HTTP 200 does not establish manager
+operation because none of these specialist outcomes reached the owner through a
+proved continuous loop.
+
+The mandatory acceptance sequence for each specialist is: genuine event,
+durable intake, specialist assessment, useful Oom Sakkie delivery, action or
+protected decision, provider/canonical/physical verification as applicable,
+durable unresolved-case ownership, earliest reassessment, and a later terminal-
+independent cycle. No PR, CI, deployment, endpoint health, stored worklist,
+observation-only result or daily brief may substitute for that sequence. Slot 2
+must first deploy and prove one ROOTLINE case beyond `zone_contained`; the next
+HERDMASTER operating-spine mission must close one genuine current case (with
+Molly/livestock allocation and withdrawal truth included in the live backlog);
+the revenue lane must then prove one genuine BEACON opportunity produces a
+current proposal or exact media request through Oom Sakkie. CORE activation must
+supervise these durable workers, stalled cases, backlogs and delivery failures;
+it does not replace their specialist work. Analytics/UI/document expansion
+remains subordinate until these operational proofs reduce recurring owner work.
+
+### OOM SAKKIE Slot 2 deployed-spine closeout and manager-worker dispatch — 2026-08-17
+
+PR #1026 head `6a6005b7` merged once as authoritative main `37a6a4c3` after
+exact-head CI. The three reviewed protected-delivery/family-action/device-registry
+migrations were applied atomically and read back. Render web plus the ROOTLINE
+15-minute reassessment cron and Oom Sakkie five-minute recovery cron loaded the
+exact merge. Fresh provider-scheduled cycles prove narrow terminal-independent
+operation: payment recovery reached `payment_recovery_idle`; ROOTLINE completed
+`OOM-SCHEDULE-ROOTLINE-20260817T113000+0200` as `zone_contained`, with zero
+Telegram sends, hardware commands or farm writes, and retained an earliest next
+assessment. The release lane is durably released. No owner-visible manager case,
+positive Telegram delivery, hardware effect or physical result was manufactured.
+
+Slot 2 remains `WORKING / DEPLOYED_NARROW_RAILS / GENERAL_MANAGER_DEGRADED`.
+The next bounded mission stays in the existing OOM SAKKIE Recovery Slot 2
+lineage: extend the existing canonical Supabase/action spine with one durable
+general manager intake, case ownership and worker loop covering material
+canonical/provider events and unresolved specialist cases. It must delegate,
+retain the earliest evidence/time reassessment, resume after restart, deliver a
+useful result or one precise exception through Oom Sakkie, and prove a later
+terminal-independent cycle. No duplicate claims/action/device ledger, n8n or
+Sheets business authority is permitted. Source, tests, PR, merge, deployment,
+health and narrow cron receipts cannot close this mission. A continuation prompt
+is prepared, but delivery is not claimed: the historical OOM Codex process is
+still open while its clean worktree and current handover classify it released;
+an open process is not active work and a second writer must not be started in
+the same worktree without explicit terminal closeout or acknowledgement.
+
+### All-terminal fresh sweep after Slot 2 release — 2026-08-17
+
+CORE has fresh modified/untracked activation-rail source and a currently running
+isolated Docker test invocation; classify `ACTIVE_SOURCE_PROOF`, not deployed
+CORE operation. ROOTLINE and HERDMASTER have old open Codex processes attached
+to dirty worktrees at 2026-08-13 heads; without new feedback, file movement or
+runtime evidence they are `HOLD / VERIFY`, not active work, and must not be
+interrupted or duplicated. BEACON has an open process in a clean worktree at
+historical head `3d0bd01d`; no fresh progress or operational cycle is proved, so
+it is `HOLD / VERIFY`. OOM SAKKIE's old process remains open against clean merged
+branch `6a6005b7` but its handover says released-retain; classify `DEPENDENCY
+IDLE / PROMPT_PREPARED_NOT_DELIVERED`. No fresh SAM, DOCUMENTS or CODEX UI
+terminal progress was proved. These classifications expire on fresh feedback or
+new execution evidence; process existence alone never preserves them as active.
+
+### CORE provider-origin activation checkpoint reconciliation — 2026-08-17
+
+Recovery Slot 1 checkpoint `6d7e84fe` preserves nine provider-origin activation-
+rail paths on base `e3e35874`. Safe mocked tests passed 30 cases and disposable
+Docker passed 123 with four platform skips. The terminal stopped correctly when
+authoritative main advanced to `37a6a4c3`; no review, push, PR, staging,
+activation or runtime effect occurred. Fresh comparison proves zero path overlap
+between the checkpoint and the 30 OOM/ROOTLINE paths introduced by current main.
+The worktree is clean, one commit ahead and sixteen behind, and no matching CORE
+development or Docker-test process remains. Process existence is therefore not
+being used as activity evidence.
+
+Classify Slot 1 `WORKING / SOURCE_CHECKPOINTED /
+CURRENT_MAIN_RECONCILIATION_AUTHORIZED`. Continue in the existing isolated
+worktree and branch; do not create another worktree or reconstruct the source.
+Perform one non-destructive current-main reconciliation, repeat complete current
+governance verification, isolated validation and both independent reviews, then
+open one source-only PR and require exact-head CI. Stop before merge, staging or
+activation. The later acceptance journey remains exact-current staging,
+separately governed scheduled-provider activation, signed owned-tree proof,
+heartbeat, independently triggered next cycle and terminal-close continuity.
+No source, test, PR or CI result establishes that CORE is alive.
+
+### SMQ-20260813-05 natural payment journey defect — 2026-08-17
+
+Fresh read-only provider trace proves two genuine authenticated private Telegram
+messages failed under deployed revision `ebc661b5`. Message `3699` stated that
+Michaels was paid Cash on 2026-07-10; n8n execution `64988` normalized it, but
+`owner_context_front_door` returned `owner_context_clarification_required` and
+delivered irrelevant reply `3700`. Message `3701` asked which payments remained
+outstanding; execution `64991` followed the same incorrect route and delivered
+reply `3702`. No payment-specific reader or preview was selected. Charl manually
+updated the affected payments afterward; those real messages and records are
+retired as immutable regression evidence and must never be replayed, rewritten
+or re-confirmed.
+
+The systemic defect remains on current deployed source `37a6a4c3`.
+`sam_payment_owner_runtime.py` still hard-codes EFT, exact invoice/counterparty
+bindings and `Livestock — Auction`, although the canonical
+`sales_payment_receipt.py` authority supports Cash/EFT and full/partial protected
+receipts. Extend existing mission `SMQ-20260813-05`; create no new payment
+ledger, write service or business authority. Required reusable correction:
+semantic-first intents for listing outstanding payments, showing payment state,
+preparing a receipt and correcting a preview; preservation of the specific
+intent through deterministic dispatch; one canonical current-payment reader;
+bounded brief/context retention; unique customer resolution; Cash/EFT and
+full/partial preview support; explicit confirmation before write; exact
+canonical readback; immediate manager-worklist refresh; replay silence; and
+continuous ownership without waiting for another daily brief. Deterministic
+patterns are resilience only, never the primary language brain.
+
+The retained SAM payment worktree at `f0bbb63f` is clean but 182 commits behind
+current main and has no matching active terminal; it is historical evidence, not
+an authorized continuation base. The OOM SAKKIE Recovery Slot 2 worktree has
+freshly advanced from `6a6005b7` to current main `37a6a4c3`, which is fresh
+progress evidence beyond its old open process. Therefore classify this defect
+`LOGGED / ACTIVE_OOM_ADDENDUM / NO_SEPARATE_DISPATCH`: do not interrupt or start
+a competing OOM/protected-action writer. At the active terminal's next safe
+feedback boundary, require it to incorporate this case into the general-manager
+intake/ownership contract or explicitly release the shared gateway/payment
+adapter paths. Only then allocate the smallest disjoint SAM canonical-reader
+slice if useful. Operational acceptance requires the next genuinely new payment
+question/report to be handled by the deployed Oom Sakkie agent through protected
+preview, provider delivery, owner confirmation, canonical readback, refreshed
+outstanding projection and a later terminal-independent cycle; no terminal may
+manufacture that event or perform the payment.
+
+### CMQ-20260813-03 dedicated grouped-movement journey — 2026-08-17
+
+Current source proves that `/bulk-weights` can classify a blank-weight row with
+a changed destination as `movement_only`, record only canonical
+`pig_location_events`, preserve Unknown weight and handle a 21-row movement-only
+batch in tests. This is useful temporary capability, but it is hidden inside a
+weighing workflow. No dedicated `/bulk-movements` page or separately exposed,
+channel-invariant grouped-movement preview/confirm contract exists. The prior
+mission classification `deployed_waiting_for_genuine_acceptance` is therefore
+insufficient: the intended owner journey cannot honestly pass acceptance yet.
+
+Extend existing mission `CMQ-20260813-03`; create no competing uploader,
+movement ledger or executor. Classify it `WORKING /
+OPERATIONAL_USABILITY_GAP / QUEUED_NEXT_INCREMENT`. The next bounded increment
+must first review and define one shared movement-only preview/confirm/execute
+contract using the strongest existing atomic, locked and idempotent grouped
+action. It must validate exact pig identity, current pen, destination, active/on-
+farm state, event chronology and replay immediately before commit; append only
+location events; preserve effective versus recorded time; support a movement
+reason, notes and observer; and never implicitly alter weight, purpose, sale,
+medical or breeding state. Application, Telegram and future voice must normalize
+to the same contract. The dedicated application page may reuse selection/filter
+components but must contain no weight input and must show selected/moving/
+skipped/blocked/Unknown totals before one confirmation.
+
+No matching CMQ-03 development process is running. All retained CMQ-03 and bulk-
+weight worktrees are clean but historical, ranging from 184 to 1,846 commits
+behind current main; none is an authorized continuation base. Do not revive or
+merge them blindly. This increment is queued, not dispatched, while CORE Slot 1,
+OOM SAKKIE Slot 2 and continuous-agent recovery occupy strategic WIP. Promotion
+requires a free slot, fresh current-main/collision review, HERDMASTER livestock-
+location review and preservation of the deployed grouped-weight executor. Until
+then `/bulk-weights` movement-only preview is the temporary governed path; a
+blank weight must remain Unknown and the preview must show zero weight entries.
+
+### HMQ-20260813-05 Weight Report discoverability and facelift — 2026-08-17
+
+Current main retains a working `/weight-report` route, canonical report loader,
+Today/date-range/pen controls and browser print action, but neither
+`templates/dashboard.html` nor the Bulk Weights template/JS contains a
+`/weight-report` link. The report is therefore operational but undiscoverable,
+the completed bulk-weighing journey has no obvious report handoff, and the page
+still predates the approved Dashboard-family visual standard. This is an owner-
+facing usability defect on existing mission `HMQ-20260813-05`, not authority for
+a new report calculation or competing analytics backend.
+
+Classify `HMQ-20260813-05` as `WORKING / UI_DISCOVERABILITY_AND_FACELIFT_QUEUED`.
+The bounded CODEX UI slice must restore Weight Report under Dashboard > Farm
+Workflows > Herd records, add visible report access to Bulk Weights, and after a
+successful batch expose View/Print actions carrying the completed weighing date.
+It must redesign `/weight-report` under the authoritative Amadeus Farm UI
+Facelift Standard with names/tags primary, Pig ID secondary, canonically
+supported summary and warning separation, preserved date/pen filters, navigable
+pig rows, explicit loading/empty/unavailable/error states and independently
+usable desktop, 390px and print/PDF layouts. UI code must not recalculate or
+reinterpret HERDMASTER metrics. Exact authenticated local screen/mobile/print
+previews require Charl's approval before merge or deployment.
+
+No CODEX UI process or target-file mutation is currently present. The inspected
+Dashboard, UIQ, HMQ-04 and bulk-weight worktrees preserve their histories and
+have clean target paths, but they are historical and none is an authorized base.
+No implementation is dispatched while Autonomy Recovery slots are occupied by
+CORE and OOM SAKKIE continuous-operation work. Promotion requires a free WIP
+slot, fresh current-main/worktree collision review, HMQ-05 canonical meaning
+review and one explicitly authorized current-lineage CODEX UI worktree. Until
+then the direct `/weight-report` route remains the temporary working access; no
+merge or deployment may occur without owner visual approval.
+
 ## Delivery limitation
+
+### CMQ-20260813-05 provider-origin activation rail integrated — 2026-08-17
+
+PR #1038 was merged from exact reviewed head
+`ce21dbbb7e104533b378e50a2e2be45074b68a42` as authoritative merge
+`64e5335496d06bde5dba8ba9a840ecb5f0168238`. Before merge, both independent
+reviews approved the exact head, disposable-Docker validation reported 147
+passed and 4 platform skips, and all three required hosted CI lanes passed. A
+fresh release-ledger readback showed the preceding OOM SAKKIE PR #1039 lane was
+durably released; no active release lane was treated as owned merely from an
+open process. The incoming OOM manager paths did not overlap the CORE activation
+paths, and GitHub accepted the merge pinned to the exact head.
+
+Classify Recovery Slot 1 as `WORKING / SOURCE_MERGED /
+EXACT_CURRENT_STAGING_REQUIRED`. This is source integration only. It does not
+prove a loaded CORE runtime, enabled scheduled task, provider-created
+supervisor, signed owned process tree, heartbeat, independent cycle or
+terminal-close continuity. CORE therefore remains honestly
+`authority-disabled / staged-state-stale-or-unverified / operationally dormant`
+until fresh runtime evidence says otherwise. The released development terminal
+and any old runtime files, waits or process records are not active-work proof.
+
+The next bounded action is a separate stopped-state staging epoch against exact
+authoritative main `64e5335496d06bde5dba8ba9a840ecb5f0168238`: fetch and verify
+governance, create a fresh isolated-validation receipt, prove the serialized
+lane is free, stage runtime/execution/manifest agreement while preserving the
+governed stop, and return the complete Control Tower handover. It must not
+activate CORE. Only after that receipt may Control Tower separately authorize
+the reviewed provider-origin activation. Operational acceptance still requires
+the Windows scheduled provider to create CORE, followed by exact loaded-revision
+proof, signed supervisor/runner ancestry, a fresh heartbeat, one independent
+cycle, the next trigger, and a later cycle after all development and activation
+terminals close.
+
+Dispatch status: `SEND NOW — TERMINAL IDLE OR RELEASED`, targeting a separate
+CORE stopped-state staging authority, not the completed source-development
+terminal. Automatic delivery is not proven, so the prompt is prepared for Charl
+to paste unless target delivery and acknowledgement are independently recorded.
+
+### CMQ-20260813-05 exact-current stopped-state staging accepted — 2026-08-17
+
+Fresh staging authority `50f20473818f4eeeb206c0f56a939573` aligned runtime
+HEAD, execution HEAD and manifest commit to authoritative main
+`64e5335496d06bde5dba8ba9a840ecb5f0168238`. Offline isolated validation used
+fresh identity `cmq05-290c649ca0d5901c28b17f53bef45d4d`; the focused
+runner-control suite passed 57 tests with 3 platform skips and the complete
+runner-control/staging/activation group passed 92 with 3 platform skips. The
+fresh signed receipt SHA-256 is `6544e778cb43cf60ed3ed48acf6f944bb54c8c7de473a58a776c08f746aaaa38`.
+
+The staging lane is archived and no staging or activation lock remains. The
+governed stop marker remains byte-identical at `8887c0c0`; the exact scheduled
+task remains Disabled with one action and digest `5ed7dc9b`. Rollback record
+`4abaff0c` preserves the prior `e3e35874` runtime/execution/manifest tuple. No
+watchdog, supervisor, runner, provider, database, farm or business action
+occurred. The dirty owner preservation workspace was not touched.
+
+Classify Slot 1 as `WORKING / EXACT_CURRENT_MAIN_STAGED /
+ACTIVATION_AUTHORITY_ELIGIBLE`. Staging is accepted but CORE remains
+`authority-disabled / deployed-dormant`: no provider-created process, heartbeat,
+independent cycle or terminal-close continuity exists. With current main still
+exact, the task/receipt/stop bindings unchanged and the durable shared release
+ledger ending in `release_coordination_released`, the next mission is one
+separate provider-origin activation epoch using the reviewed activation rail.
+The activation terminal may activate and observe only; it may not manufacture a
+CORE mission result. Acceptance requires exact loaded revision, signed
+supervisor/runner ancestry, fresh heartbeat, one independently triggered cycle,
+the next trigger, closure of all development/activation terminals and a later
+terminal-independent cycle.
+
+### CMQ-20260813-05 provider-origin activation failed closed — 2026-08-17
+
+Activation epoch `65f4f724b245421c903fc4a18073e9a9` passed every staged
+source, receipt, key, manifest, task, stop and lane binding before mutation. The
+reviewed rail created sealed observe-only authority, archived the governed stop,
+enabled and requested the exact bound Windows scheduled task, and did not create
+a terminal-origin CORE process. Windows Task Scheduler invoked the watchdog,
+but the runtime rejected the epoch as `provider_identity_incomplete` before a
+supervisor, runner, signed tree, heartbeat or mission cycle existed.
+
+Authenticated rollback then disabled the same exact task, restored the governed
+stop byte-identically, archived the packet and lane, and left runtime/execution
+clean at `64e53354` with the manifest unchanged. Rollback record `34374d28`,
+recovered-lane record `3bb97184` and archived packet `14ad8397` are durable
+evidence. Fresh Control Tower readback confirms authoritative main remains
+`64e5335496d06bde5dba8ba9a840ecb5f0168238` and the scheduled task is Disabled.
+
+Classify Recovery Slot 1 as `WORKING / ACTIVATION_FAILED_CLOSED /
+EXACT_STOPPED_STATE_RESTORED`. CORE remains `authority-disabled /
+deployed-dormant`; no autonomous workload reduction is claimed. The reusable
+blocker is the reviewed scheduled-provider ancestry inspector, not staging,
+owner input or terminal availability. Continue the same mission with one
+source-only correction of the exact `provider_identity_incomplete` boundary,
+using mocked or platform-isolated reproduction and independent process-safety
+review. Do not create another task, runtime, mission, staging epoch or activation
+epoch. After normal merge, stop again before fresh validation/staging and a
+later separately authorized activation.
+
+### CMQ-20260813-05 provider-ancestry correction integrated — 2026-08-17
+
+The interrupted source repair was recovered without discarding its two-file
+working diff. Exact source commit `3b800edf437083ab229a2b3afa0f2676ddf0abb8`
+repairs the scheduled-child self-CIM failure by obtaining the current process
+identity locally through bounded Windows APIs while continuing to query only
+exact parent PIDs. PID reuse/reparenting, ancestry cycles, unreadable or
+unterminated ancestry, terminal ancestry and scheduled-task substitutions still
+fail closed; no broad process enumeration or authority expansion was added.
+
+The exact head passed 156 relevant tests with one retained platform skip and 13
+subtests, plus focused/adjacent suites, static compilation, diff checks and a
+real non-actuating Windows local-identity probe. Independent process-safety and
+release-integrity reviews both returned GO with no findings. PR #1040 passed all
+three exact-head CI lanes and merged normally as authoritative commit
+`a0038c42a5903f39154ddc04945870046bb061c1`.
+
+Classify Slot 1 as `WORKING / PROVIDER_ANCESTRY_SOURCE_INTEGRATED /
+FRESH_VALIDATION_REQUIRED`. Failed activation `65f4f724...` remains contained,
+rolled back and non-replayable. The stopped runtime still contains the preceding
+revision and no worker, heartbeat or independent cycle is inferred. The next
+bounded mission is fresh isolated validation and stopped-state staging of exact
+current main; it may not activate CORE. Only a later separately authorized
+provider-origin epoch may test the repaired ancestry boundary.
+
+### CMQ-20260813-05 repaired-main staging refused on stopped-state contradiction — 2026-08-17
+
+Exact current main `a0038c42a5903f39154ddc04945870046bb061c1` passed fresh
+offline isolation: 5/5 provider-ancestry tests and 95 complete runner-control,
+staging and activation tests passed with 3 Windows-only skips. Fresh signed
+validation receipt `72f0e9baf590480b86b96675484daaf2` has SHA-256
+`a0bc6ddf52f02ef2599cc39975743a21e13ec42208ce56f3dab9775dd021f676`;
+the prior receipt and failed activation were not replayed.
+
+The reviewed staging rail then refused before acquiring a lane or mutating the
+runtime because durable `watchdog.json` retained the recovered activation result
+`provider_identity_incomplete`, while the stopped-state contract requires
+`governed_stop_active`. Fresh Control Tower readback confirms authoritative main
+is unchanged, the exact task remains Disabled, no staging/activation/release
+lane is active, and runtime/execution/manifest remain clean and mutually aligned
+at historical staged revision `64e53354`. The stop marker remains present and no
+supervisor, runner, heartbeat or cycle exists.
+
+Classify Slot 1 as `WORKING / RELEASE_HOLD /
+WATCHDOG_STATE_RECONCILIATION_REQUIRED`. This is a zero-effect refusal, not an
+owner task and not authority to overwrite failed-activation evidence manually.
+The next bounded same-mission source/state-contract assessment must preserve the
+archived activation and rollback evidence, determine the reviewed canonical
+transition from authenticated recovery to governed stopped state, add replay and
+audit coverage, and stop before staging or activation. A later fresh staging
+epoch must use a new identity and freshly validated receipt.
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
 paste a prompt unless target-specific delivery and acknowledgement are evidenced.
 The target is the durable CORE queue/runner. Until then, queued, delivered,
 started and deployed-runtime-active remain distinct states.
+
+### OP-004 unified HERDMASTER Herd Decisions journey — 2026-08-17
+
+Charl has resolved OP-004's documented owner-choice gap in favour of one
+HERDMASTER-led owner journey. `/pig-allocation` becomes the canonical Herd
+Decisions (`Kuddebesluite`) surface; `/purpose-review` remains only as a
+compatibility redirect into the unified page's Needs Decision view. This extends
+existing OP-004 and its canonical allocation/purpose-review rails. It does not
+authorize a second allocation engine, purpose ledger, protected-write path or UI
+mission.
+
+The accepted product direction is workflow redesign first and facelift second.
+HERDMASTER must continuously reassess material weight, weaning, movement,
+medical, sale and lifecycle changes; rank Action Needed work by urgency and
+supported commercial impact; explain evidence, confidence, missing data, holds
+and conflicts; group only compatible recommendations; retain acknowledgement
+and evidence-bound deferral; and prepare one exact protected preview. OOM SAKKIE
+surfaces material findings and the smallest required decision. Approval remains
+protected: HERDMASTER may not silently change purpose, reserve or slaughter an
+animal, contact a customer or publish availability. After confirmation it must
+read back canonical truth, immediately reassess, and prepare—never implicitly
+execute—the correct SAM, BEACON, meat, breeding or sales handoff.
+
+The owner page defaults to Action Needed rather than the whole herd, uses human
+identity before internal IDs, keeps All Active, Already Allocated and
+Exited/History as secondary views, and unifies individual and grouped decisions.
+Every group must expose removable exceptions and exact per-animal evidence before
+one confirmation. Acknowledged unchanged findings remain quiet; deferred items
+reopen only at the recorded due time or material evidence/urgency change. Unknown
+or conflicting facts stay explicit. The final CODEX UI increment must follow the
+Dashboard-family standard and preserve contextual returns, desktop/mobile states
+and owner-approved local previews without recalculating HERDMASTER decisions.
+
+Classify existing OP-004 as `WORKING / OWNER_DIRECTION_ACCEPTED /
+CONTRACT_RECONCILIATION_QUEUED`. The current OP-004 worktrees are clean retained
+historical evidence; no matching active OP-004 process or current-lineage owner
+was proven. The visible HERDMASTER processes date from 2026-08-13 and are not
+active-work proof. CODEX UI has no fresh terminal process. Therefore do not
+prompt those terminals now. First, after an eligible Recovery WIP slot and fresh
+collision check, dispatch HERDMASTER a read-only current-main reconciliation and
+unified contract/acceptance packet. CODEX UI begins only after that contract is
+accepted. Operational completion requires a genuine canonical evidence change,
+deployed HERDMASTER prioritisation, OOM SAKKIE delivery, protected owner preview,
+confirmed canonical readback, downstream preparation, correct quiet/defer
+behaviour and a later terminal-independent reassessment.
+
+### Recovery Slot 3 SAM/BEACON operational reality — 2026-08-17
+
+Fresh read-only provider and canonical evidence proves the deployed SAM
+`sam-live-stock-operating-loop` is continuously cycling inside Render deployment
+`a0038c42`. Worker `srv-d6sijjkhg0os73f7regg-747d9955fc-trzw9:pid-59`
+completed three independent 60-second cycles through 12:38:47 UTC, each scanning
+1,791 conversations with durable next-cycle times, zero proposals, zero sends and
+zero business effects. The canonical projection contained one pre-activation
+ineligible obligation and no genuinely actionable post-activation event. The
+large provider unread inventory (711 conversations / 1,783 messages) is therefore
+not treated as 711 reply obligations or replay authority.
+
+SAM is honestly `WORKING / AUTONOMOUS_SHADOW_OBSERVER / EVENT_WAITING /
+CUSTOMER_DISPATCH_AUTHORITY_DISABLED`. `SAM_SALES_LEVEL1_COHORT_ENABLED=0` and
+the operating mode defaults fail-closed to shadow. This proves terminal-independent
+observation and replay silence, not useful customer service. Do not enable the
+cohort merely to create acceptance evidence. The next genuine eligible
+post-activation event must prove exact claim, supported response or protected
+exception, provider delivered/read state, follow-up ownership and replay silence.
+Any authority decision first requires reconciliation of the retained dirty SAM
+worktree, which is 80 commits behind current main and contains three preserved
+uncommitted response-authority files.
+
+Fresh canonical BEACON inputs show 27 live-sale-ready animals, 14 in the meat
+window and 11 slaughter/cull-ready animals, with 23 media assets, 10 approved,
+12 awaiting review, scheduling and spend disabled, three recorded production
+posts and zero qualified buyer leads. This is a real commercial opportunity but
+no deployed stock-to-proposal worker, heartbeat or current proposal/media-request
+case is proven. Classify BEACON `WORKING / DEPLOYED_DORMANT /
+STOCK_OPPORTUNITY_UNOWNED`. Its next bounded revenue increment is a canonical
+sale-ready-stock observer that reuses existing proposal/media authority and may
+surface only a protected proposal or precise missing-media request—never publish,
+spend or infer private-media authority.
+
+Evidence caveat: the assessment terminal used superseded 986/259/208-line
+governance from historical SAM head `486306ab`, so its governance PASS is not
+accepted as a current implementation authorization. It also wrote an untracked
+handover in the dirty owner workspace; preserve it as evidence but do not commit,
+move or delete it from that workspace. Runtime observations remain admissible
+because they were freshly read from current deployed revision `a0038c42`.
+
+### Recovery Slot 2 deployed manager and stale weighing correction — 2026-08-17
+
+PR #1041 source `ff1568f0` merged as authoritative main
+`b9919133faea1ce1d5ba7db5ec8499f0a7d707e6` and is loaded by the Render web
+service, the five-minute `oom-sakkie-morning-scheduler`, and the fifteen-minute
+ROOTLINE reassessment schedule. Worker `oom-sakkie-general-manager-v1` completed
+provider-origin cycles `OOM-MANAGER-CYCLE-20260817T125014102507Z` and
+`OOM-MANAGER-CYCLE-20260817T125525532646Z` after development work ended. The
+first cycle delivered owner Telegram messages 3705–3707; the next cycle retained
+the cases and suppressed unchanged duplicate delivery. This is fresh proof of
+terminal-independent discovery, durable case ownership, owner-only delivery and
+reassessment. The old FARM development terminal is released; an open shell or
+historical process is not operational ownership.
+
+The Prince physical-observation request and Pig 151 withdrawal/sales hold remain
+supported. The weighing card is not supported by current canonical truth. Fresh
+read-only production evidence found bulk batch
+`69086c13-4436-4548-8ab0-bed5453f6000`, source `app_bulk_weight`, containing 79
+distinct weight events for 2026-08-17 created between 09:21:09 and 09:24:07 UTC.
+Against the same 81-pig eligible cohort, current coverage is exactly 79/81 and
+the only missing tags are 123 and 151. Charl must not repeat or re-upload the 79
+successful records. Telegram message 3707's 0/81 statement is classified as a
+stale retained-case delivery, not as canonical evidence and not as a new owner
+work item.
+
+Classify Recovery Slot 2 as `WORKING / OPERATIONAL_DEGRADED /
+STALE_CASE_DELIVERY_DEFECT`. Preserve the live schedules and one existing
+manager/case/delivery spine. The next bounded correction must refresh canonical
+collector evidence immediately before an owner delivery, bind the outgoing
+payload to the refreshed evidence generation/digest, supersede rather than
+deliver a stale retained payload, and produce one deployed-agent correction for
+the affected weighing case. It must retain replay suppression and may neither
+delete the successful batch nor manufacture weights. Completion requires the
+deployed manager to report 79/81 with only tags 123 and 151 missing, followed by
+a later provider-origin cycle that stays silent while evidence is unchanged.
+
+### CMQ-20260813-05 watchdog recovery source integration — 2026-08-17
+
+Recovery Slot 1 source commit `521aef36cbe6e66d4f76f437a315f6f60fcc503e`
+passed 118 relevant tests (one platform skip), static compilation, diff checks,
+two independent GO reviews and all three exact-head hosted CI gates. PR #1042
+merged normally as authoritative main
+`94efdd708de4c7cf2ad0bd9380a0e97eff03c155`. The correction preserves
+authenticated activation-failure evidence while providing serialized,
+replay-safe reconciliation into the governed stopped projection after recovery
+or interruption. No staging, activation, task, runtime, provider or business
+effect occurred in the source epoch.
+
+Classify CMQ-20260813-05 as `WORKING / SOURCE_INTEGRATED /
+DEPLOYMENT_ACCEPTANCE_ELIGIBLE`. Fresh Control Tower readback found the exact
+watchdog task Disabled, the governed stop marker present, no release, staging or
+activation lock, and no fresh CORE heartbeat or independent cycle. Historical
+CORE source-terminal processes are not active-work proof; its clean worktree is
+released-retain and the terminal may be closed. Recovery Slot 1 is therefore
+promoted to one separately governed deployment/acceptance epoch. That epoch must
+revalidate exact current main, reconcile stopped-state evidence only through the
+reviewed rail, create a fresh receipt and staging identity, stage exact current
+runtime/execution/manifest, and use only the exact scheduled-provider activation
+rail. It must fail closed and preserve rollback evidence on any mismatch.
+
+Operational completion remains false until the deployed CHARLIE CORE runtime
+proves exact loaded revision, provider-origin ancestry, signed supervisor/runner
+tree, fresh heartbeat, a genuine independently triggered durable mission cycle,
+the next trigger, and a later cycle after every development and activation
+terminal is closed. Terminal-created mission output or direct process startup is
+not acceptable evidence.
+
+### ROOTLINE current irrigation-plan delivery failure — 2026-08-17
+
+The deployed OOM SAKKIE manager delivered a fresh owner-visible ROOTLINE case
+stating that reassessment remains `zone_contained` and that
+`delivered_current_irrigation_plan` is still unproven. This is useful continuous
+failure visibility, but it is not ROOTLINE business completion and must not be
+normalised as an acceptable daily wait. Current source confirms the manager
+collector deliberately maps `zone_contained` into this unresolved case, while
+the canonical irrigation plan service and ROOTLINE coordinator remain the
+responsible evidence-to-plan path.
+
+Classify the ROOTLINE portion of Recovery Slot 2 as `WORKING /
+AUTONOMOUS_REASSESSMENT_ACTIVE / CURRENT_PLAN_DELIVERY_FAILED`. The next bounded
+ROOTLINE increment must inspect fresh canonical telemetry, zone state, plan
+inputs, provider schedule receipts and the exact containment reason; produce the
+current evidence-backed irrigation plan or one precise missing-evidence/system
+exception with the earliest acquisition trigger; deliver that result through
+the deployed OOM SAKKIE channel; retain reassessment until verified closure; and
+prove a later terminal-independent cycle. It may not infer irrigation, actuate
+hardware, ask Charl to repeat available canonical facts, or create a competing
+plan/action/device ledger.
+
+The active FARM weighing-freshness correction owns shared OOM manager delivery
+surfaces. ROOTLINE work must remain within the existing irrigation plan service,
+coordinator and provider reassessment boundary unless a fresh collision review
+proves a shared change is necessary; any shared-file requirement becomes an
+addendum at FARM's next safe handover, not concurrent editing.
+
+### CMQ-20260813-05 exact-main deployment containment — 2026-08-17
+
+The separately governed CORE deployment epoch validated authoritative main
+`94efdd708de4c7cf2ad0bd9380a0e97eff03c155` with fresh signed receipt
+`fcdd752358624ba487fe2b96c836b1d4` (114 passed, three platform skips) and
+successfully reconciled historical failed activation
+`65f4f724b245421c903fc4a18073e9a9` into the authenticated
+`governed_stop_active` projection without erasing or replaying its
+`provider_identity_incomplete` evidence. Staging then refused before lane
+acquisition with `git_executable_checkout_extension_present`. Runtime,
+execution and manifest remain clean at `64e5335496d06bde5dba8ba9a840ecb5f0168238`;
+the exact scheduled task remains Disabled; no staging or activation identity,
+worker, heartbeat, cycle, provider effect or business effect was created.
+
+The refusal was caused by the checkout-safety classifier treating globally
+installed Git LFS executable filters (`filter.lfs.smudge` and
+`filter.lfs.process`) as prohibited checkout extensions. Classify Recovery Slot
+1 as `WORKING / RELEASE_HOLD / CHECKOUT_SAFETY_CLASSIFICATION_DEFECT`. Preserve
+the fail-closed gate: the next source-only correction must distinguish governed,
+exactly validated Git LFS support from repository-local or otherwise executable
+hook/filter/config injection without weakening hook, filter, include, config or
+checkout protections. It must cover scope precedence, executable resolution,
+unexpected filters, altered LFS commands and repository-local overrides, obtain
+independent process-safety and release-integrity reviews, merge normally, and
+stop before validation, staging or activation.
+
+Automatic promotion after that source integration is a new exact-main signed
+receipt, one new staging identity, and separately governed provider-origin
+activation. Business completion remains false until exact loaded revision,
+signed supervisor/runner ancestry, heartbeat, an independent durable mission
+cycle, the next trigger and a later post-terminal cycle are proven.
+
+### Revenue Slot 3 SAM/BEACON enablement — 2026-08-17
+
+Reviewed source `498c820dca59ce12c9d19cf6c094e2261b693a48` merged through PR
+#1043 as authoritative main `069377406e02fa2c177b28889463a171e61c6751`.
+Exact-head tests and independent security/privacy, sales-authority and
+replay/concurrency reviews passed. Render web and the five-minute OOM manager
+cron loaded the merge. Provider-origin cycle
+`OOM-MANAGER-CYCLE-20260817T133020892715Z` completed with ten cases claimed,
+one material BEACON evidence change, nine unchanged deliveries suppressed, and
+BEACON case `OOM-CASE-63E41A327E76EB895B4B76B8` advanced to generation 2.
+This proves terminal-independent stock/media change observation and durable
+case generation, not yet the protected proposal/media-request delivery.
+
+Classify BEACON `WORKING / AUTONOMOUS_OBSERVER /
+PROTECTED_DELIVERY_DUE_20260817T140020Z`. Its next governed reassessment is
+2026-08-17 14:00:20 UTC (16:00:20 SAST), which had not arrived at Control Tower
+observation 15:33:54 SAST. This is a genuine future provider time, not an old
+wait or terminal dependency. The deployed OOM/BEACON worker owns the transition
+and must deliver generation 2 once or record a precise protected exception,
+then prove a later unchanged cycle is silent. The Revenue development terminal
+may observe only and may be closed after that handover because Render and
+Supabase own continuation.
+
+SAM remains `WORKING / AUTHORITY_DISABLED / GENUINE_EVENT_WAITING`. A fresh scan
+found zero eligible current cohort identities among 1,791 conversations; the
+latest inbound (conversation 2101, message 797102915) predates activation and is
+not replay authority. Broad dispatch remains disabled. SAM's trigger is the next
+fresh Chatwoot inbound satisfying the exact reviewed Level 1 cohort, chronology,
+claim, evidence and provider-binding rules. This is event waiting, not permission
+to leave development work ambiguous or manufacture customer traffic. Operational
+acceptance requires the deployed SAM runtime to claim, answer or contain that
+new event, obtain provider readback, retain follow-up ownership and suppress
+replay.
+
+No customer message, quote, payment, reservation, allocation, publication,
+spend, farm/stock mutation, n8n authority or Google Sheets authority was
+created. Preserve the historical dirty SAM worktree and its three files; do not
+copy or overwrite them blindly.
+
+### Revenue-loop owner correction: BEACON demand precedes SAM conversion — 2026-08-17
+
+Charl confirmed the governing commercial dependency: BEACON must create and
+amplify qualified demand; SAM then receives, qualifies and converts the resulting
+customer conversations. A zero-item SAM inbox cannot be treated as an independent
+event wait while the governed BEACON publication/boost journey has not generated
+traffic. The two agents retain distinct authorities, but their outcome chain is
+one closed Revenue loop: canonical sale-ready stock and approved media -> BEACON
+proposal -> protected publication/boost authority -> provider-confirmed campaign
+-> attributable customer inbound -> SAM response/qualification -> durable
+follow-up and commercial outcome -> BEACON performance learning.
+
+Revenue Slot 3 therefore remains `WORKING / DEMAND_GENERATION_NOT_COMPLETE`.
+BEACON generation 2 must not stop at an internal opportunity card. It must
+prepare the exact Facebook post, media selection, audience, schedule, boost
+budget/cap, duration, attribution identity and rollback/stop controls. Publication
+and spend remain protected unless an applicable durable standing authority is
+proven; where authority is absent, request one concise exact decision rather than
+leaving SAM event-waiting indefinitely. After authorization, the deployed BEACON
+runtime—not a development terminal—must publish and boost, obtain Meta/provider
+readback and create the attribution boundary that SAM uses for resulting inbound.
+SAM must then handle eligible responses through its canonical provider/claim
+rail. Business completion requires the complete attributed demand-to-conversion
+journey and a later terminal-independent cycle, not merely a BEACON case or SAM
+scanner heartbeat.
+
+### ROOTLINE plan delivery ordering defect — 2026-08-17
+
+Fresh provider-origin ROOTLINE cycles
+`OOM-SCHEDULE-ROOTLINE-20260817T151500+0200` and
+`OOM-SCHEDULE-ROOTLINE-20260817T153000+0200` completed independently with
+`zone_contained`, zero hardware commands, zero farm writes and zero plan sends.
+Fresh observation `OOM-ROOTLINE-OBS-DAEB3BC6958EC43020468A16` nevertheless
+supports a bounded advisory plan for B12345 and C12345: run each for 60 minutes,
+based on weekly demand, water evidence and dry observed weather. This is plan
+evidence only; no physical outcome or actuation is inferred.
+
+The reusable defect is ordering, not missing scheduling. With autonomous B/C
+execution enabled, `handle_rootline_reassessment_trigger` immediately returns
+the execution-cycle result. A contained execution therefore prevents the
+independent advisory-plan reassessment and provider-delivery branch from running.
+The manager collector then treats the latest `zone_contained` execution outcome
+as proof that `delivered_current_irrigation_plan` is unknown even when a fresh
+same-date plan observation exists. Telegram card 3708 consequently repeated the
+generic unresolved case instead of the current plan.
+
+Classify Recovery Slot 2 ROOTLINE as `WORKING / AUTONOMOUS_SCHEDULER_HEALTHY /
+PLAN_DELIVERY_ORDERING_DEFECT`. The existing active FARM correction owns the
+shared OOM manager files and has fresh progress in seven preserved files; do not
+interrupt or start a competing implementation. At its next safe handover it must
+incorporate this mandatory addendum: keep execution containment and zero hardware
+authority; complete advisory-plan delivery independently of optional execution;
+return separate `plan_delivery_status` and `execution_status`; close the generic
+unknown only from same-operating-date provider-confirmed plan delivery; and add
+regressions for plan-plus-containment, delivery failure, confirmed suppression,
+material change and replay silence. Operational acceptance requires a new
+provider schedule identity delivering the plan or precise evidence exception and
+a later terminal-independent reassessment.
+
+The ROOTLINE diagnostic terminal had incomplete governance reads and therefore
+supplies admissible current diagnosis, not implementation authority. Its
+read-only assessment is complete and the terminal can close; the deployed
+scheduler continues independently.
+
+### HERDMASTER premature weaning card and owner-time formatting — 2026-08-17
+
+Charl rejected the Molly card as operationally mistimed. Litter
+`LIT-2026-5C36` farrowed 2026-08-11 and has planned weaning 2026-09-11; current
+care attention is first dosing, not a weaning preview almost four weeks early.
+Current source proves the cause: `_herdmaster` creates a due
+`herdmaster:molly-active-litter` candidate unconditionally for every non-closed
+Molly litter, assigns a 30-minute reassessment and foregrounds weaning regardless
+of care phase or proximity to the planned boundary. This is an owner-noise and
+priority defect, not a request for Charl to reconfirm known dates.
+
+The active FARM mission owns the affected manager collector/renderer surfaces.
+At its next safe boundary it must add phase-aware litter care: derive the current
+care milestone from canonical litter, piglet, product/medical and observation
+evidence; surface first dosing when actually due with exact supported evidence;
+keep planned weaning quietly owned until a governed preparation window; promote
+weaning only when that window, missing prerequisite or material exception is
+reached; and suppress unchanged future milestones. Unknown weaned count before
+the weaning window is expected, not itself an urgent unknown. No dosing fact,
+date, product or completion may be inferred, and no medical/litter write occurs
+without the applicable protected confirmation.
+
+Charl also rejected raw UTC ISO timestamps in owner messages. Current source
+prints `next_reassessment_at` verbatim, producing text such as
+`2026-08-17T13:20:14.102507+00:00`. Every OOM SAKKIE owner-facing schedule,
+deadline and evidence check must instead be converted from the canonical aware
+instant to `Africa/Johannesburg` and rendered without seconds, fractional seconds
+or offset syntax: `Today, 15:20`, `Tomorrow, 08:00`, or `17 Sep 2026, 08:00`.
+Use an owner-language label such as `Next check`, not internal `Next evidence
+check`; keep the exact UTC instant only in canonical/audit evidence. Add DST/time
+zone, day-boundary, malformed/Unknown and Telegram HTML regression coverage.
+
+### ROOTLINE irrigation and auxiliary-device auto-mode outcome — 2026-08-17
+
+Charl restated the required owner outcome: ROOTLINE must deliver and execute
+governed irrigation, and bring the outstanding fertiliser controls and borehole
+plug into safe automatic management. Current truth is not that irrigation is
+running. The latest cycles produced advisory B/C evidence but zero hardware
+commands and zero physical outcomes. Hardware/execution flags remain unproven or
+disabled; only the Mixer generation-one seed is established in the typed device
+registry, while fertiliser injection and the Borehole MINI R4 are disabled and
+uncommissioned. Containment and recurring status cards are not Business
+completion.
+
+Continue existing Recovery Slot 2 with two serialized tracks. FARM retains the
+shared OOM manager/plan-delivery ordering fix. A disjoint ROOTLINE auto-mode
+readiness track may now inspect and prepare the existing typed device spine,
+provider adapters and commissioning contracts without editing FARM-owned manager
+files or actuating hardware. It must inventory each exact valve/controller,
+fertiliser mixer, injection relay and borehole plug; bind provider/device/channel
+identity; prove current ON/OFF readback; define fail-OFF, maximum runtime,
+mutual-exclusion, water/tank/pump/power/weather/manual-isolation and fertiliser
+interlocks; define standing-authority scope, revocation and emergency stop; and
+produce one staged commissioning sequence per risk profile.
+
+No device enters auto mode from configuration alone. Ordinary valves require
+provider/readback proof and supervised commissioning. Fertiliser mixer and
+injection require separate flow/recirculation evidence and verified shutdown.
+The borehole plug/pump requires the stricter pump/tank/full-controller, dry-run,
+power-loss and manual-isolation evidence. Only after exact protected approval and
+physical/provider OFF verification may the deployed ROOTLINE runtime enable a
+bounded authority envelope. Operational closure requires a genuine scheduled
+plan, provider-confirmed actuation, physical water/outcome evidence, automatic
+OFF, canonical accounting, replay silence and a later terminal-independent
+cycle. Development terminals may never operate the devices or manufacture that
+proof.
+
+### CORE checkout-safety repair interruption and durable continuation — 2026-08-17
+
+Continue existing `CMQ-20260813-05` Recovery Slot 1; do not create a duplicate
+mission. The checkout-safety source terminal did not complete a handover. Fresh
+inspection at 16:00 SAST proved launcher PID 100832 had no Codex, test or other
+work child, its durable transcript had stopped at 15:54, the expected final
+handover file was absent, and the retained worktree still held the intended
+two-file uncommitted repair in `modules/charlie/runtime_staging.py` and
+`tests/test_charlie_runtime_staging.py`. The partial full-suite invocation is
+inconclusive. The exact stale launcher and console were closed after that proof;
+no source or evidence was removed.
+
+The same retained worktree and branch were resumed through a new durable
+non-interactive source terminal at 16:00 SAST. Fresh ancestry proves launcher
+41380 owns a live Codex process, code-mode host and current command activity.
+Classify CORE as `WORKING / CHECKOUT_SAFETY_SOURCE_REPAIR_RESUMED`; source-only
+authority remains in force. The target must complete the tracked governance
+preflight, full relevant suite to final exit, static checks, two independent
+reviews, exact-head CI and normal merge, then return the complete
+`CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` and stop before validation,
+staging, activation or runtime mutation. The durable transcript and final-message
+paths are `C:\tmp\CORE_CHECKOUT_SAFETY_DURABLE_RESUME2_20260817.log` and
+`C:\tmp\CORE_CHECKOUT_SAFETY_DURABLE_RESUME2_LAST_MESSAGE_20260817.md`.
+
+Current authoritative main advanced to `2b8983961df6a70842dddd2276ad6a32c71407e1`
+through FARM/OOM PR #1044 while the CORE source repair was being resumed. That
+integration must be reconciled normally and rechecked for overlap before the CORE
+PR; historical waits or visible shells confer no dependency or ownership.
+
+The resumed durable source terminal also ended without a handover. Its transcript
+proves the direct cause: the full pytest command was terminated by the terminal's
+tool router after 5,020 ms with exit 124. The `-NoExit` launcher then remained as
+an empty visible PowerShell window, creating misleading terminal presence. A
+Control Tower foreground test was subsequently invalidated when a new chat turn
+replaced its yielded execution cell; this is orchestration loss, not test or
+product evidence. Do not run this long suite inside a short-lived tool cell again.
+
+Control Tower closed exact stale launcher 41380 only after proving it had no live
+worker. It then ran the unchanged suite through detached hidden host launcher
+53300 with durable stdout, stderr and exit receipt. The receipt records
+`exit_code=0` at `2026-08-17T16:07:48.8718110+02:00`; paths are
+`C:\tmp\CORE_CHECKOUT_SAFETY_TESTS_20260817.out.log`,
+`C:\tmp\CORE_CHECKOUT_SAFETY_TESTS_20260817.err.log` and
+`C:\tmp\CORE_CHECKOUT_SAFETY_TESTS_20260817.exit.txt`. The next bounded CORE
+source continuation must consume this fresh evidence, reconcile current main,
+complete reviews/PR/CI/integration and return the mandatory handover; it must not
+repeat the long test through the five-second command route.
+
+### ROOTLINE typed auto-mode readiness audit — 2026-08-17
+
+Continue existing Recovery Slot 2; no duplicate ROOTLINE mission, device spine,
+provider adapter or authority ledger is authorized. The read-only readiness audit
+completed with `NO BUSINESS OUTCOME`: no provider control, hardware command,
+configuration change, authority activation, farm write or physical irrigation
+result occurred. Focused evidence reported 101 tests passing with eight database-
+specific skips, plus fresh authenticated provider and canonical readback.
+
+Current safe truth is `WORKING / CONTAINED_AUTO_AUTHORITY`. The deployed 5-minute
+OOM scheduler and 15-minute ROOTLINE reassessment are autonomous, but hardware is
+authority-disabled by canonical gaps. B12345 and C12345 are online and OFF on
+eWeLink device `100204e9bc` channels 1 and 2 with native 3,599-second fail-stop;
+neither has a current typed standing-authority record. C has historical supervised
+flow/OFF evidence; B's static commissioned claim conflicts with the absence of a
+supervised B canary and must be treated as uncommissioned. Fertiliser injection
+(`100204d497`, CH1) is online/OFF but lacks typed registry, flow/preflow/flush and
+shutdown evidence. The mixer (`100204d497`, CH2) is online/OFF and has typed
+generation 1 `bounded_actuation_ready`, but standing authority is false and
+recirculation/pump-stop proof is absent. The Borehole MINI R4 is actually bound
+through Tuya/SmartLife EU, is offline/OFF at 0 W/0 mA with five disabled legacy
+timers, and must not retain the conflicting static eWeLink provider identity.
+
+Mandatory reusable corrections are: physical uniqueness by provider-account
+binding plus device ID plus channel; exact canonical authority ID/version/policy/
+revocation resolution before ON; typed registry/history population for B, C,
+injection and borehole from verified evidence only; semantic dependency/freshness
+validation; fertiliser recirculation/flow/flush protections; strict borehole tank-
+full, dry-run, pump-current/protection, manual-isolation and power-loss protections;
+and one protected emergency-stop contract that revokes future ON, issues bounded
+idempotent exact-channel OFF, requires provider OFF plus physical cessation,
+records containment and escalates once to manual isolation only if OFF remains
+unverified. All flags and standing authority remain inactive.
+
+No owner-presence or physical commissioning request is eligible until the corrected
+non-actuating spine is deployed, all electronic/provider/canonical gates pass, and
+independent device-safety plus authority/replay reviews approve. Commission one
+risk profile at a time through the deployed ROOTLINE runtime, never a terminal;
+prove intended physical effect, native automatic OFF, provider OFF, physical
+cessation, canonical evidence, replay silence, a normal later scheduled cycle and
+terminal-independent continuity.
+
+Fresh Control Tower sweep supersedes the audit's stale `FARM TERMINAL ACTIVE`
+assumption. FARM is nevertheless genuinely active now because its retained Slot 2
+worktree has fresh uncommitted changes in
+`herdmaster_daily_manager_evidence.py` and its test; it must not be interrupted.
+Retain this as an ADDENDUM for FARM's next complete handover, then allocate the
+collision-free ROOTLINE typed-source correction within the same serialized Slot 2.
+The completed read-only ROOTLINE audit terminal was closed after its handover;
+deployed schedules continue independently.
+
+### P0 Revenue addendum — truthful multi-line livestock quote — 2026-08-17
+
+Charl has a current customer request that the manual Order journey cannot represent
+truthfully without repeated manual stock searching and premature animal selection.
+Correct the punctuation lost in the intake before any implementation or quote:
+the request is **10 female piglets at 5–6 kg; 10 male piglets at 5–6 kg; one
+female piglet around 15 kg; and one male piglet around 15 kg**, total 22. It is not
+a request for 56 kg animals. Similarly, snapshot ranges rendered as `1025` and
+`1519` mean 10–25 kg and 15–19 kg.
+
+Classify this as a `CURRENT_BLOCKER / P0 REVENUE SLOT 3 ADDENDUM`, not a new order
+engine or duplicate mission. Current source already contains validated structured
+`requested_items[]`, order-line synchronization and revision contracts. The owner
+UI still exposes one aggregate request header and Order Detail couples quote lines
+to individually selected sale-eligible pigs. The required reusable journey must
+separate: customer request; HERDMASTER recommendation; protected purpose decision;
+actual reservation; and final collection. A draft quote may describe requested
+quantities before reservation only with explicit confirmed/partial/projected/
+unavailable wording and without promising specific animals.
+
+The 2026-08-17 read-only availability snapshot reported 26 selectable animals.
+Relevant selectable evidence was male tag 123 at 5.6 kg and males 98, 86 and 83 at
+16.0, 18.8 and 19.0 kg. Exact 5–6 kg canonical candidates included females 143,
+145, 142 and 129 and males 126, 144, 123, 150, 128 and 132; all except 123 had
+purpose Unknown. No active female candidate was found in the 10–25 kg snapshot.
+This is time-bound matching evidence, not authority to change purpose, reserve,
+promise or sell any animal. Even approving every plausible Unknown-purpose animal
+would leave a current shortfall against ten of each sex.
+
+The bounded backend contract must accept and preserve the four request lines
+without animal allocation; return exact, near, projected-growth and shortfall
+groups from fresh canonical stock; expose weight date, purpose, reservation,
+health and conflict evidence; prepare one grouped OP-004 purpose-review preview
+for plausible Unknown-purpose candidates; and keep all purpose changes and
+reservations behind exact protected confirmation. HERDMASTER must do the matching
+and ranking rather than requiring Charl to search or reclassify pigs manually.
+
+Reconcile the live-stock medical rule as a business-policy correction, not a broad
+removal of safety holds. Food-chain meat withdrawal must be disclosed on live-
+animal quotes and movement/health documents and must not alone become a generic
+live-sale exclusion. Genuine animal-health, treatment follow-up, quarantine,
+movement restriction and explicit sale holds remain blocking. Tag 151 is regression
+evidence for the over-broad current selector; it is not a match for this request and
+must not be selected or altered as part of acceptance.
+
+Ownership order: Revenue/SAM owns requested-items, quote truth and order-state
+contract; HERDMASTER/OP-004 owns matching evidence and purpose-review preparation;
+CODEX UI implements the multi-line editor and local owner preview only after those
+contracts are accepted. Revenue's current terminal has fresh integrated source
+through authoritative main `d8f4c0734646421e2852dd0570ba850fb2b26242e` but has
+not returned a completion handover. Retain this addendum until that safe boundary;
+never prompt or duplicate the active Revenue terminal. Then dispatch one bounded
+read-only reconciliation/contract packet followed by implementation, local owner
+desktop/mobile preview and this exact four-line acceptance journey. No production
+order, quote send, purpose change or reservation is authorized by this entry.
+
+### CORE checkout-safety source integrated — PR #1046 — 2026-08-17
+
+Existing mission `CMQ-20260813-05` Recovery Slot 1 completed its bounded source
+gate. Reviewed source head `db86e8498b5c41ae2dfd3c01bae42c823c64939a`
+merged normally through PR #1046 as authoritative main
+`d3a3b71a2163a5199d0a6863a24a5f8dfdf87b1b`. The exact repair accepts only the
+four governed standard Git LFS settings at system/global scope after trusted
+Git/Git-LFS resolution and invokes trusted Git by absolute path. Altered or partial
+configuration, unsafe scopes, extra filters, includes/includeIf, hooksPath,
+fsmonitor, malformed records, post-checkout hooks, missing executables and
+same-name untrusted substitution continue to fail closed.
+
+Verification: durable host receipt SHA-256
+`1ba0c82f35c1c53ad66232895cd58510d2363b207d66e54f0d7fb3696e2d5291`
+records exit 0 at 16:07:48 SAST; focused exact-head tests passed 26 tests plus 17
+subtests; static compilation and diff checks passed; independent process-safety
+and release-integrity reviews passed; `charlie-core`, disposable-Postgres audit
+and Playwright exact-head CI all passed. No staging, activation, task, governed-
+stop, worker, manifest, runtime, provider, database or production action occurred.
+
+Classify the source terminal `CLOSE / RELEASED-RETAIN` and mission
+`WORKING / SOURCE_INTEGRATED / VALIDATION_STAGING_ACTIVATION_GATE`. The empty
+source launcher was closed after final handover and exit-code-zero receipt. Promote
+automatically under a fresh separately governed execution identity only after
+fresh authoritative-main, lane, task, stop, runtime, execution and manifest
+readback. The next gate must create a fresh isolated validation receipt, stage
+exact current main while stopped, then use the reviewed provider-origin activation
+rail only if every binding remains exact. It must prove loaded revision, signed
+supervisor/runner ancestry, heartbeat, one independent cycle, next trigger and a
+later cycle after all development and activation terminals close. Source merge or
+terminal-created cycles do not make CORE live.
+
+### HMQ-20260813-04 offspring summary continuation — 2026-08-17
+
+Charl confirms that the `Nageslagte` section still lacks useful outcome summaries.
+The retained Cursor-era CODEX UI worktree
+`C:\tmp\ui-hmq-20260813-04-human-identity-preview-20260815` is clean in tracked
+source at `b936a1e88c67c6c116ce5c1c39e7d5d9113abd23`; only preserved preview output is
+untracked. Fresh process inspection found no terminal or worker owning that
+worktree. It is 19 unique commits ahead and 125 commits behind current main, so it
+must remain immutable evidence and must not be merged, rebased, reset or revived
+wholesale. The Cursor terminal can close without affecting any runtime or work.
+
+Classify HMQ-20260813-04 as `OWNER_PRIORITY / BACKEND_CONTRACT_REQUIRED / UI
+PREVIEW_SUPERSEDED`. The corrected local preview truthfully removed invented
+Unknown/outcome cards and retained `Totaal aangeteken — 37`, but that is not the
+requested useful business outcome. Current main has no canonical
+`offspring_disposition_summary` projection. Status, purpose and `on_farm` alone
+must not be interpreted as completed sale, processing or exit evidence.
+
+Execute in two serialized external-terminal increments. First, HERDMASTER owns a
+fresh-current-main backend projection that returns `total_recorded`, `on_farm`,
+`livestock_sale`, `auction_sale`, `slaughter_pig_sale`, `meat_processed`,
+`deceased`, `other_unresolved`, `classified_count`, `reconciles_to_total`,
+`rule_id`, and one primary canonical disposition/evidence classification per
+offspring. Categories must be mutually exclusive, evidence-backed and reconcile
+exactly to the attributable total; Unknown evidence remains unresolved, never
+zero or an inferred outcome. Historical branch commits may be inspected and
+selectively reimplemented only after current-source and collision review.
+
+Second, after the HERDMASTER contract is reviewed and integrated, launch a fresh
+external CODEX UI worktree from then-current main. Reconcile only the approved
+three-file owner experience: useful summary cards beneath `Nageslagte`, canonical
+total and reconciliation status, human-readable labels, unresolved-evidence
+warning, existing 37-row operational table, Dashboard-family styling, desktop/
+390px mobile behavior and authenticated GET-only local preview. Require Charl's
+approval before merge or deployment. The UI must not become livestock authority
+or invent categories. Both target terminals must return the complete
+`CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` and Control Tower receipt.
+
+### DMQ-20260816-01 external completion and Brain Guard distinction — 2026-08-17
+
+The Cursor-era DOCUMENTS worktree `C:\tmp\documents-catalogue-20260816` is clean
+at `e228f74ac0fac71779ff0259e4518960ffd9915d`, with no process owner. PR #1016
+remains open and mergeable; all three historical exact-head checks completed
+successfully. Its bounded delta remains three disjoint files: canonical catalogue
+ownership doctrine, `modules/documents/catalogue.py`, and its test. The branch is
+three commits ahead and 123 commits behind current main, so old PR monitoring is
+not active work and the Cursor terminal can close. Move only the completion step
+to a controlled external terminal: merge current main non-destructively, inspect
+collisions/doctrine, rerun tests and both authority/privacy reviews, push the same
+branch/PR, require fresh exact-head CI, merge normally if compatible, verify the
+merged source and stop. No Mission 2 adapter, PDF, Telegram, scheduler, printer,
+route, deployment or production mutation is authorized.
+
+DOCUMENTS and Brain Guard are distinct. DOCUMENTS owns the governed catalogue and
+future generation/delivery contracts while each business domain retains document
+meaning. Brain Guard is CORE's knowledge-integrity reviewer: it checks Vault Brain
+citations, source coverage, contradictions and update discipline, may write
+governed Vault/learning records, and blocks review-ready status when doctrine is
+missing or stale. It cannot build documents, approve business actions, merge,
+deploy, send, allocate, price or mutate production.
+
+The tracked Vault Readiness Scorecard currently reports `88–92%`: governance 94%,
+identity/hierarchy 90%, agent structure 85%, business doctrine 80%, workflows 90%,
+data doctrine 85%, standards 90%, playbooks 80%, source map/cleanup 82%, and gold
+examples 70%. Source contains the `charlie_brain_guard_gate_v1` review gate,
+ranked Vault retrieval, source-coverage enforcement, normalized write-through and
+permission tests. This is source/runtime capability, not proof of a continuously
+running independent Brain Guard worker. Fresh autonomous status depends on the
+separate CORE validation/staging/provider-activation mission and its independent-
+cycle evidence. Do not claim Brain Guard live merely because its code and doctrine
+exist.
+
+### CORE activation `aa3be93a` failed safe — 2026-08-17
+
+Existing mission `CMQ-20260813-05` Recovery Slot 1 validated and staged exact then-
+current main `d3a3b71a2163a5199d0a6863a24a5f8dfdf87b1b`, but CORE remains
+`WORKING / ACTIVATION_FAILED_SAFE / STOPPED`. Isolated validation identity
+`cmq05-validate-d3a3b71a-u2-20260817` ran 136 tests with 136 passed, three
+platform harnesses skipped and exit 0; signed receipt SHA-256 is
+`dd8cd7f19547ba33295182860f154cbc797da08009300971d6ba2a0ee7fa2292`.
+Staging lane `90565dee3b2040b48a47fbe93d8904e9` aligned runtime, execution
+and manifest to `d3a3b71a`, preserved governed stop and disabled task binding,
+then released normally.
+
+Fresh provider-origin activation `aa3be93a85974373bc29bd9b5375bbef` passed dry-run
+and requested only the exact scheduled task, but the scheduled child reported
+`provider_identity_incomplete`. No provider ancestry, supervisor, runner,
+heartbeat or independent cycle was accepted. Authenticated rollback restored the
+exact original stop bytes, disabled task, `supervisor_stopped`, absent live packet
+and zero locks; rollback SHA-256 `396c8654...`, failure `58ffd36e...`, recovery
+completion `6a56de51...` and reconciliation `3101c72d...` are retained. The epoch
+is archived and non-replayable. No database, farm, customer, Telegram, n8n,
+Sheets or hardware effect occurred.
+
+The activation terminal returned exit zero only for correct fail-closed handling;
+it did not make CORE live. Its released empty launcher was closed after handover.
+Current authoritative main has since advanced to
+`ee736fce95e8130a26207f495750f486d41b5bd3`, so no further staging or activation
+may reuse the d3a3b71a validation receipt or activation identity. Automatically
+promote one bounded current-main CORE source/read-only provider-identity diagnosis
+and repair. It must inspect exact failure evidence and scheduled-provider ancestry
+without broad process discovery, preserve the stopped runtime and all historical
+artifacts, strengthen rather than weaken provider proof, complete tests/reviews/
+PR/CI/merge, and stop before a fresh validation/staging/activation epoch.
+
+### Recovery Slot 2 weekly weighing freshness outcome — 2026-08-17
+
+The OOM SAKKIE/HERDMASTER stale weighing case achieved its owner-visible business
+result through the deployed worker. Canonical batch
+`69086c13-4436-4548-8ab0-bed5453f6000` contains 79 valid distinct 2026-08-17
+weights against 81 eligible tagged pigs: 97.53% coverage, with only tags 123 and
+151 missing and no conflicts. The 79 records were not deleted, changed, replayed
+or re-uploaded. The stale retained 0/81 payload was superseded.
+
+Repair revisions from PRs #1044, #1045 and #1047 are contained in authoritative
+main. The reusable manager now refreshes the owning specialist immediately before
+delivery; binds payload/digest/generation/lease to refreshed evidence; requires
+stable changed evidence; fences provider confirmation by exact generation/digest;
+requires provider success plus confirmation; preserves retry identity; rejects
+stale epochs; and includes Monday's canonical weights in the current weekly window.
+Focused evidence reported 192 tests plus 16 subtests, targeted 73 plus 17 subtests,
+17 boundary tests, 11/11 disposable-Postgres checks, independent reviews and all
+three CI gates passing.
+
+Deployed OOM worker cycle
+`OOM-MANAGER-CYCLE-20260817T150526546210Z-CA82DA58E2BE4DABA76322BBB48BA385`
+updated existing Telegram message 3707 as generation G2, mission
+`OOM-CASE-443218B6C4C7E41336C95CC6:G2`, with provider confirmation at
+15:06:40 UTC. The delivered text correctly states 79/81 and tags 123 and 151.
+Three later Render-origin cycles advanced leases and heartbeats with no later
+provider event, proving replay silence through the evidence cutoff. Prince's
+physical-observation request and pig 151's withdrawal/sales hold remain unchanged;
+no sale, clearance, allocation or veterinary conclusion was inferred.
+
+Classify this bounded case `BUSINESS RESULT ACHIEVED / POST-DELIVERY OBSERVATION`.
+The completed FARM terminal and clean retained worktree are released; its exact
+visible launcher was closed after handover. Keep the existing deployed OOM worker
+and schedules running; do not resend message 3707 or request another upload. A
+later provider-owned cycle should confirm durable completion, and the volatile
+HERDMASTER envelope identity should be normalized only if it continues producing
+non-material internal generations.
+
+FARM's release is the automatic promotion boundary for the retained ROOTLINE Slot
+2 addendum. Dispatch the smallest fresh-current-main source increment first:
+decouple advisory current-plan reassessment/delivery from optional contained
+hardware execution, preserve zero hardware authority, return separate plan and
+execution statuses, and close the generic unknown only from same-date provider-
+confirmed plan delivery. Require new schedule-origin delivery and a later replay-
+silent cycle after deployment. Typed device/standing-authority commissioning
+remains separately sequenced after the plan-delivery contract and never authorizes
+terminal actuation.
+
+### Revenue Slot 3 generation-9 campaign package — correction required — 2026-08-17
+
+Deployed BEACON autonomously prepared and delivered protected generation 9 for
+case `OOM-CASE-63E41A327E76EB895B4B76B8`, attribution
+`BEACON-CAMPAIGN-48C78B9256323E30AED38BE0`, through OOM SAKKIE. Render cycle
+`OOM-MANAGER-CYCLE-20260817T152038672902Z-089DF963B27B4326B8BD5C389E508B79`
+completed with one provider-confirmed delivery, seven suppressions and zero
+exceptions; a later provider-owned cycle recorded duplicate suppression. This
+proves autonomous package preparation, owner-card delivery and replay silence.
+The released clean Revenue development terminal was closed after handover; the
+deployed five-minute worker continues independently.
+
+No Facebook publication, boost, spend, customer inbound, SAM response, quote,
+reservation, allocation, payment, sale or profit occurred. Publication/spend
+authority remains disabled. The delivered envelope proposed 18 August 18:00 SAST,
+Facebook messaging conversations, ZAR 300 total/ZAR 100 daily for three days, and
+text-only media. Do not approve or execute that exact package from Control Tower.
+
+Commercial review finds a reusable objective/copy contradiction: the objective is
+message-generation for the BEACON-to-SAM revenue loop, but the copy merely asks
+people to “follow the farm journey” and does not invite livestock enquiries,
+identify a truthful availability proposition or create a clear SAM inbound path.
+Spending on this card would not satisfy Charl's standing priority that BEACON
+creates demand which SAM can handle. Classify generation 9
+`PROTECTED_CARD_DELIVERED / CORRECTION_REQUIRED / NO_PUBLICATION_AUTHORITY`.
+
+Automatically continue the same Recovery Slot 3 with a fresh-current-main bounded
+BEACON package-quality repair. Require semantic alignment among campaign objective,
+canonical sale-ready stock/media evidence, copy, call to action, target audience,
+attribution and SAM-supported response class. The package must remain truthful,
+must not promise unavailable animals or prices, must not infer private-media
+authority and must retain exact budget/time/stop/rollback controls. The deployed
+agent—not a terminal—must produce and deliver the corrected protected card. Only
+then is one exact approve/correct/decline owner decision eligible; publication and
+spend remain blocked until approval, and Meta/SAM/commercial readback remain later
+acceptance gates.
+### Revenue Slot 3 owner-card and litter-media addendum — 2026-08-17
+
+Charl's provider-visible generation-9 BEACON card is not approval-ready. It
+duplicates the post copy, exposes dense audit/authority prose, says
+`Approve / Correct / Decline` without supplying actionable Telegram buttons,
+and selects `text_only` without reconciling the governed media library to the
+specific litter/story subject. This is a current acceptance defect in the same
+Revenue Slot 3 package-quality repair, not a new BEACON mission and not owner
+approval.
+
+At the existing Revenue terminal's next safe handover boundary, require one
+compact owner card with: the business goal and story subject first; one copy
+preview; local SAST date/time; budget and duration; a short truthful stock/SAM
+boundary; and actual protected inline actions for `Approve`, `Correct`, and
+`Decline`. Put full attribution, stop, rollback, digests, and provider chronology
+behind a details action rather than duplicating them in the primary message.
+
+For a litter-specific story, BEACON must query the existing canonical media
+library by exact litter/pig/event linkage and present the matching candidate
+thumbnails or exact media identities, capture date/source, and current
+public-use authority. Ask `Use these photos?` with select/change/no-media
+controls. Library presence is evidence availability, not publication consent.
+Private, ambiguous, unlinked, or public-use-Unknown media remains ineligible;
+when no eligible media exists, deliver one precise media request instead of
+silently defaulting to text-only. The protected approval digest must bind the
+selected media identities together with copy, audience, schedule, budget,
+attribution, stop conditions, and rollback. No post, boost, spend, or media-use
+authority is granted by this register entry.
+
+### HMQ-20260813-04 backend merged; CODEX UI promoted — 2026-08-17
+
+HERDMASTER's offspring-disposition contract merged through PR #1048 as
+`f18deadebad417d799a4d7274e9fa5607f7e8e6a`. The backend terminal returned a
+complete exit-zero handover and was then closed. Its automatic trigger is
+satisfied: continue the existing HMQ mission in one fresh external CODEX UI
+worktree based on authoritative main. Render only canonical
+`offspring.dispositions[]` and `offspring.disposition_summary`; do not infer or
+recalculate classifications. Produce local desktop/mobile owner previews for
+the useful `Nageslagte` summaries and stop for owner review without merge or
+deployment.
+
+### DMQ-20260816-01 source completion captured — 2026-08-17
+
+The DOCUMENTS catalogue terminal returned a complete exit-zero handover before
+closure. PR #1016 merged normally as `6c5921b1`; authoritative main later
+advanced without changing the three catalogue files. Mark DMQ-01
+`SOURCE_INTEGRATED / TERMINAL_RELEASED`. This catalogue defines document
+families, ownership, generators, evidence and delivery contracts. Brain Guard
+is separate governance that constrains evidence, authority and memory across
+agents. No document runtime, adapter, PDF generation, delivery, schedule or
+Mission 2 was started.
+
+### CMQ-20260813-05 provider-identity repair interruption — 2026-08-17
+
+Fresh inspection at 17:35 SAST found the CORE provider-identity repair had no
+Codex child and no final/exit handover. The retained worktree
+`C:\tmp\cmq05-provider-identity-repair-ee736fce-20260817` preserved exactly two
+modified files: `modules/charlie/runtime_activation.py` and
+`tests/test_charlie_runtime_activation.py`. An empty shell was not treated as
+active work. Resume the same mission, branch, worktree and evidence lineage;
+do not create a duplicate activation identity or claim CORE live. The exact
+retained repair was relaunched at 17:35 SAST for completion and mandatory
+Control Tower feedback.
+### ROOTLINE current-plan delivery integration and live acceptance — 2026-08-17
+
+Existing OOM SAKKIE/ROOTLINE Recovery Slot 2 merged its ordering repair through
+PR #1050 as `11b03a6aaf7f2fcdc56227e7dcd916fe4e37ac1b`. The clean source terminal
+returned exit 0 and is released-retain. The repair orders advisory current-plan
+reassessment/delivery independently of optional contained execution and binds
+manager reconciliation to operating date, material/result identity, generation
+and provider confirmation. It grants no hardware authority.
+
+Control Tower did not retain the terminal's initial `EXTERNAL_HOLD` as a passive
+wait. Fresh Render readback at 18:02 SAST proved both
+`rootline-autonomous-reassessment` (`*/15`) and
+`oom-sakkie-morning-scheduler` (`*/5`) unsuspended and live on authoritative
+main `e95a9f88a493f0b1f96998a8bc6c71611697947d`, which contains PR #1050.
+Canonical/provider readback then proved provider-owned schedule identity
+`scheduled:ROOTLINE-AUTO-20260817T160000Z` delivered Telegram message `3716` at
+18:02 SAST under mission `OOM-ROOTLINE-REASSESS-7E6D0B06A9B53C374B0FD15D`,
+evidence generation `483462973CAD7DB0`. The terminal did not invoke or send it.
+
+Keep lifecycle `OPERATIONAL_ACCEPTANCE_IN_PROGRESS`: exact deployed revision,
+fresh provider schedule and Telegram confirmation now pass. Closure still
+requires the later provider-owned replay-silent cycle and explicit zero hardware
+command/readback proof. Do not send another terminal prompt or ask Charl for an
+action. The automatic trigger is the next quarter-hour ROOTLINE schedule plus
+the following manager reconciliation.
+
+### CORE provider-identity source repair integrated — 2026-08-17
+
+Existing `CMQ-20260813-05` Recovery Slot 1 recovered its interrupted two-file
+provider-identity repair without resetting evidence. Commit `50fca0f6` passed 73
+tests, 36 subtests, compilation, diff check, two independent GO reviews and all
+three hosted CI gates; PR #1051 merged normally as
+`2b03a0284c0c33a350193109963737693c080d85`. The source terminal returned its
+mandatory handover and is released-retain. No validation, staging, activation,
+task, stop marker or runtime state was changed. Lifecycle is
+`WORKING / SOURCE_INTEGRATED`; promote only to a fresh separately governed
+validation gate. Historical activation `65f4f724...` remains sealed and must not
+be retried.
+### ROOTLINE owner reservoir observation acknowledgement defect — 2026-08-17
+
+Charl supplied fresh physical evidence by replying `Reservoir is full` at 18:03
+SAST. Oom Sakkie answered that it had recorded the observation against the active
+farm question. Control Tower read-only canonical inspection at 18:06 SAST found
+no corresponding new `public.rootline_tank_observations` row; the latest stored
+reservoir observation remained dated 15 August. The acknowledgement is therefore
+not accepted as canonical-write proof and the statement is not treated as
+irrigation authority.
+
+Continue the same ROOTLINE Recovery Slot 2 with a bounded typed-intake and
+truthful-acknowledgement repair in
+`C:\tmp\rootline-reservoir-observation-slot2-20260817`. Require exact active
+question/card/provider binding, reservoir-versus-storage semantics, idempotent
+governed write, exact readback before acknowledgement, replay silence and a
+precise contained exception on failure. Do not replay the message, manufacture
+the missing row, send Telegram from a terminal or perform hardware actions. The
+visible external terminal `ROOTLINE - RESERVOIR OBSERVATION` was dispatched at
+18:09 SAST after fresh collision review found its intended intake boundary
+disjoint from the active Revenue BEACON files.
+### ROOTLINE current-plan live acceptance result — 2026-08-17 18:18 SAST
+
+Provider/canonical acceptance now proves PR #1050's primary ordering outcome:
+ROOTLINE schedule `*/15` and OOM manager `*/5` ran on exact deployed main
+`e95a9f88a493f0b1f96998a8bc6c71611697947d`; the 18:00 provider epoch delivered
+Telegram `3716` for current-date result
+`ROOTLINE-RESULT-20260817-483462973CAD7DB0`. The delivered advisory plan contained
+two bounded recommendations: B12345 `Run` for 60 minutes and C12345 `Run` for 60
+minutes. This was advisory only. No post-deploy `claim_before_on`,
+`record_on_outcome`, provider-control or hardware-command event was found.
+
+The later 18:15 ROOTLINE provider schedule completed successfully on the same
+revision, and the 18:15 OOM manager cycle completed without another ROOTLINE
+Telegram delivery. This proves terminal-independent schedule continuity and
+replay silence for the delivered generation. However, the current manager case
+is again open with a precise provider-confirmation exception for a later/current
+material-result-generation tuple. Combined with the unpersisted 18:03 reservoir
+reply, keep Recovery Slot 2 `WORKING / ACCEPTANCE_DEFECT_REPAIR_ACTIVE`; do not
+claim irrigation ran or close the broader operational mission.
+### Revenue generation 11 semantic repair complete; owner-card/media continues — 2026-08-17
+
+Revenue's bounded demand-package repair returned exit 0, merged PR #1052 and
+deployed exact main `e95a9f88a493f0b1f96998a8bc6c71611697947d`. Deployed
+generation 11 corrected the messages objective, truthful canonical sale-ready
+categories, explicit `Message Amadeus Farm` qualification CTA, SAM routing and
+replay silence. Telegram card `3714` was provider-confirmed; no publication,
+spend, customer send or business commitment occurred.
+
+Do not promote generation 11 to Charl's protected decision yet: the handover did
+not prove actual inline Approve/Correct/Decline buttons or litter-linked governed
+media selection requested after its original dispatch. Continue the same Slot 3
+in visible terminal `REVENUE - BEACON OWNER CARD + MEDIA`, worktree
+`C:\tmp\revenue-beacon-owner-card-media-slot3-20260817`. Acceptance requires a
+compact non-duplicative card, exact callback authority/replay binding, canonical
+litter-media candidates with public-use truth, and deployed provider delivery
+plus later silence. No approval, publication, boost, spend or media-use authority
+is granted.
+### CORE provider-identity isolated validation dispatched — 2026-08-17
+
+Fresh Control Tower recheck proved authoritative main
+`e95a9f88a493f0b1f96998a8bc6c71611697947d` contains PR #1051 merge
+`2b03a0284c0c33a350193109963737693c080d85`, no current CORE source terminal
+owns the worktree, and the source release lane is free. Automatically promote
+existing `CMQ-20260813-05` Recovery Slot 1 to the distinct isolated validation
+gate in detached exact-main worktree
+`C:\tmp\cmq05-provider-identity-validation-e95a9f88-20260817`.
+
+The visible terminal `CORE - PROVIDER IDENTITY VALIDATION` may produce only a
+fresh signed receipt from a network-disabled, read-only, private-PID, no-socket,
+no-production-state validation environment. It may not stage, acquire the
+production release lane, mutate runtime/task/stop/manifest state, invoke the
+provider or activate CORE. Successful completion promotes only to a separately
+authorized exact-current staging gate. All historical validation, staging and
+activation identities remain sealed and non-replayable.
+### Completed terminal-shell closeout and operational reality — 2026-08-17 18:32 SAST
+
+Fresh process/handover reconciliation proved three visible development shells
+were completed but still open: ROOTLINE current-plan delivery (PID 16940),
+Revenue demand-package repair (PID 99604), and CORE provider-identity source
+repair (PID 84560). Each had its mandatory final handover and exit 0, and none
+had a Codex work child. Control Tower closed those three shells; source
+worktrees and durable evidence remain retained and recoverable.
+
+Fresh operational readback: `CHARLIE CORE Runner Watchdog` is Disabled with
+`Enabled=False`; no heartbeat, activation lock or staging lock exists. CORE is
+not live. Render web, OOM manager (`*/5`) and ROOTLINE (`*/15`) are live on exact
+revision `e95a9f88a493f0b1f96998a8bc6c71611697947d`; both provider schedules
+completed again around 18:31 SAST. Active development work with fresh exact
+process/worktree binding is limited to CORE isolated validation, ROOTLINE typed
+reservoir observation, Revenue BEACON owner-card/media, and CODEX UI offspring
+summary. Process presence was cross-checked against current worktree changes or
+the bounded validation task; completed shells were not counted as work.
+### CORE e95 validation passed but staging withheld after main advance — 2026-08-17
+
+Validation terminal for exact main `e95a9f88a493f0b1f96998a8bc6c71611697947d`
+returned exit 0 and signed receipt
+`ee975b3d-048a-4a89-8e65-db3117f4665d` (SHA-256
+`a127443400e0d228531d022301a7c8253f584b493101c20ff3a16fa5d62eef2c`).
+The definitive isolated gate ran 245 tests: 239 passed, six explicit skips, zero
+failures. Control Tower closed the completed validation shell.
+
+Before staging, fresh fetch proved authoritative main advanced to
+`adb3658e23947ddbf2c8966765c82b677554f3e3` through disjoint ROOTLINE PR #1053
+and Revenue PR #1054. Although CORE merge #1051 remains contained and the task
+is Disabled with no activation/staging locks, the e95 receipt is exact-source
+bound and cannot authorize adb staging. No staging occurred. A visible fresh
+validation-only terminal was dispatched in detached exact adb worktree
+`C:\tmp\cmq05-provider-identity-validation-adb3658e-20260817`; it must create a
+new receipt and may not stage or activate.
+
+### ROOTLINE typed observation source merged and terminal closed — 2026-08-17
+
+PR #1053 merged as `6526adc15aeec1f2b3581ed285fbe5bc45fed21b`; the
+source terminal returned exit 0 and its empty shell was closed. The repair binds
+named reservoir/storage replies to the exact active provider question, requires
+idempotent canonical readback before saying `recorded`, and contains failures.
+The historical 18:03 reply remains uncaptured and was not replayed or inserted.
+Render web, OOM and ROOTLINE now run descendant `adb3658e`, satisfying deployment
+proof. Operational acceptance waits for a future genuine named observation; do
+not ask Charl to repeat the old message and do not infer hardware authority.
+
+### Revenue BEACON owner-card/media source terminal completed - 2026-08-17 18:41 SAST
+
+Fresh exit and worktree reconciliation recovered the handover that was not visible
+in Cursor. `TERMINAL REVENUE - BEACON OWNER CARD + MEDIA` exited successfully
+with code 0; no attributable Codex child remains. Its clean retained worktree is
+`C:\tmp\revenue-beacon-owner-card-media-slot3-20260817`, source commit
+`55ab012d7e641356531d8e440b9444c2eb359da5`. PR #1054 passed all three hosted
+gates and merged as authoritative main
+`adb3658e23947ddbf2c8966765c82b677554f3e3`.
+
+Classify the visible development terminal as `CLOSED / RELEASED-RETAIN`, not
+active and not crashed. The existing Revenue Recovery Slot 3 operational mission
+remains `RELEASE_HOLD`: exact deployed revision, a fresh deployed Oom
+Sakkie/BEACON worker cycle, one concise Telegram card with protected
+Approve/Correct/Decline buttons and exact eligible-media review, provider/card
+binding, and a later unchanged replay-silent cycle remain unproven. No duplicate
+terminal or prompt is authorized. Automatically resume acceptance only on fresh
+provider/runtime evidence; do not manufacture a card, callback, publication,
+boost, spend, customer message, media-public-use grant, reservation or farm write.
+
+### CORE staging and Revenue acceptance restarted - 2026-08-17 19:10 SAST
+
+Prior terminals exited 0 with no Codex child. Fresh detached exact-main
+worktrees now run CORE staging-only and Revenue read-only deployed acceptance.
+Activation, terminal-created provider cycles, Telegram effects, publication and
+spend remain forbidden. Fresh process evidence began at 19:09 SAST.
+
+### Multi-line livestock quote blocker dispatched - 2026-08-17 19:19 SAST
+
+Fresh collision checks found no active terminal bound to the requested-items/order
+journey. Control Tower started `SALES - MULTI-LINE LIVESTOCK QUOTE` in isolated
+worktree `C:\tmp\sales-multiline-livestock-quote-20260817` on exact main
+`adb3658e`. It owns the four-line customer request and must stop at an authenticated
+local preview. No order, quote send, purpose change, reservation, allocation,
+customer contact, production write or deployment is authorized. CODEX UI remains
+disjoint on breeding analytics; CORE and Revenue remain on their existing gates.
+
+### CORE exact-current staging passed; fresh activation dispatched - 2026-08-17 19:34 SAST
+
+CORE staging gate exited 0 and proved exact `adb3658e` in clean runtime and
+execution worktrees, receipt/key binding, manifest and rollback tuple, with the
+governed stop preserved, task Disabled, supervisor stopped and every release /
+activation lock absent. Staging lane `6f6b18c229d040efa7f4acd140700e08` was
+released. The completed staging shell was closed.
+
+Fresh fetch still resolved authoritative main to exact `adb3658e`. Control Tower
+therefore separately authorized and started one new provider-origin activation
+epoch in `C:\tmp\cmq05-provider-identity-activation-adb3658e-20260817`. It may
+leave CORE enabled only after exact Task Scheduler identity, supervisor/runner,
+heartbeat, independent result, next trigger and later terminal-independent cycle
+are proven. Any ambiguity must restore the governed stop, disable the task,
+archive the fresh epoch and prohibit retry. Historical epochs remain sealed.
+
+### Revenue event wait and SALES review recovery - 2026-08-17 19:40 SAST
+
+Revenue acceptance exited 0. Render web and OOM cron are live on exact
+`adb3658e`; six post-deploy cycles prove continuity and generation-11 replay
+suppression. No post-PR #1054 material generation exists, so corrected card/media
+behavior remains `EVENT_WAITING_ACCEPTANCE`. The completed Revenue shell was
+closed; the deployed worker owns the natural trigger and no terminal may
+manufacture it.
+
+Initial SALES quote work also exited 0 with seven preserved files and 83 passing
+tests, but used the 23-line historical programme pointer instead of the canonical
+278-line Runtime Programme and omitted required visual screenshots. Acceptance
+was rejected. The same worktree is now active as `SALES - MULTI-LINE QUOTE
+REVIEW` for corrected governance, review and authenticated desktop/mobile preview
+only. Production effects, PR, merge and deployment remain forbidden.
+
+### CORE activation 6410a3d7 contained; task-instance repair active - 2026-08-17 19:55 SAST
+
+Fresh activation `6410a3d7492144d79952632b6b0478ee` failed closed with
+`provider_identity_incomplete`: the exact scheduled task returned 1, but no
+authenticated task-instance/provider ancestry, activation-bound supervisor /
+runner or heartbeat was produced. Authenticated rollback restored the exact stop
+marker and Disabled task; supervisor is stopped, every lane is free and no
+business/provider/farm effect occurred. The epoch is sealed and non-retryable.
+The completed activation shell was closed.
+
+Control Tower started the same `CMQ-20260813-05` mission as source-only
+`CORE - TASK INSTANCE IDENTITY REPAIR` in isolated worktree
+`C:\tmp\cmq05-task-instance-identity-repair-20260817`. It must diagnose the real
+GetInstances/EnginePID/InstanceGuid and startup-handshake failure, add a
+Windows-realistic regression, preserve strict identity controls, complete one
+reviewed source PR and stop after merge. Staging, task mutation and activation
+are forbidden until a later fresh validation gate.
+
+### SALES four-line quote local preview ready - 2026-08-17 19:56 SAST
+
+The resumed SALES review exited 0, read the canonical 278-line programme, passed
+115 Python tests, JavaScript syntax and diff checks, and produced authenticated
+desktop/mobile screenshots for the exact four-line 22-pig request. The preview is
+explicitly zero-write: no order, reservation, allocation, fulfilment or customer
+message. The completed shell was closed and its dirty unique worktree retained.
+
+State is `OWNER_HOLD / LOCAL_PREVIEW_READY`. Before any release, Control Tower
+must obtain owner visual direction and reconcile the implementation with open
+HERDMASTER PR #1001's typed live-transfer disclosure contract; this branch may not
+create a competing health/movement authority. No PR, merge or deployment is yet
+authorized.
+
+### Operational outcome correction and three-lane dispatch - 2026-08-17 20:50 SAST
+
+Charl corrected Control Tower: ROOTLINE is not a first commissioning project.
+Irrigation/device paths operated previously and numerous recovery missions exist.
+Slot 2 must find the regression, preserve valid historical commissioning evidence
+and restore operation; require new proof only where current identity, authority or
+physical safety evidence genuinely expired. Do not describe it as greenfield.
+
+ROOTLINE, BEACON/SAM and HERDMASTER now run outcome-bound development terminals
+in parallel while CORE is repaired: operational B/C irrigation first; a deliberate
+media-backed campaign card leading to Meta and SAM after exact approval; and
+PR #1001/order integration unlocking the preserved four-line quote journey.
+CORE PR #1055 is merged in main `08a54ddb`; its completed source shell was closed.
+CORE is not an operational-plane dependency.
+
+### Revenue false external hold recovered - 2026-08-17 21:00 SAST
+
+The first outcome-bound Revenue shell exited 0 without a business result and
+classified BEACON as `EXTERNAL_HOLD` because its checkout did not expose
+provider/canonical credentials. That is not accepted as a current external
+dependency: the existing Revenue acceptance lineage already proved governed
+read-only Render and PostgreSQL access using retained non-secret helper paths.
+The completed wrapper PID 19460 was closed; no deployed Oom Sakkie or BEACON
+worker was stopped.
+
+Existing Revenue Recovery Slot 3 was resumed in the same clean worktree as
+`REVENUE - BEACON TO SAM OPERATIONAL RECOVERY`. It must exhaust the proven
+read-only access route, treat Charl's litter-specific library-media and concise
+button-card correction as possible genuine material mission input, and drive the
+deployed worker to one exact protected card or one precise media-evidence
+exception. It may not infer approval, publish, spend, manufacture customer input,
+or ask Charl for credentials. A coincidental future stock change is not an
+acceptable idle dependency if the current owner correction is itself unconsumed
+canonical mission evidence.
+
+Fresh attributable process/worktree proof at dispatch shows ROOTLINE operational
+recovery, HERDMASTER Orders, Revenue BEACON/SAM recovery, CORE isolated
+validation, and CODEX UI offspring summaries executing. This classification is
+based on current Codex child processes bound to exact worktrees, not open windows
+or historical waits. CORE continues in parallel and does not gate the four
+business/UI lanes.
+
+### CORE validation passed; HERDMASTER contract merged; overnight continuations dispatched - 2026-08-17 21:08 SAST
+
+Fresh process and exit-file proof established that CORE validation and the
+HERDMASTER contract terminal both exited normally with code 0; neither crashed.
+CORE issued fresh isolated receipt `2efe3caa...` for exact validated source
+`08a54ddb`, with 251 tests passing and zero runtime effects. HERDMASTER integrated
+the OP-004 typed Orders contract through its current main lineage and released its
+clean terminal; the preserved dirty SALES worktree remains the exact consumer.
+Both completed wrapper shells were closed.
+
+Control Tower authorized the existing CORE Recovery Slot 1 to continue overnight
+through fresh-current reconciliation/validation, stop-preserving staging, one
+fresh activation epoch and terminal-independent continuity, with every internal
+gate separately evidenced and fail-closed. It may repair a newly proven reusable
+defect through normal reviewed integration, but may not reuse failed identities or
+weaken provider identity.
+
+The existing SALES/HERDMASTER Orders journey was resumed directly in
+`C:\tmp\sales-multiline-livestock-quote-20260817`. It must preserve and reconcile
+the dirty preview implementation against the merged HERDMASTER contract, then
+complete tests, review, one normal PR, deployment and zero-write authenticated
+acceptance. It may not create an order, reserve/allocate/re-purpose pigs, send a
+quote or create a competing health/movement authority.
+
+A separate detached, read-only Control Tower overnight watch was started from
+main `4aeb0f3b` in `C:\tmp\control-tower-overnight-watch-20260817`, scheduled by
+mission instruction to observe through 06:00 SAST. It may close proven empty
+wrappers and continue only the same authorized missions at safe released
+boundaries; it may not infer activity from windows, replay failed epochs, operate
+hardware, publish/spend, send customer messages, write farm/order state or create
+duplicate infrastructure. Its durable external log is
+`C:\tmp\CONTROL_TOWER_OVERNIGHT_WATCH_LOG_20260817.md`.
+
+### ROOTLINE #1057 deployed; plan/authority continuation active - 2026-08-17 21:18 SAST
+
+ROOTLINE's outcome terminal exited 0 after merging PR #1057 and observing exact
+deployment `4aeb0f3b`. Canonical generation-1 identities now exist for B, C,
+fertiliser injection, mixer and Borehole MINI R4; provider readback shows all OFF
+and no terminal control call occurred. The reusable remaining defect is a current-
+plan contradiction: the canonical endpoint reports `no_current_water_energy_plan`
+while fresh scheduled audit evidence recommends B/C. B/C commissioning evidence
+and standing authority are not yet canonical; fertiliser and borehole retain
+additional physical fail-safe dependencies. The completed ROOTLINE wrapper was
+closed.
+
+### Morning operational reality and corrective dispatch - 2026-08-18
+
+Overnight outcomes were material but incomplete. CORE merged PRs #1060/#1062 and
+staged `e52b24fe`, but fresh activation epochs failed safe because Windows exposed
+no approved per-instance Task Scheduler PID evidence; CORE remains stopped.
+ROOTLINE merged PR #1063 and deployed `bd860293`: five device identities, B/C
+historical supervised evidence and Telegram observation 3717 are canonical, but
+no standing authority exists and no irrigation ran. SALES/HERDMASTER deployed the
+four-line preview through `6e7454f5` with zero-write acceptance. BEACON merged PRs
+#1058/#1059 and autonomously delivered G12 with protected buttons and replay
+silence; Meta/SAM remain behind Charl's exact card decision and missing-public-use-
+photo exception.
+
+Fresh messages after midnight prove Oom Sakkie/ROOTLINE scheduling, but expose
+defects: unchanged ROOTLINE recommendations repeated without execution; the
+morning digest contradicted ROOTLINE; weekly weighing regressed from confirmed
+79/81 to false 0/81; and the digest is too verbose. Charl reports tags 123 and 151
+were sold Sunday but cannot yet record that state through Orders. This owner report
+is not a canonical sale write and cannot infer fulfilment.
+
+Three current-blocker continuations are active: FARM owns weighing truth, concise
+briefs, shared-plan consistency and duplicate suppression; ROOTLINE owns one
+narrow reviewed B/C authority policy or exact protected decision, never
+fertiliser/borehole authority; CORE is authorized to enable the bounded reversible
+Task Scheduler Operational audit channel and complete fresh provider activation
+proof. All have fresh process/worktree bindings. CODEX UI's old processes lack
+fresh progress proof. SALES and Revenue are released; BEACON is dependency-idle
+on its live protected card; deployed schedules are operational but outcomes remain
+partial.
+
+`SALES + HERDMASTER - ORDER RECORDING FINISH` was additionally dispatched in a
+fresh current-main worktree. It owns the protected draft/selection/reservation/
+completion UI and downstream cohort reconciliation needed to record owner-reported
+Sunday sales of tags 123 and 151. The terminal may deploy and prove a zero-write
+journey, but may not create the real order/sale or infer missing buyer, movement or
+commercial facts; final mutation remains one explicit protected confirmation.
+
+### BEACON governance drift incident and terminal lifecycle correction - 2026-08-18
+
+Charl rejected G12 and pressed no button. G12 is frozen: no publication, boost,
+spend or successor may infer approval. This is a governance incident. The strict
+livestock-awareness workflow requires ordinary farm-life storytelling with no
+sales/availability/price/booking/buy/contact meaning, while another current
+campaign workflow and runtime retain a Facebook `live_stock_sales` lane and a
+scheduled `sale_ready_demand` entrypoint. Runtime also exposes `Litter <id>` rather
+than the sow's human name. Brain Guard is documented as dormant/partial and did
+not reconcile this cross-document/runtime contradiction; citing Vault files did
+not prove correct owner policy.
+
+Proposed controlling correction, pending Charl approval: public Meta livestock
+content is farm-story awareness only; use sow name publicly and keep litter IDs
+internal; never mention or imply availability, sales, price, order, reservation,
+scarcity, acquisition or contact/message calls to action; never use a messaging-
+conversation objective; require selected exact public-use litter media or ask
+precisely for it; keep the owner card to story/media/platform/time and three
+decision buttons. Independently initiated inbound messages route privately to SAM.
+Sale-readiness may inform private planning but cannot select, shape, optimize or
+appear in Meta livestock content.
+
+Before runtime repair, consolidate Beacon agent/business/campaign/awareness docs
+under one precedence manifest; supersede contradictory current guidance; update
+source and full-journey tests; extend Brain Guard with changed-path domain-source
+requirements and contradiction checks. Every agent mission and GENERAL intake
+must receive a generated mandatory domain context pack, not generic governance
+alone.
+
+Terminal lifecycle defect: Control Tower launchers used `powershell -NoExit`, so
+one-shot Codex missions finished while empty wrappers remained. Four morning
+wrappers and the stale CODEX UI owner-hold processes were closed by exact PID;
+dirty/source/evidence worktrees were preserved. Future launchers must omit
+`-NoExit`, persist exit/handover evidence and close automatically.
+
+FARM PR #1065, ROOTLINE PR #1066 and SALES PR #1067 are merged but runtime
+acceptance remains incomplete. CORE is staged but audit-channel enablement needs
+elevation. No new continuation is dispatched until this alignment plan is approved;
+deployed agents remain fail-closed under existing authority.
+
+Existing Slot 2 was immediately resumed as `ROOTLINE - PLAN AND AUTHORITY
+RECOVERY`. It must consume Charl's already recorded 18:03 SAST Telegram evidence
+“Reservoir is full”, reconcile the one authoritative plan and Oom Sakkie delivery,
+recover exact valid historical commissioning evidence without inference, and
+complete all safe source/review/deploy/replay-silent work overnight. No terminal
+hardware command or unsupervised new commissioning ON is authorized. The morning
+target is genuine operation under already-proven authority, electronically green
+readiness for one exact supervised observation, or one precise automatically
+owned evidence exception—not another generic wait.
