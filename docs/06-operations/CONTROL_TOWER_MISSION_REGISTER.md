@@ -2196,6 +2196,46 @@ Sunday sales of tags 123 and 151. The terminal may deploy and prove a zero-write
 journey, but may not create the real order/sale or infer missing buyer, movement or
 commercial facts; final mutation remains one explicit protected confirmation.
 
+### BEACON governance drift incident and terminal lifecycle correction - 2026-08-18
+
+Charl rejected G12 and pressed no button. G12 is frozen: no publication, boost,
+spend or successor may infer approval. This is a governance incident. The strict
+livestock-awareness workflow requires ordinary farm-life storytelling with no
+sales/availability/price/booking/buy/contact meaning, while another current
+campaign workflow and runtime retain a Facebook `live_stock_sales` lane and a
+scheduled `sale_ready_demand` entrypoint. Runtime also exposes `Litter <id>` rather
+than the sow's human name. Brain Guard is documented as dormant/partial and did
+not reconcile this cross-document/runtime contradiction; citing Vault files did
+not prove correct owner policy.
+
+Proposed controlling correction, pending Charl approval: public Meta livestock
+content is farm-story awareness only; use sow name publicly and keep litter IDs
+internal; never mention or imply availability, sales, price, order, reservation,
+scarcity, acquisition or contact/message calls to action; never use a messaging-
+conversation objective; require selected exact public-use litter media or ask
+precisely for it; keep the owner card to story/media/platform/time and three
+decision buttons. Independently initiated inbound messages route privately to SAM.
+Sale-readiness may inform private planning but cannot select, shape, optimize or
+appear in Meta livestock content.
+
+Before runtime repair, consolidate Beacon agent/business/campaign/awareness docs
+under one precedence manifest; supersede contradictory current guidance; update
+source and full-journey tests; extend Brain Guard with changed-path domain-source
+requirements and contradiction checks. Every agent mission and GENERAL intake
+must receive a generated mandatory domain context pack, not generic governance
+alone.
+
+Terminal lifecycle defect: Control Tower launchers used `powershell -NoExit`, so
+one-shot Codex missions finished while empty wrappers remained. Four morning
+wrappers and the stale CODEX UI owner-hold processes were closed by exact PID;
+dirty/source/evidence worktrees were preserved. Future launchers must omit
+`-NoExit`, persist exit/handover evidence and close automatically.
+
+FARM PR #1065, ROOTLINE PR #1066 and SALES PR #1067 are merged but runtime
+acceptance remains incomplete. CORE is staged but audit-channel enablement needs
+elevation. No new continuation is dispatched until this alignment plan is approved;
+deployed agents remain fail-closed under existing authority.
+
 Existing Slot 2 was immediately resumed as `ROOTLINE - PLAN AND AUTHORITY
 RECOVERY`. It must consume Charl's already recorded 18:03 SAST Telegram evidence
 “Reservoir is full”, reconcile the one authoritative plan and Oom Sakkie delivery,
