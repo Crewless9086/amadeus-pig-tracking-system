@@ -396,6 +396,9 @@ Keep:
 - Active build order in `NEXT_STEPS.md`.
 - Current live status in `CURRENT_STATE.md`.
 - Chatwoot label/attribute rules in `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`.
-- Agent role boundaries in `docs/05-ai/AGENT_ROLES.md` and `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`.
+- Agent role boundaries in `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md`,
+  `docs/09-vault-brain/02-agents/sales/SAM.md`, and the relevant focused Vault
+  workflow/rule pack. The architecture roster is implementation history, not
+  agent doctrine.
 
 Do not keep duplicate scratch plans. If a note matters, move it into one of the files above and remove it from `planning/ToDoList.md`.

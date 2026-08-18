@@ -27,8 +27,8 @@ REFERENCE_INDEX_EXCLUSIONS = {
     GENERATED_JSON_PATH,
 }
 
-MANIFEST_VERSION = "vault_physical_cutover_manifest_v1"
-BASELINE = "66d4667d6ecc4eda9c59c3ff06795494cda0a53b"
+MANIFEST_VERSION = "vault_physical_cutover_manifest_v2"
+BASELINE = "5865cc7c6300edc2f0e47d4780c05cbd3a8be020"
 
 CONTROLLING_EXCEPTIONS = {
     "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
@@ -262,7 +262,7 @@ def build_manifest() -> dict:
         "version": MANIFEST_VERSION,
         "baseline": BASELINE,
         "generated_from_head": BASELINE,
-        "owner_boundary": "review manifest only; no move, archive, deletion, pointer rewrite, doctrine rewrite, or runtime change",
+        "owner_boundary": "Batch 5 archived only the five reconciled top-level docs/05-ai files; no deletion, runtime, provider, authority, or production change",
         "entry_count": len(entries),
         "counts": dict(sorted(counts.items())),
         "entries": entries,
@@ -308,7 +308,7 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
     lines = [
         "# Vault Physical Cutover Manifest",
         "",
-        "Status: owner-review manifest; no physical change authorized.",
+        "Status: regenerated after approved Batch 5 slice; no further physical change authorized.",
         "",
         f"Version: `{manifest['version']}`",
         f"Baseline: `{manifest['baseline']}`",
@@ -316,9 +316,10 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         f"Tracked Markdown/MDX files covered: **{manifest['entry_count']}**",
         f"Validation: **{'PASS' if not findings else 'BLOCKED'}**",
         "",
-        "This manifest proposes exact dispositions only. It does not authorize a move,",
-        "archive, deletion, pointer rewrite, doctrine rewrite, deployment, runtime action",
-        "or production change. Every entry keeps `physical_change_authorized: false`.",
+        "This manifest records the completed Batch 5 archive slice and proposes later",
+        "dispositions only. It does not authorize another move, archive, deletion, pointer",
+        "rewrite, deployment, runtime action or production change. Every remaining entry",
+        "keeps `physical_change_authorized: false`.",
         "",
         "## Disposition totals",
         "",
@@ -335,7 +336,8 @@ def _markdown(manifest: dict, findings: list[str]) -> str:
         "- A delete candidate requires zero exact path references, an exact replacement, a tiny retired/superseded source, and later owner approval.",
         "- Pointer conversion requires unique-fact reconciliation first.",
         "- Static agent cards require a proven generated projection before replacement.",
-        "- Current files remain physically present throughout this batch.",
+        "- Five reconciled top-level `docs/05-ai` files are now preserved intact in the archive.",
+        "- No later physical change is authorized by this regenerated manifest.",
         "",
         "## Exact non-keep review queue",
         "",

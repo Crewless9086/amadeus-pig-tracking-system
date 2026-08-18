@@ -53,8 +53,8 @@ No customer sends, public posts, payment/deposit actions, reservations, dispatch
 - `docs/00-start-here/WORKFLOW.md`
 - `docs/00-start-here/DEPLOYMENT_SOP.md`
 - `docs/00-start-here/OWNER_INBOX_GUIDE.md`
-- `docs/05-ai/AGENT_ROLES.md`
-- `docs/09-vault-brain/README.md` after owner review; until then it is the draft consolidated brain layer.
+- `docs/09-vault-brain/02-agents/AGENT_REGISTRY.md`
+- `docs/09-vault-brain/README.md` as the canonical agent-doctrine entry point.
 - `planning/storyworks/README.md` for the separate StoryWorks owned-media
   validation programme and its authoritative internal routing.
 

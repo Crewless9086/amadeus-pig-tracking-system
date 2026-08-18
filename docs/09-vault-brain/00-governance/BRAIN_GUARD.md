@@ -139,6 +139,14 @@ Current honest state: manifest generation and validation are source-tested;
 physical execution and deployed periodic Brain Guard acceptance remain separate
 owner-reviewed missions.
 
+## Batch 5 Physical Slice State
+
+The first owner-approved physical slice archived five reconciled top-level
+`docs/05-ai` governance files intact and redirected active references to the
+Vault. Brain Guard must treat those archive paths as evidence only and must
+reject any attempt to restore them as active doctrine. The regenerated manifest
+does not authorize another move or any deletion.
+
 ## Runtime Enforcement v2
 
 The second runtime pass adds stronger operating rails:

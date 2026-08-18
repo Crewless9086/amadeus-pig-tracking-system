@@ -647,3 +647,20 @@ provider action or production mutation occurred.
 Automatic promotion requires owner approval of a bounded physical execution
 batch. That later batch must regenerate against current main and close every
 entry-specific blocker before changing the corresponding source.
+
+### Vault Cutover Batch 5 - 2026-08-18
+
+Owner approved the first bounded physical cleanup slice and expressly withheld
+all deletion authority. The five top-level legacy governance files under
+`docs/05-ai` were reconciled, preserved byte-for-byte through Git renames, and
+archived under `docs/99-archive/vault-cutover/docs/05-ai/`. Active references
+now resolve to canonical Vault packs or explicit archive evidence.
+
+Lifecycle: `WORKING / BATCH_5_FIRST_SLICE_COMPLETE /
+NEXT_PHYSICAL_SLICE_OWNER_APPROVAL_REQUIRED`.
+
+No runtime, provider, production-data, agent authority or deployed behavior
+changed. No deletion occurred. The agent-specific BEACON and SAM legacy files
+remain in place. Automatic promotion requires a fresh owner approval for one
+next coherent slice selected from the regenerated manifest; every deletion
+continues to require a separate exact deletion approval.
