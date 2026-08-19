@@ -63,6 +63,31 @@ database, farm or customer writes. Its output is one evidence-backed
 continuation packet ready for automatic promotion when an implementation slot
 releases. Process existence and old activation waits remain non-evidence.
 
+Charl then explicitly promoted this same `CMQ-20260813-05` Recovery Slot 1 lane
+from read-only audit to exact-current validation and staging, while retaining a
+separate protected activation gate. Authoritative main
+`70baac05223608b1c2592b0512e5aa1037ea841b` passed 77/78 focused CORE
+activation/staging tests with one platform skip and 251/257 proportional CORE
+control tests with six platform skips in disposable image
+`sha256:dad31c6f6a8da88f6146d6b0302d857df26e451c5891811c2a8b2ec277de1ab8`:
+network disabled, read-only source/root, private PID boundary, all capabilities
+dropped, unprivileged UID and tmpfs only. Signed validation receipt
+`2d57556f77317915869378e164767bbc0a892dde76b63785f83a1a8e104988ec`
+was preserved in the existing promotion ledger. The serialized staging rail
+used historical `f096d36d` only as the exact rollback tuple and staged both
+detached runtime trees plus manifest to `70baac05` under lane
+`fd3583aa382e458f83ad7fc23b0b1cf0`. Readback proved no active release lane,
+the scheduled task remained disabled, governed-stop digest remained
+`8887c0c06d040b60fef580c0135761019fe7e416d594538cf86fcf18d1e594b1`,
+and no activation or reconciliation lock exists. Lifecycle is
+`OWNER_HOLD / EXACT_CURRENT_VALIDATED_AND_STAGED / ACTIVATION_NOT_AUTHORIZED`;
+Business completion is false. Never reuse failed activation identity
+`51412371da70e5ae6ba8a6f4fb1e7172` or any older epoch. The only promotion
+trigger is fresh owner authority bound to exact revision, manifest, receipt,
+stop digest, disabled task identity, observe-only mode and a new activation
+identity/expiry; until then no task enablement, stop removal, worker start,
+mission pickup or autonomy claim is permitted.
+
 Automatic promotion: each development lane continues through source, tests,
 review, normal integration, deployment and genuine deployed-agent acceptance,
 stopping only at a real protected, physical, external or serialized-release
