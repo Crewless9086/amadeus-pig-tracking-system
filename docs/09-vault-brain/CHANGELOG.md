@@ -23,6 +23,15 @@
   records authorization only, and no deployed BEACON worker has yet consumed
   the corrected approval through Meta with readback.
 
+- Added the owner-requested `ACTIVE_AUTHORITY_INDEX.md` compatibility entry without duplicating the canonical authority map; made livestock preview availability report all eligible animals, consolidated medicine disclosure in the owner UI, and added reproducible authenticated/safe-local desktop and 390px zero-write browser evidence.
+
+## 2026-08-19 - Livestock quote and live-transfer doctrine reconciled
+
+- Separated live-animal sale/transfer from slaughter and food-chain medicine withdrawal.
+- Made only genuinely recorded health, welfare, quarantine, movement, sale and lifecycle restrictions live-sale blockers; absent clearance records are not manufactured.
+- Allowed requested-items draft quotes to retain partial or `Unavailable` recommendations with no allocation or reservation, while stale weight lowers confidence.
+- Bound already-completed sale recording to the existing protected Livestock order-completion rail instead of inventing veterinary or movement-clearance evidence.
+
 ## 2026-08-19 - ROOTLINE standing B/C water policy enforced
 
 - Superseded ambiguous canonical authority
