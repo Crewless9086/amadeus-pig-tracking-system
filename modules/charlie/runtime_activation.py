@@ -13,6 +13,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -243,7 +244,16 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
             "audit_receipt_hmac_sha256",
         )
         _exclusive_json(audit_receipt_path, audit_receipt)
-        task_controller.enable_and_trigger_exact(plan["task_action_sha256"])
+        expected_instance_guid = task_controller.enable_and_trigger_exact(
+            plan["task_action_sha256"]
+        )
+        if not str(expected_instance_guid or "").strip("{}"):
+            raise ActivationError("task_scheduler_instance_guid_missing")
+        packet["expected_instance_guid"] = str(expected_instance_guid)
+        packet["packet_hmac_sha256"] = _sign_packet(
+            packet, _read_key(state_root / "activation-authority.key")
+        )
+        _atomic_json(packet_path, packet)
     except Exception:
         if lane_path.exists() and not rollback_path.exists():
             try:
@@ -283,6 +293,9 @@ def consume_provider_activation(*, state_root, starter, task_controller,
     )
     if not provider.get("authorized"):
         raise ActivationError(provider.get("reason") or "provider_origin_invalid")
+    if (str(provider.get("provider_instance_guid") or "").strip("{}").casefold()
+            != str(packet["expected_instance_guid"]).strip("{}").casefold()):
+        raise ActivationError("task_scheduler_instance_guid_mismatch")
     consumed_path = state_root / f"activation-consumed-{packet['activation_id']}.json"
     _exclusive_json(consumed_path, {
         "version": ACTIVATION_VERSION, "activation_id": packet["activation_id"],
@@ -354,7 +367,14 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
             raise ActivationError("activation_verification_completion_invalid")
         return {"success": True, "status": "activation_verified",
                 "evidence": completion.get("evidence", {})}
-    packet = _read_json(packet_path, "activation_packet_invalid")
+    deadline = time.monotonic() + 5
+    while True:
+        packet = _read_json(packet_path, "activation_packet_invalid")
+        if str(packet.get("expected_instance_guid") or "").strip("{}"):
+            break
+        if time.monotonic() >= deadline:
+            raise ActivationError("task_scheduler_instance_guid_timeout")
+        time.sleep(0.05)
     try:
         _validate_packet(packet, state_root, task_reader, git_runner=git_runner,
                          now=now, allow_consumed=True, allow_expired=True)
@@ -1200,7 +1220,8 @@ def verify_provider_origin(inspector, *, expected_task):
         return {"authorized": False, "reason": "provider_task_action_mismatch"}
     return {"authorized": True, "reason": "scheduled_provider_origin_verified",
             "pid": int(current["pid"]), "parent_pid": int(current["parent_pid"]),
-            "parent_executable": parent_name}
+            "parent_executable": parent_name,
+            "provider_instance_guid": str(parent.get("instance_guid") or "")}
 
 
 def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_identity=None,
@@ -1694,7 +1715,13 @@ class WindowsExactTaskController:
         if _task_action_sha256(self.task_reader()) != digest:
             self._mutate(digest, "Disable-ScheduledTask -InputObject $t|Out-Null", {"Ready", "Running", "Disabled"})
             raise ActivationError("scheduled_task_identity_changed_after_enable")
-        self._mutate(digest, "Start-ScheduledTask -InputObject $t", {"Ready"})
+        return self._mutate(
+            digest,
+            "$s=New-Object -ComObject 'Schedule.Service';$s.Connect();"
+            "$rt=$s.GetFolder($e.task_path).GetTask($e.task_name).RunEx($null,0,0,$null);"
+            "$rt.Refresh();[string]$rt.InstanceGuid",
+            {"Ready"},
+        ).strip()
 
     def disable_exact(self, digest):
         self._mutate(digest, "Disable-ScheduledTask -InputObject $t|Out-Null", {"Ready", "Running", "Disabled"})
@@ -1721,6 +1748,7 @@ class WindowsExactTaskController:
                                 capture_output=True, text=True, timeout=30, check=False)
         if completed.returncode != 0:
             raise ActivationError("scheduled_task_provider_mutation_failed")
+        return str(completed.stdout or "")
 
 
 def _validate_authority(authority, key, now=None, allow_expired=False):

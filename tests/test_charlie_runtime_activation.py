@@ -103,6 +103,7 @@ class Controller:
         self.enabled.append(digest)
         if self.fail_start:
             raise ActivationError("provider_start_failed")
+        return "11111111-1111-1111-1111-111111111111"
 
     def disable_exact(self, digest):
         self.disabled.append(digest)
@@ -253,6 +254,7 @@ class RuntimeActivationTests(unittest.TestCase):
             "command_line": f'"{row["execute"]}" {row["arguments"]}',
             "ancestry": [{"pid": 20, "executable_path": "C:/Windows/System32/svchost.exe",
                           "provider_identity_verified": True,
+                          "instance_guid": "11111111-1111-1111-1111-111111111111",
                           "action_execute": row["execute"],
                           "action_arguments": row["arguments"],
                           "action_working_directory": row["working_directory"]}],
@@ -831,6 +833,7 @@ class RuntimeActivationTests(unittest.TestCase):
             "command_line": f'"{self.task[0]["execute"]}" {self.task[0]["arguments"]}',
             "ancestry": [{"pid": 20, "executable_path": "svchost.exe",
                           "provider_identity_verified": True,
+                          "instance_guid": "11111111-1111-1111-1111-111111111111",
                           "action_execute": self.task[0]["execute"],
                           "action_arguments": self.task[0]["arguments"],
                           "action_working_directory": self.task[0]["working_directory"]}],

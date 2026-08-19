@@ -42,6 +42,9 @@
   validation authenticates the audit intent/receipt and their shared event
   lower bound. Cross-directory POSIX moves fsync both namespaces, and embedded
   rollback recovery is attempted immediately on standalone-write failure.
+- The exact start now uses Task Scheduler COM `RunEx`; its returned
+  `InstanceGuid` is HMAC-signed into the packet before the child may consume
+  it, and both running-instance and Event 200 paths must match that GUID.
 
 ## 2026-08-19 - Livestock quotation journeys
 
