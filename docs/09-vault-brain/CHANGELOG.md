@@ -28,6 +28,9 @@
   immutable identity, including contained prepare failures, and the Windows
   CIM creation-time binding handles the native `System.DateTime` shape used
   by current PowerShell before evaluating Event 200 freshness.
+- Exclusive signed records are now fully written and fsynced before atomic
+  hard-link publication, so a torn final activation lane cannot exist; a
+  rollback-write interruption retains that complete lane for recovery.
 
 ## 2026-08-19 - Livestock quotation journeys
 

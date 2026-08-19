@@ -969,6 +969,25 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())
 
+    def test_rollback_write_failure_retains_signed_lane_for_recovery(self):
+        plan = self._plan()
+        controller = Controller()
+        with patch("modules.charlie.runtime_activation._atomic_json",
+                   side_effect=OSError("simulated rollback write failure")):
+            with self.assertRaisesRegex(OSError, "rollback write failure"):
+                prepare_activation(
+                    plan, task_controller=controller,
+                    task_reader=lambda: self.task, git_runner=self.git,
+                )
+        self.assertTrue((self.state / "activation.lock").exists())
+
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "rollback_write_interrupted"},
+        )
+        self.assertEqual(result["status"], "activation_recovered")
+
     def test_prepare_failure_permanently_consumes_activation_identity(self):
         plan = self._plan()
         controller = Controller(fail_start=True)

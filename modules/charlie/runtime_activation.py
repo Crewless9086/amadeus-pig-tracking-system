@@ -185,8 +185,7 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
     lane["lane_hmac_sha256"] = _sign_record(
         lane, _read_key(state_root / "activation-authority.key"), "lane_hmac_sha256"
     )
-    descriptor = _exclusive_json(lane_path, lane)
-    os.close(descriptor)
+    _exclusive_json(lane_path, lane)
     try:
         if (state_root / "activation-reconciliation.lock").exists():
             raise ActivationError("activation_reconciliation_lane_active")
@@ -213,8 +212,7 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
             audit_intent, _read_key(state_root / "activation-authority.key"),
             "audit_intent_hmac_sha256",
         )
-        descriptor = _exclusive_json(audit_intent_path, audit_intent)
-        os.close(descriptor)
+        _exclusive_json(audit_intent_path, audit_intent)
         audit_changed = task_controller.ensure_audit_channel_enabled()
         if audit_changed is not (not audit_prior["enabled"]):
             raise ActivationError("task_scheduler_audit_mutation_result_invalid")
@@ -232,8 +230,7 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
             audit_receipt, _read_key(state_root / "activation-authority.key"),
             "audit_receipt_hmac_sha256",
         )
-        descriptor = _exclusive_json(audit_receipt_path, audit_receipt)
-        os.close(descriptor)
+        _exclusive_json(audit_receipt_path, audit_receipt)
         task_controller.enable_and_trigger_exact(plan["task_action_sha256"])
     except Exception:
         if rollback_path.exists():
@@ -241,8 +238,6 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
                 state_root, plan, task_controller, archive_path, stop_path,
                 lane_path, rollback_path, packet_path,
             )
-        elif lane_path.exists():
-            lane_path.replace(ledger / f"{activation_id}-prepare-write-failed-lane.json")
         raise
     return {
         "success": True, "status": "provider_activation_requested",
@@ -271,12 +266,11 @@ def consume_provider_activation(*, state_root, starter, task_controller,
     if not provider.get("authorized"):
         raise ActivationError(provider.get("reason") or "provider_origin_invalid")
     consumed_path = state_root / f"activation-consumed-{packet['activation_id']}.json"
-    descriptor = _exclusive_json(consumed_path, {
+    _exclusive_json(consumed_path, {
         "version": ACTIVATION_VERSION, "activation_id": packet["activation_id"],
         "provider_pid": provider["pid"], "provider_parent_pid": provider["parent_pid"],
         "consumed_at": _now(now),
     })
-    os.close(descriptor)
     previous = os.environ.get("CHARLIE_ACTIVATION_ID")
     os.environ["CHARLIE_ACTIVATION_ID"] = packet["activation_id"]
     try:
@@ -361,8 +355,7 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
                 marker, _read_key(state_root / "activation-authority.key"),
                 "marker_hmac_sha256",
             )
-            descriptor = _exclusive_json(marker_path, marker)
-            os.close(descriptor)
+            _exclusive_json(marker_path, marker)
         lane = state_root / "activation.lock"
         archive = state_root / "activation-ledger" / f"{packet['activation_id']}-lane.json"
         if lane.exists():
@@ -752,8 +745,7 @@ def recover_activation(*, state_root, task_controller, activation_id,
         failure_record["failure_hmac_sha256"] = _sign_record(
             failure_record, key, "failure_hmac_sha256"
         )
-        descriptor = _exclusive_json(failure_path, failure_record)
-        os.close(descriptor)
+        _exclusive_json(failure_path, failure_record)
     pending = {
         "version": RECOVERY_PROJECTION_VERSION,
         "activation_id": activation_id,
@@ -796,8 +788,7 @@ def recover_activation(*, state_root, task_controller, activation_id,
                     _sign_record(existing_completion, key, "completion_hmac_sha256"))):
             raise ActivationError("activation_recovery_completion_conflict")
     else:
-        descriptor = _exclusive_json(completion_path, completion)
-        os.close(descriptor)
+        _exclusive_json(completion_path, completion)
     return {"success": True, "status": "activation_recovered", "activation_id": activation_id}
 
 
@@ -900,13 +891,12 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
                           else "activation_reconciliation_lane_active")
                 raise ActivationError(status)
     else:
-        descriptor = _exclusive_json(reconciliation_lock, {
+        _exclusive_json(reconciliation_lock, {
             "version": RECOVERY_PROJECTION_VERSION,
             "activation_id": activation_id,
             "status": "activation_reconciliation_owned",
             "owner_pid": os.getpid(),
         })
-        os.close(descriptor)
     if any((
         (state_root / "activation.lock").exists(),
         (state_root / "release-staging.lock").exists(),
@@ -1003,8 +993,7 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
         failure_record["failure_hmac_sha256"] = _sign_record(
             failure_record, key, "failure_hmac_sha256"
         )
-        descriptor = _exclusive_json(failure_path, failure_record)
-        os.close(descriptor)
+        _exclusive_json(failure_path, failure_record)
     if pending.get("historical_failure_sha256") and pending.get("historical_failure_sha256") != _sha256(failure_path):
         raise ActivationError("activation_failure_record_binding_invalid")
     completion_path = ledger / f"{activation_id}-recovery-completed.json"
@@ -1026,8 +1015,7 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
         completion["completion_hmac_sha256"] = _sign_record(
             completion, key, "completion_hmac_sha256"
         )
-        descriptor = _exclusive_json(completion_path, completion)
-        os.close(descriptor)
+        _exclusive_json(completion_path, completion)
     if (completion.get("version") != RECOVERY_PROJECTION_VERSION
             or completion.get("activation_id") != activation_id
             or completion.get("status") != "activation_recovery_completed"
@@ -1905,14 +1893,21 @@ def _parse_time(value):
 def _exclusive_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
     try:
-        descriptor = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError as exc:
-        raise ActivationError("activation_lane_already_owned") from exc
-    with os.fdopen(os.dup(descriptor), "wb") as stream:
-        stream.write(json.dumps(value, indent=2).encode())
-        stream.flush(); os.fsync(stream.fileno())
-    return descriptor
+        with temporary.open("xb") as stream:
+            stream.write(json.dumps(value, indent=2).encode())
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, path)
+        except FileExistsError as exc:
+            raise ActivationError("activation_lane_already_owned") from exc
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _atomic_json(path, value):
