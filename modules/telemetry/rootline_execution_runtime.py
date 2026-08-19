@@ -239,7 +239,8 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
     controller = readback(token_store=token_store, environ=source, now=now)
     artifact = build_execution_eligibility(
         plan=plan, evidence=evidence, controller=controller, now=now,
-        job_event_reader=lambda job_id: store("load_job_events", job_id))
+        job_event_reader=lambda job_id: store("load_job_events", job_id),
+        zone_containment_reader=lambda zone_id: store("load_zone_containment", zone_id))
     resolution = artifact.get("job_resolution") if isinstance(artifact, dict) else None
     if isinstance(resolution, dict):
         recorded = store("record_job_resolution", resolution)
