@@ -64,6 +64,7 @@ from modules.orders.order_validation import (
     validate_sync_order_lines_payload,
 )
 from modules.orders.livestock_quote_preview import build_livestock_quote_preview, build_already_sold_recording_preview
+from modules.orders.livestock_quotation import build_quotation_preview
 from modules.pig_weights.herdmaster_live_transfer_contract import (
     build_live_transfer_preview_contract,
 )
@@ -253,14 +254,31 @@ def livestock_quote_preview():
     if any(item["quantity"] > 100 for item in validation["cleaned_data"]["requested_items"]):
         return jsonify({"success": False, "errors": ["Preview requests are limited to 20 lines and 100 pigs per line."], "writes_performed": False}), 400
     try:
+        journey = str(payload.get("journey") or "sales_quotation").strip()
+        if journey in {"price_indication", "budgetary_quotation"}:
+            return jsonify(build_quotation_preview({
+                **payload,
+                "journey": journey,
+                "requested_items": validation["cleaned_data"]["requested_items"],
+            })), 200
         herdmaster_packet = build_live_transfer_preview_contract()
         if not isinstance(herdmaster_packet, dict) or not herdmaster_packet.get("packet_digest"):
             return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
-        return jsonify(build_livestock_quote_preview(
-            validation["cleaned_data"]["requested_items"], herdmaster_packet,
-            observed_at=herdmaster_packet.get("evidence_cutoff_date"),
-            evidence_source="canonical_repeatable_read",
+        return jsonify(build_quotation_preview(
+            {
+                **payload,
+                "journey": "sales_quotation",
+                "quotation_basis": "current_availability",
+                "requested_items": validation["cleaned_data"]["requested_items"],
+            },
+            herdmaster_preview_builder=lambda items, packet: build_livestock_quote_preview(
+                items, packet, observed_at=packet.get("evidence_cutoff_date"),
+                evidence_source="canonical_repeatable_read",
+            ),
+            herdmaster_packet=herdmaster_packet,
         )), 200
+    except ValueError as exc:
+        return jsonify({"success": False, "errors": [str(exc)], "writes_performed": False}), 400
     except Exception as exc:
         logger.exception("Livestock quote preview failed")
         return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503

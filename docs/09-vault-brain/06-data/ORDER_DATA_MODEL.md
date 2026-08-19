@@ -52,6 +52,8 @@ must not invoke livestock lifecycle mutation.
 - Approved-order revision actions must be idempotent: repeated correction requests should detect already-matching active lines and logged revision fingerprints instead of silently duplicating pigs or paperwork.
 - `send_for_approval` requires Draft status, customer name, payment method, collection location, and at least one active line.
 - Approval records the owner decision only. Reservation/allocation and customer or quote notification are separate named gated actions; approval must not trigger either action automatically.
+- `livestock_quotations` is the intake-linked quotation aggregate, separate from `orders`, allocation proposals and reservations. Its journey is `budgetary_quotation` or `sales_quotation`; the latter alone uses `quotation_basis=current_availability`.
+- `livestock_quotation_lines` store immutable issue-time quantity, unit-price, subtotal and effective-dated `sales_pricing` evidence. Issued rows are append-only; refresh creates a superseding quotation. Expiry and supersession are explicit, and order conversion refreshes price and availability without carrying allocation/reservation forward.
 - Rejection/customer cancellation must cancel/release linked non-terminal lines and write status-log evidence.
 - Completed orders and terminal records must be protected from unsafe approval/rejection/cancellation changes.
 - Quote/document sending must use backend-prepared document state and the outbound document-delivery path.

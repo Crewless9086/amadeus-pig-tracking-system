@@ -77,6 +77,15 @@
 
         <section class="operation-section">
           <div class="section-title-row"><div><h2>Customer request</h2><p>Requested quantities only — no animal selection or reservation.</p></div><button id="add_request_line" type="button" class="small-action-button">Add line</button></div>
+          <div class="form-group">
+            <label for="quotation_journey">What does the customer need?</label>
+            <select id="quotation_journey">
+              <option value="price_indication">Price indication - answer the category price now</option>
+              <option value="budgetary_quotation" selected>Funding / budget approval quotation - no pigs selected</option>
+              <option value="sales_quotation">Current-availability sales quotation - HERDMASTER advisory</option>
+            </select>
+            <p class="field-helper">A request, quotation, allocation proposal, reservation and order are separate records.</p>
+          </div>
           <div id="requested_items_editor"></div>
         </section>
 
@@ -98,7 +107,7 @@
         </div>
 
         <div class="form-actions">
-          <button type="submit">Build local draft quote preview</button>
+          <button type="submit">Build quotation preview</button>
         </div>
 
         <div id="add_order_message" class="message-box hidden"></div>
