@@ -20,7 +20,8 @@ STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
 
 
 def build_execution_eligibility(*, plan, evidence, controller, now=None,
-                                job_event_reader=lambda _job_id: ()):
+                                job_event_reader=lambda _job_id: (),
+                                zone_containment_reader=lambda _zone_id: {}):
     now = _aware(now or datetime.now(timezone.utc))
     if not isinstance(plan, dict) or not isinstance(evidence, dict):
         return _none("canonical_plan_unavailable")
@@ -37,7 +38,12 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             str(plan.get("operating_date") or "")[:10])
         contained = task.get("contained_parent_jobs") if isinstance(
             task.get("contained_parent_jobs"), list) else []
-        if (zone in zones and not contained and parent_date_current
+        durable_containment = (zone_containment_reader(zone) or {}
+            if zone in zones else {})
+        if (zone in zones and not contained
+                and not (isinstance(durable_containment, dict)
+                    and durable_containment.get("contained") is True)
+                and parent_date_current
                 and task.get("zone_decision") == "Run now"
                 and task.get("recommendation") == "Recommend"
                 and int(task.get("planned_duration_minutes") or 0) in range(1, 61)):

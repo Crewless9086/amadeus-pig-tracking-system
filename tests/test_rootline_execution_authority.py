@@ -220,6 +220,21 @@ def test_contained_parent_defense_in_depth_rejects_run_now_task():
     assert result["status"]=="planner_hold_or_no_dispatchable_zone"
 
 
+def test_durable_b_containment_leaves_independent_c_candidate_eligible():
+    plan,evidence,controller=inputs()
+    c_task=deepcopy(plan["candidate_tasks"][0])
+    c_task.update(task_id="irrigation_C12345",rank=2)
+    plan["candidate_tasks"].append(c_task)
+    evidence["irrigation"]["zones"].append({"zone_id":"C12345",
+        "live_rain_release_proven":True,"forecast_planning_quality":"fresh",
+        "planning_warnings":[]})
+    result=build_execution_eligibility(plan=plan,evidence=evidence,
+        controller=controller,now=NOW,
+        zone_containment_reader=lambda zone: {"contained":zone=="B12345"})
+    assert result["eligible"] is True
+    assert result["zone_id"]=="C12345" and result["channel"]==2
+
+
 def test_controller_drift_or_unexpected_output_creates_no_authority():
     plan,evidence,controller=inputs()
     controller["channels"][1]["output_state"]="ON"
