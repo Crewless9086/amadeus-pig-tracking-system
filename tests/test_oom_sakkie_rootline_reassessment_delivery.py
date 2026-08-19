@@ -95,6 +95,15 @@ def test_recurring_material_after_intervening_delivery_gets_new_date_identity():
     assert all(rows[identity]["operating_date"]==day for identity,day in zip(calls,
         ("2026-08-11","2026-08-12","2026-08-15")))
 
+def test_moving_canonical_plan_check_is_not_a_material_owner_change():
+    first=current("Run later")
+    first["next_reassessment"]={"trigger":"canonical_plan_reassessment",
+        "at":"2026-08-19T08:30:00+02:00","also_on":["new_canonical_evidence"]}
+    later={**first,"generation":"G2","result_id":"R2",
+        "next_reassessment":{**first["next_reassessment"],
+            "at":"2026-08-19T08:45:00+02:00"}}
+    assert rootline_material_digest(first)==rootline_material_digest(later)
+
 def test_legacy_ambiguous_identity_is_not_detached_or_retried():
     rows,store=memory_store(); value=current("Hold","2026-08-11")
     material=rootline_material_digest(value)

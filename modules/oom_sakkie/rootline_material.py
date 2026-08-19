@@ -25,7 +25,11 @@ def stable_reassessment(value):
     stable = {key: _normal(value.get(key)) for key in (
         "trigger", "reason", "also_on", "recovery_if_window_is_missed", "automatic_command"
     ) if key in value}
-    if trigger not in {"new_canonical_evidence", "new_canonical_evidence_or_next_read"} and "at" in value:
+    if trigger not in {
+        "canonical_plan_reassessment",
+        "new_canonical_evidence",
+        "new_canonical_evidence_or_next_read",
+    } and "at" in value:
         stable["at"] = value.get("at")
     return stable
 
