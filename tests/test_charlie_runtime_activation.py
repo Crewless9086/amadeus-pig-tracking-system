@@ -910,17 +910,69 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())
 
-    def test_recovery_rejects_tampered_packet_before_any_mutation(self):
+    def test_recovery_contains_from_signed_rollback_before_rejecting_tampered_packet(self):
         plan, controller, _ = self._prepared()
         packet_path = self.state / "activation-packet.json"
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
         packet["task_ownership"][0]["task_name"] = "Unrelated Task"
         packet_path.write_text(json.dumps(packet), encoding="utf-8")
-        with self.assertRaisesRegex(ActivationError, "activation_packet_signature_invalid"):
+        with self.assertRaisesRegex(ActivationError, "activation_recovery_incomplete"):
             recover_activation(state_root=self.state, task_controller=controller,
                                activation_id=plan["activation_id"])
-        self.assertEqual(controller.disabled, [])
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertEqual(controller.audit_restored, [])
+        self.assertTrue(self.stop.exists())
+
+    def test_recovery_resumes_after_audit_artifacts_were_archived(self):
+        plan, controller, _ = self._prepared()
+        original_replace = Path.replace
+
+        def interrupt_lane_archive(source, target):
+            if source.name == "activation.lock":
+                raise OSError("simulated lane archive interruption")
+            return original_replace(source, target)
+
+        with patch.object(Path, "replace", interrupt_lane_archive):
+            with self.assertRaisesRegex(OSError, "lane archive interruption"):
+                recover_activation(state_root=self.state, task_controller=controller,
+                                   activation_id=plan["activation_id"],
+                                   failure_evidence={"status": "test_failure"})
+        result = recover_activation(state_root=self.state, task_controller=controller,
+                                    activation_id=plan["activation_id"],
+                                    failure_evidence={"status": "test_failure"})
+        self.assertEqual(result["status"], "activation_recovered")
+
+    def test_authenticated_v1_lane_remains_containable(self):
+        plan, controller, _ = self._prepared()
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        packet["version"] = "charlie_provider_activation_v1"
+        unsigned_packet = {k: v for k, v in packet.items() if k != "packet_hmac_sha256"}
+        packet["packet_hmac_sha256"] = hmac.new(
+            self.key, json.dumps(unsigned_packet, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        rollback_path = self.state / "activation-ledger" / f"{plan['activation_id']}-rollback.json"
+        rollback = json.loads(rollback_path.read_text(encoding="utf-8"))
+        rollback["version"] = "charlie_provider_activation_v1"
+        for field in ("task_ownership", "task_scheduler_audit_prior",
+                      "task_scheduler_audit_mutation_required",
+                      "task_scheduler_audit_rollback_command"):
+            rollback.pop(field, None)
+        unsigned_rollback = {k: v for k, v in rollback.items()
+                             if k != "rollback_hmac_sha256"}
+        rollback["rollback_hmac_sha256"] = hmac.new(
+            self.key, json.dumps(unsigned_rollback, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        rollback_path.write_text(json.dumps(rollback), encoding="utf-8")
+        result = recover_activation(state_root=self.state, task_controller=controller,
+                                    activation_id=plan["activation_id"],
+                                    failure_evidence={"status": "legacy_test_failure"})
+        self.assertEqual(result["status"], "activation_recovered")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
 
     def _reconcile(self, plan, **changes):
         values = {

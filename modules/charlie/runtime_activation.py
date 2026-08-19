@@ -540,53 +540,59 @@ def recover_activation(*, state_root, task_controller, activation_id,
     )
     key = _read_key(state_root / "activation-authority.key")
     if not hmac.compare_digest(
-            str(packet.get("packet_hmac_sha256") or ""),
-            _sign_packet(packet, key)):
-        raise ActivationError("activation_packet_signature_invalid")
-    if not hmac.compare_digest(
         str(rollback.get("rollback_hmac_sha256") or ""),
         _sign_record(rollback, key, "rollback_hmac_sha256"),
     ):
         raise ActivationError("activation_rollback_signature_invalid")
+    errors = []
+    packet_valid = hmac.compare_digest(
+        str(packet.get("packet_hmac_sha256") or ""), _sign_packet(packet, key)
+    )
+    rollback_version = rollback.get("version")
+    if rollback_version not in {"charlie_provider_activation_v1", ACTIVATION_VERSION}:
+        raise ActivationError("activation_rollback_version_unsupported")
     authority = packet.get("authority") if isinstance(packet.get("authority"), dict) else {}
-    if any((
-        rollback.get("version") != ACTIVATION_VERSION,
-        rollback.get("activation_id") != activation_id,
-        rollback.get("authority_sha256") != packet.get("authority_sha256"),
-        rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256"),
-        rollback.get("task_action_sha256") != authority.get("task_action_sha256"),
-    )):
+    if rollback.get("activation_id") != activation_id:
         raise ActivationError("activation_rollback_binding_invalid")
-    rollback_task = rollback.get("task_ownership")
-    if (_payload_sha256(rollback_task) != rollback.get("task_action_sha256")
-            or rollback_task != packet.get("task_ownership")):
+    rollback_task = (rollback.get("task_ownership") if rollback_version == ACTIVATION_VERSION
+                     else packet.get("task_ownership"))
+    if (not packet_valid and rollback_version != ACTIVATION_VERSION):
+        raise ActivationError("legacy_activation_packet_signature_invalid")
+    if _payload_sha256(rollback_task) != rollback.get("task_action_sha256"):
         raise ActivationError("activation_rollback_task_binding_invalid")
     if hasattr(task_controller, "bind_exact"):
         task_controller.bind_exact(rollback_task)
-    audit_prior = rollback.get("task_scheduler_audit_prior")
-    if (not isinstance(audit_prior, dict)
+    audit_prior = rollback.get("task_scheduler_audit_prior") if rollback_version == ACTIVATION_VERSION else {
+        "log_name": TASK_SCHEDULER_OPERATIONAL_LOG, "enabled": True,
+    }
+    if (rollback_version == ACTIVATION_VERSION and (not isinstance(audit_prior, dict)
             or audit_prior.get("log_name") != TASK_SCHEDULER_OPERATIONAL_LOG
             or not isinstance(audit_prior.get("enabled"), bool)
             or rollback.get("task_scheduler_audit_rollback_command") != (
                 f"wevtutil sl {TASK_SCHEDULER_OPERATIONAL_LOG} "
-                f"/e:{str(audit_prior.get('enabled')).lower()}")):
+                f"/e:{str(audit_prior.get('enabled')).lower()}"))):
         raise ActivationError("activation_audit_rollback_binding_invalid")
     if not hasattr(task_controller, "bind_audit_channel_state"):
         raise ActivationError("task_scheduler_audit_controller_required")
     task_controller.bind_audit_channel_state(audit_prior)
-    audit_mutation_required = rollback.get("task_scheduler_audit_mutation_required")
-    if audit_mutation_required is not (not audit_prior["enabled"]):
+    audit_mutation_required = (rollback.get("task_scheduler_audit_mutation_required")
+                               if rollback_version == ACTIVATION_VERSION else False)
+    if (rollback_version == ACTIVATION_VERSION
+            and audit_mutation_required is not (not audit_prior["enabled"])):
         raise ActivationError("activation_audit_rollback_binding_invalid")
-    errors = []
     try:
         task_controller.disable_exact(rollback["task_action_sha256"])
     except Exception as exc:
         errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
-    audit_intent_valid = False
-    audit_receipt_valid = False
+    audit_intent_valid = rollback_version != ACTIVATION_VERSION
+    audit_receipt_valid = rollback_version != ACTIVATION_VERSION
     try:
+        if rollback_version != ACTIVATION_VERSION:
+            raise StopIteration
+        intent_live = state_root / f"activation-audit-intent-{activation_id}.json"
+        intent_archive = ledger / f"{activation_id}-recovered-activation-audit-intent-{activation_id}.json"
         audit_intent = _read_json(
-            state_root / f"activation-audit-intent-{activation_id}.json",
+            intent_live if intent_live.exists() else intent_archive,
             "activation_audit_intent_missing",
         )
         audit_intent_valid = bool(
@@ -601,12 +607,18 @@ def recover_activation(*, state_root, task_controller, activation_id,
         )
         if not audit_intent_valid:
             raise ActivationError("activation_audit_intent_invalid")
+    except StopIteration:
+        pass
     except Exception as exc:
         errors.append({"component": "task_scheduler_audit_intent",
                        "status": getattr(exc, "status", exc.__class__.__name__)})
     try:
+        if rollback_version != ACTIVATION_VERSION:
+            raise StopIteration
+        receipt_live = state_root / f"activation-audit-receipt-{activation_id}.json"
+        receipt_archive = ledger / f"{activation_id}-recovered-activation-audit-receipt-{activation_id}.json"
         audit_receipt = _read_json(
-            state_root / f"activation-audit-receipt-{activation_id}.json",
+            receipt_live if receipt_live.exists() else receipt_archive,
             "activation_audit_receipt_missing",
         )
         audit_receipt_valid = bool(
@@ -622,6 +634,8 @@ def recover_activation(*, state_root, task_controller, activation_id,
         )
         if not audit_receipt_valid:
             raise ActivationError("activation_audit_receipt_invalid")
+    except StopIteration:
+        pass
     except Exception as exc:
         errors.append({"component": "task_scheduler_audit_receipt",
                        "status": getattr(exc, "status", exc.__class__.__name__)})
@@ -643,6 +657,13 @@ def recover_activation(*, state_root, task_controller, activation_id,
             raise ActivationError("governed_stop_restore_failed")
     except Exception as exc:
         errors.append({"component": "governed_stop", "status": getattr(exc, "status", exc.__class__.__name__)})
+    if (not packet_valid
+            or rollback.get("authority_sha256") != packet.get("authority_sha256")
+            or rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256")
+            or rollback.get("task_action_sha256") != authority.get("task_action_sha256")
+            or rollback_task != packet.get("task_ownership")):
+        errors.append({"component": "activation_packet",
+                       "status": "activation_packet_or_binding_invalid"})
     if errors:
         raise ActivationError("activation_recovery_incomplete", errors=errors)
     failure_path = ledger / f"{activation_id}-failure.json"
