@@ -9,6 +9,28 @@ Telegram, GateKeeper, SAM owner-card and decision-evidence infrastructure.
 This workflow adds no bot, trigger, customer router, callback namespace owner,
 decision ledger or runtime scheduler.
 
+## Shared Attention Projection
+
+The attention queue is the single typed owner-attention decision projection
+for the homepage, Brief, Telegram and later voice presentation. Specialists
+contribute attributable work-item facts; browser code and channel renderers do
+not independently decide which farm work exists or recalculate priority.
+
+Each current item carries one stable identity, category, specialist owner,
+priority/watch classification, exact owner action, evidence provenance and
+freshness, safe detail target, and open/resolved/superseded lifecycle. Every
+authorized channel consumes the same ordered identities and lifecycle. A
+compact channel may render fewer items, but must expose the total hidden count
+and a governed route to the complete projection.
+
+`status_reconciliation`, `physical_action_due` (including genuine weighing),
+and `informational_watch` are distinct task classes. A missing or conflicting
+animal status remains specialist reconciliation until HERDMASTER proves a
+physical action is required. A ROOTLINE refresh or timeout remains assigned to
+ROOTLINE/Oom Sakkie unless one precise physical observation is irreducibly
+required from the owner. Failure of one specialist must not erase unrelated
+current items from another specialist.
+
 ## Three output classes
 
 1. **Sales-status summary:** exactly one stable identity per configured period,

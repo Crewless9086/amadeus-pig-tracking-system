@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - One canonical system across every channel
+
+- Made application, Telegram, voice and scheduled workers explicit adapters to
+  one canonical backend truth and lifecycle rather than independent business
+  decision surfaces.
+- Established the Oom Sakkie attention queue as the shared typed projection for
+  homepage, Brief, Telegram and later voice, with stable identities, common
+  ordering/lifecycle and channel-specific presentation only.
+- Separated specialist status reconciliation, genuine physical action and watch
+  information, and kept automatic ROOTLINE refresh failures with the agents
+  until one precise human observation is irreducible.
+
 ## 2026-08-19 - Livestock quotation journeys
 
 - Bound SAM livestock to one three-journey quotation model: direct `price_indication`, allocation-free `budgetary_quotation`, and `sales_quotation/current_availability`.
