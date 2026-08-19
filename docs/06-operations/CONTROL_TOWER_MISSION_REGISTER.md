@@ -1191,3 +1191,33 @@ The later manager case phase failed in both cycles. That pre-existing
 operating-spine timeout remains a separate current defect; Brain Guard audit
 success does not claim a completed manager business cycle. The 72 transitional
 documents remain safely retained behind the two named Batch 28 exit tests.
+
+### OOM SAKKIE manager-case timeout closeout - 2026-08-19
+
+The reusable post-Brain-Guard manager-case timeout is repaired on authoritative
+main by PR #1103 (`181543e7`, repair commit `57934592`). The correction runs the
+bounded read-only candidate collectors concurrently while preserving declared
+result order, and refreshes only the provider-owned HERDMASTER, ROOTLINE and
+BEACON case families before delivery. Focused current-main verification passed
+27 manager-case source/worker tests; all three PR checks passed.
+
+Render cron `crn-d9us4d3ncjis73adehrg` and web service
+`srv-d6sijjkhg0os73f7regg` loaded exact authoritative revision
+`14129a23cd4c1750eb442c0b4372f884c4c8774c`. Provider-owned cycles
+`OOM-MANAGER-CYCLE-20260819T081022876461Z-FBAAF1BE8EC547ABA7753827E324D118`
+and
+`OOM-MANAGER-CYCLE-20260819T081530523321Z-029BA419094A4843BC8D1A93210ABE2D`
+completed independently on the five-minute schedule. Each passed scheduled
+Brain Guard, reconciled thirteen current cases, recorded zero exceptions and
+suppressed thirteen unchanged deliveries. No terminal invoked the cycle and no
+manual Telegram, customer, Meta, farm, provider or hardware action was used.
+
+Lifecycle: `BUSINESS_COMPLETE / MANAGER_CASE_TIMEOUT_REPAIRED /
+CONSECUTIVE_PROVIDER_CYCLES_AND_TRUTHFUL_SILENCE_PROVEN`.
+
+The timeout mission is closed. Current specialist cases remain owned by their
+existing specialist missions and standing authority; this closeout does not
+duplicate SALES quotation, CORE recovery, ROOTLINE device work or BEACON
+event-waiting work. Automatic continuation remains the existing provider cron;
+unchanged evidence stays silent and materially changed evidence re-enters the
+same canonical manager-case lifecycle.
