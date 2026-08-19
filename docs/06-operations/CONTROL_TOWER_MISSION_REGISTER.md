@@ -24,7 +24,7 @@ veterinary claim.
 Recovery WIP remains capped at three implementation tracks:
 
 1. **Slot 1 - SALES / HERDMASTER livestock order completion
-   (`CURRENT_BLOCKER`)**: continue the existing multi-line requested-items and
+   (`RELEASED_OWNER_AUTH_REQUIRED`)**: continue the existing multi-line requested-items and
    OP-004 lineage in one fresh current-main worktree. Reconcile the contradictory
    livestock doctrine first, then simplify the existing live-transfer contract,
    matching, quote preview, Orders presentation and livestock document
@@ -94,6 +94,20 @@ stopping only at a real protected, physical, external or serialized-release
 boundary. Released clean worktrees must be closed promptly. Every lane must
 return `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`; open processes and older
 waits are not activity or dependency proof.
+
+Slot 1 release evidence: PR #1107 merged on 19 August 2026 as main revision
+`aea19d46aa4aee292b66e91fa8f590494deaae65`. Exact-head CI passed all three
+required workflows; Brain Guard passed with zero findings; independent review
+approved; authenticated and safe-local read-only desktop/390px preview evidence
+proved the inherited `5_to_6_Kg` band (owner shorthand “56 kg” interpreted as
+5–6 kg) plus the approximately 15 kg female/male lines, truthful availability,
+shortfalls, animal facts, price and consolidated medicine disclosure with no
+order/farm write. Production `/health` returned 200 and the deployed JavaScript
+and CSS matched the exact main blobs byte-for-byte. `/orders/new` correctly
+redirected to owner login. No production owner credential was present in the
+terminal, so authenticated production acceptance remains the one bounded
+owner-only action; no quote, reservation, purpose change or customer contact
+was performed.
 
 ## 2026-08-18 - Slot 2 OOM SAKKIE morning-truth recovery
 
