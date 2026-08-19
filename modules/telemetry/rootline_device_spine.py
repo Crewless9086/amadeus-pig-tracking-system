@@ -123,7 +123,9 @@ def store_device_record(record: Mapping, *, connect_factory) -> dict:
 
 def load_device_record(device_key: str, *, connect_factory) -> dict | None:
     with connect_factory() as db, db.cursor() as cur:
-        cur.execute("""select contract_version,device_record,evidence_digest,registry_generation
+        cur.execute("""select contract_version,device_record,evidence_digest,registry_generation,
+          encode(digest(convert_to(regexp_replace(regexp_replace(
+            device_record::text,': ',':','g'),', ',',','g'),'UTF8'),'sha256'),'hex')
           from app_private.rootline_device_registry where device_key=%s""", (str(device_key),))
         row = cur.fetchone()
     if not row:
@@ -131,7 +133,12 @@ def load_device_record(device_key: str, *, connect_factory) -> dict | None:
     record = row[1] if isinstance(row[1], Mapping) else {}
     validate_device(record, resolver=CanonicalAuthorityResolver(connect_factory))
     material = json.dumps(dict(record), sort_keys=True, separators=(",", ":"), default=str)
-    if row[0] != CONTRACT_VERSION or hashlib.sha256(material.encode()).hexdigest() != row[2]:
+    source_digest = hashlib.sha256(material.encode()).hexdigest()
+    # SQL authority migrations seal jsonb in PostgreSQL's deterministic key
+    # order; application writes seal the same material in Python-sorted order.
+    # Accept only an exact digest of the loaded record under either established
+    # canonicalization, never an unchecked or stale digest.
+    if row[0] != CONTRACT_VERSION or row[2] not in {source_digest, str(row[4])}:
         raise ValueError("rootline_device_registry_digest_mismatch")
     if int(record.get("registry_generation") or 0) != int(row[3]):
         raise ValueError("rootline_device_registry_generation_mismatch")
