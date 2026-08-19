@@ -51,6 +51,30 @@ document/UI projection and exact Wenettitus-shaped acceptance. The current
 stock-backed preview remains separately released for authenticated owner
 acceptance and must not be misrepresented as the funding-quotation journey.
 
+Release closure: PR #1118 merged normally as `05c3e2aa` after all three
+exact-head CI lanes passed; Render deployed that exact revision and then the
+documentation-only current-main superset `cc3011ed`. Migration
+`202608190003_create_livestock_quotation_aggregate` is applied and read back in
+production with both quotation tables, immutable snapshot triggers and zero
+initial quotation/line rows. Authenticated production acceptance at
+2026-08-19 08:25 UTC resolved the current effective Supabase price snapshots
+(`PRICE-YOUNG_PIGLETS_5_TO_6_KG_ANY` at R400 and
+`PRICE-WEANER_PIGLETS_15_TO_19_KG_ANY` at R600) and proved all three distinct
+preview journeys against the Wenettitus-shaped four-line request. Each returned
+subtotal R9,200.00, VAT R1,380.00 and total R10,580.00. Price indication and
+budgetary quotation selected no animals and returned no allocation; the
+current-availability sales quotation alone returned a HERDMASTER proposal.
+All three reported zero quotation/order/order-line/reservation writes, and the
+budgetary journey explicitly reported no allocation, animal selection,
+availability promise, order or reservation. The existing PDF was not opened
+for delivery or sent, and no customer/provider contact occurred.
+
+Lifecycle: `BUSINESS_COMPLETE / DEPLOYED_QUOTATION_JOURNEYS_ACCEPTED /
+CUSTOMER_DELIVERY_SEPARATELY_PROTECTED`. The development mission is closed;
+later customer/provider delivery requires its own exact protected authority.
+The next sales mission remains the registered deployed SAM salesperson outcome,
+not another quotation engine or terminal-created customer response.
+
 ## 2026-08-19 - Overnight operating-outcome recovery
 
 Owner priority: tomorrow's four-line livestock quote must be usable, while
