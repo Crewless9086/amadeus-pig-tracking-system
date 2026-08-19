@@ -216,6 +216,12 @@ class RuntimeActivationTests(unittest.TestCase):
             self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256
         ).hexdigest()
         packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        (self.state / f"activation-consumed-{packet['activation_id']}.json").write_text(
+            json.dumps({"version": ACTIVATION_VERSION,
+                        "activation_id": packet["activation_id"],
+                        "provider_pid": 10, "provider_parent_pid": 20}),
+            encoding="utf-8",
+        )
         return packet
 
     def test_exact_task_action_digest_and_executable_are_required(self):

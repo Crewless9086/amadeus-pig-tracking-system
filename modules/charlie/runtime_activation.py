@@ -452,6 +452,7 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
             f"{packet['activation_id']}-verified-activation-packet.json",
             f"{packet['activation_id']}-verified-activation-audit-intent-{packet['activation_id']}.json",
             f"{packet['activation_id']}-verified-activation-audit-receipt-{packet['activation_id']}.json",
+            f"{packet['activation_id']}-verified-activation-consumed-{packet['activation_id']}.json",
             f"{packet['activation_id']}-verified-supervisor.stop.activation-{packet['activation_id']}",
         ]
         archive_hashes = {name: _sha256(ledger / name) for name in required_archives}
@@ -1917,7 +1918,10 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_receipt_sha256_mismatch")
     if _task_action_sha256(task_reader()) != authority["task_action_sha256"]:
         raise ActivationError("activation_task_action_sha256_mismatch")
-    if _sha256(state_root / f"supervisor.stop.activation-{packet['activation_id']}") != authority["stop_marker_sha256"]:
+    live_stop_archive = state_root / f"supervisor.stop.activation-{packet['activation_id']}"
+    verified_stop_archive = (state_root / "activation-ledger"
+                             / f"{packet['activation_id']}-verified-{live_stop_archive.name}")
+    if _sha256(live_stop_archive if live_stop_archive.exists() else verified_stop_archive) != authority["stop_marker_sha256"]:
         raise ActivationError("activation_archived_stop_sha256_mismatch")
     runtime = _worktree(Path(packet["runtime_root"]), git_runner)
     execution = _worktree(Path(packet["execution_root"]), git_runner)
