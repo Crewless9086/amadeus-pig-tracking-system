@@ -135,12 +135,6 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
             or not isinstance(audit_prior.get("enabled"), bool)):
         raise ActivationError("task_scheduler_audit_state_invalid")
     lane_path = state_root / "activation.lock"
-    lane = {
-        "version": ACTIVATION_VERSION, "activation_id": plan["activation_id"],
-        "status": "activation_lane_acquired", "acquired_at": _now(now),
-    }
-    descriptor = _exclusive_json(lane_path, lane)
-    os.close(descriptor)
     ledger = state_root / "activation-ledger"
     activation_id = plan["activation_id"]
     rollback_path = ledger / f"{activation_id}-rollback.json"
@@ -180,6 +174,16 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         "task_ownership": plan["task_ownership"],
     }
     packet["packet_hmac_sha256"] = _sign_packet(packet, _read_key(state_root / "activation-authority.key"))
+    lane = {
+        "version": ACTIVATION_VERSION, "activation_id": activation_id,
+        "status": "activation_lane_acquired", "acquired_at": _now(now),
+        "rollback": rollback, "packet": packet,
+    }
+    lane["lane_hmac_sha256"] = _sign_record(
+        lane, _read_key(state_root / "activation-authority.key"), "lane_hmac_sha256"
+    )
+    descriptor = _exclusive_json(lane_path, lane)
+    os.close(descriptor)
     try:
         if (state_root / "activation-reconciliation.lock").exists():
             raise ActivationError("activation_reconciliation_lane_active")
@@ -305,7 +309,22 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
                                  task_reader=read_watchdog_task,
                                  git_runner=subprocess.run, now=None):
     state_root = Path(state_root).resolve()
-    packet = _read_json(state_root / "activation-packet.json", "activation_packet_invalid")
+    live_packet = state_root / "activation-packet.json"
+    if live_packet.exists():
+        packet_path = live_packet
+    else:
+        marker = _read_json(state_root / "activation-verification.lock",
+                            "activation_verification_marker_missing")
+        marker_key = _read_key(state_root / "activation-authority.key")
+        if (marker.get("version") != ACTIVATION_VERSION
+                or marker.get("status") != "activation_verification_archival_pending"
+                or not hmac.compare_digest(
+                    str(marker.get("marker_hmac_sha256") or ""),
+                    _sign_record(marker, marker_key, "marker_hmac_sha256"))):
+            raise ActivationError("activation_verification_marker_invalid")
+        packet_path = (state_root / "activation-ledger"
+                       / f"{marker.get('activation_id')}-verified-activation-packet.json")
+    packet = _read_json(packet_path, "activation_packet_invalid")
     try:
         _validate_packet(packet, state_root, task_reader, git_runner=git_runner,
                          now=now, allow_consumed=True, allow_expired=True)
@@ -327,6 +346,20 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
         "activation_id_exact", "unrelated_processes_absent",
     )
     if all(evidence.get(item) is True for item in required):
+        marker_path = state_root / "activation-verification.lock"
+        if not marker_path.exists():
+            marker = {
+                "version": ACTIVATION_VERSION,
+                "activation_id": packet["activation_id"],
+                "status": "activation_verification_archival_pending",
+                "recorded_at": _now(now),
+            }
+            marker["marker_hmac_sha256"] = _sign_record(
+                marker, _read_key(state_root / "activation-authority.key"),
+                "marker_hmac_sha256",
+            )
+            descriptor = _exclusive_json(marker_path, marker)
+            os.close(descriptor)
         lane = state_root / "activation.lock"
         archive = state_root / "activation-ledger" / f"{packet['activation_id']}-lane.json"
         if lane.exists():
@@ -537,26 +570,39 @@ def recover_activation(*, state_root, task_controller, activation_id,
     lane_archive = lane_archives[0]
     if lane.get("activation_id") != activation_id:
         raise ActivationError("activation_lane_identity_mismatch")
-    rollback = _read_json(
-        state_root / "activation-ledger" / f"{activation_id}-rollback.json",
-        "activation_rollback_missing",
-    )
+    key = _read_key(state_root / "activation-authority.key")
+    if (lane.get("version") == ACTIVATION_VERSION and not hmac.compare_digest(
+            str(lane.get("lane_hmac_sha256") or ""),
+            _sign_record(lane, key, "lane_hmac_sha256"))):
+        raise ActivationError("activation_lane_signature_invalid")
+    rollback_path = ledger / f"{activation_id}-rollback.json"
+    if rollback_path.exists():
+        rollback = _read_json(rollback_path, "activation_rollback_missing")
+    else:
+        rollback = lane.get("rollback") if isinstance(lane.get("rollback"), dict) else {}
+        if not rollback:
+            raise ActivationError("activation_rollback_missing")
+        _atomic_json(rollback_path, rollback)
     packet_path = state_root / "activation-packet.json"
     packet_archive = ledger / f"{activation_id}-recovered-activation-packet.json"
-    packet = _read_json(
-        packet_path if packet_path.exists() else packet_archive,
-        "activation_packet_invalid",
-    )
-    key = _read_key(state_root / "activation-authority.key")
+    if not packet_path.exists() and not packet_archive.exists():
+        embedded_packet = (lane.get("packet")
+                           if isinstance(lane.get("packet"), dict) else {})
+        if not embedded_packet:
+            raise ActivationError("activation_packet_invalid")
+        _atomic_json(packet_path, embedded_packet)
+    packet_source = packet_path if packet_path.exists() else packet_archive
+    packet_missing = not packet_source.exists()
+    packet = {} if packet_missing else _read_json(packet_source, "activation_packet_invalid")
     if not hmac.compare_digest(
         str(rollback.get("rollback_hmac_sha256") or ""),
         _sign_record(rollback, key, "rollback_hmac_sha256"),
     ):
         raise ActivationError("activation_rollback_signature_invalid")
     errors = []
-    packet_valid = hmac.compare_digest(
+    packet_valid = (not packet_missing and hmac.compare_digest(
         str(packet.get("packet_hmac_sha256") or ""), _sign_packet(packet, key)
-    )
+    ))
     rollback_version = rollback.get("version")
     if rollback_version not in {"charlie_provider_activation_v1", ACTIVATION_VERSION}:
         raise ActivationError("activation_rollback_version_unsupported")
@@ -678,11 +724,11 @@ def recover_activation(*, state_root, task_controller, activation_id,
             raise ActivationError("governed_stop_restore_failed")
     except Exception as exc:
         errors.append({"component": "governed_stop", "status": getattr(exc, "status", exc.__class__.__name__)})
-    if (not packet_valid
+    if (not packet_missing and (not packet_valid
             or rollback.get("authority_sha256") != packet.get("authority_sha256")
             or rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256")
             or rollback.get("task_action_sha256") != authority.get("task_action_sha256")
-            or rollback_task != packet.get("task_ownership")):
+            or rollback_task != packet.get("task_ownership"))):
         errors.append({"component": "activation_packet",
                        "status": "activation_packet_or_binding_invalid"})
     if errors:
@@ -1659,6 +1705,10 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_lane_missing" if not lane_candidates
                               else "activation_lane_ambiguous")
     lane = _read_json(lane_candidates[0], "activation_lane_missing")
+    if not hmac.compare_digest(
+            str(lane.get("lane_hmac_sha256") or ""),
+            _sign_record(lane, key, "lane_hmac_sha256")):
+        raise ActivationError("activation_lane_signature_invalid")
     rollback = _read_json(
         state_root / "activation-ledger" / f"{packet['activation_id']}-rollback.json",
         "activation_rollback_missing",
@@ -1836,6 +1886,7 @@ def _archive_activation_artifacts(state_root, activation_id, suffix):
         Path(state_root) / f"activation-audit-intent-{activation_id}.json",
         Path(state_root) / f"activation-audit-receipt-{activation_id}.json",
         Path(state_root) / f"supervisor.stop.activation-{activation_id}",
+        Path(state_root) / "activation-verification.lock",
     ):
         if path.exists():
             path.replace(ledger / f"{activation_id}-{suffix}-{path.name}")

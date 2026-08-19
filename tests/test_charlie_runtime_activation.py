@@ -910,6 +910,36 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())
 
+    def test_verification_resumes_after_packet_archive_interruption(self):
+        _plan, controller, _ = self._prepared()
+        self._mark_started()
+        evidence = {name: True for name in (
+            "loaded_revision_exact", "execution_mode_observe_only",
+            "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+            "activation_id_exact", "unrelated_processes_absent",
+        )}
+        original_replace = Path.replace
+
+        def interrupt_after_packet(source, target):
+            if source.name.startswith("activation-audit-intent-"):
+                raise OSError("simulated verified archival interruption")
+            return original_replace(source, target)
+
+        with patch.object(Path, "replace", interrupt_after_packet):
+            with self.assertRaisesRegex(OSError, "verified archival interruption"):
+                verify_or_recover_activation(
+                    state_root=self.state, verification_reader=lambda _packet: evidence,
+                    task_controller=controller, task_reader=lambda: self.task,
+                    git_runner=self.git,
+                )
+
+        result = verify_or_recover_activation(
+            state_root=self.state, verification_reader=lambda _packet: evidence,
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git,
+        )
+        self.assertEqual(result["status"], "activation_verified")
+
     def test_tampered_rollback_fails_closed_and_retains_lane(self):
         plan, controller, _ = self._prepared()
         rollback_path = self.state / "activation-ledger" / f"{plan['activation_id']}-rollback.json"
@@ -921,6 +951,22 @@ class RuntimeActivationTests(unittest.TestCase):
                                activation_id=plan["activation_id"])
         self.assertEqual(caught.exception.status, "activation_rollback_signature_invalid")
         self.assertTrue((self.state / "activation.lock").exists())
+
+    def test_recovery_reconstructs_rollback_when_prepare_crashes_after_lane(self):
+        plan, controller, _ = self._prepared()
+        (self.state / "activation-ledger"
+         / f"{plan['activation_id']}-rollback.json").unlink()
+        (self.state / "activation-packet.json").unlink()
+
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "prepare_durable_write_interrupted"},
+        )
+
+        self.assertEqual(result["status"], "activation_recovered")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
 
     def test_recovery_disables_only_exact_task_and_restores_exact_stop(self):
         plan, controller, _ = self._prepared()

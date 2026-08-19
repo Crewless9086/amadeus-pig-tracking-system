@@ -20,6 +20,10 @@
   process's kernel creation time, closing PID-reuse replay, and authenticated
   recovery now terminally retires ordinary pre-intent and post-readback-
   receipt interruption windows after exact task and governed-stop containment.
+- The exclusive activation lane now HMAC-seals the complete signed rollback
+  and packet seeds, permitting deterministic reconstruction after either
+  initial durable-write interruption; a signed verification-archival marker
+  likewise makes every successful-verification artifact move resumable.
 
 ## 2026-08-19 - Livestock quotation journeys
 
