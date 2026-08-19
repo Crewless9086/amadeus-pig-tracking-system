@@ -216,11 +216,19 @@ class RuntimeActivationTests(unittest.TestCase):
             self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256
         ).hexdigest()
         packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        consumed = {"version": ACTIVATION_VERSION,
+                    "activation_id": packet["activation_id"],
+                    "provider_pid": 10, "provider_parent_pid": 20,
+                    "provider_instance_guid": packet["expected_instance_guid"],
+                    "expected_instance_guid": packet["expected_instance_guid"],
+                    "packet_hmac_sha256": packet["packet_hmac_sha256"]}
+        consumed["consumed_hmac_sha256"] = hmac.new(
+            self.key,
+            json.dumps(consumed, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
         (self.state / f"activation-consumed-{packet['activation_id']}.json").write_text(
-            json.dumps({"version": ACTIVATION_VERSION,
-                        "activation_id": packet["activation_id"],
-                        "provider_pid": 10, "provider_parent_pid": 20}),
-            encoding="utf-8",
+            json.dumps(consumed), encoding="utf-8",
         )
         return packet
 

@@ -306,11 +306,19 @@ def consume_provider_activation(*, state_root, starter, task_controller,
             != str(packet["expected_instance_guid"]).strip("{}").casefold()):
         raise ActivationError("task_scheduler_instance_guid_mismatch")
     consumed_path = state_root / f"activation-consumed-{packet['activation_id']}.json"
-    _exclusive_json(consumed_path, {
+    consumed = {
         "version": ACTIVATION_VERSION, "activation_id": packet["activation_id"],
         "provider_pid": provider["pid"], "provider_parent_pid": provider["parent_pid"],
+        "provider_instance_guid": provider["provider_instance_guid"],
+        "expected_instance_guid": packet["expected_instance_guid"],
+        "packet_hmac_sha256": packet["packet_hmac_sha256"],
         "consumed_at": _now(now),
-    })
+    }
+    consumed["consumed_hmac_sha256"] = _sign_record(
+        consumed, _read_key(state_root / "activation-authority.key"),
+        "consumed_hmac_sha256",
+    )
+    _exclusive_json(consumed_path, consumed)
     previous = os.environ.get("CHARLIE_ACTIVATION_ID")
     os.environ["CHARLIE_ACTIVATION_ID"] = packet["activation_id"]
     try:
@@ -1849,6 +1857,25 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_packet_binding_invalid")
     if packet.get("status") not in ({"provider_pending", "provider_started_observe_only"} if allow_consumed else {"provider_pending"}):
         raise ActivationError("activation_packet_replayed")
+    if packet.get("status") == "provider_started_observe_only":
+        consumed_name = f"activation-consumed-{packet['activation_id']}.json"
+        consumed_live = state_root / consumed_name
+        consumed_verified = (state_root / "activation-ledger"
+                             / f"{packet['activation_id']}-verified-{consumed_name}")
+        consumed = _read_json(
+            consumed_live if consumed_live.exists() else consumed_verified,
+            "activation_consumed_identity_missing",
+        )
+        if (not hmac.compare_digest(
+                str(consumed.get("consumed_hmac_sha256") or ""),
+                _sign_record(consumed, key, "consumed_hmac_sha256"))
+                or consumed.get("activation_id") != packet["activation_id"]
+                or consumed.get("packet_hmac_sha256") != packet["packet_hmac_sha256"]
+                or str(consumed.get("expected_instance_guid") or "").strip("{}").casefold()
+                != str(packet.get("expected_instance_guid") or "").strip("{}").casefold()
+                or str(consumed.get("provider_instance_guid") or "").strip("{}").casefold()
+                != str(packet.get("expected_instance_guid") or "").strip("{}").casefold()):
+            raise ActivationError("activation_consumed_identity_invalid")
     _validate_authority(authority, key, now=now, allow_expired=allow_expired)
     if (_sha256(packet.get("authority_path")) != packet.get("authority_sha256")
             or Path(packet.get("runtime_root", "")).resolve() != state_root / "core-runtime-current"
