@@ -1,5 +1,32 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - protected BEACON publication consumer candidate
+
+- Added the missing deployed-worker consumer between genuine protected owner
+  approval and the existing one-attempt Meta execution/readback spine.
+- The callback remains authorization-only. The worker atomically claims one
+  exact generation, rechecks expiry, copy policy and exact Public Use media,
+  and contains changed, revoked, failed or ambiguous outcomes without retry.
+- Provider success is not completion: the consumer marks a post confirmed only
+  after exact Meta object, caption and ordered-media readback. Missing readback,
+  worker restart after claim and lost completion ownership remain terminal
+  ambiguous and replay-silent.
+- No owner approval, public post, spend or customer contact was performed while
+  preparing this source candidate.
+
+## 2026-08-19 - BEACON litter-story correction candidate
+
+- Reconciled the active awareness workflow against Charl's stricter Meta rule:
+  sow-human-name public identity, warm farm-life copy, no sales, availability,
+  price, booking, urgency or contact language, and exact litter-linked current
+  Public Use media.
+- Replaced the scheduled sales/messages card composition with a concise organic
+  story card and protected Approve/Correct/Decline controls. Missing exact media
+  now yields one precise governed exception and no approval card.
+- Publication remains unproven and disabled at this checkpoint: the callback
+  records authorization only, and no deployed BEACON worker has yet consumed
+  the corrected approval through Meta with readback.
+
 - Added the owner-requested `ACTIVE_AUTHORITY_INDEX.md` compatibility entry without duplicating the canonical authority map; made livestock preview availability report all eligible animals, consolidated medicine disclosure in the owner UI, and added reproducible authenticated/safe-local desktop and 390px zero-write browser evidence.
 
 ## 2026-08-19 - Livestock quote and live-transfer doctrine reconciled
