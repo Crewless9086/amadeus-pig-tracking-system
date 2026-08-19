@@ -10,6 +10,7 @@ jobs:
   browser-behavior:
     name: Playwright real-browser behavior gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -46,7 +47,14 @@ jobs:
         run: npm install
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2; do
+            if timeout 300s npx playwright install chromium; then
+              exit 0
+            fi
+            echo "Chromium installation attempt ${attempt} failed or timed out."
+          done
+          exit 1
 
       - name: Run Oom Sakkie Playwright behavior gate
         run: |
