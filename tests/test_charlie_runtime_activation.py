@@ -987,6 +987,21 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())
 
+    def test_verification_never_replays_completion_over_active_lane(self):
+        _plan, controller, _ = self._prepared()
+        (self.state / "activation-packet.json").unlink()
+        (self.state / "activation-verification-complete.json").write_text(
+            json.dumps({"status": "activation_verified"}), encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(ActivationError,
+                                    "activation_packet_missing_for_active_lane"):
+            verify_or_recover_activation(
+                state_root=self.state, verification_reader=lambda _packet: {},
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git,
+            )
+
     def test_rollback_write_failure_retains_signed_lane_for_recovery(self):
         plan = self._plan()
         controller = Controller()

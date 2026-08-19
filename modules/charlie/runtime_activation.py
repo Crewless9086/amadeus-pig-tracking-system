@@ -360,6 +360,8 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
         packet_path = (state_root / "activation-ledger"
                        / f"{marker.get('activation_id')}-verified-activation-packet.json")
     else:
+        if (state_root / "activation.lock").exists():
+            raise ActivationError("activation_packet_missing_for_active_lane")
         completion = _read_json(
             state_root / "activation-verification-complete.json",
             "activation_verification_marker_missing",
