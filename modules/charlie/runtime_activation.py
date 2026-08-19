@@ -337,7 +337,8 @@ def consume_provider_activation(*, state_root, starter, task_controller,
             os.environ["CHARLIE_ACTIVATION_ID"] = previous
     status = "provider_started_observe_only" if status_code < 300 else "provider_start_failed"
     updated = {**packet, "status": status, "provider": provider,
-               "start_result": result, "provider_started_at": _now(now)}
+               "start_result": result, "provider_started_at": _now(now),
+               "consumed_packet_hmac_sha256": packet["packet_hmac_sha256"]}
     updated["packet_hmac_sha256"] = _sign_packet(updated, _read_key(state_root / "activation-authority.key"))
     _atomic_json(packet_path, updated)
     if status_code >= 300:
@@ -1870,7 +1871,8 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
                 str(consumed.get("consumed_hmac_sha256") or ""),
                 _sign_record(consumed, key, "consumed_hmac_sha256"))
                 or consumed.get("activation_id") != packet["activation_id"]
-                or consumed.get("packet_hmac_sha256") != packet["packet_hmac_sha256"]
+                or consumed.get("packet_hmac_sha256")
+                != packet.get("consumed_packet_hmac_sha256")
                 or str(consumed.get("expected_instance_guid") or "").strip("{}").casefold()
                 != str(packet.get("expected_instance_guid") or "").strip("{}").casefold()
                 or str(consumed.get("provider_instance_guid") or "").strip("{}").casefold()

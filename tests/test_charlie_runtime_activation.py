@@ -210,7 +210,9 @@ class RuntimeActivationTests(unittest.TestCase):
     def _mark_started(self):
         packet_path = self.state / "activation-packet.json"
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        pending_hmac = packet["packet_hmac_sha256"]
         packet["status"] = "provider_started_observe_only"
+        packet["consumed_packet_hmac_sha256"] = pending_hmac
         unsigned = {k: v for k, v in packet.items() if k != "packet_hmac_sha256"}
         packet["packet_hmac_sha256"] = hmac.new(
             self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256
@@ -221,7 +223,7 @@ class RuntimeActivationTests(unittest.TestCase):
                     "provider_pid": 10, "provider_parent_pid": 20,
                     "provider_instance_guid": packet["expected_instance_guid"],
                     "expected_instance_guid": packet["expected_instance_guid"],
-                    "packet_hmac_sha256": packet["packet_hmac_sha256"]}
+                    "packet_hmac_sha256": pending_hmac}
         consumed["consumed_hmac_sha256"] = hmac.new(
             self.key,
             json.dumps(consumed, sort_keys=True, separators=(",", ":")).encode(),
