@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - CORE Task Scheduler audit-channel transaction repair
+
+- Reconciled fresh Windows provider evidence with the existing provider-origin
+  activation rail: the exact watchdog task is disabled and unchanged, while
+  `Microsoft-Windows-TaskScheduler/Operational` is currently disabled.
+- The serialized activation preparation now reads and HMAC-seals that exact
+  channel's prior enabled state, enables it with exact readback before the
+  provider task is triggered, and restores the sealed prior state on prepare
+  failure or authenticated activation recovery.
+- Historical activation identities remain immutable and ineligible. This
+  source change performed no task, stop-marker, runtime, provider, database,
+  customer, farm or hardware mutation; fresh exact-current staging and a new
+  activation identity remain separate gates.
+
 ## 2026-08-19 - protected BEACON publication consumer candidate
 
 - Added the missing deployed-worker consumer between genuine protected owner

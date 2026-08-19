@@ -20,6 +20,14 @@
 
 ## CMQ-20260813-05 Phase A Shadow Control Tower
 
+- Provider-origin activation and authenticated recovery:
+  `modules/charlie/runtime_activation.py` and
+  `scripts/charlie_runtime_activation.py`. The exact Windows Task Scheduler
+  action and Operational audit-channel prior state are transactionally bound;
+  focused fail-closed coverage is in
+  `tests/test_charlie_runtime_activation.py`. These source references grant no
+  staging, activation, process, mission-pickup or release authority.
+
 - Source contract: `modules/charlie/shadow_control_tower.py`.
 - Focused zero-authority tests: `tests/test_shadow_control_tower.py`.
 - Governing mission/admission/Shadow rules: `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md`.

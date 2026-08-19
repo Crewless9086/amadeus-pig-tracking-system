@@ -14,6 +14,7 @@ from modules.charlie.runtime_activation import (
     ACTIVATION_VERSION,
     AUTHORITY_VERSION,
     ActivationError,
+    WindowsExactTaskController,
     consume_provider_activation,
     inspect_current_provider_chain,
     plan_activation,
@@ -60,6 +61,25 @@ class Controller:
         self.enabled = []
         self.disabled = []
         self.fail_start = fail_start
+        self.audit_state = {"log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                            "enabled": False}
+        self.audit_prior = None
+        self.audit_enabled = []
+        self.audit_restored = []
+
+    def read_audit_channel_state(self):
+        return dict(self.audit_state)
+
+    def bind_audit_channel_state(self, value):
+        self.audit_prior = dict(value)
+
+    def ensure_audit_channel_enabled(self):
+        self.audit_state["enabled"] = True
+        self.audit_enabled.append(True)
+
+    def restore_audit_channel_state(self):
+        self.audit_state = dict(self.audit_prior)
+        self.audit_restored.append(self.audit_state["enabled"])
 
     def enable_and_trigger_exact(self, digest):
         self.enabled.append(digest)
@@ -676,6 +696,56 @@ class RuntimeActivationTests(unittest.TestCase):
                                task_reader=lambda: self.task, git_runner=self.git)
         self.assertEqual(caught.exception.status, "activation_lane_already_owned")
 
+    def test_prepare_seals_audit_prior_state_and_enables_before_provider_trigger(self):
+        plan, controller, result = self._prepared()
+        rollback = json.loads(Path(result["rollback_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(rollback["task_scheduler_audit_prior"], {
+            "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+            "enabled": False,
+        })
+        self.assertEqual(
+            rollback["task_scheduler_audit_rollback_command"],
+            "wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:false",
+        )
+        self.assertEqual(controller.audit_enabled, [True])
+        self.assertEqual(controller.enabled, [plan["task_action_sha256"]])
+
+    def test_missing_audit_controller_fails_before_lane_acquisition(self):
+        plan = self._plan()
+        controller = Mock(spec=[])
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_controller_required"):
+            prepare_activation(plan, task_controller=controller,
+                               task_reader=lambda: self.task, git_runner=self.git)
+        self.assertFalse((self.state / "activation.lock").exists())
+
+    def test_windows_controller_enables_and_restores_exact_audit_channel(self):
+        calls = []
+        states = iter([False, False, True, True, False])
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            if command[0] == "powershell":
+                enabled = next(states)
+                return subprocess.CompletedProcess(
+                    command, 0,
+                    json.dumps({
+                        "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                        "enabled": enabled,
+                    }), "",
+                )
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        controller = WindowsExactTaskController(runner=runner)
+        prior = controller.read_audit_channel_state()
+        controller.bind_audit_channel_state(prior)
+        controller.ensure_audit_channel_enabled()
+        controller.restore_audit_channel_state()
+        mutations = [call for call in calls if call[0] == "wevtutil"]
+        self.assertEqual(mutations, [
+            ["wevtutil", "sl", "Microsoft-Windows-TaskScheduler/Operational", "/e:true"],
+            ["wevtutil", "sl", "Microsoft-Windows-TaskScheduler/Operational", "/e:false"],
+        ])
+
     def test_prepare_rechecks_reconciliation_lane_after_plan(self):
         plan = self._plan()
         (self.state / "activation-reconciliation.lock").write_text(
@@ -693,6 +763,8 @@ class RuntimeActivationTests(unittest.TestCase):
                                task_reader=lambda: self.task, git_runner=self.git)
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertEqual(controller.audit_enabled, [True])
+        self.assertEqual(controller.audit_restored, [False])
 
     def test_provider_start_failure_is_recorded_without_terminal_spawn(self):
         plan, controller, _ = self._prepared()
@@ -773,6 +845,7 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["status"], "activation_recovered")
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
+        self.assertEqual(controller.audit_restored, [False])
 
     def _reconcile(self, plan, **changes):
         values = {
