@@ -4,6 +4,8 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from modules.telemetry.rootline_device_spine import load_device_record
+
 
 URL = os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL", "").strip()
 pytestmark = pytest.mark.skipif(not URL, reason="disposable PostgreSQL URL is required")
@@ -87,3 +89,10 @@ def test_exact_historical_bc_acceptance_advances_commissioning_without_authority
         assert db.execute("""select count(*) from app_private.rootline_authority_events where
             standing_authority_id='ROOTLINE-BC-IRRIGATION-AUTO' and version='1'
             and event_type='superseded'""").fetchone()[0] == 1
+    for channel in (1, 2):
+        loaded = load_device_record(
+            f"ifttt_ewelink:ewelink_owner_account:100204e9bc:{channel}",
+            connect_factory=connect,
+        )
+        assert loaded["device_record"]["authority_envelope"]["version"] == "2"
+        assert loaded["registry_generation"] == 4
