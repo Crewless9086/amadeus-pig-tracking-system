@@ -21,7 +21,10 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
     claimed = store.claim(worker_id or _worker_id(), current)
     if not claimed:
         return _result("beacon_publication_cycle_silent")
-    error = validate_claimed_approval(claimed, now=current)
+    try:
+        error = validate_claimed_approval(claimed, now=current)
+    except Exception as exc:
+        error = f"protected_campaign_validation_failed_{exc.__class__.__name__.lower()}"
     if error:
         store.finish(claimed["consumer_id"], "contained", {"status": error}, current)
         return _result(error, success=False)
@@ -46,7 +49,14 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
                             "automatic_retry_allowed": False}, 503)
     outcome_status = str(outcome.get("status") or "")
     provider = outcome.get("facebook_result") if isinstance(outcome.get("facebook_result"), dict) else {}
-    final = "confirmed" if outcome.get("success") is True else (
+    provider_confirmed = (outcome.get("success") is True
+        and outcome.get("provider_readback_confirmed") is True)
+    if outcome.get("success") is True and not provider_confirmed:
+        outcome = {**outcome, "success": False,
+            "status": "meta_provider_readback_unproven_ambiguous", "outcome": "ambiguous",
+            "automatic_retry_allowed": False}
+        outcome_status = str(outcome["status"])
+    final = "confirmed" if provider_confirmed else (
         "contained_ambiguous" if ("ambiguous" in outcome_status or
             provider.get("outcome") == "ambiguous" or
             outcome_status in {"provider_timeout", "provider_connection_lost"})
@@ -73,7 +83,9 @@ def validate_claimed_approval(claim, *, now=None):
         return "protected_campaign_binding_changed"
     try:
         expires = datetime.fromisoformat(str(preview.get("approval_expires_at") or "").replace("Z", "+00:00"))
-    except ValueError:
+    except (TypeError, ValueError):
+        return "protected_campaign_expiry_invalid"
+    if expires.tzinfo is None:
         return "protected_campaign_expiry_invalid"
     if expires <= (now or datetime.now(timezone.utc)):
         return "protected_campaign_approval_expired"

@@ -7,6 +7,10 @@
 - The callback remains authorization-only. The worker atomically claims one
   exact generation, rechecks expiry, copy policy and exact Public Use media,
   and contains changed, revoked, failed or ambiguous outcomes without retry.
+- Provider success is not completion: the consumer marks a post confirmed only
+  after exact Meta object, caption and ordered-media readback. Missing readback,
+  worker restart after claim and lost completion ownership remain terminal
+  ambiguous and replay-silent.
 - No owner approval, public post, spend or customer contact was performed while
   preparing this source candidate.
 
