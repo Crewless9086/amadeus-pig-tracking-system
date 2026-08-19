@@ -6,9 +6,11 @@
   activation rail: the exact watchdog task is disabled and unchanged, while
   `Microsoft-Windows-TaskScheduler/Operational` is currently disabled.
 - The serialized activation preparation now reads and HMAC-seals that exact
-  channel's prior enabled state, enables it with exact readback before the
-  provider task is triggered, and restores the sealed prior state on prepare
-  failure or authenticated activation recovery.
+  channel's prior enabled state and intent, enables it with exact readback,
+  seals a post-readback receipt before the provider task is triggered, and
+  restores the prior state only when the current transaction proves mutation
+  ownership. Ambiguous crash recovery contains the task and governed stop but
+  leaves logging enabled rather than overwriting unrelated configuration.
 - Historical activation identities remain immutable and ineligible. This
   source change performed no task, stop-marker, runtime, provider, database,
   customer, farm or hardware mutation; fresh exact-current staging and a new

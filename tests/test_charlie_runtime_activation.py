@@ -65,6 +65,7 @@ class Controller:
                             "enabled": False}
         self.audit_prior = None
         self.audit_changed = False
+        self.audit_mutation_attempted = False
         self.audit_enabled = []
         self.audit_restored = []
 
@@ -76,6 +77,7 @@ class Controller:
 
     def ensure_audit_channel_enabled(self):
         changed = not self.audit_state["enabled"]
+        self.audit_mutation_attempted = changed
         self.audit_state["enabled"] = True
         self.audit_enabled.append(True)
         self.audit_changed = changed
@@ -791,6 +793,21 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.audit_enabled, [True])
         self.assertEqual(controller.audit_restored, [False])
 
+    def test_post_mutation_readback_failure_runs_immediate_audit_cleanup(self):
+        class ReadbackFailureController(Controller):
+            def ensure_audit_channel_enabled(self):
+                self.audit_mutation_attempted = True
+                self.audit_state["enabled"] = True
+                raise ActivationError("task_scheduler_audit_readback_mismatch")
+
+        plan = self._plan()
+        controller = ReadbackFailureController()
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_readback_mismatch"):
+            prepare_activation(plan, task_controller=controller,
+                               task_reader=lambda: self.task, git_runner=self.git)
+        self.assertEqual(controller.audit_restored, [False])
+        self.assertTrue(self.stop.exists())
+
     def test_provider_start_failure_is_recorded_without_terminal_spawn(self):
         plan, controller, _ = self._prepared()
         inspector = lambda _pid: {
@@ -880,6 +897,16 @@ class RuntimeActivationTests(unittest.TestCase):
                                activation_id=plan["activation_id"])
         self.assertEqual(controller.audit_restored, [])
         self.assertTrue((self.state / "activation.lock").exists())
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+
+    def test_recovery_contains_task_and_stop_when_audit_receipt_is_missing(self):
+        plan, controller, _ = self._prepared()
+        (self.state / f"activation-audit-receipt-{plan['activation_id']}.json").unlink()
+        with self.assertRaisesRegex(ActivationError, "activation_recovery_incomplete"):
+            recover_activation(state_root=self.state, task_controller=controller,
+                               activation_id=plan["activation_id"])
+        self.assertEqual(controller.audit_restored, [])
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())
 

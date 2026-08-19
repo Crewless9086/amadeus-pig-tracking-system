@@ -26,7 +26,7 @@ from modules.charlie.process_ownership import (
 
 
 AUTHORITY_VERSION = "charlie_provider_activation_authority_v1"
-ACTIVATION_VERSION = "charlie_provider_activation_v1"
+ACTIVATION_VERSION = "charlie_provider_activation_v2"
 RECOVERY_PROJECTION_VERSION = "charlie_activation_recovery_projection_v1"
 TASK_NAME = "CHARLIE CORE Runner Watchdog"
 MODE = "observe_only"
@@ -148,9 +148,10 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
     stop_path = state_root / "supervisor.stop"
     archive_path = state_root / f"supervisor.stop.activation-{activation_id}"
     audit_intent_path = state_root / f"activation-audit-intent-{activation_id}.json"
+    audit_receipt_path = state_root / f"activation-audit-receipt-{activation_id}.json"
     for historical in (rollback_path, packet_path, archive_path,
                        state_root / f"activation-consumed-{activation_id}.json",
-                       audit_intent_path):
+                       audit_intent_path, audit_receipt_path):
         if historical.exists():
             lane_path.replace(ledger / f"{activation_id}-replay-refused-lane.json")
             raise ActivationError("activation_identity_already_used", path=str(historical))
@@ -210,6 +211,22 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         audit_changed = task_controller.ensure_audit_channel_enabled()
         if audit_changed is not (not audit_prior["enabled"]):
             raise ActivationError("task_scheduler_audit_mutation_result_invalid")
+        audit_receipt = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": activation_id,
+            "status": "task_scheduler_audit_enable_readback_complete",
+            "log_name": TASK_SCHEDULER_OPERATIONAL_LOG,
+            "prior_enabled": audit_prior["enabled"],
+            "current_enabled": True,
+            "changed": audit_changed,
+            "recorded_at": _now(now),
+        }
+        audit_receipt["audit_receipt_hmac_sha256"] = _sign_record(
+            audit_receipt, _read_key(state_root / "activation-authority.key"),
+            "audit_receipt_hmac_sha256",
+        )
+        descriptor = _exclusive_json(audit_receipt_path, audit_receipt)
+        os.close(descriptor)
         task_controller.enable_and_trigger_exact(plan["task_action_sha256"])
     except Exception:
         if rollback_path.exists():
@@ -566,6 +583,7 @@ def recover_activation(*, state_root, task_controller, activation_id,
     except Exception as exc:
         errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
     audit_intent_valid = False
+    audit_receipt_valid = False
     try:
         audit_intent = _read_json(
             state_root / f"activation-audit-intent-{activation_id}.json",
@@ -586,7 +604,28 @@ def recover_activation(*, state_root, task_controller, activation_id,
     except Exception as exc:
         errors.append({"component": "task_scheduler_audit_intent",
                        "status": getattr(exc, "status", exc.__class__.__name__)})
-    if audit_mutation_required and audit_intent_valid:
+    try:
+        audit_receipt = _read_json(
+            state_root / f"activation-audit-receipt-{activation_id}.json",
+            "activation_audit_receipt_missing",
+        )
+        audit_receipt_valid = bool(
+            hmac.compare_digest(
+                str(audit_receipt.get("audit_receipt_hmac_sha256") or ""),
+                _sign_record(audit_receipt, key, "audit_receipt_hmac_sha256"))
+            and audit_receipt.get("activation_id") == activation_id
+            and audit_receipt.get("status") == "task_scheduler_audit_enable_readback_complete"
+            and audit_receipt.get("log_name") == TASK_SCHEDULER_OPERATIONAL_LOG
+            and audit_receipt.get("prior_enabled") is audit_prior["enabled"]
+            and audit_receipt.get("current_enabled") is True
+            and audit_receipt.get("changed") is audit_mutation_required
+        )
+        if not audit_receipt_valid:
+            raise ActivationError("activation_audit_receipt_invalid")
+    except Exception as exc:
+        errors.append({"component": "task_scheduler_audit_receipt",
+                       "status": getattr(exc, "status", exc.__class__.__name__)})
+    if audit_mutation_required and audit_intent_valid and audit_receipt_valid:
         try:
             task_controller.reconcile_audit_channel_state()
         except Exception as exc:
@@ -1376,6 +1415,7 @@ class WindowsExactTaskController:
         self.expected_task = None
         self.audit_prior = None
         self.audit_changed = False
+        self.audit_mutation_attempted = False
 
     def bind_exact(self, rows):
         if not isinstance(rows, list) or len(rows) != 1:
@@ -1451,7 +1491,10 @@ class WindowsExactTaskController:
         if expected_before["enabled"] is bool(enabled):
             return False
         state = str(bool(enabled)).lower()
+        self.audit_mutation_attempted = True
         completed = self.runner(
+            # Once this command is issued, immediate cleanup may reconcile the
+            # exact channel even if post-mutation readback fails.
             ["wevtutil", "sl", TASK_SCHEDULER_OPERATIONAL_LOG, f"/e:{state}"],
             capture_output=True, text=True, timeout=30, check=False,
         )
@@ -1626,7 +1669,9 @@ def _close_prepare_failure(state_root, plan, controller, archive, stop,
     rollback = _read_json(rollback_path, "activation_rollback_missing")
     audit_intent = state_root / f"activation-audit-intent-{plan['activation_id']}.json"
     if (rollback.get("task_scheduler_audit_mutation_required")
-            and audit_intent.exists() and getattr(controller, "audit_changed", False)):
+            and audit_intent.exists()
+            and (getattr(controller, "audit_changed", False)
+                 or getattr(controller, "audit_mutation_attempted", False))):
         try:
             audit_prior = rollback.get("task_scheduler_audit_prior")
             controller.bind_audit_channel_state(audit_prior)
@@ -1745,6 +1790,7 @@ def _archive_activation_artifacts(state_root, activation_id, suffix):
         Path(state_root) / "activation-packet.json",
         Path(state_root) / f"activation-consumed-{activation_id}.json",
         Path(state_root) / f"activation-audit-intent-{activation_id}.json",
+        Path(state_root) / f"activation-audit-receipt-{activation_id}.json",
         Path(state_root) / f"supervisor.stop.activation-{activation_id}",
     ):
         if path.exists():
