@@ -38,6 +38,10 @@
   atomic `renameat2(RENAME_NOREPLACE)`. A signed verification-completion
   projection closes the final-marker window, while Event 200 must exceed the
   pre-trigger record-ID lower bound sealed into the activation transaction.
+- Preparation now proves zero pre-existing task instances; provider packet
+  validation authenticates the audit intent/receipt and their shared event
+  lower bound. Cross-directory POSIX moves fsync both namespaces, and embedded
+  rollback recovery is attempted immediately on standalone-write failure.
 
 ## 2026-08-19 - Livestock quotation journeys
 

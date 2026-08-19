@@ -79,6 +79,9 @@ class Controller:
     def read_audit_event_record_id(self):
         return 455
 
+    def assert_no_running_instances(self):
+        return None
+
     def ensure_audit_channel_enabled(self):
         changed = not self.audit_state["enabled"]
         self.audit_mutation_attempted = changed

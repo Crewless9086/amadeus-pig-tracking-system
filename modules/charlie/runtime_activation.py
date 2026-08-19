@@ -137,6 +137,9 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         raise ActivationError("task_scheduler_audit_state_invalid")
     if not hasattr(task_controller, "read_audit_event_record_id"):
         raise ActivationError("task_scheduler_audit_controller_required")
+    if not hasattr(task_controller, "assert_no_running_instances"):
+        raise ActivationError("task_scheduler_instance_controller_required")
+    task_controller.assert_no_running_instances()
     event_record_id_lower_bound = task_controller.read_audit_event_record_id()
     if not isinstance(event_record_id_lower_bound, int) or event_record_id_lower_bound < 0:
         raise ActivationError("task_scheduler_audit_record_id_invalid")
@@ -242,6 +245,11 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         _exclusive_json(audit_receipt_path, audit_receipt)
         task_controller.enable_and_trigger_exact(plan["task_action_sha256"])
     except Exception:
+        if lane_path.exists() and not rollback_path.exists():
+            try:
+                _atomic_json(rollback_path, rollback)
+            except Exception:
+                pass
         if rollback_path.exists():
             _close_prepare_failure(
                 state_root, plan, task_controller, archive_path, stop_path,
@@ -1610,6 +1618,24 @@ class WindowsExactTaskController:
             raise ActivationError("task_scheduler_audit_record_id_unreadable")
         return value
 
+    def assert_no_running_instances(self):
+        script = (
+            "$ErrorActionPreference='Stop';"
+            "$s=New-Object -ComObject 'Schedule.Service';$s.Connect();"
+            f"$t=$s.GetFolder('\\').GetTask('{TASK_NAME}');"
+            "[string]@($t.GetInstances(0)).Count"
+        )
+        completed = self.runner(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        try:
+            count = int(str(completed.stdout or "").strip())
+        except ValueError as exc:
+            raise ActivationError("task_scheduler_instance_state_unreadable") from exc
+        if completed.returncode or count != 0:
+            raise ActivationError("task_scheduler_instance_already_running")
+
     def ensure_audit_channel_enabled(self):
         if self.audit_prior is None:
             raise ActivationError("task_scheduler_audit_binding_missing")
@@ -1785,8 +1811,33 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
             or rollback.get("activation_id") != packet["activation_id"]
             or rollback.get("authority_sha256") != packet.get("authority_sha256")
             or rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256")
-            or rollback.get("task_action_sha256") != authority.get("task_action_sha256")):
+            or rollback.get("task_action_sha256") != authority.get("task_action_sha256")
+            or rollback.get("task_scheduler_event_record_id_lower_bound")
+            != packet.get("task_scheduler_event_record_id_lower_bound")):
         raise ActivationError("activation_rollback_binding_invalid")
+    activation_id = packet["activation_id"]
+    intent = _read_json(
+        state_root / f"activation-audit-intent-{activation_id}.json",
+        "activation_audit_intent_missing",
+    )
+    receipt = _read_json(
+        state_root / f"activation-audit-receipt-{activation_id}.json",
+        "activation_audit_receipt_missing",
+    )
+    prior = rollback.get("task_scheduler_audit_prior") or {}
+    if (not hmac.compare_digest(
+            str(intent.get("audit_intent_hmac_sha256") or ""),
+            _sign_record(intent, key, "audit_intent_hmac_sha256"))
+            or not hmac.compare_digest(
+                str(receipt.get("audit_receipt_hmac_sha256") or ""),
+                _sign_record(receipt, key, "audit_receipt_hmac_sha256"))
+            or intent.get("activation_id") != activation_id
+            or receipt.get("activation_id") != activation_id
+            or intent.get("prior_enabled") is not prior.get("enabled")
+            or receipt.get("current_enabled") is not True
+            or receipt.get("event_record_id_lower_bound")
+            != packet.get("task_scheduler_event_record_id_lower_bound")):
+        raise ActivationError("activation_audit_transaction_invalid")
     manifest_path = state_root / "runtime-manifest.json"
     if _sha256(manifest_path) != authority["manifest_sha256"]:
         raise ActivationError("activation_manifest_sha256_mismatch")
@@ -2022,6 +2073,7 @@ def _fsync_directory(path):
 
 def _durable_replace(source, target, *, replace_existing=False):
     source, target = Path(source), Path(target)
+    source_parent = source.parent
     target.parent.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
         _windows_move_write_through(source, target,
@@ -2043,6 +2095,8 @@ def _durable_replace(source, target, *, replace_existing=False):
                     raise FileExistsError(str(target))
                 raise OSError(error, "renameat2 failed", str(source), str(target))
         _fsync_directory(target.parent)
+        if source_parent.resolve() != target.parent.resolve():
+            _fsync_directory(source_parent)
 
 
 def _now(value=None):
