@@ -143,11 +143,14 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
     archive_path = state_root / f"supervisor.stop.activation-{activation_id}"
     audit_intent_path = state_root / f"activation-audit-intent-{activation_id}.json"
     audit_receipt_path = state_root / f"activation-audit-receipt-{activation_id}.json"
-    for historical in (rollback_path, packet_path, archive_path,
-                       state_root / f"activation-consumed-{activation_id}.json",
-                       audit_intent_path, audit_receipt_path):
+    historical_candidates = [
+        rollback_path, packet_path, archive_path,
+        state_root / f"activation-consumed-{activation_id}.json",
+        audit_intent_path, audit_receipt_path,
+        *ledger.glob(f"{activation_id}-*"),
+    ]
+    for historical in historical_candidates:
         if historical.exists():
-            lane_path.replace(ledger / f"{activation_id}-replay-refused-lane.json")
             raise ActivationError("activation_identity_already_used", path=str(historical))
     rollback = {
         "version": ACTIVATION_VERSION, "activation_id": activation_id,
@@ -1289,7 +1292,7 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "else{"
         "$engineProcess=Get-CimInstance Win32_Process -Filter 'ProcessId=" + str(int(engine_pid)) + "';"
         "if($null-eq$engineProcess-or[int]$engineProcess.ProcessId-ne" + str(int(engine_pid)) + "){exit 12};"
-        "$engineCreated=[Management.ManagementDateTimeConverter]::ToDateTime([string]$engineProcess.CreationDate).ToUniversalTime();"
+        "$engineCreated=if($engineProcess.CreationDate-is[DateTime]){$engineProcess.CreationDate.ToUniversalTime()}else{[Management.ManagementDateTimeConverter]::ToDateTime([string]$engineProcess.CreationDate).ToUniversalTime()};"
         "$log=Get-WinEvent -ListLog 'Microsoft-Windows-TaskScheduler/Operational' -ErrorAction Stop;"
         "if(-not$log.IsEnabled){exit 9};"
         "$prepared=[DateTime]::Parse('" + str(activation_prepared_at or "").replace("'", "''") + "').ToUniversalTime();"

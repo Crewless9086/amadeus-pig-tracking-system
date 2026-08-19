@@ -608,6 +608,7 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertIn("TimeCreated.ToUniversalTime()-ge$prepared", script)
         self.assertIn("TimeCreated.ToUniversalTime()-ge$engineCreated", script)
         self.assertIn("TimeCreated.ToUniversalTime()-le$engineCreated.AddSeconds(10)", script)
+        self.assertIn("CreationDate-is[DateTime]", script)
 
     def test_event_fallback_rejects_disabled_ambiguous_or_missing_evidence(self):
         expected = {
@@ -967,6 +968,22 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["status"], "activation_recovered")
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())
+
+    def test_prepare_failure_permanently_consumes_activation_identity(self):
+        plan = self._plan()
+        controller = Controller(fail_start=True)
+        with self.assertRaisesRegex(ActivationError, "provider_start_failed"):
+            prepare_activation(
+                plan, task_controller=controller,
+                task_reader=lambda: self.task, git_runner=self.git,
+            )
+        controller.fail_start = False
+
+        with self.assertRaisesRegex(ActivationError, "activation_identity_already_used"):
+            prepare_activation(
+                plan, task_controller=controller,
+                task_reader=lambda: self.task, git_runner=self.git,
+            )
 
     def test_recovery_disables_only_exact_task_and_restores_exact_stop(self):
         plan, controller, _ = self._prepared()

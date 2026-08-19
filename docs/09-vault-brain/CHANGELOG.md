@@ -24,6 +24,10 @@
   and packet seeds, permitting deterministic reconstruction after either
   initial durable-write interruption; a signed verification-archival marker
   likewise makes every successful-verification artifact move resumable.
+- Every activation-specific ledger artifact now permanently consumes its
+  immutable identity, including contained prepare failures, and the Windows
+  CIM creation-time binding handles the native `System.DateTime` shape used
+  by current PowerShell before evaluating Event 200 freshness.
 
 ## 2026-08-19 - Livestock quotation journeys
 
