@@ -2,6 +2,12 @@
 
 Status: Current authority. SAM Live Stock may create backend draft orders when source truth, fact completeness, availability, and pricing gates pass. It does not reserve stock, confirm payment, send quotes, or make final customer promises without the relevant backend/owner gates.
 
+## Quotation journey separation (owner-approved 2026-08-19)
+
+SAM uses one requested-items, canonical-pricing, document and delivery system with three distinct journeys. `price_indication` answers a supported category-price question directly in conversation and has no PDF by default. `budgetary_quotation` is an intake-linked formal funding, loan, company-approval or budgeting document; it must never select pigs, invoke live allocation, promise availability, reserve stock or create an order. `sales_quotation` requires `quotation_basis=current_availability` and may show a current HERDMASTER allocation proposal, but that proposal, reservation and order remain separate evidence states.
+
+Issued formal quotations freeze their effective-dated pricing rows, quantities, unit prices and totals. Validity, expiry and supersession are explicit. Refresh or order conversion resolves current price and current availability again and never carries historical allocation or reservation forward.
+
 ## Purpose
 
 SAM Live Stock Sales turns customer interest in live pigs into clean, source-backed sales opportunities. The workflow must reduce feed-pressure losses without creating wrong stock promises or confusing live-stock sales with meat sales.

@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - Livestock quotation journeys
+
+- Bound SAM livestock to one three-journey quotation model: direct `price_indication`, allocation-free `budgetary_quotation`, and `sales_quotation/current_availability`.
+- Recorded immutable issue-time price snapshots, validity/expiry/supersession and refresh-on-conversion boundaries while keeping request, quotation, allocation, reservation and order distinct.
+
 ## 2026-08-19 - protected BEACON publication consumer candidate
 
 - Added the missing deployed-worker consumer between genuine protected owner
