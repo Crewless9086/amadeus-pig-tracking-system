@@ -584,6 +584,7 @@ class RuntimeActivationTests(unittest.TestCase):
             "EvidenceSource": "operational_event", "EventRecordId": 456,
             "EventTime": "2026-08-18T08:00:00.0000000Z",
             "EventActivityId": "11111111-1111-1111-1111-111111111111",
+            "EngineCreationTime": "2026-08-18T07:59:59.5000000Z",
             "ActivationId": "activation-current",
         }
         calls = []
@@ -605,6 +606,8 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertIn("EnginePID-eq100", script)
         self.assertIn("TaskName).Equals('\\CHARLIE CORE Runner Watchdog'", script)
         self.assertIn("TimeCreated.ToUniversalTime()-ge$prepared", script)
+        self.assertIn("TimeCreated.ToUniversalTime()-ge$engineCreated", script)
+        self.assertIn("TimeCreated.ToUniversalTime()-le$engineCreated.AddSeconds(10)", script)
 
     def test_event_fallback_rejects_disabled_ambiguous_or_missing_evidence(self):
         expected = {
@@ -612,6 +615,7 @@ class RuntimeActivationTests(unittest.TestCase):
             9: "task_scheduler_operational_log_disabled",
             10: "task_event_identity_ambiguous",
             11: "task_event_action_mismatch",
+            12: "task_engine_process_identity_missing",
         }
         for return_code, reason in expected.items():
             with self.subTest(return_code=return_code):
@@ -930,23 +934,27 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
         self.assertEqual(controller.audit_restored, [])
 
-    def test_recovery_contains_task_and_stop_when_audit_intent_is_missing(self):
+    def test_recovery_retires_pre_intent_crash_after_task_and_stop_containment(self):
         plan, controller, _ = self._prepared()
         (self.state / f"activation-audit-intent-{plan['activation_id']}.json").unlink()
-        with self.assertRaisesRegex(ActivationError, "activation_recovery_incomplete"):
-            recover_activation(state_root=self.state, task_controller=controller,
-                               activation_id=plan["activation_id"])
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "audit_intent_write_interrupted"})
+        self.assertEqual(result["status"], "activation_recovered")
         self.assertEqual(controller.audit_restored, [])
-        self.assertTrue((self.state / "activation.lock").exists())
+        self.assertFalse((self.state / "activation.lock").exists())
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())
 
-    def test_recovery_contains_task_and_stop_when_audit_receipt_is_missing(self):
+    def test_recovery_retires_post_mutation_receipt_crash_after_containment(self):
         plan, controller, _ = self._prepared()
         (self.state / f"activation-audit-receipt-{plan['activation_id']}.json").unlink()
-        with self.assertRaisesRegex(ActivationError, "activation_recovery_incomplete"):
-            recover_activation(state_root=self.state, task_controller=controller,
-                               activation_id=plan["activation_id"])
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "audit_receipt_write_interrupted"})
+        self.assertEqual(result["status"], "activation_recovered")
         self.assertEqual(controller.audit_restored, [])
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())

@@ -600,10 +600,11 @@ def recover_activation(*, state_root, task_controller, activation_id,
             raise StopIteration
         intent_live = state_root / f"activation-audit-intent-{activation_id}.json"
         intent_archive = ledger / f"{activation_id}-recovered-activation-audit-intent-{activation_id}.json"
-        audit_intent = _read_json(
-            intent_live if intent_live.exists() else intent_archive,
-            "activation_audit_intent_missing",
-        )
+        intent_path = intent_live if intent_live.exists() else intent_archive
+        if not intent_path.exists():
+            audit_intent_valid = False
+            raise FileNotFoundError("activation_audit_intent_missing")
+        audit_intent = _read_json(intent_path, "activation_audit_intent_invalid")
         audit_intent_valid = bool(
             hmac.compare_digest(
                 str(audit_intent.get("audit_intent_hmac_sha256") or ""),
@@ -618,6 +619,11 @@ def recover_activation(*, state_root, task_controller, activation_id,
             raise ActivationError("activation_audit_intent_invalid")
     except StopIteration:
         pass
+    except FileNotFoundError:
+        # The intent is written before any channel mutation. Its absence is a
+        # recoverable pre-mutation crash state; task and stop containment are
+        # still completed from the authenticated rollback record.
+        pass
     except Exception as exc:
         errors.append({"component": "task_scheduler_audit_intent",
                        "status": getattr(exc, "status", exc.__class__.__name__)})
@@ -626,10 +632,11 @@ def recover_activation(*, state_root, task_controller, activation_id,
             raise StopIteration
         receipt_live = state_root / f"activation-audit-receipt-{activation_id}.json"
         receipt_archive = ledger / f"{activation_id}-recovered-activation-audit-receipt-{activation_id}.json"
-        audit_receipt = _read_json(
-            receipt_live if receipt_live.exists() else receipt_archive,
-            "activation_audit_receipt_missing",
-        )
+        receipt_path = receipt_live if receipt_live.exists() else receipt_archive
+        if not receipt_path.exists():
+            audit_receipt_valid = False
+            raise FileNotFoundError("activation_audit_receipt_missing")
+        audit_receipt = _read_json(receipt_path, "activation_audit_receipt_invalid")
         audit_receipt_valid = bool(
             hmac.compare_digest(
                 str(audit_receipt.get("audit_receipt_hmac_sha256") or ""),
@@ -644,6 +651,11 @@ def recover_activation(*, state_root, task_controller, activation_id,
         if not audit_receipt_valid:
             raise ActivationError("activation_audit_receipt_invalid")
     except StopIteration:
+        pass
+    except FileNotFoundError:
+        # A missing post-readback receipt is an ordinary interruption window.
+        # Enabled is additive and never rolled back automatically, so exact
+        # task/stop containment can safely retire this activation lane.
         pass
     except Exception as exc:
         errors.append({"component": "task_scheduler_audit_receipt",
@@ -1226,9 +1238,12 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "do{$instances=@($task.GetInstances(0)|Where-Object {[int]$_.EnginePID-eq" + str(int(engine_pid)) + "});"
         "if($instances.Count-eq 0-and[DateTime]::UtcNow-lt$deadline){Start-Sleep -Milliseconds 100}}"
         "while($instances.Count-eq 0-and[DateTime]::UtcNow-lt$deadline);"
-        "$instance=$null;$evidenceSource='running_instance';$eventRecordId=0;$eventTime='';$eventActivity='';"
+        "$instance=$null;$evidenceSource='running_instance';$eventRecordId=0;$eventTime='';$eventActivity='';$engineCreated='';"
         "if($instances.Count-ne 0){if($instances.Count-ne 1){exit 8};$instance=$instances[0];$instance.Refresh()}"
         "else{"
+        "$engineProcess=Get-CimInstance Win32_Process -Filter 'ProcessId=" + str(int(engine_pid)) + "';"
+        "if($null-eq$engineProcess-or[int]$engineProcess.ProcessId-ne" + str(int(engine_pid)) + "){exit 12};"
+        "$engineCreated=[Management.ManagementDateTimeConverter]::ToDateTime([string]$engineProcess.CreationDate).ToUniversalTime();"
         "$log=Get-WinEvent -ListLog 'Microsoft-Windows-TaskScheduler/Operational' -ErrorAction Stop;"
         "if(-not$log.IsEnabled){exit 9};"
         "$prepared=[DateTime]::Parse('" + str(activation_prepared_at or "").replace("'", "''") + "').ToUniversalTime();"
@@ -1236,7 +1251,7 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "$matches=@(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational';Id=200;StartTime=$prepared.AddSeconds(-2)} -ErrorAction Stop|Where-Object {"
         "$xml=[xml]$_.ToXml();$d=@{};foreach($x in $xml.Event.EventData.Data){$d[[string]$x.Name]=[string]$x.'#text'};"
         "([string]$d.TaskName).Equals('\\" + TASK_NAME.replace("'", "''") + "',[StringComparison]::OrdinalIgnoreCase)-and"
-        "([int]$d.EnginePID-eq" + str(int(engine_pid)) + ")-and$_.TimeCreated.ToUniversalTime()-ge$prepared-and$_.TimeCreated.ToUniversalTime()-le$now.AddSeconds(2)"
+        "([int]$d.EnginePID-eq" + str(int(engine_pid)) + ")-and$_.TimeCreated.ToUniversalTime()-ge$prepared-and$_.TimeCreated.ToUniversalTime()-ge$engineCreated-and$_.TimeCreated.ToUniversalTime()-le$engineCreated.AddSeconds(10)-and$_.TimeCreated.ToUniversalTime()-le$now.AddSeconds(2)"
         "});if($matches.Count-eq 0){exit 6};if($matches.Count-ne 1){exit 10};"
         "$m=$matches[0];$mx=[xml]$m.ToXml();$md=@{};foreach($x in $mx.Event.EventData.Data){$md[[string]$x.Name]=[string]$x.'#text'};"
         "$eventInstance=if($md.TaskInstanceId){$md.TaskInstanceId}else{$md.InstanceId};"
@@ -1259,6 +1274,7 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "ActionWorkingDirectory=[string]$action.WorkingDirectory;"
         "ServiceDll=[Environment]::ExpandEnvironmentVariables($dll);SystemRoot=$root;"
         "EvidenceSource=$evidenceSource;EventRecordId=$eventRecordId;EventTime=$eventTime;EventActivityId=$eventActivity;"
+        "EngineCreationTime=$(if($engineCreated){$engineCreated.ToString('o')}else{''});"
         "ActivationId='" + str(activation_id or "").replace("'", "''") + "'}"
         "|ConvertTo-Json -Compress"
     )
@@ -1281,6 +1297,7 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
             9: "task_scheduler_operational_log_disabled",
             10: "task_event_identity_ambiguous",
             11: "task_event_action_mismatch",
+            12: "task_engine_process_identity_missing",
         }
         return {"inspection_complete": False,
                 "reason": reasons.get(completed.returncode, "provider_identity_unreadable")}
@@ -1315,6 +1332,7 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
             "event_record_id": int(row.get("EventRecordId") or 0),
             "event_time": str(row.get("EventTime") or ""),
             "event_activity_id": str(row.get("EventActivityId") or ""),
+            "engine_creation_time": str(row.get("EngineCreationTime") or ""),
             "activation_id": str(row.get("ActivationId") or ""),
         }
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
@@ -1339,6 +1357,7 @@ def _valid_task_scheduler_provider(value):
         evidence_source == "operational_event"
         and int(value.get("event_record_id") or 0) > 0
         and str(value.get("event_time") or "")
+        and str(value.get("engine_creation_time") or "")
         and str(value.get("activation_id") or "")
         and str(value.get("event_activity_id") or "").strip("{}").casefold()
         == str(value.get("instance_guid") or "").strip("{}").casefold()

@@ -16,6 +16,10 @@
   source change performed no task, stop-marker, runtime, provider, database,
   customer, farm or hardware mutation; fresh exact-current staging and a new
   activation identity remain separate gates.
+- Operational Event 200 fallback is additionally bounded to the live engine
+  process's kernel creation time, closing PID-reuse replay, and authenticated
+  recovery now terminally retires ordinary pre-intent and post-readback-
+  receipt interruption windows after exact task and governed-stop containment.
 
 ## 2026-08-19 - Livestock quotation journeys
 
