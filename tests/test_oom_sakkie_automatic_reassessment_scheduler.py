@@ -38,6 +38,9 @@ def test_due_claim_is_deterministic_and_replay_never_invokes_twice():
     def invoke():
         calls.append(1)
         return {"success": True, "status": "rootline_reassessment_unchanged",
+                "execution_status": "execution_eligibility_changed",
+                "plan_delivery_status": "delivered_current_irrigation_plan",
+                "fertilizer_commissioning_status": "no_active_fertilizer_commissioning",
                 "notify_owner": False, "telegram_sends": 0, "telegram_edits": 0,
                 "hardware_commands": 0, "writes_farm_data": False}
     first = run_due_reassessment(payload=scheduled_payload(), invoke=invoke, store=store, now=NOW)
@@ -46,6 +49,10 @@ def test_due_claim_is_deterministic_and_replay_never_invokes_twice():
     assert replay["status"] == "scheduled_reassessment_replayed_noop"
     assert len(calls) == 1 and len(rows) == 2
     assert first["next_due_at"] == "2026-08-05T10:30:00+02:00"
+    outcome = rows[next(key for key in rows if key.endswith("-OUTCOME"))]
+    assert outcome["execution_status"] == "execution_eligibility_changed"
+    assert outcome["plan_delivery_status"] == "delivered_current_irrigation_plan"
+    assert outcome["fertilizer_commissioning_status"] == "no_active_fertilizer_commissioning"
 
 
 def test_clock_drift_future_due_and_unsupported_specialist_fail_closed():
