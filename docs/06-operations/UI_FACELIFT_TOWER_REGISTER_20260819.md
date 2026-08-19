@@ -1,6 +1,8 @@
 # UI Facelift Tower Register — 2026-08-19
 
-Status: current-state delivery register, not doctrine.
+Status: inventory complete; implementation paused for owner-directed resumption
+after the 2026-08-19 Spark pilot was discarded. This is a current-state delivery
+register, not doctrine.
 
 Authority revision: `783a290f8f2478fb74bef6aa089d98a645e73fc0`
 
@@ -107,8 +109,8 @@ is an authentication surface and requires a separate security-preserving slice.
 
 | Order | Slice | Templates | State |
 |---:|---|---|---|
-| 0 | Browser inventory and route verification | all 54 | IN PROGRESS |
-| 1 | Herd register | `pig-list.html` | ELIGIBLE AFTER INVENTORY |
+| 0 | Browser inventory and route verification | all 54 | COMPLETE — structural inventory; visual acceptance remains per slice |
+| 1 | Herd register | `pig-list.html` | DEFERRED TO NEXT OWNER SESSION |
 | 2 | Pig activity | `pig-weights.html`, `pig-weight-history.html`, `weight-report.html` | QUEUED |
 | 3 | Pig care | `pig-treatment.html`, `pig-treatment-history.html`, `pig-movement.html`, `pig-movement-history.html` | QUEUED |
 | 4 | Herd setup | `add-pig.html`, `add-pen.html` | QUEUED |
@@ -126,6 +128,21 @@ is an authentication surface and requires a separate security-preserving slice.
 | 16 | Authentication surface | `owner-login.html` | HELD — security-specific review |
 | 17 | Unused-template disposition | `index.html` | VERIFY THEN RETAIN/ARCHIVE/DELETE SEPARATELY |
 
+## 2026-08-19 resumption checkpoint
+
+The first unattended Spark attempt on Slice 1 did not reach an owner-review
+preview. It stopped on model capacity after producing partial presentation work,
+and independent review found an invented 21-day weight-freshness interpretation.
+That interpretation exceeded the presentation-only authority. Every partial
+template, JavaScript, CSS, capture script, screenshot and temporary run artifact
+from that attempt was removed. No implementation commit, merge, deployment or
+production effect remains.
+
+Resume from the clean tower branch. Re-validate current authoritative main and
+the active Vault UI standards before beginning Slice 1 again. The next worker
+must not infer freshness, eligibility, priority or any other business meaning
+that is not supplied by an existing canonical contract.
+
 ## Per-slice handover
 
 Each slice must leave a compact packet containing:
@@ -140,4 +157,3 @@ Each slice must leave a compact packet containing:
 - focused test results;
 - explicit confirmation of zero backend/business/data/deployment changes;
 - state `READY_FOR_OWNER_PREVIEW`, `SEND_BACK`, or `BLOCKED`.
-
