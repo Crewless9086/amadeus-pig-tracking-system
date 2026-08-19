@@ -54,11 +54,12 @@ async function previewRequest(event) {
     weight_range: row.querySelector('[data-field="weight_range"]').value, notes: ""
   }));
   try {
-    const response = await fetch("/api/orders/livestock-quote-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requested_items }) });
+    const journey = document.getElementById("quotation_journey")?.value || "price_indication";
+    const response = await fetch("/api/orders/livestock-quote-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ journey, quotation_basis: journey === "sales_quotation" ? "current_availability" : undefined, requested_items }) });
     const result = await response.json();
     if (!response.ok) throw new Error((result.errors || ["Preview failed."]).join(" "));
     message.className = "message-box message-success";
-    message.textContent = "Local preview ready. No order, reservation, allocation or customer message was created.";
+    message.textContent = "Quotation preview ready. No order, reservation, allocation or customer message was created.";
     renderPreview(result);
   } catch (error) {
     message.className = "message-box message-error";
@@ -69,6 +70,18 @@ async function previewRequest(event) {
 function renderPreview(result) {
   const host = document.getElementById("livestock_preview");
   host.classList.remove("hidden");
+  if (Array.isArray(result.lines)) {
+    const allocation = result.allocation_proposal || {};
+    const recommendations = allocation.recommendations || [];
+    const recommended = recommendations.flatMap(line => line.candidates || []);
+    const lines = result.lines.map(line => {
+      const recommendation = recommendations.find(item => item.request_item_key === line.request_item_key) || {};
+      const candidates = (recommendation.candidates || []).map(pig => `<li><strong>Tag ${esc(pig.tag_number || pig.pig_id)}</strong> - ${esc(pig.sex)} - ${pig.current_weight_kg} kg - advisory only</li>`).join("");
+      return `<article class="detail-card"><h3>${line.quantity} ${esc(line.sex)} - ${esc(weightLabel(line.weight_range))}</h3><p><strong>R${Number(line.unit_price).toFixed(2)} each</strong> - subtotal R${Number(line.subtotal).toFixed(2)} - ${esc(line.pricing_id || "canonical effective price")}</p>${candidates ? `<ul>${candidates}</ul>` : ""}</article>`;
+    }).join("");
+    host.innerHTML = `<div class="section-title-row"><div><h2>${esc(result.journey.replaceAll("_", " "))}</h2><p>${esc(result.authority_boundary)}</p></div><strong>R${Number(result.total).toFixed(2)}</strong></div>${lines}${result.journey === "sales_quotation" ? consolidatedMedicineDisclosure(recommended) : ""}<p class="field-helper">Subtotal R${Number(result.subtotal_ex_vat).toFixed(2)} - VAT R${Number(result.vat_amount).toFixed(2)} - total R${Number(result.total).toFixed(2)} - no reservation - no order.</p>`;
+    return;
+  }
   const recommended = result.recommendations.flatMap(line => line.candidates || []);
   const lines = result.recommendations.map(line => {
     const candidates = line.candidates.map(pig => `<li><strong>Tag ${esc(pig.tag_number || pig.pig_id)}</strong> · ${esc(pig.sex)} · ${pig.current_weight_kg} kg · weighed ${esc(pig.weight_date || "unknown")} · ${pig.unit_price == null ? "price unavailable" : `R${Number(pig.unit_price).toFixed(2)}`}${pig.weight_confidence === "fresh_weight_requested" ? " · fresh weight requested" : ""}</li>`).join("");

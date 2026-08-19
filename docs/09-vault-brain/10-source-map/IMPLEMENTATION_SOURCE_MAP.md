@@ -1,5 +1,14 @@
 # Implementation Source Map
 
+## Livestock quotation journeys
+
+- Contract/lifecycle: `modules/orders/livestock_quotation.py`
+- Existing requested-items/HERDMASTER preview: `modules/orders/livestock_quote_preview.py`
+- Effective-dated pricing: `modules/sales/sam_pricing.py`
+- Schema: `supabase/migrations/202608190003_create_livestock_quotation_aggregate.sql`
+- Owner preview UI: `templates/add-order.html`, `static/js/addOrder.js`
+- Acceptance: `tests/test_livestock_quotation.py`
+
 ## ROOTLINE water-credit lifecycle
 
 - Current B/C authority evidence semantics: append-only authority version `2`
