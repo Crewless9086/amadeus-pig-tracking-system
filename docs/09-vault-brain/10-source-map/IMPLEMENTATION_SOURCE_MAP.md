@@ -717,9 +717,17 @@ Current built gated surface:
   still authorization-only until a deployed BEACON worker consumes it through
   the one canonical Meta execution spine; source/card completion is not
   publication proof.
+- protected litter-story publication consumer:
+  `modules/beacon/protected_publication_worker.py`, the authenticated deployed
+  management route and the existing Oom Sakkie scheduler. It atomically consumes
+  only a completed exact BEACON campaign-review approval, revalidates digest,
+  expiry, story policy and exact Public Use media, then gives one attempt to the
+  existing Meta execution/receipt spine. Definite failure and provider ambiguity
+  are terminal; restart, concurrency and replay are silent. The callback never
+  publishes, and no approval means the consumer does nothing.
 - UI: `templates/beacon-media.html`, `static/js/beaconMedia.js`, `static/css/beaconMedia.css`;
 - tests: `tests/test_beacon_media_library.py`, `tests/test_beacon_media_intake.py`, `tests/test_beacon_media_intake_routes.py`, `tests/test_beacon_media_intake_postgres.py`, `tests/test_oom_sakkie_owner_task_gateway.py`, `tests/test_oom_sakkie_gatekeeper_media_forwarding.py`, `tests/test_oom_sakkie_routes.py`, `tests/test_beacon_creative_studio.py`, `tests/test_beacon_creative_studio_migration.py`, `tests/test_beacon_campaign.py`, `tests/test_beacon_organic_media_intelligence.py`, `tests/test_beacon_organic_media_intelligence_postgres.py`, `tests/test_beacon_weekly_owner_review.py`, `tests/test_beacon_weekly_owner_review_decisions.py`;
-- migrations: `supabase/migrations/202606180002_create_beacon_media_library.sql`, `202606180003_create_beacon_manual_post_events.sql`, `202606180004_create_beacon_campaign_performance_events.sql`, `202606180005_create_beacon_facebook_post_execution_events.sql`, `202606180006_extend_beacon_facebook_post_execution_statuses.sql`, `202607130002_create_beacon_creative_studio.sql`, `202607130003_enable_beacon_creative_studio_rls.sql`, `202607250001_create_beacon_weekly_review_decisions.sql`, `202607260003_create_beacon_publication_bindings.sql`, `202607260005_create_beacon_publication_authorizations.sql`, `202607260008_create_beacon_organic_media_learning.sql`, `202607270001_create_beacon_media_intake.sql` (deployed), `202608150003_allow_beacon_album_finish_protected_claims.sql` (deployed), `202608150007_allow_beacon_media_review_claims.sql` and `202608150008_add_beacon_album_review_envelope.sql` (deployed for BMQ-20260813-03);
+- migrations: `supabase/migrations/202606180002_create_beacon_media_library.sql`, `202606180003_create_beacon_manual_post_events.sql`, `202606180004_create_beacon_campaign_performance_events.sql`, `202606180005_create_beacon_facebook_post_execution_events.sql`, `202606180006_extend_beacon_facebook_post_execution_statuses.sql`, `202607130002_create_beacon_creative_studio.sql`, `202607130003_enable_beacon_creative_studio_rls.sql`, `202607250001_create_beacon_weekly_review_decisions.sql`, `202607260003_create_beacon_publication_bindings.sql`, `202607260005_create_beacon_publication_authorizations.sql`, `202607260008_create_beacon_organic_media_learning.sql`, `202607270001_create_beacon_media_intake.sql` (deployed), `202608150003_allow_beacon_album_finish_protected_claims.sql` (deployed), `202608150007_allow_beacon_media_review_claims.sql` and `202608150008_add_beacon_album_review_envelope.sql` (deployed for BMQ-20260813-03), `202608190002_create_beacon_protected_publication_consumer.sql` (source candidate);
 - legacy scope and media decisions are preserved in the Vault cutover archive;
   current implementation truth is the code, migrations, tests and provider
   evidence listed above.

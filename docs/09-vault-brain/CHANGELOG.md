@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - protected BEACON publication consumer candidate
+
+- Added the missing deployed-worker consumer between genuine protected owner
+  approval and the existing one-attempt Meta execution/readback spine.
+- The callback remains authorization-only. The worker atomically claims one
+  exact generation, rechecks expiry, copy policy and exact Public Use media,
+  and contains changed, revoked, failed or ambiguous outcomes without retry.
+- No owner approval, public post, spend or customer contact was performed while
+  preparing this source candidate.
+
 ## 2026-08-19 - BEACON litter-story correction candidate
 
 - Reconciled the active awareness workflow against Charl's stricter Meta rule:
