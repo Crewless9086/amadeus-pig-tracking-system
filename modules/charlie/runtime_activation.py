@@ -280,7 +280,14 @@ def consume_provider_activation(*, state_root, starter, task_controller,
                                 now=None):
     state_root = Path(state_root).resolve()
     packet_path = state_root / "activation-packet.json"
-    packet = _read_json(packet_path, "activation_packet_invalid")
+    deadline = time.monotonic() + 5
+    while True:
+        packet = _read_json(packet_path, "activation_packet_invalid")
+        if str(packet.get("expected_instance_guid") or "").strip("{}"):
+            break
+        if time.monotonic() >= deadline:
+            raise ActivationError("task_scheduler_instance_guid_timeout")
+        time.sleep(0.05)
     _validate_packet(packet, state_root, task_reader, git_runner=git_runner, now=now)
     inspector = provider_inspector or (lambda pid: inspect_current_provider_chain(
         pid, activation_id=packet["activation_id"],
@@ -1804,7 +1811,8 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_packet_signature_invalid")
     authority = packet.get("authority") if isinstance(packet.get("authority"), dict) else {}
     if (packet.get("version") != ACTIVATION_VERSION
-            or packet.get("activation_id") != authority.get("activation_id")):
+            or packet.get("activation_id") != authority.get("activation_id")
+            or not str(packet.get("expected_instance_guid") or "").strip("{}")):
         raise ActivationError("activation_packet_binding_invalid")
     if packet.get("status") not in ({"provider_pending", "provider_started_observe_only"} if allow_consumed else {"provider_pending"}):
         raise ActivationError("activation_packet_replayed")
