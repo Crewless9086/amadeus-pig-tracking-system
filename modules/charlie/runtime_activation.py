@@ -147,8 +147,10 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
     packet_path = state_root / "activation-packet.json"
     stop_path = state_root / "supervisor.stop"
     archive_path = state_root / f"supervisor.stop.activation-{activation_id}"
+    audit_marker_path = state_root / f"activation-audit-mutated-{activation_id}.json"
     for historical in (rollback_path, packet_path, archive_path,
-                       state_root / f"activation-consumed-{activation_id}.json"):
+                       state_root / f"activation-consumed-{activation_id}.json",
+                       audit_marker_path):
         if historical.exists():
             lane_path.replace(ledger / f"{activation_id}-replay-refused-lane.json")
             raise ActivationError("activation_identity_already_used", path=str(historical))
@@ -160,6 +162,7 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         "task_action_sha256": plan["task_action_sha256"],
         "task_prior_state": "Disabled", "authority_sha256": plan["authority_sha256"],
         "task_scheduler_audit_prior": audit_prior,
+        "task_scheduler_audit_mutation_required": not audit_prior["enabled"],
         "task_scheduler_audit_rollback_command": (
             f"wevtutil sl {TASK_SCHEDULER_OPERATIONAL_LOG} "
             f"/e:{str(audit_prior['enabled']).lower()}"
@@ -188,7 +191,25 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         if hasattr(task_controller, "bind_exact"):
             task_controller.bind_exact(plan["task_ownership"])
         task_controller.bind_audit_channel_state(audit_prior)
-        task_controller.ensure_audit_channel_enabled()
+        audit_changed = task_controller.ensure_audit_channel_enabled()
+        if audit_changed is not (not audit_prior["enabled"]):
+            raise ActivationError("task_scheduler_audit_mutation_result_invalid")
+        if audit_changed:
+            audit_marker = {
+                "version": ACTIVATION_VERSION,
+                "activation_id": activation_id,
+                "status": "task_scheduler_audit_enabled",
+                "log_name": TASK_SCHEDULER_OPERATIONAL_LOG,
+                "prior_enabled": False,
+                "current_enabled": True,
+                "recorded_at": _now(now),
+            }
+            audit_marker["audit_marker_hmac_sha256"] = _sign_record(
+                audit_marker, _read_key(state_root / "activation-authority.key"),
+                "audit_marker_hmac_sha256",
+            )
+            descriptor = _exclusive_json(audit_marker_path, audit_marker)
+            os.close(descriptor)
         task_controller.enable_and_trigger_exact(plan["task_action_sha256"])
     except Exception:
         if rollback_path.exists():
@@ -528,15 +549,33 @@ def recover_activation(*, state_root, task_controller, activation_id,
     if not hasattr(task_controller, "bind_audit_channel_state"):
         raise ActivationError("task_scheduler_audit_controller_required")
     task_controller.bind_audit_channel_state(audit_prior)
+    audit_mutation_required = rollback.get("task_scheduler_audit_mutation_required")
+    if audit_mutation_required is not (not audit_prior["enabled"]):
+        raise ActivationError("activation_audit_rollback_binding_invalid")
+    if audit_mutation_required:
+        audit_marker = _read_json(
+            state_root / f"activation-audit-mutated-{activation_id}.json",
+            "activation_audit_change_marker_missing",
+        )
+        if (not hmac.compare_digest(
+                str(audit_marker.get("audit_marker_hmac_sha256") or ""),
+                _sign_record(audit_marker, key, "audit_marker_hmac_sha256"))
+                or audit_marker.get("activation_id") != activation_id
+                or audit_marker.get("status") != "task_scheduler_audit_enabled"
+                or audit_marker.get("log_name") != TASK_SCHEDULER_OPERATIONAL_LOG
+                or audit_marker.get("prior_enabled") is not False
+                or audit_marker.get("current_enabled") is not True):
+            raise ActivationError("activation_audit_change_marker_invalid")
     errors = []
     try:
         task_controller.disable_exact(rollback["task_action_sha256"])
     except Exception as exc:
         errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
-    try:
-        task_controller.restore_audit_channel_state()
-    except Exception as exc:
-        errors.append({"component": "task_scheduler_audit", "status": getattr(exc, "status", exc.__class__.__name__)})
+    if audit_mutation_required:
+        try:
+            task_controller.restore_audit_channel_state()
+        except Exception as exc:
+            errors.append({"component": "task_scheduler_audit", "status": getattr(exc, "status", exc.__class__.__name__)})
     stop_path = state_root / "supervisor.stop"
     archive = state_root / f"supervisor.stop.activation-{activation_id}"
     try:
@@ -1360,18 +1399,23 @@ class WindowsExactTaskController:
     def ensure_audit_channel_enabled(self):
         if self.audit_prior is None:
             raise ActivationError("task_scheduler_audit_binding_missing")
-        self._set_audit_channel(True)
+        return self._set_audit_channel(True, expected_enabled=self.audit_prior["enabled"])
 
     def restore_audit_channel_state(self):
         if self.audit_prior is None:
             raise ActivationError("task_scheduler_audit_binding_missing")
-        self._set_audit_channel(self.audit_prior["enabled"])
+        return self._set_audit_channel(
+            self.audit_prior["enabled"], expected_enabled=True,
+        )
 
-    def _set_audit_channel(self, enabled):
+    def _set_audit_channel(self, enabled, *, expected_enabled):
         expected_before = self.read_audit_channel_state()
         if (self.audit_prior is None
-                or expected_before["log_name"] != self.audit_prior["log_name"]):
+                or expected_before["log_name"] != self.audit_prior["log_name"]
+                or expected_before["enabled"] is not bool(expected_enabled)):
             raise ActivationError("task_scheduler_audit_identity_changed")
+        if expected_before["enabled"] is bool(enabled):
+            return False
         state = str(bool(enabled)).lower()
         completed = self.runner(
             ["wevtutil", "sl", TASK_SCHEDULER_OPERATIONAL_LOG, f"/e:{state}"],
@@ -1382,6 +1426,7 @@ class WindowsExactTaskController:
         after = self.read_audit_channel_state()
         if after.get("enabled") is not bool(enabled):
             raise ActivationError("task_scheduler_audit_readback_mismatch")
+        return True
 
     def enable_and_trigger_exact(self, digest):
         self._mutate(digest, "Enable-ScheduledTask -InputObject $t|Out-Null", {"Disabled"})
@@ -1544,13 +1589,15 @@ def _close_prepare_failure(state_root, plan, controller, archive, stop,
             controller.disable_exact(plan["task_action_sha256"])
         except Exception as exc:
             errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
-    try:
-        rollback = _read_json(rollback_path, "activation_rollback_missing")
-        audit_prior = rollback.get("task_scheduler_audit_prior")
-        controller.bind_audit_channel_state(audit_prior)
-        controller.restore_audit_channel_state()
-    except Exception as exc:
-        errors.append({"component": "task_scheduler_audit", "status": getattr(exc, "status", exc.__class__.__name__)})
+    rollback = _read_json(rollback_path, "activation_rollback_missing")
+    audit_marker = state_root / f"activation-audit-mutated-{plan['activation_id']}.json"
+    if rollback.get("task_scheduler_audit_mutation_required") and audit_marker.exists():
+        try:
+            audit_prior = rollback.get("task_scheduler_audit_prior")
+            controller.bind_audit_channel_state(audit_prior)
+            controller.restore_audit_channel_state()
+        except Exception as exc:
+            errors.append({"component": "task_scheduler_audit", "status": getattr(exc, "status", exc.__class__.__name__)})
     try:
         if stop.exists() and _sha256(stop) != plan["stop_marker_sha256"]:
             raise ActivationError("governed_stop_conflict_during_prepare_recovery")
@@ -1662,6 +1709,7 @@ def _archive_activation_artifacts(state_root, activation_id, suffix):
     for path in (
         Path(state_root) / "activation-packet.json",
         Path(state_root) / f"activation-consumed-{activation_id}.json",
+        Path(state_root) / f"activation-audit-mutated-{activation_id}.json",
         Path(state_root) / f"supervisor.stop.activation-{activation_id}",
     ):
         if path.exists():

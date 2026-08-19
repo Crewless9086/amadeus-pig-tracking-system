@@ -74,12 +74,16 @@ class Controller:
         self.audit_prior = dict(value)
 
     def ensure_audit_channel_enabled(self):
+        changed = not self.audit_state["enabled"]
         self.audit_state["enabled"] = True
         self.audit_enabled.append(True)
+        return changed
 
     def restore_audit_channel_state(self):
+        changed = self.audit_state != self.audit_prior
         self.audit_state = dict(self.audit_prior)
         self.audit_restored.append(self.audit_state["enabled"])
+        return changed
 
     def enable_and_trigger_exact(self, digest):
         self.enabled.append(digest)
@@ -746,6 +750,22 @@ class RuntimeActivationTests(unittest.TestCase):
             ["wevtutil", "sl", "Microsoft-Windows-TaskScheduler/Operational", "/e:false"],
         ])
 
+    def test_windows_controller_rejects_audit_state_change_before_mutation(self):
+        states = iter([False, True])
+
+        def runner(command, **_kwargs):
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            self.fail("audit mutation must not run after identity change")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_identity_changed"):
+            controller.ensure_audit_channel_enabled()
+
     def test_prepare_rechecks_reconciliation_lane_after_plan(self):
         plan = self._plan()
         (self.state / "activation-reconciliation.lock").write_text(
@@ -846,6 +866,15 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
         self.assertEqual(controller.audit_restored, [False])
+
+    def test_recovery_rejects_missing_audit_mutation_marker_without_restoring(self):
+        plan, controller, _ = self._prepared()
+        (self.state / f"activation-audit-mutated-{plan['activation_id']}.json").unlink()
+        with self.assertRaisesRegex(ActivationError, "activation_audit_change_marker_missing"):
+            recover_activation(state_root=self.state, task_controller=controller,
+                               activation_id=plan["activation_id"])
+        self.assertEqual(controller.audit_restored, [])
+        self.assertTrue((self.state / "activation.lock").exists())
 
     def _reconcile(self, plan, **changes):
         values = {
