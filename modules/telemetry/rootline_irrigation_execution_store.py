@@ -110,7 +110,8 @@ def _load(action, payload):
                     item = row[0] if isinstance(row[0], dict) else json.loads(row[0])
                     identity = str(item.get("execution_id") or "")
                     if item.get("action") in terminal_actions:
-                        terminal.add(identity)
+                        if _terminal_closes_active(item, auxiliary=auxiliary):
+                            terminal.add(identity)
                     elif _is_active_candidate(item, active_action, claim_action):
                         candidates.setdefault(identity, item)
                 for identity, item in candidates.items():
@@ -200,6 +201,17 @@ def _load(action, payload):
       if is_database_unavailable(exc):
         raise RootlineExecutionStoreUnavailable(action) from exc
       raise
+
+
+def _terminal_closes_active(item, *, auxiliary=False):
+    action = str(item.get("action") or "") if isinstance(item, dict) else ""
+    if auxiliary:
+        return action in {"record_auxiliary_completed", "contain_auxiliary_device"}
+    if action == "record_completed":
+        return True
+    if action in {"contain_zone", "record_ambiguous_shutdown", "record_claim_recovery"}:
+        return item.get("shutdown_verified") is True
+    return False
 
 
 def _is_active_candidate(item, active_action, claim_action):
