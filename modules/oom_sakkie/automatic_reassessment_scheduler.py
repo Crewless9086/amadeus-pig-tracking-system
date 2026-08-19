@@ -45,7 +45,7 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                 "invocation_receipt": digest, "terminal_outcome": prior_identity["status"]}
     latest = store("load_latest_outcome", specialist, None) or {}
     owned_due = _parse(latest.get("next_due_at"))
-    if owned_due and due < owned_due:
+    if owned_due and now < owned_due:
         return {**_safe("scheduled_reassessment_not_yet_due"),
                 "next_due_at": owned_due.astimezone(SAST).isoformat()}
     record = {"contract_version": CONTRACT_VERSION, "schedule_identity": identity,
