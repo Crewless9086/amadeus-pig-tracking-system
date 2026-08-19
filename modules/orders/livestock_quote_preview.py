@@ -77,7 +77,7 @@ def build_livestock_quote_preview(requested_items, herdmaster_packet, observed_a
             "near_match_count": counts["near_match"],
             "projected_count": counts["projected_growth"],
             "supported_count": supported, "shortfall_quantity": shortfall,
-            "available_quantity": supported,
+            "available_quantity": len(eligible),
             "unit_price": unit_prices[0] if len(unit_prices) == 1 else None,
             "priced_quantity": len(priced),
             "recommended_subtotal": (sum(candidate["unit_price"] for candidate in priced)

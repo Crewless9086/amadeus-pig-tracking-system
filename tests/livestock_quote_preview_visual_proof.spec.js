@@ -26,12 +26,16 @@ function line(key, sex, weightRange, requested, candidates) {
     recommended_subtotal: candidates.reduce((sum, item) => sum + item.unit_price, 0) || null, candidates };
 }
 
-test("authenticated owner can enter four livestock lines once and inspect a truthful zero-write quote", async ({ page }, testInfo) => {
+test("authenticated or safe-local owner can enter four livestock lines once and inspect a truthful zero-write quote", async ({ page }, testInfo) => {
   const requests = [];
   page.on("request", request => requests.push({ method: request.method(), url: request.url() }));
-  await page.goto("/owner/login?next=/orders/new");
-  await page.locator('input[name="owner_token"]').fill(process.env.OWNER_READ_TOKEN);
-  await page.locator('button[type="submit"]').click();
+  if (process.env.OWNER_READ_TOKEN) {
+    await page.goto("/owner/login?next=/orders/new");
+    await page.locator('input[name="owner_token"]').fill(process.env.OWNER_READ_TOKEN);
+    await page.locator('button[type="submit"]').click();
+  } else {
+    await page.goto("/orders/new");
+  }
   await expect(page).toHaveURL(/\/orders\/new/);
   await page.route("**/api/orders/livestock-quote-preview", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(fixture) }));
 

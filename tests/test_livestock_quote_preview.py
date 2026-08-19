@@ -104,6 +104,18 @@ class LivestockQuotePreviewTests(unittest.TestCase):
         projected = next(row for row in line["candidates"] if row["match_state"] == "projected_growth")
         self.assertEqual(projected["projected_target_date"], "2026-08-20")
 
+    def test_available_quantity_reports_all_eligible_not_only_requested_recommendations(self):
+        pigs = [candidate(f"M{i}", f"M{i}", "Male", 5.5) for i in range(1, 5)]
+        result = build_livestock_quote_preview([{
+            "request_item_key": "m", "category": "Piglet", "weight_range": "5_to_6_Kg",
+            "sex": "Male", "quantity": 2,
+        }], packet(pigs))
+        line = result["recommendations"][0]
+        self.assertEqual(line["available_quantity"], 4)
+        self.assertEqual(line["supported_count"], 2)
+        self.assertEqual(len(line["candidates"]), 2)
+        self.assertEqual(line["shortfall_quantity"], 0)
+
     def test_category_mismatch_and_stale_or_future_growth_fail_closed(self):
         wrong_category = candidate("S", "S1", "Male", 5.5)
         wrong_category["identity"]["animal_type"] = "Sow"
