@@ -31,6 +31,9 @@
 - Exclusive signed records are now fully written and fsynced before atomic
   hard-link publication, so a torn final activation lane cannot exist; a
   rollback-write interruption retains that complete lane for recovery.
+- All activation namespace transitions now use durable publication: Windows
+  `MoveFileExW` write-through moves and POSIX parent-directory fsync ensure
+  signed lane, packet, stop and archival state survives a completed mutation.
 
 ## 2026-08-19 - Livestock quotation journeys
 

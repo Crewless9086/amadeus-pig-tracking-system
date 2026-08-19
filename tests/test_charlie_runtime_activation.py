@@ -26,6 +26,7 @@ from modules.charlie.runtime_activation import (
     _inspect_exact_process,
     _inspect_windows_task_scheduler_provider,
     _local_current_process_identity,
+    _durable_replace,
 )
 from modules.charlie.runtime_staging import _validate_recovery_projection
 
@@ -919,14 +920,13 @@ class RuntimeActivationTests(unittest.TestCase):
             "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
             "activation_id_exact", "unrelated_processes_absent",
         )}
-        original_replace = Path.replace
-
-        def interrupt_after_packet(source, target):
+        def interrupt_after_packet(source, target, **kwargs):
             if source.name.startswith("activation-audit-intent-"):
                 raise OSError("simulated verified archival interruption")
-            return original_replace(source, target)
+            return _durable_replace(source, target, **kwargs)
 
-        with patch.object(Path, "replace", interrupt_after_packet):
+        with patch("modules.charlie.runtime_activation._durable_replace",
+                   side_effect=interrupt_after_packet):
             with self.assertRaisesRegex(OSError, "verified archival interruption"):
                 verify_or_recover_activation(
                     state_root=self.state, verification_reader=lambda _packet: evidence,
@@ -1056,14 +1056,13 @@ class RuntimeActivationTests(unittest.TestCase):
 
     def test_recovery_resumes_after_audit_artifacts_were_archived(self):
         plan, controller, _ = self._prepared()
-        original_replace = Path.replace
-
-        def interrupt_lane_archive(source, target):
+        def interrupt_lane_archive(source, target, **kwargs):
             if source.name == "activation.lock":
                 raise OSError("simulated lane archive interruption")
-            return original_replace(source, target)
+            return _durable_replace(source, target, **kwargs)
 
-        with patch.object(Path, "replace", interrupt_lane_archive):
+        with patch("modules.charlie.runtime_activation._durable_replace",
+                   side_effect=interrupt_lane_archive):
             with self.assertRaisesRegex(OSError, "lane archive interruption"):
                 recover_activation(state_root=self.state, task_controller=controller,
                                    activation_id=plan["activation_id"],
@@ -1174,14 +1173,13 @@ class RuntimeActivationTests(unittest.TestCase):
         recover_activation(state_root=self.state, task_controller=controller,
                            activation_id=plan["activation_id"],
                            failure_evidence={"status": "provider_identity_incomplete"})
-        original_replace = Path.replace
-
-        def interrupt_lock(source, target):
+        def interrupt_lock(source, target, **kwargs):
             if source.name == "activation-reconciliation.lock":
                 raise OSError("simulated lock archive interruption")
-            return original_replace(source, target)
+            return _durable_replace(source, target, **kwargs)
 
-        with patch.object(Path, "replace", interrupt_lock):
+        with patch("modules.charlie.runtime_activation._durable_replace",
+                   side_effect=interrupt_lock):
             with self.assertRaisesRegex(OSError, "lock archive interruption"):
                 self._reconcile(plan)
         before = (self.state / "watchdog.json").read_bytes()

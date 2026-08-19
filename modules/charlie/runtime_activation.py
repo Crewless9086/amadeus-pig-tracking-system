@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import ctypes
 import hashlib
 import hmac
 import json
@@ -195,7 +196,7 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         _atomic_json(packet_path, packet)
         if _sha256(stop_path) != plan["stop_marker_sha256"]:
             raise ActivationError("governed_stop_changed_before_archive")
-        stop_path.replace(archive_path)
+        _durable_replace(stop_path, archive_path)
         if hasattr(task_controller, "bind_exact"):
             task_controller.bind_exact(plan["task_ownership"])
         task_controller.bind_audit_channel_state(audit_prior)
@@ -359,7 +360,7 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
         lane = state_root / "activation.lock"
         archive = state_root / "activation-ledger" / f"{packet['activation_id']}-lane.json"
         if lane.exists():
-            lane.replace(archive)
+            _durable_replace(lane, archive)
         elif not archive.exists():
             raise ActivationError("activation_lane_missing")
         _atomic_json(state_root / "activation-ledger" / f"{packet['activation_id']}-verified.json", evidence)
@@ -762,7 +763,7 @@ def recover_activation(*, state_root, task_controller, activation_id,
     _atomic_json(state_root / "activation-reconciliation-pending.json", pending)
     _archive_activation_artifacts(state_root, activation_id, "recovered")
     if lane_source != lane_archive and lane_source.exists():
-        lane_source.replace(lane_archive)
+        _durable_replace(lane_source, lane_archive)
     completion = {
         "version": RECOVERY_PROJECTION_VERSION,
         "activation_id": activation_id,
@@ -833,8 +834,9 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
                 )
                 if owner.get("activation_id") != activation_id:
                     raise ActivationError("activation_reconciliation_lane_active")
-                reconciliation_lock.replace(
-                    ledger / f"{activation_id}-reconciliation-lane.json"
+                _durable_replace(
+                    reconciliation_lock,
+                    ledger / f"{activation_id}-reconciliation-lane.json",
                 )
             return existing_projection
         if not reconciliation_lock.exists():
@@ -1063,13 +1065,14 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
         projection, key, "projection_hmac_sha256"
     )
     if not replay:
-        pending_path.replace(reconciled_path)
+        _durable_replace(pending_path, reconciled_path)
     projection["reconciled_sha256"] = _sha256(reconciled_path)
     projection["projection_hmac_sha256"] = _sign_record(
         projection, key, "projection_hmac_sha256"
     )
     _atomic_json(state_root / "watchdog.json", projection)
-    reconciliation_lock.replace(ledger / f"{activation_id}-reconciliation-lane.json")
+    _durable_replace(reconciliation_lock,
+                     ledger / f"{activation_id}-reconciliation-lane.json")
     return projection
 
 
@@ -1781,11 +1784,11 @@ def _close_prepare_failure(state_root, plan, controller, archive, stop,
     ledger = Path(state_root) / "activation-ledger"
     activation_id = plan["activation_id"]
     if packet_path.exists():
-        packet_path.replace(ledger / f"{activation_id}-prepare-failed-packet.json")
+        _durable_replace(packet_path, ledger / f"{activation_id}-prepare-failed-packet.json")
     if rollback_path.exists():
-        rollback_path.replace(ledger / f"{activation_id}-prepare-failed-rollback.json")
+        _durable_replace(rollback_path, ledger / f"{activation_id}-prepare-failed-rollback.json")
     if lane_path.exists():
-        lane_path.replace(ledger / f"{activation_id}-prepare-failed-lane.json")
+        _durable_replace(lane_path, ledger / f"{activation_id}-prepare-failed-lane.json")
 
 
 def _validate_roots(state, runtime, execution):
@@ -1880,7 +1883,7 @@ def _archive_activation_artifacts(state_root, activation_id, suffix):
         Path(state_root) / "activation-verification.lock",
     ):
         if path.exists():
-            path.replace(ledger / f"{activation_id}-{suffix}-{path.name}")
+            _durable_replace(path, ledger / f"{activation_id}-{suffix}-{path.name}")
 
 
 def _parse_time(value):
@@ -1900,7 +1903,11 @@ def _exclusive_json(path, value):
             stream.flush()
             os.fsync(stream.fileno())
         try:
-            os.link(temporary, path)
+            if os.name == "nt":
+                _windows_move_write_through(temporary, path, replace_existing=False)
+            else:
+                os.link(temporary, path)
+                _fsync_directory(path.parent)
         except FileExistsError as exc:
             raise ActivationError("activation_lane_already_owned") from exc
     finally:
@@ -1919,7 +1926,42 @@ def _atomic_bytes(path, value):
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     with temporary.open("wb") as stream:
         stream.write(value); stream.flush(); os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    _durable_replace(temporary, path, replace_existing=True)
+
+
+def _windows_move_write_through(source, target, *, replace_existing):
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    flags = 0x8 | (0x1 if replace_existing else 0)
+    if not kernel32.MoveFileExW(str(source), str(target), flags):
+        error = ctypes.get_last_error()
+        if not replace_existing and error in {80, 183}:
+            raise FileExistsError(str(target))
+        raise OSError(error, "MoveFileExW failed", str(source), str(target))
+
+
+def _fsync_directory(path):
+    if os.name == "nt":
+        return
+    descriptor = os.open(str(path), os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _durable_replace(source, target, *, replace_existing=False):
+    source, target = Path(source), Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        _windows_move_write_through(source, target,
+                                    replace_existing=replace_existing)
+    else:
+        if replace_existing:
+            os.replace(source, target)
+        else:
+            os.link(source, target)
+            source.unlink()
+        _fsync_directory(target.parent)
 
 
 def _now(value=None):
