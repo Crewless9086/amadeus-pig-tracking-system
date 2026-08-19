@@ -130,6 +130,18 @@ def test_non_bucket_next_due_never_runs_early():
     assert allowed["terminal_outcome"] == "completed"
 
 
+def test_due_bucket_runs_after_owned_second_offset_has_elapsed():
+    rows, store = memory_store()
+    rows["prior-OUTCOME"] = {"specialist": "ROOTLINE", "status": "completed",
+                             "next_due_at": "2026-08-05T10:15:26+02:00"}
+    calls = []
+    result = run_due_reassessment(payload=scheduled_payload(),
+        invoke=lambda: calls.append(1) or {"success": True, "status": "unchanged"},
+        store=store, now=datetime(2026, 8, 5, 8, 15, 43, tzinfo=timezone.utc))
+    assert result["terminal_outcome"] == "completed"
+    assert calls == [1]
+
+
 def test_gateway_scheduled_unchanged_records_receipt_and_zero_io():
     rows, schedules = memory_store(); state_rows = {}
     material = {"success": True, "overall_status": "Hold", "result_id": "R1", "generation": "G1",
