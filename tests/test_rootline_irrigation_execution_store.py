@@ -9,13 +9,23 @@ import pytest
 
 from modules.telemetry.rootline_irrigation_execution_store import (
     _claim_single_auxiliary, _claim_irrigation_output, _daily_dispatch_blocker,
-    _event_id, _stored_event_body,
+    _event_id, _stored_event_body, _terminal_closes_active,
     _is_active_candidate, RootlineExecutionStoreUnavailable, rootline_irrigation_execution_store,
 )
 
 
 class BoundedFailure(Exception):
     __module__="psycopg.errors"
+
+
+def test_unverified_irrigation_containment_remains_recoverable_active_truth():
+    assert _terminal_closes_active({"action":"contain_zone",
+        "shutdown_verified":False}) is False
+    assert _terminal_closes_active({"action":"record_ambiguous_shutdown",
+        "shutdown_verified":False}) is False
+    assert _terminal_closes_active({"action":"record_claim_recovery",
+        "shutdown_verified":True}) is True
+    assert _terminal_closes_active({"action":"record_completed"}) is True
 
 
 class FailedConnection:
