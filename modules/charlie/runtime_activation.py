@@ -282,7 +282,7 @@ def consume_provider_activation(*, state_root, starter, task_controller,
                                 now=None):
     state_root = Path(state_root).resolve()
     packet_path = state_root / "activation-packet.json"
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 35
     while True:
         packet = _read_json(packet_path, "activation_packet_invalid")
         if str(packet.get("expected_instance_guid") or "").strip("{}"):
@@ -379,6 +379,15 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
             raise ActivationError("activation_verification_completion_invalid")
         if not activation_id or completion.get("activation_id") != activation_id:
             raise ActivationError("activation_verification_completion_identity_required")
+        archive_hashes = completion.get("archive_hashes")
+        if not isinstance(archive_hashes, dict) or not archive_hashes:
+            raise ActivationError("activation_verification_completion_archives_invalid")
+        ledger = state_root / "activation-ledger"
+        for name, expected_hash in archive_hashes.items():
+            if (Path(name).name != name
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(expected_hash or ""))
+                    or _sha256(ledger / name) != expected_hash):
+                raise ActivationError("activation_verification_completion_archives_invalid")
         return {"success": True, "status": "activation_verified",
                 "evidence": completion.get("evidence", {})}
     deadline = time.monotonic() + 5
@@ -436,12 +445,23 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
             raise ActivationError("activation_lane_missing")
         _atomic_json(state_root / "activation-ledger" / f"{packet['activation_id']}-verified.json", evidence)
         _archive_activation_artifacts(state_root, packet["activation_id"], "verified")
+        ledger = state_root / "activation-ledger"
+        required_archives = [
+            f"{packet['activation_id']}-lane.json",
+            f"{packet['activation_id']}-verified.json",
+            f"{packet['activation_id']}-verified-activation-packet.json",
+            f"{packet['activation_id']}-verified-activation-audit-intent-{packet['activation_id']}.json",
+            f"{packet['activation_id']}-verified-activation-audit-receipt-{packet['activation_id']}.json",
+            f"{packet['activation_id']}-verified-supervisor.stop.activation-{packet['activation_id']}",
+        ]
+        archive_hashes = {name: _sha256(ledger / name) for name in required_archives}
         completion = {
             "version": ACTIVATION_VERSION,
             "activation_id": packet["activation_id"],
             "status": "activation_verified",
             "completed_at": _now(now),
             "evidence": evidence,
+            "archive_hashes": archive_hashes,
         }
         completion["completion_hmac_sha256"] = _sign_record(
             completion, _read_key(state_root / "activation-authority.key"),
