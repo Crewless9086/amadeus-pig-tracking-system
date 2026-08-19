@@ -625,11 +625,10 @@ def recover_activation(*, state_root, task_controller, activation_id,
     except Exception as exc:
         errors.append({"component": "task_scheduler_audit_receipt",
                        "status": getattr(exc, "status", exc.__class__.__name__)})
-    if audit_mutation_required and audit_intent_valid and audit_receipt_valid:
-        try:
-            task_controller.reconcile_audit_channel_state()
-        except Exception as exc:
-            errors.append({"component": "task_scheduler_audit", "status": getattr(exc, "status", exc.__class__.__name__)})
+    # Enabled is the fail-safe audit posture. A Boolean channel state has no
+    # writer generation, so automatic disable could overwrite a later
+    # independent enablement. Keep the authenticated prior state and rollback
+    # command as evidence, but never auto-disable the channel.
     stop_path = state_root / "supervisor.stop"
     archive = state_root / f"supervisor.stop.activation-{activation_id}"
     try:
@@ -1666,18 +1665,7 @@ def _close_prepare_failure(state_root, plan, controller, archive, stop,
             controller.disable_exact(plan["task_action_sha256"])
         except Exception as exc:
             errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
-    rollback = _read_json(rollback_path, "activation_rollback_missing")
-    audit_intent = state_root / f"activation-audit-intent-{plan['activation_id']}.json"
-    if (rollback.get("task_scheduler_audit_mutation_required")
-            and audit_intent.exists()
-            and (getattr(controller, "audit_changed", False)
-                 or getattr(controller, "audit_mutation_attempted", False))):
-        try:
-            audit_prior = rollback.get("task_scheduler_audit_prior")
-            controller.bind_audit_channel_state(audit_prior)
-            controller.reconcile_audit_channel_state()
-        except Exception as exc:
-            errors.append({"component": "task_scheduler_audit", "status": getattr(exc, "status", exc.__class__.__name__)})
+    _read_json(rollback_path, "activation_rollback_missing")
     try:
         if stop.exists() and _sha256(stop) != plan["stop_marker_sha256"]:
             raise ActivationError("governed_stop_conflict_during_prepare_recovery")

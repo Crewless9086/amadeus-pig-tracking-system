@@ -791,9 +791,9 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertEqual(controller.audit_enabled, [True])
-        self.assertEqual(controller.audit_restored, [False])
+        self.assertEqual(controller.audit_restored, [])
 
-    def test_post_mutation_readback_failure_runs_immediate_audit_cleanup(self):
+    def test_post_mutation_readback_failure_contains_without_disabling_audit(self):
         class ReadbackFailureController(Controller):
             def ensure_audit_channel_enabled(self):
                 self.audit_mutation_attempted = True
@@ -805,7 +805,7 @@ class RuntimeActivationTests(unittest.TestCase):
         with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_readback_mismatch"):
             prepare_activation(plan, task_controller=controller,
                                task_reader=lambda: self.task, git_runner=self.git)
-        self.assertEqual(controller.audit_restored, [False])
+        self.assertEqual(controller.audit_restored, [])
         self.assertTrue(self.stop.exists())
 
     def test_provider_start_failure_is_recorded_without_terminal_spawn(self):
@@ -887,7 +887,7 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["status"], "activation_recovered")
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
-        self.assertEqual(controller.audit_restored, [False])
+        self.assertEqual(controller.audit_restored, [])
 
     def test_recovery_contains_task_and_stop_when_audit_intent_is_missing(self):
         plan, controller, _ = self._prepared()
