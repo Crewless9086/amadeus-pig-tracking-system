@@ -939,7 +939,7 @@ class RuntimeActivationTests(unittest.TestCase):
             "activation_id_exact", "unrelated_processes_absent",
         )}
         def interrupt_after_packet(source, target, **kwargs):
-            if source.name.startswith("activation-audit-intent-"):
+            if source.name.startswith("activation-audit-receipt-"):
                 raise OSError("simulated verified archival interruption")
             return _durable_replace(source, target, **kwargs)
 

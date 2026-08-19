@@ -1852,14 +1852,18 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
             != packet.get("task_scheduler_event_record_id_lower_bound")):
         raise ActivationError("activation_rollback_binding_invalid")
     activation_id = packet["activation_id"]
-    intent = _read_json(
-        state_root / f"activation-audit-intent-{activation_id}.json",
-        "activation_audit_intent_missing",
-    )
-    receipt = _read_json(
-        state_root / f"activation-audit-receipt-{activation_id}.json",
-        "activation_audit_receipt_missing",
-    )
+    intent_name = f"activation-audit-intent-{activation_id}.json"
+    receipt_name = f"activation-audit-receipt-{activation_id}.json"
+    intent_live = state_root / intent_name
+    receipt_live = state_root / receipt_name
+    intent_verified = (state_root / "activation-ledger"
+                       / f"{activation_id}-verified-{intent_name}")
+    receipt_verified = (state_root / "activation-ledger"
+                        / f"{activation_id}-verified-{receipt_name}")
+    intent = _read_json(intent_live if intent_live.exists() else intent_verified,
+                        "activation_audit_intent_missing")
+    receipt = _read_json(receipt_live if receipt_live.exists() else receipt_verified,
+                         "activation_audit_receipt_missing")
     prior = rollback.get("task_scheduler_audit_prior") or {}
     if (not hmac.compare_digest(
             str(intent.get("audit_intent_hmac_sha256") or ""),
