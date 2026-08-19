@@ -64,6 +64,7 @@ class Controller:
         self.audit_state = {"log_name": "Microsoft-Windows-TaskScheduler/Operational",
                             "enabled": False}
         self.audit_prior = None
+        self.audit_changed = False
         self.audit_enabled = []
         self.audit_restored = []
 
@@ -77,6 +78,7 @@ class Controller:
         changed = not self.audit_state["enabled"]
         self.audit_state["enabled"] = True
         self.audit_enabled.append(True)
+        self.audit_changed = changed
         return changed
 
     def restore_audit_channel_state(self):
@@ -84,6 +86,9 @@ class Controller:
         self.audit_state = dict(self.audit_prior)
         self.audit_restored.append(self.audit_state["enabled"])
         return changed
+
+    def reconcile_audit_channel_state(self):
+        return self.restore_audit_channel_state()
 
     def enable_and_trigger_exact(self, digest):
         self.enabled.append(digest)
@@ -867,14 +872,28 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
         self.assertEqual(controller.audit_restored, [False])
 
-    def test_recovery_rejects_missing_audit_mutation_marker_without_restoring(self):
+    def test_recovery_contains_task_and_stop_when_audit_intent_is_missing(self):
         plan, controller, _ = self._prepared()
-        (self.state / f"activation-audit-mutated-{plan['activation_id']}.json").unlink()
-        with self.assertRaisesRegex(ActivationError, "activation_audit_change_marker_missing"):
+        (self.state / f"activation-audit-intent-{plan['activation_id']}.json").unlink()
+        with self.assertRaisesRegex(ActivationError, "activation_recovery_incomplete"):
             recover_activation(state_root=self.state, task_controller=controller,
                                activation_id=plan["activation_id"])
         self.assertEqual(controller.audit_restored, [])
         self.assertTrue((self.state / "activation.lock").exists())
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+
+    def test_recovery_rejects_tampered_packet_before_any_mutation(self):
+        plan, controller, _ = self._prepared()
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        packet["task_ownership"][0]["task_name"] = "Unrelated Task"
+        packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        with self.assertRaisesRegex(ActivationError, "activation_packet_signature_invalid"):
+            recover_activation(state_root=self.state, task_controller=controller,
+                               activation_id=plan["activation_id"])
+        self.assertEqual(controller.disabled, [])
+        self.assertEqual(controller.audit_restored, [])
 
     def _reconcile(self, plan, **changes):
         values = {
