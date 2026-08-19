@@ -49,7 +49,7 @@ jobs:
       - name: Install Chromium
         run: |
           for attempt in 1 2; do
-            if timeout 300s npx playwright install --with-deps chromium; then
+            if timeout 300s npx playwright install chromium; then
               exit 0
             fi
             echo "Chromium installation attempt ${attempt} failed or timed out."
