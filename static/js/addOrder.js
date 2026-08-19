@@ -16,7 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
 async function previewAlreadySold(event) {
   event.preventDefault();
   const value = id => document.getElementById(id).value;
-  const payload = {tag_numbers:value("sold_tags").split(",").map(v=>v.trim()).filter(Boolean), sold_date:value("sold_date"), buyer_name:value("sold_buyer"), sale_channel:value("sold_channel"), movement_destination:value("sold_destination"), movement_evidence_reference:value("sold_movement_evidence"), health_evidence_reference:value("sold_health_evidence"), owner_reported_evidence:value("sold_owner_report")};
+  const payload = {tag_numbers:value("sold_tags").split(",").map(v=>v.trim()).filter(Boolean), sold_date:value("sold_date"), buyer_name:value("sold_buyer"), sale_channel:value("sold_channel"), movement_destination:value("sold_destination"), owner_reported_evidence:value("sold_owner_report")};
   const message=document.getElementById("already_sold_message");
   try {
     const response=await fetch("/api/orders/already-sold-preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}); const result=await response.json();
@@ -25,7 +25,8 @@ async function previewAlreadySold(event) {
     const host=document.getElementById("already_sold_preview"); host.classList.remove("hidden");
     const pigs=result.selected_pigs.map(p=>`<li><strong>Tag ${esc(p.tag_number)}</strong> · ${esc(p.current_weight_kg)} kg · purpose ${esc(p.purpose)}${treatmentDisclosure(p)}</li>`).join("");
     const gaps=result.errors.map(v=>`<li>${esc(v)}</li>`).join("");
-    host.innerHTML=`<h3>${result.ready_for_protected_confirmation?"Ready for one protected confirmation":"Missing irreducible sale evidence"}</h3><p>${esc(result.authority_boundary)}</p><ul>${pigs}</ul>${gaps?`<h4>Required before confirmation</h4><ul>${gaps}</ul>`:""}<p class="field-helper">Preview ${esc(result.preview_digest)} · writes performed: no · customer send: no</p>`;
+    const next=result.next_protected_action||{};
+    host.innerHTML=`<h3>Canonical action still required</h3><p>${esc(result.authority_boundary)}</p><ul>${pigs}</ul>${gaps?`<h4>Known evidence still missing</h4><ul>${gaps}</ul>`:""}<p><strong>Use:</strong> ${esc(next.surface||"Orders")}.</p><p>${esc(next.action||"")}</p><p class="field-helper">Preview ${esc(result.preview_digest)} · writes performed: no · customer send: no</p>`;
   } catch(error) { message.className="message-box message-error"; message.textContent=error.message; }
 }
 
@@ -68,12 +69,31 @@ async function previewRequest(event) {
 function renderPreview(result) {
   const host = document.getElementById("livestock_preview");
   host.classList.remove("hidden");
+  const recommended = result.recommendations.flatMap(line => line.candidates || []);
   const lines = result.recommendations.map(line => {
-    const candidates = line.candidates.map(pig => `<li><strong>Tag ${esc(pig.tag_number || pig.pig_id)}</strong> · ${pig.current_weight_kg} kg (${esc(pig.weight_date || "weight date unknown")}) · ${esc(pig.match_state)}${pig.projected_target_date ? ` by ${esc(pig.projected_target_date)}` : ""} · purpose ${esc(pig.purpose)}${treatmentDisclosure(pig)}</li>`).join("");
-    return `<article class="detail-card"><h3>${line.requested_quantity} ${esc(line.sex)} · ${esc(weightLabel(line.weight_range))}</h3><p><strong>${esc(line.status)}</strong> · exact ${line.exact_match_count} · near ${line.near_match_count} · projected ${line.projected_count} · supported ${line.supported_count} · shortfall ${line.shortfall_quantity}</p><ul>${candidates || "<li>No supported candidate on current evidence.</li>"}</ul></article>`;
+    const candidates = line.candidates.map(pig => `<li><strong>Tag ${esc(pig.tag_number || pig.pig_id)}</strong> · ${esc(pig.sex)} · ${pig.current_weight_kg} kg · weighed ${esc(pig.weight_date || "unknown")} · ${pig.unit_price == null ? "price unavailable" : `R${Number(pig.unit_price).toFixed(2)}`}${pig.weight_confidence === "fresh_weight_requested" ? " · fresh weight requested" : ""}</li>`).join("");
+    return `<article class="detail-card"><h3>${line.requested_quantity} ${esc(line.sex)} · ${esc(weightLabel(line.weight_range))}</h3><p><strong>${esc(line.status)}</strong> · available ${line.available_quantity} · shortfall ${line.shortfall_quantity}${line.recommended_subtotal == null ? "" : ` · recommended subtotal R${Number(line.recommended_subtotal).toFixed(2)}`}</p><ul>${candidates || "<li>No current recommendation; the requested line remains Unavailable.</li>"}</ul></article>`;
   }).join("");
-  const review = (result.purpose_or_evidence_review || []).map(group => `<article class="detail-card"><h3>${esc(group.blocking_axis)} · ${esc(group.state)}</h3><p>${esc(group.reason)}</p><p class="field-helper">Evidence: ${esc((group.evidence_ids || []).join(", ") || "no attributable evidence ID")}</p><ul>${group.candidates.map(pig => `<li>Tag ${esc(pig.tag_number || pig.pig_id)} · ${pig.current_weight_kg} kg · purpose ${esc(pig.purpose)}${treatmentDisclosure(pig)}</li>`).join("")}</ul></article>`).join("");
-  host.innerHTML = `<div class="section-title-row"><div><h2>Draft quote availability</h2><p>${esc(result.authority_boundary)}</p><p class="field-helper">HERDMASTER ${esc(result.herdmaster_contract_version)} · packet ${esc(result.herdmaster_packet_digest || "unavailable")} · cutoff ${esc(result.evidence_cutoff_date || "unknown")}</p></div></div>${lines}${review ? `<div class="section-title-row"><div><h2>Purpose or evidence review</h2><p>These pigs are not counted toward supported fulfilment and no purpose is changed.</p></div></div>${review}` : ""}<p class="field-helper">Customer request: captured · HERDMASTER recommendation: advisory · Reservation: none · Final fulfilment: none.</p>`;
+  const medicine = consolidatedMedicineDisclosure(recommended);
+  const review = (result.purpose_or_evidence_review || []).map(group => `<article class="detail-card"><h3>${esc(group.blocking_axis)} · ${esc(group.state)}</h3><p>${esc(group.reason)}</p><ul>${group.candidates.map(pig => `<li>Tag ${esc(pig.tag_number || pig.pig_id)} · ${pig.current_weight_kg} kg · purpose ${esc(pig.purpose)}</li>`).join("")}</ul></article>`).join("");
+  host.innerHTML = `<div class="section-title-row"><div><h2>Draft quote preview</h2><p>${esc(result.authority_boundary)}</p></div></div>${lines}${medicine}${review ? `<details><summary>Why some animals were excluded</summary>${review}</details>` : ""}<p class="field-helper">Customer request: captured · recommendation: advisory · reservation: none · final fulfilment: none.</p>`;
+}
+
+function consolidatedMedicineDisclosure(pigs) {
+  const restricted = pigs.filter(pig => pig.treatment_disclosure);
+  const clear = pigs.filter(pig => !pig.treatment_disclosure && pig.medicine_indicator === "No current recorded food-chain restriction");
+  const unknown = pigs.length - restricted.length - clear.length;
+  const restrictions = new Map();
+  restricted.forEach(pig => {
+    const disclosure = pig.treatment_disclosure;
+    const key = [disclosure.product || "Recorded treatment", disclosure.withdrawal_end_date || "date unavailable"].join("|");
+    if (!restrictions.has(key)) restrictions.set(key, { disclosure, tags: [] });
+    restrictions.get(key).tags.push(pig.tag_number || pig.pig_id);
+  });
+  const rows = [...restrictions.values()].map(({ disclosure, tags }) =>
+    `<li><strong>Tags ${tags.map(esc).join(", ")}</strong> · ${esc(disclosure.product || "Recorded treatment")} · food-chain withdrawal through ${esc(disclosure.withdrawal_end_date || "date unavailable")}.</li>`
+  ).join("");
+  return `<aside class="detail-card" aria-label="Consolidated medicine disclosure"><h3>Consolidated medicine disclosure</h3><p>This disclosure does not reserve pigs or certify veterinary, quarantine or transport clearance.</p><ul>${rows || ""}<li>${clear.length} recommended animal${clear.length === 1 ? "" : "s"}: no current recorded food-chain restriction.</li>${unknown ? `<li>${unknown} recommended animal${unknown === 1 ? "" : "s"}: recorded food-chain status unavailable.</li>` : ""}</ul></aside>`;
 }
 
 function treatmentDisclosure(pig) {

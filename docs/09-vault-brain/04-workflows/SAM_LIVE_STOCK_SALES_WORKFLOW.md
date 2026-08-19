@@ -39,7 +39,7 @@ Telegram escalation or HUMAN ownership.
 5. Load existing conversation/order-intake memory when the backend runtime exists.
 6. Read current availability from backend source truth.
 7. Prepare advisory next action, owner packet, or safe draft reply.
-8. If all facts, full availability, and active pricing are present, SAM may create a draft order through the backend order rail, or update the existing `draft_order_id` when conversation memory already has one.
+8. If the customer request and active pricing are present, SAM may prepare a requested-items draft quote with truthful partial or `Unavailable` recommendations. Creating or updating a canonical draft order remains a separate backend action and must not attach, allocate or reserve a pig.
 9. Backend/owner gates decide whether reservation, quote, customer send, or payment-dependent actions may happen.
 10. Append learning evidence after blocked, unclear, rejected, or corrected outcomes.
 11. If the customer becomes hostile, repeatedly demands the exact farm location, calls the farm a scam, or aggressively challenges pricing, SAM should close politely, stop replying, and escalate/log the conversation for owner visibility.
@@ -104,7 +104,8 @@ Before a live-stock draft order can be prepared:
 - No payment is confirmed from POP alone.
 - No breeding candidate, sow, boar, or replacement-quality gilt may be offered through the normal live-stock sale lane.
 - Only source-truth `Purpose = Sale` pigs may be offered.
-- No sold, exited, reserved, terminal, off-farm, withdrawal-blocked, or source-conflicted animal may be offered.
+- No sold, dead, exited, reserved, terminal, off-farm, source-conflicted or explicitly health-, welfare-, quarantine-, movement- or sale-held animal may be recommended. A recorded food-chain withdrawal is a compact disclosure and slaughter/food-chain blocker, not by itself a live-sale blocker.
+- Missing or stale weight lowers confidence and may request a fresh weight; it does not prevent the requested-items draft quote or require a specific pig.
 - No old n8n or Google Sheet value may override app/Supabase truth.
 - Do not share the exact farm location. Live-stock handover is Riversdale or Albertinia after the order path is confirmed.
 - Do not argue about scam accusations, exact location, or pricing. Close politely and escalate/log when the buyer is rude, aggressive, or already negative.

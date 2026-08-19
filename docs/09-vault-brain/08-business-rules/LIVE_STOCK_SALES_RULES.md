@@ -80,15 +80,18 @@ When the owner changes a price, a new effective-dated row is appended. Older pri
 
 ## Availability Matching
 
-Herdmaster/Pig Allocation is SAM's authoritative live-stock stock-context read model. Each candidate must carry current source status, on-farm state, purpose, reservation state, breeding/family context, latest weight and weight date, withdrawal/medical status, and canonical media references when such references exist. Missing or stale weight dates, current withdrawal/follow-up holds, unhealthy/held status, breeding/retained status, and unavailable/reserved/off-farm/terminal state must make the animal ineligible before SAM matching, draft-order preparation, or quote preparation. If no canonical animal media source exists, the read model returns no media references; SAM must not infer them from notes or customer uploads.
+Herdmaster/Pig Allocation is SAM's authoritative live-stock stock-context read model. Each candidate must carry current source status, on-farm state, purpose, reservation state, breeding/family context, latest weight and weight date, recorded medicine/food-chain status, and canonical media references when such references exist. Sold, dead, exited, off-farm, reserved, terminal, source-conflicted, retained/breeding, or explicitly health-, welfare-, quarantine-, movement- or sale-held animals are ineligible. A recorded food-chain withdrawal is disclosed compactly and blocks slaughter/food-chain entry through the recorded date; it does not by itself block a live-animal quote or transfer. Missing or stale weight reduces recommendation confidence and may require a fresh weight before a specific commitment, but it does not prevent a requested-items draft quote with partial or `Unavailable` recommendations. If no canonical animal media source exists, the read model returns no media references; SAM must not infer them from notes or customer uploads.
 
-Live-transfer eligibility keeps separate attributable axes for transport
-fitness, quarantine, notifiable/infectious disease, veterinary movement stop,
-serious health/welfare state, treatment-evidence completeness, purpose,
-active/on-farm state and order eligibility. Unknown is not clearance. Treatment
-disclosure and acknowledgement prove receipt only; they never certify movement,
-health or veterinary clearance. HERDMASTER owns this livestock projection;
-SAM/order/document paths consume it without recalculating safety.
+Live-transfer eligibility keeps separate attributable axes for any genuinely
+recorded transport-fitness restriction, quarantine, notifiable/infectious
+disease restriction, veterinary movement stop, serious health/welfare hold,
+purpose, active/on-farm state and order eligibility. Unknown is not positive
+clearance, but absence of records the farm does not ordinarily capture is not a
+manufactured blocker. Treatment disclosure and acknowledgement prove receipt
+only; they never certify movement, health or veterinary clearance. HERDMASTER
+owns this livestock projection; SAM/order/document paths consume it without
+recalculating safety. This is farm operating doctrine and medicine disclosure,
+not statutory or veterinary certification.
 
 Matching priority:
 
@@ -114,7 +117,9 @@ Draft order creation is allowed when all of these are true:
 - backend availability;
 - active order conflict check.
 - active price resolved from `public.sales_pricing`;
-- complete fulfillment, not partial match.
+- requested items may remain partial or `Unavailable`; a specific allocation,
+  reservation or customer stock promise still requires the applicable later
+  gate.
 
 Reservation, payment confirmation, quote/send, and customer-visible promises remain owner/backend-gated.
 

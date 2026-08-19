@@ -424,13 +424,13 @@ def _transfer_assessment_axes(rows, as_of):
 
 def _missing_current_gate(name):
     labels = {
-        "fit_for_transport": "No current attributable fit-for-transport assessment is stored in the supplied canonical snapshot.",
-        "quarantine": "No current attributable quarantine-clearance or quarantine-hold fact is stored in the supplied canonical snapshot.",
-        "notifiable_or_infectious_disease": "No current attributable notifiable/infectious-disease clearance or restriction fact is stored in the supplied canonical snapshot.",
-        "veterinary_movement_stop": "No current attributable veterinary movement-clearance or movement-stop fact is stored in the supplied canonical snapshot.",
-        "serious_health_or_welfare_hold": "No current attributable serious health/welfare clearance or hold fact is stored in the supplied canonical snapshot.",
+        "fit_for_transport": "No current recorded transport-fitness restriction.",
+        "quarantine": "No current recorded quarantine restriction.",
+        "notifiable_or_infectious_disease": "No current recorded infectious-disease restriction.",
+        "veterinary_movement_stop": "No current recorded veterinary movement stop.",
+        "serious_health_or_welfare_hold": "No current recorded serious health or welfare hold.",
     }
-    return _axis("Unknown", labels[name])
+    return _axis("no_current_recorded_restriction", labels[name])
 
 
 def _order_axis(pig, order, lines):
@@ -448,6 +448,12 @@ def _order_axis(pig, order, lines):
         )
     if matching:
         line = matching[0]
+        if not _text(order.get("order_id")):
+            return _axis(
+                "blocked",
+                f"Pig is already linked to active order line {_text(line.get('order_line_id'))}; it cannot be recommended for another request.",
+                [_text(line.get("order_line_id"))],
+            )
         return _axis(
             "included_draft_unreserved" if _text(line.get("reserved_status")).lower() in {"not_reserved", "not reserved"} else "blocked",
             f"Pig is already present once on order {_text(order.get('order_id'))} as line {_text(line.get('order_line_id'))}; reservation remains {_text(line.get('reserved_status')) or 'Unknown'}.",
@@ -553,19 +559,14 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
                        _axis("blocked" if status != "Unknown" and on_farm is not None else "Unknown",
                              f"Current status is {status}; on_farm is {on_farm}."))
         order_axis = _order_axis(pig, order, lines)
-        required_states = [purpose_axis["state"], active_axis["state"], completeness["state"],
+        required_states = [purpose_axis["state"], active_axis["state"],
                            *(axis["state"] for axis in independent.values())]
         if "blocked" in required_states or "conflicting" in required_states:
             transfer = _axis("blocked", "At least one independent live-transfer gate is blocked or conflicting.")
-        elif "Unknown" in required_states:
-            transfer = _axis(
-                "Unknown",
-                "Live transfer is not yet supported because one or more current transport, disease, quarantine, veterinary, welfare, or treatment-evidence gates are Unknown.",
-            )
         else:
             transfer = _axis(
                 "eligible_on_current_evidence",
-                "Every required live-transfer gate is affirmatively supported; food-chain eligibility remains separate.",
+                "Active sale-purpose animal with no current recorded live-sale restriction; this is not veterinary or statutory clearance and food-chain eligibility remains separate.",
             )
         disclosure = _disclosure(pig, active)
         if disclosure:
@@ -609,18 +610,18 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
                 "health_and_welfare": {
                     "authority": "pig_observation_events",
                     **observation_projection,
-                    "limitation": "No typed current clearance event is present; narrative absence cannot prove clearance.",
+                    "limitation": "Absence of a recorded restriction is not positive veterinary clearance.",
                 },
                 "movement": {
                     "authority": "pig_location_events plus an attributable veterinary movement-stop fact",
                     "history_event_ids": [_text(row.get("location_event_id"))
                                           for row in governed_movements],
-                    "limitation": "Movement history establishes location chronology, not fitness or movement clearance.",
+                    "limitation": "Movement history establishes location chronology, not fitness certification.",
                 },
                 "quarantine_and_disease": {
                     "authority": "attributable veterinary/competent-authority evidence projected through the canonical health observation rail",
                     "current_event_ids": [],
-                    "limitation": "No canonical current typed quarantine, notifiable/infectious-disease, or veterinary-stop fact is available.",
+                    "limitation": "No current restriction is recorded; this does not manufacture positive clearance.",
                 },
             },
             "canonical_treatment_events": events,
@@ -663,7 +664,6 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
         "creates_buyer_acknowledgement": False,
         "remaining_dependencies": [
             "Tag 123 requires factual or veterinary resolution of each same-signature treatment pair and a governed append-only medical correction rail before its effective medical state can change.",
-            "Tag 151 requires current attributable transport-fitness, quarantine, disease, veterinary movement-stop and serious welfare/health evidence.",
             "Tag 151's 2_to_4_Kg line would depart from the order's 5_to_6_Kg request and therefore requires a later protected SAM commercial preview; no order change is authorized here.",
             "SAM must retain the canonical transaction-safe active order/pig uniqueness guard and lock before any later line creation.",
         ],
@@ -738,7 +738,12 @@ def load_live_transfer_snapshot(pig_ids, order_id, *, connect_factory=None,
             """, (order_id,)).fetchall()
             order = dict(orders[0])
         else:
-            lines = []
+            lines = connection.execute("""
+                select * from public.order_lines
+                where pig_id=any(%s)
+                  and lower(coalesce(line_status,'')) not in ('cancelled','removed','collected')
+                order by created_at,order_line_id
+            """, (list(pig_ids),)).fetchall()
             order = {}
         observations = connection.execute("""
             select observation_event_id,pig_id,observed_at,recorded_at,observer_reference,
