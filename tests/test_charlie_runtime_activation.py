@@ -867,7 +867,7 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
 
     def test_successful_verification_retires_packet_and_lane(self):
-        _plan, controller, _ = self._prepared()
+        plan, controller, _ = self._prepared()
         self._mark_started()
         evidence = {name: True for name in (
             "loaded_revision_exact", "execution_mode_observe_only",
@@ -885,7 +885,7 @@ class RuntimeActivationTests(unittest.TestCase):
         replay = verify_or_recover_activation(
             state_root=self.state, verification_reader=lambda _packet: evidence,
             task_controller=controller, task_reader=lambda: self.task,
-            git_runner=self.git,
+            git_runner=self.git, activation_id=plan["activation_id"],
         )
         self.assertEqual(replay["status"], "activation_verified")
 
@@ -931,7 +931,7 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertTrue(self.stop.exists())
 
     def test_verification_resumes_after_packet_archive_interruption(self):
-        _plan, controller, _ = self._prepared()
+        plan, controller, _ = self._prepared()
         self._mark_started()
         evidence = {name: True for name in (
             "loaded_revision_exact", "execution_mode_observe_only",
@@ -955,7 +955,7 @@ class RuntimeActivationTests(unittest.TestCase):
         result = verify_or_recover_activation(
             state_root=self.state, verification_reader=lambda _packet: evidence,
             task_controller=controller, task_reader=lambda: self.task,
-            git_runner=self.git,
+            git_runner=self.git, activation_id=plan["activation_id"],
         )
         self.assertEqual(result["status"], "activation_verified")
 

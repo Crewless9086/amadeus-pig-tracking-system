@@ -127,6 +127,8 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         raise ActivationError("activation_lane_already_owned")
     if (Path(plan["state_root"]) / "activation-reconciliation.lock").exists():
         raise ActivationError("activation_reconciliation_lane_active")
+    if (Path(plan["state_root"]) / "activation-verification.lock").exists():
+        raise ActivationError("activation_verification_lane_active")
     _validate_pre_mutation(plan, task_reader=task_reader, git_runner=git_runner)
     state_root = Path(plan["state_root"])
     if not hasattr(task_controller, "read_audit_channel_state"):
@@ -342,7 +344,8 @@ def consume_provider_activation(*, state_root, starter, task_controller,
 
 def verify_or_recover_activation(*, state_root, verification_reader, task_controller,
                                  task_reader=read_watchdog_task,
-                                 git_runner=subprocess.run, now=None):
+                                 git_runner=subprocess.run, now=None,
+                                 activation_id=None):
     state_root = Path(state_root).resolve()
     live_packet = state_root / "activation-packet.json"
     if live_packet.exists():
@@ -374,6 +377,8 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
                     _sign_record(completion, completion_key,
                                  "completion_hmac_sha256"))):
             raise ActivationError("activation_verification_completion_invalid")
+        if not activation_id or completion.get("activation_id") != activation_id:
+            raise ActivationError("activation_verification_completion_identity_required")
         return {"success": True, "status": "activation_verified",
                 "evidence": completion.get("evidence", {})}
     deadline = time.monotonic() + 5
@@ -384,6 +389,11 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
         if time.monotonic() >= deadline:
             raise ActivationError("task_scheduler_instance_guid_timeout")
         time.sleep(0.05)
+    marker_path = state_root / "activation-verification.lock"
+    if marker_path.exists():
+        current_marker = _read_json(marker_path, "activation_verification_marker_invalid")
+        if current_marker.get("activation_id") != packet.get("activation_id"):
+            raise ActivationError("activation_verification_marker_identity_mismatch")
     try:
         _validate_packet(packet, state_root, task_reader, git_runner=git_runner,
                          now=now, allow_consumed=True, allow_expired=True)
