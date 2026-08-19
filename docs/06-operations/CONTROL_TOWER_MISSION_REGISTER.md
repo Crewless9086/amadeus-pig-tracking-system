@@ -2,6 +2,55 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-19 - Owner-approved livestock quotation separation
+
+Charl approved one shared livestock pricing, quotation and document system with
+three explicitly different customer journeys:
+
+1. `price_indication` - a current category-price guide in conversation, with no
+   order, PDF by default, allocation, reservation or availability promise;
+2. `budgetary_quotation` - a formal category-based quotation for funding,
+   loan, company approval or budgeting, attached to the customer intake and
+   containing no selected animals or stock commitment; and
+3. `sales_quotation` with `quotation_basis = current_availability` - a current
+   sales quotation that may contain supported animals or groups, while
+   allocation proposal and reservation remain separate evidence states.
+
+Customer request, quotation, allocation proposal and reservation must remain
+distinct. The implementation must reuse the current requested-items editor,
+effective-dated Supabase pricing, document renderer and outbound delivery rail;
+it must not create a second quote engine. Issued prices are immutable snapshots,
+expiry and supersession are explicit, conversion to an order refreshes current
+price/availability, and no historical availability or reservation may be
+carried forward as current truth.
+
+The review also found that the compact authoritative Gold Standard no longer
+contains the historically owner-approved direct-price examples retained in
+commit `d78f1e02`. The implementation mission must restore only the unique
+active behaviour - answer a supported direct price question before further
+qualification, distinguish category price from availability, show quantity,
+unit price, subtotal/total when known, and never imply reservation - without
+restoring the removed 498-line historical document or creating duplicate
+doctrine.
+
+Immediate customer recovery: a one-page quotation for funding approval was
+prepared locally for Wenettitus as
+`FQ-2026-0819-WENETTITUS-01`, using read-only canonical Supabase prices R400 for
+5-6 kg and R600 for 15-19 kg. It records 10 female and 10 male 5-6 kg piglets,
+one female and one male approximately 15 kg, subtotal R9,200.00, VAT R1,380.00,
+total R10,580.00 and validity through 22 August 2026. It explicitly creates no
+order, allocation, reservation, availability promise or payment request. Charl
+accepted the PDF for owner use; provider/customer send remains unconfirmed and
+must not be inferred.
+
+Continue the existing SALES/SAM/HERDMASTER quotation lineage after the current
+customer recovery; do not create a parallel mission or document engine.
+Doctrine reconciliation precedes implementation, followed by one intake-linked
+quotation aggregate, quotation lines/price snapshots, SAM intent separation,
+document/UI projection and exact Wenettitus-shaped acceptance. The current
+stock-backed preview remains separately released for authenticated owner
+acceptance and must not be misrepresented as the funding-quotation journey.
+
 ## 2026-08-19 - Overnight operating-outcome recovery
 
 Owner priority: tomorrow's four-line livestock quote must be usable, while
