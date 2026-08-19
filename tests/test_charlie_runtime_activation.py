@@ -865,6 +865,47 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertFalse((self.state / "activation-packet.json").exists())
         self.assertFalse((self.state / "activation.lock").exists())
 
+    def test_verification_resumes_after_lane_archive_crash(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        lane = self.state / "activation.lock"
+        archived_lane = (self.state / "activation-ledger"
+                         / f"{plan['activation_id']}-lane.json")
+        lane.replace(archived_lane)
+        evidence = {name: True for name in (
+            "loaded_revision_exact", "execution_mode_observe_only",
+            "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+            "activation_id_exact", "unrelated_processes_absent",
+        )}
+
+        result = verify_or_recover_activation(
+            state_root=self.state, verification_reader=lambda _packet: evidence,
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git,
+        )
+
+        self.assertEqual(result["status"], "activation_verified")
+        self.assertFalse((self.state / "activation-packet.json").exists())
+
+    def test_verification_failure_after_lane_archive_recovers(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        lane = self.state / "activation.lock"
+        archived_lane = (self.state / "activation-ledger"
+                         / f"{plan['activation_id']}-lane.json")
+        lane.replace(archived_lane)
+
+        with self.assertRaisesRegex(ActivationError, "activation_verification_failed"):
+            verify_or_recover_activation(
+                state_root=self.state,
+                verification_reader=lambda _packet: {},
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git,
+            )
+
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+
     def test_tampered_rollback_fails_closed_and_retains_lane(self):
         plan, controller, _ = self._prepared()
         rollback_path = self.state / "activation-ledger" / f"{plan['activation_id']}-rollback.json"

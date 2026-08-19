@@ -329,7 +329,10 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
     if all(evidence.get(item) is True for item in required):
         lane = state_root / "activation.lock"
         archive = state_root / "activation-ledger" / f"{packet['activation_id']}-lane.json"
-        lane.replace(archive)
+        if lane.exists():
+            lane.replace(archive)
+        elif not archive.exists():
+            raise ActivationError("activation_lane_missing")
         _atomic_json(state_root / "activation-ledger" / f"{packet['activation_id']}-verified.json", evidence)
         _archive_activation_artifacts(state_root, packet["activation_id"], "verified")
         return {"success": True, "status": "activation_verified", "evidence": evidence}
@@ -521,11 +524,17 @@ def recover_activation(*, state_root, task_controller, activation_id,
     state_root = Path(state_root).resolve()
     ledger = state_root / "activation-ledger"
     lane_path = state_root / "activation.lock"
-    lane_archive = ledger / f"{activation_id}-lane-recovered.json"
-    lane = _read_json(
-        lane_path if lane_path.exists() else lane_archive,
-        "activation_lane_missing",
-    )
+    lane_archives = [
+        ledger / f"{activation_id}-lane-recovered.json",
+        ledger / f"{activation_id}-lane.json",
+    ]
+    lane_candidates = [path for path in [lane_path, *lane_archives] if path.exists()]
+    if len(lane_candidates) != 1:
+        raise ActivationError("activation_lane_missing" if not lane_candidates
+                              else "activation_lane_ambiguous")
+    lane = _read_json(lane_candidates[0], "activation_lane_missing")
+    lane_source = lane_candidates[0]
+    lane_archive = lane_archives[0]
     if lane.get("activation_id") != activation_id:
         raise ActivationError("activation_lane_identity_mismatch")
     rollback = _read_json(
@@ -699,8 +708,8 @@ def recover_activation(*, state_root, task_controller, activation_id,
     )
     _atomic_json(state_root / "activation-reconciliation-pending.json", pending)
     _archive_activation_artifacts(state_root, activation_id, "recovered")
-    if lane_path.exists():
-        lane_path.replace(lane_archive)
+    if lane_source != lane_archive and lane_source.exists():
+        lane_source.replace(lane_archive)
     completion = {
         "version": RECOVERY_PROJECTION_VERSION,
         "activation_id": activation_id,
@@ -1623,7 +1632,14 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_packet_authority_or_roots_invalid")
     if _read_json(packet.get("authority_path"), "activation_authority_invalid") != authority:
         raise ActivationError("activation_authority_content_mismatch")
-    lane = _read_json(state_root / "activation.lock", "activation_lane_missing")
+    lane_path = state_root / "activation.lock"
+    verified_lane = (state_root / "activation-ledger"
+                     / f"{packet['activation_id']}-lane.json")
+    lane_candidates = [path for path in (lane_path, verified_lane) if path.exists()]
+    if len(lane_candidates) != 1:
+        raise ActivationError("activation_lane_missing" if not lane_candidates
+                              else "activation_lane_ambiguous")
+    lane = _read_json(lane_candidates[0], "activation_lane_missing")
     rollback = _read_json(
         state_root / "activation-ledger" / f"{packet['activation_id']}-rollback.json",
         "activation_rollback_missing",
