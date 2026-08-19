@@ -9,6 +9,13 @@
 
 ## 2026-08-19 - ROOTLINE standing B/C water policy enforced
 
+- Superseded ambiguous canonical authority
+  `ROOTLINE-BC-IRRIGATION-AUTO` version `1` with append-only, scope-identical
+  version `2`: missing/stale reservoir observation is not itself a Hold, fresh
+  adverse reservoir evidence is a Hold, and unproven water credit is zero.
+- Rebound only the already commissioned B/C registry records to version `2`;
+  provider account, device, channels, 3599-second bound, mutual exclusion,
+  fail-OFF/readback contract and mixer/injection/borehole exclusions are unchanged.
 - Removed the runtime-only fresh tank-observation gate that contradicted the
   owner-approved standing B/C water-availability rule and repeatedly shifted a
   routine evidence obligation back to Charl.
