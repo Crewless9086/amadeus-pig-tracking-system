@@ -76,6 +76,9 @@ class Controller:
     def bind_audit_channel_state(self, value):
         self.audit_prior = dict(value)
 
+    def read_audit_event_record_id(self):
+        return 455
+
     def ensure_audit_channel_enabled(self):
         changed = not self.audit_state["enabled"]
         self.audit_mutation_attempted = changed
@@ -586,6 +589,7 @@ class RuntimeActivationTests(unittest.TestCase):
             "EventTime": "2026-08-18T08:00:00.0000000Z",
             "EventActivityId": "11111111-1111-1111-1111-111111111111",
             "EngineCreationTime": "2026-08-18T07:59:59.5000000Z",
+            "EventRecordIdLowerBound": 455,
             "ActivationId": "activation-current",
         }
         calls = []
@@ -598,6 +602,7 @@ class RuntimeActivationTests(unittest.TestCase):
             process_creation_time=lambda _pid: "provider-created",
             activation_id="activation-current",
             activation_prepared_at="2026-08-18T07:59:59+00:00",
+            event_record_id_lower_bound=455,
         )
         self.assertTrue(result["inspection_complete"])
         self.assertEqual(result["evidence_source"], "operational_event")
@@ -609,6 +614,7 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertIn("TimeCreated.ToUniversalTime()-ge$prepared", script)
         self.assertIn("TimeCreated.ToUniversalTime()-ge$engineCreated", script)
         self.assertIn("TimeCreated.ToUniversalTime()-le$engineCreated.AddSeconds(10)", script)
+        self.assertIn("RecordId-gt455", script)
         self.assertIn("CreationDate-is[DateTime]", script)
 
     def test_event_fallback_rejects_disabled_ambiguous_or_missing_evidence(self):
@@ -870,6 +876,12 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["status"], "activation_verified")
         self.assertFalse((self.state / "activation-packet.json").exists())
         self.assertFalse((self.state / "activation.lock").exists())
+        replay = verify_or_recover_activation(
+            state_root=self.state, verification_reader=lambda _packet: evidence,
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git,
+        )
+        self.assertEqual(replay["status"], "activation_verified")
 
     def test_verification_resumes_after_lane_archive_crash(self):
         plan, controller, _ = self._prepared()

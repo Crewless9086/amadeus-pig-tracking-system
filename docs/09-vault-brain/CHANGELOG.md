@@ -34,6 +34,10 @@
 - All activation namespace transitions now use durable publication: Windows
   `MoveFileExW` write-through moves and POSIX parent-directory fsync ensure
   signed lane, packet, stop and archival state survives a completed mutation.
+- Windows native calls declare exact ctypes signatures; Linux archival uses
+  atomic `renameat2(RENAME_NOREPLACE)`. A signed verification-completion
+  projection closes the final-marker window, while Event 200 must exceed the
+  pre-trigger record-ID lower bound sealed into the activation transaction.
 
 ## 2026-08-19 - Livestock quotation journeys
 
