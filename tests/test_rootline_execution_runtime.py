@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from modules.telemetry.rootline_execution_runtime import (
-    _current, _persist_stale_parent_resolutions,
+    _bc_authority_policy_proven, _current, _persist_stale_parent_resolutions,
     run_protected_rootline_segment, run_rootline_execution_cycle,
 )
 from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
@@ -150,6 +150,34 @@ def test_dry_b_creates_artifact_and_exactly_one_coordinator_execution():
     assert [call["state"] for call in transport.calls]==["ON"]
     artifacts=[row for name,row in store.rows if name=="record_eligibility"]
     assert len(artifacts)==1 and artifacts[0]["zone_id"]=="B12345"
+
+
+def test_bc_authority_policy_requires_explicit_standing_water_evidence_semantics():
+    keys=("ifttt_ewelink:ewelink_owner_account:100204e9bc:1",
+          "ifttt_ewelink:ewelink_owner_account:100204e9bc:2")
+    policy={"contract_version":"rootline_bc_standing_authority.v2",
+      "device_keys":list(keys),"zone_ids":["B12345","C12345"],"allowed_channels":[1,2],
+      "provider":"ifttt_ewelink","provider_account_binding":"ewelink_owner_account",
+      "device_id":"100204e9bc","maximum_runtime_seconds":3599,
+      "simultaneous_outputs_allowed":False,"mutual_exclusion_required":True,
+      "missing_or_stale_reservoir_observation_is_hold":False,
+      "fresh_adverse_reservoir_evidence_is_hold":True,
+      "unproven_reservoir_water_credit_litres":0,
+      "fresh_weather_and_rain_hold_required":True,"current_plan_identity_required":True,
+      "application_timeout_required":True,"provider_on_off_readback_required":True,
+      "explicit_exclusions":["fertilizer_injection","fertilizer_mixing","borehole_pump"],
+      "emergency_off_owner":"deployed ROOTLINE irrigation coordinator",
+      "emergency_off_procedure":"exact provider OFF and readback",
+      "provider_fail_stop_proven":True,"physical_fail_safe_proven":True,
+      "power_restoration_off_proven":True,"automatic_on_retry":False}
+    artifact={"maximum_duration_seconds":3599}
+    assert _bc_authority_policy_proven(policy,artifact,keys) is True
+    assert _bc_authority_policy_proven({**policy,
+      "contract_version":"rootline_bc_standing_authority.v1"},artifact,keys) is False
+    assert _bc_authority_policy_proven({**policy,
+      "fresh_adverse_reservoir_evidence_is_hold":False},artifact,keys) is False
+    assert _bc_authority_policy_proven({**policy,
+      "unproven_reservoir_water_credit_litres":1},artifact,keys) is False
 
 
 def test_eligible_artifact_without_canonical_database_fails_closed_before_on():
