@@ -448,7 +448,31 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
         from modules.oom_sakkie.manager_case_sources import (
             collect_manager_candidate, collect_manager_candidates)
         candidates = collect_manager_candidates(now=now, collectors=collectors)
+        if collectors is None:
+            from modules.telemetry.rootline_mixer_readiness_observer import (
+                collect_mixer_readiness,
+            )
+            try:
+                candidates.extend(collect_mixer_readiness(now=now))
+            except Exception as exc:
+                candidates.append({
+                    "dedupe_key": "rootline-readiness:fertilizer-mixer-ch2",
+                    "specialist": "ROOTLINE", "urgency": "urgent",
+                    "evidence_refs": [f"collector:mixer_readiness:{exc.__class__.__name__}"],
+                    "unknowns": ["current_provider_mixer_readiness"],
+                    "summary": "ROOTLINE fertilizer mixer readiness could not be observed.",
+                    "next_action": ("Keep mixer execution fail-closed and retry the existing "
+                                    "zero-control-call readback on the next manager cycle."),
+                    "next_reassessment_at": (now + CADENCE).isoformat(),
+                })
         def refresh(case):
+            if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"):
+                from modules.telemetry.rootline_mixer_readiness_observer import (
+                    collect_mixer_readiness,
+                )
+                rows = collect_mixer_readiness(now=datetime.now(timezone.utc))
+                return next((row for row in rows
+                    if row.get("dedupe_key") == case.get("dedupe_key")), None)
             return collect_manager_candidate(now=datetime.now(timezone.utc),
                 dedupe_key=case["dedupe_key"], specialist=case["specialist"],
                 collectors=collectors)
@@ -461,6 +485,11 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None):
     """Present changed farm cases through the existing owner-only lifecycle."""
+    if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"):
+        return {"success": True, "status": "readiness_attention_only",
+                "delivery_confirmed": False, "telegram_sends": 0,
+                "customer_sends": 0, "provider_actions": 0,
+                "hardware_commands": 0, "writes_farm_data": False}
     specialist = str(case.get("specialist") or "").upper()
     if specialist not in {"HERDMASTER", "ROOTLINE", "BEACON"}:
         return {"success": True, "status": "non_farm_case_delivery_suppressed",
