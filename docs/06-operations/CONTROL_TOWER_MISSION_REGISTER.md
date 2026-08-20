@@ -3175,3 +3175,20 @@ reusable defect through existing rails but may not replay the owner message, ask
 for repetition, manually affect Telegram or infer/write recovery. Fresh parent/
 child process ancestry proves dispatch only; progress requires later diff/commit/
 handover evidence.
+
+BEACON's first real-publication terminal then closed at clean, CI-green PR #1145,
+exact head `8daf8869c9c19ed49569f27e5d2e4b41e8a0e676`, with protected Page-ID/content
+binding, exactly-once execution, Meta readback/ambiguity containment and SAM
+attribution fields. It proposed the exact text “A quiet farm-life update from
+Amadeus Farm,” text-only, organic, R0 and zero-day boost. No publication, spend,
+deployment, customer message or fabricated demand occurred.
+
+Control Tower rejected that packet as `REVIEW_HOLD / OWNER_OUTCOME_MISALIGNED`:
+although technically publishable, it lacks a supported offering, useful demand
+objective, call to action and meaningful SAM handoff. A provider post alone would
+not satisfy the BEACON-to-SAM outcome. The released lane was immediately resumed
+in the same visible BEACON worktree/PR with attributable process ancestry. It must
+derive one truthful demand-oriented post from supported canonical offerings and a
+safe call to action, or return an exact evidence blocker; decorative filler is not
+acceptable. Publication/boost/spend remain protected and forbidden until the exact
+corrected owner packet is reviewed.
