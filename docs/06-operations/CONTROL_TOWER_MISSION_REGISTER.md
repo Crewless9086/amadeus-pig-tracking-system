@@ -3192,3 +3192,25 @@ derive one truthful demand-oriented post from supported canonical offerings and 
 safe call to action, or return an exact evidence blocker; decorative filler is not
 acceptable. Publication/boost/spend remain protected and forbidden until the exact
 corrected owner packet is reviewed.
+
+The HERDMASTER Prince terminal subsequently closed at clean, CI-green PR #1146,
+exact head `2e19e621ab77fa9f5d7b158494965e6f36caaacc`. Protected readback found genuine
+Telegram message `3825` had an authenticated durable manager receipt, but no
+supported HERDMASTER consumption or reassessment, and the Prince question later
+reappeared. The source correction requires actual HERDMASTER consumption plus a
+separate completion receipt before future herd-question retirement. Historical
+message/reply evidence was not replayed or mutated and no welfare recovery was
+inferred. Lifecycle is `RELEASE_HOLD / SOURCE_READY / BUSINESS_INCOMPLETE`; genuine
+deployed consumption/reassessment and later continuity remain required.
+
+Control Tower immediately reused that released lane for SAM in
+`C:\tmp\sam-beacon-attributed-inbound-20260820`, branch
+`fix/sam-beacon-attributed-inbound-20260820`. The visible terminal must ensure a
+future genuine Meta inbound attributable to the approved BEACON post enters the
+existing SAM customer lifecycle once, preserves page/post/campaign/customer identity,
+operates within existing response and protected order/payment authority, and owns
+follow-up after terminal close. It may inspect pending BEACON PR #1145's attribution
+contract but may not modify BEACON-owned files, manufacture an inbound, publish,
+message customers, reserve stock, create orders, deploy or create another queue/
+scheduler/database. Fresh process ancestry proves dispatch only; progress requires
+later diff/commit/handover evidence.
