@@ -29,13 +29,17 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
         store.finish(claimed["consumer_id"], "contained", {"status": error}, current)
         return _result(error, success=False)
     preview = claimed["preview_payload"]
-    media = [_execution_asset(item) for item in preview["selected_media"]]
+    selected_media = preview["selected_media"]
+    text_only = selected_media == {"mode": "text_only"}
+    media = [] if text_only else [_execution_asset(item) for item in selected_media]
     payload = {
         "publish_packet_id": preview["packet_id"],
         "channel": "facebook_organic", "campaign_lane": "live_stock_awareness",
         "objective": "farm_awareness", "exact_text": preview["exact_post_copy"],
-        "selected_assets": media, "selected_asset": media[0],
-        "asset_id": media[0]["asset_id"], "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "selected_assets": media, "selected_asset": media[0] if media else {},
+        "asset_id": media[0]["asset_id"] if media else "",
+        "target_page_id": preview["target_page_id"],
+        "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
         "zero_spend": True, "protected_campaign_claim_token": claimed["callback_token"],
         "protected_campaign_digest": preview["campaign_digest"],
         "recorded_by": "beacon_protected_publication_worker",
@@ -89,25 +93,33 @@ def validate_claimed_approval(claim, *, now=None):
         return "protected_campaign_expiry_invalid"
     if expires <= (now or datetime.now(timezone.utc)):
         return "protected_campaign_approval_expired"
+    if not str(preview.get("target_page_id") or "").strip():
+        return "protected_campaign_target_page_required"
     media = preview.get("selected_media")
-    if not isinstance(media, list) or not media:
-        return "protected_campaign_exact_media_required"
-    for item in media:
-        if not isinstance(item, dict) or item.get("public_use_authority") != "approved":
-            return "protected_campaign_media_authority_revoked"
-        if not all(str(item.get(key) or "").strip() for key in (
-                "asset_id", "content_sha256", "storage_readback_proof_id",
-                "library_accept_event_id", "public_use_event_id", "litter_id", "event_id")):
-            return "protected_campaign_media_evidence_incomplete"
+    text_only = media == {"mode": "text_only"}
+    if not text_only:
+        if not isinstance(media, list) or not media:
+            return "protected_campaign_exact_media_required"
+        for item in media:
+            if not isinstance(item, dict) or item.get("public_use_authority") != "approved":
+                return "protected_campaign_media_authority_revoked"
+            if not all(str(item.get(key) or "").strip() for key in (
+                    "asset_id", "content_sha256", "storage_readback_proof_id",
+                    "library_accept_event_id", "public_use_event_id", "litter_id", "event_id")):
+                return "protected_campaign_media_evidence_incomplete"
     story = preview.get("story_context") if isinstance(preview.get("story_context"), dict) else {}
     sow_name = str(story.get("sow_name") or "").strip()
     litter_id = str(story.get("litter_id") or "").strip()
     caption = str(preview.get("exact_post_copy") or "")
-    if not sow_name or sow_name not in caption or (litter_id and litter_id.casefold() in caption.casefold()):
-        return "protected_campaign_public_sow_identity_failed"
-    if any(str(item.get("litter_id") or "") != litter_id or
-           str(item.get("event_id") or "") != str(story.get("event_id") or "") for item in media):
-        return "protected_campaign_litter_media_binding_failed"
+    if not text_only:
+        if not sow_name or sow_name not in caption or (litter_id and litter_id.casefold() in caption.casefold()):
+            return "protected_campaign_public_sow_identity_failed"
+        if any(str(item.get("litter_id") or "") != litter_id or
+               str(item.get("event_id") or "") != str(story.get("event_id") or "") for item in media):
+            return "protected_campaign_litter_media_binding_failed"
+    elif (preview.get("media_evidence_exception") !=
+            "Explicit text-only publication; no media is selected or implied."):
+        return "protected_campaign_text_only_boundary_invalid"
     if __import__("re").search(
             r"\b(follow\s+(?:along|us)|volg\s+(?:saam|ons)|contact|kontak|message|boodskap|dm|"
             r"come\s+(?:see|visit)|visit|share|read\s+more|learn\s+more|see\s+more|check\s+out|click|tap|watch|subscribe|"

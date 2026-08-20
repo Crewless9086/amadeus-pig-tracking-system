@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -104,6 +105,8 @@ def build_protected_campaign_package(packet, *, now=None):
             raise ValueError("beacon_campaign_public_media_authority_incomplete")
     litter_media = packet.get("litter_media_selection") if isinstance(
         packet.get("litter_media_selection"), list) else []
+    text_only = (packet.get("packet_type") == "live_stock_awareness_proposal"
+        and media.get("status") == "text_only")
     if litter_media:
         story = ((packet.get("sale_stock_evidence") or {}).get("story_context")
             if isinstance(packet.get("sale_stock_evidence"), Mapping) else None)
@@ -137,38 +140,53 @@ def build_protected_campaign_package(packet, *, now=None):
     exact_copy = str(packet.get("draft_caption") or packet.get("recommended_copy") or "").strip()
     if not exact_copy:
         raise ValueError("beacon_campaign_exact_copy_required")
-    objective = str(packet.get("campaign_objective") or "").strip()
+    objective = str(packet.get("campaign_objective") or
+        ("farm_awareness" if text_only else "")).strip()
     cta = str(packet.get("call_to_action") or "").strip()
     stock = packet.get("sale_stock_evidence") if isinstance(
         packet.get("sale_stock_evidence"), Mapping) else {}
     sam = packet.get("sam_response_contract") if isinstance(
         packet.get("sam_response_contract"), Mapping) else {}
-    if objective != "farm_awareness" or packet.get("campaign_lane") != "live_stock_awareness":
+    campaign_lane = packet.get("campaign_lane") or (
+        "live_stock_awareness" if text_only else "")
+    if objective != "farm_awareness" or campaign_lane != "live_stock_awareness":
         raise ValueError("beacon_campaign_awareness_objective_required")
     if cta:
         raise ValueError("beacon_campaign_awareness_cta_prohibited")
-    if not litter_media:
+    if not litter_media and not text_only:
         raise ValueError("beacon_campaign_exact_litter_media_required")
-    story = stock.get("story_context") if isinstance(stock.get("story_context"), Mapping) else {}
-    sow_name = str(story.get("sow_name") or "").strip()
-    if not sow_name or str(story.get("litter_id") or "") in exact_copy:
-        raise ValueError("beacon_campaign_public_sow_identity_required")
-    if sow_name not in exact_copy:
-        raise ValueError("beacon_campaign_public_sow_name_missing")
-    if (stock.get("source") != "beacon_opportunity_scanner"
-            or not stock.get("fresh")
-            or not stock.get("card_id") or not stock.get("observed_at")):
-        raise ValueError("beacon_campaign_canonical_sale_stock_required")
-    if (sam.get("lane") != "live_stock_sales"
-            or not sam.get("campaign_attribution_required")
-            or sam.get("inbound_only") is not True):
-        raise ValueError("beacon_campaign_sam_response_contract_required")
+    if text_only:
+        capacity = packet.get("capacity_context") if isinstance(
+            packet.get("capacity_context"), Mapping) else {}
+        if capacity.get("sale_availability_inferred") is not False:
+            raise ValueError("beacon_campaign_text_only_non_availability_required")
+        stock = {"source": "beacon_opportunity_scanner", **dict(capacity),
+            "claim_boundary": "Awareness only; no stock, availability, price or fulfilment claim."}
+        if not str(packet.get("sam_routing") or "").strip():
+            raise ValueError("beacon_campaign_sam_response_contract_required")
+        sam = {"lane": "live_stock_sales", "campaign_attribution_required": True,
+            "inbound_only": True, "authority_boundary": str(packet["sam_routing"])}
+    else:
+        story = stock.get("story_context") if isinstance(stock.get("story_context"), Mapping) else {}
+        sow_name = str(story.get("sow_name") or "").strip()
+        if not sow_name or str(story.get("litter_id") or "") in exact_copy:
+            raise ValueError("beacon_campaign_public_sow_identity_required")
+        if sow_name not in exact_copy:
+            raise ValueError("beacon_campaign_public_sow_name_missing")
+        if (stock.get("source") != "beacon_opportunity_scanner"
+                or not stock.get("fresh") or not stock.get("card_id") or not stock.get("observed_at")):
+            raise ValueError("beacon_campaign_canonical_sale_stock_required")
+        if (sam.get("lane") != "live_stock_sales"
+                or not sam.get("campaign_attribution_required")
+                or sam.get("inbound_only") is not True):
+            raise ValueError("beacon_campaign_sam_response_contract_required")
     envelope = {
         "contract_version": "beacon_protected_facebook_campaign_package_v1",
         "delivery_due_policy": "same_cycle_on_new_or_changed_evidence",
         "source_packet_id": packet["packet_id"], "exact_post_copy": exact_copy,
         "selected_approved_media": exact_media,
-        "media_evidence_exception": str(packet.get("precise_media_request") or ""),
+        "media_evidence_exception": ("Explicit text-only publication; no media is selected or implied."
+            if text_only else str(packet.get("precise_media_request") or "")),
         "audience": str(packet.get("audience") or "Local people interested in responsible livestock and farm life"),
         "location": "Riversdale and Albertinia, Western Cape, South Africa",
         "publication_time": publication.isoformat(), "publication_timezone": "Africa/Johannesburg",
@@ -632,7 +650,8 @@ def select_litter_story_media(payload, *, litter_id, pig_ids, event_id):
 
 
 def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
-        provider_message_id, packet_generation, claim_creator=create_claim):
+        provider_message_id, packet_generation, target_page_id=None,
+        claim_creator=create_claim):
     """Create the compact Telegram card and its exact single-use decision claim."""
     campaign = packet.get("protected_campaign_package") if isinstance(packet, Mapping) else None
     if not isinstance(campaign, Mapping):
@@ -644,6 +663,7 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
         "contract_version": "beacon_campaign_owner_card_v1",
         "packet_id": str(packet.get("packet_id") or ""),
         "packet_generation": str(packet_generation or ""),
+        "target_page_id": str(target_page_id or os.getenv("BEACON_FACEBOOK_PAGE_ID") or "").strip(),
         "exact_post_copy": str(campaign.get("exact_post_copy") or ""),
         "selected_media": media,
         "media_evidence_exception": str(campaign.get("media_evidence_exception") or ""),
@@ -663,6 +683,8 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
     }
     if not preview["packet_generation"]:
         raise ValueError("beacon_campaign_packet_generation_required")
+    if not preview["target_page_id"]:
+        raise ValueError("beacon_campaign_target_page_required")
     preview["campaign_digest"] = canonical_preview_digest(CAMPAIGN_REVIEW_ACTION, preview)
     claim = claim_creator(action_kind=CAMPAIGN_REVIEW_ACTION,
         owner_user_id=str(owner_user_id), private_chat_id=str(private_chat_id),
