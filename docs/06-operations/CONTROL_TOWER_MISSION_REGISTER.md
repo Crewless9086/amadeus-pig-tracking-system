@@ -252,6 +252,32 @@ supervisor and exact rollback. Activation, Task Scheduler operation, runtime
 start, deployment, dispatch and every business/provider/farm/hardware effect
 remain prohibited.
 
+The CORE staging terminal and ROOTLINE acceptance observer subsequently closed
+normally. CORE consumed validation identity `a2c6f4b9...` exactly once under
+staging lane `581ee9ccd81b4e25bbf9403a49fa6e49` and staged exact source
+`3961411236fca3329abaac2d34cfb863167c1c73`. Independent durable readback proves
+runtime, execution and manifest equality; successful result SHA-256
+`83ad74e23e5b23b1f580aa38f48b8725f78431fa00c52a5c0422230b405e6927`;
+rollback SHA-256
+`4f455727c20c24fd98c93ddbc582ad48110ddba1148614613e4c57161c95adb9`;
+governed stop present; staging and activation locks absent; exact CORE watchdog
+task disabled; supervisor/runner not started; release lane free. Lifecycle is
+`OWNER_HOLD / EXACT_CURRENT_STAGED / OBSERVE_ONLY_ACTIVATION_AUTHORITY_REQUIRED`.
+CORE remains not alive and no business, provider, farm or hardware effect
+occurred.
+
+ROOTLINE's bounded observer proved that the deployed general-manager runtime
+continued independently on exact `39614112`. Canonical C Camp hierarchy is 2/2
+segments completed, 7,198 verified seconds and verified shutdown; physical
+flow/volume remains `Unknown`, so no physical-delivery overclaim is made. B Camp
+created no fresh execution identity and missed its recorded 18:45:57 SAST due
+cycle. The deployed runtime owns retry with zero owner interaction; the terminal
+made no trigger, claim, message, provider control or hardware effect. Lifecycle
+remains `EXTERNAL_HOLD / DEPLOYED_RUNTIME_RETRY_OWNS_NEXT_TRIGGER`, not Business
+completion. The next genuine cycle must either create governed B execution or
+record one exact truthful blocker; process, deployment and historical C evidence
+cannot substitute that outcome.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
