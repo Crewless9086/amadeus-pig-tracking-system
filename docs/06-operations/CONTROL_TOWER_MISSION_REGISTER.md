@@ -2,6 +2,53 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-20 - ROOTLINE fertilizer Mixer commissioning-readiness boundary
+
+The existing Slot 2 ROOTLINE device-spine worktree reconciled current
+authoritative main `52f9d8bb` without creating another mission, worktree,
+scheduler, ledger or device rail. The pre-existing dirty register chronology was
+classified as unique Control Tower evidence, preserved in commit `202a842e` and
+an independent matching-SHA backup, then reconciled append-only in merge
+`70c16bf3`. Focused device-spine, fertilizer, protected-Mixer and provider-read
+tests passed `70`, with four disposable-PostgreSQL tests skipped because the
+test dependency was unavailable. Zero provider-control, hardware, Telegram,
+farm-data or configuration action occurred.
+
+The exact Mixer source binding remains provider `ifttt_ewelink`, owner-account
+binding `ewelink_owner_account`, SONOFF 4CH Pro R3 `100204d497` / `Controller
+(1) Right`, channel 2 `Kunsmis Meng`, events `controller_1_ch2_on` and
+`controller_1_ch2_off`, safe state OFF, one-shot state-setting ON, bounded
+repeatable state-setting OFF, no ambiguous ON retry, and a proposed 300-second
+native auto-OFF. The current terminal has no database/eWeLink credential
+environment, so fresh provider state, online state, exact current 300-second
+auto-OFF, all outputs OFF, restoration OFF, timers/scenes/interlock state,
+active claim/execution history and canonical device-registry generation remain
+`Unknown`. The dated 16 August online/OFF/300-second receipt remains historical
+evidence only and is not commissioning authority.
+
+The reusable source rail is collision-free with the active observe-only CORE
+activation, which owns separate CHARLIE/Task Scheduler surfaces. PR #1127 is
+open, conflicting and frozen; it overlaps shared Oom Sakkie routes/attention/UI
+presentation but not the ROOTLINE registry, readback, device spine, protected
+Mixer executor or focused tests. No shared PR #1127 surface was edited. Source
+review found no new collision-free defect requiring repair in this bounded
+readiness pass.
+
+Lifecycle: `OWNER_HOLD / EXACT_PROTECTED_MIXER_COMMISSIONING_DECISION_NOT_YET_ISSUED`.
+The deployed Oom Sakkie/ROOTLINE runtime must first obtain a fresh read-only
+provider/canonical safety packet and create one new five-minute digest-bound
+owner/private-chat `Confirm / Cancel` Mixer preview with zero commands. Charl's
+single irreducible action is to be physically at the fertilizer tank/controller
+with manual stop access, observe normal tank recirculation and expected pump
+behaviour during the bounded attempt, confirm CH1 and unrelated outputs remain
+OFF, and observe pump/recirculation stop at or before 300 seconds. The first ON
+requires a separate exact protected confirmation of that fresh preview; presence
+alone grants no command authority. Injection and borehole stay disabled and
+uncommissioned. Any stale/ambiguous readback, claim conflict, changed digest,
+wrong actor/chat, replay, unavailable native fail-stop or unverified shutdown
+fails closed; ON is never retried, while exact CH2 OFF remains the deterministic
+rollback and may repeat only until authoritative OFF is proven.
+
 ## 2026-08-19 - ROOTLINE Slot 2 protected production-evidence boundary
 
 PRs #1106 and #1108 are merged on authoritative main `70baac05`. The retained
