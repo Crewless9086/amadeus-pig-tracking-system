@@ -144,17 +144,55 @@ def _herdmaster(now):
     from modules.oom_sakkie.farm_manager_runtime import _load_herdmaster
     result = _load_herdmaster(None, owner, now)
     candidates = []
+    from modules.pig_weights.pig_welfare_case_runtime import (
+        load_open_welfare_attention_cases,
+        project_welfare_case_attention,
+        welfare_case_runtime_enabled,
+    )
+    if welfare_case_runtime_enabled():
+        for welfare in load_open_welfare_attention_cases():
+            projected = project_welfare_case_attention(welfare)
+            case_id = projected["case_identity"]
+            pig_label = _welfare_animal_label(welfare)
+            observed = str(welfare.get("welfare_case_observed_at") or now.isoformat())
+            due = _time(welfare.get("welfare_case_next_check_at"), now)
+            state = str(welfare.get("welfare_case_state") or "open")
+            escalation = str(welfare.get("welfare_case_escalation_reason") or "").strip()
+            action = ("Physically weigh now and record the weight through the governed rail."
+                      if projected["task_class"] == "physical_action_due"
+                      else "HERDMASTER retains the case and must reconcile current canonical welfare, lifecycle and status evidence at the next check.")
+            candidates.append(_candidate(
+                f"herdmaster:welfare:{case_id}", "HERDMASTER",
+                str(welfare.get("welfare_case_urgency") or "due"),
+                [f"welfare_case:{case_id}", f"pig:{welfare.get('pig_id')}",
+                 f"case_state:{state}", f"observed:{observed}",
+                 "attention:welfare_priority"],
+                ([] if projected["task_class"] == "physical_action_due"
+                 else ["current_welfare_and_lifecycle_status"]),
+                f"{pig_label} has an active {state} welfare case"
+                + (f": {escalation}" if escalation else "."),
+                action, due, task_class=projected["task_class"], welfare_priority=True))
     for item in tuple(getattr(result, "work_items", ()) or ()):
+        metadata = getattr(item, "metadata", {}) or {}
+        welfare_priority = bool(metadata.get("welfare_exception")
+                                or metadata.get("mortality_packet"))
         unknowns = [item.genuine_question] if str(item.genuine_question or "").strip() else []
         due = item.due_at or now
         urgency = {"urgent": "urgent", "due_today": "due", "planned": "planned",
                    "waiting_for_evidence": "urgent", "protected_owner_decision": "due"}.get(item.state.value, "watch")
+        task_class = ("protected_decision" if item.state.value == "protected_owner_decision"
+                      else ("status_reconciliation" if unknowns or item.state.value == "waiting_for_evidence"
+                      else ("physical_action_due" if any(term in item.next_action.casefold()
+                            for term in ("record weight", "weigh now", "physical weighing"))
+                            else "informational_watch")))
         candidates.append(_candidate(
             "herdmaster:" + str(item.dedupe_key), "HERDMASTER", urgency,
             [f"result:{result.result_id}",
              f"observed:{item.provenance.observed_at.isoformat()}",
+             *(["attention:welfare_priority"] if welfare_priority else []),
              *item.provenance.source_refs], unknowns,
-            item.title + ": " + item.why, item.next_action, due))
+            item.title + ": " + item.why, item.next_action, due,
+            task_class=task_class, welfare_priority=welfare_priority))
     from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
     snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
@@ -187,18 +225,28 @@ def _herdmaster(now):
                 ([] if wean != "unknown" else ["current_litter_weaning_due_date"]),
                 f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}.",
                 "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.",
-                now + timedelta(minutes=30)))
+                now + timedelta(minutes=30),
+                task_class=("informational_watch" if wean != "unknown"
+                            else "status_reconciliation")))
     return candidates
 
 
 def _sam(now):
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
-            cur.execute("""select review_event_id,created_at,decision_json
-                from public.sam_live_stock_conversation_review_events
-                where event_source='sam_live_stock_direct_inbound'
-                  and created_at>=%s
-                order by created_at desc,review_event_id desc limit 50""", (now - timedelta(days=7),))
+            cur.execute("""select review_event_id,created_at,decision_json from (
+                    select distinct on (decision_json->'inbound'->>'conversation_id')
+                        review_event_id,created_at,decision_json
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='sam_live_stock_direct_inbound'
+                      and coalesce(decision_json->'inbound'->>'conversation_id','')<>''
+                    order by decision_json->'inbound'->>'conversation_id',
+                             created_at desc,review_event_id desc
+                ) latest
+                where coalesce((decision_json->>'customer_send_confirmed')::boolean,false)=false
+                  and coalesce((decision_json->'routine_reply_delivery'->>'sent')::boolean,false)=false
+                  and coalesce((decision_json->>'no_reply_recommended')::boolean,false)=false
+                order by created_at desc,review_event_id desc""")
             rows = cur.fetchall()
     result, seen = [], set()
     for event_id, observed, decision in rows:
@@ -303,15 +351,34 @@ def _runtime(now):
         now + timedelta(minutes=5))]
 
 
-def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_action, next_at):
-    return {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
+def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_action, next_at,
+               *, task_class=None, welfare_priority=False):
+    result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
+    if task_class:
+        result["task_class"] = task_class
+    if welfare_priority:
+        result["welfare_priority"] = True
+    return result
 
 
 def _configured_owner():
     values = [part.strip() for part in str(os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",") if part.strip()]
     return values[0] if values else ""
+
+
+def _welfare_animal_label(row):
+    provenance = row.get("welfare_case_provenance") or {}
+    context = provenance.get("intake_context") if isinstance(provenance, dict) else {}
+    preview = context.get("preview") if isinstance(context, dict) else {}
+    evaluator = preview.get("evaluator") if isinstance(preview, dict) else {}
+    identity = evaluator.get("identity") if isinstance(evaluator, dict) else {}
+    for key in ("display_name", "name", "tag_number"):
+        value = str(identity.get(key) or "").strip() if isinstance(identity, dict) else ""
+        if value:
+            return value
+    return f"Pig {row.get('pig_id') or 'Unknown'}"
 
 
 def _time(value, fallback):

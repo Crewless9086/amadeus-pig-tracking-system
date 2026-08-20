@@ -28,7 +28,7 @@
         <div><span id="status_weather_icon" class="live-icon" aria-hidden="true">◌</span><span><small>Weather</small><strong id="status_weather">Loading</strong></span></div>
         <div><span class="live-icon" aria-hidden="true">◒</span><span><small>Power</small><strong id="status_power">Loading</strong></span></div>
         <div><span class="live-icon" aria-hidden="true">◉</span><span><small>Irrigation</small><strong id="status_irrigation">Loading</strong></span></div>
-        <div><span class="live-icon" aria-hidden="true">!</span><span><small>Attention</small><strong id="status_attention">Checking</strong></span></div>
+        <div><span class="live-icon" aria-hidden="true">!</span><span><small>Attention</small><strong id="status_attention" role="status" aria-live="polite">Checking</strong></span></div>
       </section>
 
       <section class="farm-attention" aria-labelledby="attention_heading">
@@ -36,9 +36,10 @@
           <div><span class="farm-eyebrow">Today</span><h2 id="attention_heading">What needs attention</h2></div>
           <span class="section-state" id="attention_state">Checking the farm</span>
         </div>
-        <div class="attention-list" id="attention_list">
-          <div class="attention-placeholder">Current priorities will appear independently as each farm source responds.</div>
+        <div class="attention-list" id="attention_list" role="list" aria-labelledby="attention_heading">
+          <div class="attention-placeholder" role="listitem">Current priorities will appear independently as each farm source responds.</div>
         </div>
+        <a id="attention_view_all" class="attention-view-all" href="/owner-attention" hidden>View all</a>
       </section>
 
       <section class="operating-grid" aria-label="Farm operating areas">
@@ -102,6 +103,6 @@
       </details>
     </main>
   </div>
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260810-live-connections"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260819-shared-attention-v1"></script>
 </body>
 </html>

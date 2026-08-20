@@ -769,6 +769,13 @@ def sales_conversation_learning_status_handler(_args):
 
 
 def jarvis_daily_command_brief_handler(_args):
+    from modules.oom_sakkie.owner_attention_projection import load_owner_attention_projection
+    try:
+        owner_attention = load_owner_attention_projection()
+    except Exception as exc:
+        owner_attention = {"success": False, "status": "owner_attention_projection_unavailable",
+                           "failure_class": exc.__class__.__name__, "items": [],
+                           "ordered_work_ids": [], "total_count": 0, "hidden_count": 0}
     sections = {
         "farm": farm_operating_brief_handler({}),
         "business": business_growth_brief_handler({}),
@@ -783,7 +790,11 @@ def jarvis_daily_command_brief_handler(_args):
     safety_notes = [
         "Daily command brief is read-only. No specialist was dispatched, no specialist LLM/tool execution ran, no farm data was written, no customer/public output was created, no patch/deploy/Telegram/control action occurred."
     ]
-    links = [{"label": "Oom Sakkie", "href": "/oom-sakkie"}]
+    links = [{"label": "Oom Sakkie", "href": "/oom-sakkie"},
+             {"label": "Owner attention", "href": "/owner-attention"}]
+    attention_failed = not owner_attention.get("success")
+    if attention_failed:
+        stale_warnings.append("Shared owner-attention projection unavailable; no empty state was inferred.")
     for label, section in sections.items():
         if not section.get("success") and not _daily_optional_section_unavailable(label, section):
             stale_warnings.append(f"Daily command brief section unavailable or partial: {label}.")
@@ -804,6 +815,8 @@ def jarvis_daily_command_brief_handler(_args):
         name for name, section in sections.items()
         if not section.get("success") and not _daily_optional_section_unavailable(name, section)
     ]
+    if attention_failed:
+        failed.append("owner_attention")
     status = "partial" if failed else "ok"
     next_actions = _daily_command_next_actions(sections, failed)
     summary = (
@@ -832,6 +845,7 @@ def jarvis_daily_command_brief_handler(_args):
         "safety_notes": safety_notes[:10],
         "llm_context": {
             "kind": "jarvis_daily_command_brief",
+            "owner_attention": owner_attention,
             "sections": section_context,
             "failed_sections": failed,
             "selected_agent": {
@@ -847,6 +861,7 @@ def jarvis_daily_command_brief_handler(_args):
         },
         "raw": {
             "kind": "jarvis_daily_command_brief",
+            "owner_attention": owner_attention,
             "sections": sections,
             "failed_sections": failed,
         },

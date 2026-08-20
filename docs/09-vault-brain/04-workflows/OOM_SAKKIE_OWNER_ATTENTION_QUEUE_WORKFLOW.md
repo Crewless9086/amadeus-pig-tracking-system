@@ -1,6 +1,6 @@
 # Oom Sakkie Owner Attention Queue Workflow
 
-Status: coordination kernel integrated; existing-rail adapter prepared
+Status: coordination kernel integrated; shared read-only projection implemented
 
 ## Outcome
 
@@ -84,6 +84,22 @@ provider, callback-replay or owner-authentication checks.
 No summary/card/alert intent itself authorizes Telegram, customer, Chatwoot,
 farm, commercial or hardware activity.
 
+`modules/oom_sakkie/owner_attention_projection.py` is the single read-only
+channel projection over the existing general-manager specialist collectors.
+It creates no persistence or trigger. The homepage, complete owner-attention
+view, daily Brief and Telegram formatter consume its ordered stable work IDs,
+classification, specialist ownership, provenance/freshness, exact owner action,
+safe detail target and lifecycle. Browser code may display this packet but may
+not add, remove, rank or reclassify owner-attention work.
+
+The owner-attention page and API require the strict authenticated owner-read
+guard even when compatibility owner access is otherwise disabled. The API
+returns only the current presentation packet; resolved lifecycle history and
+raw provenance remain internal. Projection failure must be shown as unavailable
+in the homepage, Brief and Telegram rather than inferred as an empty queue.
+Completing a welfare intake observation does not close its welfare case; only an
+explicit authoritative recovery, death or resolution transition may do that.
+
 ## Existing-rail adapter
 
 `modules/oom_sakkie/owner_attention_adapter.py` projects current SAM inbox
@@ -107,6 +123,14 @@ specialist lifecycle against canonical animal state. Dead, Sold or off-farm
 animals retire stale active projections. Historical lifecycle and provider
 chronology remain immutable audit evidence, but no completed/superseded task
 may reappear as current owner work.
+
+When the separately migration-gated welfare-case runtime is enabled, its open,
+monitoring and escalated case identities feed this same manager collector and
+projection. They do not create a welfare queue or channel-specific ledger.
+Escalation alone remains status reconciliation; only explicit specialist
+evidence that a physical weighing is due may create `physical_action_due`.
+Silence, elapsed time or a collector outage cannot close or hide an active
+welfare case.
 
 ## Actionable daily-manager continuation
 

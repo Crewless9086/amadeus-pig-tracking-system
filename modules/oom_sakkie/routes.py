@@ -8,6 +8,7 @@ from modules.auth.owner_access import (
     owner_session_is_valid,
     require_owner_admin_access,
     require_owner_read_access,
+    require_strict_owner_read_access,
     require_strict_owner_admin_access,
 )
 from modules.oom_sakkie.sam_payment_owner_runtime import present_sale_payment_preview
@@ -130,6 +131,7 @@ from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_c
 from modules.oom_sakkie.general_manager_worker import (
     deliver_farm_manager_case, run_general_manager_cycle,
 )
+from modules.oom_sakkie.owner_attention_projection import load_owner_attention_projection
 from modules.oom_sakkie.rootline_physical_acceptance import attach_physical_acceptance
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -158,6 +160,25 @@ SAM_MEAT_INTAKE_REMOTE_MIN_TOKEN_CHARS = 32
 MEAT_FOLLOWUP_SEND_ENABLED_ENV = "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED"
 MEAT_FOLLOWUP_SEND_TOKEN_ENV = "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_TOKEN"
 MEAT_FOLLOWUP_SEND_MIN_TOKEN_CHARS = 32
+
+
+@oom_sakkie_bp.route("/oom-sakkie/owner-attention", methods=["GET"])
+def oom_sakkie_owner_attention_projection():
+    denied = require_strict_owner_read_access()
+    if denied:
+        return denied
+    try:
+        projection = load_owner_attention_projection()
+        projection.pop("lifecycle_items", None)
+        return jsonify(projection), 200
+    except Exception as exc:
+        return jsonify({
+            "success": False,
+            "status": "owner_attention_projection_unavailable",
+            "message": "The shared attention projection is temporarily unavailable.",
+            "failure_class": exc.__class__.__name__,
+            "writes_performed": 0,
+        }), 503
 
 
 def _require_review_access():

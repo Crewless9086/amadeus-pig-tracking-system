@@ -52,6 +52,17 @@ class OwnerAccessTests(unittest.TestCase):
             response = self.client.get("/sales/meat-leads", environ_base={"REMOTE_ADDR": "203.0.113.10"})
         self.assertEqual(response.status_code, 200)
 
+    def test_owner_attention_stays_strict_when_compatibility_access_is_disabled(self):
+        strict_env = owner_env(OWNER_ACCESS_ENABLED="0", OWNER_ACCESS_ALLOW_LOCAL_DEV="0")
+        with patch.dict(os.environ, strict_env, clear=False):
+            self._configure()
+            page = self.client.get("/owner-attention", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+            api = self.client.get("/api/oom-sakkie/owner-attention",
+                                  environ_base={"REMOTE_ADDR": "203.0.113.10"})
+        self.assertEqual(page.status_code, 403)
+        self.assertEqual(api.status_code, 403)
+        self.assertEqual(api.get_json()["status"], "owner_read_access_denied")
+
     def test_remote_protected_page_redirects_without_session_when_enabled(self):
         with patch.dict(os.environ, owner_env(), clear=False):
             self._configure()

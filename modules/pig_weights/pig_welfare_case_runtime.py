@@ -71,6 +71,40 @@ def load_open_welfare_case_contexts(chat_id: str, owner_user_id: str, *, connect
     return result
 
 
+def load_open_welfare_attention_cases(*, connect_factory=None):
+    """Load every current welfare case for the shared manager projection.
+
+    This read-only specialist adapter has no channel cutoff: an authenticated
+    owner-attention view must not lose active work created through another
+    supported channel.
+    """
+    cm = connect_factory() if connect_factory else _connect()
+    with cm as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """
+            select current.welfare_case_id,current.pig_id,current.case_state,
+                   current.urgency,current.responsible_owner,current.next_check_at,
+                   current.escalation_reason,current.state_occurred_at,
+                   event.provenance_json
+            from public.pig_welfare_case_current current
+            join public.pig_welfare_case_events event
+              on event.welfare_case_event_id=current.welfare_case_event_id
+            where current.case_state = any(%s)
+            order by current.state_occurred_at desc,current.welfare_case_id
+            """,
+            (list(OPEN_STATES),),
+        )
+        rows = cursor.fetchall()
+    return [{"welfare_case_id": str(row[0]), "pig_id": str(row[1]),
+             "welfare_case_state": str(row[2]), "welfare_case_urgency": str(row[3]),
+             "welfare_case_owner": str(row[4]),
+             "welfare_case_next_check_at": row[5].isoformat() if row[5] else None,
+             "welfare_case_escalation_reason": row[6],
+             "welfare_case_observed_at": row[7].isoformat(),
+             "welfare_case_provenance": row[8] or {}}
+            for row in rows]
+
+
 def append_welfare_case_context(lifecycle: Mapping[str, Any], *, connect_factory=None):
     """Open or append one case event, exactly once per provider generation."""
     preview = lifecycle.get("preview") if isinstance(lifecycle.get("preview"), Mapping) else {}
@@ -129,10 +163,10 @@ def append_welfare_case_context(lifecycle: Mapping[str, Any], *, connect_factory
             if current and str(current[0]) == "closed":
                 return {"success": True, "status": "welfare_case_already_closed",
                         "welfare_case_id": case_id, "rows_created": 0}
-            lifecycle_status = str(lifecycle.get("status") or "")
-            terminal = lifecycle_status == "completed" or str(lifecycle.get("event_phase") or "") == "preview_declined"
-            case_state = "closed" if terminal else ("open" if urgency in ("critical", "urgent") else "monitoring")
-            event_type = "opened" if not current else ("closed" if terminal else "evidence_added")
+            # Intake completion means the observation was captured, not that
+            # the underlying welfare concern recovered or was resolved.
+            case_state = "open" if urgency in ("critical", "urgent") else "monitoring"
+            event_type = "opened" if not current else "evidence_added"
             cursor.execute(
                 """insert into public.pig_welfare_case_events(
                 welfare_case_event_id,welfare_case_id,event_type,case_state,urgency,
@@ -142,9 +176,7 @@ def append_welfare_case_context(lifecycle: Mapping[str, Any], *, connect_factory
                 values(%s,%s,%s,%s,%s,'HERDMASTER',%s::timestamptz,%s,%s,
                        %s::timestamptz,%s,'oom_sakkie',%s,%s::jsonb,%s)""",
                 (event_id,case_id,event_type,case_state,urgency,
-                 None if terminal else next_check,
-                 "resolved" if terminal else None,
-                 "intake lifecycle completed" if terminal else None,
+                 next_check, None, None,
                  occurred,"owner:" + str(lifecycle.get("owner_user_id") or ""),
                  provider_id,provenance,event_key),
             )
@@ -157,12 +189,24 @@ def append_welfare_case_context(lifecycle: Mapping[str, Any], *, connect_factory
 def project_welfare_case_attention(row: Mapping[str, Any]) -> dict[str, Any]:
     """Project the same case identity into the existing shared-attention contract."""
     case_id = str(row.get("welfare_case_id") or "")
+    task_class = "physical_action_due" if _explicit_physical_weighing(row) else "status_reconciliation"
     return {"work_identity": case_id, "case_identity": case_id,
             "category": "pig_welfare", "specialist_owner": "HERDMASTER",
-            "task_class": "physical_action_due" if row.get("welfare_case_state") == "escalated" else "status_reconciliation",
+            "task_class": task_class,
             "lifecycle_state": "open", "priority": str(row.get("welfare_case_urgency") or "due"),
             "next_check_at": row.get("welfare_case_next_check_at"),
             "evidence_provenance": {"source": "pig_welfare_case_current", "welfare_case_id": case_id}}
+
+
+def _explicit_physical_weighing(row: Mapping[str, Any]) -> bool:
+    """Require explicit specialist evidence before assigning physical weighing."""
+    provenance = row.get("welfare_case_provenance")
+    context = provenance.get("intake_context") if isinstance(provenance, Mapping) else {}
+    preview = context.get("preview") if isinstance(context, Mapping) else {}
+    evaluator = preview.get("evaluator") if isinstance(preview, Mapping) else {}
+    immediate = evaluator.get("immediate_welfare_priority") if isinstance(evaluator, Mapping) else {}
+    evidence = str(immediate.get("action") or "").casefold() if isinstance(immediate, Mapping) else ""
+    return evidence.startswith(("weigh now", "physical weighing due", "record weight now"))
 
 
 def welfare_case_readiness(*, connect_factory=None):

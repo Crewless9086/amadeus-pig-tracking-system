@@ -7521,7 +7521,9 @@ def literal_false_is_allowed():
 
         with patch("modules.oom_sakkie.tools.farm_operating_brief_handler") as farm, \
                 patch("modules.oom_sakkie.tools.business_growth_brief_handler") as business, \
-                patch("modules.oom_sakkie.tools.agent_command_center_handler") as command:
+                patch("modules.oom_sakkie.tools.agent_command_center_handler") as command, \
+                patch("modules.oom_sakkie.owner_attention_projection.load_owner_attention_projection",
+                      return_value={"success": True, "items": [], "top_items": [], "hidden_count": 0}):
             farm.return_value = {
                 "success": True,
                 "status": "ok",
@@ -7589,7 +7591,9 @@ def literal_false_is_allowed():
 
         with patch("modules.oom_sakkie.tools.farm_operating_brief_handler") as farm, \
                 patch("modules.oom_sakkie.tools.business_growth_brief_handler") as business, \
-                patch("modules.oom_sakkie.tools.agent_command_center_handler") as command:
+                patch("modules.oom_sakkie.tools.agent_command_center_handler") as command, \
+                patch("modules.oom_sakkie.owner_attention_projection.load_owner_attention_projection",
+                      return_value={"success": True, "items": [], "top_items": [], "hidden_count": 0}):
             farm.return_value = {
                 "success": True, "status": "ok", "summary": "Farm steady.",
                 "links": [], "stale_warnings": [], "safety_notes": [], "llm_context": {}, "raw": {},
@@ -7610,6 +7614,22 @@ def literal_false_is_allowed():
         self.assertEqual(result["llm_context"]["failed_sections"], ["business"])
         self.assertIn("Daily command brief section unavailable or partial: business.", result["stale_warnings"])
         self.assertIn("Sheets unavailable.", result["stale_warnings"])
+
+    def test_jarvis_daily_command_brief_fails_visible_when_attention_unavailable(self):
+        from modules.oom_sakkie.tools import jarvis_daily_command_brief_handler
+
+        section = {"success": True, "status": "ok", "summary": "Steady.", "links": [],
+                   "stale_warnings": [], "safety_notes": [], "llm_context": {}, "raw": {}}
+        with patch("modules.oom_sakkie.owner_attention_projection.load_owner_attention_projection",
+                   side_effect=RuntimeError("read unavailable")), \
+                patch("modules.oom_sakkie.tools.farm_operating_brief_handler", return_value=section), \
+                patch("modules.oom_sakkie.tools.business_growth_brief_handler", return_value=section), \
+                patch("modules.oom_sakkie.tools.agent_command_center_handler", return_value=section):
+            result = jarvis_daily_command_brief_handler({})
+
+        self.assertFalse(result["success"])
+        self.assertIn("owner_attention", result["llm_context"]["failed_sections"])
+        self.assertIn("no empty state was inferred", " ".join(result["stale_warnings"]))
 
     def test_unsupported_action_guard_identifies_write_or_control_phrases(self):
         self.assertTrue(is_unsupported_action_request("delete that pig record"))
