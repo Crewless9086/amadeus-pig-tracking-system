@@ -4,6 +4,32 @@ Status: Active owner-facing dispatch authority
 
 ## 2026-08-20 - Four-day operational reality reset
 
+### Protected ROOTLINE release and CORE staging approvals
+
+Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
+`b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
+provider-origin zero-control-call readiness observation. Control Tower rechecked
+the exact head, clean mergeability and all three successful hosted CI lanes,
+then merged it normally at `2026-08-20T12:30:25Z` as authoritative main
+`572d078357087041d6271558f189bec4e0414ba8`. A fresh clean visible audit terminal
+was launched from that exact main to verify loaded deployment and observe the
+existing five-minute manager worker. Fresh Node PID `33872` and Codex PID `38104`
+prove launch only. It has no hardware, commissioning, Telegram, credential or
+farm-write authority and may not manually invoke the worker to manufacture
+acceptance. Lifecycle is `WORKING / MERGED / EXACT_DEPLOYMENT_AND_AUTONOMOUS_ZERO_CONTROL_READINESS_IN_PROGRESS`.
+
+Charl also explicitly approved staging only of exact revision
+`986e13e897d86b22beef67b3074491e7304b37a7` using validation identity
+`abacff9fb6b748aeaf5aa46bcf495bf7` and receipt SHA-256
+`8686cf6ba936616ce15bc771fd4f1b6eeb220ba1dfbf82075c359231a31907ea`,
+with governed stop and rollback preserved and zero activation, Task Scheduler or
+runtime-start authority. Because the authorized ROOTLINE merge advanced main to
+`572d0783` after this receipt was issued, the visible CORE terminal must apply
+the canonical eligibility rule and fail closed if current-main equality is
+required; it may not substitute, revalidate or stage the new main. Fresh Node
+PID `34136` and Codex PID `31956` prove launch only. Lifecycle is `WORKING /
+EXACT_986E13E8_STAGING_ELIGIBILITY_AND_EXECUTION_IN_PROGRESS`.
+
 ### DOCUMENTS governed local-printing next phase
 
 Charl approved governed local printing as a `NEXT_PHASE` of existing Documents
