@@ -3077,3 +3077,20 @@ deployments are enabling milestones only. “All agents fully operational” mus
 be claimed if individual physical/channel commissioning and genuine-event proof
 remain absent; the honest target is the smallest coherent operational farm team
 with explicit capability limits and a durable sequenced remainder.
+
+Owner rejected further source-centric delay and reasserted that irrigation, CORE
+continuity and a real BEACON publication/SAM activation chain are the required
+outcomes. Control Tower immediately dispatched a visible ROOTLINE B Camp live-
+outcome terminal at exact main `2548d99a`, limited to fresh deployed/canonical/
+provider diagnosis and the smallest proven repair. The deployed scheduled ROOTLINE
+actor, not the terminal, must own any actuation under existing B/C standing
+authority. The terminal may not command hardware or manufacture acceptance.
+
+Fresh sweep also found the first CORE startup-evidence terminal had exited leaving
+attributable source changes but no handover. Control Tower resumed that exact
+worktree in a new visible terminal rather than treating closure as completion or
+duplicating the changes. Together with the active Oom Sakkie names-first terminal,
+the three disjoint lanes fill current safe development capacity. BEACON real-post
+preparation is the next dispatch when one lane releases; publication/boost remains
+a genuine protected external effect requiring exact content/channel/spend evidence
+and authority, not another abstract proposal.
