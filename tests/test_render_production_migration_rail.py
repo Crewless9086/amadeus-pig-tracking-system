@@ -21,6 +21,7 @@ DATABASE_URL = os.getenv("RENDER_MIGRATION_TEST_DATABASE_URL", "").strip()
 class RenderProductionMigrationRailTests(unittest.TestCase):
     def test_allowlist_is_ordered_exact_and_checksum_bound(self):
         self.assertEqual([row.filename for row in ALLOWLIST], [
+            "202608190002_create_beacon_protected_publication_consumer.sql",
             "202608200001_add_sales_financial_disposition.sql",
             "202608200002_create_pig_welfare_case_lifecycle.sql",
         ])
@@ -43,21 +44,35 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
     def test_disposable_postgres_apply_replay_and_immutable_receipt(self):
         import psycopg
 
-        database_name = psycopg.connect(DATABASE_URL).info.dbname
+        with psycopg.connect(DATABASE_URL) as connection:
+            database_name = connection.info.dbname
         self.assertEqual(database_name, "render_migration_rail_test",
                          "refusing fixture outside render_migration_rail_test")
         with psycopg.connect(DATABASE_URL, autocommit=True) as db:
+            db.execute("""do $$ begin
+              if not exists (select 1 from pg_roles where rolname='anon') then
+                create role anon;
+              end if;
+              if not exists (select 1 from pg_roles where rolname='authenticated') then
+                create role authenticated;
+              end if;
+            end $$""")
             db.execute("drop schema if exists app_private cascade")
+            db.execute("drop table if exists public.pig_welfare_cases cascade")
             db.execute("drop table if exists public.sales_transactions cascade")
+            db.execute("drop table if exists public.pigs cascade")
             db.execute("create schema app_private")
             db.execute("""create table app_private.migration_log(
               migration_id text primary key,description text not null,
               applied_at timestamptz not null default now())""")
+            db.execute("""create table app_private.oom_protected_action_claims(
+              callback_token text primary key)""")
             db.execute("""create table public.sales_transactions(
               sale_id text primary key,sale_stream text,sale_status text,linked_order_id text,
               gross_total numeric(12,2),deductions_total numeric(12,2),net_total numeric(12,2),
               received_total numeric(12,2),payment_status text,
               payment_received_evidence_json jsonb,payment_evidence_sha256 text)""")
+            db.execute("create table public.pigs(pig_id text primary key)")
         first = run(DATABASE_URL, ENV)
         second = run(DATABASE_URL, ENV)
         self.assertEqual(first["migrations"][0]["outcome"], "applied")
