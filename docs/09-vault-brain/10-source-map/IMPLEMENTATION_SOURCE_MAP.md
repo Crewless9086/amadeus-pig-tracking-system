@@ -29,6 +29,20 @@
 
 ## CMQ-20260813-05 Phase A Shadow Control Tower
 
+- Canonical isolated-validation receipt producer and verifier:
+  `modules/charlie/validation_receipt.py`, with the evidence-only CLI at
+  `scripts/charlie_validation_receipt.py`. Version 2 binds the exact source,
+  hashed suite commands/counts and strict disposable-isolation properties to
+  one HMAC signature. Focused and proportional suite identities are mandatory.
+  Passed and rejected evidence shares one create-once state-root identity;
+  rejected identities cannot enter staging, and staging durably consumes a
+  successful identity before its first source mutation so it cannot be replayed
+  after interruption.
+  `modules/charlie/runtime_staging.py` is the sole staging consumer. Focused
+  signing, schema mutation, source/key binding, rejection and replay coverage:
+  `tests/test_charlie_validation_receipt.py` and
+  `tests/test_charlie_runtime_staging.py`. These source references provision no
+  key and grant no staging, Task Scheduler, activation or deployment authority.
 - Provider-origin activation and authenticated recovery:
   `modules/charlie/runtime_activation.py` and
   `scripts/charlie_runtime_activation.py`. The exact Windows Task Scheduler
