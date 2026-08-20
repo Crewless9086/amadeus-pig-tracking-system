@@ -56,6 +56,10 @@ def test_owner_card_is_compact_nonduplicative_and_has_real_callbacks():
     preview = value["campaign_review_preview"]
     assert preview["packet_id"] and preview["packet_generation"]
     assert preview["campaign_digest"] and preview["stop_conditions"] and preview["rollback"]
+    assert preview["target_page_id"] == "PAGE-1"
+    assert "Facebook Page ID:</b> PAGE-1" in value["answer"]
+    assert "ZAR 0.00 total" in value["answer"] and "0 days; no boost" in value["answer"]
+    assert "no automatic retry" in value["answer"]
 
 
 def test_litter_card_shows_exact_photos_with_only_protected_decision_controls():

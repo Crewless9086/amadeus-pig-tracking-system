@@ -1313,6 +1313,46 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(result["status"], "facebook_publish_packet_already_claimed")
         self.assertEqual(poster_calls, [])
 
+    @patch("modules.sales.beacon_campaign._post_to_facebook_page")
+    def test_protected_stock_neutral_enquiry_claims_once_and_requires_meta_readback(self, post):
+        caption = ("Looking for live pigs? Amadeus Farm handles enquiries for piglets, weaners, "
+            "growers and finishers. Message us with the type, number needed, intended use and your area. "
+            "SAM will check current farm records before discussing any option; no stock, price, "
+            "availability, delivery or reservation is promised.")
+        recorded=[]
+        def authority(_payload, params, _database_url):
+            identity_params={**params,"publication_binding_id":"BIND-1",
+                "owner_decision_event_id":"DECISION-1","authorization_generation_id":"AUTH-1"}
+            return ({"success":True,"binding":{"binding_id":"BIND-1",
+                "owner_decision_event_id":"DECISION-1"},"authorization":{
+                "authorization_generation_id":"AUTH-1",
+                "expected_attempt_identity":_facebook_post_execution_id(identity_params)}},200)
+        def recorder(params, database_url=None):
+            recorded.append(dict(params)); return {"success":True,"created_count":1},201
+        post.return_value=({"success":True,"facebook_post_id":"PAGE-1_9",
+            "uploaded_media_ids":[]},200)
+        readbacks=[]
+        result,status=execute_beacon_facebook_page_post({
+            "campaign_lane":"live_stock_enquiry_capture",
+            "objective":"qualified_livestock_enquiries","publish_packet_id":"PACKET-ENQUIRY",
+            "channel":"facebook_organic","exact_text":caption,"target_page_id":"PAGE-1",
+            "owner_confirmation":"POST EXACT BEACON PACKET","zero_spend":True,
+            "protected_campaign_claim_token":"TOKEN-1","protected_campaign_digest":"DIGEST-1",
+            "attribution_identity":"ATTR-1","sam_boundary":"qualify inbound only",
+        }, database_url="db", execution_recorder=recorder,
+            protected_campaign_authority_reader=authority,
+            meta_readback_reader=lambda post_id,params,**kwargs: (
+                readbacks.append((post_id,params["exact_text"])) or
+                ({"success":True,"status":"meta_readback_confirmed","id":post_id},200)),
+            environ={"BEACON_FACEBOOK_POSTING_ENABLED":"1",
+                "BEACON_FACEBOOK_PAGE_ID":"PAGE-1","BEACON_FACEBOOK_PAGE_ACCESS_TOKEN":"token"})
+        self.assertEqual((status,result["status"]),(200,"facebook_page_post_sent"))
+        self.assertTrue(result["facebook_result"]["provider_readback_confirmed"])
+        self.assertEqual(len(post.call_args_list),1)
+        self.assertEqual(readbacks,[("PAGE-1_9",caption)])
+        self.assertEqual([row["execution_status"] for row in recorded],
+            ["record_only_before_send","facebook_page_post_sent"])
+
     def test_facebook_post_execution_retry_is_blocked_before_meta(self):
         calls = []
         recorded_ids = set()

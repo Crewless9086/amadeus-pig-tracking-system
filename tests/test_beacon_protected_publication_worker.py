@@ -123,6 +123,31 @@ def test_text_only_requires_exact_class_and_target_page_binding():
     assert validate_claimed_approval(item, now=NOW)=="protected_campaign_target_page_required"
 
 
+def test_supported_enquiry_post_preserves_exact_lane_sam_identity_and_zero_spend():
+    caption = ("Looking for live pigs? Amadeus Farm handles enquiries for piglets, weaners, "
+        "growers and finishers. Message us with the type, number needed, intended use and your area. "
+        "SAM will check current farm records before discussing any option; no stock, price, "
+        "availability, delivery or reservation is promised.")
+    item=approval(caption)
+    item["preview_payload"].update({"selected_media":{"mode":"text_only"},
+        "media_evidence_exception":"Explicit text-only publication; no media is selected or implied.",
+        "story_context":{}, "campaign_lane":"live_stock_enquiry_capture",
+        "campaign_objective":"qualified_livestock_enquiries",
+        "sam_boundary":"SAM may qualify inbound only; no commitment."})
+    item["preview_payload"]["campaign_digest"]=canonical_preview_digest(
+        "beacon_campaign_review", {k:v for k,v in item["preview_payload"].items() if k!="campaign_digest"})
+    item["evidence_generation"]=item["preview_payload"]["campaign_digest"]
+    calls=[]
+    result=run_protected_publication_cycle(store=Store(item), executor=lambda payload,**kwargs: (
+        calls.append(payload) or {"success":True,"status":"facebook_page_post_sent",
+        "facebook_post_id":"PAGE-1_8","provider_readback_confirmed":True},200), now=NOW)
+    assert result["consumer_status"] == "confirmed" and len(calls) == 1
+    assert calls[0]["campaign_lane"] == "live_stock_enquiry_capture"
+    assert calls[0]["objective"] == "qualified_livestock_enquiries"
+    assert calls[0]["attribution_identity"] == "ATTR-1"
+    assert calls[0]["selected_assets"] == [] and calls[0]["zero_spend"] is True
+
+
 def test_concurrent_workers_atomically_publish_once():
     class ConcurrentStore(Store):
         def __init__(self, item):
