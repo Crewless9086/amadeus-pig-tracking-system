@@ -510,6 +510,27 @@ and manufactured Prince evidence. Lifecycle is `WORKING /
 PHASE_2_RUNTIME_INTEGRATION_IN_PROGRESS`; process identity is launch evidence
 only.
 
+HERDMASTER welfare Phase 2 completed its serialized recovery and released the
+lane. PR #1134 merged as exact main
+`4b7efb021ccdef3f226ec0433a9f02e0fd134136`; governed Render job
+`job-da3cmgek1f9s73ejvra0` succeeded against service
+`srv-d6sijjkhg0os73f7regg` from `09:39:13Z` to `09:39:33Z`, and public health
+returned HTTP 200. Source and additive schema are deployed, while zero welfare,
+observation, treatment, lifecycle, animal, farm or Telegram business effects were
+created. Hosted `PIG_WELFARE_CASE_RUNTIME_ENABLED` remains Unknown and source is
+fail-closed/off by default. Lifecycle is `EXTERNAL_HOLD /
+DEPLOYED_CAPABILITY_READY / GENUINE_EVENT_ACCEPTANCE_REQUIRED`; the completed
+window was closed.
+
+The serialized lane then passed to the preserved ROOTLINE mixer candidate. Unique
+commit `40e0a54b` and clean reconciliation head `b9cc3e40` were verified before
+launch; the branch was two commits ahead/four behind new main `4b7efb02`. A new
+visible terminal, parent PID 21804, launcher PID 38260 and worker PID 45100, must
+merge current main non-destructively and complete the original mixer-only
+readiness mission. No hardware, provider-control, protected-card, Telegram or farm
+authority is granted. Lifecycle is `WORKING /
+SERIALIZED_ROOTLINE_READINESS_RESUMED`; process identity is launch evidence only.
+
 Fresh terminal reconciliation found three distinct outcomes. CORE source repair
 completed cleanly in PR #1133 at exact head `1a1624ef`, with 121 focused tests,
 41 subtests, Brain Guard, three independent GO reviews and all hosted gates
