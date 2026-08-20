@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import modules.charlie.runtime_activation as runtime_activation
+
 from modules.charlie.runtime_activation import (
     ACTIVATION_VERSION,
     AUTHORITY_VERSION,
@@ -19,6 +21,7 @@ from modules.charlie.runtime_activation import (
     inspect_current_provider_chain,
     plan_activation,
     prepare_activation,
+    read_activation_runtime_evidence,
     reconcile_recovered_activation_stop,
     recover_activation,
     verify_or_recover_activation,
@@ -70,6 +73,7 @@ class Controller:
         self.audit_mutation_attempted = False
         self.audit_enabled = []
         self.audit_restored = []
+        self.instance_state = "running"
 
     def read_audit_channel_state(self):
         return dict(self.audit_state)
@@ -82,6 +86,9 @@ class Controller:
 
     def assert_no_running_instances(self):
         return None
+
+    def read_exact_instance_state(self, _instance_guid):
+        return self.instance_state
 
     def ensure_audit_channel_enabled(self):
         changed = not self.audit_state["enabled"]
@@ -208,17 +215,18 @@ class RuntimeActivationTests(unittest.TestCase):
                                     task_reader=lambda: self.task, git_runner=self.git)
         return plan, controller, result
 
-    def _mark_started(self):
+    def _mark_started(self, packet_status="provider_started_observe_only"):
         packet_path = self.state / "activation-packet.json"
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
         pending_hmac = packet["packet_hmac_sha256"]
-        packet["status"] = "provider_started_observe_only"
-        packet["consumed_packet_hmac_sha256"] = pending_hmac
-        unsigned = {k: v for k, v in packet.items() if k != "packet_hmac_sha256"}
-        packet["packet_hmac_sha256"] = hmac.new(
-            self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256
-        ).hexdigest()
-        packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        if packet_status != "provider_pending":
+            packet["status"] = packet_status
+            packet["consumed_packet_hmac_sha256"] = pending_hmac
+            unsigned = {k: v for k, v in packet.items() if k != "packet_hmac_sha256"}
+            packet["packet_hmac_sha256"] = hmac.new(
+                self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256
+            ).hexdigest()
+            packet_path.write_text(json.dumps(packet), encoding="utf-8")
         consumed = {"version": ACTIVATION_VERSION,
                     "activation_id": packet["activation_id"],
                     "provider_pid": 10, "provider_parent_pid": 20,
@@ -1084,6 +1092,280 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, "activation_verification_failed")
         self.assertTrue(self.stop.exists())
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+
+    def test_verification_waits_through_stale_and_partial_publication(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        ready = {name: True for name in (
+            "loaded_revision_exact", "execution_mode_observe_only",
+            "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+            "activation_id_exact", "unrelated_processes_absent",
+        )}
+        reads = iter([
+            {"publication_status": "stale_publication"},
+            {"publication_status": "activation_bound_startup_in_progress"},
+            {**ready, "publication_status": "activation_bound_ready"},
+        ])
+        ticks = iter([value / 100 for value in range(100)])
+        result = verify_or_recover_activation(
+            state_root=self.state, verification_reader=lambda _packet: next(reads),
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git, readiness_timeout_seconds=1,
+            monotonic_fn=lambda: next(ticks), sleep_fn=lambda _seconds: None,
+        )
+        self.assertEqual(result["status"], "activation_verified")
+        self.assertEqual(controller.disabled, [])
+
+    def test_stale_publication_timeout_contains_without_accepting_old_state(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        ticks = iter([0.0, 0.0, 0.2, 0.2, 0.2, 0.2])
+        with self.assertRaisesRegex(ActivationError, "activation_verification_failed") as caught:
+            verify_or_recover_activation(
+                state_root=self.state,
+                verification_reader=lambda _packet: {
+                    "publication_status": "stale_publication",
+                },
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git, readiness_timeout_seconds=0.1,
+                monotonic_fn=lambda: next(ticks), sleep_fn=lambda _seconds: None,
+            )
+        self.assertEqual(caught.exception.evidence["evidence_status"],
+                         "activation_readiness_timeout")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+
+    def test_provider_exit_during_publication_wait_contains_immediately(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started(packet_status="provider_pending")
+        controller.instance_state = "exited"
+        ticks = iter([0.0, 0.0, 0.1, 0.1, 0.1, 0.1])
+        with self.assertRaisesRegex(ActivationError, "activation_verification_failed") as caught:
+            verify_or_recover_activation(
+                state_root=self.state, verification_reader=lambda _packet: {
+                    "publication_status": "activation_bound_startup_in_progress",
+                },
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git, readiness_timeout_seconds=1,
+                monotonic_fn=lambda: next(ticks), sleep_fn=lambda _seconds: None,
+            )
+        self.assertEqual(caught.exception.evidence["evidence_status"],
+                         "activation_provider_exited_before_publication")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+
+    def test_ambiguous_concurrent_publication_never_waits_or_passes(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        with self.assertRaisesRegex(ActivationError, "activation_verification_failed"):
+            verify_or_recover_activation(
+                state_root=self.state,
+                verification_reader=lambda _packet: {
+                    "publication_status": "activation_evidence_ambiguous",
+                },
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git, readiness_timeout_seconds=5,
+                sleep_fn=lambda _seconds: self.fail("ambiguous evidence must not wait"),
+            )
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+
+    def test_second_verifier_cannot_race_active_readiness_owner(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started(packet_status="provider_pending")
+        marker = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": plan["activation_id"],
+            "status": "activation_readiness_pending",
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "owner_expires_at": (
+                datetime.now(timezone.utc) + timedelta(seconds=30)
+            ).isoformat(),
+        }
+        marker["marker_hmac_sha256"] = hmac.new(
+            self.key,
+            json.dumps(marker, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        (self.state / "activation-verification.lock").write_text(
+            json.dumps(marker), encoding="utf-8",
+        )
+        with runtime_activation._activation_verifier_lock(self.state):
+            with self.assertRaisesRegex(ActivationError,
+                                        "activation_verification_already_active"):
+                verify_or_recover_activation(
+                    state_root=self.state, verification_reader=lambda _packet: {},
+                    task_controller=controller, task_reader=lambda: self.task,
+                    git_runner=self.git,
+                )
+        self.assertEqual(controller.disabled, [])
+        self.assertTrue((self.state / "activation.lock").exists())
+
+    def test_exited_provider_allows_stale_readiness_owner_to_contain(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started(packet_status="provider_pending")
+        controller.instance_state = "exited"
+        marker = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": plan["activation_id"],
+            "status": "activation_readiness_pending",
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "owner_expires_at": (
+                datetime.now(timezone.utc) - timedelta(seconds=1)
+            ).isoformat(),
+        }
+        marker["marker_hmac_sha256"] = hmac.new(
+            self.key,
+            json.dumps(marker, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        (self.state / "activation-verification.lock").write_text(
+            json.dumps(marker), encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ActivationError,
+                                    "activation_verification_failed") as caught:
+            verify_or_recover_activation(
+                state_root=self.state,
+                verification_reader=lambda _packet: {
+                    "publication_status": "activation_bound_startup_in_progress",
+                },
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git,
+            )
+        self.assertEqual(caught.exception.evidence["evidence_status"],
+                         "activation_provider_exited_before_publication")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertFalse((self.state / "activation-verification.lock").exists())
+
+    def test_verification_marker_is_archived_only_after_completion_exists(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        evidence = {name: True for name in (
+            "loaded_revision_exact", "execution_mode_observe_only",
+            "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+            "activation_id_exact", "unrelated_processes_absent",
+        )}
+        original_replace = runtime_activation._durable_replace
+
+        def assert_completion_before_marker_archive(source, destination, **kwargs):
+            if Path(source).name == "activation-verification.lock":
+                self.assertTrue(
+                    (self.state / "activation-verification-complete.json").exists()
+                )
+            return original_replace(source, destination, **kwargs)
+
+        with patch.object(
+            runtime_activation, "_durable_replace",
+            side_effect=assert_completion_before_marker_archive,
+        ):
+            result = verify_or_recover_activation(
+                state_root=self.state,
+                verification_reader=lambda _packet: evidence,
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git,
+            )
+        self.assertEqual(result["status"], "activation_verified")
+        self.assertTrue(
+            (self.state / "activation-ledger"
+             / f"{plan['activation_id']}-verified-activation-verification.lock").exists()
+        )
+
+    def test_completion_replay_finishes_interrupted_marker_archive_without_reverify(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        evidence = {name: True for name in (
+            "loaded_revision_exact", "execution_mode_observe_only",
+            "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+            "activation_id_exact", "unrelated_processes_absent",
+        )}
+        original_replace = runtime_activation._durable_replace
+        interrupted = {"value": False}
+
+        def interrupt_marker_archive(source, destination, **kwargs):
+            if (Path(source).name == "activation-verification.lock"
+                    and not interrupted["value"]
+                    and (self.state / "activation-verification-complete.json").exists()):
+                interrupted["value"] = True
+                raise OSError("simulated marker archive interruption")
+            return original_replace(source, destination, **kwargs)
+
+        with patch.object(
+            runtime_activation, "_durable_replace",
+            side_effect=interrupt_marker_archive,
+        ):
+            with self.assertRaisesRegex(OSError, "simulated marker"):
+                verify_or_recover_activation(
+                    state_root=self.state,
+                    verification_reader=lambda _packet: evidence,
+                    task_controller=controller, task_reader=lambda: self.task,
+                    git_runner=self.git,
+                )
+        completion_path = self.state / "activation-verification-complete.json"
+        completion_bytes = completion_path.read_bytes()
+        result = verify_or_recover_activation(
+            state_root=self.state,
+            verification_reader=lambda _packet: self.fail(
+                "durable completion replay must not reverify live evidence"
+            ),
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git,
+        )
+        self.assertEqual(result["status"], "activation_verified")
+        self.assertEqual(completion_path.read_bytes(), completion_bytes)
+        self.assertEqual(controller.disabled, [])
+        self.assertFalse((self.state / "activation-verification.lock").exists())
+
+    def test_expiry_advances_during_wait_and_contains(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        expires = datetime.fromisoformat(plan["authority"]["expires_at"])
+        ticks = iter([0.0, 0.0, 0.0, 0.2, 0.2, 0.2])
+        with self.assertRaisesRegex(ActivationError, "activation_verification_failed") as caught:
+            verify_or_recover_activation(
+                state_root=self.state,
+                verification_reader=lambda _packet: {
+                    "publication_status": "stale_publication",
+                },
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git, now=expires - timedelta(seconds=0.1),
+                readiness_timeout_seconds=1,
+                monotonic_fn=lambda: next(ticks), sleep_fn=lambda _seconds: None,
+            )
+        self.assertEqual(caught.exception.evidence["evidence_status"],
+                         "activation_authority_expired")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+
+    def test_non_finite_readiness_timeout_fails_closed(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started(packet_status="provider_pending")
+        with self.assertRaisesRegex(ActivationError, "activation_verification_failed") as caught:
+            verify_or_recover_activation(
+                state_root=self.state, verification_reader=lambda _packet: {},
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git, readiness_timeout_seconds=float("inf"),
+            )
+        self.assertEqual(caught.exception.evidence["evidence_status"],
+                         "activation_readiness_configuration_invalid")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+
+    def test_real_reader_treats_current_supervisor_with_stale_heartbeat_as_starting(self):
+        packet = {"activation_id": "current", "authority": {
+            "runtime_revision": SOURCE, "execution_revision": SOURCE,
+        }}
+        (self.state / "supervisor.json").write_text(json.dumps({
+            "status": "starting", "activation_id": "current",
+            "intended_runtime_revision": SOURCE,
+            "intended_execution_revision": SOURCE,
+        }), encoding="utf-8")
+        (self.state / "runner.json").write_text(json.dumps({
+            "activation_id": "old", "runner_source_commit": "old",
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+        }), encoding="utf-8")
+        evidence = read_activation_runtime_evidence(
+            packet, state_root=self.state,
+            live_validator=lambda *_args, **_kwargs: {
+                "authorized": False, "reason": "not_published",
+            },
+        )
+        self.assertEqual(evidence["publication_status"],
+                         "activation_bound_startup_in_progress")
 
     def test_successful_verification_retires_packet_and_lane(self):
         plan, controller, _ = self._prepared()
