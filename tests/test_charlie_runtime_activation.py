@@ -14,6 +14,7 @@ from modules.charlie.runtime_activation import (
     ACTIVATION_VERSION,
     AUTHORITY_VERSION,
     ActivationError,
+    WindowsExactTaskController,
     consume_provider_activation,
     inspect_current_provider_chain,
     plan_activation,
@@ -25,6 +26,8 @@ from modules.charlie.runtime_activation import (
     _inspect_exact_process,
     _inspect_windows_task_scheduler_provider,
     _local_current_process_identity,
+    _durable_replace,
+    _validate_packet,
 )
 from modules.charlie.runtime_staging import _validate_recovery_projection
 
@@ -60,11 +63,48 @@ class Controller:
         self.enabled = []
         self.disabled = []
         self.fail_start = fail_start
+        self.audit_state = {"log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                            "enabled": False}
+        self.audit_prior = None
+        self.audit_changed = False
+        self.audit_mutation_attempted = False
+        self.audit_enabled = []
+        self.audit_restored = []
+
+    def read_audit_channel_state(self):
+        return dict(self.audit_state)
+
+    def bind_audit_channel_state(self, value):
+        self.audit_prior = dict(value)
+
+    def read_audit_event_record_id(self):
+        return 455
+
+    def assert_no_running_instances(self):
+        return None
+
+    def ensure_audit_channel_enabled(self):
+        changed = not self.audit_state["enabled"]
+        self.audit_mutation_attempted = changed
+        self.audit_state["enabled"] = True
+        self.audit_enabled.append(True)
+        self.audit_changed = changed
+        return changed
+
+    def restore_audit_channel_state(self):
+        changed = self.audit_state != self.audit_prior
+        self.audit_state = dict(self.audit_prior)
+        self.audit_restored.append(self.audit_state["enabled"])
+        return changed
+
+    def reconcile_audit_channel_state(self):
+        return self.restore_audit_channel_state()
 
     def enable_and_trigger_exact(self, digest):
         self.enabled.append(digest)
         if self.fail_start:
             raise ActivationError("provider_start_failed")
+        return "11111111-1111-1111-1111-111111111111"
 
     def disable_exact(self, digest):
         self.disabled.append(digest)
@@ -171,12 +211,28 @@ class RuntimeActivationTests(unittest.TestCase):
     def _mark_started(self):
         packet_path = self.state / "activation-packet.json"
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        pending_hmac = packet["packet_hmac_sha256"]
         packet["status"] = "provider_started_observe_only"
+        packet["consumed_packet_hmac_sha256"] = pending_hmac
         unsigned = {k: v for k, v in packet.items() if k != "packet_hmac_sha256"}
         packet["packet_hmac_sha256"] = hmac.new(
             self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256
         ).hexdigest()
         packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        consumed = {"version": ACTIVATION_VERSION,
+                    "activation_id": packet["activation_id"],
+                    "provider_pid": 10, "provider_parent_pid": 20,
+                    "provider_instance_guid": packet["expected_instance_guid"],
+                    "expected_instance_guid": packet["expected_instance_guid"],
+                    "packet_hmac_sha256": pending_hmac}
+        consumed["consumed_hmac_sha256"] = hmac.new(
+            self.key,
+            json.dumps(consumed, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        (self.state / f"activation-consumed-{packet['activation_id']}.json").write_text(
+            json.dumps(consumed), encoding="utf-8",
+        )
         return packet
 
     def test_exact_task_action_digest_and_executable_are_required(self):
@@ -215,6 +271,7 @@ class RuntimeActivationTests(unittest.TestCase):
             "command_line": f'"{row["execute"]}" {row["arguments"]}',
             "ancestry": [{"pid": 20, "executable_path": "C:/Windows/System32/svchost.exe",
                           "provider_identity_verified": True,
+                          "instance_guid": "11111111-1111-1111-1111-111111111111",
                           "action_execute": row["execute"],
                           "action_arguments": row["arguments"],
                           "action_working_directory": row["working_directory"]}],
@@ -553,6 +610,8 @@ class RuntimeActivationTests(unittest.TestCase):
             "EvidenceSource": "operational_event", "EventRecordId": 456,
             "EventTime": "2026-08-18T08:00:00.0000000Z",
             "EventActivityId": "11111111-1111-1111-1111-111111111111",
+            "EngineCreationTime": "2026-08-18T07:59:59.5000000Z",
+            "EventRecordIdLowerBound": 455,
             "ActivationId": "activation-current",
         }
         calls = []
@@ -565,6 +624,7 @@ class RuntimeActivationTests(unittest.TestCase):
             process_creation_time=lambda _pid: "provider-created",
             activation_id="activation-current",
             activation_prepared_at="2026-08-18T07:59:59+00:00",
+            event_record_id_lower_bound=455,
         )
         self.assertTrue(result["inspection_complete"])
         self.assertEqual(result["evidence_source"], "operational_event")
@@ -574,6 +634,10 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertIn("EnginePID-eq100", script)
         self.assertIn("TaskName).Equals('\\CHARLIE CORE Runner Watchdog'", script)
         self.assertIn("TimeCreated.ToUniversalTime()-ge$prepared", script)
+        self.assertIn("TimeCreated.ToUniversalTime()-ge$engineCreated", script)
+        self.assertIn("TimeCreated.ToUniversalTime()-le$engineCreated.AddSeconds(10)", script)
+        self.assertIn("RecordId-gt455", script)
+        self.assertIn("CreationDate-is[DateTime]", script)
 
     def test_event_fallback_rejects_disabled_ambiguous_or_missing_evidence(self):
         expected = {
@@ -581,6 +645,7 @@ class RuntimeActivationTests(unittest.TestCase):
             9: "task_scheduler_operational_log_disabled",
             10: "task_event_identity_ambiguous",
             11: "task_event_action_mismatch",
+            12: "task_engine_process_identity_missing",
         }
         for return_code, reason in expected.items():
             with self.subTest(return_code=return_code):
@@ -676,6 +741,72 @@ class RuntimeActivationTests(unittest.TestCase):
                                task_reader=lambda: self.task, git_runner=self.git)
         self.assertEqual(caught.exception.status, "activation_lane_already_owned")
 
+    def test_prepare_seals_audit_prior_state_and_enables_before_provider_trigger(self):
+        plan, controller, result = self._prepared()
+        rollback = json.loads(Path(result["rollback_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(rollback["task_scheduler_audit_prior"], {
+            "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+            "enabled": False,
+        })
+        self.assertEqual(
+            rollback["task_scheduler_audit_rollback_command"],
+            "wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:false",
+        )
+        self.assertEqual(controller.audit_enabled, [True])
+        self.assertEqual(controller.enabled, [plan["task_action_sha256"]])
+
+    def test_missing_audit_controller_fails_before_lane_acquisition(self):
+        plan = self._plan()
+        controller = Mock(spec=[])
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_controller_required"):
+            prepare_activation(plan, task_controller=controller,
+                               task_reader=lambda: self.task, git_runner=self.git)
+        self.assertFalse((self.state / "activation.lock").exists())
+
+    def test_windows_controller_enables_and_restores_exact_audit_channel(self):
+        calls = []
+        states = iter([False, False, True, True, False])
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            if command[0] == "powershell":
+                enabled = next(states)
+                return subprocess.CompletedProcess(
+                    command, 0,
+                    json.dumps({
+                        "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                        "enabled": enabled,
+                    }), "",
+                )
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        controller = WindowsExactTaskController(runner=runner)
+        prior = controller.read_audit_channel_state()
+        controller.bind_audit_channel_state(prior)
+        controller.ensure_audit_channel_enabled()
+        controller.restore_audit_channel_state()
+        mutations = [call for call in calls if call[0] == "wevtutil"]
+        self.assertEqual(mutations, [
+            ["wevtutil", "sl", "Microsoft-Windows-TaskScheduler/Operational", "/e:true"],
+            ["wevtutil", "sl", "Microsoft-Windows-TaskScheduler/Operational", "/e:false"],
+        ])
+
+    def test_windows_controller_rejects_audit_state_change_before_mutation(self):
+        states = iter([False, True])
+
+        def runner(command, **_kwargs):
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            self.fail("audit mutation must not run after identity change")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_identity_changed"):
+            controller.ensure_audit_channel_enabled()
+
     def test_prepare_rechecks_reconciliation_lane_after_plan(self):
         plan = self._plan()
         (self.state / "activation-reconciliation.lock").write_text(
@@ -693,6 +824,23 @@ class RuntimeActivationTests(unittest.TestCase):
                                task_reader=lambda: self.task, git_runner=self.git)
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertEqual(controller.audit_enabled, [True])
+        self.assertEqual(controller.audit_restored, [])
+
+    def test_post_mutation_readback_failure_contains_without_disabling_audit(self):
+        class ReadbackFailureController(Controller):
+            def ensure_audit_channel_enabled(self):
+                self.audit_mutation_attempted = True
+                self.audit_state["enabled"] = True
+                raise ActivationError("task_scheduler_audit_readback_mismatch")
+
+        plan = self._plan()
+        controller = ReadbackFailureController()
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_readback_mismatch"):
+            prepare_activation(plan, task_controller=controller,
+                               task_reader=lambda: self.task, git_runner=self.git)
+        self.assertEqual(controller.audit_restored, [])
+        self.assertTrue(self.stop.exists())
 
     def test_provider_start_failure_is_recorded_without_terminal_spawn(self):
         plan, controller, _ = self._prepared()
@@ -702,6 +850,7 @@ class RuntimeActivationTests(unittest.TestCase):
             "command_line": f'"{self.task[0]["execute"]}" {self.task[0]["arguments"]}',
             "ancestry": [{"pid": 20, "executable_path": "svchost.exe",
                           "provider_identity_verified": True,
+                          "instance_guid": "11111111-1111-1111-1111-111111111111",
                           "action_execute": self.task[0]["execute"],
                           "action_arguments": self.task[0]["arguments"],
                           "action_working_directory": self.task[0]["working_directory"]}],
@@ -735,7 +884,7 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
 
     def test_successful_verification_retires_packet_and_lane(self):
-        _plan, controller, _ = self._prepared()
+        plan, controller, _ = self._prepared()
         self._mark_started()
         evidence = {name: True for name in (
             "loaded_revision_exact", "execution_mode_observe_only",
@@ -750,6 +899,82 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["status"], "activation_verified")
         self.assertFalse((self.state / "activation-packet.json").exists())
         self.assertFalse((self.state / "activation.lock").exists())
+        replay = verify_or_recover_activation(
+            state_root=self.state, verification_reader=lambda _packet: evidence,
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git, activation_id=plan["activation_id"],
+        )
+        self.assertEqual(replay["status"], "activation_verified")
+
+    def test_verification_resumes_after_lane_archive_crash(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        lane = self.state / "activation.lock"
+        archived_lane = (self.state / "activation-ledger"
+                         / f"{plan['activation_id']}-lane.json")
+        lane.replace(archived_lane)
+        evidence = {name: True for name in (
+            "loaded_revision_exact", "execution_mode_observe_only",
+            "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+            "activation_id_exact", "unrelated_processes_absent",
+        )}
+
+        result = verify_or_recover_activation(
+            state_root=self.state, verification_reader=lambda _packet: evidence,
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git,
+        )
+
+        self.assertEqual(result["status"], "activation_verified")
+        self.assertFalse((self.state / "activation-packet.json").exists())
+
+    def test_verification_failure_after_lane_archive_recovers(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        lane = self.state / "activation.lock"
+        archived_lane = (self.state / "activation-ledger"
+                         / f"{plan['activation_id']}-lane.json")
+        lane.replace(archived_lane)
+
+        with self.assertRaisesRegex(ActivationError, "activation_verification_failed"):
+            verify_or_recover_activation(
+                state_root=self.state,
+                verification_reader=lambda _packet: {},
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git,
+            )
+
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+
+    def test_verification_resumes_after_packet_archive_interruption(self):
+        plan, controller, _ = self._prepared()
+        self._mark_started()
+        evidence = {name: True for name in (
+            "loaded_revision_exact", "execution_mode_observe_only",
+            "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+            "activation_id_exact", "unrelated_processes_absent",
+        )}
+        def interrupt_after_packet(source, target, **kwargs):
+            if source.name.startswith("activation-audit-receipt-"):
+                raise OSError("simulated verified archival interruption")
+            return _durable_replace(source, target, **kwargs)
+
+        with patch("modules.charlie.runtime_activation._durable_replace",
+                   side_effect=interrupt_after_packet):
+            with self.assertRaisesRegex(OSError, "verified archival interruption"):
+                verify_or_recover_activation(
+                    state_root=self.state, verification_reader=lambda _packet: evidence,
+                    task_controller=controller, task_reader=lambda: self.task,
+                    git_runner=self.git,
+                )
+
+        result = verify_or_recover_activation(
+            state_root=self.state, verification_reader=lambda _packet: evidence,
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git, activation_id=plan["activation_id"],
+        )
+        self.assertEqual(result["status"], "activation_verified")
 
     def test_tampered_rollback_fails_closed_and_retains_lane(self):
         plan, controller, _ = self._prepared()
@@ -763,6 +988,157 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, "activation_rollback_signature_invalid")
         self.assertTrue((self.state / "activation.lock").exists())
 
+    def test_recovery_rejects_pre_runex_seed_after_audit_receipt(self):
+        plan, controller, _ = self._prepared()
+        (self.state / "activation-ledger"
+         / f"{plan['activation_id']}-rollback.json").unlink()
+        (self.state / "activation-packet.json").unlink()
+
+        with self.assertRaisesRegex(ActivationError, "activation_recovery_incomplete"):
+            recover_activation(
+                state_root=self.state, task_controller=controller,
+                activation_id=plan["activation_id"],
+                failure_evidence={"status": "prepare_durable_write_interrupted"},
+            )
+
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+        self.assertFalse((self.state / "activation-packet.json").exists())
+
+    def test_recovery_reconstructs_only_proven_pre_runex_lane_seed(self):
+        plan, controller, _ = self._prepared()
+        (self.state / "activation-ledger"
+         / f"{plan['activation_id']}-rollback.json").unlink()
+        (self.state / "activation-packet.json").unlink()
+        (self.state / f"activation-audit-intent-{plan['activation_id']}.json").unlink()
+        (self.state / f"activation-audit-receipt-{plan['activation_id']}.json").unlink()
+
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "prepare_durable_write_interrupted"},
+        )
+
+        self.assertEqual(result["status"], "activation_recovered")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+
+    def test_recovery_reconstructs_post_runex_packet_from_consumed_identity(self):
+        plan, controller, _ = self._prepared()
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        consumed = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": plan["activation_id"],
+            "provider_pid": 10,
+            "provider_parent_pid": 20,
+            "provider_instance_guid": packet["expected_instance_guid"],
+            "expected_instance_guid": packet["expected_instance_guid"],
+            "packet_hmac_sha256": packet["packet_hmac_sha256"],
+        }
+        unsigned = dict(consumed)
+        consumed["consumed_hmac_sha256"] = hmac.new(
+            self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        (self.state / f"activation-consumed-{plan['activation_id']}.json").write_text(
+            json.dumps(consumed), encoding="utf-8"
+        )
+        packet_path.unlink()
+
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "consumed_pending_interrupted"},
+        )
+
+        self.assertEqual(result["status"], "activation_recovered")
+        recovered = json.loads((
+            self.state / "activation-ledger"
+            / f"{plan['activation_id']}-recovered-activation-packet.json"
+        ).read_text(encoding="utf-8"))
+        self.assertEqual(recovered["expected_instance_guid"], packet["expected_instance_guid"])
+        self.assertEqual(recovered["packet_hmac_sha256"], packet["packet_hmac_sha256"])
+
+    def test_pending_packet_with_consumed_identity_requires_recovery(self):
+        plan, _controller, _ = self._prepared()
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        consumed = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": plan["activation_id"],
+            "provider_pid": 10,
+            "provider_parent_pid": 20,
+            "provider_instance_guid": packet["expected_instance_guid"],
+            "expected_instance_guid": packet["expected_instance_guid"],
+            "packet_hmac_sha256": packet["packet_hmac_sha256"],
+        }
+        consumed["consumed_hmac_sha256"] = hmac.new(
+            self.key,
+            json.dumps(consumed, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        (self.state / f"activation-consumed-{plan['activation_id']}.json").write_text(
+            json.dumps(consumed), encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(ActivationError,
+                                    "activation_consumed_pending_recovery_required"):
+            _validate_packet(
+                packet, self.state, lambda: self.task,
+                git_runner=self.git,
+            )
+
+    def test_verification_never_replays_completion_over_active_lane(self):
+        _plan, controller, _ = self._prepared()
+        (self.state / "activation-packet.json").unlink()
+        (self.state / "activation-verification-complete.json").write_text(
+            json.dumps({"status": "activation_verified"}), encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(ActivationError,
+                                    "activation_packet_missing_for_active_lane"):
+            verify_or_recover_activation(
+                state_root=self.state, verification_reader=lambda _packet: {},
+                task_controller=controller, task_reader=lambda: self.task,
+                git_runner=self.git,
+            )
+
+    def test_rollback_write_failure_retains_signed_lane_for_recovery(self):
+        plan = self._plan()
+        controller = Controller()
+        with patch("modules.charlie.runtime_activation._atomic_json",
+                   side_effect=OSError("simulated rollback write failure")):
+            with self.assertRaisesRegex(OSError, "rollback write failure"):
+                prepare_activation(
+                    plan, task_controller=controller,
+                    task_reader=lambda: self.task, git_runner=self.git,
+                )
+        self.assertTrue((self.state / "activation.lock").exists())
+
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "rollback_write_interrupted"},
+        )
+        self.assertEqual(result["status"], "activation_recovered")
+
+    def test_prepare_failure_permanently_consumes_activation_identity(self):
+        plan = self._plan()
+        controller = Controller(fail_start=True)
+        with self.assertRaisesRegex(ActivationError, "provider_start_failed"):
+            prepare_activation(
+                plan, task_controller=controller,
+                task_reader=lambda: self.task, git_runner=self.git,
+            )
+        controller.fail_start = False
+
+        with self.assertRaisesRegex(ActivationError, "activation_identity_already_used"):
+            prepare_activation(
+                plan, task_controller=controller,
+                task_reader=lambda: self.task, git_runner=self.git,
+            )
+
     def test_recovery_disables_only_exact_task_and_restores_exact_stop(self):
         plan, controller, _ = self._prepared()
         result = recover_activation(
@@ -773,6 +1149,95 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["status"], "activation_recovered")
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
+        self.assertEqual(controller.audit_restored, [])
+
+    def test_recovery_retires_pre_intent_crash_after_task_and_stop_containment(self):
+        plan, controller, _ = self._prepared()
+        (self.state / f"activation-audit-intent-{plan['activation_id']}.json").unlink()
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "audit_intent_write_interrupted"})
+        self.assertEqual(result["status"], "activation_recovered")
+        self.assertEqual(controller.audit_restored, [])
+        self.assertFalse((self.state / "activation.lock").exists())
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+
+    def test_recovery_retires_post_mutation_receipt_crash_after_containment(self):
+        plan, controller, _ = self._prepared()
+        (self.state / f"activation-audit-receipt-{plan['activation_id']}.json").unlink()
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "audit_receipt_write_interrupted"})
+        self.assertEqual(result["status"], "activation_recovered")
+        self.assertEqual(controller.audit_restored, [])
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+
+    def test_recovery_contains_from_signed_rollback_before_rejecting_tampered_packet(self):
+        plan, controller, _ = self._prepared()
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        packet["task_ownership"][0]["task_name"] = "Unrelated Task"
+        packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        with self.assertRaisesRegex(ActivationError, "activation_recovery_incomplete"):
+            recover_activation(state_root=self.state, task_controller=controller,
+                               activation_id=plan["activation_id"])
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertEqual(controller.audit_restored, [])
+        self.assertTrue(self.stop.exists())
+
+    def test_recovery_resumes_after_audit_artifacts_were_archived(self):
+        plan, controller, _ = self._prepared()
+        def interrupt_lane_archive(source, target, **kwargs):
+            if source.name == "activation.lock":
+                raise OSError("simulated lane archive interruption")
+            return _durable_replace(source, target, **kwargs)
+
+        with patch("modules.charlie.runtime_activation._durable_replace",
+                   side_effect=interrupt_lane_archive):
+            with self.assertRaisesRegex(OSError, "lane archive interruption"):
+                recover_activation(state_root=self.state, task_controller=controller,
+                                   activation_id=plan["activation_id"],
+                                   failure_evidence={"status": "test_failure"})
+        result = recover_activation(state_root=self.state, task_controller=controller,
+                                    activation_id=plan["activation_id"],
+                                    failure_evidence={"status": "test_failure"})
+        self.assertEqual(result["status"], "activation_recovered")
+
+    def test_authenticated_v1_lane_remains_containable(self):
+        plan, controller, _ = self._prepared()
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        packet["version"] = "charlie_provider_activation_v1"
+        unsigned_packet = {k: v for k, v in packet.items() if k != "packet_hmac_sha256"}
+        packet["packet_hmac_sha256"] = hmac.new(
+            self.key, json.dumps(unsigned_packet, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        rollback_path = self.state / "activation-ledger" / f"{plan['activation_id']}-rollback.json"
+        rollback = json.loads(rollback_path.read_text(encoding="utf-8"))
+        rollback["version"] = "charlie_provider_activation_v1"
+        for field in ("task_ownership", "task_scheduler_audit_prior",
+                      "task_scheduler_audit_mutation_required",
+                      "task_scheduler_audit_rollback_command"):
+            rollback.pop(field, None)
+        unsigned_rollback = {k: v for k, v in rollback.items()
+                             if k != "rollback_hmac_sha256"}
+        rollback["rollback_hmac_sha256"] = hmac.new(
+            self.key, json.dumps(unsigned_rollback, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        rollback_path.write_text(json.dumps(rollback), encoding="utf-8")
+        result = recover_activation(state_root=self.state, task_controller=controller,
+                                    activation_id=plan["activation_id"],
+                                    failure_evidence={"status": "legacy_test_failure"})
+        self.assertEqual(result["status"], "activation_recovered")
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
 
     def _reconcile(self, plan, **changes):
         values = {
@@ -843,14 +1308,13 @@ class RuntimeActivationTests(unittest.TestCase):
         recover_activation(state_root=self.state, task_controller=controller,
                            activation_id=plan["activation_id"],
                            failure_evidence={"status": "provider_identity_incomplete"})
-        original_replace = Path.replace
-
-        def interrupt_lock(source, target):
+        def interrupt_lock(source, target, **kwargs):
             if source.name == "activation-reconciliation.lock":
                 raise OSError("simulated lock archive interruption")
-            return original_replace(source, target)
+            return _durable_replace(source, target, **kwargs)
 
-        with patch.object(Path, "replace", interrupt_lock):
+        with patch("modules.charlie.runtime_activation._durable_replace",
+                   side_effect=interrupt_lock):
             with self.assertRaisesRegex(OSError, "lock archive interruption"):
                 self._reconcile(plan)
         before = (self.state / "watchdog.json").read_bytes()
