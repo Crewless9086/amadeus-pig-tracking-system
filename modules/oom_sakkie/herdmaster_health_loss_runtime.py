@@ -412,12 +412,9 @@ def handle_authenticated_health_loss_message(
     stored = _record_lifecycle_event(lifecycle, context_store=context_store)
     if stored.get("success") is not True:
         return {"handled": True, "success": False, "status": "health_loss_lifecycle_persistence_failed"}, 503
-    welfare_case = {"success": True, "status": "welfare_case_test_store_not_applicable", "rows_created": 0}
-    if context_store is None and welfare_case_runtime_enabled():
-        welfare_case = append_welfare_case_context(lifecycle, connect_factory=connect_factory)
-        # Immediate welfare guidance must survive a coordination-store outage.
-        # The legacy authenticated chronology was retained above, so expose the
-        # degradation without withholding the physical guidance.
+    welfare_case = stored.get("welfare_case") or {
+        "success": True, "status": "welfare_case_test_store_not_applicable", "rows_created": 0,
+    }
     protected={}
     if lifecycle["status"]=="preview_ready" and lifecycle["operation_id"] and (claim_creator or os.getenv("DATABASE_URL")):
         from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim

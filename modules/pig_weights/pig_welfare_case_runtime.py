@@ -130,7 +130,7 @@ def append_welfare_case_context(lifecycle: Mapping[str, Any], *, connect_factory
                 return {"success": True, "status": "welfare_case_already_closed",
                         "welfare_case_id": case_id, "rows_created": 0}
             lifecycle_status = str(lifecycle.get("status") or "")
-            terminal = lifecycle_status in {"completed", "contained"}
+            terminal = lifecycle_status == "completed" or str(lifecycle.get("event_phase") or "") == "preview_declined"
             case_state = "closed" if terminal else ("open" if urgency in ("critical", "urgent") else "monitoring")
             event_type = "opened" if not current else ("closed" if terminal else "evidence_added")
             cursor.execute(
