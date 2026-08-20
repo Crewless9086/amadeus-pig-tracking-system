@@ -25,3 +25,16 @@ Confirm and Cancel callbacks bound to the configured owner, provider card,
 canonical sale state and exact payment preview digest. The callback re-previews
 current truth before the sole Supabase writer runs. Sequential and concurrent
 replay create no second write or owner message.
+
+## Zero-consideration disposition
+
+A completed Livestock sale may be corrected to `Charitable_Giveaway` only
+through the strict owner-admin, preview/confirm financial-disposition action.
+The action keeps the original order, animal-transfer history, line-price
+snapshots and `net_total` as list-value evidence, while setting the separate
+`receivable_total` and `received_total` to R0.00 and payment status to
+`Not_Applicable`. Any earlier receipt state is retained inside immutable
+correction evidence; it is not treated as money received. The correction
+creates no refund, receipt, invoice, customer message, reservation, allocation
+or animal lifecycle effect. Existing commercial documents remain historical
+snapshots and must not be presented as a current amount due.

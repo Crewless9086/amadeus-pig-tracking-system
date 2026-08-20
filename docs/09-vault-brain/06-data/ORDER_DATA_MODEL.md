@@ -68,6 +68,13 @@ must not invoke livestock lifecycle mutation.
 - Slaughter/abattoir sales may be recorded without a normal customer order.
 - Meat/carcass sales should use the same transaction family once the meat workflow is ready.
 - Duplicate non-cancelled sale records for the same pig must be blocked.
+- A completed Livestock transfer with no consideration uses the existing sale
+  and order identities. `net_total` and line prices preserve list-value history;
+  `financial_disposition = Charitable_Giveaway`, `receivable_total = 0.00`,
+  `received_total = 0.00` and `payment_status = Not_Applicable` preserve the
+  separate financial truth. The protected correction retains prior payment
+  evidence in its correction envelope and creates no second sale, document,
+  animal transfer, payment, refund or customer send.
 
 ## Source References
 
