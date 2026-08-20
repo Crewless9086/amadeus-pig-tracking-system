@@ -2980,3 +2980,26 @@ stop-preserving staging, but deployment and activation remain separately
 protected. Business completion requires a genuine owner reply, canonical receipt,
 specialist reassessment, provider-confirmed refresh or truthful silence, application/
 Telegram parity and a later terminal-independent cycle.
+
+Owner subsequently authorized merge and deployment of PR #1141 only at exact
+head `a2b318a6d20f40a5f505293eec51dcc558d855b5`, followed by exact loaded
+application/worker verification and passive genuine-event observation. The
+authority prohibits manufactured owner replies, manual Telegram effects, farm
+writes, credential changes and hardware actions.
+
+Control Tower freshly fetched main and reverified PR #1141 remained OPEN, CLEAN,
+based on `3961411236fca3329abaac2d34cfb863167c1c73`, at the exact authorized
+head with all three required checks successful. One serialized visible release
+terminal was dispatched in clean worktree
+`C:\tmp\oom-1141-release-20260820`, branch
+`release/oom-1141-20260820`. Fresh parent PowerShell and child Codex process
+ancestry proved delivery and start. Lifecycle is
+`WORKING / AUTHORIZED_EXACT_HEAD_RELEASE_DISPATCHED`; process existence alone
+will not prove subsequent progress.
+
+The terminal must use the complete `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`,
+stop on any identity/collision/provider ambiguity, merge no unrelated PR, deploy
+only the resulting exact main revision through the governed lane, run no migration
+without separate checksum-bound authority, and use only passive read-only
+acceptance observation. Absence of a genuine event becomes a bounded
+`EXTERNAL_HOLD`, not a manufactured test or indefinite terminal wait.
