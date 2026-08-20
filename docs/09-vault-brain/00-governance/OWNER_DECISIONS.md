@@ -147,3 +147,15 @@ publication or protected actions. Each remains conditional on its own deployed
 implementation, authority, provider evidence and genuine acceptance journey.
 Provider-safe Brief cleanup is optional presentation cleanup and is never a
 condition of successful canonical recording or delivery of the new Brief.
+
+Owner Attention counts and prioritizes only genuine owner actions and ready
+physical tasks. Agent-owned reconciliation, delegated specialist work, automatic
+provider retries and incomplete evidence remain visible only as compact system
+status and never inflate the primary owner-action count.
+
+The shared owner experience uses these lifecycle groups: `Needs you`, `Farm work
+ready`, `Oom Sakkie is checking`, `Watch`, and collapsed `Recently completed`.
+Only the first two contribute to the primary attention count. Technical IDs, long
+tag sets, provenance and chronology remain available in details; the system, not
+Charl, performs status reconciliation. One stable work identity progresses through
+reconciliation, readiness, execution and completion.

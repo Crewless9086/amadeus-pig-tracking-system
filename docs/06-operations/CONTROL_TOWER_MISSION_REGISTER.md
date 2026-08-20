@@ -3256,3 +3256,43 @@ PR #1144 continues to own the executable outcome-gate schema, Standard and
 handover-template changes. This protocol update deliberately does not duplicate or
 compete with those source changes; final integration must reconcile PR #1126 and
 #1144 before merge.
+
+### Oom Sakkie owner-attention eligibility defect - 2026-08-20
+
+Classification: `DEFECT / OPERATING_SPINE ADDENDUM` to the existing names-first
+shared owner-attention mission and PR #1142; not a new dashboard, weighing or
+HERDMASTER queue.
+
+Owner evidence shows the dashboard presenting weekly weighing as 0/78, exposing
+all 78 tags, assigning automatic status reconciliation to Charl and reporting
+approximately 198 mixed manager cases as owner attention. Source evidence supports
+the design defect: agent-owned waiting/delegated work can be coerced into urgent
+open owner items, full technical action text is rendered verbatim, and primary
+counting does not distinguish genuine owner action from manager work. Current
+canonical composition of the 198 items, cause of 0/78 and exact deployed revision
+remain Unknown and must not be inferred.
+
+Durable invariant: only genuine owner questions/protected decisions/urgent physical
+exceptions and proven ready physical tasks contribute to the primary attention
+count. Agent-owned reconciliation appears under compact `Oom Sakkie is checking`;
+`Watch` is context and `Recently completed` is collapsed/excluded. Names and farm
+meaning lead; IDs/tag lists/provenance are details. One weighing work identity moves
+through reconcile/ready/in-progress/completed rather than becoming 78 alerts.
+
+Fresh collision audit proves direct overlap with open, clean, CI-green PR #1142 at
+`e99822dc5179ad92791f0091f08ffa3f114a2b46`, which already owns
+`manager_case_sources.py`, `owner_attention_projection.py`, the owner-attention
+workflow and tests. SAM's lane closed at clean PR #1148, freeing one WIP slot;
+active BEACON and ROOTLINE fertilizer scopes are disjoint. Control Tower therefore
+resumed the exact visible PR #1142 worktree
+`C:\tmp\oom-names-first-attention-20260820` with this defect addendum rather than
+creating a competing branch. Fresh PowerShell/Codex ancestry proves dispatch only;
+progress requires later diff/commit/handover evidence.
+
+Required acceptance includes protected classification/readback of current items,
+backend owner-action eligibility, status/lifecycle mapping, compact/detail and
+grouped shared projections, no loss of urgent welfare/safety, exact-current tests
+and reviews, merge/deploy/loaded revision, authenticated production count readback,
+desktop/mobile owner approval, later manager cycle and measured owner-work reduction.
+No CSS-only concealment, arbitrary limits, new queue/database/scheduler, invented
+animal status, manual owner tag reconciliation or Telegram-only truth is permitted.
