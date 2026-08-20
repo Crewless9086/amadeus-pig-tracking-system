@@ -30,6 +30,41 @@ required; it may not substitute, revalidate or stage the new main. Fresh Node
 PID `34136` and Codex PID `31956` prove launch only. Lifecycle is `WORKING /
 EXACT_986E13E8_STAGING_ELIGIBILITY_AND_EXECUTION_IN_PROGRESS`.
 
+Both bounded terminals then completed and auto-closed. ROOTLINE production web
+and the existing five-minute Oom Sakkie cron loaded exact merged revision
+`572d078357087041d6271558f189bec4e0414ba8`. Genuine provider-origin cycle
+`OOM-MANAGER-CYCLE-20260820T123517439111Z-9BB157AEF6BB4FEA83F34C79CFE7A7F3`
+failed before readiness observation with PostgreSQL `42P01 UndefinedTable` for
+`app_private.beacon_protected_publication_consumers`, introduced by unapplied
+migration `202608190002_create_beacon_protected_publication_consumer`. No
+readiness case exists and eWeLink OFF/fail-stop truth remains Unknown. The
+terminal correctly made zero controls, hardware commands, Telegram sends or
+farm writes and did not weaken BEACON replay safety. ROOTLINE lifecycle is
+`WORKING / DEPLOYED / PRODUCTION_SCHEMA_BLOCKED`; automatic continuation
+requires a governed exact migration application and a later genuine scheduler
+cycle.
+
+CORE consumed the approved validation identity exactly once and staged only
+revision `986e13e897d86b22beef67b3074491e7304b37a7` in lane
+`6cae96a0cfc74cc9b96910e13e3398ce`; current main `572d0783` was not substituted
+or staged. Runtime, execution and manifest read back the exact approved revision
+and receipt hash. Rollback and governed-stop digest remained unchanged; the
+watchdog task remained disabled; no activation/runtime/business effect occurred;
+the lane and locks were released. The receipt is permanently consumed and may
+not be replayed. CORE lifecycle is `WORKING / EXACT_REVISION_STAGED /
+GOVERNED_STOP_PRESERVED / ACTIVATION_NOT_AUTHORIZED`.
+
+Charl then visually reviewed the exact PR #1127 local authenticated fixture and
+explicitly approved it, praising the restrained semantic emoji and light human
+humour. The review used real PR templates/JavaScript with synthetic read-only
+Prince, Molly, weighing and ROOTLINE examples; production data and write routes
+were not used. The local preview helper was stopped immediately after approval.
+PR #1127 remains unmerged pending its distinct release authorization and a fresh
+current-main mergeability/collision check. Lifecycle advances from owner hold to
+`VISUALLY_APPROVED / RELEASE_APPROVAL_REQUIRED`. Preserve concise semantic emoji
+and warm, restrained humour where it improves scanability; never let humour
+obscure welfare urgency, evidence, safety or required action.
+
 ### DOCUMENTS governed local-printing next phase
 
 Charl approved governed local printing as a `NEXT_PHASE` of existing Documents
