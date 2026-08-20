@@ -134,6 +134,20 @@ welfare case.
 
 ## Actionable daily-manager continuation
 
+The provider-delivered Brief is a rolling projection, not an acknowledgement
+card. After an authenticated answer is durably receipted and the responsible
+specialist has been reassessed, Oom Sakkie rebuilds the same shared attention
+projection. An unchanged material digest is silent. A changed digest creates a
+new Brief generation near the latest conversation activity: the family-message
+lifecycle first records its exact provider message identity, then marks the
+prior generation superseded, and only then may attempt bounded best-effort
+deletion of the prior bot-authored Brief. Failed or ambiguous replacement
+delivery leaves the prior generation current and is never blindly retried.
+Failed or ambiguous deletion is silent presentation debt. Generic
+acknowledgement text never shares, edits or overwrites a Brief identity. Owner
+messages, alerts, protected decisions and important terminal evidence are
+outside this deletion policy.
+
 The scheduler stores one typed binding for the single grouped question on the
 provider-delivered daily plan. The next authenticated reply loads that binding
 before generic semantic intake. Exact reply identity or one compatible

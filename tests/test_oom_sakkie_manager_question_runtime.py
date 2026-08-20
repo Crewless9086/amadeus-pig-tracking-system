@@ -604,6 +604,36 @@ def test_authenticated_context_database_failure_returns_bounded_zero_effect_resp
     assert result["message"]["hardware_commands"] == 0
 
 
+@patch("modules.oom_sakkie.morning_runtime.reassess_current_brief_after_owner_answer",
+       return_value={"success":True,"status":"daily_manager_unchanged_silent",
+                     "telegram_sends":0,"telegram_edits":0})
+@patch("modules.oom_sakkie.telegram_gateway.handle_manager_question_reply",
+       return_value=({"handled":True,"success":True,
+                      "status":"manager_question_reply_recorded",
+                      "answer":"Thanks generic acknowledgement"},200))
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input",
+       return_value=({"handled":False},200))
+@patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",
+       return_value=None)
+@patch("modules.oom_sakkie.telegram_gateway.load_active_manager_question")
+def test_complete_receipt_reassesses_with_gateway_environment_and_sends_no_generic_ack(
+        active,_replay,_owner_task,_manager,reassess):
+    active.return_value=question()
+    token="c"*40
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":token,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":OWNER,
+        "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID":OWNER}
+    payload={"message":{"message_id":"3530","date":int(NOW.timestamp()),
+        "text":"They are eating, drinking and moving normally",
+        "from":{"id":int(OWNER)},"chat":{"id":int(OWNER),"type":"private"}}}
+    result,status=handle_telegram_gateway_message(payload,
+        headers={"Authorization":"Bearer "+token},environ=env)
+    assert status==200 and result["delivery"]["status"]=="daily_manager_unchanged_silent"
+    assert result["answer"]=="" and result["sends_telegram"] is False
+    assert reassess.call_args.kwargs["environ"] is env
+
+
 def test_context_places_active_manager_question_before_semantic_classification():
     context = semantic_context_with_manager_question(parsed(),
         base_context_loader=lambda _parsed: {"active_cases": [], "recent_turns": []},

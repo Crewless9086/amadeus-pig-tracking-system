@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+- 2026-08-20: Corrected the Oom Sakkie rolling-current Brief continuation.
+  A durably received and specialist-reconciled owner answer now recomposes the
+  shared projection instead of editing the delivered Brief into a generic
+  acknowledgement. Material changes use a new provider-confirmed generation,
+  canonical supersession and then optional prior-Brief cleanup; unchanged
+  projections are silent, ambiguous replacement is not retried and cleanup
+  ambiguity is retained as presentation debt. No schema or production
+  authority changed.
+
 - 2026-08-20: Reconciled the shared Oom Sakkie owner-attention projection with
   HERDMASTER welfare Phase 2 after merging authoritative main. Active canonical
   welfare cases now enter the existing manager collector under their stable

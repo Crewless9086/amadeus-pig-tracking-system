@@ -27,14 +27,17 @@ ZERO = {"hardware_commands": 0, "writes_farm_data": False,
 
 def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                            litter_rows, sale_rows=(), deliver, store=None, now=None,
-                           language="en", semantic_prioritizer=None):
+                           language="en", semantic_prioritizer=None,
+                           replace_brief=None):
     now = _aware(now or datetime.now(timezone.utc))
     local = now.astimezone(SAST)
     identity = f"OOM-DAILY-FARM-MANAGER-{local.date().isoformat()}"
     if str(owner_user_id) != str(chat_id) or not str(owner_user_id):
         return {"success": False, "status": "daily_manager_owner_binding_denied", **ZERO}
     store = store or daily_farm_manager_store
-    prior = store("load_daily", identity, None) or {}
+    projection_identity = _owner_projection_identity(identity, owner_user_id, chat_id)
+    prior = store("load_daily", identity, {"owner_user_id": str(owner_user_id),
+        "chat_id": str(chat_id)}) or {}
     if not prior and (local.hour, local.minute) < (MORNING_HOUR, MORNING_MINUTE):
         return {"success": True, "status": "daily_manager_not_due",
                 "next_due_at": local.replace(hour=MORNING_HOUR, minute=MORNING_MINUTE,
@@ -44,7 +47,8 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     sales = build_sale_watch_result(sale_rows, now=now, language=language)
     results = [row for row in specialist_results if isinstance(row, SpecialistResult)] + [litter, sales]
     answered = store("load_answered_questions", identity, {
-        "owner_user_id": str(owner_user_id), "chat_id": str(chat_id)}) or ()
+        "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+        "daily_identity": identity}) or ()
     results = _retire_answered_questions(results, answered)
     packet = build_daily_management_packet(results, now=now, language=language,
         semantic_prioritizer=semantic_prioritizer)
@@ -58,7 +62,11 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     # One scheduled date owns one provider effect.  The material digest is
     # evidence carried by the claim, not part of its identity: evidence may
     # change while another worker starts or a process restarts.
-    claim_id = identity + ":DELIVERY"
+    replacement = bool(prior.get("status") in {"presented", "unchanged"}
+                       and prior.get("material_digest") != digest
+                       and str(prior.get("telegram_message_id") or ""))
+    claim_id = (projection_identity + ":GENERATION:" + digest[:20].upper()
+                if replacement else projection_identity + ":DELIVERY")
     claim = store("claim_daily", claim_id, {"daily_identity": identity,
         "material_digest": digest, "status": "detected", "observed_at": now.isoformat(),
         "task_identities": [row["task_id"] for row in packet["all_tasks"]],
@@ -85,9 +93,19 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         "provider_timestamp": now.isoformat(), "text": "Daily Farm Manager"}
     result = {"success": True, "status": "daily_farm_manager_ready",
         "answer": packet["answer"], "result_digest": digest,
+        "rolling_brief_replacement": replacement,
         "hardware_commands": 0, "writes_farm_data": False}
-    delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
-        mission_id=claim_id, card_mission_id=identity)
+    if replacement:
+        if replace_brief is None:
+            from modules.oom_sakkie.family_message_lifecycle import replace_current_brief
+            replace_brief = replace_current_brief
+        delivery = replace_brief(parsed, result, mission_id=claim_id,
+            card_mission_id=identity,
+            previous_message_id=str(prior.get("telegram_message_id") or ""),
+            generation_digest=digest)
+    else:
+        delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
+            mission_id=claim_id, card_mission_id=identity)
     message_id = str((delivery or {}).get("telegram_message_id") or "")
     provider_confirmed = bool(message_id and ((delivery or {}).get("success") is True
         or (delivery or {}).get("provider_delivery_confirmed") is True))
@@ -122,7 +140,10 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
         "question": packet["question"], "question_binding": packet["question_binding"],
         "telegram_message_id": str(delivery.get("telegram_message_id")),
-        "telegram_sends": int(delivery.get("telegram_sends") or 0)})
+        "telegram_sends": int(delivery.get("telegram_sends") or 0),
+        "previous_telegram_message_id": str(prior.get("telegram_message_id") or "")
+            if replacement else "",
+        "generation_replaced": replacement})
     if not task_receipts_proven or not isinstance(outcome, dict) or outcome.get("success") is not True:
         return {"success": False, "status": "daily_manager_provider_confirmed_lifecycle_unavailable",
             "daily_identity": identity, "material_digest": digest,
@@ -298,7 +319,7 @@ def build_daily_management_packet(results, *, now=None, language="en",
 
 def daily_farm_manager_store(action, identity, payload):
     if action == "load_daily":
-        return _load_daily(identity)
+        return _load_daily(identity, payload or {})
     if action == "load_answered_questions":
         return _load_answered_questions(payload or {})
     from modules.sales.sam_live_stock_launch_control import (
@@ -317,17 +338,20 @@ def daily_farm_manager_store(action, identity, payload):
         "created": result.get("created", status < 300)}
 
 
-def _load_daily(identity):
+def _load_daily(identity, binding):
     with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'daily_farm_manager'
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
                   and review_json->'daily_farm_manager'->>'daily_identity'=%s
+                  and review_json->'daily_farm_manager'->>'owner_user_id'=%s
+                  and review_json->'daily_farm_manager'->>'chat_id'=%s
                   and review_json->'daily_farm_manager'->>'status' in
-                      ('presented','unchanged','provider_ambiguous')
+                      ('presented','unchanged')
                 order by created_at desc, review_event_id desc limit 1""",
-                (EVENT_SOURCE, identity))
+                (EVENT_SOURCE, identity, str(binding.get("owner_user_id") or ""),
+                 str(binding.get("chat_id") or "")))
             row = cursor.fetchone(); return row[0] if row else None
 
 
@@ -336,16 +360,19 @@ def _load_answered_questions(binding):
         return ()
     with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("""select distinct
-                    review_json->'manager_question_reply'->>'task_id'
+            cursor.execute("""select review_json->'manager_question_reply'
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_manager_question_reply'
                   and review_json->'manager_question_reply'->>'owner_user_id'=%s
                   and review_json->'manager_question_reply'->>'chat_id'=%s
-                  and review_json->'manager_question_reply'->>'status'='recorded'""",
+                  and review_json->'manager_question_reply'->>'daily_identity'=%s
+                  and review_json->'manager_question_reply'->>'status'='recorded'
+                order by created_at, review_event_id""",
                 (str(binding.get("owner_user_id") or ""),
-                 str(binding.get("chat_id") or "")))
-            return tuple(str(row[0]) for row in cursor.fetchall() if row and row[0])
+                 str(binding.get("chat_id") or ""),
+                 str(binding.get("daily_identity") or "")))
+            return tuple(dict(row[0]) for row in cursor.fetchall()
+                         if row and isinstance(row[0], dict))
 
 
 def _render(priorities, watch, question, now, language):
@@ -383,6 +410,11 @@ def _material(item):
         "next_action": item.next_action, "state": item.state.value,
         "authority": item.authority.value,
         "due_at": item.due_at.isoformat() if item.due_at else None}
+
+
+def _owner_projection_identity(daily_identity, owner_user_id, chat_id):
+    scope = sha256(f"{owner_user_id}|{chat_id}".encode()).hexdigest()[:16].upper()
+    return f"{daily_identity}:OWNER:{scope}"
 
 
 def _priority(item):
@@ -445,18 +477,20 @@ def _validated_semantic_order(items, selected):
 
 
 def _retire_answered_questions(results, answered):
-    answered = {str(value) for value in answered or () if str(value)}
-    if not answered:
+    receipts = tuple(value for value in answered or () if isinstance(value, dict))
+    if not receipts:
         return results
     projected = []
     for result in results:
         if not isinstance(result, SpecialistResult):
             projected.append(result)
             continue
-        items = tuple(replace(item, genuine_question="", question_for="")
-                      if item.item_id in answered else item
-                      for item in result.work_items)
-        projected.append(replace(result, work_items=items))
+        if result.specialist == "herdmaster":
+            from modules.oom_sakkie.herdmaster_daily_manager_adapter import (
+                reconcile_manager_question_answer)
+            for receipt in receipts:
+                result = reconcile_manager_question_answer(result, receipt)
+        projected.append(result)
     return projected
 
 

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import pytest
 
 from modules.oom_sakkie.daily_farm_manager import (
     build_daily_management_packet, build_litter_watch_result, build_sale_watch_result,
@@ -6,6 +7,8 @@ from modules.oom_sakkie.daily_farm_manager import (
 from modules.oom_sakkie.farm_manager_loop import (
     Authority, Provenance, SpecialistAvailability, SpecialistResult,
     SpecialistWorkItem, WorkState)
+from modules.oom_sakkie.herdmaster_daily_manager_adapter import (
+    reconcile_manager_question_answer)
 
 NOW=datetime(2026,8,10,5,0,tzinfo=timezone.utc)
 
@@ -15,8 +18,8 @@ def result(name="rootline",items=()):
         work_items=tuple(items))
 
 
-def item(identity,title,state=WorkState.PLANNED,value=50,question=""):
-    provenance=Provenance("rootline","rootline-1",("canonical",),NOW,1.0)
+def item(identity,title,state=WorkState.PLANNED,value=50,question="",specialist="rootline"):
+    provenance=Provenance(specialist,specialist+"-1",("canonical",),NOW,1.0)
     return SpecialistWorkItem(item_id=identity,dedupe_key=identity,domain="water_energy",
         title=title,why="Supported reason",next_action="Supported action",assignee="charl",
         state=state,authority=Authority.READ_ONLY,provenance=provenance,
@@ -28,7 +31,9 @@ def store():
     def effect(action,identity,payload):
         if action=="load_daily":
             candidates=[row for row in rows.values() if row.get("daily_identity")==identity
-                        and row.get("status") in {"presented","unchanged","provider_ambiguous"}]
+                        and row.get("status") in {"presented","unchanged"}
+                        and row.get("owner_user_id")==str((payload or {}).get("owner_user_id") or "")
+                        and row.get("chat_id")==str((payload or {}).get("chat_id") or "")]
             return candidates[-1] if candidates else None
         if action=="load_answered_questions":
             return ()
@@ -150,3 +155,54 @@ def test_provider_ambiguity_is_quarantined_without_retry():
         deliver=ambiguous,store=state,now=NOW)
     assert first["status"]=="daily_manager_delivery_ambiguous"
     assert replay["status"]=="daily_manager_replay_suppressed" and len(calls)==1
+
+
+def test_material_refresh_replaces_brief_instead_of_editing_or_acknowledging():
+    state=store(); replacements=[]
+    def deliver(*_args,**_kwargs):
+        return {"success":True,"telegram_message_id":"4000","telegram_sends":1}
+    first=run_daily_farm_manager(owner_user_id="42",chat_id="42",
+        specialist_results=[result(items=[item("R-1","Old current work")])],
+        litter_rows=[],deliver=deliver,store=state,now=NOW)
+    def replace(parsed,outcome,**kwargs):
+        replacements.append((parsed,outcome,kwargs))
+        return {"success":True,"status":"brief_replaced",
+            "telegram_message_id":"4001","telegram_sends":1,"telegram_deletes":1}
+    refreshed=run_daily_farm_manager(owner_user_id="42",chat_id="42",
+        specialist_results=[result(items=[item("R-2","New current work")])],
+        litter_rows=[],deliver=lambda *_a,**_k:pytest.fail("must not edit old brief"),
+        replace_brief=replace,store=state,now=NOW)
+    assert first["telegram_message_id"] == "4000"
+    assert refreshed["status"] == "daily_manager_presented"
+    assert refreshed["telegram_message_id"] == "4001"
+    assert len(replacements) == 1
+    assert replacements[0][2]["previous_message_id"] == "4000"
+    assert replacements[0][1]["rolling_brief_replacement"] is True
+
+
+def test_daily_projection_and_provider_claims_are_cross_owner_isolated():
+    state=store(); sends=[]
+    def deliver(parsed,_outcome,**kwargs):
+        sends.append((parsed["telegram_user_id"],kwargs["mission_id"],kwargs["card_mission_id"]))
+        return {"success":True,"telegram_message_id":str(5000+len(sends)),
+            "telegram_sends":1}
+    for owner in ("42","84"):
+        value=run_daily_farm_manager(owner_user_id=owner,chat_id=owner,
+            specialist_results=[result(items=[item("R-1","Current work")])],
+            litter_rows=[],deliver=deliver,store=state,now=NOW)
+        assert value["status"] == "daily_manager_presented"
+    assert len(sends) == 2 and sends[0][1] != sends[1][1]
+    assert sends[0][2] == sends[1][2]
+
+
+def test_herdmaster_reassesses_only_exact_current_question_from_owner_evidence():
+    current=result(name="herdmaster",items=[item("H-1","Welfare",question="Are they eating?",
+        specialist="herdmaster")])
+    receipt={"task_id":"H-1","dedupe_key":"H-1","domain":"herd",
+        "owner_evidence":"They are eating.",
+        "accumulated_semantic_facts":{"observation":"They are eating."}}
+    reconciled=reconcile_manager_question_answer(current,receipt)
+    stale=reconcile_manager_question_answer(current,{**receipt,"task_id":"OLD"})
+    assert reconciled.work_items[0].genuine_question==""
+    assert reconciled.result_id==current.result_id
+    assert stale == current and current.work_items[0].genuine_question=="Are they eating?"

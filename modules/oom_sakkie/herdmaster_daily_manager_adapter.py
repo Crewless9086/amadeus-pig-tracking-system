@@ -161,6 +161,32 @@ def _findings(rows):
         for row in rows[:4]) + ". No cause or diagnosis is inferred."
 
 
+def reconcile_manager_question_answer(result, receipt):
+    """Reassess one exact current HERDMASTER work item from owner evidence."""
+    if not isinstance(result, SpecialistResult) or result.specialist != "herdmaster" \
+            or not isinstance(receipt, dict):
+        return result
+    facts = receipt.get("accumulated_semantic_facts")
+    facts = facts if isinstance(facts, dict) else {}
+    task_id = str(receipt.get("task_id") or "")
+    dedupe = str(receipt.get("dedupe_key") or "")
+    if (str(receipt.get("domain") or "") not in {"herd", "herd_health", "herd_management"}
+            or not str(facts.get("observation") or "").strip()
+            or not str(receipt.get("owner_evidence") or "").strip()):
+        return result
+    matched = False
+    items = []
+    for item in result.work_items:
+        if (item.item_id == task_id and item.dedupe_key == dedupe
+                and bool(item.genuine_question.strip())):
+            item = replace(item, genuine_question="", question_for="")
+            matched = True
+        items.append(item)
+    if not matched:
+        return result
+    return replace(result, work_items=tuple(items))
+
+
 def _compact_identity(values):
     import hashlib
     return hashlib.sha256("|".join(sorted(values)).encode()).hexdigest()[:20]

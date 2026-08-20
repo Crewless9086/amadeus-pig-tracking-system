@@ -915,7 +915,19 @@ Current Stage 4 surface:
   07:00 plan loaders never run. Durable daily/provider claims, rather
   than a workstation process, arbitrate restarts and multiple web workers. One
   date-stable `:DELIVERY` claim is shared by the useful-plan and visible-failure
-  outcomes; evidence changes never create another same-day send or edit.
+  outcomes; scheduler replay or unreceipted evidence changes never create
+  another same-day send or edit. A later authenticated, durably receipted owner
+  answer may enter the separately generation-bound rolling continuation below.
+- `modules/oom_sakkie/morning_scheduler.py` and
+- Rolling current Brief continuation: authenticated complete answers are
+  durably receipted by `modules/oom_sakkie/manager_question_runtime.py`, then
+  `modules/oom_sakkie/morning_runtime.py` reloads specialist/canonical evidence
+  and `modules/oom_sakkie/daily_farm_manager.py` recomposes the same shared
+  projection. `modules/oom_sakkie/family_message_lifecycle.py` confirms a new
+  provider identity before canonical supersession and optional prior-Brief
+  cleanup. Unchanged material is silent; ambiguous replacement is not retried;
+  cleanup failure is silent presentation debt. No schema, queue, scheduler,
+  Telegram lifecycle or acknowledgement type is added.
 - `modules/oom_sakkie/morning_scheduler.py` and
   `scripts/oom_sakkie_morning_scheduler.py` — authenticated Render cron entry,
   exact daily-runtime dispatch and non-colliding read-only ROOTLINE schedule

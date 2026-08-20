@@ -94,7 +94,9 @@ def test_changed_evidence_after_restart_cannot_edit_or_send_again():
     assert first["status"] == "daily_manager_presented"
     assert restarted["status"] == "daily_manager_replay_suppressed"
     assert restarted["telegram_sends"] == restarted["telegram_edits"] == 0
-    assert deliveries == ["OOM-DAILY-FARM-MANAGER-2026-08-13:DELIVERY"]
+    assert len(deliveries) == 1
+    assert deliveries[0].startswith("OOM-DAILY-FARM-MANAGER-2026-08-13:OWNER:")
+    assert deliveries[0].endswith(":DELIVERY")
 
 
 def test_in_window_failure_retries_then_missed_window_escalates_once():
@@ -202,7 +204,9 @@ def test_success_claim_blocks_later_failure_card_for_same_date():
     assert first["status"] == "daily_manager_presented"
     assert failed["status"] == "morning_runtime_failure_replay_suppressed"
     assert failed["telegram_sends"] == failed["telegram_edits"] == 0
-    assert deliveries == ["OOM-DAILY-FARM-MANAGER-2026-08-13:DELIVERY"]
+    assert len(deliveries) == 1
+    assert deliveries[0].startswith("OOM-DAILY-FARM-MANAGER-2026-08-13:OWNER:")
+    assert deliveries[0].endswith(":DELIVERY")
 
 
 def test_runtime_starts_only_under_production_ownership(monkeypatch):

@@ -1,11 +1,141 @@
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Lock
+from contextlib import contextmanager
 import hashlib
 import pytest
 
 from modules.oom_sakkie.family_message_lifecycle import (_visible_notification_events,
-    bind_existing_card,bind_legacy_provider_request,deliver_family_result)
+    bind_existing_card,bind_legacy_provider_request,deliver_family_result,
+    replace_current_brief)
+
+
+def test_brief_replacement_confirms_supersession_before_optional_cleanup():
+    rows = {"prior":{"event_id":"prior","state":"delivered",
+        "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
+        "specialist_identity":"OOM_SAKKIE","task_state":"daily_farm_manager_ready"}}
+    order = []
+    def store(action, identity, payload):
+        if action == "load": return list(rows.values())
+        created = identity not in rows
+        if created:
+            rows[identity] = dict(payload or {})
+            order.append(rows[identity]["state"])
+        return {"success": True, "created": created}
+    value = replace_current_brief({"telegram_user_id":"42","telegram_chat_id":"42",
+        "provider_message_id":"owner-2","provider_timestamp":"2026-08-20T08:00:00+00:00",
+        "text":"answer"}, {"answer":"new brief","status":"daily_farm_manager_ready",
+        "rolling_brief_replacement":True}, mission_id="DAILY:GENERATION:2",
+        card_mission_id="DAILY", previous_message_id="100", generation_digest="a"*64,
+        event_store=store,
+        sender=lambda *_a:{"success":True,"telegram_message_id":"101"},
+        deleter=lambda *_a:{"success":False,"status":"telegram_delete_ambiguous"})
+    assert value["success"] is True
+    assert value["status"] == "brief_replaced_cleanup_debt"
+    assert value["telegram_message_id"] == "101" and value["telegram_deletes"] == 0
+    assert order.index("brief_generation_delivered") < order.index("brief_generation_superseded")
+    assert order.index("brief_generation_superseded") < order.index("brief_cleanup_debt")
+
+
+def test_ambiguous_brief_replacement_keeps_previous_current_and_never_deletes():
+    rows = {"prior":{"event_id":"prior","state":"delivered",
+        "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
+        "specialist_identity":"OOM_SAKKIE","task_state":"daily_farm_manager_ready"}}; deleted = []
+    def store(action, identity, payload):
+        if action == "load": return list(rows.values())
+        created = identity not in rows
+        if created: rows[identity] = dict(payload or {})
+        return {"success":True,"created":created}
+    kwargs = dict(mission_id="DAILY:GENERATION:2", card_mission_id="DAILY",
+        previous_message_id="100", generation_digest="b"*64, event_store=store,
+        sender=lambda *_a:{"success":False,"status":"ambiguous"},
+        deleter=lambda *_a:deleted.append(1))
+    parsed={"telegram_user_id":"42","telegram_chat_id":"42",
+        "provider_message_id":"owner-2","provider_timestamp":"2026-08-20T08:00:00+00:00",
+        "text":"answer"}
+    result={"answer":"new brief","status":"daily_farm_manager_ready",
+        "rolling_brief_replacement":True}
+    first=replace_current_brief(parsed,result,**kwargs)
+    replay=replace_current_brief(parsed,result,**kwargs)
+    assert first["status"] == replay["status"] == "brief_replacement_delivery_ambiguous"
+    assert deleted == [] and first["telegram_sends"] == replay["telegram_sends"] == 0
+
+
+def test_brief_replacement_requires_exact_prior_owner_provider_binding():
+    def store(action,_identity,_payload):
+        return [{"state":"delivered","telegram_message_id":"100",
+            "owner_user_id":"another-owner","chat_id":"another-chat",
+            "specialist_identity":"OOM_SAKKIE"}] if action == "load" else {
+                "success":True,"created":True}
+    value=replace_current_brief({"telegram_user_id":"42","telegram_chat_id":"42",
+        "provider_message_id":"2","provider_timestamp":"2026-08-20T08:00:00+00:00",
+        "text":"answer"},{"answer":"new brief","status":"daily_farm_manager_ready",
+        "rolling_brief_replacement":True},mission_id="D:G",card_mission_id="D",
+        previous_message_id="100",generation_digest="c"*64,event_store=store,
+        sender=lambda *_a:pytest.fail("must not send"),
+        deleter=lambda *_a:pytest.fail("must not delete"))
+    assert value["status"] == "brief_replacement_prior_binding_unproven"
+
+
+def test_different_material_generations_serialize_against_one_current_brief():
+    rows={"prior":{"event_id":"prior","state":"delivered","task_state":"daily_farm_manager_ready",
+        "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
+        "specialist_identity":"OOM_SAKKIE"}}
+    row_lock=Lock(); projection=Lock(); sends=[]
+    def store(action,identity,payload):
+        with row_lock:
+            if action=="load": return list(rows.values())
+            created=identity not in rows
+            if created: rows[identity]=dict(payload or {})
+            return {"success":True,"created":created}
+    @contextmanager
+    def locked(_identity):
+        with projection: yield
+    def run(digest):
+        return replace_current_brief({"telegram_user_id":"42","telegram_chat_id":"42",
+            "provider_message_id":"2","provider_timestamp":"2026-08-20T08:00:00+00:00",
+            "text":"answer"},{"answer":"brief "+digest[0],"status":"daily_farm_manager_ready",
+            "rolling_brief_replacement":True},mission_id="D:"+digest[0],card_mission_id="D",
+            previous_message_id="100",generation_digest=digest,event_store=store,
+            sender=lambda *_a:(sends.append(1) or {"success":True,"telegram_message_id":"101"}),
+            deleter=lambda *_a:{"success":True},projection_lock=locked)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        values=list(executor.map(run,("d"*64,"e"*64)))
+    assert len(sends)==1
+    assert sorted(value["success"] for value in values)==[False,True]
+    assert any(value["status"]=="brief_replacement_prior_binding_unproven" for value in values)
+
+
+def test_delivered_generation_resumes_supersession_without_another_send():
+    rows={"prior":{"event_id":"prior","state":"delivered","task_state":"daily_farm_manager_ready",
+        "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
+        "specialist_identity":"OOM_SAKKIE"}}
+    fail_supersession=[True]; sends=[]
+    def store(action,identity,payload):
+        if action=="load": return list(rows.values())
+        if identity.endswith("-SUPERSEDED") and fail_supersession[0]:
+            fail_supersession[0]=False
+            return {"success":False,"created":False}
+        created=identity not in rows
+        if created: rows[identity]=dict(payload or {})
+        return {"success":True,"created":created}
+    kwargs=dict(mission_id="D:G",card_mission_id="D",previous_message_id="100",
+        generation_digest="f"*64,event_store=store,
+        sender=lambda *_a:(sends.append(1) or {"success":True,"telegram_message_id":"101"}),
+        deleter=lambda *_a:{"success":False,"status":"ambiguous"},
+        projection_lock=lambda _identity:_null_context())
+    parsed={"telegram_user_id":"42","telegram_chat_id":"42","provider_message_id":"2",
+        "provider_timestamp":"2026-08-20T08:00:00+00:00","text":"answer"}
+    result={"answer":"new","status":"daily_farm_manager_ready","rolling_brief_replacement":True}
+    first=replace_current_brief(parsed,result,**kwargs)
+    replay=replace_current_brief(parsed,result,**kwargs)
+    assert first["status"]=="brief_replacement_supersession_receipt_unavailable"
+    assert replay["status"]=="brief_replaced_cleanup_debt" and len(sends)==1
+
+
+@contextmanager
+def _null_context():
+    yield
 
 
 def test_postgres_lifecycle_load_uses_bounded_transaction_read_only(monkeypatch):
