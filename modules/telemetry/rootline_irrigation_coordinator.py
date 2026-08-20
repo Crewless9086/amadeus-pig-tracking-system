@@ -23,6 +23,9 @@ from modules.telemetry.rootline_device_registry import commissioned_irrigation_c
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
+EMERGENCY_OFF_AUXILIARY_DEVICE_ID = "FERTILIZER-MIXER-CH2"
+EMERGENCY_OFF_DEVICE_ID = "100204d497"
+EMERGENCY_OFF_CHANNEL = "2"
 
 
 def advance_irrigation_execution(*, decision_id, commissioning_id,
@@ -220,6 +223,41 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     active={**execution,"state":"Active","on_attempts":1,"start_evidence":started}
     store("mark_auxiliary_active",active)
     return _aux_result("auxiliary_started",commands=1,state="Started",execution=active)
+
+
+def emergency_off_auxiliary_execution(*, store, transport,
+                                      reason="emergency_off"):
+    """Drive one exact active auxiliary output to authoritative OFF.
+
+    Emergency shutdown never grants ON authority and reuses the existing
+    execution, OFF-attempt and containment rails. The complete canonical
+    binding prevents injection, borehole or unrelated outputs from inheriting
+    a Mixer's stop request.
+    """
+    active = store("load_active_auxiliary", None)
+    if not isinstance(active, dict):
+        return _aux_result("auxiliary_emergency_off_no_active_execution")
+    if (active.get("auxiliary_device_id") != EMERGENCY_OFF_AUXILIARY_DEVICE_ID
+            or active.get("device_id") != EMERGENCY_OFF_DEVICE_ID
+            or str(active.get("channel") or "") != EMERGENCY_OFF_CHANNEL):
+        return _aux_result("auxiliary_emergency_off_binding_mismatch",
+            state="Intervention", fertilizer_debt=True)
+    recovery = _bounded_auxiliary_off(active, store, transport)
+    shutdown = _read_auxiliary_output(active, transport)
+    verified = (shutdown.get("authoritative") is True
+                and shutdown.get("state") == "OFF")
+    containment = {**active, "reason": str(reason or "emergency_off"),
+        "shutdown_verified": verified, "shutdown_evidence": shutdown}
+    store("contain_auxiliary_device", containment)
+    if not verified:
+        store("record_auxiliary_exception", {**containment,
+            "fertilizer_debt": True})
+    return _aux_result("auxiliary_emergency_off_verified" if verified
+        else "auxiliary_emergency_off_unverified",
+        commands=recovery["commands"], state="Intervention",
+        fertilizer_debt=not verified, auxiliary_contained=True,
+        shutdown_verified=verified, shutdown_evidence=shutdown,
+        execution_id=active.get("execution_id"))
 
 
 def _recover_auxiliary(active,store,transport,now):
