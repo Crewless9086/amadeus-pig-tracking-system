@@ -746,6 +746,26 @@ the release lane is free. Automatic promotion requires exact deployment proof
 and a separately explicit bounded mixer-only commissioning authorization; it
 must not inherit authority for injection, irrigation or borehole.
 
+A fresh exact-main read-only deployment-proof pass then established that generic
+Render health is HTTP 200 but does not expose the loaded revision; latest
+attributable deployment evidence predates PR #1135, and canonical/eWeLink
+credentials were unavailable. Device/account/channel, current OFF, native
+five-minute fail-stop and absence of an active execution therefore remain
+Unknown rather than inferred. The terminal created source-only PR #1137 at exact
+head `257995dc`, adding a fail-closed `/health/revision` response bound to Render
+and a strict 40-hex provider commit. Independent Control Tower verification found
+the PR open, clean and mergeable with all three hosted checks successful; 36
+focused tests and independent security/provider review also passed. Zero
+commands, writes, claims, executions, confirmations or messages occurred.
+
+Lifecycle: `REVIEWED_SOURCE_READY / RELEASE_APPROVAL_REQUIRED`. The released
+terminal auto-closed and must not be kept open as work. Exact next boundary is a
+source-only merge/deploy of #1137; after exact revision readback, an authorized
+read-only canonical/provider observer must prove every mixer readiness fact.
+Physical commissioning remains a later separate owner authority and may begin
+only after that proof. No owner presence or repeated commissioning attempt is
+requested at this source-release boundary.
+
 The first CORE handshake-repair terminal was interrupted externally during its
 focused pytest run and produced no final handover, commit or PR. Its exact dirty
 candidate is preserved only in
