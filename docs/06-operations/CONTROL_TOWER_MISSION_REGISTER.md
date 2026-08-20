@@ -56,6 +56,22 @@ change secrets or credentials, create claims/writes, or operate any provider or
 hardware control. Lifecycle is `WORKING / GOVERNED_MIGRATION_JOB_SUCCEEDED /
 AUTONOMOUS_ZERO_CONTROL_ACCEPTANCE_IN_PROGRESS`.
 
+After Charl requested full safe terminal capacity, Control Tower found the
+ROOTLINE observer still freshly dispatched but without a completed handover;
+process existence was not promoted to progress. Two disjoint operating-spine
+slots were then filled from exact main `b9eefabf`. CORE Recovery Slot 1 now has
+a validation-only terminal in `C:\tmp\core-b9eefabf-validation-20260820`
+(fresh Node PID `14488`, Codex PID `38740`) producing one new exact-current
+canonical receipt in disposable isolation; it has no staging or activation
+authority. SAM Recovery Slot 3 now has a read-only/source-bounded terminal in
+`C:\tmp\sam-operational-reality-20260820` (fresh Node PID `34384`, Codex PID
+`1372`) verifying genuine provider/canonical inbox operation and may repair only
+a proven collision-free autonomous-observation defect before stopping at a PR;
+it has no customer-send, synthetic-inbound, data-write, gate or credential
+authority. With ROOTLINE Node/Codex PIDs `8916`/`37340`, three visible terminals
+are dispatched at the recovery WIP cap. These identities prove launch only;
+completion still requires their attributable handovers and required evidence.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
