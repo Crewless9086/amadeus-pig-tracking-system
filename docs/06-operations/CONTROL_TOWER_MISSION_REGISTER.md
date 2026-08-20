@@ -848,6 +848,23 @@ desktop/mobile homepage and full-attention presentation; after approval, merge
 and deployment remain a separately governed release action. No continuation is
 dispatched while that decision is outstanding.
 
+The released Oom Sakkie implementation slot was then reassigned to the existing
+CORE `CMQ-20260813-05` Recovery Slot 1 journey. PR #1136 had already merged its
+canonical signed v2 validation-receipt producer as `88bccc07`; current main is
+now `986e13e897d86b22beef67b3074491e7304b37a7`. A fresh clean worktree
+`C:\tmp\core-exact-current-validation-20260820` on branch
+`fix/core-exact-current-validation-20260820` was created from that exact main and
+a visible auto-closing terminal was dispatched for one fresh isolated canonical
+validation identity only. It must use the complete feedback handover template
+and preserve all historical/rejected identities. It has zero staging,
+activation, deployment, key, Task Scheduler, watchdog, supervisor, runner,
+process-control, mission-dispatch or business-effect authority. Fresh launcher
+evidence identified Node PID `29032` and Codex PID `2792`; these prove only that
+the dispatch started. Lifecycle is `WORKING /
+EXACT_CURRENT_VALIDATION_IN_PROGRESS`; successful completion requires an
+attributable immutable receipt with exact suite/digest/count/isolation evidence,
+not an open terminal.
+
 The approved longitudinal welfare-case addendum has now entered its first bounded,
 collision-safe source phase in a fresh visible HERDMASTER terminal. Worktree
 `C:\tmp\herdmaster-welfare-cases-20260820` was created from current authoritative
