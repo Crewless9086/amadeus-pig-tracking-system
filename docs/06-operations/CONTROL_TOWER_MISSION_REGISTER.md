@@ -3094,3 +3094,29 @@ the three disjoint lanes fill current safe development capacity. BEACON real-pos
 preparation is the next dispatch when one lane releases; publication/boost remains
 a genuine protected external effect requiring exact content/channel/spend evidence
 and authority, not another abstract proposal.
+
+### Executable Mission Outcome Gate - 2026-08-20
+
+Owner directed immediate mechanical enforcement after repeated false closure and
+time loss. Fresh evidence again showed Oom Sakkie and ROOTLINE source terminals
+emitting 714/788-byte summaries that claimed the full feedback template existed at
+the same path. Those artifacts are accepted only as technical-stage summaries;
+neither mission is closed. ROOTLINE explicitly remains business-incomplete because
+fresh protected canonical/provider observation was unavailable. Oom Sakkie PR
+#1142 is source-ready/CI-green only.
+
+One visible exact-main CORE terminal was dispatched in
+`C:\tmp\core-mission-outcome-gate-20260820`, branch
+`fix/core-mission-outcome-gate-20260820`, with fresh attributable process ancestry.
+It must implement a versioned structured handover validator and canonical mission
+transition guard. A terminal may release a stage but may never self-assign
+`BUSINESS_COMPLETE`. Missing deployed actor, genuine non-terminal trigger, loaded
+revision, canonical/provider/physical-or-customer evidence where applicable, later
+independent cycle or measured owner-work removal must keep the mission open.
+
+Invalid/short/ambiguous handovers must become `INVALID_HANDOVER`; terminal closure
+must preserve the mission and calculate the next safe stage or exact protected/
+external hold with wake condition. Tests must prove PR/merge/deployment-only and
+terminal-created evidence cannot close a mission. The terminal is source-only and
+must return the complete feedback template; merge, deployment and live enforcement
+proof remain later protected stages.
