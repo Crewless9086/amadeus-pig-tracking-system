@@ -169,6 +169,30 @@ and a later terminal-independent cycle. PR #1126 overlaps only the mission
 register and must be reconciled after any #1140 integration; neither open PR nor
 historical worktree is treated as active ownership.
 
+Charl authorized PR #1140's exact reviewed head for merge/deployment while
+explicitly prohibiting terminal-issued irrigation, hardware control, Telegram,
+credential changes, manufactured evidence and manual worker invocation. Control
+Tower reverified exact head `e43c828c`, clean mergeability and all three green CI
+lanes, then merged it normally as authoritative main
+`3961411236fca3329abaac2d34cfb863167c1c73`. Render deployment
+`dep-da3in267bikc7396arrg` became live and `/health/revision` returned HTTP 200,
+`provider=render`, `identity_complete=true` and exact revision `39614112` with
+request identity `f5155d3e-68e8-47f7`. No worker, provider or hardware action was
+invoked during release.
+
+A fresh clean read-only acceptance observer was dispatched from exact main in
+`C:\tmp\rootline-1140-deployed-acceptance-20260820`, branch
+`audit/rootline-1140-deployed-acceptance-20260820`. Its exact visible ancestry is
+PowerShell PID `15224`, Node PID `39712` and Codex PID `2516`. This proves prompt
+delivery and start only, not operational progress or completion. The observer
+must wait for naturally scheduled deployed cycles, determine B Camp's exact
+canonical lifecycle or truthful blocker, reconcile C Camp completion, and obtain
+a later distinct terminal-independent cycle. It has read-only authority and may
+not invoke the worker, send Telegram, mutate farm/database/provider state or
+operate any device. Lifecycle is `WORKING / EXACT_REVISION_DEPLOYED /
+AUTONOMOUS_ACCEPTANCE_OBSERVER_STARTED`; Business completion remains unproven.
+PR #1126 was reconciled with the exact new authoritative main without conflict.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
