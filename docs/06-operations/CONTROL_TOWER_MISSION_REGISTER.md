@@ -3373,3 +3373,35 @@ Tower receipt and terminal handover must separately report target owner outcome,
 owner outcome actually achieved, enabling-stage progress and whether Charl can use
 the capability successfully now. If he cannot, the mission remains open regardless
 of technical-stage quality.
+### Usable-outcome continuation after Green and borehole closure - 2026-08-20
+
+Fresh sweep proved the DOCUMENTS Green and ROOTLINE borehole terminals closed;
+OOM Sakkie remained open with fresh dirty source/test changes. Both closed terminals
+returned materially populated handovers and explicitly reported `NO BUSINESS
+OUTCOME`, no deployed actor/cycle and no physical result. Their source stages are
+preserved, but neither capability is usable now.
+
+DOCUMENTS `DMQ-20260816-01`: target owner outcome is one genuine authenticated
+natural weekly-weighing request producing exactly one correct physical print and
+one truthful closure. Owner outcome achieved: `NONE`. Usable now: `NO`. Enabling
+stage: clean CI-green PR #1150 at `8ca84260943d81891452abdccb2099a2167ebef5`
+with a bounded contract and commissioning guide. First missing real-life gate is
+the canonical request/PDF/version/digest and crash-safe executable adapter contract.
+Because safe same-mission work remains, Control Tower resumed the exact visible
+worktree/PR rather than starting a new mission or asking for merge/hardware authority.
+
+ROOTLINE borehole: target owner outcome is deployed ROOTLINE safely pumping the
+real commissioned borehole from genuine canonical need, proving provider/canonical/
+physical water result and final OFF, then repeating independently. Owner outcome
+achieved: `NONE`. Usable now: `NO`. Enabling stage: PR #1151 at
+`ff55f12cc425b7693fa035dc586c312924fec7d3`; two hosted checks passed and the
+PostgreSQL audit lane was still running at sweep time. First missing real-life gate
+is canonical commissioned-baseline validation, durable execution identity and
+existing coordinator/runtime integration. Control Tower resumed that exact visible
+worktree/PR for non-actuating implementation; authority and hardware remain disabled.
+
+Fresh PowerShell-to-Codex ancestry proves both continuation instructions started,
+but process presence is dispatch evidence only. Progress requires later diff,
+commit, tests and complete handover. The current capacity is completion-depth only:
+OOM owner-attention correction, the same Green printing journey and the same
+borehole journey. No new capability mission was opened.
