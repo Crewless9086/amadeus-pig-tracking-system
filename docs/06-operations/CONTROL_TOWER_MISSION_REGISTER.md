@@ -2906,3 +2906,34 @@ continuity were not established. No business, farm, customer, messaging or
 hardware effect occurred. An open or recently closed process is not treated as
 CORE being alive; a fresh diagnosis and separately governed activation are
 required.
+
+Full terminal handover subsequently confirmed exact Task Scheduler instance
+`{E66790D2-FAD2-4A7D-98AC-540CEC3BC444}` and provider records 3343-3350:
+queue, start and action occurred, then the action exited with return code
+`2147942401` before any activation-bound supervisor, runner, heartbeat or result.
+Activation rollback record SHA-256 is
+`3841e2b998ee56bac96d55ee3f9d3c6f93757aa3089a6e7f8376ccecf13c8a96`;
+failure record SHA-256 is
+`0e80206568a45e2060ca308fa2143eb33009ee6fa53a9be9948a33d8be94ca88`;
+final governed-stop SHA-256 is
+`8887c0c06d040b60fef580c0135761019fe7e416d594538cf86fcf18d1e594b1`.
+The activation identity is sealed and non-replayable.
+
+Control Tower freshly verified the closed activation worktree and complete
+handover, disabled exact watchdog task, present governed stop, absent
+activation-owned process and absence of a next executable cycle. It then opened
+one disjoint source-only diagnosis lane at authoritative main
+`3961411236fca3329abaac2d34cfb863167c1c73`:
+`C:\tmp\core-watchdog-provider-exit-20260820`, branch
+`fix/core-watchdog-provider-exit-20260820`. Fresh attributable PowerShell and
+Codex process ancestry proved the diagnosis instruction started. This is
+development work, not CORE runtime liveness.
+
+Diagnosis scope is limited to the exact provider action exit, task-action/path/
+quoting/environment construction, launcher return propagation and activation
+binding. The terminal may produce an isolated source repair and PR with tests and
+review. It may not enable, run or change Task Scheduler, activate or start CORE,
+stage/deploy, reuse the sealed identity, dispatch a mission, or create any
+business, messaging, provider, farm or hardware effect. It must return the full
+`CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. A later validation, staging and
+fresh separately authorized activation remain required.
