@@ -570,6 +570,27 @@ identity, task invocation, heartbeat, mission cycle or business/farm/provider
 effect. Lifecycle is `WORKING / EXACT_CURRENT_STAGING_IN_PROGRESS`; process
 identity is launch evidence only.
 
+The staging gate rejected the supplied receipt before mutation. Its wrapper HMAC
+was authentic, but schema `cmq_signed_validation_envelope_v1` is incompatible
+with the canonical top-level `charlie_isolated_validation_receipt_v1` staging
+contract and the embedded JSON is malformed at `effects`. Receipt SHA-256
+`678acbe8...bd87fe` and validation identity
+`2a4b47f0-cd08-4dcd-bf34-adf633c3e20d` are permanently rejected and must not be
+retried. No key was provisioned, lane acquired or source staged. Runtime,
+execution and manifest remain exact `86fb87a3`; governed stop is present,
+supervisor stopped, task disabled and all lanes free. The contained staging
+window was closed.
+
+Control Tower immediately opened a fresh validation/receipt-generation epoch,
+not a staging retry, in the exact clean validation worktree. Visible parent PID
+39024, launcher PID 15380 and worker PID 41824 must use the repository's canonical
+receipt producer and prove acceptance through the exact staging validator in a
+second isolated boundary. It may not handcraft an envelope; a missing/defective
+producer must return a bounded source repair. Staging, activation and runtime or
+business effects remain forbidden. Lifecycle is `WORKING /
+CANONICAL_RECEIPT_REGENERATION_IN_PROGRESS`; process identity is launch evidence
+only.
+
 Charl reported the SALES owner page open and authenticated, but browser-control
 discovery returned no connected browser surface. Therefore Control Tower did not
 read, submit or fabricate a preview. The owner may safely create the zero-write
