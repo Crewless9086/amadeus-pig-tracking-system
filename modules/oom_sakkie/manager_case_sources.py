@@ -149,12 +149,17 @@ def _herdmaster(now):
         due = item.due_at or now
         urgency = {"urgent": "urgent", "due_today": "due", "planned": "planned",
                    "waiting_for_evidence": "urgent", "protected_owner_decision": "due"}.get(item.state.value, "watch")
+        task_class = ("status_reconciliation" if unknowns or item.state.value == "waiting_for_evidence"
+                      else ("physical_action_due" if any(term in item.next_action.casefold()
+                            for term in ("record weight", "weigh now", "physical weighing"))
+                            else "informational_watch"))
         candidates.append(_candidate(
             "herdmaster:" + str(item.dedupe_key), "HERDMASTER", urgency,
             [f"result:{result.result_id}",
              f"observed:{item.provenance.observed_at.isoformat()}",
              *item.provenance.source_refs], unknowns,
-            item.title + ": " + item.why, item.next_action, due))
+            item.title + ": " + item.why, item.next_action, due,
+            task_class=task_class))
     from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
     snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
@@ -187,7 +192,7 @@ def _herdmaster(now):
                 ([] if wean != "unknown" else ["current_litter_weaning_due_date"]),
                 f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}.",
                 "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.",
-                now + timedelta(minutes=30)))
+                now + timedelta(minutes=30), task_class="informational_watch"))
     return candidates
 
 
@@ -303,10 +308,14 @@ def _runtime(now):
         now + timedelta(minutes=5))]
 
 
-def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_action, next_at):
-    return {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
+def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_action, next_at,
+               *, task_class=None):
+    result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
+    if task_class:
+        result["task_class"] = task_class
+    return result
 
 
 def _configured_owner():

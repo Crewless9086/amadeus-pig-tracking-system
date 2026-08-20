@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - Shared owner-attention projection implementation
+
+- Bound the existing Oom Sakkie manager collectors to one typed, read-only
+  owner-attention projection consumed by homepage, Brief and Telegram.
+- Stable work identity, ordered priority/watch class, specialist ownership,
+  provenance/freshness, exact owner action, safe target and lifecycle are now
+  channel-invariant; UI code no longer decides which attention work exists.
+- Kept status reconciliation separate from genuine physical weighing and kept
+  ROOTLINE retry/refresh work agent-owned unless evidence explicitly names a
+  physical owner observation.
+
 ## 2026-08-19 - One canonical system across every channel
 
 - Made application, Telegram, voice and scheduled workers explicit adapters to

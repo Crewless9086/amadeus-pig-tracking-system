@@ -592,7 +592,8 @@ def _compact_telegram_reply(message_result, title="Oom Sakkie", footer=None):
 
 def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
     sections = (context or {}).get("sections") or {}
-    if not sections:
+    attention = (context or {}).get("owner_attention") or {}
+    if not sections and not attention.get("items"):
         return ""
     farm = ((sections.get("farm") or {}).get("llm_context") or {}).get("sections") or {}
     business = (sections.get("business") or {}).get("llm_context") or {}
@@ -600,6 +601,21 @@ def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
     command_center = command.get("command_center") or {}
     next_actions = list((context or {}).get("next_actions") or [])[:2]
     lines = [title, "", "Daily Command Brief", ""]
+    attention_items = list(attention.get("top_items") or attention.get("items") or [])[:3]
+    if attention_items:
+        lines.append("Owner attention")
+        for item in attention_items:
+            lines.append(f"- {item.get('semantic_emoji', '•')} {item.get('title', 'Current work')} — {item.get('specialist_owner', 'specialist')}")
+            lines.append(f"  {item.get('work_id', 'identity unavailable')} · {str(item.get('task_class', 'watch')).replace('_', ' ')} · {item.get('priority', 'watch')} · {item.get('lifecycle', 'open')} · {item.get('freshness', 'unknown freshness')}")
+            lines.append(f"  Action: {_clip(str(item.get('exact_owner_action') or 'No supported owner action.'), 220)}")
+            refs = list(item.get("provenance") or [])[:2]
+            if refs:
+                lines.append(f"  Evidence: {_clip(' · '.join(str(ref) for ref in refs), 180)}")
+            lines.append(f"  Detail: {item.get('detail_target', '/owner-attention')}")
+        hidden = int(attention.get("hidden_count") or 0)
+        if hidden:
+            lines.append(f"- ➕ {hidden} more: /attention")
+        lines.append("")
     if farm:
         lines.extend([
             "Farm",

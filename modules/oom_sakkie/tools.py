@@ -769,6 +769,13 @@ def sales_conversation_learning_status_handler(_args):
 
 
 def jarvis_daily_command_brief_handler(_args):
+    from modules.oom_sakkie.owner_attention_projection import load_owner_attention_projection
+    try:
+        owner_attention = load_owner_attention_projection()
+    except Exception as exc:
+        owner_attention = {"success": False, "status": "owner_attention_projection_unavailable",
+                           "failure_class": exc.__class__.__name__, "items": [],
+                           "ordered_work_ids": [], "total_count": 0, "hidden_count": 0}
     sections = {
         "farm": farm_operating_brief_handler({}),
         "business": business_growth_brief_handler({}),
@@ -832,6 +839,7 @@ def jarvis_daily_command_brief_handler(_args):
         "safety_notes": safety_notes[:10],
         "llm_context": {
             "kind": "jarvis_daily_command_brief",
+            "owner_attention": owner_attention,
             "sections": section_context,
             "failed_sections": failed,
             "selected_agent": {
@@ -847,6 +855,7 @@ def jarvis_daily_command_brief_handler(_args):
         },
         "raw": {
             "kind": "jarvis_daily_command_brief",
+            "owner_attention": owner_attention,
             "sections": sections,
             "failed_sections": failed,
         },

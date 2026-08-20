@@ -91,6 +91,14 @@ def home():
     return render_template("dashboard.html")
 
 
+@app.route("/owner-attention")
+def owner_attention_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
+    return render_template("owner-attention.html")
+
+
 @app.route("/rootline/policy-review")
 def rootline_policy_review_page():
     guard = require_strict_owner_read_access()

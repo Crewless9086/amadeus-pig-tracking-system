@@ -2064,6 +2064,18 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertNotIn("/api/telemetry/rootline/daily-brief", js)
         self.assertNotIn('method: "POST"', js)
 
+    def test_dashboard_attention_is_one_backend_projection_with_governed_view_all(self):
+        template = Path("templates/dashboard.html").read_text(encoding="utf-8")
+        detail = Path("templates/owner-attention.html").read_text(encoding="utf-8")
+        js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
+
+        self.assertIn("/api/oom-sakkie/owner-attention", js)
+        self.assertIn('id="attention_view_all"', template)
+        self.assertIn('href="/owner-attention"', template)
+        self.assertIn("ownerAttention.js", detail)
+        self.assertNotIn("addAttention", js)
+        self.assertNotIn("removeAttention", js)
+
     def test_dashboard_v2_detail_pages_are_read_only_and_consistently_navigable(self):
         app_source = Path("app.py").read_text(encoding="utf-8")
         nav = Path("templates/_farm_nav.html").read_text(encoding="utf-8")

@@ -1,6 +1,6 @@
 # Oom Sakkie Owner Attention Queue Workflow
 
-Status: coordination kernel integrated; existing-rail adapter prepared
+Status: coordination kernel integrated; shared read-only projection implemented
 
 ## Outcome
 
@@ -83,6 +83,14 @@ provider, callback-replay or owner-authentication checks.
 
 No summary/card/alert intent itself authorizes Telegram, customer, Chatwoot,
 farm, commercial or hardware activity.
+
+`modules/oom_sakkie/owner_attention_projection.py` is the single read-only
+channel projection over the existing general-manager specialist collectors.
+It creates no persistence or trigger. The homepage, complete owner-attention
+view, daily Brief and Telegram formatter consume its ordered stable work IDs,
+classification, specialist ownership, provenance/freshness, exact owner action,
+safe detail target and lifecycle. Browser code may display this packet but may
+not add, remove, rank or reclassify owner-attention work.
 
 ## Existing-rail adapter
 
