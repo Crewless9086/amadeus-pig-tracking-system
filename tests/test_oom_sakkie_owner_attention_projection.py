@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from modules.oom_sakkie.manager_case_sources import _herdmaster
 from modules.oom_sakkie.owner_attention_projection import build_owner_attention_projection
 from modules.oom_sakkie.telegram_direct import _format_daily_command_brief
 
@@ -107,3 +108,36 @@ def test_failed_specialist_does_not_resolve_its_prior_work():
     retained = next(item for item in delivery_projection["lifecycle_items"]
                     if item["source_key"] == "delivery:HERDMASTER:abc")
     assert retained["lifecycle"] == "open"
+
+
+def test_herdmaster_protected_state_is_typed_as_owner_decision(monkeypatch):
+    class State:
+        value = "protected_owner_decision"
+
+    class Provenance:
+        observed_at = NOW
+        source_refs = ("canonical:herd",)
+
+    class WorkItem:
+        state = State()
+        genuine_question = None
+        due_at = NOW
+        dedupe_key = "purpose-choice"
+        title = "Purpose needs Charl's choice"
+        why = "Two materially different supported outcomes remain."
+        next_action = "Choose the intended purpose."
+        provenance = Provenance()
+
+    class Result:
+        result_id = "herd-result-1"
+        work_items = (WorkItem(),)
+
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "owner-1")
+    monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
+                        lambda *_args: Result())
+    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
+                        lambda: {"overview_rows": [], "litter_rows": []})
+
+    rows = _herdmaster(NOW)
+
+    assert rows[0]["task_class"] == "protected_decision"

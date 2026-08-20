@@ -149,10 +149,11 @@ def _herdmaster(now):
         due = item.due_at or now
         urgency = {"urgent": "urgent", "due_today": "due", "planned": "planned",
                    "waiting_for_evidence": "urgent", "protected_owner_decision": "due"}.get(item.state.value, "watch")
-        task_class = ("status_reconciliation" if unknowns or item.state.value == "waiting_for_evidence"
+        task_class = ("protected_decision" if item.state.value == "protected_owner_decision"
+                      else ("status_reconciliation" if unknowns or item.state.value == "waiting_for_evidence"
                       else ("physical_action_due" if any(term in item.next_action.casefold()
                             for term in ("record weight", "weigh now", "physical weighing"))
-                            else "informational_watch"))
+                            else "informational_watch")))
         candidates.append(_candidate(
             "herdmaster:" + str(item.dedupe_key), "HERDMASTER", urgency,
             [f"result:{result.result_id}",

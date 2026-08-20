@@ -112,8 +112,7 @@ def _load_prior_cases(now: datetime) -> list[dict[str, Any]]:
             cur.execute("""select dedupe_key,specialist,urgency,status,evidence_refs,unknowns,
                     summary,next_action,updated_at
                 from app_private.oom_manager_cases
-                where updated_at >= %s - interval '7 days'
-                order by updated_at desc,dedupe_key""", (now,))
+                order by updated_at desc,dedupe_key""")
             return [{"dedupe_key": row[0], "specialist": row[1], "urgency": row[2],
                      "lifecycle": (row[3] if row[3] in LIFECYCLES else "open"),
                      "evidence_refs": row[4] or [f"manager_case:{row[0]}"],
