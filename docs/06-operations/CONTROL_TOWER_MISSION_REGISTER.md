@@ -3149,3 +3149,29 @@ Fresh visible PowerShell and Codex child ancestry proved both instructions start
 later progress still requires worktree/commit/handover evidence. All three terminals
 must return the complete `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. No open
 process, old wait or historical provider event is treated as mission activity.
+
+The Mission Outcome Gate terminal subsequently closed at clean, CI-green PR #1144,
+exact head `5e0b590ad006945c87541c151e0c90218ab7455f`. Its source reports structured
+`core_mission_outcome_handover_v1`, separation of terminal/stage status from
+business lifecycle, automatic preservation of open missions for invalid/incomplete
+handover, bounded N/A/hold semantics and evidence-gated `BUSINESS_COMPLETE`; 430
+tests and 13 subtests, Brain Guard and all three exact-head checks passed. It is
+`RELEASE_HOLD / SOURCE_READY / LIVE_ENFORCEMENT_UNPROVEN`, not complete.
+
+The terminal's saved 1,269-byte summary again claimed a fully populated handover at
+the same path. Under the new contract this is technical-stage summary evidence and
+would be `INVALID_HANDOVER` for mission closure. PR #1144 must reconcile PR #1126's
+Mission Standard overlap before any exact-head merge decision. Merge, deployment,
+live rejection of an invalid handover and one valid genuine business-completion
+fixture remain required.
+
+Control Tower immediately reused the released collision-free lane at exact main for
+`C:\tmp\herdmaster-prince-owner-outcome-20260820`, branch
+`fix/herdmaster-prince-owner-outcome-20260820`. The visible HERDMASTER terminal must
+trace the genuine Prince reply through authenticated ingress, question receipt,
+HERDMASTER consumption/reassessment, question retirement, shared projection and
+provider state, preserving unsupported facts as Unknown. It may repair a proven
+reusable defect through existing rails but may not replay the owner message, ask
+for repetition, manually affect Telegram or infer/write recovery. Fresh parent/
+child process ancestry proves dispatch only; progress requires later diff/commit/
+handover evidence.
