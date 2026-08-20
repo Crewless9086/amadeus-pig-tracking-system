@@ -766,6 +766,35 @@ Physical commissioning remains a later separate owner authority and may begin
 only after that proof. No owner presence or repeated commissioning attempt is
 requested at this source-release boundary.
 
+Charl then explicitly approved the source-only merge and deployment of PR #1137
+at exact head `257995dc`, with every hardware, execution, claim, confirmation,
+farm-write, Telegram and credential effect excluded. PR #1137 merged at
+`2026-08-20T12:02:22Z` as authoritative main
+`986e13e897d86b22beef67b3074491e7304b37a7`. Production subsequently returned
+HTTP 200 from `/health/revision` with `provider=render`,
+`identity_complete=true` and that exact 40-hex revision; the attributable Render
+request identity was `6c672323-b949-47fc`. All three exact-main hosted CI lanes
+completed successfully. This proves the loaded source revision, not mixer
+readiness or physical operation.
+
+Control Tower found the existing strict-owner read-only eWeLink route and its
+registry-bound zero-control-call adapter for mixer device `100204d497`, channel
+2, but had neither a live authenticated browser session nor local canonical or
+provider credentials. It did not substitute owner relay or infer readiness.
+Instead it continued the existing `OOM-ROOTLINE-FERTILIZER-CONFIG-20260809`
+lineage in clean isolated worktree
+`C:\tmp\rootline-autonomous-readiness-observer-20260820` from exact main. The
+bounded source mission must reuse the deployed provider scheduler/worker,
+credential store, device registry, canonical worker evidence and shared
+attention projection to produce terminal-independent, replay-silent readiness
+evidence with `provider_control_calls=0`; it may not create a second scheduler,
+queue, database, credential path or manager lifecycle. Physical commissioning,
+ON/OFF, mixer, valve, injection, irrigation and borehole commands remain
+unauthorized. Lifecycle is `DEPLOYED_EXACT_REVISION_PROVEN /
+AUTONOMOUS_PROVIDER_READINESS_OBSERVER_IN_PROGRESS`; business completion still
+requires a genuine provider-origin read-only cycle, canonical result, current
+and next trigger identity, and a later terminal-independent cycle.
+
 The first CORE handshake-repair terminal was interrupted externally during its
 focused pytest run and produced no final handover, commit or PR. Its exact dirty
 candidate is preserved only in
