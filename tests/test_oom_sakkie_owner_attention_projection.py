@@ -32,6 +32,14 @@ def test_same_stable_prince_identity_drives_home_brief_and_telegram():
     assert "Next: Review the attributable Prince trial outcome." in telegram
     assert projection["items"][0]["work_id"] not in telegram
     assert "Evidence:" not in telegram
+    assert "View all: Amadeus Farm → Owner attention" not in telegram
+
+
+def test_telegram_fails_visible_when_shared_projection_is_unavailable():
+    telegram = _format_daily_command_brief({
+        "owner_attention": {"success": False, "items": []}, "sections": {"farm": {}}
+    })
+    assert "Shared owner attention is unavailable" in telegram
 
 
 def test_molly_and_clovy_status_evidence_classifies_identically_not_as_weighing():
@@ -185,3 +193,27 @@ def test_sam_unresolved_work_does_not_expire_by_age():
     assert "timedelta(days=" not in source
     assert "limit 50" not in source.casefold()
     assert "distinct on (decision_json->'inbound'->>'conversation_id')" in source
+
+
+def test_molly_missing_weaning_date_remains_status_reconciliation(monkeypatch):
+    class Result:
+        result_id = "herd-result-molly"
+        work_items = ()
+
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "owner-1")
+    monkeypatch.delenv("PIG_WELFARE_CASE_RUNTIME_ENABLED", raising=False)
+    monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
+                        lambda *_args: Result())
+    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
+                        lambda: {"snapshot_observed_at": NOW.isoformat(), "overview_rows": [],
+                                 "litter_rows": [{"Sow_Tag_Number": "Molly",
+                                                  "Litter_Status": "Active",
+                                                  "Litter_ID": "LIT-MOLLY",
+                                                  "Farrowing_Date": "2026-08-11",
+                                                  "Wean_Date": None,
+                                                  "Weaned_Count": None}]})
+
+    rows = _herdmaster(NOW)
+
+    assert rows[0]["dedupe_key"] == "herdmaster:molly-active-litter"
+    assert rows[0]["task_class"] == "status_reconciliation"

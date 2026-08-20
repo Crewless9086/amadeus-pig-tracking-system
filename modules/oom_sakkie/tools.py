@@ -790,7 +790,11 @@ def jarvis_daily_command_brief_handler(_args):
     safety_notes = [
         "Daily command brief is read-only. No specialist was dispatched, no specialist LLM/tool execution ran, no farm data was written, no customer/public output was created, no patch/deploy/Telegram/control action occurred."
     ]
-    links = [{"label": "Oom Sakkie", "href": "/oom-sakkie"}]
+    links = [{"label": "Oom Sakkie", "href": "/oom-sakkie"},
+             {"label": "Owner attention", "href": "/owner-attention"}]
+    attention_failed = not owner_attention.get("success")
+    if attention_failed:
+        stale_warnings.append("Shared owner-attention projection unavailable; no empty state was inferred.")
     for label, section in sections.items():
         if not section.get("success") and not _daily_optional_section_unavailable(label, section):
             stale_warnings.append(f"Daily command brief section unavailable or partial: {label}.")
@@ -811,6 +815,8 @@ def jarvis_daily_command_brief_handler(_args):
         name for name, section in sections.items()
         if not section.get("success") and not _daily_optional_section_unavailable(name, section)
     ]
+    if attention_failed:
+        failed.append("owner_attention")
     status = "partial" if failed else "ok"
     next_actions = _daily_command_next_actions(sections, failed)
     summary = (

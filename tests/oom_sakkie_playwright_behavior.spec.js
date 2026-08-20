@@ -32,6 +32,21 @@ async function stubOomSakkieApi(page) {
         pipeline: {},
         agent_activity: {},
       };
+    } else if (url.endsWith("/owner-attention") && request.method() === "GET") {
+      const attentionItems = [
+        { work_id: "attn-welfare", title: "Prince has an active welfare case.", specialist_owner: "HERDMASTER", task_class: "status_reconciliation", priority: "urgent", freshness: "current", exact_owner_action: "HERDMASTER owns current status reconciliation.", semantic_emoji: "🔄", detail_target: "/pigs" },
+        { work_id: "attn-molly", title: "Molly's litter remains under care.", specialist_owner: "HERDMASTER", task_class: "informational_watch", priority: "due", freshness: "current", exact_owner_action: "Review at the planned weaning boundary.", semantic_emoji: "👀", detail_target: "/litters" },
+        { work_id: "attn-weight", title: "Physical weighing is due.", specialist_owner: "HERDMASTER", task_class: "physical_action_due", priority: "due", freshness: "current", exact_owner_action: "Weigh now and record weight.", semantic_emoji: "⚖️", detail_target: "/pigs" },
+        { work_id: "attn-rootline", title: "ROOTLINE retry is pending.", specialist_owner: "ROOTLINE", task_class: "status_reconciliation", priority: "watch", freshness: "aging", exact_owner_action: "No owner action now — ROOTLINE owns the retry.", semantic_emoji: "🔄", detail_target: "/irrigation" },
+      ];
+      body = {
+        success: true,
+        total_count: 4,
+        hidden_count: 1,
+        view_all_target: "/owner-attention",
+        items: attentionItems,
+        top_items: attentionItems.slice(0, 3),
+      };
     } else if (url.endsWith("/agent-dry-runs") && request.method() === "POST") {
       body = {
         success: true,
@@ -167,6 +182,56 @@ test.beforeEach(async ({ page }) => {
     };
   });
   await stubOomSakkieApi(page);
+});
+
+async function authenticateOwner(page) {
+  await page.goto("/owner/login?next=/owner-attention");
+  await page.locator('input[name="owner_token"]').fill(process.env.OWNER_READ_TOKEN);
+  await Promise.all([
+    page.waitForURL("**/owner-attention"),
+    page.locator('button[type="submit"]').click(),
+  ]);
+}
+
+test("authenticated owner attention is accessible and responsive", async ({ page }, testInfo) => {
+  await authenticateOwner(page);
+  await page.goto("/");
+  await expect(page.locator(".attention-item")).toHaveCount(3);
+  await expect(page.locator(".attention-item").first()).toHaveAttribute("data-work-id", "attn-welfare");
+  await expect(page.locator("#attention_view_all")).toHaveText("View all · 1 more");
+  await testInfo.attach("owner-attention-home-desktop", {
+    body: await page.screenshot({ fullPage: true }), contentType: "image/png",
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await testInfo.attach("owner-attention-home-mobile", {
+    body: await page.screenshot({ fullPage: true }), contentType: "image/png",
+  });
+  await page.locator("#attention_view_all").click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(page.getByRole("heading", { name: "Owner attention" })).toBeVisible();
+  await expect(page.locator(".attention-all-item")).toHaveCount(4);
+  await expect(page.getByText("Prince has an active welfare case.")).toBeVisible();
+  await expect(page.getByText("No owner action now — ROOTLINE owns the retry.")).toBeVisible();
+  await expect(page.locator('.attention-emoji[aria-hidden="true"]')).toHaveCount(4);
+  await page.locator(".manager-link").focus();
+  await page.keyboard.press("Tab");
+  await expect(page.locator(".attention-all-item").first()).toBeFocused();
+  await expect(page.locator(".attention-all-item").first()).toHaveCSS("outline-style", "solid");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await testInfo.attach("owner-attention-desktop", {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".attention-all-item").first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await testInfo.attach("owner-attention-mobile", {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
 });
 
 test("kiosk startup performs no hidden POSTs or interval polling", async ({ page }) => {

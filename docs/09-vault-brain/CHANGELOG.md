@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+- 2026-08-20: Reconciled the shared Oom Sakkie owner-attention projection with
+  HERDMASTER welfare Phase 2 after merging authoritative main. Active canonical
+  welfare cases now enter the existing manager collector under their stable
+  case identity when the migration-gated runtime is enabled. Escalation is not
+  inferred as physical work; only explicit weighing evidence produces a
+  physical action. No second queue, scheduler, database, channel calculation,
+  farm write, Telegram send, hardware action or boar D-3 behavior was added.
+  Strict owner-read authentication now guards both presentation routes;
+  lifecycle/provenance history remains internal, and projection failure is
+  explicit in Brief and Telegram. Welfare intake completion no longer implies
+  case resolution, and canonical nested weighing instructions remain typed.
+
 ## 2026-08-20 - CORE canonical validation-receipt boundary prepared
 
 - Replaced the permissive staging-only receipt shape with one canonical signed

@@ -32,12 +32,12 @@ function renderAttention(data) {
   setText("status_attention", total ? `${total} item${total === 1 ? "" : "s"}` : "Clear");
   setText("attention_state", total ? "Shared specialist work" : "No open item found");
   const list = byId("attention_list");
-  if (list) list.innerHTML = items.length ? items.map(item => `<a class="attention-item" data-work-id="${escapeHtml(item.work_id)}" href="${escapeHtml(item.detail_target)}"><strong>${escapeHtml(item.semantic_emoji)} ${escapeHtml(item.title)}</strong><small>${escapeHtml(item.specialist_owner)} · ${escapeHtml(item.task_class.replace(/_/g," "))} · ${escapeHtml(item.freshness)}</small><em>${escapeHtml(item.exact_owner_action)}</em></a>`).join("") : `<div class="attention-placeholder">No open owner-attention work is supported by current evidence.</div>`;
-  const viewAll = byId("attention_view_all"); if (viewAll) { viewAll.hidden = !total; viewAll.textContent = hidden ? `View all · ${hidden} more` : "View all"; }
+  if (list) list.innerHTML = items.length ? items.map(item => `<a role="listitem" class="attention-item" data-work-id="${escapeHtml(item.work_id)}" href="${escapeHtml(item.detail_target)}"><strong><span aria-hidden="true">${escapeHtml(item.semantic_emoji)}</span> ${escapeHtml(item.title)}</strong><small>${escapeHtml(item.specialist_owner)} · ${escapeHtml(item.task_class.replace(/_/g," "))} · ${escapeHtml(item.freshness)}</small><em>${escapeHtml(item.exact_owner_action)}</em></a>`).join("") : `<div class="attention-placeholder" role="listitem">No open owner-attention work is supported by current evidence.</div>`;
+  const viewAll = byId("attention_view_all"); if (viewAll) { viewAll.hidden = !hidden; viewAll.textContent = hidden ? `View all · ${hidden} more` : "View all"; }
 }
 async function loadAttention() {
   try { renderAttention(await fetchJson("/api/oom-sakkie/owner-attention", 45000)); }
-  catch (_) { setText("status_attention", "Unavailable"); setText("attention_state", "Shared projection unavailable"); const list=byId("attention_list"); if(list) list.innerHTML='<div class="attention-placeholder">Shared attention is temporarily unavailable. No specialist work was inferred.</div>'; }
+  catch (_) { setText("status_attention", "Unavailable"); setText("attention_state", "Shared projection unavailable"); const list=byId("attention_list"); if(list) list.innerHTML='<div class="attention-placeholder" role="listitem">Shared attention is temporarily unavailable. No specialist work was inferred.</div>'; }
 }
 function renderPriorities() {
   const items = [...dashboardState.priorities.values()].slice(0, 3);

@@ -601,6 +601,8 @@ def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
     command_center = command.get("command_center") or {}
     next_actions = list((context or {}).get("next_actions") or [])[:2]
     lines = [title, "", "Daily Command Brief", ""]
+    if attention.get("success") is False:
+        lines.extend(["What needs attention", "- Shared owner attention is unavailable; no empty state was inferred.", ""])
     attention_items = list(attention.get("top_items") or attention.get("items") or [])[:3]
     if attention_items:
         lines.append("What needs attention")
@@ -610,6 +612,7 @@ def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
         hidden = int(attention.get("hidden_count") or 0)
         if hidden:
             lines.append(f"- ➕ {hidden} more in What needs attention")
+            lines.append("  View all: Amadeus Farm → Owner attention")
         lines.append("")
     if farm:
         lines.extend([

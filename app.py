@@ -93,7 +93,7 @@ def home():
 
 @app.route("/owner-attention")
 def owner_attention_page():
-    guard = require_owner_page_access()
+    guard = require_strict_owner_read_access()
     if guard:
         return guard
     return render_template("owner-attention.html")

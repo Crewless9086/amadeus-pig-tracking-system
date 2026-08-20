@@ -8,6 +8,7 @@ from modules.auth.owner_access import (
     owner_session_is_valid,
     require_owner_admin_access,
     require_owner_read_access,
+    require_strict_owner_read_access,
     require_strict_owner_admin_access,
 )
 from modules.oom_sakkie.sam_payment_owner_runtime import present_sale_payment_preview
@@ -163,11 +164,13 @@ MEAT_FOLLOWUP_SEND_MIN_TOKEN_CHARS = 32
 
 @oom_sakkie_bp.route("/oom-sakkie/owner-attention", methods=["GET"])
 def oom_sakkie_owner_attention_projection():
-    denied = require_owner_read_access()
+    denied = require_strict_owner_read_access()
     if denied:
         return denied
     try:
-        return jsonify(load_owner_attention_projection()), 200
+        projection = load_owner_attention_projection()
+        projection.pop("lifecycle_items", None)
+        return jsonify(projection), 200
     except Exception as exc:
         return jsonify({
             "success": False,
