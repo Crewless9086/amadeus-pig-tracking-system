@@ -1598,13 +1598,17 @@ def _require_protected_campaign_authority(payload, params, database_url=None):
             or _clean_text(payload.get("target_page_id")) != configured_page_id
             or media != requested):
         return {"success": False, "status": "protected_campaign_authority_binding_mismatch"}, 409
-    current_projection, current_status = resolve_server_publication_assets(
-        [item.get("asset_id") for item in params.get("selected_assets") or []], database_url)
-    if current_status != 200 or current_projection.get("success") is not True:
-        return {"success": False, "status": "protected_campaign_media_authority_revoked"}, 409
-    current = [{key:item.get(key) for key in media_keys} for item in current_projection["assets"]]
-    if current != media:
-        return {"success": False, "status": "protected_campaign_media_authority_changed"}, 409
+    if selected_media == {"mode": "text_only"}:
+        if params.get("selected_assets") or params.get("asset_id"):
+            return {"success": False, "status": "protected_campaign_text_only_media_conflict"}, 409
+    else:
+        current_projection, current_status = resolve_server_publication_assets(
+            [item.get("asset_id") for item in params.get("selected_assets") or []], database_url)
+        if current_status != 200 or current_projection.get("success") is not True:
+            return {"success": False, "status": "protected_campaign_media_authority_revoked"}, 409
+        current = [{key:item.get(key) for key in media_keys} for item in current_projection["assets"]]
+        if current != media:
+            return {"success": False, "status": "protected_campaign_media_authority_changed"}, 409
     binding_id = "BEACON-PROTECTED-BINDING-" + hashlib.sha256(token.encode()).hexdigest()[:24].upper()
     return {"success": True, "status": "protected_campaign_authority_verified",
         "binding": {"binding_id": binding_id, "owner_decision_event_id": token},

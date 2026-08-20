@@ -42,6 +42,8 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
         "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
         "zero_spend": True, "protected_campaign_claim_token": claimed["callback_token"],
         "protected_campaign_digest": preview["campaign_digest"],
+        "attribution_identity": preview["attribution_identity"],
+        "sam_boundary": preview["sam_boundary"],
         "recorded_by": "beacon_protected_publication_worker",
     }
     execute = executor or execute_beacon_facebook_page_post
@@ -53,8 +55,9 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
                             "automatic_retry_allowed": False}, 503)
     outcome_status = str(outcome.get("status") or "")
     provider = outcome.get("facebook_result") if isinstance(outcome.get("facebook_result"), dict) else {}
-    provider_confirmed = (outcome.get("success") is True
-        and outcome.get("provider_readback_confirmed") is True)
+    provider_confirmed = (outcome.get("success") is True and (
+        outcome.get("provider_readback_confirmed") is True
+        or provider.get("provider_readback_confirmed") is True))
     if outcome.get("success") is True and not provider_confirmed:
         outcome = {**outcome, "success": False,
             "status": "meta_provider_readback_unproven_ambiguous", "outcome": "ambiguous",
@@ -95,6 +98,12 @@ def validate_claimed_approval(claim, *, now=None):
         return "protected_campaign_approval_expired"
     if not str(preview.get("target_page_id") or "").strip():
         return "protected_campaign_target_page_required"
+    if (preview.get("budget_cap") != {"currency": "ZAR", "total": "0.00", "daily": "0.00"}
+            or preview.get("duration") != {"days": 0}):
+        return "protected_campaign_zero_spend_boundary_invalid"
+    if (not str(preview.get("attribution_identity") or "").strip()
+            or not str(preview.get("sam_boundary") or "").strip()):
+        return "protected_campaign_sam_identity_required"
     media = preview.get("selected_media")
     text_only = media == {"mode": "text_only"}
     if not text_only:
