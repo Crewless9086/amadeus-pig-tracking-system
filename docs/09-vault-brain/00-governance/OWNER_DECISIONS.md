@@ -1,5 +1,25 @@
 # Owner Decisions
 
+## 2026-08-20 - CORE Standing Authority V1
+
+Charl grants CORE recurring authority to validate each exact authoritative-main
+revision once in the governed disposable isolation and, only after a fresh,
+valid, unused and exact-source signed receipt passes every required focused and
+proportional suite plus Brain Guard, stage that same revision through the
+existing receipt-bound rail. Staging must preserve the exact rollback, governed
+stop, disabled Task Scheduler task and stopped supervisor. Authoritative-main
+movement, receipt or identity conflict, occupied serialized lane, uncertain
+rollback or ambiguous staging effect fails closed without retry.
+
+This standing authority does not include activation, runtime start, Task
+Scheduler operation, application deployment, development-mission dispatch,
+credential or signing-key change/exposure, Telegram/customer/provider action,
+database business writes, farm action or hardware control. Activation remains a
+separate protected decision until one fresh observe-only activation proves exact
+worker/task/action/instance ancestry, heartbeat, independent result, next trigger,
+rollback and terminal-close continuity. Historical validation, staging or
+activation identities remain immutable and cannot authorize a later revision.
+
 ## 2026-08-11 - Weaning-led boar exposure, not observed-heat gating
 
 Charl confirmed the farm's mating operating rule. A breeding female becomes due for boar allocation from her governed weaning chronology, subject to genuine lifecycle, welfare, medical, withdrawal and owner holds. HERDMASTER must not require observed standing heat or a `heat/no heat` entry before selecting a boar or scheduling placement. The farm expects heat at roughly four days after weaning and keeps the selected female with the selected boar for 17 days to cover the intended heat opportunities. The exposure count is inclusive: the placement/start date is day 1, so a 17-day exposure beginning on 2026-08-12 has planned removal on 2026-08-28 (start plus 16 calendar days). Those timings are owner-declared farm practice, not universal biological claims.

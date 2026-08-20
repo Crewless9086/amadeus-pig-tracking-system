@@ -219,6 +219,16 @@ standing CORE authority presently includes production deployment, mission
 dispatch, customer/provider/farm action, Telegram, secrets, database business
 writes or hardware control.
 
+Charl approved this exact boundary as `CORE STANDING AUTHORITY V1`. It is now a
+durable recurring authority rather than a revision-specific approval. The active
+exact-main `39614112` validation remains in progress and has not yet produced a
+receipt; process ancestry alone is not progress or permission to stage. If and
+only if its canonical v2 receipt passes and remains exact-current, Control Tower
+must automatically promote the same mission into one stop-preserving staging
+gate without returning to Charl. Activation remains protected and cannot be
+inferred from this authority. The exact authority is also recorded in
+`docs/09-vault-brain/00-governance/OWNER_DECISIONS.md`.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
