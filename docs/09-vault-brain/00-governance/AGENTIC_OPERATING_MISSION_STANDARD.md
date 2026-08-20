@@ -38,6 +38,27 @@ Every final handoff must include a short `Governance preflight` line stating the
 
 The system must reduce Charl's work, not move internal system work onto him.
 
+### Owner outcome means a real usable result
+
+`Owner outcome` is a completion term, not a prioritisation label or a description
+of what a mission hopes to achieve. An owner outcome exists only when the deployed
+agent has completed the intended production job and the result is usable in the
+real farm or business. For physical operations, the required physical effect must
+actually occur and be verified: irrigation water flows through the intended camp,
+fertilizer is actually mixed and injected as commissioned, the borehole actually
+pumps safely, or the requested document actually emerges from the printer. For
+customer or publication work, the genuine customer-visible or public effect and
+the required downstream lifecycle must actually occur.
+
+The following are `enabling-stage progress`, never an owner outcome: choosing or
+dispatching a mission; writing doctrine or source; tests, reviews or Brain Guard;
+a commit, PR, merge or deployment; health/readiness evidence; a decision packet;
+commissioning preparation; a synthetic or terminal-created event; and an expected
+or proposed benefit. Control Tower must use `target owner outcome` for the intended
+future result, `enabling-stage progress` for engineering progress, and `owner
+outcome achieved` only for a freshly proven usable real-world result. If the owner
+cannot yet use the capability when needed, the owner outcome is not achieved.
+
 Universal deployed-agent acceptance target:
 
 > The deployed agent observes genuine events, reasons from shared canonical

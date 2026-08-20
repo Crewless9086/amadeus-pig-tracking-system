@@ -3354,3 +3354,22 @@ shutdown protection, provider/canonical receipts, final OFF and rollback. Missio
 completion requires later deployed-agent actuation under explicit authority,
 provider and physical water evidence, replay containment and terminal-independent
 continuity.
+### Owner correction: owner outcome is usable real-world completion - 2026-08-20
+
+Charl corrected an ambiguity in Control Tower's use of `owner outcome`. The term
+does not describe which mission was selected, what terminal lane was filled, the
+benefit a mission targets or progress toward source readiness. It means the deployed
+agent completed the genuine production job and Charl can use the capability in real
+life. Irrigation requires verified water through the intended camp; fertilizer
+requires verified mixer and injector operation; borehole requires verified safe
+pumping; printing requires the physical requested pages; BEACON/SAM requires the
+genuine public/customer lifecycle. Later terminal-independent continuity remains
+required for mission completion.
+
+All source, test, PR, merge, deployment, commissioning-guide, decision-packet and
+readiness work is henceforth classified only as `ENABLING_STAGE_PROGRESS`. It may
+be necessary and valuable, but its achieved owner outcome is `NONE`. Every Control
+Tower receipt and terminal handover must separately report target owner outcome,
+owner outcome actually achieved, enabling-stage progress and whether Charl can use
+the capability successfully now. If he cannot, the mission remains open regardless
+of technical-stage quality.

@@ -30,7 +30,10 @@ than inferring evidence.
 ## Mission identity and owner outcome
 
 - Existing mission ID:
-- Owner-visible outcome:
+- Target owner outcome (the exact future usable real-world result):
+- Owner outcome achieved this turn: `NONE` / exact genuine production result:
+- Enabling-stage progress only (source/test/PR/deploy/readiness; never call this an owner outcome):
+- Can Charl use the capability successfully in real life now: yes / no / Unknown, with proof:
 - Explicit non-outcomes:
 - Lifecycle state:
 - Remaining acceptance journey:
@@ -92,6 +95,13 @@ script or a synthetic canary cannot by itself establish autonomous operation.
 - Physical or customer-visible facts:
 - Unknown or contradictory facts:
 
+If a physical capability has not performed its intended genuine real-world job,
+`Owner outcome achieved this turn` must be `NONE` even when source, tests, PR,
+deployment, provider connectivity or commissioning preparation succeeded. Examples:
+no verified B Camp water means no irrigation owner outcome; no verified mixing and
+injection means no fertilizer owner outcome; no verified pumping means no borehole
+owner outcome; no physical page means no printing owner outcome.
+
 ## Fresh execution epoch
 
 - Historical contained identities sealed and non-replayable:
@@ -121,6 +131,7 @@ script or a synthetic canary cannot by itself establish autonomous operation.
 - Owner-facing dispatch banner: `DO NOT SEND — TERMINAL ACTIVE` /
   `SEND NOW — TERMINAL IDLE OR RELEASED` / `HOLD — VERIFY TERMINAL STATE`
 - Business result, or `NO BUSINESS OUTCOME`:
+- Usable-now proof, or exact reason the capability is still unusable:
 - Exact blocker and owner:
 - Safe work remaining:
 - Terminal/worktree closeout:

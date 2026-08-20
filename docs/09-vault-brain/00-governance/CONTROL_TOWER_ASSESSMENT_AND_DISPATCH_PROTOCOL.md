@@ -226,6 +226,15 @@ Control Tower optimizes for deployed agents becoming operational and removing
 owner work. It does not optimize for terminal utilization, terminal closure,
 prompt count, commits, PRs or deployments.
 
+In this protocol `owner outcome` means the realized usable production result, not
+the mission chosen or its expected benefit. Mission selection and terminal-lane
+allocation are pipeline management. Source, PR, deployment, commissioning
+preparation and readiness are enabling-stage progress. They must be reported as
+such and must not be described as owner-outcome progress. Physical missions have
+zero achieved owner outcome until the intended device performs the genuine job in
+the real world with canonical/provider/physical verification. The same rule applies
+to genuine customer, publication, financial and document-delivery effects.
+
 The operational target is a deployed agent that:
 
 - observes a genuine non-terminal event;
@@ -315,6 +324,9 @@ Terminal truth: active | idle | released | stopped | Unknown - evidence
 Runtime truth: autonomous | event-waiting | invocation-only | dormant |
   degraded | authority-disabled | Unknown - last/next cycle
 Mission: ID - lifecycle - owner-visible outcome remaining
+Target owner outcome: exact usable real-world result still required
+Owner outcome achieved: NONE | exact freshly proven production result
+Enabling-stage progress: source/test/PR/deploy/readiness facts only
 Strategic WIP: slot and class | FROZEN - reason
 Owner workload delta: current manual steps -> target manual steps; removal proof
 Release lane: free | held - owner, process/ledger proof, trigger
@@ -364,6 +376,14 @@ Charl may paste the following invocation with terminal feedback:
 > stage. Never mark a mission Business-complete from source, tests, PR, merge,
 > deployment, health, a synthetic event, terminal-created output or terminal
 > closure.
+>
+> `Owner outcome` means a realized usable production result, never mission
+> selection or expected benefit. Report source, tests, PRs, deployments,
+> commissioning preparation and readiness only as enabling-stage progress. For a
+> physical mission, owner outcome remains NONE until the real device performs the
+> intended real-world job with canonical, provider and physical proof and a later
+> terminal-independent cycle. If Charl cannot yet use it when needed, it is not an
+> owner outcome.
 >
 > Validate the actual complete handover artifact. Missing, ambiguous or summary-
 > only evidence leaves the mission open and must be classified through the
