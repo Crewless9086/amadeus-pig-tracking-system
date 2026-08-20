@@ -320,6 +320,45 @@ def test_afrikaans_non_reply_continuation_binds_same_active_question():
     assert value["specialist_identity"] == "HERDMASTER"
 
 
+def test_herd_question_claims_then_requires_herdmaster_consumption_before_retirement():
+    state = memory()
+    downstream = {"handled": True, "success": True,
+        "status": "health_loss_follow_up_retained", "specialist_identity": "HERDMASTER",
+        "mission_id": "OOM-HERDMASTER-PRINCE", "card_mission_id": "OOM-HERDMASTER-PRINCE",
+        "answer": "HERDMASTER retained the attributable welfare update.",
+        "writes_farm_data": False, "hardware_commands": 0}
+    calls = []
+    def dispatch(inbound, _authority):
+        calls.append(inbound["provider_message_id"])
+        assert next(iter(state.rows.values()))["status"] == "dispatch_claimed"
+        return downstream, 200
+    value, status = handle_manager_question_reply(parsed(
+        "Prince is improving and eating again"),
+        issue_gateway_owner_authority(OWNER, OWNER), semantic(),
+        question=question(), event_store=state,
+        event_loader=lambda key: state.rows.get(key, {}),
+        herdmaster_dispatcher=dispatch)
+    assert status == 200
+    assert value["manager_question_status"] == "manager_question_reply_recorded"
+    assert value["specialist_identity"] == "HERDMASTER"
+    assert [row["status"] for row in state.rows.values()] == ["dispatch_claimed", "recorded"]
+    assert calls == ["3530"]
+
+
+def test_herd_question_is_not_retired_when_herdmaster_does_not_consume_it():
+    state = memory()
+    value, status = handle_manager_question_reply(parsed(
+        "Prince is improving and eating again"),
+        issue_gateway_owner_authority(OWNER, OWNER), semantic(),
+        question=question(), event_store=state,
+        event_loader=lambda key: state.rows.get(key, {}),
+        herdmaster_dispatcher=lambda *_: ({"handled": False, "success": False}, 200))
+    assert status == 503
+    assert value["status"] == "manager_question_herdmaster_retry_owned"
+    assert value["retry_owner"] == "same_provider_message_identity"
+    assert [row["status"] for row in state.rows.values()] == ["dispatch_claimed", "retry_owned"]
+
+
 def test_unrelated_direct_specialist_request_is_not_stolen_by_manager_question():
     value, status = handle_manager_question_reply(
         parsed("What is today's irrigation plan?", reply=""),

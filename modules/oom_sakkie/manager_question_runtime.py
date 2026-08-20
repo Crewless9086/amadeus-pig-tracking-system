@@ -86,7 +86,7 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
 
 def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                                   question_loader=None, event_store=None,
-                                  event_loader=None):
+                                  event_loader=None, herdmaster_dispatcher=None):
     if authority is None:
         return {"handled": False, **ZERO}, 200
     active = question or load_active_manager_question(parsed, loader=question_loader)
@@ -239,6 +239,66 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "content_sha256": binding["content_sha256"]}
     downstream = None
     downstream_status = 200
+    herd_question = expected_domain in {"herd", "herd_health", "herd_management"}
+    # Injected stores are unit/recovery boundaries; require an explicit paired
+    # dispatcher there so a test store cannot accidentally invoke production
+    # HERDMASTER persistence.  The deployed path uses both production defaults.
+    if herd_question and not partial and (event_store is None or herdmaster_dispatcher is not None):
+        store = event_store or manager_question_event_store
+        claim = {**record, "status": "dispatch_claimed",
+            "claim_started_at": datetime.now(timezone.utc).isoformat()}
+        claimed = store(event_id, claim)
+        if not isinstance(claimed, dict) or claimed.get("success") is not True:
+            return {"handled": True, "success": False,
+                "status": "manager_question_receipt_unavailable",
+                "answer": ("I received the welfare update, but could not durably claim it. "
+                           "HERDMASTER has not acknowledged consumption."),
+                "requires_visible_notification": True, **ZERO}, 503
+        if claimed.get("created") is False:
+            prior = claimed.get("record") if isinstance(claimed.get("record"), dict) else {}
+            if prior.get("provider_binding") != binding:
+                return {"handled": True, "success": False,
+                    "status": "manager_question_concurrent_reply_conflict",
+                    "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
+                    "requires_visible_notification": True, **ZERO}, 409
+            return {"handled": True, "success": False,
+                "status": "manager_question_herdmaster_dispatch_in_progress",
+                "answer": "", "suppress_owner_delivery": True, **ZERO}, 202
+        if herdmaster_dispatcher is None:
+            from modules.oom_sakkie.herdmaster_health_loss_runtime import (
+                handle_authenticated_health_loss_message,
+            )
+            herdmaster_dispatcher = handle_authenticated_health_loss_message
+        downstream, downstream_status = herdmaster_dispatcher(parsed, authority)
+        if not isinstance(downstream, dict) or downstream.get("handled") is not True \
+                or downstream.get("success") is not True:
+            retained = store(event_id + "-RETRY-OWNED-1", {**record,
+                "event_id": event_id + "-RETRY-OWNED-1", "status": "retry_owned",
+                "downstream_result": dict(downstream or {}),
+                "downstream_status": int(downstream_status)})
+            return {"handled": True, "success": False,
+                "status": "manager_question_herdmaster_retry_owned",
+                "answer": ("The attributable welfare update is retained, but HERDMASTER "
+                           "consumption is not yet proven."),
+                "requires_visible_notification": True,
+                "retry_owner": "same_provider_message_identity",
+                "durable_retry_owned": isinstance(retained, dict)
+                    and retained.get("success") is True, **ZERO}, 503
+        completion = {**record, "event_id": completion_event_id,
+            "status": "recorded", "downstream_result": dict(downstream),
+            "downstream_status": int(downstream_status)}
+        stored = store(completion_event_id, completion)
+        if not isinstance(stored, dict) or stored.get("success") is not True:
+            return {"handled": True, "success": False,
+                "status": "manager_question_receipt_unavailable",
+                "answer": ("HERDMASTER consumed the welfare update, but the linked manager "
+                           "completion receipt is not proven."),
+                "downstream_retention_possible": True,
+                "requires_visible_notification": True, **ZERO}, 503
+        return {**downstream, "handled": True,
+            "manager_question_status": "manager_question_reply_recorded",
+            "manager_question_event_id": event_id,
+            "records_audit_trace": True}, downstream_status
     if rootline_question and semantic_domain == "rootline":
         store = event_store or manager_question_event_store
         if existing and existing.get("status") != "dispatch_claimed":
