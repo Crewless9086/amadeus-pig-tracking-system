@@ -603,18 +603,13 @@ def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
     lines = [title, "", "Daily Command Brief", ""]
     attention_items = list(attention.get("top_items") or attention.get("items") or [])[:3]
     if attention_items:
-        lines.append("Owner attention")
+        lines.append("What needs attention")
         for item in attention_items:
             lines.append(f"- {item.get('semantic_emoji', '•')} {item.get('title', 'Current work')} — {item.get('specialist_owner', 'specialist')}")
-            lines.append(f"  {item.get('work_id', 'identity unavailable')} · {str(item.get('task_class', 'watch')).replace('_', ' ')} · {item.get('priority', 'watch')} · {item.get('lifecycle', 'open')} · {item.get('freshness', 'unknown freshness')}")
-            lines.append(f"  Action: {_clip(str(item.get('exact_owner_action') or 'No supported owner action.'), 220)}")
-            refs = list(item.get("provenance") or [])[:2]
-            if refs:
-                lines.append(f"  Evidence: {_clip(' · '.join(str(ref) for ref in refs), 180)}")
-            lines.append(f"  Detail: {item.get('detail_target', '/owner-attention')}")
+            lines.append(f"  Next: {_clip(str(item.get('exact_owner_action') or 'No supported owner action.'), 220)}")
         hidden = int(attention.get("hidden_count") or 0)
         if hidden:
-            lines.append(f"- ➕ {hidden} more: /attention")
+            lines.append(f"- ➕ {hidden} more in What needs attention")
         lines.append("")
     if farm:
         lines.extend([

@@ -23,10 +23,11 @@ def test_same_stable_prince_identity_drives_home_brief_and_telegram():
     brief = {"owner_attention": projection, "sections": {}}
     telegram = _format_daily_command_brief(brief)
     assert "Prince trial outcome" in telegram
+    assert "What needs attention" in telegram
     assert "HERDMASTER" in telegram
-    assert projection["items"][0]["work_id"] in telegram
-    assert "Action: Review the attributable Prince trial outcome." in telegram
-    assert "Evidence:" in telegram
+    assert "Next: Review the attributable Prince trial outcome." in telegram
+    assert projection["items"][0]["work_id"] not in telegram
+    assert "Evidence:" not in telegram
 
 
 def test_molly_and_clovy_status_evidence_classifies_identically_not_as_weighing():
