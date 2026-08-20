@@ -195,6 +195,36 @@ existing missions, not new lineages. Fresh terminal/session evidence is required
 for continued `ACTIVE` classification; the recorded process identities alone
 are launch receipts, not completion proof.
 
+### Protected-boundary follow-through - 2026-08-20
+
+CORE activation epoch `1387144492d944c2b2441aa44cd1af12` was attempted
+exactly once and failed before provider launch with
+`task_scheduler_audit_mutation_failed`: the Windows Task Scheduler Operational
+audit channel was disabled and could not be enabled/read back by the governed
+controller. The epoch is permanently consumed. Task remains disabled,
+supervisor stopped, governed stop restored, all locks absent, and no heartbeat,
+cycle or business effect occurred. The released activation window was closed.
+A visible continuation terminal (parent PID 50548 / Codex PID 58888) now owns
+only the smallest audit-channel mutation/readback repair; it has no staging or
+activation authority and may not run process-control tests in its own ancestry.
+
+ROOTLINE Mixer readiness completed source reconciliation and exact device
+contract proof without actuation. Mixer is SONOFF controller `100204d497`, CH2
+`Kunsmis Meng`, provider events `controller_1_ch2_on/off`, safe state OFF and
+maximum native fail-stop 300 seconds. Fresh provider/canonical safety readback
+and a deployed protected preview remain absent, so no owner confirmation or
+hardware command is yet eligible. The ROOTLINE window was closed; injection and
+borehole remain separate later device classes.
+
+The exact owner page for the SALES charity decision is
+`/sales/transactions/SALE-A1EE5E3DBC3110D1`. Control Tower did not ask Charl to
+test it while production migration remained Unknown. A visible SALES acceptance
+terminal (parent PID 35548 / Codex PID 51612) is verifying/applying the governed
+migration and producing one authenticated zero-write preview using the truthful
+facts that the pig was donated and R0.01 was entered only because the former UI
+rejected a zero-value giveaway. It must stop before confirmation and return the
+exact preview, before/after no-write evidence and one explicit owner decision.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
