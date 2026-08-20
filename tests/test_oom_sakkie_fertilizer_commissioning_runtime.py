@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
     _evaluation_time, continue_fertilizer_commissioning,
-    execute_protected_fertilizer_commissioning, recover_fertilizer_commissioning,
+    emergency_off_fertilizer_mixer, execute_protected_fertilizer_commissioning,
+    recover_fertilizer_commissioning,
 )
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
 from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
@@ -87,6 +88,18 @@ class Transport:
             return {"accepted_unambiguous": False}
         self.commands.append((state, idempotency_key)); self.state = state
         return {"accepted_unambiguous": True, "status": "accepted"}
+
+
+def test_emergency_off_wrapper_cannot_target_injection_or_borehole():
+    store=Store();transport=Transport();store.active={"execution_id":"MIXER-1",
+        "auxiliary_device_id":"FERTILIZER-MIXER-CH2","device_id":"100204d497",
+        "channel":2,"state":"Active"}
+    result=emergency_off_fertilizer_mixer(store=store,transport=transport,
+        reason="commissioning_emergency")
+    assert result["status"]=="auxiliary_emergency_off_verified"
+    assert result["hardware_commands"]==1
+    assert result["injection_enabled"] is False
+    assert transport.commands==[("OFF","MIXER-1:OFF:1")]
 
 
 def test_fresh_context_starts_exactly_one_mixer_proof_and_replay_does_not_start_again():
