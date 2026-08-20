@@ -12,6 +12,7 @@ OWNER_ACCESS_ALLOW_LOCAL_DEV_ENV = "OWNER_ACCESS_ALLOW_LOCAL_DEV"
 OWNER_READ_TOKEN_ENV = "OWNER_READ_TOKEN"
 OWNER_ADMIN_TOKEN_ENV = "OWNER_ADMIN_TOKEN"
 OWNER_SESSION_SECRET_ENV = "OWNER_SESSION_SECRET"
+OWNER_SESSION_MAX_AGE_SECONDS_ENV = "OWNER_SESSION_MAX_AGE_SECONDS"
 MIN_OWNER_TOKEN_CHARS = 32
 SESSION_KEY = "owner_access"
 
@@ -141,6 +142,16 @@ def owner_session_is_valid(required_role="read"):
     if required_role == "admin":
         return role == "admin"
     return role in {"read", "admin"}
+
+
+def strict_owner_read_principal():
+    """Return the opaque server-bound principal accepted by the strict read guard."""
+    role, principal = _validated_session_principal()
+    if principal and role in {"read", "admin"}:
+        return principal
+    if _correction_batch_local_dev_allowed():
+        return "owner-read:local-development"
+    return ""
 
 
 def set_owner_session(role):
@@ -292,6 +303,16 @@ def _validated_session_principal():
     if role not in {"read", "admin"}:
         return "", ""
     principal = str(data.get("principal_id") or "").strip()
+    try:
+        created = datetime.fromisoformat(str(data.get("created_at") or "").replace("Z", "+00:00"))
+        if created.tzinfo is None:
+            return role, ""
+        maximum = int(os.environ.get(OWNER_SESSION_MAX_AGE_SECONDS_ENV, "28800"))
+        age = (datetime.now(timezone.utc) - created.astimezone(timezone.utc)).total_seconds()
+        if maximum <= 0 or age < 0 or age > maximum:
+            return role, ""
+    except (TypeError, ValueError, OverflowError):
+        return role, ""
     expected = _stable_owner_principal(role)
     if not principal or not expected or not hmac.compare_digest(principal, expected):
         return role, ""
