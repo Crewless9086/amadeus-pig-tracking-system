@@ -4,6 +4,37 @@ Status: Active owner-facing dispatch authority
 
 ## 2026-08-20 - Four-day operational reality reset
 
+### Visible-terminal launch correction
+
+Control Tower initially dispatched three in-session collaboration workers and
+incorrectly described them as terminals. They were not visible to Charl and
+their lifecycle ended when the Control Tower turn returned. This was a dispatch
+method failure, not proof that the three development missions had stopped or
+that Windows crashed Codex. Windows application-event inspection found no Codex
+application crash in the relevant window, and no hidden worker is retained as
+current work.
+
+The CORE worker also approached the prohibited boundary of running
+runner/process-control tests inside its own Codex ancestry. Its attempted local
+command failed before any test executed because the worktree-local Python path
+was absent. This remains a safety near miss. CORE source repair may proceed in a
+visible terminal, but runtime activation, runner-control, supervisor, watchdog,
+process-ownership and Task Scheduler tests must run only in the disposable
+isolated validator controlled outside the target Codex ancestry.
+
+At 08:27 SAST Control Tower launched three genuinely visible persistent
+PowerShell terminals and verified their live `codex exec` child identities:
+
+- CORE safe source repair: parent PID 15968, Codex launcher PID 83372;
+- Oom Sakkie shared attention: parent PID 66484, Codex launcher PID 27888; and
+- Sales charity settlement: parent PID 50092, Codex launcher PID 88984.
+
+Each writes an append-only transcript and a separate final-message artifact
+under `C:\tmp`, and remains visibly open after Codex finishes so Charl can see
+completion and provide the handover. Process presence proves only that the
+prompt is currently executing; subsequent activity and completion still
+require attributable transcript, diff, commit, CI or runtime evidence.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
