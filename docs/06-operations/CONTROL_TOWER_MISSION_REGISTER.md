@@ -65,6 +65,18 @@ current-main mergeability/collision check. Lifecycle advances from owner hold to
 and warm, restrained humour where it improves scanability; never let humour
 obscure welfare urgency, evidence, safety or required action.
 
+Control Tower immediately continued without consuming either protected release
+boundary. A visible Oom Sakkie terminal (fresh Node PID `38796`, Codex PID
+`33728`) is reconciling PR #1127 with current main while requiring the
+owner-approved visual bytes and behavior to remain unchanged; it must rerun all
+gates and stop before merge/deployment. A separate visible ROOTLINE read-only
+schema-readiness terminal (fresh Node PID `36908`, Codex PID `360`) is deriving
+the exact digest/order/dependencies and owner authorization for the missing
+BEACON consumer migration through the existing governed Render migration rail;
+it has no schema/data-write, worker-invocation, Telegram, credential or hardware
+authority. Process identities prove launch only. No additional owner action is
+requested until attributable handovers establish the exact next boundaries.
+
 ### DOCUMENTS governed local-printing next phase
 
 Charl approved governed local printing as a `NEXT_PHASE` of existing Documents
