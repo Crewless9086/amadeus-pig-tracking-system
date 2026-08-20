@@ -360,6 +360,30 @@ Visible parent PID 70472 owns the bounded source/CI update; it has no merge,
 deployment, farm-write, Telegram-send or fabricated-screenshot authority. The
 browser/owner-preview gate remains mandatory after the PR is clean again.
 
+Charl completed the exact local Administrator action and supplied fresh
+readback proving `Microsoft-Windows-TaskScheduler/Operational` is now
+`enabled: true`. Control Tower independently repeated the readback successfully.
+This changes only the OS eligibility boundary; it does not authorize or prove
+CORE activation. A new visible CORE terminal (parent PID 80476 / Codex PID
+39264) now owns fresh exact-current isolated validation and stop-preserving
+staging. It must retain governed stop and the disabled task and create no
+activation epoch, worker, heartbeat or cycle.
+
+Charl also approved creation of one canonical governed Render production-
+migration rail using the existing production database environment, ordered
+allowlist, checksum/receipt ledger, idempotency, concurrency lock and
+transactional failure containment, with no arbitrary SQL or application business
+writes. The first authorized migration is
+`202608200001_add_sales_financial_disposition.sql`. A new visible SALES terminal
+(parent PID 38536 / Codex PID 46804) owns design through reviewed source,
+deployment, exact migration receipt/schema verification and one authenticated
+zero-write preview. Charity confirmation remains explicitly unauthorized.
+
+Together with the continuing PR #1127 reconciliation terminal (parent PID
+70472 / Codex PID 56796), safe visible implementation capacity is three. These
+fresh session identities are launch receipts only; continued activity and
+completion require attributable session, commit, PR, CI or runtime evidence.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
