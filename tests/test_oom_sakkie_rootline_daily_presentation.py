@@ -65,7 +65,9 @@ def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     text = compose_daily_rootline_plan(result())
     assert "<b>B Camp:</b> Recommendation: Hold" in text
     assert "<b>C Camp:</b> Recommendation: Hold" in text
-    assert "Not yet authorized or started" in text
+    assert "Lifecycle: Held" in text
+    assert "Reason: Observed rain supports Hold." in text
+    assert "Started: no" not in text and "Completed: no" not in text
     assert "Observed rain supports Hold" in text
     assert "SOC" not in text and "solar" not in text.casefold() and "grid" not in text.casefold()
     assert "No action required from you" in text and "<b>What I need from you:</b> Nothing" in text
@@ -75,6 +77,26 @@ def test_recommendation_never_claims_irrigation_executed():
     text = compose_daily_rootline_plan(result(b="Recommend", c="Run"))
     assert "Recommendation - irrigate" in text
     assert ">Run<" not in text and ":</b> Run" not in text
+
+
+def test_completed_canonical_lifecycle_never_maps_to_hold():
+    value = result(b="Do Not Run", c="Hold")
+    value["irrigation_lifecycle"] = {
+        "B12345": {"contract_version": "rootline_zone_lifecycle.v1",
+                    "zone_id": "B12345", "state": "Completed",
+                    "reason": "Verified shutdown and runtime.",
+                    "next_action_owner": "ROOTLINE",
+                    "next_action": "Reassess at the next governed due time."},
+        "C12345": {"contract_version": "rootline_zone_lifecycle.v1",
+                    "zone_id": "C12345", "state": "Held",
+                    "reason": "Fresh observed rain.",
+                    "next_action_owner": "ROOTLINE",
+                    "next_action": "Reassess when weather changes."},
+    }
+    text = compose_daily_rootline_plan(value)
+    assert "<b>B Camp:</b> Recommendation: Completed" in text
+    assert "Lifecycle: Completed" in text
+    assert "B Camp:</b> Recommendation: Hold" not in text
 
 
 def test_volatile_cutoff_and_formatting_never_change_material_decision_content():

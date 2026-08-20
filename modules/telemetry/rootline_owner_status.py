@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from modules.telemetry.rootline_irrigation_history import read_canonical_irrigation_history
 from modules.telemetry.rootline_water_balance import read_latest_zone_water_balances
 from modules.telemetry.rootline_water_energy_plan import _read_latest_tank_observation
+from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle
 
 ZONE_NAMES = {"B12345": "B Camp", "C12345": "C Camp"}
 
@@ -36,6 +37,8 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
         zone_history = (history.get("zones") or {}).get(zone_id, {})
         balance = ((evidence.get("water_balance") or {}).get("zones") or {}).get(zone_id, {})
         active = runtime if runtime.get("zone_id") == zone_id else {}
+        execution = (active or (latest_outcome
+            if latest_outcome.get("zone_id") == zone_id else {}))
         credits = [row for row in (evidence.get("water_credits") or {}).get("credits", [])
                    if row.get("zone_id") == zone_id]
         decision = _decision(recommendation.get("status"))
@@ -45,6 +48,9 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
             "zone_name": ZONE_NAMES[zone_id],
             "decision": decision,
             "operational_state": _operational_state(decision, blocker, active),
+            "lifecycle": project_zone_lifecycle(zone_id=zone_id,
+                recommendation=recommendation, history=zone_history,
+                execution=execution),
             "reason": _zone_reason(recommendation, balance),
             "planned_minutes": recommendation.get("planned_duration_minutes"),
             "feasible_window": recommendation.get("preferred_window"),
@@ -164,7 +170,9 @@ def _specialist_projection(evidence, operating_date, now):
             "status": {"Run": "Recommend", "Not Due": "Do Not Run"}.get(state, state),
             "reason": reason, "planned_duration_minutes": row.get("planned_duration_minutes"),
             "preferred_window": row.get("feasible_window"),
-            "eligibility_blocker": row.get("eligibility_blocker"), "needs": []})
+            "eligibility_blocker": row.get("eligibility_blocker"),
+            "lifecycle": row.get("lifecycle") if isinstance(row.get("lifecycle"), dict) else None,
+            "needs": []})
     overall = next((item["status"] for item in recommendations if item["status"] != "Needs Data"),
                    "Needs Data")
     return {"result_id": reassessment.get("result_id") if reassessment else None,
