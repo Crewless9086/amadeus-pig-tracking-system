@@ -423,6 +423,40 @@ n8n, Sheets or hardware business authority is included. Lifecycle is `WORKING /
 FRESH_ACTIVATION_AUTHORIZED / PROVIDER_CONTINUITY_PROOF_IN_PROGRESS`; launch
 process identity alone is not operational proof.
 
+That single authorized activation completed with authenticated containment, not
+operation. Task Scheduler started exact instance
+`{654D458E-3726-4CF7-BBCC-4621DC64D9C9}`, but activation-bound supervisor/runner
+state and a fresh heartbeat were not published before verification; stale
+supervisor revision `7cb7ddae` and heartbeat revision `9f2970ba` could not satisfy
+the contract. Epoch `83948af6782b4fa6b4fc53c7dddfbcf3` is permanently consumed
+and must never be retried. Failure receipt
+`3cd279fdfcd81587df121594431e106df5f5c5dda8d147468fd7a4e787df9474`,
+recovery completion
+`80ac814e9fdbb14304dd2d3fa7b277361cb6200c6c15e0f3b1905c34e65348e4`
+and reconciliation
+`95e60342583b1ea106e9b6435d759718abe22fca42cc30c78f7c1e5fb29d34ee`
+prove restored governed stop, disabled task, stopped supervisor, zero CORE
+processes and all lanes free. Lifecycle returns to `CONTAINED /
+HANDSHAKE_REPAIR_REQUIRED`; a new activation is ineligible until the reusable
+provider-consumer verification timing/handshake defect is repaired, reviewed,
+validated and staged. The completed visible CORE window was closed.
+
+The canonical Render production-migration rail is source-complete and merged in
+PR #1131 as current main `9b6aac25075481eeb35cd32320bf3f0d804ffb61`.
+Focused validation passed 166 tests with one environment skip and 29 subtests;
+disposable PostgreSQL apply/replay/receipt tests, Brain Guard and all PR and
+post-merge CI passed. Governed run `32347518599` failed closed before creating a
+Render job or opening `DATABASE_URL` because GitHub environment `production`
+does not contain `RENDER_API_KEY`. Therefore migration
+`202608200001_add_sales_financial_disposition.sql` is not applied, the sale API
+still returns the expected `UndefinedColumn` 503, and no charity preview or
+business-data write exists. Lifecycle is `WORKING / SOURCE_RAIL_COMPLETE /
+PROVIDER_AUTHORITY_BLOCKED`. Automatic promotion requires Charl/provider admin
+to add a Render API key with one-off-job authority for service
+`srv-d6sijjkhg0os73f7regg` as GitHub environment secret
+`production / RENDER_API_KEY`; no charity confirmation is authorized. The
+completed visible SALES window was closed.
+
 The existing shared-attention PR #1127 reconciled current main without opening a
 duplicate lineage. Exact head `57a61ac7` is clean against `86fb87a3`; 52 focused
 tests, 753 broad Oom/SAM/BEACON tests with seven skips, 235 incoming-overlap
