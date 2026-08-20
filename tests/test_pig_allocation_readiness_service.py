@@ -434,6 +434,9 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "purpose": "Sale", "calculated_stage": "Weaner", "latest_weight_kg": 15,
                     "latest_weight_date": "2026-06-22", "days_since_weight": 2,
                     "wean_date": "2026-06-01", "withdrawal_clear": "No",
+                    "withdrawal_evidence_state": "hold", "medical_status": "Withdrawal hold",
+                    "allocation_query_status": "known", "allocation_evidence_state": "known_unallocated",
+                    "reserved_status": "Not_Reserved", "sex": "Male",
                 },
                 {
                     "pig_id": "PIG-STALE", "status": "Active", "on_farm": "Yes",
@@ -463,7 +466,9 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertIn("allocation evidence", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
         self.assertEqual(by_id["PIG-BREEDING"]["available_for_sale"], "No")
         self.assertIn("Purpose = Sale", by_id["PIG-BREEDING"]["live_stock_sale_reason"])
-        self.assertEqual(by_id["PIG-WITHDRAWAL"]["available_for_sale"], "No")
+        self.assertEqual(by_id["PIG-WITHDRAWAL"]["available_for_sale"], "Yes")
+        self.assertTrue(by_id["PIG-WITHDRAWAL"]["live_stock_sale_eligible"])
+        self.assertEqual(by_id["PIG-WITHDRAWAL"]["withdrawal_evidence_state"], "hold")
         self.assertEqual(by_id["PIG-STALE"]["available_for_sale"], "No")
         self.assertEqual(by_id["PIG-HEALTH-HOLD"]["available_for_sale"], "No")
 

@@ -4220,6 +4220,7 @@ def _sales_availability_from_supabase_allocation():
             "on_farm": pig.get("on_farm", ""),
             "withdrawal_clear": withdrawal_clear,
             "current_withdrawal_end_date": pig.get("current_withdrawal_end_date", ""),
+            "last_product_name": pig.get("last_product_name", ""),
             "health_status": pig.get("health_status", ""),
             "medical_status": pig.get("medical_status", ""),
             "reserved_status": pig.get("reserved_status", ""),
@@ -4295,13 +4296,23 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
         return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
     if _is_breeding_or_retained_stage(animal_type, calculated_stage):
         return _live_stock_sale_block("breeding_or_retained", "Breeding and retained animals are excluded from SAM Live stock sales.")
-    if withdrawal_state not in {"not_applicable", "cleared"}:
-        return _live_stock_sale_block("live_transfer_evidence_unknown", "Food-chain withdrawal alone does not prohibit live transfer, but current live-transfer fitness and movement evidence is not affirmatively clear.", withdrawal_clear, withdrawal_state)
-    if any(token in health_status for token in ("sick", "injured", "quarantine", "hold")):
+    withdrawal_only_health = health_status in {
+        "withdrawal hold", "withdrawal_hold", "food-chain withdrawal",
+        "food chain withdrawal", "withdrawal active",
+    }
+    if (not withdrawal_only_health
+            and any(token in health_status for token in ("sick", "injured", "quarantine", "hold"))):
         return _live_stock_sale_block("health_hold", "Pig health status blocks SAM Live stock sales.", withdrawal_clear)
-    if medical_status != "clear":
+    withdrawal_only_medical = medical_status in {
+        "withdrawal hold", "withdrawal_hold", "food-chain withdrawal",
+        "food chain withdrawal", "withdrawal active",
+    }
+    if medical_status != "clear" and not withdrawal_only_medical:
         return _live_stock_sale_block("medical_evidence_not_clear", "Medical eligibility is not affirmatively clear.", withdrawal_clear, withdrawal_state)
-    if hold_status in {"hold", "held", "yes", "true", "medical", "health", "withdrawal"}:
+    withdrawal_only_hold = hold_status in {"withdrawal", "withdrawal hold", "food-chain withdrawal"}
+    if (not withdrawal_only_hold
+            and (hold_status in {"hold", "held", "yes", "true", "medical", "health"}
+                 or "hold" in hold_status)):
         return _live_stock_sale_block("sale_hold", "Pig is held from sale by source truth.", withdrawal_clear)
     if latest_weight_kg is None:
         return _live_stock_sale_block("missing_weight", "Latest weight is required before SAM can quote live stock.", withdrawal_clear)
@@ -4319,7 +4330,7 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
         return _live_stock_sale_block("price_band_missing", "No live-stock price band matched the latest weight.")
     return {
         "eligible": True,
-        "reason": "Purpose = Sale, active/on-farm, not reserved, withdrawal clear, fresh latest weight, weaned or sale-stage, and current weight maps to a live-stock price band.",
+        "reason": "Purpose = Sale, active/on-farm, not reserved, no recorded live-transfer hold, fresh latest weight, weaned or sale-stage, and current weight maps to a live-stock price band. Food-chain withdrawal remains a separate disclosure and slaughter restriction.",
         "status": "SAM Live sale-ready",
         "sale_category": category,
         "weight_band": derived_band,

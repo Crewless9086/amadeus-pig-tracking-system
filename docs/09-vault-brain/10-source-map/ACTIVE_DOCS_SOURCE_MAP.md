@@ -38,6 +38,7 @@ Technical scratchpads, never durable state or doctrine:
 
 Compatibility pointers, never current state or doctrine:
 
+- `docs/09-vault-brain/ACTIVE_AUTHORITY_INDEX.md`
 - `docs/00-start-here/README.md`
 - `docs/00-start-here/WORKFLOW.md`
 - `docs/00-start-here/DEPLOYMENT_SOP.md`

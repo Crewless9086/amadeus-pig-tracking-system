@@ -647,7 +647,10 @@ async function loadAvailablePigs() {
     (data.pigs || []).forEach(pig => {
       const option = document.createElement("option");
       option.value = pig.pig_id;
-      option.textContent = `${pig.tag_number} · ${pig.sale_category} · ${pig.weight_band} · ${pig.current_weight_kg || "-"}kg`;
+      const withdrawal = pig.treatment_disclosure?.withdrawal_end_date
+        ? ` · food-chain restricted through ${pig.treatment_disclosure.withdrawal_end_date}`
+        : "";
+      option.textContent = `${pig.tag_number} · ${pig.sale_category} · ${pig.weight_band} · ${pig.current_weight_kg || "-"}kg${withdrawal}`;
       pigSelect.appendChild(option);
     });
 

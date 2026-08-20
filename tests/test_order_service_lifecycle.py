@@ -294,6 +294,60 @@ class OrderLifecycleServiceTests(unittest.TestCase):
         self.assertEqual(batch_update.call_args.args[0], order_lifecycle.ORDER_LINES_SHEET)
         self.assertNotEqual(batch_update.call_args.args[0], order_lifecycle.PIG_MASTER_SHEET)
 
+    def test_slaughter_completion_blocks_tag_151_during_food_chain_withdrawal(self):
+        approved_row = draft_order(
+            Order_Status="Approved", Approval_Status="Approved", Order_Stream="Slaughter"
+        )
+        rows = [["OL-151", "ORD-1", "PIG-2026-B156", "Confirmed", "Not_Reserved", ""]]
+        packet = {
+            "pigs": [{
+                "identity": {"pig_id": "PIG-2026-B156", "tag_number": "151"},
+                "food_chain_eligibility": {
+                    "state": "blocked",
+                    "reason": "Food-chain entry remains prohibited through 2026-09-08.",
+                },
+            }]
+        }
+        with patch.object(order_lifecycle, "_get_order_master_row", return_value=approved_row), \
+             patch.object(order_lifecycle, "_sheet_headers_and_rows", return_value=(ORDER_LINES_HEADERS, rows)), \
+             patch("modules.pig_weights.herdmaster_live_transfer_contract.build_live_transfer_contract", return_value=packet), \
+             patch.object(order_lifecycle, "batch_update_rows_by_id") as batch_update, \
+             patch.object(order_lifecycle, "_update_sheet_row_by_id") as update_order:
+            with self.assertRaisesRegex(ValueError, "Food-chain/slaughter completion is blocked.*PIG-2026-B156"):
+                order_lifecycle.complete_order("ORD-1", changed_by="Tester")
+
+        batch_update.assert_not_called()
+        update_order.assert_not_called()
+
+    def test_slaughter_completion_fails_closed_when_food_chain_evidence_is_unavailable(self):
+        approved_row = draft_order(
+            Order_Status="Approved", Approval_Status="Approved", Order_Stream="Slaughter"
+        )
+        rows = [["OL-151", "ORD-1", "PIG-2026-B156", "Confirmed", "Not_Reserved", ""]]
+        with patch.object(order_lifecycle, "_get_order_master_row", return_value=approved_row), \
+             patch.object(order_lifecycle, "_sheet_headers_and_rows", return_value=(ORDER_LINES_HEADERS, rows)), \
+             patch("modules.pig_weights.herdmaster_live_transfer_contract.build_live_transfer_contract", side_effect=RuntimeError("offline")), \
+             patch.object(order_lifecycle, "batch_update_rows_by_id") as batch_update:
+            with self.assertRaisesRegex(ValueError, "Food-chain eligibility evidence is unavailable"):
+                order_lifecycle.complete_order("ORD-1", changed_by="Tester")
+
+        batch_update.assert_not_called()
+
+    def test_slaughter_completion_requires_pig_id_before_any_write(self):
+        approved_row = draft_order(
+            Order_Status="Approved", Approval_Status="Approved", Order_Stream="Slaughter"
+        )
+        rows = [["OL-SLAUGHTER", "ORD-1", "", "Confirmed", "Not_Reserved", ""]]
+        with patch.object(order_lifecycle, "_get_order_master_row", return_value=approved_row), \
+             patch.object(order_lifecycle, "_sheet_headers_and_rows", return_value=(ORDER_LINES_HEADERS, rows)), \
+             patch.object(order_lifecycle, "batch_update_rows_by_id") as batch_update, \
+             patch.object(order_lifecycle, "_update_sheet_row_by_id") as update_order:
+            with self.assertRaisesRegex(ValueError, "Slaughter lines have no Pig_ID"):
+                order_lifecycle.complete_order("ORD-1", changed_by="Tester")
+
+        batch_update.assert_not_called()
+        update_order.assert_not_called()
+
     def test_completed_order_retries_projection_without_lifecycle_writes(self):
         row = draft_order(Order_Status="Completed", Approval_Status="Approved")
         projection = {"success": True, "sale_id": "SALE-ONE", "item_count": 5}

@@ -43,7 +43,7 @@ def test_cron_calls_only_authenticated_existing_application_spine():
     result=run(environ=ENV,now=NOW,opener=open_)
     assert result["success"] is True and result["hardware_commands"]==0
     assert seen["url"].endswith("/api/oom-sakkie/management/rootline/reassess")
-    assert seen["auth"].startswith("Bearer ") and seen["timeout"]==115
+    assert seen["auth"].startswith("Bearer ") and seen["timeout"]==210
 
 def test_missing_or_ambiguous_identity_fails_without_network():
     for changes in ({"ROOTLINE_REASSESSMENT_SCHEDULER_URL":"http://bad"},

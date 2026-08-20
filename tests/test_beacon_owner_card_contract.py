@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
-    build_protected_campaign_package, build_sale_ready_demand_proposal,
+    build_litter_awareness_story_proposal, build_protected_campaign_package,
+    build_sale_ready_demand_proposal,
     build_litter_media_choice, prepare_campaign_owner_card, select_litter_story_media,
 )
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
@@ -14,11 +15,19 @@ def opportunity():
         "category": "livestock", "unit": "animals", "blockers": [],
         "capacity_calculation": {"demand_cap": 3, "eligible_categories": ["Weaner Piglets"]},
         "freshness": {"fresh": True},
-        "provenance": {"observed_at": "2026-08-17T08:00:00+00:00"}}]}
+        "provenance": {"observed_at": "2026-08-17T08:00:00+00:00"},
+        "story_context": {"kind": "litter", "subject": "internal",
+            "litter_id": "LITTER-7", "pig_ids": ["PIG-1", "PIG-2"],
+            "event_id": "EVENT-7"}}]}
+
+
+def litters(name="Molly"):
+    return {"success": True, "litters": [{"litter_id": "LITTER-7", "sow_name": name}]}
 
 
 def packet():
-    value = build_sale_ready_demand_proposal(opportunity(), {"success": True, "items": []})
+    value = build_litter_awareness_story_proposal(
+        opportunity(), litters(), {"success": True, "items": [media_item()]})
     return build_protected_campaign_package(value,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
 
@@ -35,57 +44,54 @@ def test_owner_card_is_compact_nonduplicative_and_has_real_callbacks():
     assert value["answer"].count(copy) == 1
     assert "Attribution:" not in value["answer"] and "Rollback" not in value["answer"]
     buttons = [b for row in value["reply_markup"]["inline_keyboard"] for b in row]
-    assert [b["text"] for b in buttons] == ["Approve", "Correct", "Decline", "Details"]
+    assert [b["text"] for b in buttons] == ["Approve", "Correct", "Decline"]
     assert [b["callback_data"] for b in buttons] == [
         "oompa:opaque-token:confirm", "oompa:opaque-token:change",
-        "oompa:opaque-token:cancel", "oompa:opaque-token:details"]
+        "oompa:opaque-token:cancel"]
     preview = value["campaign_review_preview"]
     assert preview["packet_id"] and preview["packet_generation"]
     assert preview["campaign_digest"] and preview["stop_conditions"] and preview["rollback"]
 
 
-def test_litter_card_asks_use_these_photos_with_review_change_and_no_media_controls():
+def test_litter_card_shows_exact_photos_with_only_protected_decision_controls():
     value_packet = packet()
     value_packet["litter_media_selection"] = select_litter_story_media(
         {"success": True, "items": [media_item()]}, litter_id="LITTER-7",
         pig_ids=["PIG-1", "PIG-2"], event_id="EVENT-7")
     value = prepare_campaign_owner_card(value_packet, owner_user_id="42", private_chat_id="42",
         provider_message_id="scheduled:case:G11", packet_generation="G11", claim_creator=fake_claim)
-    assert "Use these photos?" in value["answer"]
+    assert "Pictures:" in value["answer"]
     assert "ASSET-1" in value["answer"] and "2026-08-16" in value["answer"]
     labels = [b["text"] for row in value["reply_markup"]["inline_keyboard"] for b in row]
-    assert "Review photos" in labels and "Select/change" in labels and "No media" in labels
+    assert labels == ["Approve", "Correct", "Decline"]
 
 
 def test_litter_story_queries_library_and_wires_media_into_real_packet():
-    stock = opportunity()
-    stock["cards"][0]["story_context"] = {"kind": "litter", "subject": "Litter 7 first week",
-        "litter_id": "LITTER-7", "pig_ids": ["PIG-1", "PIG-2"], "event_id": "EVENT-7"}
-    value = build_sale_ready_demand_proposal(stock, {"success": True, "items": [media_item()]})
-    assert value["story_subject"] == "Litter 7 first week"
+    value = build_litter_awareness_story_proposal(
+        opportunity(), litters(), {"success": True, "items": [media_item()]})
+    assert value["story_subject"] == "Molly and her piglets"
+    assert "LITTER-7" not in value["draft_caption"]
     assert value["litter_media_selection"][0]["asset_id"] == "ASSET-1"
     protected = build_protected_campaign_package(value,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
     assert [item["asset_id"] for item in protected["protected_campaign_package"]["selected_approved_media"]] == ["ASSET-1"]
     card = prepare_campaign_owner_card(protected, owner_user_id="42", private_chat_id="42",
         provider_message_id="scheduled:case:G11", packet_generation="G11", claim_creator=fake_claim)
-    assert "<b>Story:</b> Litter 7 first week" in card["answer"]
-    assert "Use these photos?" in card["answer"]
+    assert "<b>Story:</b> Molly and her piglets" in card["answer"]
+    assert "Pictures:" in card["answer"]
 
 
 def test_litter_story_without_eligible_media_delivers_one_precise_request():
-    stock = opportunity()
-    stock["cards"][0]["story_context"] = {"kind": "litter", "subject": "Litter 7 first week",
-        "litter_id": "LITTER-7", "pig_ids": ["PIG-1", "PIG-2"], "event_id": "EVENT-7"}
-    value = build_sale_ready_demand_proposal(stock, {"success": True, "items": [media_item(public=None)]})
+    value = build_litter_awareness_story_proposal(
+        opportunity(), litters(), {"success": True, "items": [media_item(public=None)]})
     assert value["precise_media_request"].startswith("Please send one current portrait photo")
-    protected = build_protected_campaign_package(value,
-        now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
-    card = prepare_campaign_owner_card(protected, owner_user_id="42", private_chat_id="42",
-        provider_message_id="scheduled:case:G11", packet_generation="G11", claim_creator=fake_claim)
-    assert card["answer"].count("Please send one current portrait photo") == 1
-    assert card["campaign_review_preview"]["media_evidence_exception"] == \
-        protected["protected_campaign_package"]["media_evidence_exception"]
+    try:
+        build_protected_campaign_package(value,
+            now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
+    except ValueError as exc:
+        assert str(exc) == "beacon_campaign_exact_litter_media_required"
+    else:
+        raise AssertionError("missing exact media must not create a protected card")
 
 
 def test_litter_story_copy_and_stock_digest_bind_exact_litter_context():

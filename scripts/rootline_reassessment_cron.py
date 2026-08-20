@@ -62,7 +62,7 @@ def run(*, environ=None, now=None, opener=None) -> dict:
     request = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST",
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
     try:
-        response = (opener or urllib.request.urlopen)(request, timeout=115)
+        response = (opener or urllib.request.urlopen)(request, timeout=210)
         with response:
             result = json.load(response)
     except Exception:

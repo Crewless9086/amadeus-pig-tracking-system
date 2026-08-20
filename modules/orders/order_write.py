@@ -108,12 +108,28 @@ def _available_pigs_from_sales_rows(rows):
 
     for row in rows:
         available = to_clean_string(row.get("Available_For_Sale", row.get("available_for_sale", "")))
-        if available != "Yes":
+        live_transfer_eligible = row.get("live_stock_sale_eligible")
+        if available != "Yes" and live_transfer_eligible is not True:
             continue
 
         reserved_status = to_clean_string(row.get("Reserved_Status", row.get("reserved_status", "")))
-        if reserved_status == "Reserved":
+        if reserved_status.lower() == "reserved":
             continue
+
+        withdrawal_state = to_clean_string(row.get("withdrawal_evidence_state", "")).lower()
+        withdrawal_end = to_clean_string(row.get("current_withdrawal_end_date", ""))
+        treatment_disclosure = None
+        if withdrawal_state == "hold":
+            treatment_disclosure = {
+                "product": to_clean_string(row.get("last_product_name", "")) or "Recorded treatment",
+                "withdrawal_end_date": withdrawal_end or None,
+                "food_chain_prohibition": True,
+                "safe_buyer_wording": (
+                    f"Food-chain entry and slaughter are prohibited through {withdrawal_end}."
+                    if withdrawal_end else
+                    "A recorded food-chain withdrawal is active; the end date is unavailable."
+                ),
+            }
 
         pigs.append({
             "pig_id": to_clean_string(row.get("Pig_ID", row.get("pig_id", ""))),
@@ -124,6 +140,11 @@ def _available_pigs_from_sales_rows(rows):
             "sale_category": to_clean_string(row.get("Sale_Category", row.get("sale_category", ""))),
             "suggested_price_category": to_clean_string(row.get("Suggested_Price_Category", row.get("suggested_price_category", ""))),
             "reserved_status": reserved_status,
+            "livestock_transfer_eligible": True,
+            "food_chain_eligible": withdrawal_state in {"", "not_applicable", "cleared"},
+            "withdrawal_evidence_state": withdrawal_state or "unknown",
+            "current_withdrawal_end_date": withdrawal_end or None,
+            "treatment_disclosure": treatment_disclosure,
         })
 
     return sorted(pigs, key=lambda x: (x["tag_number"] or x["pig_id"]).lower())

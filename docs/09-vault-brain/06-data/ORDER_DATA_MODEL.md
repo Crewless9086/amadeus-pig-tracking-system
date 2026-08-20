@@ -52,6 +52,8 @@ must not invoke livestock lifecycle mutation.
 - Approved-order revision actions must be idempotent: repeated correction requests should detect already-matching active lines and logged revision fingerprints instead of silently duplicating pigs or paperwork.
 - `send_for_approval` requires Draft status, customer name, payment method, collection location, and at least one active line.
 - Approval records the owner decision only. Reservation/allocation and customer or quote notification are separate named gated actions; approval must not trigger either action automatically.
+- `livestock_quotations` is the intake-linked quotation aggregate, separate from `orders`, allocation proposals and reservations. Its journey is `budgetary_quotation` or `sales_quotation`; the latter alone uses `quotation_basis=current_availability`.
+- `livestock_quotation_lines` store immutable issue-time quantity, unit-price, subtotal and effective-dated `sales_pricing` evidence. Issued rows are append-only; refresh creates a superseding quotation. Expiry and supersession are explicit, and order conversion refreshes price and availability without carrying allocation/reservation forward.
 - Rejection/customer cancellation must cancel/release linked non-terminal lines and write status-log evidence.
 - Completed orders and terminal records must be protected from unsafe approval/rejection/cancellation changes.
 - Quote/document sending must use backend-prepared document state and the outbound document-delivery path.
@@ -66,6 +68,13 @@ must not invoke livestock lifecycle mutation.
 - Slaughter/abattoir sales may be recorded without a normal customer order.
 - Meat/carcass sales should use the same transaction family once the meat workflow is ready.
 - Duplicate non-cancelled sale records for the same pig must be blocked.
+- A completed Livestock transfer with no consideration uses the existing sale
+  and order identities. `net_total` and line prices preserve list-value history;
+  `financial_disposition = Charitable_Giveaway`, `receivable_total = 0.00`,
+  `received_total = 0.00` and `payment_status = Not_Applicable` preserve the
+  separate financial truth. The protected correction retains prior payment
+  evidence in its correction envelope and creates no second sale, document,
+  animal transfer, payment, refund or customer send.
 
 ## Source References
 

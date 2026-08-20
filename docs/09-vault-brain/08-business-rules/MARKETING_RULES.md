@@ -4,6 +4,13 @@ Beacon must not post publicly without owner-approved gates, spend money without 
 
 Public copy must not overpromise stock, timing, delivery, final booking, or price.
 
+Live-stock awareness is not a demand or sales lane. Its public copy must contain
+no availability, sale, stock, price, booking, reservation, urgency, contact,
+message or buying invitation, even when current sale-readiness triggered Beacon's
+internal observation. A litter story uses the sow's canonical human name and
+never exposes the internal litter identity. Organic inbound is routed to SAM
+only after the person independently contacts the farm.
+
 Objectives, brand rules, channel allowlists, KPI definitions, attribution windows, thresholds, and targets must show whether they are proposed or owner-approved. Approval may not be inferred from a default.
 
 Demand ceilings require fresh fulfilment provenance and subtract commitments, operational reserve, and safety buffer from verified availability. Unknown channels, unresolved public-media permission, and missing, stale, invalid, incompatible, or zero-capacity evidence fail closed.

@@ -78,6 +78,10 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
     next_due = _next_due(now, result)
     outcome = {**record, "status": terminal, "terminal_outcome": str(result.get("status") or terminal),
                "material_digest": str(result.get("material_digest") or ""),
+               "execution_status": str(result.get("execution_status") or ""),
+               "plan_delivery_status": str(result.get("plan_delivery_status") or ""),
+               "fertilizer_commissioning_status": str(
+                   result.get("fertilizer_commissioning_status") or ""),
                "next_due_at": next_due.isoformat(), "telegram_sends": int(result.get("telegram_sends") or 0),
                "telegram_edits": int(result.get("telegram_edits") or 0),
                "hardware_commands": int(result.get("hardware_commands") or 0),

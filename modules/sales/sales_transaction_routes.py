@@ -43,6 +43,8 @@ from modules.sales.sales_transaction_lifecycle import (
 from modules.sales.sales_transaction_read import get_sales_transaction, list_sales_transactions
 from modules.sales.sales_payment_receipt import (
     preview_sale_payment_state, record_sale_payment_state)
+from modules.sales.sales_financial_disposition import (
+    preview_charitable_disposition, confirm_charitable_disposition)
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
 from modules.sales.butcher_truth_board import get_butcher_truth_board
 from modules.sales.meat_fulfillment import (
@@ -456,6 +458,77 @@ def sales_transaction_payment_state_update(sale_id):
     result, status_code = record_sale_payment_state(
         sale_id, payload, actor_id=principal)
     return jsonify(result), status_code
+
+
+@sales_bp.route("/sales-transactions/<sale_id>/charitable-disposition/preview", methods=["POST"])
+def sales_transaction_charitable_disposition_preview(sale_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    principal = strict_owner_admin_principal()
+    if not principal:
+        return jsonify({"success": False, "status": "owner_identity_required",
+                        "writes_to_supabase": False}), 403
+    result, status_code = preview_charitable_disposition(
+        sale_id, request.get_json(silent=True) or {}, actor_id=principal)
+    if status_code == 200 and result.get("confirmation_required") is True:
+        token = _disposition_confirmation_token(sale_id, principal, result.get("preview_digest"))
+        if not token:
+            return jsonify({"success": False, "status": "disposition_confirmation_signing_unavailable",
+                            "writes_to_supabase": False}), 503
+        result["confirmation_token"] = token
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales-transactions/<sale_id>/charitable-disposition/confirm", methods=["POST"])
+def sales_transaction_charitable_disposition_confirm(sale_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    principal = strict_owner_admin_principal()
+    if not principal:
+        return jsonify({"success": False, "status": "owner_identity_required",
+                        "writes_to_supabase": False}), 403
+    payload = request.get_json(silent=True) or {}
+    token_status = _validate_disposition_confirmation_token(
+        payload.pop("confirmation_token", ""), sale_id, principal,
+        payload.get("confirmed_preview_digest"))
+    if token_status != "valid":
+        return jsonify({"success": False, "status": token_status,
+                        "writes_to_supabase": False}), 409
+    result, status_code = confirm_charitable_disposition(
+        sale_id, payload, actor_id=principal)
+    return jsonify(result), status_code
+
+
+def _disposition_confirmation_serializer():
+    secret = current_app.secret_key
+    return (URLSafeTimedSerializer(secret, salt="sales-financial-disposition-confirmation-v1")
+            if secret else None)
+
+
+def _disposition_confirmation_token(sale_id, principal, preview_digest):
+    serializer = _disposition_confirmation_serializer()
+    if not serializer:
+        return ""
+    return serializer.dumps({"sale_id": sale_id, "principal": principal,
+                             "preview_digest": preview_digest})
+
+
+def _validate_disposition_confirmation_token(token, sale_id, principal, preview_digest):
+    serializer = _disposition_confirmation_serializer()
+    if not serializer or not token:
+        return "disposition_confirmation_token_required"
+    try:
+        bound = serializer.loads(token, max_age=900)
+    except SignatureExpired:
+        return "disposition_confirmation_token_expired"
+    except BadSignature:
+        return "disposition_confirmation_token_invalid"
+    if bound != {"sale_id": sale_id, "principal": principal,
+                 "preview_digest": preview_digest}:
+        return "disposition_confirmation_token_mismatch"
+    return "valid"
 
 
 def _payment_confirmation_serializer():

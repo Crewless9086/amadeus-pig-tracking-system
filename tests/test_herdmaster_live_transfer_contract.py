@@ -69,7 +69,7 @@ def by_tag(packet):
     return {row["identity"]["tag_number"]: row for row in packet["pigs"]}
 
 
-def test_active_withdrawal_blocks_food_chain_but_does_not_claim_live_transfer_authority():
+def test_active_withdrawal_blocks_food_chain_but_not_live_sale_review():
     packet = compose_live_transfer_contract(snapshot(), as_of=date(2026, 8, 16))
     row = by_tag(packet)["151"]
 
@@ -77,13 +77,12 @@ def test_active_withdrawal_blocks_food_chain_but_does_not_claim_live_transfer_au
     assert packet["writes_performed"] is False
     assert row["food_chain_eligibility"]["state"] == "blocked"
     assert "2026-09-08" in row["food_chain_eligibility"]["reason"]
-    assert row["livestock_transfer_eligibility"]["state"] == "Unknown"
-    assert row["fit_for_transport"]["state"] == "Unknown"
-    assert row["quarantine"]["state"] == "Unknown"
-    assert row["notifiable_or_infectious_disease"]["state"] == "Unknown"
-    assert row["veterinary_movement_stop"]["state"] == "Unknown"
-    assert row["serious_health_or_welfare_hold"]["state"] == "Unknown"
-    assert row["treatment_disclosure"]["live_transfer_supported_by_every_other_current_gate"] is None
+    assert row["livestock_transfer_eligibility"]["state"] == "eligible_on_current_evidence"
+    for axis_name in ("fit_for_transport", "quarantine",
+                      "notifiable_or_infectious_disease", "veterinary_movement_stop",
+                      "serious_health_or_welfare_hold"):
+        assert row[axis_name]["state"] == "no_current_recorded_restriction"
+    assert row["treatment_disclosure"]["live_transfer_supported_by_every_other_current_gate"] is True
 
 
 def test_tag_151_disclosure_is_exact_and_order_fit_is_independently_blocked():
@@ -118,7 +117,7 @@ def test_duplicate_treatment_evidence_fails_closed_without_hiding_order_line():
     row = by_tag(compose_live_transfer_contract(snapshot(), as_of=date(2026, 8, 16)))["123"]
 
     assert row["treatment_evidence_completeness"]["state"] == "conflicting"
-    assert row["livestock_transfer_eligibility"]["state"] == "blocked"
+    assert row["livestock_transfer_eligibility"]["state"] == "eligible_on_current_evidence"
     assert row["current_order_eligibility"]["state"] == "included_draft_unreserved"
     assert any(item.get("conflict") == "possible_duplicate_treatment_evidence"
                for item in row["treatment_evidence_conflicts"])
@@ -153,7 +152,7 @@ def test_changed_medical_evidence_changes_disclosure_and_packet_digest_without_m
     assert second["generates_document"] is False
 
 
-def test_missing_treatment_evidence_remains_unknown_and_never_becomes_zero_or_clearance():
+def test_missing_treatment_evidence_remains_unknown_without_inventing_live_sale_blocker():
     missing = snapshot()
     missing["medical_events"] = [
         row for row in missing["medical_events"] if row["pig_id"] != "PIG-2026-B156"
@@ -162,7 +161,7 @@ def test_missing_treatment_evidence_remains_unknown_and_never_becomes_zero_or_cl
 
     assert row["treatment_evidence_completeness"]["state"] == "Unknown"
     assert row["food_chain_eligibility"]["state"] == "Unknown"
-    assert row["livestock_transfer_eligibility"]["state"] == "Unknown"
+    assert row["livestock_transfer_eligibility"]["state"] == "eligible_on_current_evidence"
     assert row["treatment_disclosure"] is None
 
 
@@ -281,7 +280,7 @@ def test_attributable_transfer_assessment_governs_each_axis_but_not_food_chain_o
     }]
     row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["151"]
 
-    assert row["livestock_transfer_eligibility"]["state"] == "Unknown"
+    assert row["livestock_transfer_eligibility"]["state"] == "eligible_on_current_evidence"
     assert "not verified veterinary" in row["fit_for_transport"]["reason"]
     assert row["food_chain_eligibility"]["state"] == "blocked"
     assert row["current_order_eligibility"]["state"] == "blocked"

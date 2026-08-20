@@ -17,6 +17,7 @@ from modules.beacon.content_operations import (
     build_beacon_content_candidate,
     gather_beacon_content_evidence,
 )
+from modules.pig_weights.farm_supabase_read_service import list_litter_overview
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 from modules.oom_sakkie.beacon_media_review_runtime import present_private_media_review
 from modules.oom_sakkie.protected_action_claims import (
@@ -33,8 +34,9 @@ CAMPAIGN_REVIEW_ACTION = "beacon_campaign_review"
 
 def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_opportunity_cards,
         media_loader=list_media_intakes, content_evidence_loader=gather_beacon_content_evidence,
-        content_candidate_builder=build_beacon_content_candidate, now=None):
-    """Compose one internal BEACON result from current canonical evidence."""
+        content_candidate_builder=build_beacon_content_candidate,
+        litter_loader=list_litter_overview, now=None):
+    """Compose one governed litter-awareness result from current evidence."""
     opportunities = opportunity_loader()
     media_result = media_loader()
     media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
@@ -42,15 +44,15 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
     # Keep the legacy awareness dependencies injectable for caller compatibility,
     # but a scheduled revenue case must use the sale-ready demand contract.  An
     # awareness/follow packet is never silently upgraded into a messages campaign.
-    packet = build_sale_ready_demand_proposal(opportunities, media_payload,
-        observed_at=evidence_time)
-    if packet.get("status") == "ready_for_owner_review":
+    packet = build_litter_awareness_story_proposal(
+        opportunities, litter_loader(), media_payload, observed_at=evidence_time)
+    if packet.get("status") == "ready_for_owner_review" and packet.get("litter_media_selection"):
         packet = build_protected_campaign_package(packet, now=evidence_time)
     return {
         "success": True,
-        "status": ("beacon_sale_ready_stock_proposal_ready" if
+        "status": ("beacon_litter_awareness_story_ready" if
             packet.get("protected_campaign_package") else
-            "beacon_sale_ready_stock_evidence_request"),
+            "beacon_litter_awareness_media_exception"),
         "answer": render_beacon_packet(packet, language="en"),
         "proposal": packet,
         "result_digest": _digest(packet),
@@ -141,28 +143,25 @@ def build_protected_campaign_package(packet, *, now=None):
         packet.get("sale_stock_evidence"), Mapping) else {}
     sam = packet.get("sam_response_contract") if isinstance(
         packet.get("sam_response_contract"), Mapping) else {}
-    if objective != "facebook_messaging_conversations":
-        raise ValueError("beacon_campaign_messages_objective_required")
-    qualification_fields = {str(value) for value in sam.get("qualification_fields") or []}
-    required_qualification = {"animal_type", "quantity", "intended_use", "customer_area"}
-    if (not re.search(r"\bmessage\s+(?:amadeus(?:\s+farm)?|us)\b", cta, re.I)
-            or not re.search(r"\b(?:animal|livestock|pig|weaner)\b", cta, re.I)
-            or not re.search(r"\b(?:number|quantity|how many)\b", cta, re.I)
-            or not re.search(r"\b(?:intended use|need them for|looking for)\b", cta, re.I)
-            or not re.search(r"\b(?:area|location|town)\b", cta, re.I)):
-        raise ValueError("beacon_campaign_useful_message_cta_required")
-    if re.search(r"\bfollow\b", exact_copy, re.I) and not re.search(
-            r"\b(?:enquir|looking for|need)\w*\b", exact_copy, re.I):
-        raise ValueError("beacon_campaign_awareness_copy_messages_mismatch")
+    if objective != "farm_awareness" or packet.get("campaign_lane") != "live_stock_awareness":
+        raise ValueError("beacon_campaign_awareness_objective_required")
+    if cta:
+        raise ValueError("beacon_campaign_awareness_cta_prohibited")
+    if not litter_media:
+        raise ValueError("beacon_campaign_exact_litter_media_required")
+    story = stock.get("story_context") if isinstance(stock.get("story_context"), Mapping) else {}
+    sow_name = str(story.get("sow_name") or "").strip()
+    if not sow_name or str(story.get("litter_id") or "") in exact_copy:
+        raise ValueError("beacon_campaign_public_sow_identity_required")
+    if sow_name not in exact_copy:
+        raise ValueError("beacon_campaign_public_sow_name_missing")
     if (stock.get("source") != "beacon_opportunity_scanner"
             or not stock.get("fresh")
-            or not (stock.get("sale_ready_categories") or [])
             or not stock.get("card_id") or not stock.get("observed_at")):
         raise ValueError("beacon_campaign_canonical_sale_stock_required")
     if (sam.get("lane") != "live_stock_sales"
-            or sam.get("supported_response_class") != "clarification"
             or not sam.get("campaign_attribution_required")
-            or qualification_fields != required_qualification):
+            or sam.get("inbound_only") is not True):
         raise ValueError("beacon_campaign_sam_response_contract_required")
     envelope = {
         "contract_version": "beacon_protected_facebook_campaign_package_v1",
@@ -174,28 +173,27 @@ def build_protected_campaign_package(packet, *, now=None):
         "location": "Riversdale and Albertinia, Western Cape, South Africa",
         "publication_time": publication.isoformat(), "publication_timezone": "Africa/Johannesburg",
         "approval_expires_at": publication.isoformat(),
-        "boost_objective": "Facebook messaging conversations",
+        "boost_objective": "none",
         "campaign_objective": objective,
         "call_to_action": cta,
         "sale_stock_evidence": dict(stock),
         "sam_response_contract": dict(sam),
-        "budget_cap": {"currency": "ZAR", "total": "300.00", "daily": "100.00"},
-        "duration": {"days": 3},
-        "stop_conditions": ["total_spend_reaches_ZAR_300", "three_day_duration_expires",
-            "public_use_or_campaign_authority_is_revoked", "canonical_sale_eligibility_materially_changes",
-            "provider_rejects_or_returns_ambiguous_publication_or_spend_state"],
+        "budget_cap": {"currency": "ZAR", "total": "0.00", "daily": "0.00"},
+        "duration": {"days": 0},
+        "stop_conditions": ["public_use_or_campaign_authority_is_revoked",
+            "canonical_litter_or_media_evidence_materially_changes",
+            "provider_rejects_or_returns_ambiguous_publication_state"],
         "rollback": {
             "on_publication_failure": "do_not_retry; retain provider chronology and stop boost",
-            "on_boost_failure": "stop the campaign; do not retry spend; retain the organic post only if provider-confirmed",
-            "on_authority_or_evidence_change": "pause/stop provider campaign and preserve immutable readback"},
+            "on_authority_or_evidence_change": "stop before publication and preserve immutable readback"},
         "authority": {"publication_authorized": False, "boost_authorized": False,
             "spend_authorized": False, "customer_send_authorized": False, "approval_required": True}}
     envelope["attribution_identity"] = "BEACON-CAMPAIGN-" + _digest(envelope)[:24].upper()
     envelope["sam_response_contract"]["campaign_attribution_id"] = envelope["attribution_identity"]
     envelope["approval_card"] = {
-        "decision": "Approve this exact Facebook publication and boost envelope before its publication time / Correct / Decline",
+        "decision": "Approve this exact organic Facebook story before its publication time / Correct / Decline",
         "approval_effect": "authorization only; BEACON must execute and obtain Meta readback",
-        "requested_authority": "one publication attempt and one Meta boost capped at ZAR 300 for 3 days"}
+        "requested_authority": "one organic Facebook publication attempt with zero spend"}
     return {**packet, "protected_campaign_package": envelope}
 
 
@@ -339,6 +337,78 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
     packet["packet_id"] = "BEACON-DEMAND-" + _digest({
         "stock": stock, "copy": caption, "cta": cta, "media": media_plan,
         "sam": packet["sam_response_contract"]})[:24].upper()
+    return packet
+
+
+def build_litter_awareness_story_proposal(opportunities, litter_result, media_payload,
+        *, observed_at=None):
+    """Build one non-commercial sow/litter story with exact governed media."""
+    if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
+        raise ValueError("canonical_opportunity_evidence_required")
+    if not isinstance(litter_result, Mapping) or litter_result.get("success") is not True:
+        raise ValueError("canonical_litter_evidence_required")
+    cards = [row for row in opportunities.get("cards") or [] if isinstance(row, Mapping)]
+    card = next((row for row in cards if isinstance(row.get("story_context"), Mapping)
+        and row["story_context"].get("kind") == "litter"), None)
+    if not card:
+        return _litter_awareness_exception(
+            "No current canonical litter event is linked to the BEACON observation.",
+            "Choose one current canonical litter before any media or publication review.")
+    story = dict(card["story_context"])
+    litter = next((row for row in litter_result.get("litters") or []
+        if isinstance(row, Mapping)
+        and str(row.get("litter_id") or "") == str(story.get("litter_id") or "")), None)
+    sow_name = str((litter or {}).get("sow_name") or "").strip()
+    if not sow_name or sow_name.casefold() == "unknown":
+        return _litter_awareness_exception(
+            "The current litter has no canonical sow human name.",
+            "Record or confirm the sow's human name on the canonical litter record.")
+    story["sow_name"] = sow_name
+    choice = build_litter_media_choice(media_payload, litter_id=story.get("litter_id"),
+        pig_ids=story.get("pig_ids") or [], event_id=story.get("event_id"),
+        subject=f"{sow_name}'s piglets")
+    caption = (f"{sow_name} has settled into the steady rhythm of caring for her piglets. "
+        "Between feeds, clean bedding and quiet checks, the little family is finding its feet "
+        "one ordinary farm day at a time.")
+    if not assess_public_livestock_content(caption, objective="farm_awareness",
+            campaign_lane="live_stock_awareness", media=choice["selected"])["allowed"]:
+        raise ValueError("awareness_copy_policy_failed")
+    packet = {
+        "contract_version": "beacon_litter_awareness_story_v1",
+        "packet_type": "litter_awareness_story",
+        "status": "ready_for_owner_review" if choice["selected"] else "missing_media",
+        "campaign_objective": "farm_awareness", "campaign_lane": "live_stock_awareness",
+        "objective": f"Share a warm farm-life update about {sow_name} and her litter",
+        "story_subject": f"{sow_name} and her piglets", "story_context": story,
+        "audience": "People who enjoy honest farm-life stories",
+        "intended_channel": "Facebook Page organic", "draft_caption": caption,
+        "call_to_action": "", "litter_media_selection": choice["selected"],
+        "precise_media_request": "" if choice["selected"] else choice["request"],
+        "media": ({"status": "exact_litter_public_media_selected"}
+            if choice["selected"] else {"status": "missing_exact_litter_media"}),
+        "sale_stock_evidence": {"source": "beacon_opportunity_scanner",
+            "card_id": str(card.get("card_id") or ""),
+            "observed_at": str((card.get("provenance") or {}).get("observed_at")
+                or observed_at or opportunities.get("generated_at") or ""),
+            "fresh": bool((card.get("freshness") or {}).get("fresh") is True),
+            "story_context": story,
+            "claim_boundary": "Internal trigger evidence only; no public stock or availability claim."},
+        "sam_response_contract": {"lane": "live_stock_sales",
+            "campaign_attribution_required": True, "inbound_only": True,
+            "authority_boundary": "SAM may act only after genuine independently initiated attributed inbound."},
+        "decision_options": ["approve", "correct", "decline"], "authority": dict(ZERO),
+    }
+    packet["packet_id"] = "BEACON-LITTER-STORY-" + _digest({
+        "story": story, "copy": caption, "media": choice["selected"]})[:24].upper()
+    return packet
+
+
+def _litter_awareness_exception(reason, request):
+    packet = {"contract_version": "beacon_litter_awareness_exception_v1",
+        "packet_type": "litter_awareness_exception", "status": "missing_media",
+        "precise_exception": reason, "precise_media_request": request,
+        "authority": dict(ZERO)}
+    packet["packet_id"] = "BEACON-LITTER-EXCEPTION-" + _digest(packet)[:24].upper()
     return packet
 
 
@@ -584,6 +654,7 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
         "budget_cap": campaign.get("budget_cap") or {},
         "duration": campaign.get("duration") or {},
         "attribution_identity": str(campaign.get("attribution_identity") or ""),
+        "story_context": dict((campaign.get("sale_stock_evidence") or {}).get("story_context") or {}),
         "stock_boundary": str((campaign.get("sale_stock_evidence") or {}).get("claim_boundary") or ""),
         "sam_boundary": str((campaign.get("sam_response_contract") or {}).get("authority_boundary") or ""),
         "stop_conditions": campaign.get("stop_conditions") or [],
@@ -610,30 +681,21 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
         media_summary = (f"{media.get('asset_id')} (public-use approved)"
             if isinstance(media, Mapping) and media.get("asset_id") else "Text only")
     answer = "\n".join([
-        "<b>BEACON campaign approval</b>",
-        f"<b>Story:</b> {html.escape(str(packet.get('story_subject') or packet.get('objective') or 'Generate qualified livestock enquiries'))}",
-        f"<b>Copy preview:</b> {html.escape(preview['exact_post_copy'])}",
-        f"<b>Media:</b> {html.escape(media_summary)}",
-        f"<b>Publish:</b> {html.escape(preview['publication_time'])} SAST",
-        f"<b>Budget:</b> ZAR {html.escape(str(budget.get('total') or '0'))} total; {html.escape(str(duration.get('days') or '0'))} days",
-        "<b>Boundary:</b> Stock supports enquiries only; SAM must re-check stock before any offer. No quote, reservation, allocation, delivery promise or customer send.",
+        "<b>BEACON — Facebook story</b>",
+        f"<b>Story:</b> {html.escape(str(packet.get('story_subject') or packet.get('objective') or 'Farm life'))}",
+        f"<b>Post:</b> {html.escape(preview['exact_post_copy'])}",
+        f"<b>Pictures:</b> {html.escape(media_summary)}",
+        f"<b>Publish by:</b> {html.escape(preview['publication_time'])}",
+        "<b>Boundary:</b> Organic awareness only. No sales claim, call to action, spend or customer send.",
     ])
     rows = [[
         {"text": "Approve", "callback_data": f"{CALLBACK_PREFIX}{token}:confirm"},
         {"text": "Correct", "callback_data": f"{CALLBACK_PREFIX}{token}:change"},
         {"text": "Decline", "callback_data": f"{CALLBACK_PREFIX}{token}:cancel"},
     ]]
-    if litter_media:
-        answer += "\n<b>Use these photos?</b>"
-        rows.append([
-            {"text": "Review photos", "callback_data": f"{CALLBACK_PREFIX}{token}:details"},
-            {"text": "Select/change", "callback_data": f"{CALLBACK_PREFIX}{token}:change"},
-            {"text": "No media", "callback_data": f"{CALLBACK_PREFIX}{token}:nomedia"},
-        ])
-    elif preview["media_evidence_exception"]:
+    if not litter_media and preview["media_evidence_exception"]:
         answer += "\n<b>Media evidence exception:</b> " + html.escape(
             preview["media_evidence_exception"])
-    rows.append([{"text": "Details", "callback_data": f"{CALLBACK_PREFIX}{token}:details"}])
     markup = {"inline_keyboard": rows}
     return {"answer": answer, "reply_markup": markup, "callback_token": token,
         "preview_digest": claim.get("preview_digest") or preview["campaign_digest"],
@@ -741,7 +803,30 @@ def _project_media(payload, tags):
 
 def render_beacon_packet(packet, *, language="en"):
     af = str(language).casefold().startswith("af")
-    if packet.get("packet_type") == "sale_ready_demand_proposal":
+    if packet.get("packet_type") == "litter_awareness_story":
+        media = packet.get("litter_media_selection") or []
+        if not media:
+            lines = ["<b>BEACON — ONE MEDIA EXCEPTION</b>", "",
+                "No exact litter-linked image with current Public Use authority is available.",
+                "<b>Smallest governed decision:</b> " + html.escape(
+                    str(packet.get("precise_media_request") or "")),
+                "No approval card was created and nothing can be published."]
+        else:
+            lines = ["<b>BEACON — FACEBOOK STORY</b>", "",
+                f"<b>Story:</b> {html.escape(str(packet.get('story_subject') or ''))}",
+                f"<b>Post:</b> {html.escape(str(packet.get('draft_caption') or ''))}",
+                "<b>Pictures:</b> " + html.escape("; ".join(
+                    f"{item.get('asset_id')} — preview {item.get('thumbnail_url') or 'unavailable'}"
+                    for item in media)),
+                "<b>Boundary:</b> Organic awareness only; no availability, sale, price, booking, urgency, contact invitation, spend or customer send.",
+                "<b>Choose:</b> Approve / Correct / Decline."]
+    elif packet.get("packet_type") == "litter_awareness_exception":
+        lines = ["<b>BEACON — ONE MEDIA EXCEPTION</b>", "",
+            html.escape(str(packet.get("precise_exception") or "")),
+            "<b>Smallest governed decision:</b> " + html.escape(
+                str(packet.get("precise_media_request") or "")),
+            "No card was created and nothing can be published."]
+    elif packet.get("packet_type") == "sale_ready_demand_proposal":
         media = packet.get("media") or {}
         stock = packet.get("sale_stock_evidence") or {}
         sam = packet.get("sam_response_contract") or {}

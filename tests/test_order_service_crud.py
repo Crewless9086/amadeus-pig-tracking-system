@@ -44,6 +44,43 @@ def available_pig(**overrides):
 
 
 class OrderCrudServiceTests(unittest.TestCase):
+    def test_selector_includes_live_transfer_eligible_withdrawal_and_discloses_food_chain_hold(self):
+        rows = [{
+            "pig_id": "PIG-2026-B156", "tag_number": "151", "sex": "Male",
+            "current_weight_kg": 4.0, "weight_band": "2_to_4_Kg",
+            "sale_category": "Young Piglets", "reserved_status": "Not_Reserved",
+            "available_for_sale": "No", "live_stock_sale_eligible": True,
+            "withdrawal_evidence_state": "hold",
+            "current_withdrawal_end_date": "2026-09-08",
+            "last_product_name": "Ecomectin",
+        }]
+
+        pigs = order_write._available_pigs_from_sales_rows(rows)
+
+        self.assertEqual([pig["pig_id"] for pig in pigs], ["PIG-2026-B156"])
+        self.assertTrue(pigs[0]["livestock_transfer_eligible"])
+        self.assertFalse(pigs[0]["food_chain_eligible"])
+        self.assertEqual(pigs[0]["treatment_disclosure"]["product"], "Ecomectin")
+        self.assertEqual(pigs[0]["treatment_disclosure"]["withdrawal_end_date"], "2026-09-08")
+        self.assertTrue(pigs[0]["treatment_disclosure"]["food_chain_prohibition"])
+
+    def test_selector_still_excludes_noneligible_reserved_and_unavailable_rows(self):
+        base = {
+            "sex": "Male", "current_weight_kg": 4.0, "weight_band": "2_to_4_Kg",
+            "sale_category": "Young Piglets", "available_for_sale": "No",
+            "live_stock_sale_eligible": False,
+        }
+        rows = [
+            {**base, "pig_id": "SOLD", "tag_number": "sold", "reserved_status": "Not_Reserved"},
+            {**base, "pig_id": "OFF", "tag_number": "off", "reserved_status": "Not_Reserved"},
+            {**base, "pig_id": "HEALTH", "tag_number": "health", "reserved_status": "Not_Reserved"},
+            {**base, "pig_id": "SOURCE", "tag_number": "source", "reserved_status": "Not_Reserved"},
+            {**base, "pig_id": "RESERVED", "tag_number": "reserved", "available_for_sale": "Yes",
+             "live_stock_sale_eligible": True, "reserved_status": "Reserved"},
+        ]
+
+        self.assertEqual(order_write._available_pigs_from_sales_rows(rows), [])
+
     def test_create_order_appends_draft_defaults_and_status_log(self):
         with patch.object(order_write, "generate_order_id", return_value="ORD-1"), \
              patch.object(order_write, "append_row") as append_row, \

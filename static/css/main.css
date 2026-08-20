@@ -3357,6 +3357,14 @@ button:disabled {
 }
 
 @media (max-width: 700px) {
+  body.operations-page .farm-nav {
+    flex-wrap: wrap;
+  }
+
+  body.operations-page .farm-nav-owner {
+    margin-left: auto;
+  }
+
   .page-shell {
     padding: 18px 12px;
   }

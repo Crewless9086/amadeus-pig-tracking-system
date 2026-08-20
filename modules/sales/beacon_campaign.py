@@ -1256,7 +1256,9 @@ def facebook_posting_policy(environ=None):
 
 def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
                                       meat_launch_authorized=False, media_projector=None,
-                                      now_provider=None, publish_now_authority_reader=None):
+                                      now_provider=None, publish_now_authority_reader=None,
+                                      protected_campaign_authority_reader=None,
+                                      meta_readback_reader=None):
     payload = payload if isinstance(payload, dict) else {}
     current_time = now_provider or (lambda: datetime.now(timezone.utc))
     raw_campaign_lane = payload.get("campaign_lane")
@@ -1325,6 +1327,14 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
         if projection_status != 200 or projection.get("success") is not True:
             return {**projection, **_facebook_execution_authority(False)}, projection_status
         projected = projection["assets"]
+        if payload.get("protected_campaign_claim_token"):
+            exact_keys = ("asset_id", "content_sha256", "library_accept_event_id", "public_use_event_id")
+            approved = [{key: item.get(key) for key in exact_keys} for item in requested_assets]
+            current = [{key: item.get(key) for key in exact_keys} for item in projected]
+            if approved != current:
+                return {"success": False, "status": "protected_campaign_exact_media_changed",
+                        "outcome": "definite_failure_before_meta", "automatic_retry_allowed": False,
+                        **_facebook_execution_authority(False)}, 409
         payload = {**payload, "asset_id": projected[0]["asset_id"],
                    "selected_asset": projected[0], "selected_assets": projected}
         successor_error = validate_successor_execution(payload, now=current_time())
@@ -1350,13 +1360,19 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             "execution_event": _public_facebook_post_event(params),
             **_facebook_execution_authority(False),
         }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
+    protected_token = ""
     if campaign_lane == "live_stock_awareness":
         source = environ if environ is not None else os.environ
-        binding_result, binding_status = require_organic_publication_binding(
-            params,
-            target_page_id=_clean_text(source.get(FACEBOOK_PAGE_ID_ENV)),
-            database_url=database_url,
-        )
+        protected_token = _clean_text(payload.get("protected_campaign_claim_token"))
+        if protected_token:
+            reader = protected_campaign_authority_reader or _require_protected_campaign_authority
+            binding_result, binding_status = reader(payload, params, database_url)
+        else:
+            binding_result, binding_status = require_organic_publication_binding(
+                params,
+                target_page_id=_clean_text(source.get(FACEBOOK_PAGE_ID_ENV)),
+                database_url=database_url,
+            )
         if binding_status != 200:
             return {
                 **binding_result,
@@ -1366,11 +1382,9 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
         binding = binding_result["binding"]
         authorization = binding_result["authorization"]
         params["publication_binding_id"] = binding["binding_id"]
-        params["approved_weekly_packet_id"] = binding["weekly_packet_id"]
+        params["approved_weekly_packet_id"] = binding.get("weekly_packet_id", "")
         params["owner_decision_event_id"] = binding["owner_decision_event_id"]
-        params["authorization_generation_id"] = authorization[
-            "authorization_generation_id"
-        ]
+        params["authorization_generation_id"] = authorization["authorization_generation_id"]
         successor_error = validate_successor_execution(
             params,
             now=current_time(),
@@ -1382,10 +1396,8 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             return {"success": False, "status": successor_error,
                     **_facebook_execution_authority(False)}, 409
         params["execution_event_id"] = _facebook_post_execution_id(params)
-        if (
-            params["execution_event_id"]
-            != authorization["expected_attempt_identity"]
-        ):
+        if (authorization.get("expected_attempt_identity")
+                and params["execution_event_id"] != authorization["expected_attempt_identity"]):
             return {
                 "success": False,
                 "status": "organic_publication_attempt_identity_mismatch",
@@ -1498,8 +1510,10 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             return status < 400 and bool(result.get("success"))
 
         def authority_guard():
-            if not is_publish_now:
-                return True
+            if protected_token:
+                guarded, guarded_status = reader(payload, params, database_url)
+                return guarded_status == 200 and guarded.get("success") is True
+            if not is_publish_now: return True
             guard_result, guard_status = authority_reader(database_url)
             return guard_status == 200 and guard_result.get("success") is True
 
@@ -1507,6 +1521,20 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             params, policy, stage_recorder=record_stage,
             authority_guard=authority_guard,
         )
+        if protected_token and post_status < 400 and post_result.get("success") is True:
+            readback = meta_readback_reader or _readback_facebook_page_post
+            readback_result, readback_status = readback(
+                post_result.get("facebook_post_id") or post_result.get("id"), params,
+                environ=environ, expected_media_ids=post_result.get("uploaded_media_ids") or [])
+            if readback_status >= 400 or readback_result.get("success") is not True:
+                post_result = {**post_result, "success": False,
+                    "status": "meta_provider_readback_ambiguous",
+                    "provider_readback": readback_result, "outcome": "ambiguous",
+                    "automatic_retry_allowed": False}
+                post_status = 503
+            else:
+                post_result = {**post_result, "provider_readback": readback_result,
+                               "provider_readback_confirmed": True}
     execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
     params.update({
         "execution_event_id": f'{params["execution_event_id"]}-RESULT',
@@ -1527,6 +1555,90 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
         "policy": policy,
         **_facebook_execution_authority(execution_status == "facebook_page_post_sent"),
     }, 200 if execution_status == "facebook_page_post_sent" else 502
+
+
+def _require_protected_campaign_authority(payload, params, database_url=None):
+    """Re-read the claimed owner decision; request fields are never authority."""
+    token = _clean_text(payload.get("protected_campaign_claim_token"))
+    digest = _clean_text(payload.get("protected_campaign_digest"))
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV) or "").strip()
+    if not token or not digest or not database_url:
+        return {"success": False, "status": "protected_campaign_authority_unavailable"}, 503
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=10,
+                options="-c default_transaction_read_only=on -c statement_timeout=10000") as db, db.cursor() as cur:
+            cur.execute("""select c.evidence_generation,c.preview_payload,c.result_payload,c.expires_at,
+                    p.consumer_id,p.status
+                from app_private.oom_protected_action_claims c
+                join app_private.beacon_protected_publication_consumers p on p.callback_token=c.callback_token
+                where c.callback_token=%s and c.action_kind='beacon_campaign_review'
+                  and c.status='completed'""", (token,))
+            row = cur.fetchone()
+    except Exception as exc:
+        return {"success": False, "status": "protected_campaign_authority_read_failed",
+                "error_type": exc.__class__.__name__}, 503
+    if not row or row[5] != "claimed" or row[3] <= datetime.now(timezone.utc):
+        return {"success": False, "status": "protected_campaign_authority_not_actionable"}, 409
+    preview = row[1] if isinstance(row[1], dict) else {}
+    decision = row[2] if isinstance(row[2], dict) else {}
+    media_keys = ("asset_id", "content_sha256", "library_accept_event_id", "public_use_event_id")
+    media = [{key:item.get(key) for key in media_keys} for item in preview.get("selected_media") or []]
+    requested = [{key:item.get(key) for key in media_keys} for item in params.get("selected_assets") or []]
+    if (row[0] != digest or preview.get("campaign_digest") != digest
+            or decision.get("status") != "beacon_campaign_review_approved"
+            or preview.get("packet_id") != params.get("publish_packet_id")
+            or preview.get("exact_post_copy") != params.get("exact_text")
+            or media != requested):
+        return {"success": False, "status": "protected_campaign_authority_binding_mismatch"}, 409
+    current_projection, current_status = resolve_server_publication_assets(
+        [item.get("asset_id") for item in params.get("selected_assets") or []], database_url)
+    if current_status != 200 or current_projection.get("success") is not True:
+        return {"success": False, "status": "protected_campaign_media_authority_revoked"}, 409
+    current = [{key:item.get(key) for key in media_keys} for item in current_projection["assets"]]
+    if current != media:
+        return {"success": False, "status": "protected_campaign_media_authority_changed"}, 409
+    binding_id = "BEACON-PROTECTED-BINDING-" + hashlib.sha256(token.encode()).hexdigest()[:24].upper()
+    return {"success": True, "status": "protected_campaign_authority_verified",
+        "binding": {"binding_id": binding_id, "owner_decision_event_id": token},
+        "authorization": {"authorization_generation_id": digest}}, 200
+
+
+def _readback_facebook_page_post(post_id, params, environ=None, expected_media_ids=None):
+    """Confirm Meta can read the exact created object and caption."""
+    source = environ if environ is not None else os.environ
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    post_id = _clean_text(post_id)
+    if not post_id or not token:
+        return {"success": False, "status": "meta_readback_configuration_missing"}, 503
+    query = urllib_parse.urlencode({"fields":"id,message,created_time,attachments{target,subattachments{target}}","access_token":token})
+    endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version,safe='')}/{urllib_parse.quote(post_id,safe='')}?{query}"
+    try:
+        with urllib_request.urlopen(urllib_request.Request(endpoint,method="GET"), timeout=25) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError,
+            ValueError, json.JSONDecodeError) as exc:
+        return {"success": False, "status": "meta_readback_failed",
+                "error_type": exc.__class__.__name__}, 503
+    if payload.get("id") != post_id or canonical_caption_text(payload.get("message", "")) != params.get("exact_text"):
+        return {"success": False, "status": "meta_readback_binding_mismatch"}, 409
+    expected = [str(value) for value in expected_media_ids or [] if str(value)]
+    attachments = ((payload.get("attachments") or {}).get("data") or [])
+    def target_ids(items):
+        values=[]
+        for item in items:
+            target=item.get("target") if isinstance(item.get("target"),dict) else {}
+            if target.get("id"): values.append(str(target["id"]))
+            children=((item.get("subattachments") or {}).get("data") or [])
+            values.extend(target_ids(children))
+        return values
+    returned = target_ids(attachments)
+    if expected and sorted(expected) != sorted(returned):
+        return {"success": False, "status": "meta_readback_media_binding_mismatch"}, 409
+    return {"success": True, "status": "meta_readback_confirmed", "id":payload["id"],
+            "message_sha256":hashlib.sha256(payload["message"].encode()).hexdigest(),
+            "provider_media_ids":sorted(set(returned)),"created_time":payload.get("created_time","")}, 200
 
 
 def list_beacon_facebook_post_execution_events(limit=25, publish_packet_id="", database_url=None):
@@ -2711,6 +2823,7 @@ def _post_to_facebook_page_feed(params, policy, environ=None):
         return {
             "success": False,
             "status": "facebook_post_request_failed",
+            "outcome": "ambiguous", "automatic_retry_allowed": False,
             "error_type": exc.__class__.__name__,
             "error": str(exc)[:240],
         }, 502
@@ -2992,6 +3105,7 @@ def _post_to_facebook_page_photos(params, policy, environ=None):
         return {
             "success": False,
             "status": "facebook_photo_post_request_failed",
+            "outcome": "ambiguous", "automatic_retry_allowed": False,
             "post_kind": "photo",
             "selected_media": _facebook_selected_media(params),
             "error_type": exc.__class__.__name__,

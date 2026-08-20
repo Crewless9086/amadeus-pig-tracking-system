@@ -122,6 +122,24 @@ def test_unpaid_records_no_receipt_and_never_infers_money():
     assert status == 400 and "Unpaid cannot record" in " ".join(result["errors"])
 
 
+def test_charitable_disposition_rejects_stale_payment_preview_and_confirmation():
+    row = ("Completed", "Not_Applicable", None, None, Decimal("0.00"),
+           Decimal("750.00"), None, "", "", None, None, None, None, None,
+           "Charitable_Giveaway", Decimal("0.00"))
+    for action in (preview_sale_payment_state, record_sale_payment_state):
+        cursor = Mock(); cursor.fetchone.return_value = row
+        request = payload("750.00")
+        if action is record_sale_payment_state:
+            request["confirmed_preview_digest"] = "0" * 64
+        with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+            result, status = action("SALE-CHARITY", request,
+                database_url="postgresql://example", actor_id="owner:charl")
+        assert status == 409
+        assert result["status"] == "payment_not_applicable_no_receivable"
+        assert result["amount_due"] == "0.00"
+        assert cursor.execute.call_count == 1
+
+
 def test_caller_cannot_supply_payment_audit_actor():
     result, status = record_sale_payment_state("SALE-1", payload(),
         database_url="postgresql://example")

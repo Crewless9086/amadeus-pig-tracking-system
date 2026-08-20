@@ -1,5 +1,14 @@
 # Implementation Source Map
 
+## Livestock quotation journeys
+
+- Contract/lifecycle: `modules/orders/livestock_quotation.py`
+- Existing requested-items/HERDMASTER preview: `modules/orders/livestock_quote_preview.py`
+- Effective-dated pricing: `modules/sales/sam_pricing.py`
+- Schema: `supabase/migrations/202608190003_create_livestock_quotation_aggregate.sql`
+- Owner preview UI: `templates/add-order.html`, `static/js/addOrder.js`
+- Acceptance: `tests/test_livestock_quotation.py`
+
 ## ROOTLINE water-credit lifecycle
 
 - Current B/C authority evidence semantics: append-only authority version `2`
@@ -19,6 +28,17 @@
   executor owns water-credit authority.
 
 ## CMQ-20260813-05 Phase A Shadow Control Tower
+
+- Provider-origin activation and authenticated recovery:
+  `modules/charlie/runtime_activation.py` and
+  `scripts/charlie_runtime_activation.py`. The exact Windows Task Scheduler
+  action and Operational audit-channel prior state are transactionally bound;
+  missing post-`RunEx` packets recover only through the HMAC-authenticated
+  consumed instance record, and consumed-plus-pending state is routed to
+  explicit recovery before any repeated provider start;
+  focused fail-closed coverage is in
+  `tests/test_charlie_runtime_activation.py`. These source references grant no
+  staging, activation, process, mission-pickup or release authority.
 
 - Source contract: `modules/charlie/shadow_control_tower.py`.
 - Focused zero-authority tests: `tests/test_shadow_control_tower.py`.
@@ -707,9 +727,27 @@ Current built gated surface:
   digest/order/type/scope evidence to historical-compatible events. Public Use
   is organic-awareness-only and grants no campaign/publication authority;
 - code: `modules/beacon/media_library.py`, `modules/beacon/media_intake.py`, `modules/beacon/creative_providers.py`, `modules/beacon/creative_studio.py`, `modules/beacon/organic_media_intelligence.py`, `modules/beacon/organic_publication_binding.py`, `modules/beacon/organic_publication_authorization.py`, `modules/beacon/weekly_owner_review.py`, `modules/beacon/weekly_owner_review_decisions.py`, `modules/oom_sakkie/telegram_gateway.py`, `modules/oom_sakkie/telegram_direct.py`, `modules/oom_sakkie/family_message_lifecycle.py`, `modules/oom_sakkie/routes.py`, `modules/sales/beacon_campaign.py`, `modules/sales/sales_transaction_routes.py`;
+- current litter-awareness composer/card source:
+  `modules/oom_sakkie/beacon_request_runtime.py`. The scheduled BEACON case
+  joins the scanner litter event to the canonical litter overview for the sow's
+  human name, selects only exact litter/pig/event-linked current Public Use
+  media, and creates no protected card when that evidence is absent. Public
+  copy is organic farm life with no commerce term or CTA; the compact private
+  card binds exact media previews and only Approve/Correct/Decline. Approval is
+  still authorization-only until a deployed BEACON worker consumes it through
+  the one canonical Meta execution spine; source/card completion is not
+  publication proof.
+- protected litter-story publication consumer:
+  `modules/beacon/protected_publication_worker.py`, the authenticated deployed
+  management route and the existing Oom Sakkie scheduler. It atomically consumes
+  only a completed exact BEACON campaign-review approval, revalidates digest,
+  expiry, story policy and exact Public Use media, then gives one attempt to the
+  existing Meta execution/receipt spine. Definite failure and provider ambiguity
+  are terminal; restart, concurrency and replay are silent. The callback never
+  publishes, and no approval means the consumer does nothing.
 - UI: `templates/beacon-media.html`, `static/js/beaconMedia.js`, `static/css/beaconMedia.css`;
 - tests: `tests/test_beacon_media_library.py`, `tests/test_beacon_media_intake.py`, `tests/test_beacon_media_intake_routes.py`, `tests/test_beacon_media_intake_postgres.py`, `tests/test_oom_sakkie_owner_task_gateway.py`, `tests/test_oom_sakkie_gatekeeper_media_forwarding.py`, `tests/test_oom_sakkie_routes.py`, `tests/test_beacon_creative_studio.py`, `tests/test_beacon_creative_studio_migration.py`, `tests/test_beacon_campaign.py`, `tests/test_beacon_organic_media_intelligence.py`, `tests/test_beacon_organic_media_intelligence_postgres.py`, `tests/test_beacon_weekly_owner_review.py`, `tests/test_beacon_weekly_owner_review_decisions.py`;
-- migrations: `supabase/migrations/202606180002_create_beacon_media_library.sql`, `202606180003_create_beacon_manual_post_events.sql`, `202606180004_create_beacon_campaign_performance_events.sql`, `202606180005_create_beacon_facebook_post_execution_events.sql`, `202606180006_extend_beacon_facebook_post_execution_statuses.sql`, `202607130002_create_beacon_creative_studio.sql`, `202607130003_enable_beacon_creative_studio_rls.sql`, `202607250001_create_beacon_weekly_review_decisions.sql`, `202607260003_create_beacon_publication_bindings.sql`, `202607260005_create_beacon_publication_authorizations.sql`, `202607260008_create_beacon_organic_media_learning.sql`, `202607270001_create_beacon_media_intake.sql` (deployed), `202608150003_allow_beacon_album_finish_protected_claims.sql` (deployed), `202608150007_allow_beacon_media_review_claims.sql` and `202608150008_add_beacon_album_review_envelope.sql` (deployed for BMQ-20260813-03);
+- migrations: `supabase/migrations/202606180002_create_beacon_media_library.sql`, `202606180003_create_beacon_manual_post_events.sql`, `202606180004_create_beacon_campaign_performance_events.sql`, `202606180005_create_beacon_facebook_post_execution_events.sql`, `202606180006_extend_beacon_facebook_post_execution_statuses.sql`, `202607130002_create_beacon_creative_studio.sql`, `202607130003_enable_beacon_creative_studio_rls.sql`, `202607250001_create_beacon_weekly_review_decisions.sql`, `202607260003_create_beacon_publication_bindings.sql`, `202607260005_create_beacon_publication_authorizations.sql`, `202607260008_create_beacon_organic_media_learning.sql`, `202607270001_create_beacon_media_intake.sql` (deployed), `202608150003_allow_beacon_album_finish_protected_claims.sql` (deployed), `202608150007_allow_beacon_media_review_claims.sql` and `202608150008_add_beacon_album_review_envelope.sql` (deployed for BMQ-20260813-03), `202608190002_create_beacon_protected_publication_consumer.sql` (source candidate);
 - legacy scope and media decisions are preserved in the Vault cutover archive;
   current implementation truth is the code, migrations, tests and provider
   evidence listed above.
@@ -718,6 +756,9 @@ Current built gated surface:
 ### Orders And Sales Transactions
 
 Current built Supabase-backed surface:
+
+- requested-items livestock draft quote: `modules/pig_weights/herdmaster_live_transfer_contract.py` owns the read-only canonical animal/hold/medicine projection; `modules/orders/livestock_quote_preview.py` preserves customer request, advisory recommendation, reservation and completion as separate states, reports total eligible availability separately from capped recommendations, and permits partial/`Unavailable` draft lines without selecting or reserving stock; `/api/orders/livestock-quote-preview`, `templates/add-order.html` and `static/js/addOrder.js` expose the owner preview with consolidated medicine disclosure. Recorded food-chain withdrawal is a compact disclosure and slaughter/food-chain restriction, not by itself a live-sale blocker. Missing/stale weight lowers confidence. Only recorded health, welfare, quarantine, movement or sale holds block. Focused coverage: `tests/test_herdmaster_live_transfer_contract.py`, `tests/test_livestock_quote_preview.py` and `tests/livestock_quote_preview_visual_proof.spec.js`.
+- already-completed livestock sales are not written from owner conversation or the read-only preview. The preview names the evidence still required and directs the owner to the existing protected Livestock order creation/line/completion rail; only completed Livestock orders may invoke canonical Sold/off-farm mutation.
 
 - routes: `/orders`, `/orders/new`, `/sales-dashboard`, `/sales-availability`, `/api/orders`, `/api/sales-transactions`, `/api/sales-transactions/<sale_id>/payment-state/preview`, `/api/sales-transactions/<sale_id>/payment-state/confirm`, `/api/pig-weights/sales-dashboard`; the former direct `/payment` mutation fails closed;
 - code: `modules/orders/*`, `modules/sales/sales_transaction_*`, `modules/sales/sales_payment_receipt.py`, `modules/pig_weights/pig_weights_service.py`;
@@ -740,6 +781,13 @@ Current built Supabase-backed surface:
   `modules/oom_sakkie/protected_action_runtime.py` rechecks the exact digest
   before invoking the sole writer; `/api/oom-sakkie/sales/payment-preview` is
   the strict-owner deployed-runtime entry and does not itself record money.
+- zero-consideration correction: `modules/sales/sales_financial_disposition.py`
+  owns the strict owner-admin digest-bound preview/confirm action for an
+  existing completed Livestock sale. Migration
+  `202608200001_add_sales_financial_disposition.sql` separates preserved list
+  value from receivable truth. The sale detail and sales dashboard project
+  R0.00 receivable and `Not_Applicable` payment without creating a duplicate
+  sale, document, receipt, customer message or animal-transfer effect.
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 

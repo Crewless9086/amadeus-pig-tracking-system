@@ -19,6 +19,7 @@ from modules.beacon.media_intake import (
     record_media_group_review,
     record_media_review,
 )
+from modules.beacon.protected_publication_worker import run_protected_publication_cycle
 
 from modules.oom_sakkie.access import (
     is_message_request_allowed,
@@ -299,6 +300,17 @@ def oom_sakkie_general_manager_cycle():
                         "customer_sends": 0, "provider_actions": 0,
                         "hardware_commands": 0, "writes_farm_data": False}), 403
     result = run_general_manager_cycle(deliver=deliver_farm_manager_case)
+    return jsonify(result), 200 if result.get("success") else 503
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/beacon-publication-cycle", methods=["POST"])
+def oom_sakkie_beacon_publication_cycle():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "beacon_publication_worker_auth_denied",
+                        "publishes": False, "meta_call": False}), 403
+    result = run_protected_publication_cycle()
     return jsonify(result), 200 if result.get("success") else 503
 
 

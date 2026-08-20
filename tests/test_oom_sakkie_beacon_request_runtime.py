@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
-    build_current_beacon_proposal, build_live_stock_awareness_proposal,
+    build_current_beacon_proposal, build_litter_awareness_story_proposal,
+    build_live_stock_awareness_proposal,
     build_protected_campaign_package, build_sale_ready_demand_proposal,
     build_scheduled_sale_ready_stock_result, handle_beacon_request,
     render_beacon_packet)
@@ -21,7 +22,13 @@ def opportunity(ready=True):
         "capacity_calculation": {"demand_cap": 3 if ready else 0,
             "eligible_categories": ["weaner"] if ready else []},
         "freshness": {"fresh": True},
-        "provenance": {"observed_at": "2026-08-17T08:00:00+00:00"}}]}
+        "provenance": {"observed_at": "2026-08-17T08:00:00+00:00"},
+        "story_context": {"kind": "litter", "litter_id": "LITTER-7",
+            "pig_ids": ["PIG-1", "PIG-2"], "event_id": "EVENT-7"}}]}
+
+
+def litter_evidence(name="Molly"):
+    return {"success": True, "litters": [{"litter_id": "LITTER-7", "sow_name": name}]}
 
 
 def media(accepted=True, public=False):
@@ -39,7 +46,11 @@ def public_awareness_media(trusted=True):
         "current_library_accept_event_id": "LIBRARY-ACCEPT-1",
         "current_public_use_event_id": "PUBLIC-USE-1", "effective_public_use_approved": True,
         "private_storage_proof_id": "BEACON-BINARY-1:readback:" + "b" * 64,
-        "observation": {"tags": ["live_stock", "piglets", "weaner"]}}]}
+        "thumbnail_url": "/private/litter-preview",
+        "observation": {"tags": ["live_stock", "piglets", "weaner"],
+            "litter_id": "LITTER-7", "pig_ids": ["PIG-1", "PIG-2"],
+            "event_id": "EVENT-7", "captured_at": "2026-08-16",
+            "source": "Charl Telegram intake"}}]}
 
 
 def parsed(text="Please prepare the current marketing proposal", language="en"):
@@ -101,11 +112,12 @@ def test_missing_media_is_precise_and_afrikaans_rendered():
 def test_scheduled_result_binds_material_stock_and_media_evidence():
     fixed = {"content_evidence_loader": lambda **kwargs: kwargs,
         "content_candidate_builder": lambda evidence, **kwargs: awareness_candidate(),
+        "litter_loader": litter_evidence,
         "now": datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)}
     first = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(), media_loader=lambda: public_awareness_media(), **fixed)
     changed = opportunity()
-    changed["cards"][0]["demand_summary"] = {"qualified_units": 2}
+    changed["cards"][0]["story_context"]["event_id"] = "EVENT-8"
     changed_stock = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: changed, media_loader=lambda: public_awareness_media(), **fixed)
     changed_media = build_scheduled_sale_ready_stock_result(
@@ -116,36 +128,37 @@ def test_scheduled_result_binds_material_stock_and_media_evidence():
     assert first["result_digest"] != changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
     package = first["proposal"]["protected_campaign_package"]
-    assert first["proposal"]["packet_type"] == "sale_ready_demand_proposal"
-    assert "Message Amadeus Farm" in package["call_to_action"]
-    assert "Follow the farm journey" not in package["exact_post_copy"]
+    assert first["proposal"]["packet_type"] == "litter_awareness_story"
+    assert package["call_to_action"] == ""
+    assert "Molly" in package["exact_post_copy"] and "LITTER-7" not in package["exact_post_copy"]
     assert package["sale_stock_evidence"]["card_id"] == "BEACON-CURRENT"
     assert package["sam_response_contract"]["lane"] == "live_stock_sales"
-    assert package["sam_response_contract"]["supported_response_class"] == "clarification"
+    assert package["sam_response_contract"]["inbound_only"] is True
     assert package["sam_response_contract"]["campaign_attribution_id"] == package["attribution_identity"]
     assert package["delivery_due_policy"] == "same_cycle_on_new_or_changed_evidence"
     assert package["publication_time"] == "2026-08-18T18:00:00+02:00"
     assert package["approval_expires_at"] == package["publication_time"]
-    assert package["budget_cap"] == {"currency": "ZAR", "total": "300.00", "daily": "100.00"}
-    assert package["duration"] == {"days": 3}
+    assert package["budget_cap"] == {"currency": "ZAR", "total": "0.00", "daily": "0.00"}
+    assert package["duration"] == {"days": 0}
     assert package["authority"]["publication_authorized"] is False
     assert package["authority"]["boost_authorized"] is False
     assert package["attribution_identity"].startswith("BEACON-CAMPAIGN-")
-    assert "EXACT PROTECTED FACEBOOK CAMPAIGN" in first["answer"]
+    assert "FACEBOOK STORY" in first["answer"]
 
 
 def test_scheduled_missing_media_request_keeps_publication_separate():
     result = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(),
         media_loader=lambda: media(accepted=False),
+        litter_loader=litter_evidence,
         content_evidence_loader=lambda **kwargs: kwargs,
         content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
         now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
-    assert result["proposal"]["packet_type"] == "sale_ready_demand_proposal"
+    assert result["proposal"]["packet_type"] == "litter_awareness_story"
     assert result["proposal"]["authority"]["publishes"] is False
-    assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
-    assert "Governed text-only campaign" in result["answer"]
-    assert "Message Amadeus Farm" in result["answer"]
+    assert "protected_campaign_package" not in result["proposal"]
+    assert "ONE MEDIA EXCEPTION" in result["answer"]
+    assert "Please send one current portrait photo" in result["proposal"]["precise_media_request"]
 
 
 def test_messages_objective_rejects_generic_awareness_follow_copy():
@@ -164,7 +177,7 @@ def test_messages_objective_rejects_generic_awareness_follow_copy():
         build_protected_campaign_package(awareness,
             now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
     except ValueError as exc:
-        assert str(exc) == "beacon_campaign_useful_message_cta_required"
+        assert str(exc) == "beacon_campaign_awareness_objective_required"
     else:
         raise AssertionError("awareness copy must not pass a messages objective")
 
@@ -176,7 +189,7 @@ def test_messages_objective_rejects_generic_message_cta_without_qualification_co
         build_protected_campaign_package(packet,
             now=datetime(2026, 8, 17, 8, tzinfo=timezone.utc))
     except ValueError as exc:
-        assert str(exc) == "beacon_campaign_useful_message_cta_required"
+        assert str(exc) == "beacon_campaign_awareness_objective_required"
     else:
         raise AssertionError("generic message CTA must not pass")
 
@@ -185,11 +198,10 @@ def test_missing_sale_stock_returns_precise_non_publishable_exception():
     result = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(False),
         media_loader=lambda: public_awareness_media(),
+        litter_loader=litter_evidence,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
-    assert result["status"] == "beacon_sale_ready_stock_evidence_request"
-    assert result["proposal"]["packet_type"] == "sale_ready_stock_evidence_request"
-    assert "sale-ready stock category" in result["proposal"]["precise_exception"]
-    assert "protected_campaign_package" not in result["proposal"]
+    assert result["status"] == "beacon_litter_awareness_story_ready"
+    assert result["proposal"]["packet_type"] == "litter_awareness_story"
     assert result["publishes"] is False and result["spends_money"] is False
 
 
@@ -215,6 +227,7 @@ def test_blocked_positive_cap_stock_returns_precise_exception():
 
 def test_missing_existing_demand_does_not_block_canonical_sale_ready_categories():
     stock = opportunity()
+    stock["cards"][0].pop("story_context")
     stock["cards"][0].update({"status": "blocked", "category": "live_stock",
         "blockers": ["unknown_live_stock_demand_quantity",
             "no_quantified_uncommitted_live_stock_demand"]})
@@ -234,6 +247,9 @@ def test_missing_existing_demand_does_not_block_canonical_sale_ready_categories(
 
 def test_public_media_must_match_canonical_stock_category():
     unrelated = public_awareness_media()
+    unrelated["items"][0]["observation"].pop("litter_id")
+    unrelated["items"][0]["observation"].pop("pig_ids")
+    unrelated["items"][0]["observation"].pop("event_id")
     unrelated["items"][0]["observation"]["tags"] = ["farm_life", "chickens"]
     packet = build_sale_ready_demand_proposal(opportunity(), unrelated)
     assert packet["media"]["status"] == "text_only"
@@ -255,9 +271,11 @@ def test_protected_boundary_rejects_incomplete_claimed_public_media_authority():
 def test_unchanged_evidence_is_stable_across_scheduler_day_rollover():
     first = build_scheduled_sale_ready_stock_result(
         opportunity_loader=opportunity, media_loader=public_awareness_media,
+        litter_loader=litter_evidence,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
     later = build_scheduled_sale_ready_stock_result(
         opportunity_loader=opportunity, media_loader=public_awareness_media,
+        litter_loader=litter_evidence,
         now=datetime(2026, 8, 19, 12, tzinfo=timezone.utc))
     assert first["proposal"]["packet_id"] == later["proposal"]["packet_id"]
     assert first["result_digest"] == later["result_digest"]
@@ -268,11 +286,13 @@ def test_unchanged_evidence_is_stable_across_scheduler_day_rollover():
 def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time():
     first = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(), media_loader=lambda: public_awareness_media(),
+        litter_loader=litter_evidence,
         now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
     refreshed = opportunity()
     refreshed["generated_at"] = "2026-08-17T12:01:00+00:00"
     second = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: refreshed, media_loader=lambda: public_awareness_media(),
+        litter_loader=litter_evidence,
         now=datetime(2026, 8, 17, 12, 1, tzinfo=timezone.utc))
     assert first["proposal"]["packet_id"] == second["proposal"]["packet_id"]
     assert first["result_digest"] == second["result_digest"]

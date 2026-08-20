@@ -74,6 +74,23 @@
             </div>
             <div id="sale_payment_preview" class="message-box hidden"></div>
           </form>
+          <form id="sale_charity_form" class="compact-form hidden">
+            <h3>Charitable giveaway</h3>
+            <div class="form-field form-field-wide">
+              <label for="sale_charity_reason">Charitable purpose</label>
+              <textarea id="sale_charity_reason" rows="2" required></textarea>
+            </div>
+            <div class="form-field form-field-wide">
+              <label for="sale_charity_correction_reason">Why any earlier payment entry is incorrect</label>
+              <textarea id="sale_charity_correction_reason" rows="2" required></textarea>
+            </div>
+            <p class="form-helper">This keeps the normal pig prices as list-value history, records R0.00 receivable and marks payment as not applicable.</p>
+            <div class="form-actions">
+              <button id="sale_charity_preview_button" type="submit">Preview charitable disposition</button>
+              <button id="sale_charity_confirm_button" type="button" class="button-danger hidden">Confirm charitable disposition</button>
+            </div>
+            <div id="sale_charity_preview" class="message-box hidden"></div>
+          </form>
         </article>
       </section>
 

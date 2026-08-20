@@ -21,6 +21,30 @@ class OrderRoutesTests(unittest.TestCase):
         app.testing = True
         self.client = app.test_client()
 
+    def test_available_pigs_is_owner_guarded_and_returns_tag_151_once(self):
+        pig = {
+            "pig_id": "PIG-2026-B156", "tag_number": "151",
+            "livestock_transfer_eligible": True, "food_chain_eligible": False,
+            "treatment_disclosure": {"withdrawal_end_date": "2026-09-08"},
+        }
+        with patch.object(order_routes, "require_owner_read_access", return_value=None) as guard, \
+             patch.object(order_routes, "get_available_pigs_for_orders", return_value=[pig]):
+            response = self.client.get("/api/orders/available-pigs")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["count"], 1)
+        self.assertEqual([row["tag_number"] for row in response.get_json()["pigs"]], ["151"])
+        guard.assert_called_once_with()
+
+    def test_available_pigs_returns_owner_guard_without_reading_inventory(self):
+        guarded = ({"success": False, "error": "owner_read_required"}, 403)
+        with patch.object(order_routes, "require_owner_read_access", return_value=guarded), \
+             patch.object(order_routes, "get_available_pigs_for_orders") as read_inventory:
+            response = self.client.get("/api/orders/available-pigs")
+
+        self.assertEqual(response.status_code, 403)
+        read_inventory.assert_not_called()
+
     def test_create_order_route_validates_payload_and_returns_created(self):
         service_result = {
             "success": True,

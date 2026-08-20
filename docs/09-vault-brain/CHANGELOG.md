@@ -1,5 +1,117 @@
 # Vault Brain Changelog
 
+- 2026-08-20: Added the governed charitable Livestock disposition contract.
+  Completed sale and animal-transfer history retain normal list-price evidence,
+  while a strict owner-admin digest-bound correction records R0.00 receivable,
+  R0.00 received and payment not applicable. Prior receipt evidence is retained
+  for audit; no duplicate sale, refund, document, customer send or animal effect
+  is authorized.
+
+## 2026-08-19 - CORE Task Scheduler audit-channel transaction repair
+
+- Reconciled fresh Windows provider evidence with the existing provider-origin
+  activation rail: the exact watchdog task is disabled and unchanged, while
+  `Microsoft-Windows-TaskScheduler/Operational` is currently disabled.
+- The serialized activation preparation now reads and HMAC-seals that exact
+  channel's prior enabled state and intent, enables it with exact readback,
+  seals a post-readback receipt before the provider task is triggered, and
+  retains the exact prior state and rollback command as authenticated evidence.
+  Recovery always contains the task and governed stop, but never automatically
+  disables the additive audit channel because its Boolean state cannot prove
+  that no later independent writer requires logging to remain enabled.
+- Historical activation identities remain immutable and ineligible. This
+  source change performed no task, stop-marker, runtime, provider, database,
+  customer, farm or hardware mutation; fresh exact-current staging and a new
+  activation identity remain separate gates.
+- Operational Event 200 fallback is additionally bounded to the live engine
+  process's kernel creation time, closing PID-reuse replay, and authenticated
+  recovery now terminally retires ordinary pre-intent and post-readback-
+  receipt interruption windows after exact task and governed-stop containment.
+- The exclusive activation lane now HMAC-seals the complete signed rollback
+  and packet seeds, permitting deterministic reconstruction after either
+  initial durable-write interruption; a signed verification-archival marker
+  likewise makes every successful-verification artifact move resumable.
+- Every activation-specific ledger artifact now permanently consumes its
+  immutable identity, including contained prepare failures, and the Windows
+  CIM creation-time binding handles the native `System.DateTime` shape used
+  by current PowerShell before evaluating Event 200 freshness.
+- Exclusive signed records are now fully written and fsynced before atomic
+  hard-link publication, so a torn final activation lane cannot exist; a
+  rollback-write interruption retains that complete lane for recovery.
+- All activation namespace transitions now use durable publication: Windows
+  `MoveFileExW` write-through moves and POSIX parent-directory fsync ensure
+  signed lane, packet, stop and archival state survives a completed mutation.
+- Windows native calls declare exact ctypes signatures; Linux archival uses
+  atomic `renameat2(RENAME_NOREPLACE)`. A signed verification-completion
+  projection closes the final-marker window, while Event 200 must exceed the
+  pre-trigger record-ID lower bound sealed into the activation transaction.
+- Preparation now proves zero pre-existing task instances; provider packet
+  validation authenticates the audit intent/receipt and their shared event
+  lower bound. Cross-directory POSIX moves fsync both namespaces, and embedded
+  rollback recovery is attempted immediately on standalone-write failure.
+- The exact start now uses Task Scheduler COM `RunEx`; its returned
+  `InstanceGuid` is HMAC-signed into the packet before the child may consume
+  it, and both running-instance and Event 200 paths must match that GUID.
+- Recovery no longer substitutes the lane's pre-`RunEx` packet after provider
+  consumption. It reconstructs a missing packet only from the authenticated
+  consumed instance identity, rejects ambiguous or unproven post-readback
+  provenance, and preserves the original consumed packet HMAC binding.
+- Ordinary packet validation now detects an authenticated consumed record beside
+  a still-pending packet and requires the explicit recovery path instead of
+  relying on a later exclusive-write collision to fail incidentally.
+## 2026-08-19 - One canonical system across every channel
+
+- Made application, Telegram, voice and scheduled workers explicit adapters to
+  one canonical backend truth and lifecycle rather than independent business
+  decision surfaces.
+- Established the Oom Sakkie attention queue as the shared typed projection for
+  homepage, Brief, Telegram and later voice, with stable identities, common
+  ordering/lifecycle and channel-specific presentation only.
+- Separated specialist status reconciliation, genuine physical action and watch
+  information, and kept automatic ROOTLINE refresh failures with the agents
+  until one precise human observation is irreducible.
+
+## 2026-08-19 - Livestock quotation journeys
+
+- Bound SAM livestock to one three-journey quotation model: direct `price_indication`, allocation-free `budgetary_quotation`, and `sales_quotation/current_availability`.
+- Recorded immutable issue-time price snapshots, validity/expiry/supersession and refresh-on-conversion boundaries while keeping request, quotation, allocation, reservation and order distinct.
+
+## 2026-08-19 - protected BEACON publication consumer candidate
+
+- Added the missing deployed-worker consumer between genuine protected owner
+  approval and the existing one-attempt Meta execution/readback spine.
+- The callback remains authorization-only. The worker atomically claims one
+  exact generation, rechecks expiry, copy policy and exact Public Use media,
+  and contains changed, revoked, failed or ambiguous outcomes without retry.
+- Provider success is not completion: the consumer marks a post confirmed only
+  after exact Meta object, caption and ordered-media readback. Missing readback,
+  worker restart after claim and lost completion ownership remain terminal
+  ambiguous and replay-silent.
+- No owner approval, public post, spend or customer contact was performed while
+  preparing this source candidate.
+
+## 2026-08-19 - BEACON litter-story correction candidate
+
+- Reconciled the active awareness workflow against Charl's stricter Meta rule:
+  sow-human-name public identity, warm farm-life copy, no sales, availability,
+  price, booking, urgency or contact language, and exact litter-linked current
+  Public Use media.
+- Replaced the scheduled sales/messages card composition with a concise organic
+  story card and protected Approve/Correct/Decline controls. Missing exact media
+  now yields one precise governed exception and no approval card.
+- Publication remains unproven and disabled at this checkpoint: the callback
+  records authorization only, and no deployed BEACON worker has yet consumed
+  the corrected approval through Meta with readback.
+
+- Added the owner-requested `ACTIVE_AUTHORITY_INDEX.md` compatibility entry without duplicating the canonical authority map; made livestock preview availability report all eligible animals, consolidated medicine disclosure in the owner UI, and added reproducible authenticated/safe-local desktop and 390px zero-write browser evidence.
+
+## 2026-08-19 - Livestock quote and live-transfer doctrine reconciled
+
+- Separated live-animal sale/transfer from slaughter and food-chain medicine withdrawal.
+- Made only genuinely recorded health, welfare, quarantine, movement, sale and lifecycle restrictions live-sale blockers; absent clearance records are not manufactured.
+- Allowed requested-items draft quotes to retain partial or `Unavailable` recommendations with no allocation or reservation, while stale weight lowers confidence.
+- Bound already-completed sale recording to the existing protected Livestock order-completion rail instead of inventing veterinary or movement-clearance evidence.
+
 ## 2026-08-19 - ROOTLINE standing B/C water policy enforced
 
 - Superseded ambiguous canonical authority

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import ctypes
 import hashlib
 import hmac
 import json
@@ -12,6 +13,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +28,7 @@ from modules.charlie.process_ownership import (
 
 
 AUTHORITY_VERSION = "charlie_provider_activation_authority_v1"
-ACTIVATION_VERSION = "charlie_provider_activation_v1"
+ACTIVATION_VERSION = "charlie_provider_activation_v2"
 RECOVERY_PROJECTION_VERSION = "charlie_activation_recovery_projection_v1"
 TASK_NAME = "CHARLIE CORE Runner Watchdog"
 MODE = "observe_only"
@@ -125,25 +127,42 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         raise ActivationError("activation_lane_already_owned")
     if (Path(plan["state_root"]) / "activation-reconciliation.lock").exists():
         raise ActivationError("activation_reconciliation_lane_active")
+    if (Path(plan["state_root"]) / "activation-verification.lock").exists():
+        raise ActivationError("activation_verification_lane_active")
     _validate_pre_mutation(plan, task_reader=task_reader, git_runner=git_runner)
     state_root = Path(plan["state_root"])
+    if not hasattr(task_controller, "read_audit_channel_state"):
+        raise ActivationError("task_scheduler_audit_controller_required")
+    audit_prior = task_controller.read_audit_channel_state()
+    if (not isinstance(audit_prior, dict)
+            or audit_prior.get("log_name") != TASK_SCHEDULER_OPERATIONAL_LOG
+            or not isinstance(audit_prior.get("enabled"), bool)):
+        raise ActivationError("task_scheduler_audit_state_invalid")
+    if not hasattr(task_controller, "read_audit_event_record_id"):
+        raise ActivationError("task_scheduler_audit_controller_required")
+    if not hasattr(task_controller, "assert_no_running_instances"):
+        raise ActivationError("task_scheduler_instance_controller_required")
+    task_controller.assert_no_running_instances()
+    event_record_id_lower_bound = task_controller.read_audit_event_record_id()
+    if not isinstance(event_record_id_lower_bound, int) or event_record_id_lower_bound < 0:
+        raise ActivationError("task_scheduler_audit_record_id_invalid")
     lane_path = state_root / "activation.lock"
-    lane = {
-        "version": ACTIVATION_VERSION, "activation_id": plan["activation_id"],
-        "status": "activation_lane_acquired", "acquired_at": _now(now),
-    }
-    descriptor = _exclusive_json(lane_path, lane)
-    os.close(descriptor)
     ledger = state_root / "activation-ledger"
     activation_id = plan["activation_id"]
     rollback_path = ledger / f"{activation_id}-rollback.json"
     packet_path = state_root / "activation-packet.json"
     stop_path = state_root / "supervisor.stop"
     archive_path = state_root / f"supervisor.stop.activation-{activation_id}"
-    for historical in (rollback_path, packet_path, archive_path,
-                       state_root / f"activation-consumed-{activation_id}.json"):
+    audit_intent_path = state_root / f"activation-audit-intent-{activation_id}.json"
+    audit_receipt_path = state_root / f"activation-audit-receipt-{activation_id}.json"
+    historical_candidates = [
+        rollback_path, packet_path, archive_path,
+        state_root / f"activation-consumed-{activation_id}.json",
+        audit_intent_path, audit_receipt_path,
+        *ledger.glob(f"{activation_id}-*"),
+    ]
+    for historical in historical_candidates:
         if historical.exists():
-            lane_path.replace(ledger / f"{activation_id}-replay-refused-lane.json")
             raise ActivationError("activation_identity_already_used", path=str(historical))
     rollback = {
         "version": ACTIVATION_VERSION, "activation_id": activation_id,
@@ -151,7 +170,15 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         "stop_marker_bytes_b64": base64.b64encode(stop_path.read_bytes()).decode("ascii"),
         "stop_marker_sha256": plan["stop_marker_sha256"],
         "task_action_sha256": plan["task_action_sha256"],
+        "task_ownership": plan["task_ownership"],
         "task_prior_state": "Disabled", "authority_sha256": plan["authority_sha256"],
+        "task_scheduler_audit_prior": audit_prior,
+        "task_scheduler_event_record_id_lower_bound": event_record_id_lower_bound,
+        "task_scheduler_audit_mutation_required": not audit_prior["enabled"],
+        "task_scheduler_audit_rollback_command": (
+            f"wevtutil sl {TASK_SCHEDULER_OPERATIONAL_LOG} "
+            f"/e:{str(audit_prior['enabled']).lower()}"
+        ),
     }
     rollback["rollback_hmac_sha256"] = _sign_record(rollback, _read_key(state_root / "activation-authority.key"), "rollback_hmac_sha256")
     packet = {
@@ -161,8 +188,18 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         "authority_sha256": plan["authority_sha256"], "prepared_at": _now(now),
         "runtime_root": plan["runtime_root"], "execution_root": plan["execution_root"],
         "task_ownership": plan["task_ownership"],
+        "task_scheduler_event_record_id_lower_bound": event_record_id_lower_bound,
     }
     packet["packet_hmac_sha256"] = _sign_packet(packet, _read_key(state_root / "activation-authority.key"))
+    lane = {
+        "version": ACTIVATION_VERSION, "activation_id": activation_id,
+        "status": "activation_lane_acquired", "acquired_at": _now(now),
+        "rollback": rollback, "packet": packet,
+    }
+    lane["lane_hmac_sha256"] = _sign_record(
+        lane, _read_key(state_root / "activation-authority.key"), "lane_hmac_sha256"
+    )
+    _exclusive_json(lane_path, lane)
     try:
         if (state_root / "activation-reconciliation.lock").exists():
             raise ActivationError("activation_reconciliation_lane_active")
@@ -172,18 +209,64 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         _atomic_json(packet_path, packet)
         if _sha256(stop_path) != plan["stop_marker_sha256"]:
             raise ActivationError("governed_stop_changed_before_archive")
-        stop_path.replace(archive_path)
+        _durable_replace(stop_path, archive_path)
         if hasattr(task_controller, "bind_exact"):
             task_controller.bind_exact(plan["task_ownership"])
-        task_controller.enable_and_trigger_exact(plan["task_action_sha256"])
+        task_controller.bind_audit_channel_state(audit_prior)
+        audit_intent = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": activation_id,
+            "status": "task_scheduler_audit_enable_intended",
+            "log_name": TASK_SCHEDULER_OPERATIONAL_LOG,
+            "prior_enabled": audit_prior["enabled"],
+            "intended_enabled": True,
+            "recorded_at": _now(now),
+        }
+        audit_intent["audit_intent_hmac_sha256"] = _sign_record(
+            audit_intent, _read_key(state_root / "activation-authority.key"),
+            "audit_intent_hmac_sha256",
+        )
+        _exclusive_json(audit_intent_path, audit_intent)
+        audit_changed = task_controller.ensure_audit_channel_enabled()
+        if audit_changed is not (not audit_prior["enabled"]):
+            raise ActivationError("task_scheduler_audit_mutation_result_invalid")
+        audit_receipt = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": activation_id,
+            "status": "task_scheduler_audit_enable_readback_complete",
+            "log_name": TASK_SCHEDULER_OPERATIONAL_LOG,
+            "prior_enabled": audit_prior["enabled"],
+            "current_enabled": True,
+            "changed": audit_changed,
+            "event_record_id_lower_bound": event_record_id_lower_bound,
+            "recorded_at": _now(now),
+        }
+        audit_receipt["audit_receipt_hmac_sha256"] = _sign_record(
+            audit_receipt, _read_key(state_root / "activation-authority.key"),
+            "audit_receipt_hmac_sha256",
+        )
+        _exclusive_json(audit_receipt_path, audit_receipt)
+        expected_instance_guid = task_controller.enable_and_trigger_exact(
+            plan["task_action_sha256"]
+        )
+        if not str(expected_instance_guid or "").strip("{}"):
+            raise ActivationError("task_scheduler_instance_guid_missing")
+        packet["expected_instance_guid"] = str(expected_instance_guid)
+        packet["packet_hmac_sha256"] = _sign_packet(
+            packet, _read_key(state_root / "activation-authority.key")
+        )
+        _atomic_json(packet_path, packet)
     except Exception:
+        if lane_path.exists() and not rollback_path.exists():
+            try:
+                _atomic_json(rollback_path, rollback)
+            except Exception:
+                pass
         if rollback_path.exists():
             _close_prepare_failure(
                 state_root, plan, task_controller, archive_path, stop_path,
                 lane_path, rollback_path, packet_path,
             )
-        elif lane_path.exists():
-            lane_path.replace(ledger / f"{activation_id}-prepare-write-failed-lane.json")
         raise
     return {
         "success": True, "status": "provider_activation_requested",
@@ -199,11 +282,19 @@ def consume_provider_activation(*, state_root, starter, task_controller,
                                 now=None):
     state_root = Path(state_root).resolve()
     packet_path = state_root / "activation-packet.json"
-    packet = _read_json(packet_path, "activation_packet_invalid")
+    deadline = time.monotonic() + 35
+    while True:
+        packet = _read_json(packet_path, "activation_packet_invalid")
+        if str(packet.get("expected_instance_guid") or "").strip("{}"):
+            break
+        if time.monotonic() >= deadline:
+            raise ActivationError("task_scheduler_instance_guid_timeout")
+        time.sleep(0.05)
     _validate_packet(packet, state_root, task_reader, git_runner=git_runner, now=now)
     inspector = provider_inspector or (lambda pid: inspect_current_provider_chain(
         pid, activation_id=packet["activation_id"],
         activation_prepared_at=packet["prepared_at"],
+        activation_event_record_id_lower_bound=packet["task_scheduler_event_record_id_lower_bound"],
     ))
     provider = verify_provider_origin(
         inspector,
@@ -211,13 +302,23 @@ def consume_provider_activation(*, state_root, starter, task_controller,
     )
     if not provider.get("authorized"):
         raise ActivationError(provider.get("reason") or "provider_origin_invalid")
+    if (str(provider.get("provider_instance_guid") or "").strip("{}").casefold()
+            != str(packet["expected_instance_guid"]).strip("{}").casefold()):
+        raise ActivationError("task_scheduler_instance_guid_mismatch")
     consumed_path = state_root / f"activation-consumed-{packet['activation_id']}.json"
-    descriptor = _exclusive_json(consumed_path, {
+    consumed = {
         "version": ACTIVATION_VERSION, "activation_id": packet["activation_id"],
         "provider_pid": provider["pid"], "provider_parent_pid": provider["parent_pid"],
+        "provider_instance_guid": provider["provider_instance_guid"],
+        "expected_instance_guid": packet["expected_instance_guid"],
+        "packet_hmac_sha256": packet["packet_hmac_sha256"],
         "consumed_at": _now(now),
-    })
-    os.close(descriptor)
+    }
+    consumed["consumed_hmac_sha256"] = _sign_record(
+        consumed, _read_key(state_root / "activation-authority.key"),
+        "consumed_hmac_sha256",
+    )
+    _exclusive_json(consumed_path, consumed)
     previous = os.environ.get("CHARLIE_ACTIVATION_ID")
     os.environ["CHARLIE_ACTIVATION_ID"] = packet["activation_id"]
     try:
@@ -236,7 +337,8 @@ def consume_provider_activation(*, state_root, starter, task_controller,
             os.environ["CHARLIE_ACTIVATION_ID"] = previous
     status = "provider_started_observe_only" if status_code < 300 else "provider_start_failed"
     updated = {**packet, "status": status, "provider": provider,
-               "start_result": result, "provider_started_at": _now(now)}
+               "start_result": result, "provider_started_at": _now(now),
+               "consumed_packet_hmac_sha256": packet["packet_hmac_sha256"]}
     updated["packet_hmac_sha256"] = _sign_packet(updated, _read_key(state_root / "activation-authority.key"))
     _atomic_json(packet_path, updated)
     if status_code >= 300:
@@ -251,9 +353,65 @@ def consume_provider_activation(*, state_root, starter, task_controller,
 
 def verify_or_recover_activation(*, state_root, verification_reader, task_controller,
                                  task_reader=read_watchdog_task,
-                                 git_runner=subprocess.run, now=None):
+                                 git_runner=subprocess.run, now=None,
+                                 activation_id=None):
     state_root = Path(state_root).resolve()
-    packet = _read_json(state_root / "activation-packet.json", "activation_packet_invalid")
+    live_packet = state_root / "activation-packet.json"
+    if live_packet.exists():
+        packet_path = live_packet
+    elif (state_root / "activation-verification.lock").exists():
+        marker = _read_json(state_root / "activation-verification.lock",
+                            "activation_verification_marker_missing")
+        marker_key = _read_key(state_root / "activation-authority.key")
+        if (marker.get("version") != ACTIVATION_VERSION
+                or marker.get("status") != "activation_verification_archival_pending"
+                or not hmac.compare_digest(
+                    str(marker.get("marker_hmac_sha256") or ""),
+                    _sign_record(marker, marker_key, "marker_hmac_sha256"))):
+            raise ActivationError("activation_verification_marker_invalid")
+        packet_path = (state_root / "activation-ledger"
+                       / f"{marker.get('activation_id')}-verified-activation-packet.json")
+    else:
+        if (state_root / "activation.lock").exists():
+            raise ActivationError("activation_packet_missing_for_active_lane")
+        completion = _read_json(
+            state_root / "activation-verification-complete.json",
+            "activation_verification_marker_missing",
+        )
+        completion_key = _read_key(state_root / "activation-authority.key")
+        if (completion.get("version") != ACTIVATION_VERSION
+                or completion.get("status") != "activation_verified"
+                or not hmac.compare_digest(
+                    str(completion.get("completion_hmac_sha256") or ""),
+                    _sign_record(completion, completion_key,
+                                 "completion_hmac_sha256"))):
+            raise ActivationError("activation_verification_completion_invalid")
+        if not activation_id or completion.get("activation_id") != activation_id:
+            raise ActivationError("activation_verification_completion_identity_required")
+        archive_hashes = completion.get("archive_hashes")
+        if not isinstance(archive_hashes, dict) or not archive_hashes:
+            raise ActivationError("activation_verification_completion_archives_invalid")
+        ledger = state_root / "activation-ledger"
+        for name, expected_hash in archive_hashes.items():
+            if (Path(name).name != name
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(expected_hash or ""))
+                    or _sha256(ledger / name) != expected_hash):
+                raise ActivationError("activation_verification_completion_archives_invalid")
+        return {"success": True, "status": "activation_verified",
+                "evidence": completion.get("evidence", {})}
+    deadline = time.monotonic() + 5
+    while True:
+        packet = _read_json(packet_path, "activation_packet_invalid")
+        if str(packet.get("expected_instance_guid") or "").strip("{}"):
+            break
+        if time.monotonic() >= deadline:
+            raise ActivationError("task_scheduler_instance_guid_timeout")
+        time.sleep(0.05)
+    marker_path = state_root / "activation-verification.lock"
+    if marker_path.exists():
+        current_marker = _read_json(marker_path, "activation_verification_marker_invalid")
+        if current_marker.get("activation_id") != packet.get("activation_id"):
+            raise ActivationError("activation_verification_marker_identity_mismatch")
     try:
         _validate_packet(packet, state_root, task_reader, git_runner=git_runner,
                          now=now, allow_consumed=True, allow_expired=True)
@@ -275,11 +433,58 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
         "activation_id_exact", "unrelated_processes_absent",
     )
     if all(evidence.get(item) is True for item in required):
+        marker_path = state_root / "activation-verification.lock"
+        if not marker_path.exists():
+            marker = {
+                "version": ACTIVATION_VERSION,
+                "activation_id": packet["activation_id"],
+                "status": "activation_verification_archival_pending",
+                "recorded_at": _now(now),
+            }
+            marker["marker_hmac_sha256"] = _sign_record(
+                marker, _read_key(state_root / "activation-authority.key"),
+                "marker_hmac_sha256",
+            )
+            _exclusive_json(marker_path, marker)
         lane = state_root / "activation.lock"
         archive = state_root / "activation-ledger" / f"{packet['activation_id']}-lane.json"
-        lane.replace(archive)
+        if lane.exists():
+            _durable_replace(lane, archive)
+        elif not archive.exists():
+            raise ActivationError("activation_lane_missing")
         _atomic_json(state_root / "activation-ledger" / f"{packet['activation_id']}-verified.json", evidence)
         _archive_activation_artifacts(state_root, packet["activation_id"], "verified")
+        ledger = state_root / "activation-ledger"
+        required_archives = [
+            f"{packet['activation_id']}-lane.json",
+            f"{packet['activation_id']}-verified.json",
+            f"{packet['activation_id']}-verified-activation-packet.json",
+            f"{packet['activation_id']}-verified-activation-audit-intent-{packet['activation_id']}.json",
+            f"{packet['activation_id']}-verified-activation-audit-receipt-{packet['activation_id']}.json",
+            f"{packet['activation_id']}-verified-activation-consumed-{packet['activation_id']}.json",
+            f"{packet['activation_id']}-verified-supervisor.stop.activation-{packet['activation_id']}",
+        ]
+        archive_hashes = {name: _sha256(ledger / name) for name in required_archives}
+        completion = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": packet["activation_id"],
+            "status": "activation_verified",
+            "completed_at": _now(now),
+            "evidence": evidence,
+            "archive_hashes": archive_hashes,
+        }
+        completion["completion_hmac_sha256"] = _sign_record(
+            completion, _read_key(state_root / "activation-authority.key"),
+            "completion_hmac_sha256",
+        )
+        _atomic_json(state_root / "activation-verification-complete.json", completion)
+        marker_path = state_root / "activation-verification.lock"
+        if marker_path.exists():
+            _durable_replace(
+                marker_path,
+                state_root / "activation-ledger"
+                / f"{packet['activation_id']}-verified-activation-verification.lock",
+            )
         return {"success": True, "status": "activation_verified", "evidence": evidence}
     recover_activation(state_root=state_root, task_controller=task_controller,
                        activation_id=packet["activation_id"], failure_evidence={
@@ -469,45 +674,202 @@ def recover_activation(*, state_root, task_controller, activation_id,
     state_root = Path(state_root).resolve()
     ledger = state_root / "activation-ledger"
     lane_path = state_root / "activation.lock"
-    lane_archive = ledger / f"{activation_id}-lane-recovered.json"
-    lane = _read_json(
-        lane_path if lane_path.exists() else lane_archive,
-        "activation_lane_missing",
-    )
+    lane_archives = [
+        ledger / f"{activation_id}-lane-recovered.json",
+        ledger / f"{activation_id}-lane.json",
+    ]
+    lane_candidates = [path for path in [lane_path, *lane_archives] if path.exists()]
+    if len(lane_candidates) != 1:
+        raise ActivationError("activation_lane_missing" if not lane_candidates
+                              else "activation_lane_ambiguous")
+    lane = _read_json(lane_candidates[0], "activation_lane_missing")
+    lane_source = lane_candidates[0]
+    lane_archive = lane_archives[0]
     if lane.get("activation_id") != activation_id:
         raise ActivationError("activation_lane_identity_mismatch")
-    rollback = _read_json(
-        state_root / "activation-ledger" / f"{activation_id}-rollback.json",
-        "activation_rollback_missing",
-    )
+    key = _read_key(state_root / "activation-authority.key")
+    if (lane.get("version") == ACTIVATION_VERSION and not hmac.compare_digest(
+            str(lane.get("lane_hmac_sha256") or ""),
+            _sign_record(lane, key, "lane_hmac_sha256"))):
+        raise ActivationError("activation_lane_signature_invalid")
+    rollback_path = ledger / f"{activation_id}-rollback.json"
+    if rollback_path.exists():
+        rollback = _read_json(rollback_path, "activation_rollback_missing")
+    else:
+        rollback = lane.get("rollback") if isinstance(lane.get("rollback"), dict) else {}
+        if not rollback:
+            raise ActivationError("activation_rollback_missing")
+        _atomic_json(rollback_path, rollback)
     packet_path = state_root / "activation-packet.json"
     packet_archive = ledger / f"{activation_id}-recovered-activation-packet.json"
-    packet = _read_json(
-        packet_path if packet_path.exists() else packet_archive,
-        "activation_packet_invalid",
-    )
-    key = _read_key(state_root / "activation-authority.key")
+    packet_provenance_error = None
+    if not packet_path.exists() and not packet_archive.exists():
+        embedded_packet = (lane.get("packet")
+                           if isinstance(lane.get("packet"), dict) else {})
+        if not embedded_packet:
+            raise ActivationError("activation_packet_invalid")
+        consumed_candidates = [path for path in (
+            state_root / f"activation-consumed-{activation_id}.json",
+            ledger / f"{activation_id}-recovered-activation-consumed-{activation_id}.json",
+            ledger / f"{activation_id}-verified-activation-consumed-{activation_id}.json",
+        ) if path.exists()]
+        if len(consumed_candidates) > 1:
+            packet_provenance_error = "activation_consumed_identity_ambiguous"
+        elif consumed_candidates:
+            consumed = _read_json(
+                consumed_candidates[0], "activation_consumed_identity_invalid"
+            )
+            reconstructed = dict(embedded_packet)
+            reconstructed["expected_instance_guid"] = consumed.get(
+                "expected_instance_guid"
+            )
+            reconstructed["packet_hmac_sha256"] = _sign_packet(reconstructed, key)
+            try:
+                _validate_consumed_identity(
+                    reconstructed, consumed, key,
+                    require_packet_hmac=True,
+                )
+            except ActivationError as exc:
+                packet_provenance_error = exc.status
+            else:
+                _atomic_json(packet_path, reconstructed)
+        else:
+            receipt_candidates = [path for path in (
+                state_root / f"activation-audit-receipt-{activation_id}.json",
+                ledger / f"{activation_id}-recovered-activation-audit-receipt-{activation_id}.json",
+                ledger / f"{activation_id}-verified-activation-audit-receipt-{activation_id}.json",
+            ) if path.exists()]
+            if receipt_candidates:
+                # Once the post-readback receipt exists, RunEx may have returned
+                # an instance identity.  The pre-RunEx lane seed can no longer
+                # prove the strongest packet state and must never replace it.
+                packet_provenance_error = "activation_provider_identity_provenance_missing"
+            else:
+                # The receipt is written before RunEx.  With neither receipt nor
+                # consumed identity, the signed lane packet is provably only the
+                # pre-provider seed and is safe to retain for containment.
+                _atomic_json(packet_path, embedded_packet)
+    packet_source = packet_path if packet_path.exists() else packet_archive
+    packet_missing = not packet_source.exists()
+    packet = {} if packet_missing else _read_json(packet_source, "activation_packet_invalid")
     if not hmac.compare_digest(
         str(rollback.get("rollback_hmac_sha256") or ""),
         _sign_record(rollback, key, "rollback_hmac_sha256"),
     ):
         raise ActivationError("activation_rollback_signature_invalid")
-    authority = packet.get("authority") if isinstance(packet.get("authority"), dict) else {}
-    if any((
-        rollback.get("version") != ACTIVATION_VERSION,
-        rollback.get("activation_id") != activation_id,
-        rollback.get("authority_sha256") != packet.get("authority_sha256"),
-        rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256"),
-        rollback.get("task_action_sha256") != authority.get("task_action_sha256"),
-    )):
-        raise ActivationError("activation_rollback_binding_invalid")
-    if hasattr(task_controller, "bind_exact"):
-        task_controller.bind_exact(packet.get("task_ownership"))
     errors = []
+    packet_valid = (not packet_missing and hmac.compare_digest(
+        str(packet.get("packet_hmac_sha256") or ""), _sign_packet(packet, key)
+    ))
+    rollback_version = rollback.get("version")
+    if rollback_version not in {"charlie_provider_activation_v1", ACTIVATION_VERSION}:
+        raise ActivationError("activation_rollback_version_unsupported")
+    authority = packet.get("authority") if isinstance(packet.get("authority"), dict) else {}
+    if rollback.get("activation_id") != activation_id:
+        raise ActivationError("activation_rollback_binding_invalid")
+    rollback_task = (rollback.get("task_ownership") if rollback_version == ACTIVATION_VERSION
+                     else packet.get("task_ownership"))
+    if (not packet_valid and rollback_version != ACTIVATION_VERSION):
+        raise ActivationError("legacy_activation_packet_signature_invalid")
+    if _payload_sha256(rollback_task) != rollback.get("task_action_sha256"):
+        raise ActivationError("activation_rollback_task_binding_invalid")
+    if hasattr(task_controller, "bind_exact"):
+        task_controller.bind_exact(rollback_task)
+    audit_prior = rollback.get("task_scheduler_audit_prior") if rollback_version == ACTIVATION_VERSION else {
+        "log_name": TASK_SCHEDULER_OPERATIONAL_LOG, "enabled": True,
+    }
+    if (rollback_version == ACTIVATION_VERSION and (not isinstance(audit_prior, dict)
+            or audit_prior.get("log_name") != TASK_SCHEDULER_OPERATIONAL_LOG
+            or not isinstance(audit_prior.get("enabled"), bool)
+            or rollback.get("task_scheduler_audit_rollback_command") != (
+                f"wevtutil sl {TASK_SCHEDULER_OPERATIONAL_LOG} "
+                f"/e:{str(audit_prior.get('enabled')).lower()}"))):
+        raise ActivationError("activation_audit_rollback_binding_invalid")
+    if not hasattr(task_controller, "bind_audit_channel_state"):
+        raise ActivationError("task_scheduler_audit_controller_required")
+    task_controller.bind_audit_channel_state(audit_prior)
+    audit_mutation_required = (rollback.get("task_scheduler_audit_mutation_required")
+                               if rollback_version == ACTIVATION_VERSION else False)
+    if (rollback_version == ACTIVATION_VERSION
+            and audit_mutation_required is not (not audit_prior["enabled"])):
+        raise ActivationError("activation_audit_rollback_binding_invalid")
     try:
         task_controller.disable_exact(rollback["task_action_sha256"])
     except Exception as exc:
         errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
+    audit_intent_valid = rollback_version != ACTIVATION_VERSION
+    audit_receipt_valid = rollback_version != ACTIVATION_VERSION
+    try:
+        if rollback_version != ACTIVATION_VERSION:
+            raise StopIteration
+        intent_live = state_root / f"activation-audit-intent-{activation_id}.json"
+        intent_archive = ledger / f"{activation_id}-recovered-activation-audit-intent-{activation_id}.json"
+        intent_path = intent_live if intent_live.exists() else intent_archive
+        if not intent_path.exists():
+            audit_intent_valid = False
+            raise FileNotFoundError("activation_audit_intent_missing")
+        audit_intent = _read_json(intent_path, "activation_audit_intent_invalid")
+        audit_intent_valid = bool(
+            hmac.compare_digest(
+                str(audit_intent.get("audit_intent_hmac_sha256") or ""),
+                _sign_record(audit_intent, key, "audit_intent_hmac_sha256"))
+            and audit_intent.get("activation_id") == activation_id
+            and audit_intent.get("status") == "task_scheduler_audit_enable_intended"
+            and audit_intent.get("log_name") == TASK_SCHEDULER_OPERATIONAL_LOG
+            and audit_intent.get("prior_enabled") is audit_prior["enabled"]
+            and audit_intent.get("intended_enabled") is True
+        )
+        if not audit_intent_valid:
+            raise ActivationError("activation_audit_intent_invalid")
+    except StopIteration:
+        pass
+    except FileNotFoundError:
+        # The intent is written before any channel mutation. Its absence is a
+        # recoverable pre-mutation crash state; task and stop containment are
+        # still completed from the authenticated rollback record.
+        pass
+    except Exception as exc:
+        errors.append({"component": "task_scheduler_audit_intent",
+                       "status": getattr(exc, "status", exc.__class__.__name__)})
+    try:
+        if rollback_version != ACTIVATION_VERSION:
+            raise StopIteration
+        receipt_live = state_root / f"activation-audit-receipt-{activation_id}.json"
+        receipt_archive = ledger / f"{activation_id}-recovered-activation-audit-receipt-{activation_id}.json"
+        receipt_path = receipt_live if receipt_live.exists() else receipt_archive
+        if not receipt_path.exists():
+            audit_receipt_valid = False
+            raise FileNotFoundError("activation_audit_receipt_missing")
+        audit_receipt = _read_json(receipt_path, "activation_audit_receipt_invalid")
+        audit_receipt_valid = bool(
+            hmac.compare_digest(
+                str(audit_receipt.get("audit_receipt_hmac_sha256") or ""),
+                _sign_record(audit_receipt, key, "audit_receipt_hmac_sha256"))
+            and audit_receipt.get("activation_id") == activation_id
+            and audit_receipt.get("status") == "task_scheduler_audit_enable_readback_complete"
+            and audit_receipt.get("log_name") == TASK_SCHEDULER_OPERATIONAL_LOG
+            and audit_receipt.get("prior_enabled") is audit_prior["enabled"]
+            and audit_receipt.get("current_enabled") is True
+            and audit_receipt.get("changed") is audit_mutation_required
+            and audit_receipt.get("event_record_id_lower_bound")
+            == rollback.get("task_scheduler_event_record_id_lower_bound")
+        )
+        if not audit_receipt_valid:
+            raise ActivationError("activation_audit_receipt_invalid")
+    except StopIteration:
+        pass
+    except FileNotFoundError:
+        # A missing post-readback receipt is an ordinary interruption window.
+        # Enabled is additive and never rolled back automatically, so exact
+        # task/stop containment can safely retire this activation lane.
+        pass
+    except Exception as exc:
+        errors.append({"component": "task_scheduler_audit_receipt",
+                       "status": getattr(exc, "status", exc.__class__.__name__)})
+    # Enabled is the fail-safe audit posture. A Boolean channel state has no
+    # writer generation, so automatic disable could overwrite a later
+    # independent enablement. Keep the authenticated prior state and rollback
+    # command as evidence, but never auto-disable the channel.
     stop_path = state_root / "supervisor.stop"
     archive = state_root / f"supervisor.stop.activation-{activation_id}"
     try:
@@ -522,6 +884,16 @@ def recover_activation(*, state_root, task_controller, activation_id,
             raise ActivationError("governed_stop_restore_failed")
     except Exception as exc:
         errors.append({"component": "governed_stop", "status": getattr(exc, "status", exc.__class__.__name__)})
+    if (not packet_missing and (not packet_valid
+            or rollback.get("authority_sha256") != packet.get("authority_sha256")
+            or rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256")
+            or rollback.get("task_action_sha256") != authority.get("task_action_sha256")
+            or rollback_task != packet.get("task_ownership"))):
+        errors.append({"component": "activation_packet",
+                       "status": "activation_packet_or_binding_invalid"})
+    if packet_provenance_error:
+        errors.append({"component": "activation_packet",
+                       "status": packet_provenance_error})
     if errors:
         raise ActivationError("activation_recovery_incomplete", errors=errors)
     failure_path = ledger / f"{activation_id}-failure.json"
@@ -540,8 +912,7 @@ def recover_activation(*, state_root, task_controller, activation_id,
         failure_record["failure_hmac_sha256"] = _sign_record(
             failure_record, key, "failure_hmac_sha256"
         )
-        descriptor = _exclusive_json(failure_path, failure_record)
-        os.close(descriptor)
+        _exclusive_json(failure_path, failure_record)
     pending = {
         "version": RECOVERY_PROJECTION_VERSION,
         "activation_id": activation_id,
@@ -557,8 +928,8 @@ def recover_activation(*, state_root, task_controller, activation_id,
     )
     _atomic_json(state_root / "activation-reconciliation-pending.json", pending)
     _archive_activation_artifacts(state_root, activation_id, "recovered")
-    if lane_path.exists():
-        lane_path.replace(lane_archive)
+    if lane_source != lane_archive and lane_source.exists():
+        _durable_replace(lane_source, lane_archive)
     completion = {
         "version": RECOVERY_PROJECTION_VERSION,
         "activation_id": activation_id,
@@ -584,8 +955,7 @@ def recover_activation(*, state_root, task_controller, activation_id,
                     _sign_record(existing_completion, key, "completion_hmac_sha256"))):
             raise ActivationError("activation_recovery_completion_conflict")
     else:
-        descriptor = _exclusive_json(completion_path, completion)
-        os.close(descriptor)
+        _exclusive_json(completion_path, completion)
     return {"success": True, "status": "activation_recovered", "activation_id": activation_id}
 
 
@@ -630,8 +1000,9 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
                 )
                 if owner.get("activation_id") != activation_id:
                     raise ActivationError("activation_reconciliation_lane_active")
-                reconciliation_lock.replace(
-                    ledger / f"{activation_id}-reconciliation-lane.json"
+                _durable_replace(
+                    reconciliation_lock,
+                    ledger / f"{activation_id}-reconciliation-lane.json",
                 )
             return existing_projection
         if not reconciliation_lock.exists():
@@ -688,13 +1059,12 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
                           else "activation_reconciliation_lane_active")
                 raise ActivationError(status)
     else:
-        descriptor = _exclusive_json(reconciliation_lock, {
+        _exclusive_json(reconciliation_lock, {
             "version": RECOVERY_PROJECTION_VERSION,
             "activation_id": activation_id,
             "status": "activation_reconciliation_owned",
             "owner_pid": os.getpid(),
         })
-        os.close(descriptor)
     if any((
         (state_root / "activation.lock").exists(),
         (state_root / "release-staging.lock").exists(),
@@ -791,8 +1161,7 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
         failure_record["failure_hmac_sha256"] = _sign_record(
             failure_record, key, "failure_hmac_sha256"
         )
-        descriptor = _exclusive_json(failure_path, failure_record)
-        os.close(descriptor)
+        _exclusive_json(failure_path, failure_record)
     if pending.get("historical_failure_sha256") and pending.get("historical_failure_sha256") != _sha256(failure_path):
         raise ActivationError("activation_failure_record_binding_invalid")
     completion_path = ledger / f"{activation_id}-recovery-completed.json"
@@ -814,8 +1183,7 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
         completion["completion_hmac_sha256"] = _sign_record(
             completion, key, "completion_hmac_sha256"
         )
-        descriptor = _exclusive_json(completion_path, completion)
-        os.close(descriptor)
+        _exclusive_json(completion_path, completion)
     if (completion.get("version") != RECOVERY_PROJECTION_VERSION
             or completion.get("activation_id") != activation_id
             or completion.get("status") != "activation_recovery_completed"
@@ -863,13 +1231,14 @@ def reconcile_recovered_activation_stop(*, state_root, activation_id,
         projection, key, "projection_hmac_sha256"
     )
     if not replay:
-        pending_path.replace(reconciled_path)
+        _durable_replace(pending_path, reconciled_path)
     projection["reconciled_sha256"] = _sha256(reconciled_path)
     projection["projection_hmac_sha256"] = _sign_record(
         projection, key, "projection_hmac_sha256"
     )
     _atomic_json(state_root / "watchdog.json", projection)
-    reconciliation_lock.replace(ledger / f"{activation_id}-reconciliation-lane.json")
+    _durable_replace(reconciliation_lock,
+                     ledger / f"{activation_id}-reconciliation-lane.json")
     return projection
 
 
@@ -944,12 +1313,14 @@ def verify_provider_origin(inspector, *, expected_task):
         return {"authorized": False, "reason": "provider_task_action_mismatch"}
     return {"authorized": True, "reason": "scheduled_provider_origin_verified",
             "pid": int(current["pid"]), "parent_pid": int(current["parent_pid"]),
-            "parent_executable": parent_name}
+            "parent_executable": parent_name,
+            "provider_instance_guid": str(parent.get("instance_guid") or "")}
 
 
 def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_identity=None,
                                    provider_identity=None, activation_id=None,
-                                   activation_prepared_at=None):
+                                   activation_prepared_at=None,
+                                   activation_event_record_id_lower_bound=None):
     """Inspect this process locally and only its exact parent PIDs through CIM."""
     requested_pid = int(pid or os.getpid())
     if current_identity is not None:
@@ -967,7 +1338,8 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
     provider_reader = provider_identity or (
         (lambda: _inspect_windows_task_scheduler_provider(
             requested_pid, runner=runner, activation_id=activation_id,
-            activation_prepared_at=activation_prepared_at))
+            activation_prepared_at=activation_prepared_at,
+            event_record_id_lower_bound=activation_event_record_id_lower_bound))
         if os.name == "nt" else lambda: {"inspection_complete": False}
     )
     provider = provider_reader()
@@ -1051,7 +1423,8 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
 def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
                                              process_creation_time=None,
                                              activation_id=None,
-                                             activation_prepared_at=None):
+                                             activation_prepared_at=None,
+                                             event_record_id_lower_bound=None):
     """Bind this PID to one Task Scheduler instance and its exact service.
 
     Task Scheduler can start the action before its COM running-instance view
@@ -1075,9 +1448,12 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "do{$instances=@($task.GetInstances(0)|Where-Object {[int]$_.EnginePID-eq" + str(int(engine_pid)) + "});"
         "if($instances.Count-eq 0-and[DateTime]::UtcNow-lt$deadline){Start-Sleep -Milliseconds 100}}"
         "while($instances.Count-eq 0-and[DateTime]::UtcNow-lt$deadline);"
-        "$instance=$null;$evidenceSource='running_instance';$eventRecordId=0;$eventTime='';$eventActivity='';"
+        "$instance=$null;$evidenceSource='running_instance';$eventRecordId=0;$eventTime='';$eventActivity='';$engineCreated='';"
         "if($instances.Count-ne 0){if($instances.Count-ne 1){exit 8};$instance=$instances[0];$instance.Refresh()}"
         "else{"
+        "$engineProcess=Get-CimInstance Win32_Process -Filter 'ProcessId=" + str(int(engine_pid)) + "';"
+        "if($null-eq$engineProcess-or[int]$engineProcess.ProcessId-ne" + str(int(engine_pid)) + "){exit 12};"
+        "$engineCreated=if($engineProcess.CreationDate-is[DateTime]){$engineProcess.CreationDate.ToUniversalTime()}else{[Management.ManagementDateTimeConverter]::ToDateTime([string]$engineProcess.CreationDate).ToUniversalTime()};"
         "$log=Get-WinEvent -ListLog 'Microsoft-Windows-TaskScheduler/Operational' -ErrorAction Stop;"
         "if(-not$log.IsEnabled){exit 9};"
         "$prepared=[DateTime]::Parse('" + str(activation_prepared_at or "").replace("'", "''") + "').ToUniversalTime();"
@@ -1085,7 +1461,7 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "$matches=@(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational';Id=200;StartTime=$prepared.AddSeconds(-2)} -ErrorAction Stop|Where-Object {"
         "$xml=[xml]$_.ToXml();$d=@{};foreach($x in $xml.Event.EventData.Data){$d[[string]$x.Name]=[string]$x.'#text'};"
         "([string]$d.TaskName).Equals('\\" + TASK_NAME.replace("'", "''") + "',[StringComparison]::OrdinalIgnoreCase)-and"
-        "([int]$d.EnginePID-eq" + str(int(engine_pid)) + ")-and$_.TimeCreated.ToUniversalTime()-ge$prepared-and$_.TimeCreated.ToUniversalTime()-le$now.AddSeconds(2)"
+        "([int]$d.EnginePID-eq" + str(int(engine_pid)) + ")-and[long]$_.RecordId-gt" + str(int(event_record_id_lower_bound or 0)) + "-and$_.TimeCreated.ToUniversalTime()-ge$prepared-and$_.TimeCreated.ToUniversalTime()-ge$engineCreated-and$_.TimeCreated.ToUniversalTime()-le$engineCreated.AddSeconds(10)-and$_.TimeCreated.ToUniversalTime()-le$now.AddSeconds(2)"
         "});if($matches.Count-eq 0){exit 6};if($matches.Count-ne 1){exit 10};"
         "$m=$matches[0];$mx=[xml]$m.ToXml();$md=@{};foreach($x in $mx.Event.EventData.Data){$md[[string]$x.Name]=[string]$x.'#text'};"
         "$eventInstance=if($md.TaskInstanceId){$md.TaskInstanceId}else{$md.InstanceId};"
@@ -1108,6 +1484,8 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "ActionWorkingDirectory=[string]$action.WorkingDirectory;"
         "ServiceDll=[Environment]::ExpandEnvironmentVariables($dll);SystemRoot=$root;"
         "EvidenceSource=$evidenceSource;EventRecordId=$eventRecordId;EventTime=$eventTime;EventActivityId=$eventActivity;"
+        "EngineCreationTime=$(if($engineCreated){$engineCreated.ToString('o')}else{''});"
+        "EventRecordIdLowerBound=" + str(int(event_record_id_lower_bound or 0)) + ";"
         "ActivationId='" + str(activation_id or "").replace("'", "''") + "'}"
         "|ConvertTo-Json -Compress"
     )
@@ -1130,6 +1508,7 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
             9: "task_scheduler_operational_log_disabled",
             10: "task_event_identity_ambiguous",
             11: "task_event_action_mismatch",
+            12: "task_engine_process_identity_missing",
         }
         return {"inspection_complete": False,
                 "reason": reasons.get(completed.returncode, "provider_identity_unreadable")}
@@ -1164,6 +1543,8 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
             "event_record_id": int(row.get("EventRecordId") or 0),
             "event_time": str(row.get("EventTime") or ""),
             "event_activity_id": str(row.get("EventActivityId") or ""),
+            "engine_creation_time": str(row.get("EngineCreationTime") or ""),
+            "event_record_id_lower_bound": int(row.get("EventRecordIdLowerBound") or 0),
             "activation_id": str(row.get("ActivationId") or ""),
         }
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
@@ -1188,7 +1569,9 @@ def _valid_task_scheduler_provider(value):
         evidence_source == "operational_event"
         and int(value.get("event_record_id") or 0) > 0
         and str(value.get("event_time") or "")
-        and str(value.get("activation_id") or "")
+        and str(value.get("engine_creation_time") or "")
+        and int(value.get("event_record_id") or 0)
+        > int(value.get("event_record_id_lower_bound") or -1)
         and str(value.get("event_activity_id") or "").strip("{}").casefold()
         == str(value.get("instance_guid") or "").strip("{}").casefold()
     )
@@ -1284,22 +1667,154 @@ def _local_current_process_identity():
     }
 
 
+TASK_SCHEDULER_OPERATIONAL_LOG = "Microsoft-Windows-TaskScheduler/Operational"
+
+
 class WindowsExactTaskController:
     def __init__(self, task_reader=read_watchdog_task, runner=subprocess.run):
         self.task_reader, self.runner = task_reader, runner
         self.expected_task = None
+        self.audit_prior = None
+        self.audit_changed = False
+        self.audit_mutation_attempted = False
 
     def bind_exact(self, rows):
         if not isinstance(rows, list) or len(rows) != 1:
             raise ActivationError("scheduled_task_ownership_ambiguous")
         self.expected_task = rows
 
+    def read_audit_channel_state(self):
+        script = (
+            "$ErrorActionPreference='Stop';"
+            f"$l=Get-WinEvent -ListLog '{TASK_SCHEDULER_OPERATIONAL_LOG}';"
+            f"[pscustomobject]@{{log_name='{TASK_SCHEDULER_OPERATIONAL_LOG}';"
+            "enabled=[bool]$l.IsEnabled}|ConvertTo-Json -Compress"
+        )
+        completed = self.runner(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if completed.returncode:
+            raise ActivationError("task_scheduler_audit_state_unreadable")
+        try:
+            value = json.loads(completed.stdout)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ActivationError("task_scheduler_audit_state_unreadable") from exc
+        if (not isinstance(value, dict)
+                or value.get("log_name") != TASK_SCHEDULER_OPERATIONAL_LOG
+                or not isinstance(value.get("enabled"), bool)):
+            raise ActivationError("task_scheduler_audit_state_invalid")
+        return value
+
+    def bind_audit_channel_state(self, value):
+        if (not isinstance(value, dict)
+                or value.get("log_name") != TASK_SCHEDULER_OPERATIONAL_LOG
+                or not isinstance(value.get("enabled"), bool)):
+            raise ActivationError("task_scheduler_audit_state_invalid")
+        self.audit_prior = dict(value)
+
+    def read_audit_event_record_id(self):
+        script = (
+            "$ErrorActionPreference='Stop';"
+            f"$e=Get-WinEvent -FilterHashtable @{{LogName='{TASK_SCHEDULER_OPERATIONAL_LOG}'}} "
+            "-MaxEvents 1 -ErrorAction SilentlyContinue;"
+            "if($null-eq$e){'0'}else{[string][long]$e.RecordId}"
+        )
+        completed = self.runner(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        try:
+            value = int(str(completed.stdout or "0").strip())
+        except ValueError as exc:
+            raise ActivationError("task_scheduler_audit_record_id_unreadable") from exc
+        if completed.returncode or value < 0:
+            raise ActivationError("task_scheduler_audit_record_id_unreadable")
+        return value
+
+    def assert_no_running_instances(self):
+        script = (
+            "$ErrorActionPreference='Stop';"
+            "$s=New-Object -ComObject 'Schedule.Service';$s.Connect();"
+            f"$t=$s.GetFolder('\\').GetTask('{TASK_NAME}');"
+            "[string]@($t.GetInstances(0)).Count"
+        )
+        completed = self.runner(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        try:
+            count = int(str(completed.stdout or "").strip())
+        except ValueError as exc:
+            raise ActivationError("task_scheduler_instance_state_unreadable") from exc
+        if completed.returncode or count != 0:
+            raise ActivationError("task_scheduler_instance_already_running")
+
+    def ensure_audit_channel_enabled(self):
+        if self.audit_prior is None:
+            raise ActivationError("task_scheduler_audit_binding_missing")
+        changed = self._set_audit_channel(
+            True, expected_enabled=self.audit_prior["enabled"],
+        )
+        self.audit_changed = changed
+        return changed
+
+    def restore_audit_channel_state(self):
+        if self.audit_prior is None:
+            raise ActivationError("task_scheduler_audit_binding_missing")
+        return self._set_audit_channel(
+            self.audit_prior["enabled"], expected_enabled=True,
+        )
+
+    def reconcile_audit_channel_state(self):
+        if self.audit_prior is None:
+            raise ActivationError("task_scheduler_audit_binding_missing")
+        current = self.read_audit_channel_state()
+        if current["log_name"] != self.audit_prior["log_name"]:
+            raise ActivationError("task_scheduler_audit_identity_changed")
+        if current["enabled"] is self.audit_prior["enabled"]:
+            return False
+        if current["enabled"] is not True:
+            raise ActivationError("task_scheduler_audit_state_ambiguous")
+        return self._set_audit_channel(
+            self.audit_prior["enabled"], expected_enabled=True,
+        )
+
+    def _set_audit_channel(self, enabled, *, expected_enabled):
+        expected_before = self.read_audit_channel_state()
+        if (self.audit_prior is None
+                or expected_before["log_name"] != self.audit_prior["log_name"]
+                or expected_before["enabled"] is not bool(expected_enabled)):
+            raise ActivationError("task_scheduler_audit_identity_changed")
+        if expected_before["enabled"] is bool(enabled):
+            return False
+        state = str(bool(enabled)).lower()
+        self.audit_mutation_attempted = True
+        completed = self.runner(
+            # Once this command is issued, immediate cleanup may reconcile the
+            # exact channel even if post-mutation readback fails.
+            ["wevtutil", "sl", TASK_SCHEDULER_OPERATIONAL_LOG, f"/e:{state}"],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if completed.returncode:
+            raise ActivationError("task_scheduler_audit_mutation_failed")
+        after = self.read_audit_channel_state()
+        if after.get("enabled") is not bool(enabled):
+            raise ActivationError("task_scheduler_audit_readback_mismatch")
+        return True
+
     def enable_and_trigger_exact(self, digest):
         self._mutate(digest, "Enable-ScheduledTask -InputObject $t|Out-Null", {"Disabled"})
         if _task_action_sha256(self.task_reader()) != digest:
             self._mutate(digest, "Disable-ScheduledTask -InputObject $t|Out-Null", {"Ready", "Running", "Disabled"})
             raise ActivationError("scheduled_task_identity_changed_after_enable")
-        self._mutate(digest, "Start-ScheduledTask -InputObject $t", {"Ready"})
+        return self._mutate(
+            digest,
+            "$s=New-Object -ComObject 'Schedule.Service';$s.Connect();"
+            "$rt=$s.GetFolder($e.task_path).GetTask($e.task_name).RunEx($null,0,0,$null);"
+            "$rt.Refresh();[string]$rt.InstanceGuid",
+            {"Ready"},
+        ).strip()
 
     def disable_exact(self, digest):
         self._mutate(digest, "Disable-ScheduledTask -InputObject $t|Out-Null", {"Ready", "Running", "Disabled"})
@@ -1326,6 +1841,7 @@ class WindowsExactTaskController:
                                 capture_output=True, text=True, timeout=30, check=False)
         if completed.returncode != 0:
             raise ActivationError("scheduled_task_provider_mutation_failed")
+        return str(completed.stdout or "")
 
 
 def _validate_authority(authority, key, now=None, allow_expired=False):
@@ -1373,6 +1889,23 @@ def _validate_pre_mutation(plan, *, task_reader, git_runner):
         raise ActivationError("activation_worktree_identity_changed")
 
 
+def _validate_consumed_identity(packet, consumed, key, *, require_packet_hmac):
+    expected = str(packet.get("expected_instance_guid") or "").strip("{}").casefold()
+    consumed_expected = str(consumed.get("expected_instance_guid") or "").strip("{}").casefold()
+    provider_instance = str(consumed.get("provider_instance_guid") or "").strip("{}").casefold()
+    packet_hmac = (packet.get("packet_hmac_sha256") if require_packet_hmac
+                   else packet.get("consumed_packet_hmac_sha256"))
+    if (not hmac.compare_digest(
+            str(consumed.get("consumed_hmac_sha256") or ""),
+            _sign_record(consumed, key, "consumed_hmac_sha256"))
+            or consumed.get("activation_id") != packet.get("activation_id")
+            or not expected
+            or consumed_expected != expected
+            or provider_instance != expected
+            or consumed.get("packet_hmac_sha256") != packet_hmac):
+        raise ActivationError("activation_consumed_identity_invalid")
+
+
 def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
                      now=None, allow_consumed=False, allow_expired=False):
     key = _read_key(state_root / "activation-authority.key")
@@ -1381,10 +1914,24 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_packet_signature_invalid")
     authority = packet.get("authority") if isinstance(packet.get("authority"), dict) else {}
     if (packet.get("version") != ACTIVATION_VERSION
-            or packet.get("activation_id") != authority.get("activation_id")):
+            or packet.get("activation_id") != authority.get("activation_id")
+            or not str(packet.get("expected_instance_guid") or "").strip("{}")):
         raise ActivationError("activation_packet_binding_invalid")
     if packet.get("status") not in ({"provider_pending", "provider_started_observe_only"} if allow_consumed else {"provider_pending"}):
         raise ActivationError("activation_packet_replayed")
+    consumed_name = f"activation-consumed-{packet['activation_id']}.json"
+    consumed_live = state_root / consumed_name
+    consumed_verified = (state_root / "activation-ledger"
+                         / f"{packet['activation_id']}-verified-{consumed_name}")
+    consumed_path = consumed_live if consumed_live.exists() else consumed_verified
+    if packet.get("status") == "provider_pending" and consumed_path.exists() and not allow_consumed:
+        raise ActivationError("activation_consumed_pending_recovery_required")
+    if packet.get("status") == "provider_started_observe_only" or consumed_path.exists():
+        consumed = _read_json(consumed_path, "activation_consumed_identity_missing")
+        _validate_consumed_identity(
+            packet, consumed, key,
+            require_packet_hmac=packet.get("status") == "provider_pending",
+        )
     _validate_authority(authority, key, now=now, allow_expired=allow_expired)
     if (_sha256(packet.get("authority_path")) != packet.get("authority_sha256")
             or Path(packet.get("runtime_root", "")).resolve() != state_root / "core-runtime-current"
@@ -1392,7 +1939,18 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_packet_authority_or_roots_invalid")
     if _read_json(packet.get("authority_path"), "activation_authority_invalid") != authority:
         raise ActivationError("activation_authority_content_mismatch")
-    lane = _read_json(state_root / "activation.lock", "activation_lane_missing")
+    lane_path = state_root / "activation.lock"
+    verified_lane = (state_root / "activation-ledger"
+                     / f"{packet['activation_id']}-lane.json")
+    lane_candidates = [path for path in (lane_path, verified_lane) if path.exists()]
+    if len(lane_candidates) != 1:
+        raise ActivationError("activation_lane_missing" if not lane_candidates
+                              else "activation_lane_ambiguous")
+    lane = _read_json(lane_candidates[0], "activation_lane_missing")
+    if not hmac.compare_digest(
+            str(lane.get("lane_hmac_sha256") or ""),
+            _sign_record(lane, key, "lane_hmac_sha256")):
+        raise ActivationError("activation_lane_signature_invalid")
     rollback = _read_json(
         state_root / "activation-ledger" / f"{packet['activation_id']}-rollback.json",
         "activation_rollback_missing",
@@ -1405,8 +1963,37 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
             or rollback.get("activation_id") != packet["activation_id"]
             or rollback.get("authority_sha256") != packet.get("authority_sha256")
             or rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256")
-            or rollback.get("task_action_sha256") != authority.get("task_action_sha256")):
+            or rollback.get("task_action_sha256") != authority.get("task_action_sha256")
+            or rollback.get("task_scheduler_event_record_id_lower_bound")
+            != packet.get("task_scheduler_event_record_id_lower_bound")):
         raise ActivationError("activation_rollback_binding_invalid")
+    activation_id = packet["activation_id"]
+    intent_name = f"activation-audit-intent-{activation_id}.json"
+    receipt_name = f"activation-audit-receipt-{activation_id}.json"
+    intent_live = state_root / intent_name
+    receipt_live = state_root / receipt_name
+    intent_verified = (state_root / "activation-ledger"
+                       / f"{activation_id}-verified-{intent_name}")
+    receipt_verified = (state_root / "activation-ledger"
+                        / f"{activation_id}-verified-{receipt_name}")
+    intent = _read_json(intent_live if intent_live.exists() else intent_verified,
+                        "activation_audit_intent_missing")
+    receipt = _read_json(receipt_live if receipt_live.exists() else receipt_verified,
+                         "activation_audit_receipt_missing")
+    prior = rollback.get("task_scheduler_audit_prior") or {}
+    if (not hmac.compare_digest(
+            str(intent.get("audit_intent_hmac_sha256") or ""),
+            _sign_record(intent, key, "audit_intent_hmac_sha256"))
+            or not hmac.compare_digest(
+                str(receipt.get("audit_receipt_hmac_sha256") or ""),
+                _sign_record(receipt, key, "audit_receipt_hmac_sha256"))
+            or intent.get("activation_id") != activation_id
+            or receipt.get("activation_id") != activation_id
+            or intent.get("prior_enabled") is not prior.get("enabled")
+            or receipt.get("current_enabled") is not True
+            or receipt.get("event_record_id_lower_bound")
+            != packet.get("task_scheduler_event_record_id_lower_bound")):
+        raise ActivationError("activation_audit_transaction_invalid")
     manifest_path = state_root / "runtime-manifest.json"
     if _sha256(manifest_path) != authority["manifest_sha256"]:
         raise ActivationError("activation_manifest_sha256_mismatch")
@@ -1414,7 +2001,10 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_receipt_sha256_mismatch")
     if _task_action_sha256(task_reader()) != authority["task_action_sha256"]:
         raise ActivationError("activation_task_action_sha256_mismatch")
-    if _sha256(state_root / f"supervisor.stop.activation-{packet['activation_id']}") != authority["stop_marker_sha256"]:
+    live_stop_archive = state_root / f"supervisor.stop.activation-{packet['activation_id']}"
+    verified_stop_archive = (state_root / "activation-ledger"
+                             / f"{packet['activation_id']}-verified-{live_stop_archive.name}")
+    if _sha256(live_stop_archive if live_stop_archive.exists() else verified_stop_archive) != authority["stop_marker_sha256"]:
         raise ActivationError("activation_archived_stop_sha256_mismatch")
     runtime = _worktree(Path(packet["runtime_root"]), git_runner)
     execution = _worktree(Path(packet["execution_root"]), git_runner)
@@ -1455,6 +2045,7 @@ def _close_prepare_failure(state_root, plan, controller, archive, stop,
             controller.disable_exact(plan["task_action_sha256"])
         except Exception as exc:
             errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
+    _read_json(rollback_path, "activation_rollback_missing")
     try:
         if stop.exists() and _sha256(stop) != plan["stop_marker_sha256"]:
             raise ActivationError("governed_stop_conflict_during_prepare_recovery")
@@ -1473,11 +2064,11 @@ def _close_prepare_failure(state_root, plan, controller, archive, stop,
     ledger = Path(state_root) / "activation-ledger"
     activation_id = plan["activation_id"]
     if packet_path.exists():
-        packet_path.replace(ledger / f"{activation_id}-prepare-failed-packet.json")
+        _durable_replace(packet_path, ledger / f"{activation_id}-prepare-failed-packet.json")
     if rollback_path.exists():
-        rollback_path.replace(ledger / f"{activation_id}-prepare-failed-rollback.json")
+        _durable_replace(rollback_path, ledger / f"{activation_id}-prepare-failed-rollback.json")
     if lane_path.exists():
-        lane_path.replace(ledger / f"{activation_id}-prepare-failed-lane.json")
+        _durable_replace(lane_path, ledger / f"{activation_id}-prepare-failed-lane.json")
 
 
 def _validate_roots(state, runtime, execution):
@@ -1566,10 +2157,12 @@ def _archive_activation_artifacts(state_root, activation_id, suffix):
     for path in (
         Path(state_root) / "activation-packet.json",
         Path(state_root) / f"activation-consumed-{activation_id}.json",
+        Path(state_root) / f"activation-audit-intent-{activation_id}.json",
+        Path(state_root) / f"activation-audit-receipt-{activation_id}.json",
         Path(state_root) / f"supervisor.stop.activation-{activation_id}",
     ):
         if path.exists():
-            path.replace(ledger / f"{activation_id}-{suffix}-{path.name}")
+            _durable_replace(path, ledger / f"{activation_id}-{suffix}-{path.name}")
 
 
 def _parse_time(value):
@@ -1582,14 +2175,25 @@ def _parse_time(value):
 def _exclusive_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
     try:
-        descriptor = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError as exc:
-        raise ActivationError("activation_lane_already_owned") from exc
-    with os.fdopen(os.dup(descriptor), "wb") as stream:
-        stream.write(json.dumps(value, indent=2).encode())
-        stream.flush(); os.fsync(stream.fileno())
-    return descriptor
+        with temporary.open("xb") as stream:
+            stream.write(json.dumps(value, indent=2).encode())
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            if os.name == "nt":
+                _windows_move_write_through(temporary, path, replace_existing=False)
+            else:
+                os.link(temporary, path)
+                _fsync_directory(path.parent)
+        except FileExistsError as exc:
+            raise ActivationError("activation_lane_already_owned") from exc
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _atomic_json(path, value):
@@ -1601,7 +2205,57 @@ def _atomic_bytes(path, value):
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     with temporary.open("wb") as stream:
         stream.write(value); stream.flush(); os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    _durable_replace(temporary, path, replace_existing=True)
+
+
+def _windows_move_write_through(source, target, *, replace_existing):
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.MoveFileExW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+    kernel32.MoveFileExW.restype = ctypes.c_int
+    flags = 0x8 | (0x1 if replace_existing else 0)
+    if not kernel32.MoveFileExW(str(source), str(target), flags):
+        error = ctypes.get_last_error()
+        if not replace_existing and error in {80, 183}:
+            raise FileExistsError(str(target))
+        raise OSError(error, "MoveFileExW failed", str(source), str(target))
+
+
+def _fsync_directory(path):
+    if os.name == "nt":
+        return
+    descriptor = os.open(str(path), os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _durable_replace(source, target, *, replace_existing=False):
+    source, target = Path(source), Path(target)
+    source_parent = source.parent
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        _windows_move_write_through(source, target,
+                                    replace_existing=replace_existing)
+    else:
+        if replace_existing:
+            os.replace(source, target)
+        else:
+            libc = ctypes.CDLL(None, use_errno=True)
+            renameat2 = getattr(libc, "renameat2", None)
+            if renameat2 is None:
+                raise OSError("atomic no-replace rename unavailable")
+            renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                                  ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+            renameat2.restype = ctypes.c_int
+            if renameat2(-100, os.fsencode(source), -100, os.fsencode(target), 1) != 0:
+                error = ctypes.get_errno()
+                if error == 17:
+                    raise FileExistsError(str(target))
+                raise OSError(error, "renameat2 failed", str(source), str(target))
+        _fsync_directory(target.parent)
+        if source_parent.resolve() != target.parent.resolve():
+            _fsync_directory(source_parent)
 
 
 def _now(value=None):

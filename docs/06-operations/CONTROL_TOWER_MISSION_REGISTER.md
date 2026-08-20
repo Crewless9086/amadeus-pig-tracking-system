@@ -29,6 +29,120 @@ and borehole remain separately uncommissioned/Unknown and receive no transferred
 authority. No owner physical observation is requested while governed evidence
 sources remain the correct first source.
 
+## 2026-08-19 - Queued Oom Sakkie shared owner-attention projection
+
+Charl confirmed the cross-channel invariant: application, Telegram, future
+voice and autonomous workers use the same canonical farm facts and the same
+work-item identities, priority, ownership and lifecycle. Channels may render
+different amounts of authorized detail, but they must not independently decide
+what farm work exists.
+
+This is the next phase of the existing Oom Sakkie continuous-manager and
+HERDMASTER worklist lineage, not a dashboard-only mission and not a second
+queue, database, scheduler or mission ledger. The current defect is that the
+homepage assembles attention independently in browser code while the Brief uses
+the manager pipeline. Prince can therefore appear in the Brief but not on the
+homepage; Molly and Clovy can receive different classifications; status
+reconciliation can be mislabeled as physical weighing; and a ROOTLINE refresh
+failure can be shifted incorrectly to Charl.
+
+Required outcome: one typed backend attention projection combining active
+welfare lifecycles, HERDMASTER/breeding/litter work, ROOTLINE, sales and Orders.
+Every item carries a stable ID, category, open/resolved/superseded state,
+priority/watch classification, specialist owner, exact owner action, evidence
+provenance/freshness and safe detail target. Homepage, Brief, Telegram and later
+voice consume the same ordered identities. The homepage renders the shared top
+three plus total hidden count and View all; channel-specific formatting and
+permissions remain presentation concerns only.
+
+Acceptance requires Prince parity and one identity across homepage and Brief;
+resolution removes it from both; Molly/Clovy have the same classification or
+evidence-based exclusion; `status_reconciliation` is distinct from
+`weighing_due`; ROOTLINE automatic retries remain assigned to ROOTLINE/Oom
+Sakkie until one precise physical observation is irreducible; specialist
+timeouts cannot erase unrelated work; Telegram follows the concise semantic
+emoji standard; and exact-revision authenticated desktop/mobile production
+parity is proven. CODEX UI follows only after the shared backend contract is
+established and requires Charl's visual approval.
+
+Promotion is serialized behind current ROOTLINE and Orders/Sales work because
+their manager adapters and presentation paths are collision-prone. The recently
+completed Oom Sakkie timeout repair and autonomous five-minute manager cycles
+are the operating base for this phase.
+
+## 2026-08-19 - Owner-approved livestock quotation separation
+
+Charl approved one shared livestock pricing, quotation and document system with
+three explicitly different customer journeys:
+
+1. `price_indication` - a current category-price guide in conversation, with no
+   order, PDF by default, allocation, reservation or availability promise;
+2. `budgetary_quotation` - a formal category-based quotation for funding,
+   loan, company approval or budgeting, attached to the customer intake and
+   containing no selected animals or stock commitment; and
+3. `sales_quotation` with `quotation_basis = current_availability` - a current
+   sales quotation that may contain supported animals or groups, while
+   allocation proposal and reservation remain separate evidence states.
+
+Customer request, quotation, allocation proposal and reservation must remain
+distinct. The implementation must reuse the current requested-items editor,
+effective-dated Supabase pricing, document renderer and outbound delivery rail;
+it must not create a second quote engine. Issued prices are immutable snapshots,
+expiry and supersession are explicit, conversion to an order refreshes current
+price/availability, and no historical availability or reservation may be
+carried forward as current truth.
+
+The review also found that the compact authoritative Gold Standard no longer
+contains the historically owner-approved direct-price examples retained in
+commit `d78f1e02`. The implementation mission must restore only the unique
+active behaviour - answer a supported direct price question before further
+qualification, distinguish category price from availability, show quantity,
+unit price, subtotal/total when known, and never imply reservation - without
+restoring the removed 498-line historical document or creating duplicate
+doctrine.
+
+Immediate customer recovery: a one-page quotation for funding approval was
+prepared locally for Wenettitus as
+`FQ-2026-0819-WENETTITUS-01`, using read-only canonical Supabase prices R400 for
+5-6 kg and R600 for 15-19 kg. It records 10 female and 10 male 5-6 kg piglets,
+one female and one male approximately 15 kg, subtotal R9,200.00, VAT R1,380.00,
+total R10,580.00 and validity through 22 August 2026. It explicitly creates no
+order, allocation, reservation, availability promise or payment request. Charl
+accepted the PDF for owner use; provider/customer send remains unconfirmed and
+must not be inferred.
+
+Continue the existing SALES/SAM/HERDMASTER quotation lineage after the current
+customer recovery; do not create a parallel mission or document engine.
+Doctrine reconciliation precedes implementation, followed by one intake-linked
+quotation aggregate, quotation lines/price snapshots, SAM intent separation,
+document/UI projection and exact Wenettitus-shaped acceptance. The current
+stock-backed preview remains separately released for authenticated owner
+acceptance and must not be misrepresented as the funding-quotation journey.
+
+Release closure: PR #1118 merged normally as `05c3e2aa` after all three
+exact-head CI lanes passed; Render deployed that exact revision and then the
+documentation-only current-main superset `cc3011ed`. Migration
+`202608190003_create_livestock_quotation_aggregate` is applied and read back in
+production with both quotation tables, immutable snapshot triggers and zero
+initial quotation/line rows. Authenticated production acceptance at
+2026-08-19 08:25 UTC resolved the current effective Supabase price snapshots
+(`PRICE-YOUNG_PIGLETS_5_TO_6_KG_ANY` at R400 and
+`PRICE-WEANER_PIGLETS_15_TO_19_KG_ANY` at R600) and proved all three distinct
+preview journeys against the Wenettitus-shaped four-line request. Each returned
+subtotal R9,200.00, VAT R1,380.00 and total R10,580.00. Price indication and
+budgetary quotation selected no animals and returned no allocation; the
+current-availability sales quotation alone returned a HERDMASTER proposal.
+All three reported zero quotation/order/order-line/reservation writes, and the
+budgetary journey explicitly reported no allocation, animal selection,
+availability promise, order or reservation. The existing PDF was not opened
+for delivery or sent, and no customer/provider contact occurred.
+
+Lifecycle: `BUSINESS_COMPLETE / DEPLOYED_QUOTATION_JOURNEYS_ACCEPTED /
+CUSTOMER_DELIVERY_SEPARATELY_PROTECTED`. The development mission is closed;
+later customer/provider delivery requires its own exact protected authority.
+The next sales mission remains the registered deployed SAM salesperson outcome,
+not another quotation engine or terminal-created customer response.
+
 ## 2026-08-19 - Overnight operating-outcome recovery
 
 Owner priority: tomorrow's four-line livestock quote must be usable, while
@@ -51,7 +165,7 @@ veterinary claim.
 Recovery WIP remains capped at three implementation tracks:
 
 1. **Slot 1 - SALES / HERDMASTER livestock order completion
-   (`CURRENT_BLOCKER`)**: continue the existing multi-line requested-items and
+   (`RELEASED_OWNER_AUTH_REQUIRED`)**: continue the existing multi-line requested-items and
    OP-004 lineage in one fresh current-main worktree. Reconcile the contradictory
    livestock doctrine first, then simplify the existing live-transfer contract,
    matching, quote preview, Orders presentation and livestock document
@@ -90,12 +204,51 @@ database, farm or customer writes. Its output is one evidence-backed
 continuation packet ready for automatic promotion when an implementation slot
 releases. Process existence and old activation waits remain non-evidence.
 
+Charl then explicitly promoted this same `CMQ-20260813-05` Recovery Slot 1 lane
+from read-only audit to exact-current validation and staging, while retaining a
+separate protected activation gate. Authoritative main
+`70baac05223608b1c2592b0512e5aa1037ea841b` passed 77/78 focused CORE
+activation/staging tests with one platform skip and 251/257 proportional CORE
+control tests with six platform skips in disposable image
+`sha256:dad31c6f6a8da88f6146d6b0302d857df26e451c5891811c2a8b2ec277de1ab8`:
+network disabled, read-only source/root, private PID boundary, all capabilities
+dropped, unprivileged UID and tmpfs only. Signed validation receipt
+`2d57556f77317915869378e164767bbc0a892dde76b63785f83a1a8e104988ec`
+was preserved in the existing promotion ledger. The serialized staging rail
+used historical `f096d36d` only as the exact rollback tuple and staged both
+detached runtime trees plus manifest to `70baac05` under lane
+`fd3583aa382e458f83ad7fc23b0b1cf0`. Readback proved no active release lane,
+the scheduled task remained disabled, governed-stop digest remained
+`8887c0c06d040b60fef580c0135761019fe7e416d594538cf86fcf18d1e594b1`,
+and no activation or reconciliation lock exists. Lifecycle is
+`OWNER_HOLD / EXACT_CURRENT_VALIDATED_AND_STAGED / ACTIVATION_NOT_AUTHORIZED`;
+Business completion is false. Never reuse failed activation identity
+`51412371da70e5ae6ba8a6f4fb1e7172` or any older epoch. The only promotion
+trigger is fresh owner authority bound to exact revision, manifest, receipt,
+stop digest, disabled task identity, observe-only mode and a new activation
+identity/expiry; until then no task enablement, stop removal, worker start,
+mission pickup or autonomy claim is permitted.
+
 Automatic promotion: each development lane continues through source, tests,
 review, normal integration, deployment and genuine deployed-agent acceptance,
 stopping only at a real protected, physical, external or serialized-release
 boundary. Released clean worktrees must be closed promptly. Every lane must
 return `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`; open processes and older
 waits are not activity or dependency proof.
+
+Slot 1 release evidence: PR #1107 merged on 19 August 2026 as main revision
+`aea19d46aa4aee292b66e91fa8f590494deaae65`. Exact-head CI passed all three
+required workflows; Brain Guard passed with zero findings; independent review
+approved; authenticated and safe-local read-only desktop/390px preview evidence
+proved the inherited `5_to_6_Kg` band (owner shorthand “56 kg” interpreted as
+5–6 kg) plus the approximately 15 kg female/male lines, truthful availability,
+shortfalls, animal facts, price and consolidated medicine disclosure with no
+order/farm write. Production `/health` returned 200 and the deployed JavaScript
+and CSS matched the exact main blobs byte-for-byte. `/orders/new` correctly
+redirected to owner login. No production owner credential was present in the
+terminal, so authenticated production acceptance remains the one bounded
+owner-only action; no quote, reservation, purpose change or customer contact
+was performed.
 
 ## 2026-08-18 - Slot 2 OOM SAKKIE morning-truth recovery
 
@@ -1168,3 +1321,33 @@ PHYSICAL_B_SEGMENT_CANONICALLY_COMPLETED_AND_ALL_OUTPUTS_OFF`.
 
 Terminal ownership is released. Normal standing B/C authority remains bounded
 and unchanged; fertilizer and borehole exclusions remain in force.
+
+### OOM SAKKIE manager-case timeout closeout - 2026-08-19
+
+The reusable post-Brain-Guard manager-case timeout is repaired on authoritative
+main by PR #1103 (`181543e7`, repair commit `57934592`). The correction runs the
+bounded read-only candidate collectors concurrently while preserving declared
+result order, and refreshes only the provider-owned HERDMASTER, ROOTLINE and
+BEACON case families before delivery. Focused current-main verification passed
+27 manager-case source/worker tests; all three PR checks passed.
+
+Render cron `crn-d9us4d3ncjis73adehrg` and web service
+`srv-d6sijjkhg0os73f7regg` loaded exact authoritative revision
+`14129a23cd4c1750eb442c0b4372f884c4c8774c`. Provider-owned cycles
+`OOM-MANAGER-CYCLE-20260819T081022876461Z-FBAAF1BE8EC547ABA7753827E324D118`
+and
+`OOM-MANAGER-CYCLE-20260819T081530523321Z-029BA419094A4843BC8D1A93210ABE2D`
+completed independently on the five-minute schedule. Each passed scheduled
+Brain Guard, reconciled thirteen current cases, recorded zero exceptions and
+suppressed thirteen unchanged deliveries. No terminal invoked the cycle and no
+manual Telegram, customer, Meta, farm, provider or hardware action was used.
+
+Lifecycle: `BUSINESS_COMPLETE / MANAGER_CASE_TIMEOUT_REPAIRED /
+CONSECUTIVE_PROVIDER_CYCLES_AND_TRUTHFUL_SILENCE_PROVEN`.
+
+The timeout mission is closed. Current specialist cases remain owned by their
+existing specialist missions and standing authority; this closeout does not
+duplicate SALES quotation, CORE recovery, ROOTLINE device work or BEACON
+event-waiting work. Automatic continuation remains the existing provider cron;
+unchanged evidence stays silent and materially changed evidence re-enters the
+same canonical manager-case lifecycle.
