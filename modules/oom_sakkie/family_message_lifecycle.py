@@ -385,6 +385,165 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             "telegram_message_id": message_id, "telegram_sends": 1, "telegram_edits": 0}
 
 
+def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], *,
+                          mission_id: str, card_mission_id: str,
+                          previous_message_id: str, generation_digest: str,
+                          event_store=None, sender=None, deleter=None,
+                          projection_lock=None, _projection_lock_held=False) -> dict[str, Any]:
+    """Confirm a new Brief generation before superseding and cleaning the old one."""
+    text = str(result.get("answer") or "").strip()
+    digest = str(generation_digest or "").lower()
+    prior_id = str(previous_message_id or "").strip()
+    if (result.get("status") != "daily_farm_manager_ready"
+            or result.get("rolling_brief_replacement") is not True
+            or not text or len(digest) != 64 or not prior_id):
+        return {"success": False, "status": "brief_replacement_binding_incomplete",
+                "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    if not _projection_lock_held:
+        if projection_lock is not None:
+            with projection_lock(card_mission_id):
+                return replace_current_brief(parsed, result, mission_id=mission_id,
+                    card_mission_id=card_mission_id, previous_message_id=prior_id,
+                    generation_digest=digest, event_store=event_store, sender=sender,
+                    deleter=deleter, projection_lock=projection_lock,
+                    _projection_lock_held=True)
+        if event_store is None:
+            from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+            with connect_bounded_rootline_postgres(
+                    database_url=os.environ.get("DATABASE_URL"), read_only=False) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("select pg_advisory_lock(hashtextextended(%s,0))",
+                        ("oom-current-brief:" + card_mission_id,))
+                try:
+                    return replace_current_brief(parsed, result, mission_id=mission_id,
+                        card_mission_id=card_mission_id, previous_message_id=prior_id,
+                        generation_digest=digest, event_store=event_store, sender=sender,
+                        deleter=deleter, _projection_lock_held=True)
+                finally:
+                    with connection.cursor() as cursor:
+                        cursor.execute("select pg_advisory_unlock(hashtextextended(%s,0))",
+                            ("oom-current-brief:" + card_mission_id,))
+    store = event_store or _event_store
+    events = list(store("load", card_mission_id, None) or [])
+    owner_scope = hashlib.sha256((str(parsed.get("telegram_user_id") or "") + "|"
+        + str(parsed.get("telegram_chat_id") or "")).encode()).hexdigest()[:16].upper()
+    generation_id = (card_mission_id + "-OWNER-" + owner_scope
+        + "-GENERATION-" + digest[:20].upper())
+    generation_events = [row for row in events
+        if str(row.get("event_id") or "").startswith(generation_id)]
+    delivered = next((row for row in reversed(generation_events)
+        if row.get("state") == "brief_generation_delivered"), None)
+    superseded_receipt = next((row for row in reversed(generation_events)
+        if row.get("state") == "brief_generation_superseded"), None)
+    confirmed_generation_ids = {str(row.get("event_id") or "").removesuffix("-SUPERSEDED")
+        for row in events if row.get("state") == "brief_generation_superseded"}
+    brief_deliveries = [row for row in events
+        if ((row.get("state") in {"delivered", "updated"}
+             and row.get("task_state") == "daily_farm_manager_ready")
+            or (row.get("state") == "brief_generation_delivered"
+                and str(row.get("event_id") or "").removesuffix("-DELIVERED")
+                    in confirmed_generation_ids))
+        and str(row.get("owner_user_id") or "") == str(parsed.get("telegram_user_id") or "")
+        and str(row.get("chat_id") or "") == str(parsed.get("telegram_chat_id") or "")
+        and str(row.get("specialist_identity") or "") == "OOM_SAKKIE"]
+    prior = brief_deliveries[-1] if brief_deliveries else None
+    if not prior or str(prior.get("telegram_message_id") or "") != prior_id:
+        return {"success": False, "status": "brief_replacement_prior_binding_unproven",
+            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    if generation_events and any(
+            str(row.get("owner_user_id") or "") != str(parsed.get("telegram_user_id") or "")
+            or str(row.get("chat_id") or "") != str(parsed.get("telegram_chat_id") or "")
+            or str(row.get("generation_digest") or "") != digest
+            or str(row.get("previous_telegram_message_id") or "") != prior_id
+            for row in generation_events):
+        return {"success": False, "status": "brief_replacement_generation_binding_conflict",
+            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    cleanup_receipt = next((row for row in reversed(generation_events)
+        if row.get("state") in {"brief_previous_deleted", "brief_cleanup_debt"}), None)
+    if delivered and superseded_receipt and cleanup_receipt:
+        return {"success": True, "status": "brief_replacement_replayed_noop",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": str(delivered.get("telegram_message_id") or ""),
+            "previous_telegram_message_id": prior_id,
+            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    if delivered and superseded_receipt and not cleanup_receipt:
+        recovery = store("record", generation_id + "-CLEANUP", {
+            **dict(delivered), "event_id": generation_id + "-CLEANUP",
+            "state": "brief_cleanup_debt", "telegram_message_id": str(
+                delivered.get("telegram_message_id") or ""),
+            "superseded_telegram_message_id": prior_id,
+            "cleanup_failure_class": "cleanup_outcome_unknown_after_interruption"})
+        return {"success": isinstance(recovery, dict) and recovery.get("success") is True,
+            "status": "brief_replaced_cleanup_debt" if isinstance(recovery, dict)
+                and recovery.get("success") is True else "brief_cleanup_receipt_unavailable",
+            "provider_delivery_confirmed": True,
+            "telegram_message_id": str(delivered.get("telegram_message_id") or ""),
+            "previous_telegram_message_id": prior_id,
+            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    if generation_events and not delivered:
+        return {"success": False, "status": "brief_replacement_delivery_ambiguous",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "previous_telegram_message_id": prior_id,
+            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    payload = _event(parsed, mission_id, card_mission_id, "OOM_SAKKIE",
+                     "brief_generation", digest)
+    payload.update({"generation_digest": digest,
+                    "previous_telegram_message_id": prior_id})
+    sends = 0
+    if delivered:
+        new_id = str(delivered.get("telegram_message_id") or "")
+    else:
+        claim = store("record", generation_id, {**payload, "event_id": generation_id,
+            "state": "brief_generation_delivery_attempted"})
+        if not isinstance(claim, dict) or claim.get("created") is not True:
+            return {"success": False, "status": "brief_replacement_delivery_ambiguous",
+                    "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+        response = ((sender)(str(parsed.get("telegram_chat_id") or ""), text)
+                    if sender else _send_telegram(str(parsed.get("telegram_chat_id") or ""), text))
+        new_id = str((response or {}).get("telegram_message_id") or "")
+        if not (response or {}).get("success") or not new_id:
+            store("record", generation_id + "-CONTAINED", {**payload,
+                "event_id": generation_id + "-CONTAINED", "state": "contained",
+                "reason": "brief_replacement_delivery_unconfirmed"})
+            return {"success": False, "status": "brief_replacement_delivery_ambiguous",
+                    "previous_telegram_message_id": prior_id,
+                    "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+        sends = 1
+        receipt = store("record", generation_id + "-DELIVERED", {**payload,
+            "event_id": generation_id + "-DELIVERED", "state": "brief_generation_delivered",
+            "telegram_message_id": new_id,
+            "delivery_provider_timestamp": str((response or {}).get("provider_timestamp") or "")})
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            return {"success": False, "status": "brief_replacement_provider_confirmed_receipt_unavailable",
+                "provider_delivery_confirmed": True, "telegram_message_id": new_id,
+                "previous_telegram_message_id": prior_id,
+                "telegram_sends": 1, "telegram_edits": 0, "telegram_deletes": 0}
+    superseded = store("record", generation_id + "-SUPERSEDED", {**payload,
+        "event_id": generation_id + "-SUPERSEDED", "state": "brief_generation_superseded",
+        "telegram_message_id": new_id, "superseded_telegram_message_id": prior_id})
+    if not isinstance(superseded, dict) or superseded.get("success") is not True:
+        return {"success": False, "status": "brief_replacement_supersession_receipt_unavailable",
+            "provider_delivery_confirmed": True, "telegram_message_id": new_id,
+            "previous_telegram_message_id": prior_id,
+            "telegram_sends": sends, "telegram_edits": 0, "telegram_deletes": 0}
+    cleanup = ((deleter)(str(parsed.get("telegram_chat_id") or ""), prior_id)
+               if deleter else _delete_telegram(str(parsed.get("telegram_chat_id") or ""), prior_id))
+    deleted = bool((cleanup or {}).get("success"))
+    cleanup_receipt = store("record", generation_id + "-CLEANUP", {**payload,
+        "event_id": generation_id + "-CLEANUP",
+        "state": "brief_previous_deleted" if deleted else "brief_cleanup_debt",
+        "telegram_message_id": new_id, "superseded_telegram_message_id": prior_id,
+        "cleanup_failure_class": "" if deleted else str((cleanup or {}).get("status") or "unconfirmed")})
+    cleanup_recorded = isinstance(cleanup_receipt, dict) and cleanup_receipt.get("success") is True
+    return {"success": cleanup_recorded,
+        "status": "brief_replaced" if deleted else "brief_replaced_cleanup_debt",
+        **({"status": "brief_cleanup_receipt_unavailable"} if not cleanup_recorded else {}),
+        "provider_delivery_confirmed": True, "mission_id": mission_id,
+        "card_mission_id": card_mission_id, "telegram_message_id": new_id,
+        "previous_telegram_message_id": prior_id,
+        "telegram_sends": sends, "telegram_edits": 0, "telegram_deletes": int(deleted)}
+
+
 def _deliver_visible_notification(parsed, payload, text, mission_id, card_mission_id,
                                    card_id, text_sha, store, sender, *, specialist,
                                    prior_edits):
@@ -659,3 +818,19 @@ def _edit_telegram(chat_id, message_id, text, reply_markup=None):
         return {"success": False, "status": "telegram_edit_ambiguous"}
     return {"success": response.get("ok") is True,
             "telegram_message_id": str(((response.get("result") or {}).get("message_id") if isinstance(response, dict) else "") or "")}
+
+
+def _delete_telegram(chat_id, message_id):
+    from modules.sales.sam_live_stock_launch_control import _telegram_api
+    token = str(os.environ.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or
+                os.environ.get("OOM_SAKKIE_TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        return {"success": False, "status": "telegram_token_not_configured"}
+    try:
+        response = _telegram_api(token, "deleteMessage", {
+            "chat_id": str(chat_id), "message_id": str(message_id)})
+    except Exception:
+        return {"success": False, "status": "telegram_delete_ambiguous"}
+    return {"success": isinstance(response, dict) and response.get("ok") is True,
+            "status": "telegram_message_deleted" if isinstance(response, dict)
+            and response.get("ok") is True else "telegram_delete_unconfirmed"}

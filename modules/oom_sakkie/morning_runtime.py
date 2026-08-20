@@ -62,6 +62,30 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
                     hour=7, minute=0, second=0, microsecond=0).isoformat()}
 
 
+def reassess_current_brief_after_owner_answer(parsed, *, environ=None, deliver=None,
+                                              store=None, herd_loader=None,
+                                              rootline_loader=None,
+                                              litter_loader=None, sales_loader=None,
+                                              replace_brief=None):
+    """Rebuild the shared current projection after one durable complete answer."""
+    source = environ if environ is not None else os.environ
+    owner = str(parsed.get("telegram_user_id") or "").strip()
+    chat = str(parsed.get("telegram_chat_id") or "").strip()
+    now = _aware(_provider_time(parsed.get("provider_timestamp")))
+    if not owner or owner != chat or owner != _configured_owner(source):
+        return _safe("current_brief_owner_binding_denied", success=False)
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
+    results, litters, sales = _load_inputs(owner, now, source,
+        herd_loader=herd_loader, rootline_loader=rootline_loader,
+        litter_loader=litter_loader, sales_loader=sales_loader)
+    return run_daily_farm_manager(owner_user_id=owner, chat_id=chat,
+        specialist_results=results, litter_rows=litters, sale_rows=sales,
+        deliver=deliver or deliver_family_result, store=store, now=now,
+        language=str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en"),
+        replace_brief=replace_brief)
+
+
 def start_production_morning_runtime(*, environ=None, runner=None):
     """Start one daemon per process; durable claims arbitrate scaled workers."""
     global _STARTED
@@ -133,10 +157,12 @@ def _load_inputs(owner, now, source, *, herd_loader, rootline_loader,
 
 
 def _escalate_failure(owner, now, deliver, exc, *, store=None):
-    from modules.oom_sakkie.daily_farm_manager import daily_farm_manager_store
+    from modules.oom_sakkie.daily_farm_manager import (
+        daily_farm_manager_store, _owner_projection_identity)
     store = store or daily_farm_manager_store
     daily_identity = f"OOM-DAILY-FARM-MANAGER-{now.astimezone(SAST).date().isoformat()}"
-    claim_id = daily_identity + ":DELIVERY"
+    projection_identity = _owner_projection_identity(daily_identity, owner, owner)
+    claim_id = projection_identity + ":DELIVERY"
     claim = store("claim_daily", claim_id, {
         "daily_identity": daily_identity,
         "status": "failure_detected",
@@ -162,7 +188,7 @@ def _escalate_failure(owner, now, deliver, exc, *, store=None):
                          "No farm or hardware action was taken. The incident is retained for recovery."),
               "hardware_commands": 0, "writes_farm_data": False}
     delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
-                       mission_id=identity, card_mission_id=identity)
+                       mission_id=identity, card_mission_id=daily_identity)
     confirmed = bool((delivery or {}).get("success")
                      and (delivery or {}).get("telegram_message_id"))
     store("record_daily", claim_id + ":OUTCOME", {
@@ -201,3 +227,10 @@ def _truthy(value):
 
 def _aware(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _provider_time(value):
+    try:
+        return datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc)

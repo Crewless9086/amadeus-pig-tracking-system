@@ -584,7 +584,27 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     manager_reply, manager_reply_status = handle_manager_question_reply(
         parsed, gateway_authority, semantic, question=active_manager_question)
     if manager_reply.get("handled"):
-        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+        refreshed = None
+        complete_receipt = (manager_reply.get("success") is True
+            and (manager_reply.get("status") == "manager_question_reply_recorded"
+                 or manager_reply.get("manager_question_status") ==
+                    "manager_question_reply_recorded"))
+        if complete_receipt:
+            try:
+                from modules.oom_sakkie.morning_runtime import (
+                    reassess_current_brief_after_owner_answer)
+                refreshed = reassess_current_brief_after_owner_answer(
+                    parsed, environ=environ)
+            except Exception as exc:
+                refreshed = {"success": False,
+                    "status": "current_brief_reassessment_contained",
+                    "failure_class": exc.__class__.__name__,
+                    "telegram_sends": 0, "telegram_edits": 0}
+            manager_reply = {**manager_reply, "answer": "",
+                "suppress_owner_delivery": True,
+                "rolling_current_brief": refreshed}
+        delivery = (refreshed if refreshed is not None else
+                    {"success": True, "telegram_sends": 0, "telegram_edits": 0,
                      "status": "owner_delivery_suppressed_replay"}
                     if manager_reply.get("suppress_owner_delivery") else
                     deliver_family_result(parsed, manager_reply,
