@@ -405,6 +405,24 @@ observe-only activation authority bound to this exact revision, manifest,
 receipt, stop digest, task/action identity and enabled audit channel; no prior
 epoch or authority may be reused.
 
+Charl explicitly authorized one fresh observe-only activation bound to staged
+revision `86fb87a39fd92fb430f683fb1b10c935cbdd0d8f`, validation receipt
+`6416c7644dfdbfc6e8ee3eda1013fe516ae4b2576f8c4a199bfdb4dd336845ca`,
+enabled Task Scheduler Operational audit channel, preserved governed rollback,
+exact task/action/provider instance ancestry and terminal-independent continuity
+acceptance. Fresh Control Tower preflight reconfirmed exact main/staged equality,
+`enabled:true`, disabled watchdog and no active staging/activation locks.
+
+A visible bounded CORE activation terminal was launched as parent PID 79356 /
+Codex PID 80168. It may create exactly one new immutable short-lived epoch and
+activate only through the governed provider rail in observe-only mode. Any
+stale, changed, incomplete, ambiguous or failed evidence requires immediate
+authenticated containment, stop restoration, task disablement, durable
+reconciliation and permanent no-retry consumption. No farm, customer, Telegram,
+n8n, Sheets or hardware business authority is included. Lifecycle is `WORKING /
+FRESH_ACTIVATION_AUTHORIZED / PROVIDER_CONTINUITY_PROOF_IN_PROGRESS`; launch
+process identity alone is not operational proof.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
