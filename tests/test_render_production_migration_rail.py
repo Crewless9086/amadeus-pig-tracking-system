@@ -25,8 +25,9 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         ])
         self.assertEqual(list(ALLOWLIST), sorted(ALLOWLIST, key=lambda row: row.migration_id))
         for row in ALLOWLIST:
-            raw = (Path("supabase/migrations") / row.filename).read_bytes()
-            self.assertEqual(hashlib.sha256(raw).hexdigest(), row.sha256)
+            sql = (Path("supabase/migrations") / row.filename).read_text(encoding="utf-8")
+            canonical = sql.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+            self.assertEqual(hashlib.sha256(canonical).hexdigest(), row.sha256)
 
     def test_render_identity_is_mandatory_and_exact(self):
         with self.assertRaisesRegex(RuntimeError, "render_runtime_required"):

@@ -35,7 +35,7 @@ ALLOWLIST = (
     AllowedMigration(
         migration_id="202608200001_add_sales_financial_disposition",
         filename="202608200001_add_sales_financial_disposition.sql",
-        sha256="7b4a55e5543aa02c770bd1734cd47e86631272055d46219e93276b3409acad3e",
+        sha256="626808c3f6d4e4ee2862cfd78bc6a3bae5f05992006559618d5fb7740db8c920",
     ),
 )
 
@@ -95,10 +95,12 @@ def _load_sql(item: AllowedMigration) -> str:
     expected_parent = (REPO_ROOT / "supabase" / "migrations").resolve()
     if path.parent != expected_parent or path.name != item.filename:
         raise RuntimeError("allowlisted_migration_path_invalid")
-    raw = path.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != item.sha256:
+    # Git's canonical blob uses LF. Normalize checkout newline materialization
+    # before binding so Windows review and Render/Linux execute identical SQL.
+    sql = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    if hashlib.sha256(sql.encode("utf-8")).hexdigest() != item.sha256:
         raise RuntimeError(f"allowlisted_migration_checksum_mismatch:{item.migration_id}")
-    return raw.decode("utf-8")
+    return sql
 
 
 def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
