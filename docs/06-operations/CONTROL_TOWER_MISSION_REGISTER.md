@@ -423,6 +423,15 @@ n8n, Sheets or hardware business authority is included. Lifecycle is `WORKING /
 FRESH_ACTIVATION_AUTHORIZED / PROVIDER_CONTINUITY_PROOF_IN_PROGRESS`; launch
 process identity alone is not operational proof.
 
+The existing shared-attention PR #1127 reconciled current main without opening a
+duplicate lineage. Exact head `57a61ac7` is clean against `86fb87a3`; 52 focused
+tests, 753 broad Oom/SAM/BEACON tests with seven skips, 235 incoming-overlap
+tests, JavaScript syntax, browser smoke, Brain Guard, independent review and all
+three hosted CI lanes passed. Lifecycle is `REVIEW_HOLD /
+AUTHENTICATED_OWNER_PREVIEW_REQUIRED`; source is not merged or deployed. The
+released reconciliation host was closed. Automatic promotion remains exact-head
+desktop/mobile visual approval when browser inventory becomes available.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
