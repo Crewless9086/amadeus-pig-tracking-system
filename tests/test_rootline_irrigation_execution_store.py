@@ -269,6 +269,20 @@ def test_auxiliary_consumption_is_atomic_without_blocking_bc_claim(monkeypatch):
     assert sum(item.get("created") is True for item in results)==1
     assert sorted(item.get("status") for item in results)==[
         "claimed","eligibility_already_consumed"]
+    winner=1 if results[0].get("created") else 2
+    auxiliary=f"ROOTLINE-AUX-{suffix}-{winner}"
+    with psycopg.connect(url) as connection:
+        for event_id,execution,action,body in (
+            (f"AUX-TERMINAL-{suffix}",auxiliary,"record_auxiliary_completed",
+             {"action":"record_auxiliary_completed","execution_id":auxiliary,
+              "shutdown_verified":True}),
+            (f"PARENT-TERMINAL-{suffix}",parent,"record_completed",
+             {"action":"record_completed","execution_id":parent,"job_id":job,
+              "shutdown_verified":True})):
+            connection.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+                values (%s,%s,'rootline_irrigation_execution',%s,%s::jsonb)""",
+                (event_id,execution,action,json.dumps({"rootline_execution":body})))
 
 
 @pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),
