@@ -20,8 +20,15 @@ const paymentDateInput = document.getElementById("sale_payment_date");
 const paymentPreviewButton = document.getElementById("sale_payment_preview_button");
 const paymentConfirmButton = document.getElementById("sale_payment_confirm_button");
 const paymentPreviewBox = document.getElementById("sale_payment_preview");
+const charityForm = document.getElementById("sale_charity_form");
+const charityReasonInput = document.getElementById("sale_charity_reason");
+const charityCorrectionInput = document.getElementById("sale_charity_correction_reason");
+const charityPreviewButton = document.getElementById("sale_charity_preview_button");
+const charityConfirmButton = document.getElementById("sale_charity_confirm_button");
+const charityPreviewBox = document.getElementById("sale_charity_preview");
 let loadedSale = null;
 let pendingPaymentPreview = null;
+let pendingCharityPreview = null;
 let paymentPreviewGeneration = 0;
 
 function showMessage(message, type = "error") {
@@ -178,8 +185,10 @@ async function loadSaleDetail() {
       ["Payment Status", sale.payment_status],
       ["Payment Method", sale.payment_method],
       ["Payment Date", dateOnly(sale.payment_date)],
-      ["Settlement received", sale.payment_status === "Paid" ? "Yes" : "No"],
-      ["Fully reconciled", sale.sale_status === "Completed" && sale.payment_status === "Paid" ? "Yes" : "No"],
+      ["Financial disposition", sale.financial_disposition || "Commercial"],
+      ["Amount receivable", money(sale.receivable_total ?? sale.net_settlement_payable ?? sale.net_total)],
+      ["Settlement received", sale.payment_status === "Paid" ? "Yes" : sale.payment_status === "Not_Applicable" ? "Not applicable" : "No"],
+      ["Fully reconciled", sale.sale_status === "Completed" && ["Paid", "Not_Applicable"].includes(sale.payment_status) ? "Yes" : "No"],
       ["Gross Total", money(sale.gross_total)],
       ["Deductions", money(sale.deductions_total)],
       ["Net Total", money(sale.net_total)],
@@ -198,8 +207,11 @@ async function loadSaleDetail() {
 
 function updatePaymentPanel(sale) {
   if (!paymentForm) return;
-  const canRecord = sale.sale_status !== "Cancelled" && sale.payment_status !== "Paid";
+  const canRecord = sale.sale_status !== "Cancelled" && !["Paid", "Not_Applicable"].includes(sale.payment_status);
   paymentForm.classList.toggle("hidden", !canRecord);
+  if (charityForm) {
+    charityForm.classList.toggle("hidden", !canRecord || sale.sale_stream !== "Livestock" || sale.sale_status !== "Completed");
+  }
   if (!canRecord) return;
   const due = sale.net_settlement_payable ?? sale.net_total;
   const currentReceived = Number(sale.received_total || 0);
@@ -207,6 +219,46 @@ function updatePaymentPanel(sale) {
     paymentAmountInput.value = Math.max(0, Number(due) - currentReceived).toFixed(2);
   }
   paymentMethodInput.value = sale.payment_method === "Cash" ? "Cash" : "EFT";
+}
+
+async function previewCharity(event) {
+  event.preventDefault();
+  pendingCharityPreview = null;
+  charityConfirmButton.classList.add("hidden");
+  const payload = { reason: charityReasonInput.value.trim(),
+    correction_reason: charityCorrectionInput.value.trim() };
+  charityPreviewButton.disabled = true;
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/charitable-disposition/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error((data.errors || []).join(" ") || data.status || "Could not preview charitable disposition.");
+    charityPreviewBox.textContent = data.preview.human_readable;
+    charityPreviewBox.classList.remove("hidden");
+    pendingCharityPreview = { payload, digest: data.preview_digest, token: data.confirmation_token };
+    charityConfirmButton.classList.remove("hidden");
+  } catch (error) { showMessage(error.message); }
+  finally { charityPreviewButton.disabled = false; }
+}
+
+async function confirmCharity() {
+  if (!pendingCharityPreview) return;
+  charityConfirmButton.disabled = true;
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/charitable-disposition/confirm`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        ...pendingCharityPreview.payload, confirmed_preview_digest: pendingCharityPreview.digest,
+        confirmation_token: pendingCharityPreview.token,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error((data.errors || []).join(" ") || data.status || "Could not record charitable disposition.");
+    pendingCharityPreview = null;
+    showMessage("Charitable giveaway recorded with no payment due.", "success");
+    await loadSaleDetail();
+  } catch (error) { showMessage(error.message); }
+  finally { charityConfirmButton.disabled = false; }
 }
 
 function paymentRequestPayload() {
@@ -313,6 +365,8 @@ if (exitConfirmForm) {
 }
 if (paymentForm) paymentForm.addEventListener("submit", previewSettlement);
 if (paymentConfirmButton) paymentConfirmButton.addEventListener("click", confirmSettlement);
+if (charityForm) charityForm.addEventListener("submit", previewCharity);
+if (charityConfirmButton) charityConfirmButton.addEventListener("click", confirmCharity);
 [paymentAmountInput, paymentMethodInput, paymentDateInput].forEach((element) => {
   if (element) element.addEventListener("input", invalidateSettlementPreview);
 });

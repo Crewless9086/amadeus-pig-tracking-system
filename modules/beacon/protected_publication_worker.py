@@ -135,6 +135,13 @@ class PostgresProtectedPublicationStore:
               where status='claimed' and claimed_at < %s - interval '5 minutes'""",
               (json.dumps({"status":"worker_restart_after_claim_ambiguous",
                            "automatic_retry_allowed":False}),now,now,now))
+            # Use the same manager-row -> protected-claim lock order as manager
+            # reconciliation.  This makes current-generation validation and
+            # consumer creation one serialized transaction.
+            cur.execute("""select case_id,generation
+              from app_private.oom_manager_cases
+              where specialist='BEACON' order by case_id for update""")
+            cur.fetchall()
             cur.execute("""select c.callback_token,c.action_kind,c.evidence_generation,
                 c.preview_payload,c.status,c.result_payload
               from app_private.oom_protected_action_claims c
@@ -143,6 +150,10 @@ class PostgresProtectedPublicationStore:
              where c.action_kind='beacon_campaign_review' and c.status='completed'
                and c.result_payload->>'status'='beacon_campaign_review_approved'
                and p.callback_token is null
+               and (c.provider_message_id not like 'scheduled:%' or exists (
+                 select 1 from app_private.oom_manager_cases m
+                 where m.specialist='BEACON'
+                   and c.provider_message_id=('scheduled:' || m.case_id || ':G' || m.generation::text)))
              order by c.completed_at,c.callback_token for update of c skip locked limit 1""")
             row = cur.fetchone()
             if not row: return None

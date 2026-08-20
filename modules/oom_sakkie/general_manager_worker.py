@@ -129,9 +129,13 @@ class PostgresManagerCaseStore:
             connection = self.connect_factory()
             with connection:
                 with connection.cursor() as cur:
-                    for raw in candidates:
-                        candidate = normalize_candidate(raw, now=now)
+                    normalized_candidates = sorted(
+                        (normalize_candidate(raw, now=now) for raw in candidates),
+                        key=lambda item: item["case_id"])
+                    for candidate in normalized_candidates:
                         result = self._reconcile(cur, candidate, now)
+                        if candidate["specialist"] == "BEACON":
+                            self._retire_stale_beacon_claims(cur, candidate["dedupe_key"], now)
                         created += result == "created"
                         changed += result == "changed"
                         replayed += result == "replayed"
@@ -259,6 +263,17 @@ class PostgresManagerCaseStore:
             from app_private.oom_manager_cases where dedupe_key=%s for update""",
                     (candidate["dedupe_key"],))
         prior = cur.fetchone()
+        if (prior and candidate["specialist"] == "BEACON"
+                and prior[0] != candidate["evidence_digest"]):
+            current_provider = f"scheduled:{candidate['case_id']}:G{int(prior[1])}"
+            cur.execute("""select 1
+                from app_private.beacon_protected_publication_consumers p
+                join app_private.oom_protected_action_claims c
+                  on c.callback_token=p.callback_token
+                where p.status='claimed' and c.action_kind='beacon_campaign_review'
+                  and c.provider_message_id=%s limit 1""", (current_provider,))
+            if cur.fetchone():
+                return "deferred"
         if (prior and prior[4] and prior[4] >= now
                 and str(prior[3] or "") != str(lease_owner or "")):
             return "deferred"
@@ -300,6 +315,38 @@ class PostgresManagerCaseStore:
         event_case = {**candidate, "generation": generation}
         self._event(cur, event_case, "created" if not prior else "evidence_changed", now)
         return "created" if not prior else "changed"
+
+    @staticmethod
+    def _retire_stale_beacon_claims(cur, dedupe_key, now):
+        """Make every older scheduled BEACON card permanently non-actionable."""
+        cur.execute("""select case_id,generation from app_private.oom_manager_cases
+            where dedupe_key=%s and specialist='BEACON' for update""", (dedupe_key,))
+        current = cur.fetchone()
+        if not current:
+            raise ManagerCaseError("beacon_manager_case_missing_during_claim_retirement")
+        current_provider = f"scheduled:{current[0]}:G{int(current[1])}"
+        case_provider_pattern = f"scheduled:{current[0]}:G%"
+        reason = json.dumps({
+            "status": "beacon_campaign_claim_superseded_by_current_manager_generation",
+            "current_manager_case_id": str(current[0]),
+            "current_generation": int(current[1]),
+            "invalidated_at": now.isoformat(),
+            "publishes": False,
+            "spends_money": False,
+        }, sort_keys=True)
+        cur.execute("""update app_private.oom_protected_action_claims c
+            set status='changed',
+                result_payload=coalesce(result_payload,'{}'::jsonb) || %s::jsonb,
+                completed_at=coalesce(completed_at,%s)
+            where c.action_kind='beacon_campaign_review'
+              and c.provider_message_id like 'scheduled:%%'
+              and c.provider_message_id like %s
+              and c.provider_message_id<>%s
+              and c.status in ('active','executing','completed')
+              and not exists (
+                select 1 from app_private.beacon_protected_publication_consumers p
+                where p.callback_token=c.callback_token)""",
+            (reason, now, case_provider_pattern, current_provider))
 
     def _finish_claim(self, case, outcome, now, cycle_id):
         confirmed = bool(outcome.get("success") is True
@@ -360,6 +407,8 @@ class PostgresManagerCaseStore:
                     return None
                 self._reconcile(cur, candidate, now, lease_owner=cycle_id,
                     replace_delegated_owner=claimed.get("status") != "delegated")
+                if candidate["specialist"] == "BEACON":
+                    self._retire_stale_beacon_claims(cur, candidate["dedupe_key"], now)
                 cur.execute("""select case_id,dedupe_key,specialist,urgency,status,evidence_digest,
                         evidence_refs,unknowns,summary,next_action,next_reassessment_at,generation,
                         last_delivery_digest

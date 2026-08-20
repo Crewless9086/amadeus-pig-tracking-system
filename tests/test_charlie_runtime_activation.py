@@ -807,6 +807,160 @@ class RuntimeActivationTests(unittest.TestCase):
         with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_identity_changed"):
             controller.ensure_audit_channel_enabled()
 
+    def test_windows_controller_already_enabled_does_not_mutate(self):
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, json.dumps({
+                "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                "enabled": True,
+            }), "")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        self.assertFalse(controller.ensure_audit_channel_enabled())
+        self.assertFalse(any(call[0] == "wevtutil" for call in calls))
+
+    def test_windows_controller_classifies_audit_access_denied(self):
+        states = iter([False, False])
+
+        def runner(command, **_kwargs):
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            return subprocess.CompletedProcess(command, 5, "", "Access is denied.")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_access_denied"):
+            controller.ensure_audit_channel_enabled()
+        self.assertTrue(controller.audit_mutation_attempted)
+
+    def test_windows_controller_classifies_audit_provider_error(self):
+        states = iter([False, False])
+
+        def runner(command, **_kwargs):
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            return subprocess.CompletedProcess(command, 15001, "", "provider failure")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_provider_error"):
+            controller.ensure_audit_channel_enabled()
+
+    def test_windows_controller_classifies_audit_provider_launch_error(self):
+        states = iter([False, False])
+
+        def runner(command, **_kwargs):
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            raise OSError("wevtutil unavailable")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_provider_error"):
+            controller.ensure_audit_channel_enabled()
+
+    def test_windows_controller_classifies_permission_error_as_access_denied(self):
+        states = iter([False, False])
+
+        def runner(command, **_kwargs):
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            error = PermissionError("denied")
+            error.winerror = 5
+            raise error
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_access_denied"):
+            controller.ensure_audit_channel_enabled()
+
+    def test_windows_controller_classifies_hresult_access_denied(self):
+        states = iter([False, False])
+
+        def runner(command, **_kwargs):
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            return subprocess.CompletedProcess(command, -2147024891, "", "denied")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_access_denied"):
+            controller.ensure_audit_channel_enabled()
+
+    def test_windows_controller_rejects_audit_readback_mismatch(self):
+        states = iter([False, False, False])
+
+        def runner(command, **_kwargs):
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_readback_mismatch"):
+            controller.ensure_audit_channel_enabled()
+
+    def test_windows_controller_normalizes_audit_readback_provider_error(self):
+        reads = 0
+
+        def runner(command, **_kwargs):
+            nonlocal reads
+            if command[0] == "powershell":
+                reads += 1
+                if reads == 3:
+                    raise subprocess.TimeoutExpired(command, 30)
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": False,
+                }), "")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_provider_error"):
+            controller.ensure_audit_channel_enabled()
+
+    def test_windows_controller_reconciles_enabled_channel_to_bound_prior(self):
+        calls = []
+        states = iter([False, True, True, False])
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            if command[0] == "powershell":
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "log_name": "Microsoft-Windows-TaskScheduler/Operational",
+                    "enabled": next(states),
+                }), "")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        controller = WindowsExactTaskController(runner=runner)
+        controller.bind_audit_channel_state(controller.read_audit_channel_state())
+        self.assertTrue(controller.reconcile_audit_channel_state())
+        self.assertIn([
+            "wevtutil", "sl", "Microsoft-Windows-TaskScheduler/Operational", "/e:false",
+        ], calls)
+
     def test_prepare_rechecks_reconciliation_lane_after_plan(self):
         plan = self._plan()
         (self.state / "activation-reconciliation.lock").write_text(
@@ -827,6 +981,36 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(controller.audit_enabled, [True])
         self.assertEqual(controller.audit_restored, [])
 
+    def test_audit_access_denied_contains_before_provider_launch(self):
+        class AccessDeniedController(Controller):
+            def ensure_audit_channel_enabled(self):
+                self.audit_mutation_attempted = True
+                raise ActivationError("task_scheduler_audit_access_denied")
+
+        plan = self._plan()
+        controller = AccessDeniedController()
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_access_denied"):
+            prepare_activation(plan, task_controller=controller,
+                               task_reader=lambda: self.task, git_runner=self.git)
+        self.assertEqual(controller.enabled, [])
+        self.assertEqual(controller.audit_restored, [])
+        self.assertTrue(self.stop.exists())
+
+    def test_audit_provider_error_contains_before_provider_launch(self):
+        class ProviderErrorController(Controller):
+            def ensure_audit_channel_enabled(self):
+                self.audit_mutation_attempted = True
+                raise ActivationError("task_scheduler_audit_provider_error")
+
+        plan = self._plan()
+        controller = ProviderErrorController()
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_provider_error"):
+            prepare_activation(plan, task_controller=controller,
+                               task_reader=lambda: self.task, git_runner=self.git)
+        self.assertEqual(controller.enabled, [])
+        self.assertEqual(controller.audit_restored, [])
+        self.assertTrue(self.stop.exists())
+
     def test_post_mutation_readback_failure_contains_without_disabling_audit(self):
         class ReadbackFailureController(Controller):
             def ensure_audit_channel_enabled(self):
@@ -840,6 +1024,24 @@ class RuntimeActivationTests(unittest.TestCase):
             prepare_activation(plan, task_controller=controller,
                                task_reader=lambda: self.task, git_runner=self.git)
         self.assertEqual(controller.audit_restored, [])
+        self.assertEqual(controller.enabled, [])
+        self.assertTrue(self.stop.exists())
+
+    def test_post_mutation_readback_provider_error_contains_without_disabling_audit(self):
+        class ReadbackProviderErrorController(Controller):
+            def ensure_audit_channel_enabled(self):
+                self.audit_mutation_attempted = True
+                self.audit_state["enabled"] = True
+                raise ActivationError("task_scheduler_audit_provider_error")
+
+        plan = self._plan()
+        controller = ReadbackProviderErrorController()
+        with self.assertRaisesRegex(ActivationError, "task_scheduler_audit_provider_error"):
+            prepare_activation(plan, task_controller=controller,
+                               task_reader=lambda: self.task, git_runner=self.git)
+        self.assertEqual(controller.enabled, [])
+        self.assertEqual(controller.audit_restored, [])
+        self.assertTrue(controller.audit_state["enabled"])
         self.assertTrue(self.stop.exists())
 
     def test_provider_start_failure_is_recorded_without_terminal_spawn(self):

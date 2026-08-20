@@ -177,7 +177,7 @@ function renderSalesTotals(rows) {
     if (!totals[key]) return;
     if (item.sale_status === "Cancelled") return;
     totals[key].count += 1;
-    totals[key].value += Number(item.net_total || 0);
+    totals[key].value += Number(item.receivable_total ?? item.net_total ?? 0);
     totals[key].pigs += Number(item.pig_count || item.item_count || 0);
   });
 
@@ -224,8 +224,8 @@ function renderTransactions(rows) {
         <td><span class="${statusClass}">${item.sale_status || "-"}</span></td>
         <td><span class="${statusClass}">${item.payment_status || "-"}</span></td>
         <td>
-          <strong>${money(item.net_total)}</strong>
-          <span class="table-subtext">${item.item_count ?? item.pig_count ?? "-"} item${Number(item.item_count || item.pig_count) === 1 ? "" : "s"}</span>
+          <strong>${money(item.receivable_total ?? item.net_total)}</strong>
+          <span class="table-subtext">${item.financial_disposition === "Charitable_Giveaway" ? `Charity; list value ${money(item.net_total)}` : `${item.item_count ?? item.pig_count ?? "-"} item${Number(item.item_count || item.pig_count) === 1 ? "" : "s"}`}</span>
         </td>
       </tr>
     `;

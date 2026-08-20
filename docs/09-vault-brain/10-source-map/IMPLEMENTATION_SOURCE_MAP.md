@@ -37,7 +37,11 @@
   consumed instance record, and consumed-plus-pending state is routed to
   explicit recovery before any repeated provider start;
   focused fail-closed coverage is in
-  `tests/test_charlie_runtime_activation.py`. These source references grant no
+  `tests/test_charlie_runtime_activation.py`. Native Windows access-denied
+  forms are an explicit OS-authority blocker distinct from provider/tool or
+  readback failure; no source fallback elevates the controller or bypasses
+  exact audit readback. These
+  source references grant no
   staging, activation, process, mission-pickup or release authority.
 
 - Source contract: `modules/charlie/shadow_control_tower.py`.
@@ -781,6 +785,13 @@ Current built Supabase-backed surface:
   `modules/oom_sakkie/protected_action_runtime.py` rechecks the exact digest
   before invoking the sole writer; `/api/oom-sakkie/sales/payment-preview` is
   the strict-owner deployed-runtime entry and does not itself record money.
+- zero-consideration correction: `modules/sales/sales_financial_disposition.py`
+  owns the strict owner-admin digest-bound preview/confirm action for an
+  existing completed Livestock sale. Migration
+  `202608200001_add_sales_financial_disposition.sql` separates preserved list
+  value from receivable truth. The sale detail and sales dashboard project
+  R0.00 receivable and `Not_Applicable` payment without creating a duplicate
+  sale, document, receipt, customer message or animal-transfer effect.
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 
