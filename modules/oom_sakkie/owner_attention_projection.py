@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from datetime import timedelta
 import hashlib
 import re
 from typing import Any, Callable, Iterable, Mapping
@@ -15,9 +16,12 @@ from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
 
 
-VERSION = "oom_sakkie_owner_attention_projection.v2"
+VERSION = "oom_sakkie_owner_attention_projection.v3"
 LIFECYCLES = frozenset({"open", "resolved", "superseded"})
 TASK_CLASSES = frozenset({"status_reconciliation", "physical_action_due", "informational_watch", "protected_decision"})
+ATTENTION_GROUPS = (
+    "needs_you", "farm_work_ready", "oom_sakkie_checking", "watch", "recently_completed",
+)
 PRIORITY_ORDER = {"critical": 0, "urgent": 1, "due": 2, "planned": 3, "watch": 4}
 SEMANTIC_EMOJI = {
     "status_reconciliation": "🔄",
@@ -48,6 +52,11 @@ class OwnerAttentionItem:
     detail_target: str
     lifecycle: str
     semantic_emoji: str
+    attention_group: str
+    owner_action_eligible: bool
+    owner_urgency: str
+    operational_status: str
+    assigned_to: str
 
 
 def build_owner_attention_projection(
@@ -56,6 +65,8 @@ def build_owner_attention_projection(
 ) -> dict[str, Any]:
     """Normalize existing specialist candidates into one stable ordered view."""
     now = _aware(generated_at or datetime.now(timezone.utc))
+    prior_case_rows = [dict(row) for row in prior_cases]
+    prior_by_key = {str(row.get("dedupe_key") or ""): row for row in prior_case_rows}
     current_by_key: dict[str, Mapping[str, Any]] = {}
     source_candidate_count = 0
     for candidate in candidates:
@@ -64,13 +75,25 @@ def build_owner_attention_projection(
         prior = current_by_key.get(key)
         if prior is not None and dict(prior) != dict(candidate):
             raise ValueError("conflicting owner-attention candidates share one stable identity")
-        current_by_key[key] = candidate
+        prior_case = prior_by_key.get(key) or {}
+        prior_status = str(prior_case.get("operational_status") or "").lower()
+        prior_lifecycle = str(prior_case.get("lifecycle") or "").lower()
+        terminal_lifecycle = (
+            prior_lifecycle if prior_lifecycle in {"resolved", "superseded"} else "resolved"
+        ) if prior_status in {"completed", "contained", "resolved", "superseded", "stale"} else None
+        current_by_key[key] = {
+            **dict(candidate),
+            **({"operational_status": prior_case.get("operational_status"),
+                "assigned_worker_id": prior_case.get("assigned_worker_id"),
+                **({"lifecycle": terminal_lifecycle} if terminal_lifecycle else {})}
+               if prior_case.get("operational_status") else {}),
+        }
     unavailable_specialists = {
         key.rsplit(":", 1)[-1].upper()
         for key in current_by_key if key.startswith("runtime:collector:")
     }
     items = [_item(candidate, now) for candidate in current_by_key.values()]
-    for prior in prior_cases:
+    for prior in prior_case_rows:
         key = _required(prior.get("dedupe_key"), "dedupe_key")
         if key in current_by_key:
             continue
@@ -90,7 +113,12 @@ def build_owner_attention_projection(
     ))
     lifecycle_items = [asdict(item) for item in ordered]
     current = [item for item in lifecycle_items if item["lifecycle"] == "open"]
-    material_digest = _material_digest(current)
+    primary = [item for item in current if item["owner_action_eligible"]]
+    groups = {name: [] for name in ATTENTION_GROUPS}
+    for item in lifecycle_items:
+        groups[item["attention_group"]].append(item)
+    material_digest = _material_digest(primary)
+    context_digest = _material_digest(current)
     material_changed = (None if prior_material_digest is None
                         else prior_material_digest != material_digest)
     return {
@@ -100,22 +128,27 @@ def build_owner_attention_projection(
         "ordered_work_ids": [item["work_id"] for item in current],
         "items": current,
         "lifecycle_items": lifecycle_items,
-        "total_count": len(current),
-        "top_items": current[:3],
-        "hidden_count": max(0, len(current) - 3),
+        # total_count is deliberately the primary owner-attention count. Agent
+        # reconciliation and useful context remain visible without becoming
+        # owner work.
+        "total_count": len(primary),
+        "open_context_count": len(current),
+        "top_items": primary[:3],
+        "hidden_count": max(0, len(primary) - 3),
+        "groups": groups,
+        "group_counts": {name: len(values) for name, values in groups.items()},
         "measurement": {
             "source_message_count": source_candidate_count,
             "duplicate_message_count": source_candidate_count - len(current_by_key),
             "owner_visible_message_count": len(current),
-            "owner_work_item_count": sum(
-                item["task_class"] in {"protected_decision", "physical_action_due"}
-                for item in current),
+            "owner_work_item_count": len(primary),
             "baseline_material_digest": prior_material_digest,
             "after_material_digest": material_digest,
             "material_changed": material_changed,
-            "new_message_eligible": bool(current) and material_changed is not False,
+            "new_message_eligible": bool(primary) and material_changed is not False,
         },
         "material_digest": material_digest,
+        "context_digest": context_digest,
         "view_all_target": "/owner-attention",
         "writes_performed": 0,
         "authority": "read_only_projection",
@@ -136,13 +169,20 @@ def _load_prior_cases(now: datetime) -> list[dict[str, Any]]:
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
             cur.execute("""select dedupe_key,specialist,urgency,status,evidence_refs,unknowns,
-                    summary,next_action,updated_at
+                    summary,next_action,updated_at,assigned_worker_id,next_reassessment_at
                 from app_private.oom_manager_cases
-                order by updated_at desc,dedupe_key""")
+                where status in ('open','delegated','waiting_reassessment','exception')
+                   or updated_at >= %s
+                order by updated_at desc,dedupe_key""",
+                (now - timedelta(days=7),))
             return [{"dedupe_key": row[0], "specialist": row[1], "urgency": row[2],
-                     "lifecycle": (row[3] if row[3] in LIFECYCLES else "open"),
+                     "lifecycle": ("resolved" if row[3] in {"completed", "contained"}
+                                   else (row[3] if row[3] in LIFECYCLES else "open")),
                      "evidence_refs": row[4] or [f"manager_case:{row[0]}"],
-                     "unknowns": row[5] or [], "summary": row[6], "next_action": row[7]}
+                     "unknowns": row[5] or [], "summary": row[6], "next_action": row[7],
+                     "operational_status": row[3], "assigned_worker_id": row[9],
+                     "next_reassessment_at": row[10].isoformat() if row[10] else None,
+                     "updated_at": row[8].isoformat() if row[8] else None}
                     for row in cur.fetchall()]
 
 
@@ -164,6 +204,11 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
     summary = _required(raw.get("summary"), "summary")
     display_title = (summary if summary.casefold().startswith(primary_label.casefold())
                      else f"{primary_label} — {summary}")
+    operational_status = str(raw.get("operational_status") or "open").strip().lower()
+    attention_group, eligible = _attention_eligibility(
+        raw, task_class=task_class, lifecycle=lifecycle,
+        operational_status=operational_status, priority=priority)
+    assigned_to = _assigned_to(raw, specialist, attention_group)
     return OwnerAttentionItem(
         work_id="attn_" + hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:24],
         source_key=source_key,
@@ -185,7 +230,47 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         detail_target=_detail_target(source_key, specialist),
         lifecycle=lifecycle,
         semantic_emoji=SEMANTIC_EMOJI[task_class],
+        attention_group=attention_group,
+        owner_action_eligible=eligible,
+        owner_urgency=(priority if eligible else "none"),
+        operational_status=operational_status,
+        assigned_to=assigned_to,
     )
+
+
+def _attention_eligibility(raw: Mapping[str, Any], *, task_class: str, lifecycle: str,
+                           operational_status: str, priority: str) -> tuple[str, bool]:
+    """Derive owner eligibility only from existing canonical case semantics."""
+    if lifecycle != "open" or operational_status in {"completed", "contained", "resolved", "superseded", "stale"}:
+        return "recently_completed", False
+    agent_owned = operational_status in {"delegated", "waiting_reassessment"}
+    if agent_owned:
+        return "oom_sakkie_checking", False
+    if (task_class == "protected_decision"
+            and raw.get("owner_question_eligible") is True):
+        return "needs_you", True
+    if task_class == "physical_action_due" and raw.get("physical_work_ready") is True:
+        # A physical task is owner-visible work only when the specialist has
+        # proved it ready. Urgent welfare/shutdown exceptions remain an exact
+        # owner need; ordinary physical work stays farm work ready.
+        if (operational_status == "exception" and priority in {"critical", "urgent"}
+                and raw.get("irreducible_owner_exception") is True):
+            return "needs_you", True
+        return "farm_work_ready", True
+    if task_class in {"status_reconciliation", "physical_action_due", "protected_decision"} or operational_status == "exception":
+        return "oom_sakkie_checking", False
+    return "watch", False
+
+
+def _assigned_to(raw: Mapping[str, Any], specialist: str, attention_group: str) -> str:
+    worker = _owner_text(raw.get("assigned_worker_id"), 120)
+    if attention_group == "needs_you":
+        return "Charl"
+    if attention_group == "farm_work_ready":
+        return _owner_text(raw.get("physical_assignee"), 120) or "Farm team"
+    if attention_group == "oom_sakkie_checking":
+        return worker or ("Oom Sakkie / " + specialist.title())
+    return specialist.title()
 
 
 def _presentation_identity(raw: Mapping[str, Any], source_key: str) -> tuple[str, str, str]:
@@ -210,14 +295,15 @@ def _presentation_identity(raw: Mapping[str, Any], source_key: str) -> tuple[str
 
 def _disambiguate_duplicate_labels(items: list[OwnerAttentionItem]) -> list[OwnerAttentionItem]:
     """Keep a shared name first while exposing stable references for collisions."""
-    counts: dict[str, int] = {}
+    counts: dict[tuple[str, str], int] = {}
     for item in items:
-        counts[item.primary_label.casefold()] = counts.get(item.primary_label.casefold(), 0) + 1
+        key = (item.attention_group, item.primary_label.casefold())
+        counts[key] = counts.get(key, 0) + 1
     result = []
     ordinal = {item.work_id: index for index, item in enumerate(
         sorted(items, key=lambda value: value.work_id), 1)}
     for item in items:
-        if counts[item.primary_label.casefold()] <= 1:
+        if counts[(item.attention_group, item.primary_label.casefold())] <= 1:
             result.append(item)
             continue
         title = item.title
@@ -238,7 +324,9 @@ def _owner_text(value: Any, limit: int) -> str:
 def _material_digest(items: list[dict[str, Any]]) -> str:
     material = [{key: item[key] for key in (
         "work_id", "primary_label", "secondary_reference", "message_family", "title",
-        "task_class", "priority", "specialist_owner", "exact_owner_action", "lifecycle")}
+        "task_class", "priority", "specialist_owner", "exact_owner_action", "lifecycle",
+        "attention_group", "owner_action_eligible", "owner_urgency", "operational_status",
+        "assigned_to")}
         for item in items]
     import json
     return hashlib.sha256(json.dumps(material, sort_keys=True,

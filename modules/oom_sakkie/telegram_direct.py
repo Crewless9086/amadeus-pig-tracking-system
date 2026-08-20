@@ -603,17 +603,39 @@ def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
     lines = [title, "", "Daily Command Brief", ""]
     if attention.get("success") is False:
         lines.extend(["What needs attention", "- Shared owner attention is unavailable; no empty state was inferred.", ""])
-    attention_items = list(attention.get("top_items") or attention.get("items") or [])[:3]
+    groups = attention.get("groups") or {}
+    visible_primary = list(attention.get("top_items") or [])[:3]
+    needs_you = [item for item in visible_primary if item.get("attention_group") == "needs_you"]
+    farm_ready = [item for item in visible_primary if item.get("attention_group") == "farm_work_ready"]
+    attention_items = needs_you + farm_ready
     if attention_items:
-        lines.append("What needs attention")
-        for item in attention_items:
+        if needs_you:
+            lines.append("Needs you")
+        for item in needs_you:
             lines.append(f"- {item.get('semantic_emoji', '•')} {item.get('title', 'Current work')} — {item.get('specialist_owner', 'specialist')}")
             lines.append(f"  Next: {_clip(str(item.get('exact_owner_action') or 'No supported owner action.'), 220)}")
+        if farm_ready:
+            lines.append("Farm work ready")
+        for item in farm_ready:
+            lines.append(f"- {item.get('semantic_emoji', '•')} {item.get('title', 'Current work')} — {item.get('assigned_to', 'Farm team')}")
+            lines.append(f"  Next: {_clip(str(item.get('exact_owner_action') or 'No supported action.'), 220)}")
         hidden = int(attention.get("hidden_count") or 0)
         if hidden:
             lines.append(f"- ➕ {hidden} more in What needs attention")
             lines.append("  View all: Amadeus Farm → Owner attention")
         lines.append("")
+    checking = list(groups.get("oom_sakkie_checking") or [])
+    if checking:
+        lines.append("Oom Sakkie is checking")
+        lines.append(f"- {len(checking)} specialist item{'s' if len(checking) != 1 else ''}; no owner action now")
+        lines.append("  Names, source references and chronology remain in collapsed details in the full view.")
+        lines.append("")
+    watch = list(groups.get("watch") or [])
+    completed = list(groups.get("recently_completed") or [])
+    if watch:
+        lines.extend(["Watch", f"- {len(watch)} useful context item{'s' if len(watch) != 1 else ''}; not owner work", ""])
+    if completed:
+        lines.extend(["Recently completed", f"- {len(completed)} recent item{'s' if len(completed) != 1 else ''}; excluded from open action count", ""])
     if farm:
         lines.extend([
             "Farm",

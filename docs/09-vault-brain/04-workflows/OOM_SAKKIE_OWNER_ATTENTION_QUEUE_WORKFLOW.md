@@ -109,8 +109,9 @@ not add, remove, rank or reclassify owner-attention work.
 
 The owner-attention page and API require the strict authenticated owner-read
 guard even when compatibility owner access is otherwise disabled. The API
-returns only the current presentation packet; resolved lifecycle history and
-raw provenance remain internal. Projection failure must be shown as unavailable
+returns only the bounded presentation packet; compact recent lifecycle history
+and raw provenance remain behind authenticated collapsed details rather than
+primary labels. Projection failure must be shown as unavailable
 in the homepage, Brief and Telegram rather than inferred as an empty queue.
 Completing a welfare intake observation does not close its welfare case; only an
 explicit authoritative recovery, death or resolution transition may do that.
@@ -146,6 +147,29 @@ Escalation alone remains status reconciliation; only explicit specialist
 evidence that a physical weighing is due may create `physical_action_due`.
 Silence, elapsed time or a collector outage cannot close or hide an active
 welfare case.
+
+The shared projection classifies current manager work into exactly five owner
+meanings: `Needs you` for one exact owner question, protected decision or urgent
+physical exception; `Farm work ready` for a physical task proved ready;
+`Oom Sakkie is checking` for delegated, waiting-reassessment and other
+agent-owned reconciliation; `Watch` for useful non-work context; and `Recently
+completed` for compact resolved, superseded, stale or completed history. Only
+the first two contribute to the primary owner-attention count. Specialist
+urgency remains available as operational evidence but cannot create owner
+urgency by itself. Names, status, responsible party and exact action lead;
+technical chronology, raw tags and provenance remain behind collapsed detail.
+Homepage, full view, Brief, Telegram and later voice consume these same groups
+and counts without channel-specific reclassification.
+
+Owner eligibility fails closed. A protected item counts only when the current
+specialist packet explicitly proves one exact owner question; physical work
+counts only when the specialist explicitly proves readiness with no unresolved
+blocking fact. `delegated` and `waiting_reassessment` remain agent-owned even
+when their task wording mentions a decision or physical work. An urgent
+physical exception reaches `Needs you` only with an explicit irreducible-owner
+exception signal. Recently completed presentation is bounded to manager cases
+updated in the preceding seven days; older immutable history stays canonical
+and outside the ordinary owner projection.
 
 ## Actionable daily-manager continuation
 

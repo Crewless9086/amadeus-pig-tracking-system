@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+- 2026-08-20: Separated shared owner-action eligibility from specialist manager
+  urgency. Only exact owner needs and proved physical farm work now count;
+  delegated/waiting reconciliation remains Oom Sakkie-owned, watch context and
+  compact completed history remain separate, and raw tags/provenance stay in
+  collapsed detail across homepage, full view, Brief, Telegram and later voice.
+  No migration, new queue, farm write, provider send or inferred weighing
+  cohort was authorized; the observed 198-case composition and 0/78 cause
+  remain Unknown pending authenticated production readback.
+
 - 2026-08-20: Consolidated names-first owner-attention presentation in the
   existing shared projection. Supported human names or familiar farm/business
   meaning now lead Application, rolling Brief and Telegram titles; missing and

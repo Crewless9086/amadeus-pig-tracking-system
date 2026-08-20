@@ -39,13 +39,20 @@ async function stubOomSakkieApi(page) {
         { work_id: "attn-weight", title: "Physical weighing is due.", specialist_owner: "HERDMASTER", task_class: "physical_action_due", priority: "due", freshness: "current", exact_owner_action: "Weigh now and record weight.", semantic_emoji: "⚖️", detail_target: "/pigs" },
         { work_id: "attn-rootline", title: "ROOTLINE retry is pending.", specialist_owner: "ROOTLINE", task_class: "status_reconciliation", priority: "watch", freshness: "aging", exact_owner_action: "No owner action now — ROOTLINE owns the retry.", semantic_emoji: "🔄", detail_target: "/irrigation" },
       ];
+      attentionItems[0] = { ...attentionItems[0], attention_group: "oom_sakkie_checking", owner_action_eligible: false, owner_urgency: "none", operational_status: "waiting_reassessment", assigned_to: "Oom Sakkie / Herdmaster", secondary_reference: "tag 125", provenance: ["pig:PIG-125"] };
+      attentionItems[1] = { ...attentionItems[1], attention_group: "watch", owner_action_eligible: false, owner_urgency: "none", operational_status: "open", assigned_to: "Herdmaster", secondary_reference: "litter", provenance: ["litter:current"] };
+      attentionItems[2] = { ...attentionItems[2], attention_group: "farm_work_ready", owner_action_eligible: true, owner_urgency: "due", operational_status: "open", assigned_to: "Farm team", secondary_reference: "weekly cohort", provenance: ["cohort:weekly"] };
+      attentionItems[3] = { ...attentionItems[3], attention_group: "oom_sakkie_checking", owner_action_eligible: false, owner_urgency: "none", operational_status: "delegated", assigned_to: "oom-manager-cycle", secondary_reference: "current plan", provenance: ["plan:current"] };
       body = {
         success: true,
-        total_count: 4,
-        hidden_count: 1,
+        total_count: 1,
+        open_context_count: 4,
+        hidden_count: 0,
         view_all_target: "/owner-attention",
         items: attentionItems,
-        top_items: attentionItems.slice(0, 3),
+        top_items: [attentionItems[2]],
+        groups: { needs_you: [], farm_work_ready: [attentionItems[2]], oom_sakkie_checking: [attentionItems[0], attentionItems[3]], watch: [attentionItems[1]], recently_completed: [] },
+        group_counts: { needs_you: 0, farm_work_ready: 1, oom_sakkie_checking: 2, watch: 1, recently_completed: 0 },
       };
     } else if (url.endsWith("/agent-dry-runs") && request.method() === "POST") {
       body = {
@@ -196,9 +203,9 @@ async function authenticateOwner(page) {
 test("authenticated owner attention is accessible and responsive", async ({ page }, testInfo) => {
   await authenticateOwner(page);
   await page.goto("/");
-  await expect(page.locator(".attention-item")).toHaveCount(3);
-  await expect(page.locator(".attention-item").first()).toHaveAttribute("data-work-id", "attn-welfare");
-  await expect(page.locator("#attention_view_all")).toHaveText("View all · 1 more");
+  await expect(page.locator(".attention-item")).toHaveCount(1);
+  await expect(page.locator(".attention-item").first()).toHaveAttribute("data-work-id", "attn-weight");
+  await expect(page.locator("#attention_view_all")).toHaveText("Full view · 4 current");
   await testInfo.attach("owner-attention-home-desktop", {
     body: await page.screenshot({ fullPage: true }), contentType: "image/png",
   });
@@ -212,13 +219,14 @@ test("authenticated owner attention is accessible and responsive", async ({ page
   await page.setViewportSize({ width: 1280, height: 720 });
   await expect(page.getByRole("heading", { name: "Owner attention" })).toBeVisible();
   await expect(page.locator(".attention-all-item")).toHaveCount(4);
+  await expect(page.getByText("Prince has an active welfare case.")).not.toBeVisible();
+  await page.getByText("Oom Sakkie is checking").click();
   await expect(page.getByText("Prince has an active welfare case.")).toBeVisible();
   await expect(page.getByText("No owner action now — ROOTLINE owns the retry.")).toBeVisible();
   await expect(page.locator('.attention-emoji[aria-hidden="true"]')).toHaveCount(4);
   await page.locator(".manager-link").focus();
   await page.keyboard.press("Tab");
-  await expect(page.locator(".attention-all-item").first()).toBeFocused();
-  await expect(page.locator(".attention-all-item").first()).toHaveCSS("outline-style", "solid");
+  await expect(page.locator(".attention-group").first().locator(":scope > summary")).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await testInfo.attach("owner-attention-desktop", {
     body: await page.screenshot({ fullPage: true }),

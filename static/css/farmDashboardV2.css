@@ -65,6 +65,14 @@ body { background: #f2f0e8; color: var(--farm-ink); }
 .attention-all-item small { color: var(--farm-muted); }
 .attention-all-item em { font-size: 13px; font-style: normal; }
 .attention-emoji { font-size: 24px; }
+.attention-group { border: 1px solid var(--farm-line); border-radius: 16px; background: rgba(255,253,248,.72); overflow: clip; }
+.attention-group > summary { display: flex; justify-content: space-between; gap: 16px; padding: 16px 18px; cursor: pointer; color: var(--farm-ink); }
+.attention-group > summary span { min-width: 2rem; text-align: center; color: var(--farm-muted); }
+.attention-group > summary:focus-visible, .attention-all-item details > summary:focus-visible { outline: 3px solid var(--farm-green); outline-offset: -3px; border-radius: 8px; }
+.attention-group > section { display: grid; gap: 10px; padding: 0 12px 12px; }
+.attention-all-item details { margin-top: 4px; color: var(--farm-muted); }
+.attention-all-item details summary { cursor: pointer; font-weight: 700; color: var(--farm-green); }
+.attention-all-item details p { margin: 7px 0 0; overflow-wrap: anywhere; }
 
 .operating-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .operating-card { position: relative; display: flex; flex-direction: column; min-height: 275px; padding: 22px; overflow: hidden; border: 1px solid var(--farm-line); border-radius: 20px; background: var(--farm-paper); color: var(--farm-ink); text-decoration: none; box-shadow: 0 10px 30px rgba(38,58,45,.06); transition: transform .18s ease, box-shadow .18s ease; }

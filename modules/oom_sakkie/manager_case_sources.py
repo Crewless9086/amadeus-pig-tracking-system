@@ -177,6 +177,7 @@ def _herdmaster(now):
                 f"{pig_label} has an active {state} welfare case"
                 + (f": {escalation}" if escalation else "."),
                 action, due, task_class=projected["task_class"], welfare_priority=True,
+                physical_work_ready=projected["task_class"] == "physical_action_due",
                 presentation_identity=presentation_identity))
     for item in tuple(getattr(result, "work_items", ()) or ()):
         metadata = getattr(item, "metadata", {}) or {}
@@ -186,7 +187,14 @@ def _herdmaster(now):
         due = item.due_at or now
         urgency = {"urgent": "urgent", "due_today": "due", "planned": "planned",
                    "waiting_for_evidence": "urgent", "protected_owner_decision": "due"}.get(item.state.value, "watch")
-        task_class = ("protected_decision" if item.state.value == "protected_owner_decision"
+        exact_owner_question = bool(
+            str(item.genuine_question or "").strip()
+            and str(item.assignee or "").casefold() == "charl"
+            and str(item.question_for or "").casefold() == "charl"
+            and item.state.value in {"urgent", "due_today", "protected_owner_decision"}
+            and item.authority.value in {"advisory", "owner_decision"})
+        task_class = ("protected_decision" if (
+                          item.state.value == "protected_owner_decision" or exact_owner_question)
                       else ("status_reconciliation" if unknowns or item.state.value == "waiting_for_evidence"
                       else ("physical_action_due" if any(term in item.next_action.casefold()
                             for term in ("record weight", "weigh now", "physical weighing"))
@@ -198,7 +206,13 @@ def _herdmaster(now):
              *(["attention:welfare_priority"] if welfare_priority else []),
              *item.provenance.source_refs], unknowns,
             item.title + ": " + item.why, item.next_action, due,
-            task_class=task_class, welfare_priority=welfare_priority))
+            task_class=task_class, welfare_priority=welfare_priority,
+            physical_work_ready=(task_class == "physical_action_due"
+                                 and metadata.get("physical_work_ready") is True
+                                 and not unknowns),
+            physical_assignee=(item.assignee if task_class == "physical_action_due" else None),
+            owner_question_eligible=exact_owner_question or (
+                task_class == "protected_decision" and not unknowns)))
     from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
     snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
@@ -370,7 +384,9 @@ def _runtime(now):
 
 def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_action, next_at,
                *, task_class=None, welfare_priority=False, presentation_identity=None,
-               message_family=None):
+               message_family=None, physical_work_ready=False,
+               physical_assignee=None, owner_question_eligible=False,
+               irreducible_owner_exception=False):
     result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
@@ -382,6 +398,14 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
         result["presentation_identity"] = dict(presentation_identity)
     if message_family:
         result["message_family"] = str(message_family)
+    if physical_work_ready:
+        result["physical_work_ready"] = True
+    if physical_assignee:
+        result["physical_assignee"] = str(physical_assignee)
+    if owner_question_eligible:
+        result["owner_question_eligible"] = True
+    if irreducible_owner_exception:
+        result["irreducible_owner_exception"] = True
     return result
 
 
