@@ -242,6 +242,70 @@ and generate one authenticated zero-write preview. It must stop before
 confirmation and return the exact owner decision; no duplicate migration rail
 or business-data correction is authorized.
 
+### Approved queued addendum - longitudinal animal welfare cases
+
+Charl approved the concept of one durable welfare case per animal episode with
+many dated facts/actions, HERDMASTER-owned reassessment and evidence-backed
+closure. Register this as an addendum to existing `OOM-INTAKE-SLICE-1`, Oom
+Sakkie continuous management, HERDMASTER continuous worklist/mortality
+intelligence and the shared owner-attention projection. Do not create a second
+manager, intake rail, observation store, pig identity, reminder queue or
+standalone welfare product.
+
+Lifecycle: `QUEUED / OWNER_CONCEPT_APPROVED /
+DOCTRINE_AND_IMPLEMENTATION_RECONCILIATION_REQUIRED`. Strategic class:
+`OPERATING_SPINE`. It does not consume a fourth active implementation slot.
+Automatic dispatch requires the current three-track slot/collision sweep to
+release a compatible Oom Sakkie/HERDMASTER lane, with PR #1127 and current
+BEACON/manager-route ownership reconciled first.
+
+Owner outcome: a natural English/Afrikaans report opens or updates one stable
+episode; each factual observation remains individually attributable; medical,
+movement, treatment, diagnosis and pig-lifecycle facts remain separate but
+linked; HERDMASTER owns next-check timing, escalation and closure proposals;
+the same case identity appears once in Telegram, Brief/homepage and pig detail;
+closed history improves later herd reasoning without requiring Charl to manage
+forms or reminders.
+
+Required design refinements:
+
+- case matching must use pig plus episode/type/chronology and allow concurrent
+  unrelated cases for one pig; uncertain matching asks one useful question;
+- immediate welfare guidance/escalation is never delayed by a protected record
+  write, while canonical writes and recovered/deceased/transferred/error closure
+  remain preview-and-confirm actions;
+- severity, escalation trigger, next-check deadline, responsible observer and
+  evidence needed for closure are explicit; unchanged reassessments stay silent;
+- silence never proves recovery; transfer does not mean recovered; death closes
+  the living-welfare question but leaves disposal/mortality-review tasks separate;
+- recurrence links to the previous case without overwriting it, and conservative
+  backfill never invents case membership for ambiguous historical observations;
+- cohort/pen/litter clustering is an evidence-based analytical projection, never
+  a diagnosis, cause or new compliance requirement;
+- Telegram shows only animal name, concern, current state, last material fact,
+  next check and one useful action. Full chronology is available in the app/on
+  request rather than repeated in every message.
+
+Recommended concise Telegram contract:
+
+`🐷 Prince — Welfare follow-up` / `State: Awaiting observation` / `Last: Not
+eating and lying down (17 Aug 07:15)` / `Next: Check eating, drinking and
+standing by 16:00.` Natural replies append through a protected factual preview.
+When supported: `🐷 Prince appears recovered` / `Evidence: normal eating and
+behaviour across two checks` with `Close recovered / Keep monitoring / Correct`.
+Found-dead intake uses one compound preview for observation, case closure and pig
+lifecycle transition while leaving removal/disposal review visible.
+
+Phased implementation remains one mission: (1) Vault/data contract and additive
+migration; (2) existing intake/observation adapters and durable open-case
+retrieval beyond 24 hours; (3) HERDMASTER reassessment plus shared attention and
+concise Telegram projection; (4) pig-detail timeline with authenticated
+desktop/mobile owner preview; (5) mortality/trend read models; (6) genuine Prince
+and found-dead production acceptance. Each phase must preserve exact-once,
+chronology, correction, concurrency, cross-owner isolation and replay silence.
+No production write, Telegram send, diagnosis, treatment, animal status change
+or UI deployment is authorized by this intake entry.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
