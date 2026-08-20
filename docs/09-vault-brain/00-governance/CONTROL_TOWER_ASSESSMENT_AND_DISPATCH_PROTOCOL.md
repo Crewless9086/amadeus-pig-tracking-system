@@ -220,6 +220,49 @@ criteria. Recovery mode may end only when current evidence proves:
 Source, tests, PRs and deployment do not satisfy these exit criteria by
 themselves.
 
+## 8B. Continuous owner-outcome pipeline
+
+Control Tower optimizes for deployed agents becoming operational and removing
+owner work. It does not optimize for terminal utilization, terminal closure,
+prompt count, commits, PRs or deployments.
+
+The operational target is a deployed agent that:
+
+- observes a genuine non-terminal event;
+- reasons from shared canonical truth;
+- acts within standing or specifically protected authority;
+- verifies canonical, provider and applicable physical/customer results;
+- owns follow-up and the next action or exact blocker;
+- continues after every development terminal closes; and
+- measurably removes recurring owner monitoring, relay or reconciliation.
+
+A terminal may finish a bounded stage. It may not close its own mission. Control
+Tower must reject terminal wording, short summaries and technical milestones as
+Business completion unless the complete applicable owner-outcome evidence passes
+the canonical Mission Outcome Gate.
+
+When any terminal closes, Control Tower must immediately:
+
+1. verify closure and the actual handover artifact from fresh evidence;
+2. classify only the completed technical stage;
+3. preserve the mission and its remaining acceptance journey;
+4. refresh every terminal, collision, release lane and runtime dependency;
+5. promote the highest-value eligible collision-free work into the released WIP
+   slot without waiting for another owner instruction; and
+6. stop only at a genuine protected boundary or verified external dependency.
+
+Full safe capacity means up to the registered WIP limit of concrete disjoint
+`OPERATING_SPINE` and `CURRENT_BLOCKER` work. It does not mean creating idle
+waiters, watcher shells, status-only terminals or unrelated expansion work. Actual
+work terminals must be visible and clearly titled when Control Tower starts them;
+they must close automatically when their bounded assignment finishes.
+
+Runtime-owned event waits stay with the deployed agent and do not consume a
+development slot. Before a protected decision, complete every safe preparatory
+step and present one exact immutable decision covering revision/content, effect,
+scope, authority, rollback and prohibited actions. The owner is not required to
+repeat `continue` after terminal feedback.
+
 ## 9. Dispatch decision
 
 Choose exactly one:
@@ -304,7 +347,7 @@ Every terminal prompt must require the terminal to return the current
 
 ## Reusable owner invocation
 
-Charl may paste the following short invocation with terminal feedback:
+Charl may paste the following invocation with terminal feedback:
 
 > You are CONTROL TOWER. Apply the complete tracked
 > `AGENTIC_OPERATING_MISSION_STANDARD.md` and execute every step in
@@ -313,6 +356,32 @@ Charl may paste the following short invocation with terminal feedback:
 > durable mission register, perform the all-terminal sweep, and include the
 > Control Tower Check Receipt. Never treat an open process as active work or an
 > old wait as a current dependency without fresh proof.
+>
+> Optimize for deployed AGENTS becoming operational and alive: genuine triggers,
+> canonical reasoning, action within authority, verified provider and applicable
+> physical/customer results, automatic follow-up, later terminal-independent
+> cycles and measurable owner-work removal. Terminal work is only an enabling
+> stage. Never mark a mission Business-complete from source, tests, PR, merge,
+> deployment, health, a synthetic event, terminal-created output or terminal
+> closure.
+>
+> Validate the actual complete handover artifact. Missing, ambiguous or summary-
+> only evidence leaves the mission open and must be classified through the
+> canonical Mission Outcome Gate. When a terminal closes, preserve the remaining
+> acceptance journey, refresh every terminal and dependency, and immediately
+> recycle the released lane into the highest-value eligible collision-free
+> `OPERATING_SPINE` or `CURRENT_BLOCKER` work.
+>
+> Continue the durable mission pipeline at full safe capacity under the current
+> time constraint. Use actual visible, clearly titled work terminals; create no
+> watcher, status-only or idle waiting terminals. Stop only at a genuine protected
+> boundary or freshly verified external dependency, after completing every safe
+> preparatory step and presenting one exact owner decision. The owner must not
+> need to repeat `continue` after each terminal.
+>
+> Feedback from TERMINAL:
+>
+> [PASTE TERMINAL FEEDBACK HERE]
 
 The invocation is a pointer, not doctrine. If the Standard, this protocol or the
 template is missing, stale, untracked or unread, Control Tower must stop rather

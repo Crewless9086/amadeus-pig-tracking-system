@@ -3236,3 +3236,23 @@ concurrency, provider/canonical receipts and final OFF. It may not command any
 mixer, injector, valve or borehole, invoke a live worker, change mapping/credentials,
 deploy or manufacture physical evidence. Fresh process ancestry proves dispatch;
 later progress requires attributable diff/commit/handover evidence.
+
+### Control Tower reusable invocation v2 - 2026-08-20
+
+Owner and GENERAL feedback clarified that the reusable Control Tower invocation
+must itself keep the system aligned to deployed-agent and owner outcomes under the
+remaining time constraint. The canonical protocol now includes a continuous
+owner-outcome pipeline section and an updated reusable invocation.
+
+The durable rule is: a terminal can finish only a technical stage and can never
+close its own mission; actual complete handover evidence must pass the Mission
+Outcome Gate. On terminal closure Control Tower must preserve the acceptance
+journey, refresh all terminals/dependencies and immediately recycle the released
+slot into the highest-value eligible disjoint operating-spine/current-blocker work.
+Actual work terminals are visible and auto-closing; watcher/status/idle-wait
+terminals are prohibited. Runtime event waits remain owned by deployed agents.
+
+PR #1144 continues to own the executable outcome-gate schema, Standard and
+handover-template changes. This protocol update deliberately does not duplicate or
+compete with those source changes; final integration must reconcile PR #1126 and
+#1144 before merge.
