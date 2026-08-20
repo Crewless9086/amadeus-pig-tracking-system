@@ -193,6 +193,32 @@ operate any device. Lifecycle is `WORKING / EXACT_REVISION_DEPLOYED /
 AUTONOMOUS_ACCEPTANCE_OBSERVER_STARTED`; Business completion remains unproven.
 PR #1126 was reconciled with the exact new authoritative main without conflict.
 
+After Charl asked whether programme capacity and CORE authority were optimal,
+Control Tower rechecked the live ROOTLINE observer and current CORE eligibility.
+ROOTLINE's exact observer ancestry remained alive but had not yet produced a
+handover, so it remained observation-started rather than completed. CORE's prior
+signed receipt was bound to superseded main `b9eefabf` and is ineligible for new
+main `39614112`; it was not reused. A fresh clean validation-only worktree was
+created at `C:\tmp\core-39614112-validation-20260820`, branch
+`audit/core-39614112-validation-20260820`, exact current main `39614112`.
+Visible PowerShell PID `39408` and Node PID `32228` prove delivery/start only.
+The terminal may issue one canonical signed create-once v2 isolated validation
+receipt and must close without staging, activation, Task Scheduler/process,
+runtime, deployment, provider, business, farm or hardware effect.
+
+The proposed minimum recurring CORE authority is deliberately split: standing
+authority may cover exact-current isolated validation and receipt-bound,
+stop-preserving staging only when the source equals authoritative main, every
+required suite and Brain Guard passes, the sealed receipt is fresh and unused,
+the serialized lane is free, rollback is exact, and the task remains disabled,
+supervisor stopped and governed stop present. Any ambiguity fails closed without
+retry. Activation remains a separately protected decision until one fresh
+observe-only epoch proves exact task/action/instance ancestry, heartbeat,
+independent result, next trigger, rollback and terminal-close continuity. No
+standing CORE authority presently includes production deployment, mission
+dispatch, customer/provider/farm action, Telegram, secrets, database business
+writes or hardware control.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
