@@ -18,9 +18,8 @@ Render `/health/revision` first proved the intermediate Oom deployment and then
 returned HTTP 200 with `provider=render`, `identity_complete=true` and exact
 combined revision `b9eefabf65f30811c771a484b0459c5280401686`; attributable
 request identity was `230f7496-34c8-4c13`. Anonymous homepage and owner-attention
-API requests both failed closed with HTTP 403. The hosted browser lane passed on
-the combined main; the other two post-merge lanes were still running at the
-observation cutoff and are not claimed as complete. Authenticated production
+API requests both failed closed with HTTP 403. All three post-merge hosted CI
+lanes subsequently completed successfully on the exact combined main. Authenticated production
 content parity remains Unknown because Control Tower has no owner session/token;
 the byte-identical approved source and exact deployment are proven separately.
 
