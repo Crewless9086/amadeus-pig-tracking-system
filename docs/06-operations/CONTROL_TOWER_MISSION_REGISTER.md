@@ -518,6 +518,24 @@ R0.01 workaround correction, but must not press `Confirm charitable
 disposition` until the digest-bound preview is returned to Control Tower for
 review.
 
+Charl supplied the genuine owner-admin preview and, after Control Tower verified
+its preserved R750.00 list value, R0.00 receivable, no-payment-due disposition
+and correction-evidence wording, confirmed it exactly once. Provider-visible
+success reported `Charitable giveaway recorded with no payment due.` Fresh
+production API readback at `2026-08-20T08:51:56Z` returned HTTP 200 and proves
+sale `SALE-A1EE5E3DBC3110D1` remains `Completed / Livestock`, linked order
+`ORD-2026-A6EC6D`, two items/tags 123 and 151, gross/net R750.00,
+`financial_disposition=Charitable_Giveaway`, `receivable_total=0.00`,
+`received_total=0.00`, `payment_status=Not_Applicable`, null payment method/date
+and evidence digest
+`e26447f8a84139e68d8341d5be1795c7ea3a06547dae4a134c36a0d0a8321f81`.
+The read projection reports `writes_to_supabase:false` and
+`writes_to_sheets:false`; sealed response SHA-256 is
+`c0c3ef59be2abbf5df958b5b607448eebe30ebf28da6cc21859389f6b273c14b`.
+Lifecycle is `BUSINESS_COMPLETE / CHARITABLE_DISPOSITION_RECORDED`; the R0.01
+workaround is no longer payment truth and remains only in attributable historical
+correction evidence. No further owner action is required for this sale.
+
 The first CORE handshake-repair terminal was interrupted externally during its
 focused pytest run and produced no final handover, commit or PR. Its exact dirty
 candidate is preserved only in
