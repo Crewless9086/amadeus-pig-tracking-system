@@ -37,6 +37,8 @@ and owner-review packets do not satisfy this contract.
   that gateway is separately implemented and activated;
 - prepare deterministic, provider-disabled ElevenLabs and Happy Horse 1.0 mock evaluations from owner-approved, hash-verified source assets;
 - prepare owner-review publish packets;
+- invite stock-neutral live-pig enquiries only through the governed
+  `live_stock_enquiry_capture` lane and SAM qualification boundary;
 - record manual post and performance evidence;
 - identify compatible recurring campaign weaknesses and prepare structured, evidence-linked CORE follow-up mission suggestions;
 - post only through exact owner-approved gates when configured.

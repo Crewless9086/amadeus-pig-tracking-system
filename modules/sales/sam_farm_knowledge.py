@@ -1,5 +1,6 @@
 import json
 import os
+import hashlib
 from pathlib import Path
 
 
@@ -66,8 +67,19 @@ def load_sam_farm_knowledge(environ=None):
             **_result("fallback_default_read_failed", path, DEFAULT_KNOWLEDGE, configured=False),
             "error": str(exc)[:240],
         }
-    knowledge = _deep_merge(DEFAULT_KNOWLEDGE, loaded if isinstance(loaded, dict) else {})
-    return _result("ok", path, _sanitize_knowledge(knowledge), configured=True)
+    raw = loaded if isinstance(loaded, dict) else {}
+    knowledge = _deep_merge(DEFAULT_KNOWLEDGE, raw)
+    result = _result("ok", path, _sanitize_knowledge(knowledge), configured=True)
+    result["source_content_sha256"] = hashlib.sha256(
+        json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    result["source_top_level_keys"] = sorted(str(key) for key in raw)
+    result["source_evidence"] = _sanitize_knowledge({
+        "version": raw.get("version"), "status": raw.get("status"),
+        "public_profile": raw.get("public_profile"),
+        "product_menu": raw.get("product_menu"),
+    })
+    return result
 
 
 def public_profile(knowledge):

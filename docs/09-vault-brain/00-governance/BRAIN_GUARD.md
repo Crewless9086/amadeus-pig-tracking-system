@@ -121,6 +121,11 @@ For every mission Brain Guard must verify:
 7. BEACON/Meta livestock-awareness missions include
    `BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md` and fail on sales, availability,
    price, booking, urgency or contact calls-to-action;
+   the distinct stock-neutral `live_stock_enquiry_capture` lane must instead
+   bind configured supported-offering evidence, SAM qualification, explicit
+   no-stock/no-price/no-availability/no-delivery/no-reservation wording,
+   text-only or separately governed media, organic zero spend and exact Meta
+   readback;
 8. conflicts produce one durable reconciliation finding and block review-ready;
 9. an absent pack fails closed instead of falling back to a legacy file; and
 10. the exact release head repeats the same pack and conflict checks.

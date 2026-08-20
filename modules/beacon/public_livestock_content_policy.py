@@ -5,6 +5,7 @@ import unicodedata
 
 
 POLICY_VERSION = "beacon_public_livestock_awareness_only_v1"
+ENQUIRY_POLICY_VERSION = "beacon_public_livestock_enquiry_capture_v1"
 RISK_STATUS = "owner_review_required_meta_livestock_commerce_risk"
 SAFE_OBJECTIVES = (
     "farm_awareness",
@@ -134,6 +135,39 @@ def assess_public_livestock_content(
         reasons.append("public_livestock_copy_missing")
     allowed = not reasons
     return _result(allowed, reasons, True, objective_text)
+
+
+def assess_public_livestock_enquiry_capture(text, *, campaign_lane="", media=None):
+    """Allow a bounded enquiry invitation without implying a current offer."""
+    normalized = _normalize(text)
+    lane = _normalize(campaign_lane).replace(" ", "_")
+    reasons = []
+    if lane != "live_stock_enquiry_capture":
+        reasons.append("public_livestock_enquiry_lane_invalid")
+    forbidden = (
+        r"\b(?:for sale|in stock|currently available|available now|ready now|we have)\b",
+        r"\b(?:te koop|in voorraad|nou beskikbaar|ons het)\b",
+        r"(?:r|zar)\s*\d",
+    )
+    if any(re.search(pattern, normalized, re.I) for pattern in forbidden):
+        reasons.append("unsupported_stock_or_fulfilment_claim")
+    required = ("amadeus farm", "handles enquiries", "message us", "sam",
+        "no stock", "price", "availability", "delivery", "reservation is promised")
+    if any(value not in normalized for value in required):
+        reasons.append("enquiry_capture_boundary_incomplete")
+    if media:
+        reasons.append("enquiry_capture_text_only_required")
+    if not normalized:
+        reasons.append("public_livestock_copy_missing")
+    return {
+        "allowed": not reasons,
+        "status": "public_livestock_enquiry_capture_policy_passed" if not reasons else RISK_STATUS,
+        "withhold_draft": bool(reasons), "livestock_context": True,
+        "objective": "qualified_livestock_enquiries", "reasons": sorted(set(reasons)),
+        "policy_version": ENQUIRY_POLICY_VERSION,
+        "performance_optimization_for_commerce_allowed": False,
+        "private_sam_livestock_sales_unchanged": True,
+    }
 
 
 def enforce_public_livestock_drafts(

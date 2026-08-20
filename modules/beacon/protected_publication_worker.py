@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 
-from modules.beacon.public_livestock_content_policy import assess_public_livestock_content
+from modules.beacon.public_livestock_content_policy import (
+    assess_public_livestock_content, assess_public_livestock_enquiry_capture,
+)
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.sales.beacon_campaign import (
     FACEBOOK_POST_CONFIRMATION_PHRASE, execute_beacon_facebook_page_post,
@@ -34,8 +36,10 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
     media = [] if text_only else [_execution_asset(item) for item in selected_media]
     payload = {
         "publish_packet_id": preview["packet_id"],
-        "channel": "facebook_organic", "campaign_lane": "live_stock_awareness",
-        "objective": "farm_awareness", "exact_text": preview["exact_post_copy"],
+        "channel": "facebook_organic",
+        "campaign_lane": preview.get("campaign_lane") or "live_stock_awareness",
+        "objective": preview.get("campaign_objective") or "farm_awareness",
+        "exact_text": preview["exact_post_copy"],
         "selected_assets": media, "selected_asset": media[0] if media else {},
         "asset_id": media[0]["asset_id"] if media else "",
         "target_page_id": preview["target_page_id"],
@@ -129,14 +133,23 @@ def validate_claimed_approval(claim, *, now=None):
     elif (preview.get("media_evidence_exception") !=
             "Explicit text-only publication; no media is selected or implied."):
         return "protected_campaign_text_only_boundary_invalid"
-    if __import__("re").search(
+    lane = preview.get("campaign_lane") or "live_stock_awareness"
+    objective = preview.get("campaign_objective") or "farm_awareness"
+    if (lane, objective) not in {("live_stock_awareness", "farm_awareness"),
+            ("live_stock_enquiry_capture", "qualified_livestock_enquiries")}:
+        return "protected_campaign_objective_binding_invalid"
+    enquiry_capture = (lane == "live_stock_enquiry_capture"
+        and preview.get("campaign_objective") == "qualified_livestock_enquiries")
+    if not enquiry_capture and __import__("re").search(
             r"\b(follow\s+(?:along|us)|volg\s+(?:saam|ons)|contact|kontak|message|boodskap|dm|"
             r"come\s+(?:see|visit)|visit|share|read\s+more|learn\s+more|see\s+more|check\s+out|click|tap|watch|subscribe|"
             r"kom\s+(?:kyk|besoek|loer)|gaan\s+kyk|besoek|deel|lees\s+meer|vind\s+meer\s+uit|klik|druk|kyk|teken\s+in)\b",
             caption, __import__("re").I):
         return "protected_campaign_story_only_cta_failed"
-    policy = assess_public_livestock_content(preview.get("exact_post_copy"),
-        objective="farm_awareness", campaign_lane="live_stock_awareness", media=media)
+    policy = (assess_public_livestock_enquiry_capture(preview.get("exact_post_copy"),
+        campaign_lane="live_stock_enquiry_capture", media=[] if text_only else media) if enquiry_capture else
+        assess_public_livestock_content(preview.get("exact_post_copy"),
+            objective="farm_awareness", campaign_lane="live_stock_awareness", media=media))
     if not policy.get("allowed"):
         return "protected_campaign_public_policy_failed"
     return ""

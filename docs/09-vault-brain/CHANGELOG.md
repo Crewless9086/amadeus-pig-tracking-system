@@ -1,5 +1,12 @@
 # Vault Brain Changelog
 
+- 2026-08-20: Added the distinct BEACON stock-neutral livestock-enquiry
+  capture boundary. It may invite four qualification facts from a configured
+  Amadeus Farm `live_sales` offering but cannot claim stock, price,
+  availability, delivery, reservation or outcome. It remains organic,
+  zero-spend, exactly-once, owner-approved and provider-readback-bound, with
+  genuine inbound attributed to SAM. The awareness lane remains unchanged.
+
 - 2026-08-20: Corrected the Oom Sakkie rolling-current Brief continuation.
   A durably received and specialist-reconciled owner answer now recomposes the
   shared projection instead of editing the delivered Brief into a generic
