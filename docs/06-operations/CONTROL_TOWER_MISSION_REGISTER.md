@@ -510,6 +510,30 @@ and manufactured Prince evidence. Lifecycle is `WORKING /
 PHASE_2_RUNTIME_INTEGRATION_IN_PROGRESS`; process identity is launch evidence
 only.
 
+Fresh terminal reconciliation found three distinct outcomes. CORE source repair
+completed cleanly in PR #1133 at exact head `1a1624ef`, with 121 focused tests,
+41 subtests, Brain Guard, three independent GO reviews and all hosted gates
+green. Control Tower verified the exact clean head and serialized mergeability,
+then merged it as `9fdfa2dc343e36b432766055c0f408966431c624`. No activation or runtime effect
+occurred. A fresh detached exact-main isolated validation terminal now runs from
+that merge as parent PID 72040, launcher PID 19512 and worker PID 62820; staging
+and activation are forbidden.
+
+HERDMASTER Phase 2 and the current ROOTLINE mixer terminal were both externally
+interrupted mid-edit and produced no valid current handover. HERDMASTER's exact
+eight-file runtime/migration/test candidate and ROOTLINE's exact four-file
+commissioning candidate remain dirty and preserved in their original worktrees.
+The apparent ROOTLINE final packet identified historical worktree
+`C:\tmp\overnight-rootline-operational-20260819` and head `e9dad787`, not the
+current visible mission worktree, and is rejected as stale/non-current evidence.
+Both idle shells were closed. HERDMASTER resumed from its exact candidate as
+parent PID 63840, launcher PID 3972 and worker PID 96412; ROOTLINE resumed from
+its exact candidate as parent PID 55752, launcher PID 31528 and worker PID 31772.
+Each must checkpoint and reconcile current main non-destructively, complete its
+interrupted tests/reviews/PR evidence and return the full handover. ROOTLINE still
+has zero hardware authority; HERDMASTER still has zero production-record or
+Telegram authority. Process identities are launch evidence only.
+
 Charl reported the SALES owner page open and authenticated, but browser-control
 discovery returned no connected browser surface. Therefore Control Tower did not
 read, submit or fabricate a preview. The owner may safely create the zero-write
