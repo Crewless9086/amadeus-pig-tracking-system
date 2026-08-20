@@ -384,6 +384,27 @@ Together with the continuing PR #1127 reconciliation terminal (parent PID
 fresh session identities are launch receipts only; continued activity and
 completion require attributable session, commit, PR, CI or runtime evidence.
 
+CORE exact-current revalidation and staging completed successfully. Detached
+source, freshly fetched `origin/main`, runtime, execution and manifest all bind
+to `86fb87a39fd92fb430f683fb1b10c935cbdd0d8f`. Validation identity
+`10e401aefa264094a8306910d481b88f` passed 116 focused tests with one
+Windows-only skip, the complete governed suite passed 283 tests with six
+platform skips, and Brain Guard/signature/source binding passed. Receipt digest
+is `6416c7644dfdbfc6e8ee3eda1013fe516ae4b2576f8c4a199bfdb4dd336845ca`.
+
+Fresh staging lane `72f2f9a1f92d4c41a8f0ba28cd1d1c1a` promoted exact current source while
+preserving rollback tuple `98d13d87`, governed-stop digest
+`8887c0c06d040b60fef580c0135761019fe7e416d594538cf86fcf18d1e594b1`,
+enabled Task Scheduler Operational audit readback, disabled watchdog and stopped
+supervisor. All staging/activation/reconciliation locks are absent. No
+activation identity, provider start, worker, heartbeat, cycle or business effect
+was created. Lifecycle is `OWNER_HOLD /
+EXACT_CURRENT_VALIDATED_AND_STAGED / NEW_ACTIVATION_AUTHORITY_REQUIRED`. The
+released staging host was closed. Automatic promotion requires a new short-lived
+observe-only activation authority bound to this exact revision, manifest,
+receipt, stop digest, task/action identity and enabled audit channel; no prior
+epoch or authority may be reused.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
