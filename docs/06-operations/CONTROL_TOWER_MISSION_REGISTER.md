@@ -3043,3 +3043,37 @@ and independent review, and create at most one clean PR per mission. They are
 source work only; source/PR completion is not deployment or business completion.
 ROOTLINE and deployed OOM natural acceptance remain runtime-owned dependencies,
 not terminal waits.
+
+### Three-day operational outcome focus - 2026-08-20
+
+The owner established a remaining delivery window of three days and one night and
+challenged source-heavy progress without enough user outcomes. Control Tower must
+therefore optimize the remaining portfolio for four observable closures, in this
+order:
+
+1. CORE continuity: secret-safe startup evidence, reviewed repair, exact-current
+   validation/staging and a separately protected observe-only activation proving
+   provider ancestry, heartbeat, independent result, next trigger and terminal-
+   close continuity. Stretch acceptance is one bounded real mission lifecycle.
+2. Oom Sakkie owner journey: deployed rolling Brief plus names-first/quiet shared
+   projection, followed by one genuine owner reply, canonical receipt, specialist
+   reassessment, refreshed Brief or truthful silence and a later independent cycle.
+3. ROOTLINE irrigation outcome: commissioned B/C operation must produce one genuine
+   governed B execution or one exact actionable blocker, truthful canonical/provider
+   projection and a later autonomous reassessment. Fertilizer and borehole control
+   do not enter the critical path without completed commissioning and authority.
+4. One complete specialist/business journey through the shared manager: prioritize
+   an already-deployed HERDMASTER or SAM path that can be triggered genuinely and
+   prove canonical readback and owner/customer result without manufacturing demand.
+
+Printing/Green, broader BEACON publication, borehole expansion, fertilizer control,
+large UI portfolios and non-critical governance cleanup are secondary during this
+window. They may proceed only when they do not consume a critical operating-spine,
+owner-attention, irrigation or specialist-acceptance lane.
+
+Daily reporting must count owner journeys closed, autonomous cycles, exact truthful
+blockers and recurring owner actions removed. Commits, tests, PRs, merges and
+deployments are enabling milestones only. “All agents fully operational” must not
+be claimed if individual physical/channel commissioning and genuine-event proof
+remain absent; the honest target is the smallest coherent operational farm team
+with explicit capability limits and a durable sequenced remainder.
