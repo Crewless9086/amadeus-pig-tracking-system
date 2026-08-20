@@ -22,6 +22,10 @@ from modules.pig_weights.farm_supabase_read_service import (
     get_pig_master_rows,
 )
 from modules.pig_weights.herdmaster_health_loss_recording import confirm_health_loss_preview
+from modules.pig_weights.pig_welfare_case_runtime import (
+    append_welfare_case_context,
+    load_open_welfare_case_contexts,
+)
 
 
 EVENT_SOURCE = "oom_sakkie_herdmaster_health_loss_runtime"
@@ -407,6 +411,12 @@ def handle_authenticated_health_loss_message(
     stored = _record_lifecycle_event(lifecycle, context_store=context_store)
     if stored.get("success") is not True:
         return {"handled": True, "success": False, "status": "health_loss_lifecycle_persistence_failed"}, 503
+    welfare_case = {"success": True, "status": "welfare_case_test_store_not_applicable", "rows_created": 0}
+    if context_store is None:
+        welfare_case = append_welfare_case_context(lifecycle, connect_factory=connect_factory)
+        # Immediate welfare guidance must survive a coordination-store outage.
+        # The legacy authenticated chronology was retained above, so expose the
+        # degradation without withholding the physical guidance.
     protected={}
     if lifecycle["status"]=="preview_ready" and lifecycle["operation_id"] and (claim_creator or os.getenv("DATABASE_URL")):
         from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
@@ -442,6 +452,9 @@ def handle_authenticated_health_loss_message(
         "records_audit_trace": True,
         "writes_farm_data": False,
         "protected_actions_performed": False,
+        "welfare_case": welfare_case,
+        "welfare_case_id": str(welfare_case.get("welfare_case_id") or ""),
+        "welfare_case_persistence_degraded": welfare_case.get("success") is not True,
         **protected,
     }, 200
 
@@ -587,6 +600,15 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
     if not database_url:
         raise ActiveContextLoadError("active_context_store_unavailable")
     try:
+        try:
+            durable = load_open_welfare_case_contexts(chat_id, owner_user_id)
+        except Exception:
+            # The runtime can be deployed before the separately governed
+            # migration is applied. Preserve the existing bounded chronology
+            # until the welfare-case capability is present and readable.
+            durable = []
+        if durable:
+            return _dedupe_active_contexts(durable, owner_user_id=owner_user_id)
         import psycopg
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
