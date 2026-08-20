@@ -1,5 +1,58 @@
 # Vault Brain Changelog
 
+## 2026-08-19 - CORE Task Scheduler audit-channel transaction repair
+
+- Reconciled fresh Windows provider evidence with the existing provider-origin
+  activation rail: the exact watchdog task is disabled and unchanged, while
+  `Microsoft-Windows-TaskScheduler/Operational` is currently disabled.
+- The serialized activation preparation now reads and HMAC-seals that exact
+  channel's prior enabled state and intent, enables it with exact readback,
+  seals a post-readback receipt before the provider task is triggered, and
+  retains the exact prior state and rollback command as authenticated evidence.
+  Recovery always contains the task and governed stop, but never automatically
+  disables the additive audit channel because its Boolean state cannot prove
+  that no later independent writer requires logging to remain enabled.
+- Historical activation identities remain immutable and ineligible. This
+  source change performed no task, stop-marker, runtime, provider, database,
+  customer, farm or hardware mutation; fresh exact-current staging and a new
+  activation identity remain separate gates.
+- Operational Event 200 fallback is additionally bounded to the live engine
+  process's kernel creation time, closing PID-reuse replay, and authenticated
+  recovery now terminally retires ordinary pre-intent and post-readback-
+  receipt interruption windows after exact task and governed-stop containment.
+- The exclusive activation lane now HMAC-seals the complete signed rollback
+  and packet seeds, permitting deterministic reconstruction after either
+  initial durable-write interruption; a signed verification-archival marker
+  likewise makes every successful-verification artifact move resumable.
+- Every activation-specific ledger artifact now permanently consumes its
+  immutable identity, including contained prepare failures, and the Windows
+  CIM creation-time binding handles the native `System.DateTime` shape used
+  by current PowerShell before evaluating Event 200 freshness.
+- Exclusive signed records are now fully written and fsynced before atomic
+  hard-link publication, so a torn final activation lane cannot exist; a
+  rollback-write interruption retains that complete lane for recovery.
+- All activation namespace transitions now use durable publication: Windows
+  `MoveFileExW` write-through moves and POSIX parent-directory fsync ensure
+  signed lane, packet, stop and archival state survives a completed mutation.
+- Windows native calls declare exact ctypes signatures; Linux archival uses
+  atomic `renameat2(RENAME_NOREPLACE)`. A signed verification-completion
+  projection closes the final-marker window, while Event 200 must exceed the
+  pre-trigger record-ID lower bound sealed into the activation transaction.
+- Preparation now proves zero pre-existing task instances; provider packet
+  validation authenticates the audit intent/receipt and their shared event
+  lower bound. Cross-directory POSIX moves fsync both namespaces, and embedded
+  rollback recovery is attempted immediately on standalone-write failure.
+- The exact start now uses Task Scheduler COM `RunEx`; its returned
+  `InstanceGuid` is HMAC-signed into the packet before the child may consume
+  it, and both running-instance and Event 200 paths must match that GUID.
+- Recovery no longer substitutes the lane's pre-`RunEx` packet after provider
+  consumption. It reconstructs a missing packet only from the authenticated
+  consumed instance identity, rejects ambiguous or unproven post-readback
+  provenance, and preserves the original consumed packet HMAC binding.
+- Ordinary packet validation now detects an authenticated consumed record beside
+  a still-pending packet and requires the explicit recovery path instead of
+  relying on a later exclusive-write collision to fail incidentally.
+
 ## 2026-08-19 - One canonical system across every channel
 
 - Made application, Telegram, voice and scheduled workers explicit adapters to
