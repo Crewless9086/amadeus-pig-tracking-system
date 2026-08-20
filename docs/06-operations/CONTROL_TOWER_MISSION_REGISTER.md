@@ -278,6 +278,23 @@ completion. The next genuine cycle must either create governed B execution or
 record one exact truthful blocker; process, deployment and historical C evidence
 cannot substitute that outcome.
 
+Charl then explicitly authorized one fresh observe-only CORE activation for
+exact staged `3961411236fca3329abaac2d34cfb863167c1c73`, validation identity
+`a2c6f4b9ef6449fbaf71d68325261abd`, staging lane
+`581ee9ccd81b4e25bbf9403a49fa6e49` and rollback SHA-256
+`4f455727c20c24fd98c93ddbc582ad48110ddba1148614613e4c57161c95adb9`.
+A fresh exact-main worktree
+`C:\tmp\core-39614112-observe-activation-20260820`, branch
+`audit/core-39614112-observe-activation-20260820`, was dispatched with visible
+PowerShell PID `38908` and Node PID `30260`. Fresh readback immediately after
+start still showed the exact CORE watchdog disabled, governed stop present and
+no activation lock, so the terminal remains in preflight and no activation
+effect is yet claimed. It must use one new immutable identity, prove exact
+task/action/instance and supervisor/runner ancestry, fresh heartbeat, genuine
+independent observe-only result, next trigger and terminal-close continuity. Any
+ambiguity must contain without retry; no mission dispatch, deployment,
+credential, message, database business, farm or hardware authority is granted.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
