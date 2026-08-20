@@ -37,6 +37,11 @@ ALLOWLIST = (
         filename="202608200001_add_sales_financial_disposition.sql",
         sha256="626808c3f6d4e4ee2862cfd78bc6a3bae5f05992006559618d5fb7740db8c920",
     ),
+    AllowedMigration(
+        migration_id="202608200002_create_pig_welfare_case_lifecycle",
+        filename="202608200002_create_pig_welfare_case_lifecycle.sql",
+        sha256="f82972f872a3aa6080d9e1d9a4fc45c117a22a0c4f5e328407caefeb044ab14c",
+    ),
 )
 
 

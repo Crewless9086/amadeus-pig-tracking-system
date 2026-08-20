@@ -22,6 +22,11 @@ from modules.pig_weights.farm_supabase_read_service import (
     get_pig_master_rows,
 )
 from modules.pig_weights.herdmaster_health_loss_recording import confirm_health_loss_preview
+from modules.pig_weights.pig_welfare_case_runtime import (
+    append_welfare_case_context,
+    load_open_welfare_case_contexts,
+    welfare_case_runtime_enabled,
+)
 
 
 EVENT_SOURCE = "oom_sakkie_herdmaster_health_loss_runtime"
@@ -407,6 +412,9 @@ def handle_authenticated_health_loss_message(
     stored = _record_lifecycle_event(lifecycle, context_store=context_store)
     if stored.get("success") is not True:
         return {"handled": True, "success": False, "status": "health_loss_lifecycle_persistence_failed"}, 503
+    welfare_case = stored.get("welfare_case") or {
+        "success": True, "status": "welfare_case_test_store_not_applicable", "rows_created": 0,
+    }
     protected={}
     if lifecycle["status"]=="preview_ready" and lifecycle["operation_id"] and (claim_creator or os.getenv("DATABASE_URL")):
         from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
@@ -442,6 +450,9 @@ def handle_authenticated_health_loss_message(
         "records_audit_trace": True,
         "writes_farm_data": False,
         "protected_actions_performed": False,
+        "welfare_case": welfare_case,
+        "welfare_case_id": str(welfare_case.get("welfare_case_id") or ""),
+        "welfare_case_persistence_degraded": welfare_case.get("success") is not True,
         **protected,
     }, 200
 
@@ -552,7 +563,11 @@ def _record_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None)
     event["customer_message_excerpt"] = ""
     event["sam_reply_excerpt"] = ""
     result, status = record_sam_live_stock_review_event(event)
-    return {**result, "success": status < 400 and result.get("success") is True}
+    stored = status < 400 and result.get("success") is True
+    welfare_case = None
+    if stored and welfare_case_runtime_enabled():
+        welfare_case = append_welfare_case_context(lifecycle)
+    return {**result, "success": stored, "welfare_case": welfare_case}
 
 
 def _claim_pending_context(pending, target, parsed, *, context_store=None):
@@ -587,6 +602,14 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
     if not database_url:
         raise ActiveContextLoadError("active_context_store_unavailable")
     try:
+        durable = []
+        if welfare_case_runtime_enabled():
+            try:
+                durable = load_open_welfare_case_contexts(chat_id, owner_user_id)
+            except Exception:
+                # The runtime can be deployed before the separately governed
+                # migration is applied. Preserve the existing bounded chronology.
+                durable = []
         import psycopg
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
@@ -622,7 +645,7 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
             if created_at and now - created_at.astimezone(timezone.utc) > CONTEXT_WINDOW:
                 continue
             current.append({**value, "card_message_id": str(card_message_id or "")})
-        return _dedupe_active_contexts(current, owner_user_id=owner_user_id)
+        return _dedupe_active_contexts(durable + current, owner_user_id=owner_user_id)
     except Exception as exc:
         raise ActiveContextLoadError("active_context_read_failed") from exc
 

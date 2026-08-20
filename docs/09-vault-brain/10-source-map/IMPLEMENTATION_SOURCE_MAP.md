@@ -288,8 +288,13 @@
   defines stable per-episode/per-concern identity, append-only case events and
   reference-only canonical fact links; `tests/test_pig_welfare_case_migration.py`
   and `tests/test_pig_welfare_case_postgres.py` verify the zero-authority and
-  disposable-Postgres integrity contracts. The migration is unapplied and no
-  capture, manager, shared-attention, UI or Telegram path consumes it yet.
+  disposable-Postgres integrity contracts. The bounded runtime adapter is
+  `modules/pig_weights/pig_welfare_case_runtime.py`; the existing authenticated
+  health/loss handler consumes its durable open-case context without a 24-hour
+  expiry and exposes the same case/work identity to the existing shared-
+  attention contract. Focused coverage is in
+  `tests/test_pig_welfare_case_runtime.py`. No second manager, queue,
+  observation store, UI or Telegram lifecycle is introduced.
 - Dispatch truth reducer:
   `modules/oom_sakkie/specialist_dispatch_ack.py`.
 - Existing durable evidence rail:
