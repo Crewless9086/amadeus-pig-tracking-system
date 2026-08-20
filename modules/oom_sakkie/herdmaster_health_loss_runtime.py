@@ -25,6 +25,7 @@ from modules.pig_weights.herdmaster_health_loss_recording import confirm_health_
 from modules.pig_weights.pig_welfare_case_runtime import (
     append_welfare_case_context,
     load_open_welfare_case_contexts,
+    welfare_case_runtime_enabled,
 )
 
 
@@ -412,7 +413,7 @@ def handle_authenticated_health_loss_message(
     if stored.get("success") is not True:
         return {"handled": True, "success": False, "status": "health_loss_lifecycle_persistence_failed"}, 503
     welfare_case = {"success": True, "status": "welfare_case_test_store_not_applicable", "rows_created": 0}
-    if context_store is None:
+    if context_store is None and welfare_case_runtime_enabled():
         welfare_case = append_welfare_case_context(lifecycle, connect_factory=connect_factory)
         # Immediate welfare guidance must survive a coordination-store outage.
         # The legacy authenticated chronology was retained above, so expose the
@@ -565,7 +566,11 @@ def _record_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None)
     event["customer_message_excerpt"] = ""
     event["sam_reply_excerpt"] = ""
     result, status = record_sam_live_stock_review_event(event)
-    return {**result, "success": status < 400 and result.get("success") is True}
+    stored = status < 400 and result.get("success") is True
+    welfare_case = None
+    if stored and welfare_case_runtime_enabled():
+        welfare_case = append_welfare_case_context(lifecycle)
+    return {**result, "success": stored, "welfare_case": welfare_case}
 
 
 def _claim_pending_context(pending, target, parsed, *, context_store=None):
@@ -600,15 +605,14 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
     if not database_url:
         raise ActiveContextLoadError("active_context_store_unavailable")
     try:
-        try:
-            durable = load_open_welfare_case_contexts(chat_id, owner_user_id)
-        except Exception:
-            # The runtime can be deployed before the separately governed
-            # migration is applied. Preserve the existing bounded chronology
-            # until the welfare-case capability is present and readable.
-            durable = []
-        if durable:
-            return _dedupe_active_contexts(durable, owner_user_id=owner_user_id)
+        durable = []
+        if welfare_case_runtime_enabled():
+            try:
+                durable = load_open_welfare_case_contexts(chat_id, owner_user_id)
+            except Exception:
+                # The runtime can be deployed before the separately governed
+                # migration is applied. Preserve the existing bounded chronology.
+                durable = []
         import psycopg
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
@@ -644,7 +648,7 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
             if created_at and now - created_at.astimezone(timezone.utc) > CONTEXT_WINDOW:
                 continue
             current.append({**value, "card_message_id": str(card_message_id or "")})
-        return _dedupe_active_contexts(current, owner_user_id=owner_user_id)
+        return _dedupe_active_contexts(durable + current, owner_user_id=owner_user_id)
     except Exception as exc:
         raise ActiveContextLoadError("active_context_read_failed") from exc
 

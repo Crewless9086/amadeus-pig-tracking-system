@@ -152,9 +152,10 @@ context, prefers durable open cases over its legacy 24-hour compatibility
 chronology, carries HERDMASTER owner/urgency/next-check state and projects the
 same case/work identity for the existing shared-attention contract. It creates
 no second observation, treatment, movement, mortality, manager, queue or
-Telegram lifecycle. Production application and runtime loading remain separate
-evidence gates until an immutable migration receipt and exact deployed revision
-are verified.
+Telegram lifecycle. Runtime reads and writes remain fail-closed unless
+`PIG_WELFARE_CASE_RUNTIME_ENABLED=true`; production application, explicit
+post-migration activation and exact deployed revision remain separate evidence
+gates until an immutable migration receipt and readiness proof are verified.
 
 ### Production status
 

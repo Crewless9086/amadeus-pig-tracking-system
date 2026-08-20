@@ -18,6 +18,12 @@ from typing import Any, Mapping
 OPEN_STATES = ("open", "monitoring", "escalated")
 
 
+def welfare_case_runtime_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """Require an explicit post-migration activation switch."""
+    value = (environ or os.environ).get("PIG_WELFARE_CASE_RUNTIME_ENABLED", "")
+    return str(value).strip().lower() == "true"
+
+
 def load_open_welfare_case_contexts(chat_id: str, owner_user_id: str, *, connect_factory=None):
     """Load open contexts without an elapsed-time cutoff.
 
@@ -88,7 +94,13 @@ def append_welfare_case_context(lifecycle: Mapping[str, Any], *, connect_factory
         cm = connect_factory() if connect_factory else _connect()
         with cm as connection, connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))", (case_id,))
-            cursor.execute("select welfare_case_id from public.pig_welfare_cases where idempotency_key=%s", ("case:" + mission_id,))
+            cursor.execute(
+                """select welfare_case_id,pig_id,created_by,
+                          provenance_json->'intake_context'->>'chat_id',
+                          provenance_json->'intake_context'->>'owner_user_id'
+                   from public.pig_welfare_cases where idempotency_key=%s""",
+                ("case:" + mission_id,),
+            )
             existing_case = cursor.fetchone()
             if not existing_case:
                 cursor.execute(
@@ -102,6 +114,12 @@ def append_welfare_case_context(lifecycle: Mapping[str, Any], *, connect_factory
                      provenance,"case:" + mission_id),
                 )
             else:
+                expected_owner = "owner:" + str(lifecycle.get("owner_user_id") or "")
+                if (str(existing_case[1]) != pig_id
+                        or str(existing_case[2]) != expected_owner
+                        or str(existing_case[3] or "") != str(lifecycle.get("chat_id") or "")
+                        or str(existing_case[4] or "") != str(lifecycle.get("owner_user_id") or "")):
+                    return {"success": False, "status": "welfare_case_identity_binding_mismatch", "rows_created": 0}
                 case_id = str(existing_case[0])
             cursor.execute("select welfare_case_event_id from public.pig_welfare_case_events where idempotency_key=%s", (event_key,))
             if cursor.fetchone():
@@ -109,17 +127,25 @@ def append_welfare_case_context(lifecycle: Mapping[str, Any], *, connect_factory
             cursor.execute("select case_state from public.pig_welfare_case_current where welfare_case_id=%s", (case_id,))
             current = cursor.fetchone()
             if current and str(current[0]) == "closed":
-                return {"success": False, "status": "closed_welfare_case_requires_explicit_reopen", "rows_created": 0}
+                return {"success": True, "status": "welfare_case_already_closed",
+                        "welfare_case_id": case_id, "rows_created": 0}
+            lifecycle_status = str(lifecycle.get("status") or "")
+            terminal = lifecycle_status in {"completed", "contained"}
+            case_state = "closed" if terminal else ("open" if urgency in ("critical", "urgent") else "monitoring")
+            event_type = "opened" if not current else ("closed" if terminal else "evidence_added")
             cursor.execute(
                 """insert into public.pig_welfare_case_events(
                 welfare_case_event_id,welfare_case_id,event_type,case_state,urgency,
-                responsible_owner,next_check_at,occurred_at,actor_reference,source_system,
-                source_reference,provenance_json,idempotency_key)
-                values(%s,%s,%s,%s,%s,'HERDMASTER',%s::timestamptz,%s::timestamptz,
-                       %s,'oom_sakkie',%s,%s::jsonb,%s)""",
-                (event_id,case_id,"opened" if not current else "evidence_added",
-                 "open" if urgency in ("critical","urgent") else "monitoring",urgency,
-                 next_check,occurred,"owner:" + str(lifecycle.get("owner_user_id") or ""),
+                responsible_owner,next_check_at,closure_kind,closure_reason,
+                occurred_at,actor_reference,source_system,source_reference,
+                provenance_json,idempotency_key)
+                values(%s,%s,%s,%s,%s,'HERDMASTER',%s::timestamptz,%s,%s,
+                       %s::timestamptz,%s,'oom_sakkie',%s,%s::jsonb,%s)""",
+                (event_id,case_id,event_type,case_state,urgency,
+                 None if terminal else next_check,
+                 "resolved" if terminal else None,
+                 "intake lifecycle completed" if terminal else None,
+                 occurred,"owner:" + str(lifecycle.get("owner_user_id") or ""),
                  provider_id,provenance,event_key),
             )
         return {"success": True, "status": "welfare_case_context_appended",

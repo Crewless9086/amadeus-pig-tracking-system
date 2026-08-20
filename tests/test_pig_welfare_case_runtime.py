@@ -4,6 +4,7 @@ from modules.pig_weights.pig_welfare_case_runtime import (
     load_open_welfare_case_contexts,
     project_welfare_case_attention,
     welfare_case_readiness,
+    welfare_case_runtime_enabled,
 )
 
 
@@ -57,3 +58,9 @@ def test_readiness_probe_reads_schema_only_and_zero_business_rows():
     body, status = welfare_case_readiness(connect_factory=lambda: Connection([]))
     assert status == 200 and body["success"] is True
     assert body["business_rows_read"] == body["business_rows_written"] == 0
+
+
+def test_runtime_requires_explicit_post_migration_activation():
+    assert welfare_case_runtime_enabled({}) is False
+    assert welfare_case_runtime_enabled({"PIG_WELFARE_CASE_RUNTIME_ENABLED": "true"}) is True
+    assert welfare_case_runtime_enabled({"PIG_WELFARE_CASE_RUNTIME_ENABLED": "1"}) is False
