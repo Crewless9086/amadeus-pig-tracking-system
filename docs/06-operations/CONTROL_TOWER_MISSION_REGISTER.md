@@ -346,6 +346,20 @@ charity button. Promotion requires an explicit governed production-migration
 authority decision; a terminal may not invent credentials or disguise the
 disposable CI database as production.
 
+Control Tower then requested the exact elevated OS mutation required by CORE:
+enable `Microsoft-Windows-TaskScheduler/Operational` and read it back. Even the
+managed elevated execution boundary returned Windows `Access is denied`; fresh
+readback remains `enabled: false`. No task, provider, activation, epoch or
+runtime state changed. This proves a genuine interactive/local Administrator or
+SYSTEM boundary is still required; repeating non-elevated terminals is
+ineligible.
+
+With the three released terminals closed, Control Tower reopened only the
+existing PR #1127 shared-attention lineage for current-main reconciliation.
+Visible parent PID 70472 owns the bounded source/CI update; it has no merge,
+deployment, farm-write, Telegram-send or fabricated-screenshot authority. The
+browser/owner-preview gate remains mandatory after the PR is clean again.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
