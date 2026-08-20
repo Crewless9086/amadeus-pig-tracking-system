@@ -826,13 +826,27 @@ only and completion requires attributable source, review, tests, Brain Guard and
 exact-head CI evidence.
 
 The existing shared-attention PR #1127 reconciled current main without opening a
-duplicate lineage. Exact head `57a61ac7` is clean against `86fb87a3`; 52 focused
-tests, 753 broad Oom/SAM/BEACON tests with seven skips, 235 incoming-overlap
-tests, JavaScript syntax, browser smoke, Brain Guard, independent review and all
-three hosted CI lanes passed. Lifecycle is `REVIEW_HOLD /
-AUTHENTICATED_OWNER_PREVIEW_REQUIRED`; source is not merged or deployed. The
-released reconciliation host was closed. Automatic promotion remains exact-head
-desktop/mobile visual approval when browser inventory becomes available.
+duplicate lineage. Its released terminal subsequently incorporated the welfare
+case foundation and ROOTLINE revision endpoint from authoritative main
+`986e13e8`, preserving the sole `app.py` overlap, and closed with a clean
+worktree at exact head `0910d8c0a9f94e64d79621048ae51166aa8afb6d` (13 ahead,
+zero behind). Exact-head evidence records 288 tests passed, 11 skipped and 20
+subtests passed; authenticated Playwright, Brain Guard, HERDMASTER/domain,
+security/safety, UI and accessibility review all passed. GitHub independently
+reports PR #1127 clean/mergeable with all three hosted CI lanes successful.
+The source supplies one typed attention projection across API, homepage, full
+view, Brief and Telegram, including stable welfare identity, proper status
+reconciliation versus physical weighing, ROOTLINE-owned retries, top-three plus
+hidden count, lifecycle/provenance and strict owner-read authentication. It did
+not implement the separately registered grouped boar D-3 addendum.
+
+Lifecycle is `OWNER_HOLD / AUTHENTICATED_OWNER_VISUAL_APPROVAL_REQUIRED`;
+source is not merged or deployed and no business outcome is claimed. The Oom
+Sakkie terminal is closed/released rather than active work. The single genuine
+next owner decision is visual approval or precise correction of PR #1127's
+desktop/mobile homepage and full-attention presentation; after approval, merge
+and deployment remain a separately governed release action. No continuation is
+dispatched while that decision is outstanding.
 
 The approved longitudinal welfare-case addendum has now entered its first bounded,
 collision-safe source phase in a fresh visible HERDMASTER terminal. Worktree
