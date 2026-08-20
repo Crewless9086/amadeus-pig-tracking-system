@@ -98,6 +98,33 @@ explicit zero-consideration charity disposition for
 receivable/payment truth without a data hack. Lifecycle remains `WORKING /
 INTERRUPTION_RECOVERED / IMPLEMENTATION_AND_ACCEPTANCE_REQUIRED`.
 
+### CORE exact-current validation and staging
+
+Mission `CMQ-20260813-05` passed a fresh isolated validation and
+stop-preserving staging gate for exact authoritative revision
+`98d13d87a1aac63a37ec2dcf7ad6cad35f79a9c2`. Validation identity
+`7a55ff7b38ce4c128a82dc612fd27572` ran in the governed disposable
+boundary: 104 focused tests passed with one platform skip; the complete
+nine-module gate passed 271 tests with six platform skips; deterministic Brain
+Guard passed with zero findings; signed receipt
+`e12b29e9f5bd84c60d68a28dbbe5c41b1a2df483f96f1b9252c4b905edc94c5a`
+verified against the exact source.
+
+Staging lane `fcb5fda6c9e84e50aaccc15a5a1c102a` promoted runtime, execution and
+manifest to the same exact revision and then released cleanly. Governed stop
+digest `8887c0c06d040b60fef580c0135761019fe7e416d594538cf86fcf18d1e594b1`
+was preserved; supervisor remains stopped; watchdog projection is
+`governed_stop_active`; the exact scheduled task remains disabled; no locks,
+heartbeat, worker cycle, database, provider, farm, customer or hardware effect
+was created. Historical identities were not reused.
+
+Lifecycle is `OWNER_HOLD / EXACT_CURRENT_VALIDATED_AND_STAGED /
+ACTIVATION_NOT_AUTHORIZED`. The validation/staging terminal is released and its
+idle visible host is eligible to close. The only next CORE gate is one separately
+authorized fresh provider-origin activation, followed by exact provider,
+supervisor/runner, heartbeat, independent-cycle, next-cycle and terminal-close
+continuity proof. Staging success is not operational CORE.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
