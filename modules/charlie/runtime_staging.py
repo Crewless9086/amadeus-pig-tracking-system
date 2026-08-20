@@ -503,13 +503,8 @@ def _validate_task(rows, runtime_root):
     row = rows[0] if isinstance(rows[0], dict) else {}
     canonical_root = runtime_root.parent.parent
     expected_execute = canonical_root / "venv" / "Scripts" / "pythonw.exe"
-    expected_watchdog = runtime_root / "scripts" / "charlie_runner_watchdog.py"
-    expected_env = canonical_root / ".env"
-    expected_arguments = (
-        '-c "from dotenv import load_dotenv; load_dotenv(r\'{0}\', override=True); '
-        "import runpy,sys; sys.argv=[r'{1}','--json']; "
-        "runpy.run_path(r'{1}', run_name='__main__')\""
-    ).format(expected_env, expected_watchdog)
+    expected_launcher = runtime_root / "scripts" / "charlie_runner_task_launcher.py"
+    expected_arguments = f'"{expected_launcher}"'
     execute = str(Path(str(row.get("execute") or "")).resolve()).casefold()
     working = str(Path(str(row.get("working_directory") or "")).resolve()).casefold()
     arguments = str(row.get("arguments") or "").casefold()

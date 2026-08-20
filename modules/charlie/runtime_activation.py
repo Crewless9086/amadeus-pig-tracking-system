@@ -554,6 +554,9 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
             sleep_fn(max(0, min(poll,
                                 deadline - monotonic_fn())))
     except Exception as exc:
+        startup_evidence = read_startup_evidence(
+            state_root, str(packet.get("activation_id") or "")
+        )
         recover_activation(state_root=state_root, task_controller=task_controller,
                            activation_id=str(packet.get("activation_id") or ""),
                            failure_evidence={
@@ -561,9 +564,11 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
                                "evidence_status": getattr(exc, "status", exc.__class__.__name__),
                                "evidence": getattr(exc, "evidence", {}),
                                "readiness_observations": locals().get("observations", []),
+                               "startup_evidence": startup_evidence,
                            })
         raise ActivationError("activation_verification_failed",
-                              evidence_status=getattr(exc, "status", exc.__class__.__name__)) from exc
+                              evidence_status=getattr(exc, "status", exc.__class__.__name__),
+                              startup_evidence=startup_evidence) from exc
     required = (
         "loaded_revision_exact", "execution_mode_observe_only",
         "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
@@ -2250,13 +2255,8 @@ def _validate_exact_task(rows, runtime_root):
         raise ActivationError("scheduled_task_executable_mismatch")
     if str(Path(str(rows[0].get("working_directory") or "")).resolve()).casefold() != str(runtime_root).casefold():
         raise ActivationError("scheduled_task_working_directory_mismatch")
-    canonical_root = runtime_root.parent.parent
-    expected_watchdog = runtime_root / "scripts" / "charlie_runner_watchdog.py"
-    expected_arguments = (
-        '-c "from dotenv import load_dotenv; load_dotenv(r\'{0}\', override=True); '
-        "import runpy,sys; sys.argv=[r'{1}','--json']; "
-        "runpy.run_path(r'{1}', run_name='__main__')\""
-    ).format(canonical_root / ".env", expected_watchdog)
+    expected_launcher = runtime_root / "scripts" / "charlie_runner_task_launcher.py"
+    expected_arguments = f'"{expected_launcher}"'
     if str(rows[0].get("arguments") or "").casefold() != expected_arguments.casefold():
         raise ActivationError("scheduled_task_arguments_mismatch")
 
@@ -2375,6 +2375,45 @@ def _command_tokens(value):
 def _sign_record(record, key, signature_field):
     unsigned = {k: v for k, v in record.items() if k != signature_field}
     return hmac.new(key, _canonical(unsigned), hashlib.sha256).hexdigest()
+
+
+def read_startup_evidence(state_root, activation_id, *, limit=32):
+    """Return only authenticated, activation-bound launcher records."""
+    state_root = Path(state_root)
+    evidence_dir = state_root / "activation-ledger" / "startup-evidence" / activation_id
+    try:
+        key = _read_key(state_root / "activation-authority.key")
+        paths = sorted(evidence_dir.glob("*.json"))
+    except (OSError, ActivationError):
+        return {"status": "startup_evidence_unavailable", "records": []}
+    records = []
+    invalid_count = 0
+    for path in paths:
+        try:
+            record = json.loads(path.read_bytes())
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            invalid_count += 1
+            continue
+        signature = str(record.get("record_hmac_sha256") or "")
+        if (record.get("version") != "charlie_core_startup_evidence_v1"
+                or record.get("activation_id") != activation_id
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(record.get("activation_packet_hmac_sha256") or ""),
+                )
+                or not hmac.compare_digest(
+                    signature, _sign_record(record, key, "record_hmac_sha256")
+                )):
+            invalid_count += 1
+            continue
+        records.append(record)
+    selected = records[-int(limit):]
+    return {
+        "status": "startup_evidence_authenticated" if records else "startup_evidence_absent",
+        "records": selected,
+        "evidence_sha256": hashlib.sha256(_canonical(selected)).hexdigest(),
+        "invalid_or_unbound_records_ignored": invalid_count,
+    }
 
 
 def _archive_activation_artifacts(state_root, activation_id, suffix):

@@ -57,6 +57,17 @@
   exact audit readback. These
   source references grant no
   staging, activation, process, mission-pickup or release authority.
+  The scheduled action enters through
+  `scripts/charlie_runner_task_launcher.py`, which publishes bounded,
+  HMAC-authenticated immutable per-epoch phase records, exact launcher/action
+  identity, sanitized stderr tail and exit evidence before importing dotenv or
+  the watchdog. Activation
+  verification accepts only correctly signed records bound to its fresh
+  activation identity; invalid, tampered and other-epoch records are ignored.
+  Promotion and staging bind the launcher action exactly. Focused source-only
+  coverage is in `tests/test_charlie_runner_task_launcher.py` and
+  `tests/test_charlie_runtime_staging.py`; this evidence rail grants no task,
+  activation, runtime, mission, provider or release authority.
 
 - Source contract: `modules/charlie/shadow_control_tower.py`.
 - Focused zero-authority tests: `tests/test_shadow_control_tower.py`.

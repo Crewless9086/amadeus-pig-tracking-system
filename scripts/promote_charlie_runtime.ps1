@@ -79,9 +79,8 @@ try {
 & $python (Join-Path $RuntimeRoot "scripts\charlie_runtime_audit.py") promote --runtime-dir $runtimeState
 if ($LASTEXITCODE -ne 0) { throw "Runtime manifest promotion failed." }
 
-$watchdog = Join-Path $RuntimeRoot "scripts\charlie_runner_watchdog.py"
-$envFile = Join-Path $canonical ".env"
-$argument = '-c "from dotenv import load_dotenv; load_dotenv(r''{0}'', override=True); import runpy,sys; sys.argv=[r''{1}'',''--json'']; runpy.run_path(r''{1}'', run_name=''__main__'')"' -f $envFile,$watchdog
+$launcher = Join-Path $RuntimeRoot "scripts\charlie_runner_task_launcher.py"
+$argument = '"{0}"' -f $launcher
 $action = New-ScheduledTaskAction -Execute $pythonw -Argument $argument -WorkingDirectory $RuntimeRoot
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2)
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -Hidden
