@@ -534,6 +534,29 @@ interrupted tests/reviews/PR evidence and return the full handover. ROOTLINE sti
 has zero hardware authority; HERDMASTER still has zero production-record or
 Telegram authority. Process identities are launch evidence only.
 
+CORE exact-main validation passed for merge `9fdfa2dc`: HEAD, FETCH_HEAD and
+origin/main were equal; Windows returned 95 passed plus 24 subtests, the isolated
+container returned 94 passed plus one Windows-only skip and 24 subtests, and Brain
+Guard/focused Vault checks passed. Unique validation identity
+`2a4b47f0-cd08-4dcd-bf34-adf633c3e20d` produced receipt SHA-256
+`678acbe8aff0b833a392690368ef8aac45b4862511a85dc5328cd62f49bd87fe`
+and key SHA-256
+`fff846c43dfab96254e547e34a05bc913fdf08b995235bbdbeb3b6d05008ee27`;
+HMAC verification passed. No staging or operational effect occurred. Lifecycle is
+`EXACT_CURRENT_VALIDATED / STAGING_AUTHORITY_REQUIRED`; the validation window was
+closed.
+
+The concurrent HERDMASTER and ROOTLINE resumes were both stopped at the same
+instant by the shared terminal pipeline (`The pipeline has been stopped`) without
+source/test failure or final handover. Both dirty candidates remain intact. To
+avoid repeating a shared-session interruption, Control Tower moved to serialized
+recovery: ROOTLINE remains preserved and idle with zero hardware authority, while
+HERDMASTER alone resumed in a separately launched visible terminal, parent PID
+35128, launcher PID 56160 and worker PID 79732. Its first duty is to checkpoint
+the existing eight-file candidate before reconciling current main and continuing.
+Lifecycle is `WORKING / SERIALIZED_PHASE_2_RECOVERY`; process identity is launch
+evidence only.
+
 Charl reported the SALES owner page open and authenticated, but browser-control
 discovery returned no connected browser surface. Therefore Control Tower did not
 read, submit or fabricate a preview. The owner may safely create the zero-write
