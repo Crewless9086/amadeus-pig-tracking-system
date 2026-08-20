@@ -1326,7 +1326,8 @@ deferral/rejection and tank-gate result remain `Unknown` in this source worktree
 403 without an owner session, and no in-app browser session was available. The
 healthy deployed web service and historical manager cycles do not fill that gap.
 
-Lifecycle: `WORKING / SOURCE_REPAIR_ACTIVE / CANONICAL_READBACK_REQUIRED`.
+Lifecycle: `REVIEW_HOLD / SOURCE_PR_1140_OPEN / RELEASE_HOLD /
+CANONICAL_READBACK_REQUIRED`.
 
 The current branch adds one read-only `rootline_zone_lifecycle.v1` projection
 for `Recommended`, `Revalidating`, `Eligible`, `Authorized`, `Started`,
@@ -1344,8 +1345,8 @@ queue, scheduler, approval or Telegram lifecycle is added.
 PR #1126 is governance collision evidence only because it modifies this
 register and the Mission Standard; its current head must be reconciled before
 final PR preparation without importing its lifecycle claims as runtime truth.
-Automatic continuation after exact-head review is one source-only PR, then a
-later serialized merge/deploy decision. Business completion still requires the
+Source-only PR #1140 is the single review rail; a later serialized merge/deploy
+decision remains outside this terminal's authority. Business completion still requires the
 deployed ROOTLINE actor to produce a fresh B execution or one exact truthful
 blocker, provider/canonical readback, physical proof and a later
 terminal-independent cycle. This terminal is forbidden from operating B/C,
