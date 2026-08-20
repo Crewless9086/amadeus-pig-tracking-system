@@ -37,7 +37,11 @@
   consumed instance record, and consumed-plus-pending state is routed to
   explicit recovery before any repeated provider start;
   focused fail-closed coverage is in
-  `tests/test_charlie_runtime_activation.py`. These source references grant no
+  `tests/test_charlie_runtime_activation.py`. Native Windows access-denied
+  forms are an explicit OS-authority blocker distinct from provider/tool or
+  readback failure; no source fallback elevates the controller or bypasses
+  exact audit readback. These
+  source references grant no
   staging, activation, process, mission-pickup or release authority.
 
 - Source contract: `modules/charlie/shadow_control_tower.py`.
