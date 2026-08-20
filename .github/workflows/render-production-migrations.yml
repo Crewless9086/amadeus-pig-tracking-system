@@ -1,0 +1,83 @@
+name: Governed Render Production Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        description: Exact deployed main commit authorized for this run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-production-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate exact source binding and authority
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::expected_source_commit must be an exact lowercase commit SHA"
+            exit 1
+          }
+          [[ -n "$RENDER_API_KEY" ]] || {
+            echo "::error::production environment secret RENDER_API_KEY is unavailable"
+            exit 1
+          }
+
+      - name: Create exact Render one-off migration job
+        id: create
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: srv-d6sijjkhg0os73f7regg
+        shell: bash
+        run: |
+          set -euo pipefail
+          body=$(jq -cn --arg command "RENDER_MIGRATION_EXPECTED_COMMIT=$EXPECTED_SOURCE_COMMIT python scripts/run_render_production_migrations.py" '{startCommand:$command}')
+          response=$(curl --fail-with-body --silent --show-error \
+            -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/jobs" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data "$body")
+          job_id=$(jq -er '.id' <<<"$response")
+          [[ "$job_id" == job-* ]] || { echo "::error::invalid Render job identity"; exit 1; }
+          echo "job_id=$job_id" >> "$GITHUB_OUTPUT"
+          echo "Render job created: $job_id"
+
+      - name: Wait for terminal Render job outcome
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: srv-d6sijjkhg0os73f7regg
+          JOB_ID: ${{ steps.create.outputs.job_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            response=$(curl --fail-with-body --silent --show-error \
+              "https://api.render.com/v1/services/$RENDER_SERVICE_ID/jobs/$JOB_ID" \
+              -H "Authorization: Bearer $RENDER_API_KEY")
+            status=$(jq -er '.status' <<<"$response")
+            case "$status" in
+              succeeded)
+                jq '{id,status,startedAt,finishedAt,serviceId}' <<<"$response"
+                exit 0 ;;
+              failed|canceled)
+                jq '{id,status,startedAt,finishedAt,serviceId}' <<<"$response"
+                exit 1 ;;
+              *) sleep 10 ;;
+            esac
+          done
+          echo "::error::Render migration job did not reach a terminal state within ten minutes"
+          exit 1
