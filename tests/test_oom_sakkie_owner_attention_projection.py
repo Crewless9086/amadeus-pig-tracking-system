@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+import inspect
 
-from modules.oom_sakkie.manager_case_sources import _herdmaster
+from modules.oom_sakkie.manager_case_sources import _herdmaster, _sam
 from modules.oom_sakkie.owner_attention_projection import build_owner_attention_projection
 from modules.oom_sakkie.telegram_direct import _format_daily_command_brief
 
@@ -141,3 +142,9 @@ def test_herdmaster_protected_state_is_typed_as_owner_decision(monkeypatch):
     rows = _herdmaster(NOW)
 
     assert rows[0]["task_class"] == "protected_decision"
+
+
+def test_sam_unresolved_work_does_not_expire_by_age():
+    source = inspect.getsource(_sam)
+    assert "timedelta(days=" not in source
+    assert "limit 50" not in source.casefold()

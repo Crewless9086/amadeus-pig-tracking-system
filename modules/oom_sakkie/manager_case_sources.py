@@ -203,8 +203,7 @@ def _sam(now):
             cur.execute("""select review_event_id,created_at,decision_json
                 from public.sam_live_stock_conversation_review_events
                 where event_source='sam_live_stock_direct_inbound'
-                  and created_at>=%s
-                order by created_at desc,review_event_id desc limit 50""", (now - timedelta(days=7),))
+                order by created_at desc,review_event_id desc""")
             rows = cur.fetchall()
     result, seen = [], set()
     for event_id, observed, decision in rows:
