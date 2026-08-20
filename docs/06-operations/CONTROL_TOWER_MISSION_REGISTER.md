@@ -77,6 +77,33 @@ it has no schema/data-write, worker-invocation, Telegram, credential or hardware
 authority. Process identities prove launch only. No additional owner action is
 requested until attributable handovers establish the exact next boundaries.
 
+Both continuation terminals then completed and auto-closed; a fresh process
+sweep found no active `codex exec` terminal. Oom Sakkie reconciled PR #1127 to
+current main and pushed exact head
+`193397e829d7b1749f19748226cf2e49b26948cf`. GitHub independently reports it
+open, clean and mergeable with all three exact-head CI lanes successful. The
+owner-approved CSS, JavaScript, templates, semantic emoji and humour remain
+byte-identical to approved head `0910d8c0`, and PR #1138 is preserved. No visual
+re-review is required. Lifecycle is `VISUALLY_APPROVED /
+EXACT_CURRENT_RELEASE_HOLD`; only a separately explicit merge/deployment
+authorization remains.
+
+ROOTLINE proved that current deployed main `572d0783` cannot apply missing
+migration `202608190002_create_beacon_protected_publication_consumer.sql`
+because the governed workflow's closed allowlist omitted it. Source-only PR
+#1139 at exact head `86bce828ff81cd0e25bb2ef12d33b1283871550f`
+repairs that allowlist/order; GitHub reports it open, clean and mergeable with all
+three exact-head CI lanes successful. Disposable PostgreSQL application, replay,
+immutable receipt, structure, syntax, checksum and ordering checks passed. The
+migration's canonical LF SHA-256 is
+`2d033bdcdf011f9dd417c5d9ae2659c334e139f7815b20a910b12b50e4df7edd`;
+it creates one empty private replay-safety consumer table and requires existing
+protected-action claims. No migration or production effect occurred. Lifecycle
+is `WORKING / MIGRATION_RAIL_SOURCE_READY / RELEASE_HOLD`. First authorize only
+PR #1139 merge/deployment; only after exact deployed revision proof may a second
+authorization run the checksum-bound production migration workflow. The
+untracked ROOTLINE readiness handover remains preserved and is not active work.
+
 ### DOCUMENTS governed local-printing next phase
 
 Charl approved governed local printing as a `NEXT_PHASE` of existing Documents
