@@ -38,6 +38,48 @@ def test_scheduled_brain_guard_audit_preserves_failure_findings():
     assert audit["findings"] == ["missing authority"]
 
 
+def test_current_beacon_generation_retires_every_older_unconsumed_card():
+    commands = []
+
+    class Cursor:
+        def execute(self, sql, params):
+            commands.append((sql, params))
+        def fetchone(self):
+            return ("OOM-CASE-BEACON", 26)
+
+    PostgresManagerCaseStore._retire_stale_beacon_claims(
+        Cursor(), "general-manager:beacon", NOW)
+    update, params = commands[-1]
+    assert "c.status in ('active','executing','completed')" in update
+    assert "beacon_protected_publication_consumers" in update
+    assert "coalesce(result_payload,'{}'::jsonb)" in update
+    assert params[2] == "scheduled:OOM-CASE-BEACON:G%"
+    assert params[3] == "scheduled:OOM-CASE-BEACON:G26"
+    assert "c.provider_message_id like %s" in update
+    assert "superseded_by_current_manager_generation" in params[0]
+
+
+def test_beacon_reconciliation_checks_claimed_publication_point_of_no_return():
+    commands = []
+
+    class Cursor:
+        responses = [("old", 26, "waiting_reassessment", None, None, []), (1,)]
+        def execute(self, sql, params):
+            commands.append((sql, params))
+        def fetchone(self):
+            return self.responses.pop(0)
+
+    candidate = {"case_id": "CASE-A", "dedupe_key": "beacon:a",
+        "specialist": "BEACON", "urgency": "planned", "evidence_digest": "new",
+        "evidence_refs": [], "unknowns": [], "summary": "summary",
+        "next_action": "next", "next_reassessment_at": NOW.isoformat()}
+    result = PostgresManagerCaseStore(connect_factory=lambda: None)._reconcile(
+        Cursor(), candidate, NOW)
+    assert result == "deferred"
+    assert "beacon_protected_publication_consumers" in commands[-1][0]
+    assert commands[-1][1] == ("scheduled:CASE-A:G26",)
+
+
 def test_cycle_wrapper_supplies_current_brain_guard_audit_to_store():
     class Store:
         def run_cycle(self, candidates, **kwargs):

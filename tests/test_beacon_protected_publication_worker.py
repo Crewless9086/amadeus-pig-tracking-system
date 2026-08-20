@@ -127,6 +127,15 @@ def test_restart_after_claim_is_terminal_ambiguous_and_never_retried():
     assert "claimed_at <" in joined and "contained_ambiguous" in joined
 
 
+def test_scheduled_approval_must_still_be_the_current_manager_generation():
+    sql = PostgresProtectedPublicationStore.claim.__code__.co_consts
+    joined = " ".join(value for value in sql if isinstance(value, str))
+    assert "app_private.oom_manager_cases" in joined
+    assert "m.specialist='BEACON'" in joined
+    assert "scheduled:" in joined and "m.generation::text" in joined
+    assert "order by case_id for update" in joined
+
+
 def test_success_without_provider_readback_is_contained_ambiguous():
     store=Store(approval())
     result=run_protected_publication_cycle(store=store, executor=lambda *a,**k: (

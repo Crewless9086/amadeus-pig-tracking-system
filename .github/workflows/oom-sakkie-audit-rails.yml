@@ -158,6 +158,14 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608150003_allow_beacon_album_finish_protected_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608150007_allow_beacon_media_review_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608150008_add_beacon_album_review_envelope.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608170002_create_oom_manager_case_runtime.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608170004_allow_beacon_campaign_review_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608190002_create_beacon_protected_publication_consumer.sql
+
+      - name: Run BEACON current-generation retirement and publication serialization tests
+        env:
+          BEACON_GENERATION_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_beacon_generation_retirement_postgres
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
