@@ -35,6 +35,27 @@ The next protected migration authorization must name exact deployed main
 any ad-hoc SQL, data, deployment, worker invocation, Telegram, provider, secret,
 claim or hardware effect.
 
+Charl then issued that exact protected authorization. Control Tower reverified
+production `/health/revision` at exact `b9eefabf65f30811c771a484b0459c5280401686`
+and dispatched `.github/workflows/render-production-migrations.yml` exactly once
+with only `expected_source_commit` set to that SHA. GitHub run `32388286765`
+validated the source binding and production secret, created Render one-off job
+`job-da3i3djtqb8s73cujbpg`, and completed successfully. Render reports the job
+started `2026-08-20T15:48:06Z`, finished `15:48:36Z`, status `succeeded`, on
+service `srv-d6sijjkhg0os73f7regg`. No retry occurred and no second workflow run
+was created. This provider result proves the governed job completed; exact
+canonical migration receipts and restored manager behavior remain separate
+acceptance evidence.
+
+A fresh clean visible ROOTLINE acceptance terminal was launched from exact main
+at `C:\tmp\rootline-post-migration-acceptance-20260820` solely to observe the
+next genuine five-minute provider-owned manager cycle and one later independent
+cycle. Fresh Node PID `8916` and Codex PID `37340` prove dispatch only. The
+terminal may not invoke the scheduler/worker, rerun migrations, send Telegram,
+change secrets or credentials, create claims/writes, or operate any provider or
+hardware control. Lifecycle is `WORKING / GOVERNED_MIGRATION_JOB_SUCCEEDED /
+AUTONOMOUS_ZERO_CONTROL_ACCEPTANCE_IN_PROGRESS`.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
