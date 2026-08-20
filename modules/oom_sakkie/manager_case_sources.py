@@ -200,10 +200,13 @@ def _herdmaster(now):
 def _sam(now):
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
-            cur.execute("""select review_event_id,created_at,decision_json
+            cur.execute("""select distinct on (decision_json->'inbound'->>'conversation_id')
+                    review_event_id,created_at,decision_json
                 from public.sam_live_stock_conversation_review_events
                 where event_source='sam_live_stock_direct_inbound'
-                order by created_at desc,review_event_id desc""")
+                  and coalesce(decision_json->'inbound'->>'conversation_id','')<>''
+                order by decision_json->'inbound'->>'conversation_id',
+                         created_at desc,review_event_id desc""")
             rows = cur.fetchall()
     result, seen = [], set()
     for event_id, observed, decision in rows:

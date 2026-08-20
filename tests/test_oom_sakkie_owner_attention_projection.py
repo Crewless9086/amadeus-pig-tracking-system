@@ -148,3 +148,4 @@ def test_sam_unresolved_work_does_not_expire_by_age():
     source = inspect.getsource(_sam)
     assert "timedelta(days=" not in source
     assert "limit 50" not in source.casefold()
+    assert "distinct on (decision_json->'inbound'->>'conversation_id')" in source
