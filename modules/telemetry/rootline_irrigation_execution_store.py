@@ -23,6 +23,8 @@ def rootline_irrigation_execution_store(action, payload):
                   "load_auxiliary_physical_outcome", "load_job_events"}:
         return _load(action, payload)
     body = dict(payload or {})
+    if action == "dispatch_auxiliary_on_edge":
+        return _dispatch_auxiliary_on_edge(body)
     execution_id = str(body.get("execution_id") or "").strip()
     if not execution_id:
         return {"success": False, "created": False}
@@ -50,9 +52,18 @@ def rootline_irrigation_execution_store(action, payload):
         "review_json": {"rootline_execution": _stored_event_body(action, body, event_id)},
         "decision_json": {}, "facts_json": {},
         "customer_message_excerpt": "", "sam_reply_excerpt": ""})
+    def connect_for_event():
+        connection=connect_bounded_rootline_postgres(
+            database_url=os.environ.get("DATABASE_URL"),read_only=False)
+        if action in {"mark_active","mark_stopping","record_completed","contain_zone",
+                "record_ambiguous_shutdown","record_claim_recovery"}:
+            # Serialize parent state transitions with an injection claim's final
+            # active-parent check. Lock order is identical everywhere.
+            connection.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
+            connection.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+        return connection
     result, status = record_sam_live_stock_review_event(event,
-        connect_factory=lambda: connect_bounded_rootline_postgres(
-            database_url=os.environ.get("DATABASE_URL"), read_only=False))
+        connect_factory=connect_for_event)
     if status >= 500 and str(result.get("error_type") or "") in {
             "OperationalError", "ConnectionTimeout", "PoolTimeout",
             "QueryCanceled", "QueryCanceledError", "LockNotAvailable"}:
@@ -112,6 +123,8 @@ def _load(action, payload):
                     if item.get("action") in terminal_actions:
                         if _terminal_closes_active(item, auxiliary=auxiliary):
                             terminal.add(identity)
+                    elif not auxiliary and item.get("action") == "mark_stopping":
+                        candidates.setdefault(identity,item)
                     elif _is_active_candidate(item, active_action, claim_action):
                         candidates.setdefault(identity, item)
                 for identity, item in candidates.items():
@@ -395,7 +408,47 @@ def _claim_single_auxiliary(body):
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
                                            read_only=False) as connection:
         with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            if body.get("device_type") == "fertilizer_injection_valve":
+                job_id=str(body.get("job_id") or "");job_sha=str(body.get("job_sha256") or "")
+                segment=str(body.get("segment_identity") or "");zone=str(body.get("zone_id") or "")
+                zone_execution=str(body.get("zone_execution_id") or "")
+                if (not job_id.startswith("ROOTLINE-IRRIGATION-JOB-") or len(job_sha)!=64
+                        or not segment.startswith("ROOTLINE-JOB-SEGMENT-") or not zone
+                        or not zone_execution):
+                    return {"success":False,"created":False,
+                        "status":"irrigation_job_binding_incomplete"}
+                cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
+                    where claim.event_source=%s
+                      and claim.review_json->'rootline_execution'->>'action'='claim_before_on'
+                      and claim.review_json->'rootline_execution'->>'job_id'=%s
+                      and claim.review_json->'rootline_execution'->>'job_sha256'=%s
+                      and claim.review_json->'rootline_execution'->>'segment_identity'=%s
+                      and claim.review_json->'rootline_execution'->>'zone_id'=%s
+                      and claim.review_json->'rootline_execution'->>'execution_id'=%s
+                      and exists (select 1 from public.sam_live_stock_conversation_review_events active
+                        where active.event_source=%s
+                          and active.review_json->'rootline_execution'->>'action'='mark_active'
+                          and active.review_json->'rootline_execution'->>'execution_id'=
+                              claim.review_json->'rootline_execution'->>'execution_id')
+                      and not exists (select 1 from public.sam_live_stock_conversation_review_events terminal
+                        where terminal.event_source=%s
+                          and terminal.review_json->'rootline_execution'->>'execution_id'=
+                              claim.review_json->'rootline_execution'->>'execution_id'
+                          and terminal.review_json->'rootline_execution'->>'action'
+                              in ('record_completed','contain_zone','record_ambiguous_shutdown',
+                                  'record_claim_recovery'))
+                      and not exists (select 1 from public.sam_live_stock_conversation_review_events stopping
+                        where stopping.event_source=%s
+                          and stopping.review_json->'rootline_execution'->>'execution_id'=
+                              claim.review_json->'rootline_execution'->>'execution_id'
+                          and stopping.review_json->'rootline_execution'->>'action'='mark_stopping')
+                    limit 1""",(EVENT_SOURCE,job_id,job_sha,segment,zone,zone_execution,
+                        EVENT_SOURCE,EVENT_SOURCE,EVENT_SOURCE))
+                if not cursor.fetchone():
+                    return {"success":True,"created":False,
+                        "status":"eligible_irrigation_segment_not_active"}
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
                 where event_source=%s and (review_event_id=%s or
                   (review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
@@ -431,6 +484,40 @@ def _claim_single_auxiliary(body):
                     "event_id":event_id,**body}},sort_keys=True,separators=(",",":"),default=str)))
             return {"success":True,"created":cursor.rowcount==1,
                 "status":"claimed" if cursor.rowcount==1 else "execution_replay"}
+
+
+def _dispatch_auxiliary_on_edge(body):
+    """Hold parent and auxiliary locks through the injection provider ON edge."""
+    dispatch=body.pop("dispatch",None)
+    if not callable(dispatch) or body.get("device_type")!="fertilizer_injection_valve":
+        return {"accepted_unambiguous":False,"status":"atomic_on_edge_invalid"}
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                                           read_only=False) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
+                where claim.event_source=%s
+                  and claim.review_json->'rootline_execution'->>'action'='claim_before_on'
+                  and claim.review_json->'rootline_execution'->>'execution_id'=%s
+                  and claim.review_json->'rootline_execution'->>'job_id'=%s
+                  and claim.review_json->'rootline_execution'->>'job_sha256'=%s
+                  and claim.review_json->'rootline_execution'->>'segment_identity'=%s
+                  and claim.review_json->'rootline_execution'->>'zone_id'=%s
+                  and not exists (select 1 from public.sam_live_stock_conversation_review_events stop
+                    where stop.event_source=%s
+                      and stop.review_json->'rootline_execution'->>'execution_id'=%s
+                      and stop.review_json->'rootline_execution'->>'action' in
+                        ('mark_stopping','record_completed','contain_zone',
+                         'record_ambiguous_shutdown','record_claim_recovery')) limit 1""",
+                (EVENT_SOURCE,body.get("zone_execution_id"),body.get("job_id"),
+                 body.get("job_sha256"),body.get("segment_identity"),body.get("zone_id"),
+                 EVENT_SOURCE,body.get("zone_execution_id")))
+            if not cursor.fetchone():
+                return {"accepted_unambiguous":False,
+                    "status":"parent_edge_authority_revoked"}
+            return dispatch()
 
 
 def _append_history(action, body):

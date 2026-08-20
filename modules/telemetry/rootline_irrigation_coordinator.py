@@ -19,7 +19,9 @@ from modules.telemetry.rootline_auxiliary_management import (
 from modules.telemetry.rootline_irrigation_execution_store import (
     RootlineExecutionStoreUnavailable,
 )
-from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
+from modules.telemetry.rootline_device_registry import (
+    commissioned_irrigation_contract, get_device_contract,
+)
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
@@ -191,6 +193,9 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         "auxiliary_device_id":artifact["auxiliary_device_id"],
         "device_type":artifact["device_type"],"device_id":artifact["device_id"],
         "channel":artifact["channel"],"zone_id":artifact.get("zone_id"),
+        "job_id":artifact.get("job_id"),"job_sha256":artifact.get("job_sha256"),
+        "segment_identity":artifact.get("segment_identity"),
+        "zone_execution_id":artifact.get("zone_execution_id"),
         "pulse_number":artifact.get("pulse_number"),
         "maximum_duration_seconds":artifact["maximum_duration_seconds"],
         "claimed_at":now.isoformat(),"primary_stop_deadline":(
@@ -199,8 +204,11 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     claim=store("claim_auxiliary_before_on",execution)
     if not isinstance(claim,dict) or claim.get("created") is not True:
         return _aux_result("auxiliary_claim_conflict")
-    accepted=transport.set_state(device_id=execution["device_id"],channel=execution["channel"],
-        state="ON",idempotency_key=execution["execution_id"]+":ON")
+    dispatch=lambda:transport.set_state(device_id=execution["device_id"],
+        channel=execution["channel"],state="ON",
+        idempotency_key=execution["execution_id"]+":ON")
+    accepted=(store("dispatch_auxiliary_on_edge",{**execution,"dispatch":dispatch})
+        if execution["device_type"]=="fertilizer_injection_valve" else dispatch())
     store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
     if accepted.get("accepted_unambiguous") is not True:
         recovery=_bounded_auxiliary_off(execution,store,transport)
@@ -226,7 +234,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
 
 
 def emergency_off_auxiliary_execution(*, store, transport,
-                                      reason="emergency_off"):
+                                      reason="emergency_off", expected_device_id=None):
     """Drive one exact active auxiliary output to authoritative OFF.
 
     Emergency shutdown never grants ON authority and reuses the existing
@@ -237,9 +245,13 @@ def emergency_off_auxiliary_execution(*, store, transport,
     active = store("load_active_auxiliary", None)
     if not isinstance(active, dict):
         return _aux_result("auxiliary_emergency_off_no_active_execution")
-    if (active.get("auxiliary_device_id") != EMERGENCY_OFF_AUXILIARY_DEVICE_ID
-            or active.get("device_id") != EMERGENCY_OFF_DEVICE_ID
-            or str(active.get("channel") or "") != EMERGENCY_OFF_CHANNEL):
+    expected_identity=(expected_device_id or EMERGENCY_OFF_AUXILIARY_DEVICE_ID)
+    expected=get_device_contract(expected_identity)
+    if (not expected or expected_identity not in {
+            "FERTILIZER-MIXER-CH2","FERTILIZER-INJECTION-CH1"}
+            or active.get("auxiliary_device_id") != expected_identity
+            or active.get("device_id") != expected.get("device_id")
+            or active.get("channel") != expected.get("channel")):
         return _aux_result("auxiliary_emergency_off_binding_mismatch",
             state="Intervention", fertilizer_debt=True)
     recovery = _bounded_auxiliary_off(active, store, transport)
@@ -342,8 +354,13 @@ def _aux_result(status,*,commands=0,state=None,fertilizer_debt=False,
 
 def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
     if active.get("state") in {"claimed", "claimed_recovery_required"}:
+        barrier=store("mark_stopping",{**active,"state":"stopping",
+            "reason":"restart_after_pre_on_claim"})
+        if not isinstance(barrier,dict) or barrier.get("success") is not True:
+            return _stopping_barrier_hold(active,store,notify)
         store("contain_zone", {**active, "state": "ambiguous",
               "shutdown_verified": False, "reason": "restart_after_pre_on_claim"})
+        auxiliary_stop = _stop_bound_injection(active,store,transport)
         recovery = _bounded_off(active, store, transport)
         try:
             shutdown = transport.read_output_state(device_id=_output_binding(active)["device_id"], channel=active["channel"])
@@ -355,25 +372,37 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
         delivery = _notify(notify, store, "Intervention", {**active,
             "reason": "interrupted_start_contained", "shutdown_verified": verified})
         return _result("interrupted_start_contained" if verified else "interrupted_start_shutdown_unverified",
-                       commands=recovery["commands"], messages=delivery["confirmed"],
+                       commands=recovery["commands"]+auxiliary_stop["hardware_commands"], messages=delivery["confirmed"],
                        notification=delivery)
     primary_deadline = _timestamp(active.get("primary_stop_deadline"))
     native_deadline = _timestamp(active.get("native_fail_stop_deadline"))
     if primary_deadline is None or native_deadline is None or primary_deadline > native_deadline:
+        barrier=store("mark_stopping",{**active,"state":"stopping",
+            "reason":"fail_stop_deadline_missing"})
+        if not isinstance(barrier,dict) or barrier.get("success") is not True:
+            return _stopping_barrier_hold(active,store,notify)
+        auxiliary_stop = _stop_bound_injection(active,store,transport)
         recovery = _bounded_off(active, store, transport)
         delivery = _notify(notify, store, "Intervention", {**active,
             "reason": "fail_stop_deadline_missing", "recovery": recovery})
-        return _result("active_segment_contained", commands=recovery["commands"],
+        return _result("active_segment_contained", commands=recovery["commands"]+
+                       auxiliary_stop["hardware_commands"],
                        messages=delivery["confirmed"], notification=delivery)
     if now < primary_deadline:
         return _result("active_segment_owned", commands=0, messages=0, execution=active)
+    barrier=store("mark_stopping",{**active,"state":"stopping",
+        "reason":"primary_deadline_reached"})
+    if not isinstance(barrier,dict) or barrier.get("success") is not True:
+        return _stopping_barrier_hold(active,store,notify)
+    auxiliary_stop = _stop_bound_injection(active,store,transport)
     recovery = _bounded_off(active, store, transport)
     shutdown = transport.read_output_state(device_id=_output_binding(active)["device_id"], channel=active["channel"])
     if shutdown.get("state") != "OFF" or shutdown.get("authoritative") is not True:
         store("contain_zone", {**active, "state": "ambiguous", "shutdown_verified": False})
         delivery = _notify(notify, store, "Intervention", {**active,
             "reason": "shutdown_unverified"})
-        return _result("shutdown_unverified", commands=recovery["commands"],
+        return _result("shutdown_unverified", commands=recovery["commands"]+
+                       auxiliary_stop["hardware_commands"],
                        messages=delivery["confirmed"], notification=delivery)
     shutdown_at = _timestamp(shutdown.get("retrieved_at"))
     completion_now = max(now, shutdown_at) if shutdown_at is not None else now
@@ -413,9 +442,31 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
     delivery = _notify(notify, store, lifecycle, completed)
     return _result("segment_completed" if completed["objective_satisfied"]
                    else "segment_stopped_outcome_unconfirmed",
-                   commands=recovery["commands"],
+                   commands=recovery["commands"]+auxiliary_stop["hardware_commands"],
                    messages=delivery["confirmed"], execution=completed,
                    notification=delivery, writes_farm_data=True)
+
+
+def _stop_bound_injection(parent,store,transport):
+    auxiliary=store("load_active_auxiliary",None)
+    if (not isinstance(auxiliary,dict)
+            or auxiliary.get("auxiliary_device_id")!="FERTILIZER-INJECTION-CH1"):
+        return _aux_result("no_bound_injection")
+    bindings=("job_id","job_sha256","segment_identity","zone_id")
+    mismatch=any(auxiliary.get(key)!=parent.get(key) for key in bindings)
+    result=emergency_off_auxiliary_execution(store=store,transport=transport,
+        reason=("parent_binding_mismatch" if mismatch else "parent_irrigation_stopping"),
+        expected_device_id="FERTILIZER-INJECTION-CH1")
+    return {**result,"parent_binding_mismatch":mismatch}
+
+
+def _stopping_barrier_hold(active,store,notify):
+    delivery=_notify(notify,store,"Intervention",{**active,
+        "reason":"canonical_stopping_barrier_unproven",
+        "owner_action_required":False})
+    return _result("canonical_stopping_barrier_unproven",commands=0,
+        messages=delivery["confirmed"],notification=delivery,
+        execution=active,writes_farm_data=False,degraded=True)
 
 
 def _bounded_off(execution, store, transport):

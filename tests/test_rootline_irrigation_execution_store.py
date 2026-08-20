@@ -248,9 +248,23 @@ def test_auxiliary_consumption_is_atomic_without_blocking_bc_claim(monkeypatch):
     migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
     with psycopg.connect(url) as connection:connection.execute(migration.read_text(encoding="utf-8"))
     suffix=uuid.uuid4().hex;key=f"ROOTLINE-AUX-CONSUME-{suffix}"
+    parent=f"ROOTLINE-PARENT-{suffix}";job=f"ROOTLINE-IRRIGATION-JOB-{suffix[:24].upper()}"
+    job_sha="a"*64;segment=f"ROOTLINE-JOB-SEGMENT-{suffix[:24].upper()}"
+    with psycopg.connect(url) as connection:
+        for action,event_id in (("claim_before_on",f"PARENT-CLAIM-{suffix}"),
+                                ("mark_active",f"PARENT-ACTIVE-{suffix}")):
+            body={"action":action,"execution_id":parent,"job_id":job,
+                "job_sha256":job_sha,"segment_identity":segment,"zone_id":"B12345",
+                "state":"Active" if action=="mark_active" else "claimed"}
+            connection.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+                values (%s,%s,'rootline_irrigation_execution',%s,%s::jsonb)""",
+                (event_id,parent,action,json.dumps({"rootline_execution":body})))
     def claim(index):
         return _claim_single_auxiliary({"execution_id":f"ROOTLINE-AUX-{suffix}-{index}",
-            "consumption_key":key,"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"})
+            "consumption_key":key,"auxiliary_device_id":"FERTILIZER-INJECTION-CH1",
+            "device_type":"fertilizer_injection_valve","job_id":job,"job_sha256":job_sha,
+            "segment_identity":segment,"zone_id":"B12345","zone_execution_id":parent})
     with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(claim,(1,2)))
     assert sum(item.get("created") is True for item in results)==1
     assert sorted(item.get("status") for item in results)==[

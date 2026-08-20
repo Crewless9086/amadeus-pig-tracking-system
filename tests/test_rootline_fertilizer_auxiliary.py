@@ -45,6 +45,8 @@ def safety(device="injection",**changes):
 
 def injection_context(**changes):
     value={"plan_generation":"PLAN-1","batch_generation":"BATCH-1",
+        "job_id":"ROOTLINE-IRRIGATION-JOB-"+"A"*24,"job_sha256":"a"*64,
+        "segment_identity":"ROOTLINE-JOB-SEGMENT-"+"B"*24,
         "active_zone_ids":["B12345"],"zone_execution_id":"ZONE-EXEC-1",
         "zone_start_evidence":{"evidence_id":"START-1","zone_execution_id":"ZONE-EXEC-1",
             "observed_at":(NOW-timedelta(seconds=600)).isoformat()},
@@ -130,6 +132,7 @@ def test_injection_requires_exact_zone_preflow_spacing_flush_and_only_two_pulses
         "shutdown_verified":True,"observed_at":(NOW-timedelta(seconds=600)).isoformat()})
     assert second["eligible"] and second["pulse_number"]==2
     cases=[
+        ({"job_id":None},"irrigation_job_binding_incomplete"),
         ({"active_zone_ids":[]},"exactly_one_bc_zone_required"),
         ({"active_zone_ids":["B12345","C12345"]},"exactly_one_bc_zone_required"),
         ({"zone_start_evidence":{"evidence_id":"START-X","zone_execution_id":"ZONE-EXEC-1",
@@ -249,6 +252,7 @@ class Store:
                 if key in self.consumed:return {"success":True,"created":False}
                 self.consumed.add(key);self.active=payload;self.rows.append((action,payload))
                 return {"success":True,"created":True}
+        if action=="dispatch_auxiliary_on_edge":return payload["dispatch"]()
         if action=="claim_auxiliary_off_attempt":
             row={"attempt":payload["attempt"]};self.off.append(row);return {"created":True,"success":True}
         self.rows.append((action,payload))
@@ -344,6 +348,18 @@ def test_emergency_off_rejects_an_active_injection_execution_without_command():
     assert transport.calls==[]
 
 
+def test_irrigation_abort_can_stop_exact_active_injection_and_verify_off():
+    store=Store();store.active={"execution_id":"INJECTION-1",
+        "auxiliary_device_id":"FERTILIZER-INJECTION-CH1","device_id":"100204d497",
+        "channel":1,"state":"Active"}
+    transport=Transport(read="ON")
+    result=emergency_off_auxiliary_execution(store=store,transport=transport,
+        reason="parent_irrigation_abort",expected_device_id="FERTILIZER-INJECTION-CH1")
+    assert result["status"]=="auxiliary_emergency_off_verified"
+    assert result["shutdown_verified"] is True
+    assert [row["state"] for row in transport.calls]==["OFF"]
+
+
 def test_ambiguous_on_never_retries_and_fertilizer_failure_preserves_irrigation():
     store=Store();transport=Transport(on=False,read="OFF")
     result=advance_auxiliary_execution(eligibility=injection_eligibility(),store=store,
@@ -356,7 +372,10 @@ def test_ambiguous_on_never_retries_and_fertilizer_failure_preserves_irrigation(
 
 
 def test_injection_edge_revalidates_zone_on_and_flush_window_before_claim():
-    for current in (injection_context(zone_output_evidence={"evidence_id":"OUTPUT-2",
+    for current in (injection_context(job_id="ROOTLINE-IRRIGATION-JOB-"+"C"*24),
+            injection_context(job_sha256="c"*64),
+            injection_context(segment_identity="ROOTLINE-JOB-SEGMENT-"+"D"*24),
+            injection_context(zone_output_evidence={"evidence_id":"OUTPUT-2",
             "zone_execution_id":"ZONE-EXEC-1","observed_at":NOW.isoformat(),"state":"OFF"}),
             injection_context(irrigation_stop_deadline=(NOW+timedelta(seconds=1439)).isoformat())):
         store=Store();transport=Transport()
