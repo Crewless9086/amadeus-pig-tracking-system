@@ -229,6 +229,29 @@ gate without returning to Charl. Activation remains protected and cannot be
 inferred from this authority. The exact authority is also recorded in
 `docs/09-vault-brain/00-governance/OWNER_DECISIONS.md`.
 
+The exact-current CORE validation terminal then closed normally. Canonical v2
+validation identity `a2c6f4b9ef6449fbaf71d68325261abd` is durably recorded for
+source `3961411236fca3329abaac2d34cfb863167c1c73`, receipt SHA-256
+`ff64d3f410b0878da0a7dc619d4a850116ea919082c4f72f1210fd2a84c7332b`
+and evidence SHA-256
+`e2509d8b6ed5b55e19c8f7223f3dea1dca0e3418403459164c437255228f3281`.
+Focused validation passed 39 tests; proportional validation passed 142 with one
+platform skip; Brain Guard passed with zero findings; replay was rejected with
+the receipt unchanged. Independent Control Tower readback verified exact receipt
+bytes, passed status, source equality, isolation fields and unconsumed identity.
+No staging, activation, runtime or business effect occurred in validation.
+
+CORE Standing Authority V1 therefore promoted the same mission automatically
+into one exact stop-preserving staging gate without another owner approval. A
+fresh exact-main worktree `C:\tmp\core-39614112-staging-20260820`, branch
+`audit/core-39614112-staging-20260820`, was dispatched with PowerShell PID
+`27240` and Node PID `18524`. Those identities prove delivery/start only. The
+terminal may consume only validation identity `a2c6f4b9...`, stage only exact
+`39614112`, and must preserve the governed stop, disabled task, stopped
+supervisor and exact rollback. Activation, Task Scheduler operation, runtime
+start, deployment, dispatch and every business/provider/farm/hardware effect
+remain prohibited.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
