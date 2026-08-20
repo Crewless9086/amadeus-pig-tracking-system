@@ -72,6 +72,40 @@ authority. With ROOTLINE Node/Codex PIDs `8916`/`37340`, three visible terminals
 are dispatched at the recovery WIP cap. These identities prove launch only;
 completion still requires their attributable handovers and required evidence.
 
+The ROOTLINE post-migration observer then completed and auto-closed with genuine
+terminal-independent evidence. Manager cycles
+`OOM-MANAGER-CYCLE-20260820T155028565924Z-58ADBD9683F4426AA97B20D8774CF733`
+and `OOM-MANAGER-CYCLE-20260820T155524836498Z-1C9A6D79DB98406F8080635CB286DA81`
+completed on exact deployed `b9eefabf`; the prior missing-table blocker was gone.
+Readiness case `OOM-CASE-C0C589F1A0970494C2BB730F` proved exact account/device/
+channel binding, current authenticated OFF, enabled 300-second native fail-stop,
+no conflicting execution and zero provider control calls. The later cycle kept
+generation 1 and identical semantic/registry digests with zero delivery, proving
+replay silence. The bounded mixer-readiness observer is `BUSINESS_COMPLETE`;
+physical fertilizer commissioning remains `WORKING / AUTHORITY_DISABLED`.
+
+Charl's current ROOTLINE observation is accepted as a `DEFECT` addendum to
+existing `RMQ-20260813-04`, not a new mission. Canonical evidence supports two C
+Camp completions early on 20 August while Telegram represented C as `Hold` and
+used fixed no-start/no-completion wording. B Camp had a current `Run now`
+recommendation but no proven same-day start/completion and no exact owner-visible
+deferral reason. Missing or stale tank observation is not an independent hold
+under active commissioned B/C standing-water doctrine unless fresh adverse
+supply evidence exists. The owner outcome is one canonical per-zone lifecycle
+shared by execution, application and Telegram: normal standing-authority B/C
+work executes automatically, completed C remains completed, and any hold exposes
+one exact supported gate plus system-owned retry rather than burdening Charl.
+
+Slot 2 was immediately reassigned in a fresh exact-main worktree
+`C:\tmp\rootline-bc-lifecycle-truth-20260820` to identify B's exact resolution
+and implement the smallest existing-lifecycle repair. Fresh Node PID `39204` and
+Codex PID `38448` prove dispatch only. The terminal may produce source/tests/
+reviews/one PR but has no merge, deployment, worker invocation, farm write,
+provider control or irrigation/hardware authority. It must not create a second
+queue, scheduler, database, approval or Telegram lifecycle. Together with CORE
+PIDs `14488`/`38740` and SAM PIDs `34384`/`1372`, the three recovery slots remain
+fully allocated without file-surface collision identified at dispatch.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
