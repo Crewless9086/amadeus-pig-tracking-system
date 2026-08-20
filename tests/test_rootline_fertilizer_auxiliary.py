@@ -311,14 +311,8 @@ def test_emergency_off_is_exact_bound_and_authoritatively_verified():
             "mixing_history_complete_through":NOW.isoformat(),"power_suitable":True},
         now=NOW)
     assert started["status"]=="auxiliary_started"
-    wrong=emergency_off_auxiliary_execution(
-        auxiliary_device_id="FERTILIZER-INJECTION-CH1",device_id="100204d497",
-        channel=1,store=store,transport=transport)
-    assert wrong["status"]=="auxiliary_emergency_off_binding_mismatch"
-    assert [row["state"] for row in transport.calls]==["ON"]
     stopped=emergency_off_auxiliary_execution(
-        auxiliary_device_id="FERTILIZER-MIXER-CH2",device_id="100204d497",
-        channel=2,store=store,transport=transport,reason="owner_emergency_stop")
+        store=store,transport=transport,reason="owner_emergency_stop")
     assert stopped["status"]=="auxiliary_emergency_off_verified"
     assert stopped["shutdown_verified"] is True
     assert [row["state"] for row in transport.calls]==["ON","OFF"]
@@ -330,14 +324,24 @@ def test_emergency_off_contains_unverified_shutdown_without_other_authority():
         "channel":2,"state":"Active"}
     transport=Transport(off=False,read="ON")
     result=emergency_off_auxiliary_execution(
-        auxiliary_device_id="FERTILIZER-MIXER-CH2",device_id="100204d497",
-        channel=2,store=store,transport=transport)
+        store=store,transport=transport)
     assert result["status"]=="auxiliary_emergency_off_unverified"
     assert result["shutdown_verified"] is False
     assert result["auxiliary_contained"] is True
     assert result["borehole_authority"] is False
     assert result["channels_3_4_authority"] is False
     assert [row["state"] for row in transport.calls]==["OFF","OFF","OFF"]
+
+
+def test_emergency_off_rejects_an_active_injection_execution_without_command():
+    store=Store();store.active={"execution_id":"INJECTION-1",
+        "auxiliary_device_id":"FERTILIZER-INJECTION-CH1","device_id":"100204d497",
+        "channel":1,"state":"Active"}
+    transport=Transport(read="ON")
+    result=emergency_off_auxiliary_execution(store=store,transport=transport)
+    assert result["status"]=="auxiliary_emergency_off_binding_mismatch"
+    assert result["hardware_commands"]==0
+    assert transport.calls==[]
 
 
 def test_ambiguous_on_never_retries_and_fertilizer_failure_preserves_irrigation():

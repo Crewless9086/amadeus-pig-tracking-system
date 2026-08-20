@@ -294,7 +294,6 @@ def emergency_off_fertilizer_mixer(*, reason="emergency_off", environ=None,
     transport = transport or RootlineIFTTTTransport(
         token_store=token_store, environ=source)
     return _present(emergency_off_auxiliary_execution(
-        auxiliary_device_id=MIXER_ID, device_id=DEVICE_ID, channel=2,
         store=store, transport=transport, reason=reason))
 
 

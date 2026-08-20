@@ -23,6 +23,9 @@ from modules.telemetry.rootline_device_registry import commissioned_irrigation_c
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
+EMERGENCY_OFF_AUXILIARY_DEVICE_ID = "FERTILIZER-MIXER-CH2"
+EMERGENCY_OFF_DEVICE_ID = "100204d497"
+EMERGENCY_OFF_CHANNEL = "2"
 
 
 def advance_irrigation_execution(*, decision_id, commissioning_id,
@@ -222,8 +225,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     return _aux_result("auxiliary_started",commands=1,state="Started",execution=active)
 
 
-def emergency_off_auxiliary_execution(*, auxiliary_device_id, device_id, channel,
-                                      store, transport, reason="emergency_off"):
+def emergency_off_auxiliary_execution(*, store, transport,
+                                      reason="emergency_off"):
     """Drive one exact active auxiliary output to authoritative OFF.
 
     Emergency shutdown never grants ON authority and reuses the existing
@@ -234,9 +237,9 @@ def emergency_off_auxiliary_execution(*, auxiliary_device_id, device_id, channel
     active = store("load_active_auxiliary", None)
     if not isinstance(active, dict):
         return _aux_result("auxiliary_emergency_off_no_active_execution")
-    if (active.get("auxiliary_device_id") != str(auxiliary_device_id)
-            or active.get("device_id") != str(device_id)
-            or str(active.get("channel") or "") != str(channel or "")):
+    if (active.get("auxiliary_device_id") != EMERGENCY_OFF_AUXILIARY_DEVICE_ID
+            or active.get("device_id") != EMERGENCY_OFF_DEVICE_ID
+            or str(active.get("channel") or "") != EMERGENCY_OFF_CHANNEL):
         return _aux_result("auxiliary_emergency_off_binding_mismatch",
             state="Intervention", fertilizer_debt=True)
     recovery = _bounded_auxiliary_off(active, store, transport)
