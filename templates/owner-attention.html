@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Owner attention · Amadeus Farm</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
+</head>
+<body><div class="farm-app-shell">{% include '_farm_nav.html' %}
+  <main class="operations-page">
+    <header class="operations-hero"><div><span class="farm-eyebrow">Oom Sakkie</span><h1 id="owner_attention_heading">Owner attention</h1><p>One ordered view of current specialist-owned work. Opening detail does not authorize an action.</p></div><a class="manager-link" href="/">← Farm home</a></header>
+    <p class="attention-status" id="owner_attention_status" role="status" aria-live="polite">Loading current canonical work…</p>
+    <section class="attention-all" id="owner_attention_all" role="list" aria-labelledby="owner_attention_heading"></section>
+  </main>
+</div><script src="{{ url_for('static', filename='js/ownerAttention.js') }}?v=20260819-shared-v1"></script></body>
+</html>

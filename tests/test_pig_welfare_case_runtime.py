@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from modules.pig_weights.pig_welfare_case_runtime import (
+    load_open_welfare_attention_cases,
     load_open_welfare_case_contexts,
     project_welfare_case_attention,
     welfare_case_readiness,
@@ -51,7 +52,45 @@ def test_shared_attention_projection_keeps_case_and_work_identity_equal():
         "welfare_case_next_check_at": "2026-08-20T12:00:00+00:00"})
     assert item["work_identity"] == item["case_identity"] == "WELFARE-1"
     assert item["specialist_owner"] == "HERDMASTER"
+    assert item["task_class"] == "status_reconciliation"
+
+
+def test_attention_projection_requires_explicit_physical_weighing_evidence():
+    item = project_welfare_case_attention({"welfare_case_id": "WELFARE-1",
+        "welfare_case_state": "escalated", "welfare_case_urgency": "critical",
+        "required_action": "Physical weighing due; weigh now and record weight."})
+    assert item["task_class"] == "status_reconciliation"
+
+
+def test_attention_projection_reads_canonical_nested_welfare_action():
+    item = project_welfare_case_attention({"welfare_case_id": "WELFARE-PRINCE",
+        "welfare_case_state": "monitoring", "welfare_case_urgency": "due",
+        "welfare_case_provenance": {"intake_context": {"preview": {"evaluator": {
+            "immediate_welfare_priority": {"action": "Weigh now and record weight."}
+        }}}}})
     assert item["task_class"] == "physical_action_due"
+
+    negated = project_welfare_case_attention({"welfare_case_id": "WELFARE-PRINCE",
+        "welfare_case_provenance": {"intake_context": {"preview": {"evaluator": {
+            "immediate_welfare_priority": {"action": "Do not weigh now; reconcile status."}
+        }}}}})
+    assert negated["task_class"] == "status_reconciliation"
+    for action in ("Physical weighing is not required; record weight only after reconciliation.",
+                   "No need to weigh now; reconcile status."):
+        projected = project_welfare_case_attention({"welfare_case_id": "WELFARE-PRINCE",
+            "welfare_case_provenance": {"intake_context": {"preview": {"evaluator": {
+                "immediate_welfare_priority": {"action": action}
+            }}}}})
+        assert projected["task_class"] == "status_reconciliation"
+
+
+def test_shared_attention_loader_reads_all_open_cases_without_channel_cutoff():
+    observed = datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
+    rows = [("WELFARE-PRINCE", "PIG-PRINCE", "monitoring", "due", "HERDMASTER",
+             None, None, observed, {"intake_context": {}})]
+    loaded = load_open_welfare_attention_cases(connect_factory=lambda: Connection(rows))
+    assert loaded[0]["welfare_case_id"] == "WELFARE-PRINCE"
+    assert loaded[0]["welfare_case_state"] == "monitoring"
 
 
 def test_readiness_probe_reads_schema_only_and_zero_business_rows():

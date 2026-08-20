@@ -305,8 +305,10 @@
   disposable-Postgres integrity contracts. The bounded runtime adapter is
   `modules/pig_weights/pig_welfare_case_runtime.py`; the existing authenticated
   health/loss handler consumes its durable open-case context without a 24-hour
-  expiry and exposes the same case/work identity to the existing shared-
-  attention contract. Focused coverage is in
+  expiry. When explicitly runtime-enabled, `manager_case_sources.py` reads the
+  same open identities into `owner_attention_projection.py`; escalation stays
+  status reconciliation unless explicit evidence requires physical weighing.
+  Focused coverage is in
   `tests/test_pig_welfare_case_runtime.py`. No second manager, queue,
   observation store, UI or Telegram lifecycle is introduced.
 - Dispatch truth reducer:

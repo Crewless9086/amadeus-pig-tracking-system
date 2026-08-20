@@ -6,6 +6,36 @@ Status: Active owner-facing dispatch authority
 
 ### Protected ROOTLINE release and CORE staging approvals
 
+Charl subsequently authorized the exact-current releases of Oom Sakkie PR #1127
+head `193397e829d7b1749f19748226cf2e49b26948cf` and ROOTLINE PR #1139 head
+`86bce828ff81cd0e25bb2ef12d33b1283871550f`, while explicitly withholding all
+production migration authority. Control Tower rechecked both exact heads and
+green CI, merged #1127 first as `5959f17d9296e25fdfddb9e60807bba9b06c06ac`,
+then verified #1139's two-file rail change remained disjoint and merged it as
+authoritative main `b9eefabf65f30811c771a484b0459c5280401686`.
+
+Render `/health/revision` first proved the intermediate Oom deployment and then
+returned HTTP 200 with `provider=render`, `identity_complete=true` and exact
+combined revision `b9eefabf65f30811c771a484b0459c5280401686`; attributable
+request identity was `230f7496-34c8-4c13`. Anonymous homepage and owner-attention
+API requests both failed closed with HTTP 403. The hosted browser lane passed on
+the combined main; the other two post-merge lanes were still running at the
+observation cutoff and are not claimed as complete. Authenticated production
+content parity remains Unknown because Control Tower has no owner session/token;
+the byte-identical approved source and exact deployment are proven separately.
+
+No migration workflow was dispatched and the latest migration run remains an
+older completed run. ROOTLINE therefore remains `WORKING /
+EXACT_RAIL_DEPLOYED / PRODUCTION_MIGRATION_AUTHORITY_REQUIRED`; the scheduler's
+missing-table blocker is expected to persist until a checksum-bound governed
+migration succeeds. Oom Sakkie source/deployment is `INTEGRATED /
+AUTHENTICATED_PRODUCTION_PARITY_PENDING`; no Telegram or farm write occurred.
+The next protected migration authorization must name exact deployed main
+`b9eefabf65f30811c771a484b0459c5280401686` and the existing
+`.github/workflows/render-production-migrations.yml` rail. It may not authorize
+any ad-hoc SQL, data, deployment, worker invocation, Telegram, provider, secret,
+claim or hardware effect.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked

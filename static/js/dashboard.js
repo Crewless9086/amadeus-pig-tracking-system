@@ -1,4 +1,4 @@
-const dashboardState = { attention: new Map(), priorities: new Map(), loaded: 0 };
+const dashboardState = { priorities: new Map(), loaded: 0 };
 const byId = id => document.getElementById(id);
 const setText = (id, value) => { const el = byId(id); if (el) el.textContent = value ?? "--"; };
 const number = (value, suffix = "") => Number.isFinite(Number(value)) ? `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}${suffix}` : "--";
@@ -24,16 +24,20 @@ function finish(panelId, ok = true) {
   panel.classList.remove("is-loading");
   panel.classList.toggle("is-unavailable", !ok);
 }
-function addAttention(key, title, detail, href, priority = 20) { dashboardState.attention.set(key, { title, detail, href, priority }); renderAttention(); }
-function removeAttention(key) { dashboardState.attention.delete(key); renderAttention(); }
 function addPriority(key, text) { dashboardState.priorities.set(key, text); renderPriorities(); }
 function removePriority(key) { dashboardState.priorities.delete(key); renderPriorities(); }
-function renderAttention() {
-  const items = [...dashboardState.attention.values()].sort((a,b) => a.priority - b.priority).slice(0, 3);
-  setText("status_attention", items.length ? `${items.length} item${items.length === 1 ? "" : "s"}` : dashboardState.loaded ? "Clear" : "Checking");
-  setText("attention_state", items.length ? "Act on the important work first" : dashboardState.loaded ? "No urgent item found" : "Checking the farm");
+function renderAttention(data) {
+  const items = Array.isArray(data?.top_items) ? data.top_items : [];
+  const total = Number(data?.total_count || 0); const hidden = Number(data?.hidden_count || 0);
+  setText("status_attention", total ? `${total} item${total === 1 ? "" : "s"}` : "Clear");
+  setText("attention_state", total ? "Shared specialist work" : "No open item found");
   const list = byId("attention_list");
-  if (list) list.innerHTML = items.length ? items.map(item => `<a class="attention-item" href="${item.href}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></a>`).join("") : `<div class="attention-placeholder">${dashboardState.loaded ? "No urgent item is supported by the available farm evidence." : "Current priorities will appear independently as each farm source responds."}</div>`;
+  if (list) list.innerHTML = items.length ? items.map(item => `<a role="listitem" class="attention-item" data-work-id="${escapeHtml(item.work_id)}" href="${escapeHtml(item.detail_target)}"><strong><span aria-hidden="true">${escapeHtml(item.semantic_emoji)}</span> ${escapeHtml(item.title)}</strong><small>${escapeHtml(item.specialist_owner)} · ${escapeHtml(item.task_class.replace(/_/g," "))} · ${escapeHtml(item.freshness)}</small><em>${escapeHtml(item.exact_owner_action)}</em></a>`).join("") : `<div class="attention-placeholder" role="listitem">No open owner-attention work is supported by current evidence.</div>`;
+  const viewAll = byId("attention_view_all"); if (viewAll) { viewAll.hidden = !hidden; viewAll.textContent = hidden ? `View all · ${hidden} more` : "View all"; }
+}
+async function loadAttention() {
+  try { renderAttention(await fetchJson("/api/oom-sakkie/owner-attention", 45000)); }
+  catch (_) { setText("status_attention", "Unavailable"); setText("attention_state", "Shared projection unavailable"); const list=byId("attention_list"); if(list) list.innerHTML='<div class="attention-placeholder" role="listitem">Shared attention is temporarily unavailable. No specialist work was inferred.</div>'; }
 }
 function renderPriorities() {
   const items = [...dashboardState.priorities.values()].slice(0, 3);
@@ -87,7 +91,6 @@ async function loadPower() {
     setText("power_headline", (data.summary?.operator_notes || []).join(" ") || data.summary?.headline || "Current electrical state available.");
     setText("power_age", Number.isFinite(Number(data.source?.data_age_minutes)) ? `${number(data.source.data_age_minutes)} min old` : "Current");
     setText("status_power", `${number(current.battery_soc_pct, "%")} · ${number(Number(current.load_power_w) / 1000, " kW load")}`);
-    if (data.flags?.low_battery || data.flags?.high_load) addAttention("power", "Power needs attention", data.summary?.headline || "Review power state", "/power", 7); else removeAttention("power");
     finish("power_panel");
   } catch (_) { setText("power_headline", "Power is temporarily unavailable."); setText("power_age", "Unavailable"); setText("status_power", "Unavailable"); finish("power_panel", false); }
 }
@@ -106,7 +109,6 @@ async function loadIrrigation() {
     const sharedReason = b?.reason && b.reason === c?.reason ? b.reason : [b?.reason, c?.reason].filter(Boolean).join(" · ");
     setText("irrigation_note", sharedReason || (data.operator_summary?.notes || [])[0] || data.operator_summary?.headline || "Current irrigation position available.");
     setText("status_irrigation", current.status === "RUNNING" ? `${current.zone_name || current.zone_id} · Running` : `${status} · ${day.skipped_count || 0} held`);
-    if (["needs data", "recovery required"].includes(status.toLowerCase())) addAttention("irrigation", "Irrigation needs evidence", data.operator_summary?.notes?.[0] || status, "/irrigation", 10); else removeAttention("irrigation");
     finish("irrigation_panel");
   } catch (_) { setText("irrigation_note", "Irrigation is temporarily unavailable."); setText("irrigation_source", "Unavailable"); setText("status_irrigation", "Unavailable"); finish("irrigation_panel", false); }
 }
@@ -133,9 +135,8 @@ async function loadFarm() {
     if (litters.length) {
       const first = litters[0];
       const {headline, context: litterContext} = litterAttentionIdentity(first);
-      addAttention("litter", `${headline} needs attention`, `${first.reason || "Review current litter work"}${litterContext}`, litterAttentionHref(first), 5);
       addPriority("litter", `${headline}${litterContext}: ${first.reason || "review current work"}.`);
-    } else { removeAttention("litter"); removePriority("litter"); }
+    } else { removePriority("litter"); }
     finish("herd_panel");
   } catch (_) { finish("herd_panel", false); setText("herd_total", "Unavailable"); }
 }
@@ -149,7 +150,6 @@ async function loadBreeding() {
     setText("breeding_open", number(open.length)); setText("breeding_due", number(due.length)); setText("breeding_overdue", number(overdue.length));
     setText("breeding_attention", number(overdue.length + due.length));
     setText("breeding_headline", overdue.length ? `${overdue.length} mating record${overdue.length === 1 ? "" : "s"} show overdue farrowing evidence.` : next ? `${next.sow_tag_number || "Sow"} is next around ${next.expected_farrowing_date}.` : `${open.length} open mating${open.length === 1 ? "" : "s"} under monitoring.`);
-    if (overdue.length) addAttention("breeding", "Breeding chronology needs review", `${overdue.map(item => item.sow_tag_number).filter(Boolean).join(", ")} show overdue farrowing evidence.`, "/matings", 6); else removeAttention("breeding");
     if (next) addPriority("breeding", `${next.sow_tag_number || "Sow"}: expected farrowing around ${next.expected_farrowing_date}.`); else removePriority("breeding");
     finish("breeding_panel");
   } catch (_) { setText("breeding_headline", "Breeding chronology is temporarily unavailable."); finish("breeding_panel", false); }
@@ -166,10 +166,10 @@ async function loadOrders() {
     const counts = data.counts || {}; const items = data.sections?.orders_needing_attention || []; const needing = Number(counts.orders_needing_attention || items.length || 0);
     setText("orders_attention", number(needing)); setText("orders_pending", number(counts.pending_approval || 0)); setText("orders_completed", number(counts.completed_today || 0));
     setText("orders_headline", needing ? `${needing} order${needing === 1 ? "" : "s"} need a decision.` : `${number(counts.completed_today || 0)} completed today · no order currently needs attention.`);
-    if (needing) { const first = items[0] || {}; addAttention("orders", "Sales decision needed", first.customer_name ? `${first.customer_name} · ${(first.reasons || []).join(", ") || "Review order"}` : `${needing} order review`, first.order_id ? `/orders/${encodeURIComponent(first.order_id)}` : "/orders", 8); addPriority("orders", `${needing} sales order${needing === 1 ? "" : "s"} need review.`); } else { removeAttention("orders"); removePriority("orders"); }
+    if (needing) { addPriority("orders", `${needing} sales order${needing === 1 ? "" : "s"} need review.`); } else { removePriority("orders"); }
     finish("orders_panel");
   } catch (_) { setText("orders_headline", "Sales evidence is temporarily unavailable."); finish("orders_panel", false); }
 }
-function start(job) { job().finally(() => { dashboardState.loaded += 1; renderAttention(); setText("dashboard_timestamp", `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · sections refresh independently`); }); }
-renderAttention(); renderPriorities();
-[loadWeather, loadForecast, loadPower, loadIrrigation, loadFarm, loadBreeding, loadSales, loadOrders].forEach(start);
+function start(job) { job().finally(() => { dashboardState.loaded += 1; setText("dashboard_timestamp", `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · sections refresh independently`); }); }
+renderPriorities();
+[loadAttention, loadWeather, loadForecast, loadPower, loadIrrigation, loadFarm, loadBreeding, loadSales, loadOrders].forEach(start);
