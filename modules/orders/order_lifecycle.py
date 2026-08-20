@@ -598,8 +598,38 @@ def complete_order(order_id: str, changed_by: str = "App"):
         raise ValueError("Order has no active lines to complete.")
 
     missing_pig = [l["line_id"] for l in active_lines if not l["pig_id"]]
-    if order_stream == "Livestock" and missing_pig:
-        raise ValueError(f"The following lines have no Pig_ID and cannot be completed: {', '.join(missing_pig)}")
+    if order_stream in {"Livestock", "Slaughter"} and missing_pig:
+        raise ValueError(
+            f"The following {order_stream} lines have no Pig_ID and cannot be completed: "
+            + ", ".join(missing_pig)
+        )
+
+    if order_stream in {"Meat", "Slaughter"}:
+        pig_ids = [line["pig_id"] for line in active_lines if line["pig_id"]]
+        if pig_ids:
+            from modules.pig_weights.herdmaster_live_transfer_contract import build_live_transfer_contract
+
+            try:
+                food_chain_packet = build_live_transfer_contract(pig_ids, order_id)
+            except Exception as exc:
+                raise ValueError(
+                    "Food-chain eligibility evidence is unavailable; completion is blocked."
+                ) from exc
+            evidence_by_id = {
+                to_clean_string((row.get("identity") or {}).get("pig_id", "")): row
+                for row in food_chain_packet.get("pigs", [])
+            }
+            blocked = []
+            for pig_id in pig_ids:
+                state = to_clean_string(
+                    (evidence_by_id.get(pig_id, {}).get("food_chain_eligibility") or {}).get("state", "")
+                ).lower()
+                if state not in {"eligible", "eligible_on_recorded_withdrawal_axis"}:
+                    blocked.append(pig_id)
+            if blocked:
+                raise ValueError(
+                    "Food-chain/slaughter completion is blocked for pig(s): " + ", ".join(blocked)
+                )
 
     today_str = datetime.now().strftime("%d %b %Y")
 

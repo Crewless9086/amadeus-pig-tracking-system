@@ -229,6 +229,9 @@ def order_operator_summary(order_id):
 
 @orders_bp.route("/orders/available-pigs", methods=["GET"])
 def available_pigs():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
     pigs = get_available_pigs_for_orders()
     return jsonify({
         "success": True,

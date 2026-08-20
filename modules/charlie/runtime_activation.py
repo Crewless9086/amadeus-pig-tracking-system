@@ -702,12 +702,53 @@ def recover_activation(*, state_root, task_controller, activation_id,
         _atomic_json(rollback_path, rollback)
     packet_path = state_root / "activation-packet.json"
     packet_archive = ledger / f"{activation_id}-recovered-activation-packet.json"
+    packet_provenance_error = None
     if not packet_path.exists() and not packet_archive.exists():
         embedded_packet = (lane.get("packet")
                            if isinstance(lane.get("packet"), dict) else {})
         if not embedded_packet:
             raise ActivationError("activation_packet_invalid")
-        _atomic_json(packet_path, embedded_packet)
+        consumed_candidates = [path for path in (
+            state_root / f"activation-consumed-{activation_id}.json",
+            ledger / f"{activation_id}-recovered-activation-consumed-{activation_id}.json",
+            ledger / f"{activation_id}-verified-activation-consumed-{activation_id}.json",
+        ) if path.exists()]
+        if len(consumed_candidates) > 1:
+            packet_provenance_error = "activation_consumed_identity_ambiguous"
+        elif consumed_candidates:
+            consumed = _read_json(
+                consumed_candidates[0], "activation_consumed_identity_invalid"
+            )
+            reconstructed = dict(embedded_packet)
+            reconstructed["expected_instance_guid"] = consumed.get(
+                "expected_instance_guid"
+            )
+            reconstructed["packet_hmac_sha256"] = _sign_packet(reconstructed, key)
+            try:
+                _validate_consumed_identity(
+                    reconstructed, consumed, key,
+                    require_packet_hmac=True,
+                )
+            except ActivationError as exc:
+                packet_provenance_error = exc.status
+            else:
+                _atomic_json(packet_path, reconstructed)
+        else:
+            receipt_candidates = [path for path in (
+                state_root / f"activation-audit-receipt-{activation_id}.json",
+                ledger / f"{activation_id}-recovered-activation-audit-receipt-{activation_id}.json",
+                ledger / f"{activation_id}-verified-activation-audit-receipt-{activation_id}.json",
+            ) if path.exists()]
+            if receipt_candidates:
+                # Once the post-readback receipt exists, RunEx may have returned
+                # an instance identity.  The pre-RunEx lane seed can no longer
+                # prove the strongest packet state and must never replace it.
+                packet_provenance_error = "activation_provider_identity_provenance_missing"
+            else:
+                # The receipt is written before RunEx.  With neither receipt nor
+                # consumed identity, the signed lane packet is provably only the
+                # pre-provider seed and is safe to retain for containment.
+                _atomic_json(packet_path, embedded_packet)
     packet_source = packet_path if packet_path.exists() else packet_archive
     packet_missing = not packet_source.exists()
     packet = {} if packet_missing else _read_json(packet_source, "activation_packet_invalid")
@@ -850,6 +891,9 @@ def recover_activation(*, state_root, task_controller, activation_id,
             or rollback_task != packet.get("task_ownership"))):
         errors.append({"component": "activation_packet",
                        "status": "activation_packet_or_binding_invalid"})
+    if packet_provenance_error:
+        errors.append({"component": "activation_packet",
+                       "status": packet_provenance_error})
     if errors:
         raise ActivationError("activation_recovery_incomplete", errors=errors)
     failure_path = ledger / f"{activation_id}-failure.json"
@@ -1845,6 +1889,23 @@ def _validate_pre_mutation(plan, *, task_reader, git_runner):
         raise ActivationError("activation_worktree_identity_changed")
 
 
+def _validate_consumed_identity(packet, consumed, key, *, require_packet_hmac):
+    expected = str(packet.get("expected_instance_guid") or "").strip("{}").casefold()
+    consumed_expected = str(consumed.get("expected_instance_guid") or "").strip("{}").casefold()
+    provider_instance = str(consumed.get("provider_instance_guid") or "").strip("{}").casefold()
+    packet_hmac = (packet.get("packet_hmac_sha256") if require_packet_hmac
+                   else packet.get("consumed_packet_hmac_sha256"))
+    if (not hmac.compare_digest(
+            str(consumed.get("consumed_hmac_sha256") or ""),
+            _sign_record(consumed, key, "consumed_hmac_sha256"))
+            or consumed.get("activation_id") != packet.get("activation_id")
+            or not expected
+            or consumed_expected != expected
+            or provider_instance != expected
+            or consumed.get("packet_hmac_sha256") != packet_hmac):
+        raise ActivationError("activation_consumed_identity_invalid")
+
+
 def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
                      now=None, allow_consumed=False, allow_expired=False):
     key = _read_key(state_root / "activation-authority.key")
@@ -1858,26 +1919,19 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
         raise ActivationError("activation_packet_binding_invalid")
     if packet.get("status") not in ({"provider_pending", "provider_started_observe_only"} if allow_consumed else {"provider_pending"}):
         raise ActivationError("activation_packet_replayed")
-    if packet.get("status") == "provider_started_observe_only":
-        consumed_name = f"activation-consumed-{packet['activation_id']}.json"
-        consumed_live = state_root / consumed_name
-        consumed_verified = (state_root / "activation-ledger"
-                             / f"{packet['activation_id']}-verified-{consumed_name}")
-        consumed = _read_json(
-            consumed_live if consumed_live.exists() else consumed_verified,
-            "activation_consumed_identity_missing",
+    consumed_name = f"activation-consumed-{packet['activation_id']}.json"
+    consumed_live = state_root / consumed_name
+    consumed_verified = (state_root / "activation-ledger"
+                         / f"{packet['activation_id']}-verified-{consumed_name}")
+    consumed_path = consumed_live if consumed_live.exists() else consumed_verified
+    if packet.get("status") == "provider_pending" and consumed_path.exists() and not allow_consumed:
+        raise ActivationError("activation_consumed_pending_recovery_required")
+    if packet.get("status") == "provider_started_observe_only" or consumed_path.exists():
+        consumed = _read_json(consumed_path, "activation_consumed_identity_missing")
+        _validate_consumed_identity(
+            packet, consumed, key,
+            require_packet_hmac=packet.get("status") == "provider_pending",
         )
-        if (not hmac.compare_digest(
-                str(consumed.get("consumed_hmac_sha256") or ""),
-                _sign_record(consumed, key, "consumed_hmac_sha256"))
-                or consumed.get("activation_id") != packet["activation_id"]
-                or consumed.get("packet_hmac_sha256")
-                != packet.get("consumed_packet_hmac_sha256")
-                or str(consumed.get("expected_instance_guid") or "").strip("{}").casefold()
-                != str(packet.get("expected_instance_guid") or "").strip("{}").casefold()
-                or str(consumed.get("provider_instance_guid") or "").strip("{}").casefold()
-                != str(packet.get("expected_instance_guid") or "").strip("{}").casefold()):
-            raise ActivationError("activation_consumed_identity_invalid")
     _validate_authority(authority, key, now=now, allow_expired=allow_expired)
     if (_sha256(packet.get("authority_path")) != packet.get("authority_sha256")
             or Path(packet.get("runtime_root", "")).resolve() != state_root / "core-runtime-current"

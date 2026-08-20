@@ -27,6 +27,7 @@ from modules.charlie.runtime_activation import (
     _inspect_windows_task_scheduler_provider,
     _local_current_process_identity,
     _durable_replace,
+    _validate_packet,
 )
 from modules.charlie.runtime_staging import _validate_recovery_projection
 
@@ -987,11 +988,30 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, "activation_rollback_signature_invalid")
         self.assertTrue((self.state / "activation.lock").exists())
 
-    def test_recovery_reconstructs_rollback_when_prepare_crashes_after_lane(self):
+    def test_recovery_rejects_pre_runex_seed_after_audit_receipt(self):
         plan, controller, _ = self._prepared()
         (self.state / "activation-ledger"
          / f"{plan['activation_id']}-rollback.json").unlink()
         (self.state / "activation-packet.json").unlink()
+
+        with self.assertRaisesRegex(ActivationError, "activation_recovery_incomplete"):
+            recover_activation(
+                state_root=self.state, task_controller=controller,
+                activation_id=plan["activation_id"],
+                failure_evidence={"status": "prepare_durable_write_interrupted"},
+            )
+
+        self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+        self.assertTrue(self.stop.exists())
+        self.assertFalse((self.state / "activation-packet.json").exists())
+
+    def test_recovery_reconstructs_only_proven_pre_runex_lane_seed(self):
+        plan, controller, _ = self._prepared()
+        (self.state / "activation-ledger"
+         / f"{plan['activation_id']}-rollback.json").unlink()
+        (self.state / "activation-packet.json").unlink()
+        (self.state / f"activation-audit-intent-{plan['activation_id']}.json").unlink()
+        (self.state / f"activation-audit-receipt-{plan['activation_id']}.json").unlink()
 
         result = recover_activation(
             state_root=self.state, task_controller=controller,
@@ -1002,6 +1022,72 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["status"], "activation_recovered")
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertTrue(self.stop.exists())
+
+    def test_recovery_reconstructs_post_runex_packet_from_consumed_identity(self):
+        plan, controller, _ = self._prepared()
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        consumed = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": plan["activation_id"],
+            "provider_pid": 10,
+            "provider_parent_pid": 20,
+            "provider_instance_guid": packet["expected_instance_guid"],
+            "expected_instance_guid": packet["expected_instance_guid"],
+            "packet_hmac_sha256": packet["packet_hmac_sha256"],
+        }
+        unsigned = dict(consumed)
+        consumed["consumed_hmac_sha256"] = hmac.new(
+            self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        (self.state / f"activation-consumed-{plan['activation_id']}.json").write_text(
+            json.dumps(consumed), encoding="utf-8"
+        )
+        packet_path.unlink()
+
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "consumed_pending_interrupted"},
+        )
+
+        self.assertEqual(result["status"], "activation_recovered")
+        recovered = json.loads((
+            self.state / "activation-ledger"
+            / f"{plan['activation_id']}-recovered-activation-packet.json"
+        ).read_text(encoding="utf-8"))
+        self.assertEqual(recovered["expected_instance_guid"], packet["expected_instance_guid"])
+        self.assertEqual(recovered["packet_hmac_sha256"], packet["packet_hmac_sha256"])
+
+    def test_pending_packet_with_consumed_identity_requires_recovery(self):
+        plan, _controller, _ = self._prepared()
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        consumed = {
+            "version": ACTIVATION_VERSION,
+            "activation_id": plan["activation_id"],
+            "provider_pid": 10,
+            "provider_parent_pid": 20,
+            "provider_instance_guid": packet["expected_instance_guid"],
+            "expected_instance_guid": packet["expected_instance_guid"],
+            "packet_hmac_sha256": packet["packet_hmac_sha256"],
+        }
+        consumed["consumed_hmac_sha256"] = hmac.new(
+            self.key,
+            json.dumps(consumed, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        (self.state / f"activation-consumed-{plan['activation_id']}.json").write_text(
+            json.dumps(consumed), encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(ActivationError,
+                                    "activation_consumed_pending_recovery_required"):
+            _validate_packet(
+                packet, self.state, lambda: self.task,
+                git_runner=self.git,
+            )
 
     def test_verification_never_replays_completion_over_active_lane(self):
         _plan, controller, _ = self._prepared()

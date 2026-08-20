@@ -2,6 +2,47 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-19 - Queued Oom Sakkie shared owner-attention projection
+
+Charl confirmed the cross-channel invariant: application, Telegram, future
+voice and autonomous workers use the same canonical farm facts and the same
+work-item identities, priority, ownership and lifecycle. Channels may render
+different amounts of authorized detail, but they must not independently decide
+what farm work exists.
+
+This is the next phase of the existing Oom Sakkie continuous-manager and
+HERDMASTER worklist lineage, not a dashboard-only mission and not a second
+queue, database, scheduler or mission ledger. The current defect is that the
+homepage assembles attention independently in browser code while the Brief uses
+the manager pipeline. Prince can therefore appear in the Brief but not on the
+homepage; Molly and Clovy can receive different classifications; status
+reconciliation can be mislabeled as physical weighing; and a ROOTLINE refresh
+failure can be shifted incorrectly to Charl.
+
+Required outcome: one typed backend attention projection combining active
+welfare lifecycles, HERDMASTER/breeding/litter work, ROOTLINE, sales and Orders.
+Every item carries a stable ID, category, open/resolved/superseded state,
+priority/watch classification, specialist owner, exact owner action, evidence
+provenance/freshness and safe detail target. Homepage, Brief, Telegram and later
+voice consume the same ordered identities. The homepage renders the shared top
+three plus total hidden count and View all; channel-specific formatting and
+permissions remain presentation concerns only.
+
+Acceptance requires Prince parity and one identity across homepage and Brief;
+resolution removes it from both; Molly/Clovy have the same classification or
+evidence-based exclusion; `status_reconciliation` is distinct from
+`weighing_due`; ROOTLINE automatic retries remain assigned to ROOTLINE/Oom
+Sakkie until one precise physical observation is irreducible; specialist
+timeouts cannot erase unrelated work; Telegram follows the concise semantic
+emoji standard; and exact-revision authenticated desktop/mobile production
+parity is proven. CODEX UI follows only after the shared backend contract is
+established and requires Charl's visual approval.
+
+Promotion is serialized behind current ROOTLINE and Orders/Sales work because
+their manager adapters and presentation paths are collision-prone. The recently
+completed Oom Sakkie timeout repair and autonomous five-minute manager cycles
+are the operating base for this phase.
+
 ## 2026-08-19 - Owner-approved livestock quotation separation
 
 Charl approved one shared livestock pricing, quotation and document system with
