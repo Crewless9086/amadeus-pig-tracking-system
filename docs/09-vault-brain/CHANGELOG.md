@@ -1,5 +1,21 @@
 # Vault Brain Changelog
 
+## 2026-08-20 - CORE canonical validation-receipt boundary prepared
+
+- Replaced the permissive staging-only receipt shape with one canonical signed
+  v2 contract shared by the isolated evidence producer and staging validator.
+  Exact source, suite command digests/counts and disposable-isolation properties
+  are signature-bound; unknown, malformed, mutated or weakened fields fail
+  closed.
+- Focused and proportional suite identities are mandatory. Passed and rejected
+  evidence shares one create-once state-root identity, so a validation identity
+  cannot cross status or path namespaces. Rejected identities remain immutable
+  and non-retryable; staging durably consumes a successful identity before its
+  first source mutation, so interruption cannot make it reusable.
+- This is source and test evidence only. No key was provisioned, no receipt was
+  produced for a runtime candidate, and no staging, Task Scheduler, activation,
+  deployment, process, provider, database, farm or customer effect occurred.
+
 ## 2026-08-20 - CORE audit-channel authority boundary classification
 
 - Read-only Windows evidence proved the Task Scheduler Operational channel is

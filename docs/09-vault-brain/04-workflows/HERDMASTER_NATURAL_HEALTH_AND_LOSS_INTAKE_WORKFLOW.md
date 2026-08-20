@@ -51,6 +51,30 @@ veterinary assistance for breathing distress, inability to stand or drink,
 serious bleeding, continuing difficult farrowing, severe distress, or another
 supported urgent sign.
 
+## Longitudinal welfare-case boundary
+
+One stable welfare case follows one canonical pig, one attributable episode and
+one concern. New evidence for that same episode appends to the existing case;
+unrelated concurrent concerns for the pig remain distinct. Matching must use
+chronology and concern continuity, preserve ambiguity as Unknown and never
+collapse cases merely because they share a pig, wording or nearby time. A later
+recurrence creates a linked new case. Natural correction appends evidence and
+invalidates stale projections without rewriting history.
+
+Every case lifecycle explicitly carries urgency, state, next check,
+responsible owner, escalation, closure/reopening and provenance. Silence never
+means recovery. A due check that produces no evidence remains due or escalates
+under a later explicit event; it does not close. Immediate supported welfare
+guidance always precedes record confirmation and remains available even if case
+matching or persistence is unavailable.
+
+The case links observation, treatment/medical, movement, mortality and
+pig-lifecycle facts by their separate canonical identities. It never merges or
+replaces them. Canonical death evidence explicitly closes the living-welfare
+question, while mortality assessment, removal and disposal remain separate
+work with their own lifecycle and owner. Unknown death, disposal or cause stays
+Unknown and blocks only the dependent conclusion.
+
 ## Complete-effect preview
 
 One consolidated preview enumerates each potentially affected domain and marks
@@ -119,6 +143,19 @@ existing mortality handling. It is not a generic compound executor and grants
 no authority to create arbitrary litter, mating, medical, movement, disposal,
 availability, customer, or sales effects. Stage 1 neither invokes nor expands
 this writer.
+
+`202608200002_create_pig_welfare_case_lifecycle.sql` is the reviewed additive
+foundation for case identity, append-only case events and non-merging fact
+links. `modules/pig_weights/pig_welfare_case_runtime.py` is the bounded adapter:
+the existing authenticated health/loss handler opens or appends coordination
+context, prefers durable open cases over its legacy 24-hour compatibility
+chronology, carries HERDMASTER owner/urgency/next-check state and projects the
+same case/work identity for the existing shared-attention contract. It creates
+no second observation, treatment, movement, mortality, manager, queue or
+Telegram lifecycle. Runtime reads and writes remain fail-closed unless
+`PIG_WELFARE_CASE_RUNTIME_ENABLED=true`; production application, explicit
+post-migration activation and exact deployed revision remain separate evidence
+gates until an immutable migration receipt and readiness proof are verified.
 
 ### Production status
 

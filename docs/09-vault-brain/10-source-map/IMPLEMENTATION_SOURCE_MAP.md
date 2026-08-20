@@ -29,6 +29,20 @@
 
 ## CMQ-20260813-05 Phase A Shadow Control Tower
 
+- Canonical isolated-validation receipt producer and verifier:
+  `modules/charlie/validation_receipt.py`, with the evidence-only CLI at
+  `scripts/charlie_validation_receipt.py`. Version 2 binds the exact source,
+  hashed suite commands/counts and strict disposable-isolation properties to
+  one HMAC signature. Focused and proportional suite identities are mandatory.
+  Passed and rejected evidence shares one create-once state-root identity;
+  rejected identities cannot enter staging, and staging durably consumes a
+  successful identity before its first source mutation so it cannot be replayed
+  after interruption.
+  `modules/charlie/runtime_staging.py` is the sole staging consumer. Focused
+  signing, schema mutation, source/key binding, rejection and replay coverage:
+  `tests/test_charlie_validation_receipt.py` and
+  `tests/test_charlie_runtime_staging.py`. These source references provision no
+  key and grant no staging, Task Scheduler, activation or deployment authority.
 - Provider-origin activation and authenticated recovery:
   `modules/charlie/runtime_activation.py` and
   `scripts/charlie_runtime_activation.py`. The exact Windows Task Scheduler
@@ -283,6 +297,18 @@
   `tests/test_oom_sakkie_herdmaster_health_loss_preview.py`, plus
   `tests/test_oom_sakkie_herdmaster_health_loss_runtime.py`; the bounded writer
   gate remains `tests/test_herdmaster_health_loss_recording.py` below.
+- Longitudinal welfare-case source foundation:
+  `supabase/migrations/202608200002_create_pig_welfare_case_lifecycle.sql`
+  defines stable per-episode/per-concern identity, append-only case events and
+  reference-only canonical fact links; `tests/test_pig_welfare_case_migration.py`
+  and `tests/test_pig_welfare_case_postgres.py` verify the zero-authority and
+  disposable-Postgres integrity contracts. The bounded runtime adapter is
+  `modules/pig_weights/pig_welfare_case_runtime.py`; the existing authenticated
+  health/loss handler consumes its durable open-case context without a 24-hour
+  expiry and exposes the same case/work identity to the existing shared-
+  attention contract. Focused coverage is in
+  `tests/test_pig_welfare_case_runtime.py`. No second manager, queue,
+  observation store, UI or Telegram lifecycle is introduced.
 - Dispatch truth reducer:
   `modules/oom_sakkie/specialist_dispatch_ack.py`.
 - Existing durable evidence rail:
@@ -792,6 +818,15 @@ Current built Supabase-backed surface:
   value from receivable truth. The sale detail and sales dashboard project
   R0.00 receivable and `Not_Applicable` payment without creating a duplicate
   sale, document, receipt, customer message or animal-transfer effect.
+- governed Render production migrations: the protected manual workflow
+  `.github/workflows/render-production-migrations.yml` creates a one-off job
+  from the existing production web service. The closed runner
+  `scripts/run_render_production_migrations.py` accepts no SQL or migration
+  argument, verifies the ordered filename/checksum allowlist and exact Render
+  deploy commit, serializes with a PostgreSQL advisory lock, applies each item
+  transactionally and records immutable applied/failed receipts in
+  `app_private.production_migration_receipts`. It never performs application
+  business writes.
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 

@@ -19,6 +19,7 @@ Farm record writes require approved backend paths and audit evidence.
 | Farm products/settings | Medicine/product defaults and system settings. |
 | Pig observation events | Append-only factual human observations for read-only Herdmaster evidence; never a lifecycle, purpose, medical, sales, reservation, slaughter, customer, alert-acknowledgement, or owner-decision store. |
 | Pig lifecycle events | Append-only audit evidence for canonical pig lifecycle facts; never a lifecycle write rail or substitute for the current-state projection on `pigs`. |
+| Pig welfare cases | One stable coordination identity per pig, episode and concern, with an append-only lifecycle and reference-only links to separately canonical facts. It is not an observation, diagnosis, treatment, movement, mortality, disposal, pig-lifecycle, notification or owner-decision store. |
 | Riversdale auction cycles | Unapplied owner-confirmation and advisory cohort-snapshot rail. A canonical active-outlet claim rail permits at most one active customer sale, reservation, auction, meat, breeding, health-hold, keep-growing, abattoir, or future outlet state per pig. The migration synchronizes the current protected Supabase order-reservation, sales-transaction, and meat-batch writers transactionally; a conflicting source write fails closed. Future protected cohort execution must create its matching claim and member transactionally. Neither auction rail is a reservation, sale, lifecycle, or customer-send rail. |
 
 ## Pig Observation Event Contract
@@ -40,6 +41,44 @@ Farm record writes require approved backend paths and audit evidence.
 - Events are append-only. Only `lifecycle_correction` events may carry `supersedes_lifecycle_event_id`, and every correction must carry one. Updates and deletes are database-blocked, and a correction may supersede only an event for the same pig.
 - The effective timestamp cannot be later than the recorded timestamp. RLS is enabled and no browser policy or writer integration is introduced by this migration.
 - A future protected lifecycle-write rail must emit this evidence through its approved, owner-gated backend path. Canonical detail/history reads and frontend visibility are separate dependent work.
+
+## Pig Welfare Case Contract
+
+`pig_welfare_cases` identifies a longitudinal living-welfare question. The
+stable uniqueness boundary is canonical pig plus `episode_key` plus
+`concern_key`: re-observation of the same concern in the same episode reuses the
+case, while unrelated simultaneous concerns for one pig remain separate cases.
+Episode matching uses attributable chronology, concern continuity and explicit
+correction/reopening evidence; tag proximity, similar wording, elapsed silence
+or pig identity alone must never merge cases. A materially later recurrence is
+a new case linked through `recurrence_of_welfare_case_id`, not a rewrite of the
+old episode.
+
+Case identity, case events and fact links are append-only. The lifecycle records
+explicit state, urgency, responsible owner, next check, escalation, closure and
+reopening. Silence, a missed check or the passage of time never improves or
+closes a case. Closing requires an attributable event and reason; reopening is
+an explicit later event. Current state is a projection of the latest recorded
+event, never a mutable shadow queue.
+
+Case provenance stores minimal structured source identities and timestamps.
+Secrets, credentials, raw Telegram bodies and duplicated medical free text do
+not belong in `provenance_json`; the case cites the canonical source fact or
+provider identity instead.
+
+Observations, medical/treatment records, movement records, pig-lifecycle facts
+and mortality facts retain their own canonical identities and write rails.
+`pig_welfare_case_fact_links` may cite them with provenance but cannot copy,
+merge, correct or execute them. A recorded death closes the living-welfare
+question through an explicit case event/link; mortality assessment, carcass
+removal and disposal work remain separate canonical tasks and do not disappear
+with that closure.
+
+Immediate supported welfare guidance and urgent physical/veterinary escalation
+never wait for case creation, matching or record confirmation. This source-only
+foundation grants no diagnosis, treatment, farm write, Telegram, owner-decision
+or pig-status authority. Applying the migration and adding capture/projection
+runtime are separate owner-reviewed phases.
 
 ## Pig Purpose Correction Batch Contract
 
@@ -82,3 +121,4 @@ The current canonical `pig_current_state`/`pigs` read projection does not supply
 - `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`
 - `supabase/migrations/202607200001_create_pig_observation_events.sql` (unapplied; application requires explicit owner approval)
 - `supabase/migrations/202607210001_create_pig_lifecycle_events.sql` (unapplied; application requires explicit owner approval)
+- `supabase/migrations/202608200002_create_pig_welfare_case_lifecycle.sql` (unapplied additive case foundation; application requires explicit owner approval)
