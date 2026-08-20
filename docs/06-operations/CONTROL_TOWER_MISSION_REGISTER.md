@@ -3405,3 +3405,27 @@ but process presence is dispatch evidence only. Progress requires later diff,
 commit, tests and complete handover. The current capacity is completion-depth only:
 OOM owner-attention correction, the same Green printing journey and the same
 borehole journey. No new capability mission was opened.
+### Oom Sakkie owner-attention source closure and reality continuation - 2026-08-20
+
+Fresh ancestry proved the Oom Sakkie source terminal closed while the Green print
+and ROOTLINE borehole continuation terminals remained present. PR #1142 is clean
+and all three hosted checks pass at exact head
+`0fe30829986cdc98c5df5bce039b6fd27cd5a00a`; focused tests, browser checks and
+reviews are enabling-stage evidence. The saved artifact is only 1,109 bytes and
+points to a purported complete handover at itself, so it is `INVALID_HANDOVER` for
+stage or mission closure.
+
+Target owner outcome: deployed Oom Sakkie truthfully separates genuine owner work,
+ready physical work, agent-owned reconciliation, watch and completed state across
+dashboard, full view, Brief and Telegram. Owner outcome achieved: `NONE`. Usable
+now: `NO`; no merge/deployment, exact loaded revision, authenticated production
+classification, owner visual approval or later manager cycle is proven. First
+missing real-life gate before a protected merge/deploy packet is current read-only
+classification of the reported projected items and the actual cause of 0/78.
+
+Control Tower resumed the SAME visible PR #1142 worktree for concrete read-only
+production/canonical diagnosis and a complete immutable release packet. This is not
+a result-only terminal or a new mission. Database/farm/customer writes, Telegram
+effects, worker invocation, merge/deploy and manufactured evidence remain forbidden.
+Fresh process ancestry proves dispatch only; progress requires later attributable
+readback, diff/commit where justified and the complete populated handover.
