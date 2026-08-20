@@ -283,6 +283,13 @@
   `tests/test_oom_sakkie_herdmaster_health_loss_preview.py`, plus
   `tests/test_oom_sakkie_herdmaster_health_loss_runtime.py`; the bounded writer
   gate remains `tests/test_herdmaster_health_loss_recording.py` below.
+- Longitudinal welfare-case source foundation:
+  `supabase/migrations/202608200002_create_pig_welfare_case_lifecycle.sql`
+  defines stable per-episode/per-concern identity, append-only case events and
+  reference-only canonical fact links; `tests/test_pig_welfare_case_migration.py`
+  and `tests/test_pig_welfare_case_postgres.py` verify the zero-authority and
+  disposable-Postgres integrity contracts. The migration is unapplied and no
+  capture, manager, shared-attention, UI or Telegram path consumes it yet.
 - Dispatch truth reducer:
   `modules/oom_sakkie/specialist_dispatch_ack.py`.
 - Existing durable evidence rail:
