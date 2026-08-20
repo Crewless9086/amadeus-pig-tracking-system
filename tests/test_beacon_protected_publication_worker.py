@@ -169,6 +169,27 @@ def test_success_without_provider_readback_is_contained_ambiguous():
         {"success":True,"status":"facebook_page_post_sent","facebook_post_id":"42_7"},200), now=NOW)
     assert result["consumer_status"]=="contained_ambiguous"
     assert result["status"]=="meta_provider_readback_unproven_ambiguous"
+
+
+def test_real_executor_nested_readback_shape_is_confirmed():
+    store=Store(approval())
+    result=run_protected_publication_cycle(store=store, executor=lambda *a,**k: (
+        {"success":True,"status":"facebook_page_post_sent","facebook_post_id":"PAGE-1_7",
+         "facebook_result":{"success":True,"provider_readback_confirmed":True}},200), now=NOW)
+    assert result["consumer_status"] == "confirmed"
+
+
+def test_nonzero_budget_or_duration_is_rejected_before_executor():
+    for field,value in (("budget_cap",{"currency":"ZAR","total":"1.00","daily":"1.00"}),
+                        ("duration",{"days":1})):
+        item=approval(); item["preview_payload"][field]=value
+        item["preview_payload"]["campaign_digest"]=canonical_preview_digest(
+            "beacon_campaign_review", {k:v for k,v in item["preview_payload"].items() if k!="campaign_digest"})
+        item["evidence_generation"]=item["preview_payload"]["campaign_digest"]
+        called=[]; result=run_protected_publication_cycle(store=Store(item),
+            executor=lambda *a,**k: called.append(1), now=NOW)
+        assert result["status"]=="protected_campaign_zero_spend_boundary_invalid"
+        assert called == []
     assert result["automatic_retry_allowed"] is False
 
 
