@@ -2,6 +2,87 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-20 - Four-day operational reality reset
+
+Owner priority: use the four remaining days to turn the existing specialist
+spines into terminal-independent operating outcomes. CORE recovery continues in
+parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
+BEACON development and operation. Recovery-mode implementation WIP remains
+capped at three collision-audited tracks.
+
+Fresh authoritative main is
+`783a290f8f2478fb74bef6aa089d98a645e73fc0`. Process existence, registered
+worktrees and historical waits were inspected only as collision evidence and
+were not accepted as active work or current dependencies.
+
+Current operational reality at the 2026-08-20 morning cutoff:
+
+- **Oom Sakkie / Brain Guard:** autonomous on exact current main. Provider-owned
+  five-minute manager cycles are advancing with zero exceptions; Brain Guard
+  passed 119 governed files. A cycle started at `05:55:20Z` with next target
+  `06:00:20Z`; completed cycles immediately before it establish continuity.
+- **ROOTLINE B/C irrigation:** operational and autonomous. Two C-camp segments
+  completed on 20 August. Execution
+  `ROOTLINE-EXECUTION-C9A9E6B2CB62E1DFAA1920F8` has authoritative provider ON,
+  provider OFF, final OFF readback, `shutdown_verified=true` and 3,599 seconds
+  runtime. All four controller channels were freshly read OFF at `05:56:40Z`.
+  Fertiliser mixer/injection and borehole remain separate uncommissioned device
+  classes and have no current actuation proof.
+- **HERDMASTER:** operating through the manager with four reassessing cases,
+  fresh provider-confirmed material deliveries and later duplicate silence.
+  Shared worklist/homepage/Brief parity remains unfinished.
+- **SAM:** event-waiting. Eight cases are refreshed, but no fresh genuine
+  customer event or autonomous commercial outcome is proven.
+- **BEACON:** scheduled case reconciliation is autonomous, but the business
+  outcome is incomplete. Generation 26 delivered a truthful media exception;
+  no compliant card, Meta publication or readback exists. The older generation
+  24 claim contains prohibited sales/contact wording and litter-ID presentation
+  and must be retired, never approved or published.
+- **Orders / quotations:** the three price-indication, budgetary-quotation and
+  current-sales-quotation journeys are deployed and accepted. Order
+  `ORD-2026-A6EC6D` and sale `SALE-A1EE5E3DBC3110D1` are completed with tags 123
+  and 151 collected. Charity accounting remains wrong: R750 consideration,
+  R0.01 received and `Part_Paid`; correct through an explicit zero-consideration
+  disposition, never a direct data hack.
+- **CORE:** contained and not operational. The watchdog task is disabled,
+  governed stop is active, supervisor is stopped, runner PIDs are absent and
+  heartbeat is stale from 16 August. Staged revision `cec3a5c6` is 44 commits
+  behind current main. PR #1117 is conflicting, has no current checks and has a
+  fresh independent `NO-GO` review on recovery provenance. No activation is
+  eligible.
+- **CODEX UI:** no active implementation terminal. The facelift inventory is
+  preserved; presentation work stays behind operating-spine outcomes except
+  where it is required to accept the shared attention projection.
+
+Today's serialized operating plan:
+
+1. **Slot 1 - CORE operating spine:** continue existing
+   `CMQ-20260813-05`; reconcile PR #1117 to exact current main, repair the two
+   independent-review findings, pass isolated proportional tests, Brain Guard,
+   independent GO and exact-head CI, then integrate. Validation, staging and a
+   fresh activation remain later separate gates.
+2. **Slot 2 - Oom Sakkie / shared attention:** preserve the unique dirty
+   `C:\tmp\oom-sakkie-shared-attention-20260819` worktree and continue the
+   existing shared owner-attention projection through tests, review, serialized
+   merge/deploy and cross-channel parity. No duplicate queue or dashboard-only
+   workaround. Once released, promote the existing ROOTLINE device spine to
+   fertiliser mixer commissioning, then injection; borehole remains a later
+   independent commissioning class.
+3. **Slot 3 - Revenue / herd completion:** first implement explicit charity /
+   zero-consideration settlement truth for the existing sale journey. Then
+   resume the same BEACON Slot 3 mission to retire the stale forbidden claim and
+   prove one sow-named, story-only, Public Use media card, protected approval,
+   exact Meta readback and later replay silence. SAM wakes only for genuine
+   inbound; HERDMASTER parity feeds the Slot 2 shared projection.
+
+Four-day targets: Day 1 closes the three reusable source defects above; Day 2
+integrates/deploys and obtains provider acceptance; Day 3 commissions the next
+eligible ROOTLINE device class and proves revenue/herd follow-through; Day 4 is
+reserved for terminal-independent continuity, regression repair, concise owner
+experience and handover. No stage is Business complete without the deployed
+agent's real trigger, worker, heartbeat, durable result, next trigger and later
+terminal-independent cycle.
+
 ## 2026-08-19 - Queued Oom Sakkie shared owner-attention projection
 
 Charl confirmed the cross-channel invariant: application, Telegram, future
