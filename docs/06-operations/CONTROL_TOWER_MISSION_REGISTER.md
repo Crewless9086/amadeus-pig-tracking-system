@@ -2937,3 +2937,46 @@ stage/deploy, reuse the sealed identity, dispatch a mission, or create any
 business, messaging, provider, farm or hardware effect. It must return the full
 `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. A later validation, staging and
 fresh separately authorized activation remain required.
+
+The source-only diagnosis terminal closed with exact cause still `Unknown`.
+Return code `2147942401` is `0x80070001`, but the sealed activation retained no
+stderr or startup-phase evidence sufficient to distinguish action quoting, path,
+environment, launcher or early Python failure. The clean exact-main worktree made
+no speculative source change or PR; its focused verification passed 142 tests and
+41 subtests. The next safe CORE repair must first add bounded, secret-safe startup
+failure evidence in isolated source/tests, without operating the real task. CORE
+remains contained and not operational.
+
+### Oom Sakkie rolling current Brief source release - 2026-08-20
+
+Lifecycle: `RELEASE_HOLD / SOURCE_PR_1141_CI_GREEN / BUSINESS_INCOMPLETE`.
+
+The source terminal closed and returned the complete Control Tower feedback
+template. Exact pushed head `a2b318a6d20f40a5f505293eec51dcc558d855b5`
+continues the existing shared owner-attention mission in PR #1141. The PR is one
+commit ahead of authoritative base
+`3961411236fca3329abaac2d34cfb863167c1c73`, mergeable/CLEAN and has all three
+required CI checks passing. Broad affected verification passed 420 tests, 8
+skips, 1 documented pre-existing deselection and 237 subtests; exact-head critical
+verification passed 91 tests, 1 skip and the same deselection. Brain Guard and
+independent security/data-integrity and Oom Sakkie correctness reviews are clean.
+
+The source correction sends a new provider-confirmed Brief generation only after
+material shared-projection change, canonically supersedes the prior Brief before
+bounded best-effort cleanup, suppresses routine generic acknowledgement, and
+contains ambiguous delivery, replay, concurrency and cross-owner effects. It
+adds no database, scheduler, queue or second lifecycle. No Telegram, production,
+farm, customer or hardware effect occurred.
+
+Fresh Control Tower inspection found no surviving OOM process. The worktree has
+one `manager_question_runtime.py` working-copy marker caused by line-ending
+metadata; raw/content diff and numstat are empty and its blob equals HEAD. It is
+preserved and is not classified as active work or uncommitted source content.
+
+Merge and deployment are not authorized by source completion. The next boundary
+is an explicit exact-head owner release decision for PR #1141. After merge, CORE's
+standing authority may perform exact-current isolated validation and receipt-bound
+stop-preserving staging, but deployment and activation remain separately
+protected. Business completion requires a genuine owner reply, canonical receipt,
+specialist reassessment, provider-confirmed refresh or truthful silence, application/
+Telegram parity and a later terminal-independent cycle.
