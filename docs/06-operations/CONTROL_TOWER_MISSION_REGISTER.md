@@ -557,6 +557,19 @@ the existing eight-file candidate before reconciling current main and continuing
 Lifecycle is `WORKING / SERIALIZED_PHASE_2_RECOVERY`; process identity is launch
 evidence only.
 
+Charl explicitly authorized one exact-current staging-only CORE gate for revision
+`9fdfa2dc343e36b432766055c0f408966431c624` using validation receipt
+`678acbe8aff0b833a392690368ef8aac45b4862511a85dc5328cd62f49bd87fe`,
+with governed stop and rollback preserved and zero activation. Fresh preflight
+reconfirmed HEAD and authoritative main equality, exact receipt/key hashes and no
+visible staging/activation lock. A separately launched visible staging terminal
+now runs as parent PID 7992, launcher PID 90552 and worker PID 100512. It may use
+only the canonical receipt-bound staging rail and must leave the watchdog disabled,
+supervisor stopped and governed stop present; it may not create an activation
+identity, task invocation, heartbeat, mission cycle or business/farm/provider
+effect. Lifecycle is `WORKING / EXACT_CURRENT_STAGING_IN_PROGRESS`; process
+identity is launch evidence only.
+
 Charl reported the SALES owner page open and authenticated, but browser-control
 discovery returned no connected browser surface. Therefore Control Tower did not
 read, submit or fabricate a preview. The owner may safely create the zero-write
