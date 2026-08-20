@@ -306,6 +306,65 @@ chronology, correction, concurrency, cross-owner isolation and replay silence.
 No production write, Telegram send, diagnosis, treatment, animal status change
 or UI deployment is authorized by this intake entry.
 
+### Approved queued addendum - grouped boar-removal advance attention
+
+Charl approved advance notice for the existing 17-day grouped boar-exposure
+journey. Register this as an addendum to `HMQ-20260813-06` and the existing
+HERDMASTER Breeding Attention/grouped exposure-removal lineage, with Oom
+Sakkie's shared owner-attention projection as its presentation dependency. Do
+not create a new mission, reminder table, queue, scheduler, calendar, Telegram
+lifecycle or channel-specific calculation.
+
+Lifecycle: `QUEUED / OWNER_POLICY_APPROVED /
+CURRENT_MAIN_AND_SHARED_ATTENTION_RECONCILIATION_REQUIRED`. Strategic class:
+`OPERATING_SPINE`. This addendum does not consume a separate implementation
+slot. Fresh inspection on 2026-08-20 found authoritative main at `4b7efb02` and
+PR #1127 still open, clean and mergeable at `57a61ac7`, but based on older main
+`86fb87a3`. Reconcile that PR and all current HERDMASTER/Oom Sakkie ownership
+before implementation; an open PR or worktree is not active-work proof.
+
+Owner outcome: one grouped HERDMASTER work item appears three Africa/Johannesburg
+calendar days before the canonical planned removal date, remains visible as due
+and then overdue until attributable actual removal is recorded, and closes on
+every channel from that same canonical event. Charl and Anton no longer calculate
+17 days, repeatedly inspect the mating page or maintain personal reminders. They
+retain only physical separation, correction of wrong source facts and one
+truthful governed actual-removal confirmation.
+
+Required contract:
+
+- the existing inclusive 17-day rule remains authoritative: start is day 1 and
+  planned removal is start plus 16 farm-local calendar days;
+- one stable work identity binds the canonical exposure episode/group, boar and
+  planned-removal date; grouped females are context, not duplicate per-sow tasks;
+- more than three days remaining is monitoring only; D-3 through D-1 is upcoming
+  work; D0 is due today; D+1 onward is overdue; missing or conflicting evidence
+  is `Needs data`; only an actual canonical removal event completes the item;
+- correcting the exposure or planned date supersedes the prior work identity and
+  cannot leave two live reminders; replay and concurrent cycles remain silent;
+- HERDMASTER owns the biology, due state, reason and next action. Oom Sakkie only
+  ranks and projects the same typed item to API, homepage, full attention, Brief
+  and Telegram; UI/channel code must not independently calculate the window;
+- the assignee is the supported farm operator/manager, not automatically Charl.
+  A precise human question is raised only when canonical evidence cannot answer
+  whether removal occurred;
+- countdown changes update one current item. They do not create daily Telegram
+  messages. Provider delivery is reserved for a material state transition under
+  the existing attention-message policy; unchanged reassessments stay silent;
+- planned removal, observed physical separation and governed canonical recording
+  remain distinct facts. No mating/service date, conception, pregnancy, movement,
+  sale or customer effect may be inferred.
+
+Acceptance must prove D-4 silence, exactly one grouped D-3 item, due/overdue
+transitions, identical stable identity and facts across all projections,
+Unknown-safe date handling, correction/supersession, replay/concurrency safety,
+protected exact-once removal and automatic cross-channel closure. Release proof
+requires exact-current Brain Guard/reviews/CI, authenticated owner preview, exact
+loaded revision, genuine canonical exposure readback, owner-visible advance
+notice, physical separation, canonical removal readback and a later independent
+manager cycle showing the item remains closed. Calculated dates, fixtures or a
+visible preview alone are not Business completion.
+
 ### Three-track closeout - 2026-08-20
 
 All three visible development terminals returned complete handovers and their
