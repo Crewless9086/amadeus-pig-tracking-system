@@ -1134,7 +1134,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
         tasks = []
         recommendation_map = {
             "Run now": "Recommend", "Run later": "Recommend", "Hold": "Hold",
-            "Needs Data": "Needs Data", "Completed": "Hold",
+            "Needs Data": "Needs Data", "Completed": "Do Not Run",
             "Reassess after segment one": "Hold",
             "recovery required": "Do Not Run",
         }

@@ -1313,3 +1313,41 @@ revision, one provider-origin canonical readiness result with current/next cycle
 and a later terminal-independent provider-origin cycle. No owner action, provider
 readback, secret/configuration change, merge, deployment or hardware action was
 performed by the development terminal.
+
+### RMQ-20260813-04 B/C lifecycle truth repair - 2026-08-20
+
+Owner-observed and GENERAL-inspected evidence reopened the existing operational
+irrigation lineage: canonical history proves two early-20-August C segments,
+while the shared Telegram daily presentation mapped `Completed` to `Hold` and
+printed fixed false lifecycle fields. B had a fresh `Run now` recommendation but
+did not advance into governed execution. The exact canonical B eligibility,
+deferral/rejection and tank-gate result remain `Unknown` in this source worktree:
+`DATABASE_URL` is absent, the deployed owner-status route correctly returned
+403 without an owner session, and no in-app browser session was available. The
+healthy deployed web service and historical manager cycles do not fill that gap.
+
+Lifecycle: `REVIEW_HOLD / SOURCE_PR_1140_OPEN / RELEASE_HOLD /
+CANONICAL_READBACK_REQUIRED`.
+
+The current branch adds one read-only `rootline_zone_lifecycle.v1` projection
+for `Recommended`, `Revalidating`, `Eligible`, `Authorized`, `Started`,
+`Completed`, `Held` and `Failed`; the specialist result, persisted reassessment,
+application owner-status projection and Telegram formatter consume that shared
+shape. Completed history outranks later recommendation wording and can no longer
+render as Hold. Each Hold exposes one supported reason or `Unknown` and assigns
+the next action to ROOTLINE. Existing standing-water execution eligibility is
+retained: absent/stale tank evidence does not independently block commissioned
+B/C, while fresh adverse water, weather, controller, concurrency and shutdown
+evidence still fail closed. Existing canonical job identity/history, atomic
+claims, replay suppression and scheduler retry rails are reused; no database,
+queue, scheduler, approval or Telegram lifecycle is added.
+
+PR #1126 is governance collision evidence only because it modifies this
+register and the Mission Standard; its current head must be reconciled before
+final PR preparation without importing its lifecycle claims as runtime truth.
+Source-only PR #1140 is the single review rail; a later serialized merge/deploy
+decision remains outside this terminal's authority. Business completion still requires the
+deployed ROOTLINE actor to produce a fresh B execution or one exact truthful
+blocker, provider/canonical readback, physical proof and a later
+terminal-independent cycle. This terminal is forbidden from operating B/C,
+invoking the worker, controlling a provider or manufacturing acceptance.

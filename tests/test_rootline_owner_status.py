@@ -106,3 +106,14 @@ def test_run_with_persisted_technical_blocker_projects_run_blocked():
     assert b["status"] == "Recommend"
     assert blocker == "controller_safety_not_dispatchable"
     assert _operational_state("Run", blocker, {}) == "Run — blocked"
+
+
+def test_current_runtime_reprojects_over_stale_persisted_lifecycle():
+    from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle
+    recommendation = {"status": "Recommend", "reason": "Water is due.",
+        "lifecycle": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "B12345", "state": "Recommended",
+            "next_action_owner": "ROOTLINE"}}
+    current = project_zone_lifecycle(zone_id="B12345", recommendation=recommendation,
+        execution={"action": "mark_active", "state": "Active"})
+    assert current["state"] == "Started"
