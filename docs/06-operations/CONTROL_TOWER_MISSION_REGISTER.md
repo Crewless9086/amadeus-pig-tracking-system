@@ -306,6 +306,46 @@ chronology, correction, concurrency, cross-owner isolation and replay silence.
 No production write, Telegram send, diagnosis, treatment, animal status change
 or UI deployment is authorized by this intake entry.
 
+### Three-track closeout - 2026-08-20
+
+All three visible development terminals returned complete handovers and their
+idle hosts were closed. No open shell is retained as active work.
+
+**CORE:** PR #1130 head `f53ec9bb` passed isolated activation tests, Brain
+Guard, two independent GO reviews and all hosted CI, then merged as current-main
+revision `86fb87a39fd92fb430f683fb1b10c935cbdd0d8f`. The repair now classifies
+audit-channel access denial, provider/tool error and readback failure exactly and
+fails closed. Windows readback proves the Task Scheduler Operational channel is
+present but disabled, while the controller runs medium-integrity and is not an
+administrator. Lifecycle is `OWNER_HOLD / MERGED_REPAIR /
+OS_AUTHORITY_BLOCKED`. No activation, epoch, task/provider launch, worker,
+heartbeat or business effect occurred. Automatic promotion requires a governed
+elevated administrator/system boundary to enable and read back that exact
+channel; only afterward may exact-current validation/staging and a separately
+authorized new epoch begin. Consumed epoch `1387144492d944c2b2441aa44cd1af12`
+remains permanently non-replayable.
+
+**BEACON:** PR #1129 head `7210d252` passed focused/concurrency tests,
+independent reviews and hosted CI, and merged as `ac74e9ba`. Older same-case
+owner-card claims now retire when a newer manager generation exists, and
+publication accepts only the exact current generation. Generation 24 is
+permanently ineligible as current authority. Lifecycle remains `WORKING /
+MERGED / DEPLOYMENT_PROVIDER_PROOF_REQUIRED`; no exact deployment, scheduler
+heartbeat, canonical retirement readback, compliant card, Meta publication,
+inbound or SAM result is yet proven. Current truthful outcome remains generation
+26 `beacon_litter_awareness_media_exception` until exact litter-linked Library
+Accept/Public Use/hash/storage evidence exists.
+
+**SALES:** fresh GitHub and repository inventory proved there is no existing
+governed production-migration workflow, secret-name surface or protected
+environment to apply `202608200001_add_sales_financial_disposition.sql`. The
+owner page is HTTP 200 but the sale API remains HTTP 503 `UndefinedColumn`.
+Lifecycle is `EXTERNAL_HOLD / PRODUCTION_MIGRATION_AUTHORITY_MISSING`. No
+migration, preview, confirmation or business write occurred. Charl must press no
+charity button. Promotion requires an explicit governed production-migration
+authority decision; a terminal may not invent credentials or disguise the
+disposable CI database as production.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
