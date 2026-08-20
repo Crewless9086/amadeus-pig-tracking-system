@@ -457,6 +457,18 @@ to add a Render API key with one-off-job authority for service
 `production / RENDER_API_KEY`; no charity confirmation is authorized. The
 completed visible SALES window was closed.
 
+Control Tower immediately continued the existing CMQ-20260813-05 lineage in a
+fresh source-only repair worktree at exact current main `9b6aac25`: branch
+`fix/core-activation-handshake-20260820`, visible parent PID 44960, launcher PID
+47504 and worker PID 64912. This gate may diagnose and repair only the bounded
+activation-bound supervisor/runner publication and verification handshake, with
+time-bounded stale/delay/exit/replay/expiry/concurrency/rollback proof. It may
+not reuse epoch `83948af`, activate, stage, invoke Task Scheduler, start CORE or
+perform business effects. Lifecycle is `WORKING /
+HANDSHAKE_SOURCE_REPAIR_IN_PROGRESS`; the process identities are launch receipts
+only and completion requires attributable source, review, tests, Brain Guard and
+exact-head CI evidence.
+
 The existing shared-attention PR #1127 reconciled current main without opening a
 duplicate lineage. Exact head `57a61ac7` is clean against `86fb87a3`; 52 focused
 tests, 753 broad Oom/SAM/BEACON tests with seven skips, 235 incoming-overlap
