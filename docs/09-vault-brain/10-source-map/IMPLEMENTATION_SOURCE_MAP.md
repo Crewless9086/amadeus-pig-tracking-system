@@ -792,6 +792,15 @@ Current built Supabase-backed surface:
   value from receivable truth. The sale detail and sales dashboard project
   R0.00 receivable and `Not_Applicable` payment without creating a duplicate
   sale, document, receipt, customer message or animal-transfer effect.
+- governed Render production migrations: the protected manual workflow
+  `.github/workflows/render-production-migrations.yml` creates a one-off job
+  from the existing production web service. The closed runner
+  `scripts/run_render_production_migrations.py` accepts no SQL or migration
+  argument, verifies the ordered filename/checksum allowlist and exact Render
+  deploy commit, serializes with a PostgreSQL advisory lock, applies each item
+  transactionally and records immutable applied/failed receipts in
+  `app_private.production_migration_receipts`. It never performs application
+  business writes.
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 
