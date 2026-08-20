@@ -74,6 +74,30 @@ the closed source process. It is forbidden to run process-control tests in its
 Codex ancestry, must use only the disposable isolated validator, and has zero
 activation authority.
 
+### SALES charity-settlement interruption recovery
+
+The visible SALES charity/zero-consideration terminal did not complete. Fresh
+process inspection found only its PowerShell host and console; its Codex child
+was absent, the required final-message artifact did not exist, and its
+transcript ended with `The pipeline has been stopped`. The exact Codex session
+shows that it was polling a full repository test run at approximately ten
+percent when the parent session ended. No test failure or Windows application
+crash was recorded. This is classified as an externally interrupted test/run,
+not active work and not a completed mission.
+
+All fifteen WIP paths in `C:\tmp\sales-charity-disposition-20260820` remain
+preserved and pass `git diff --check`; no reset, restore, stash, overwrite,
+reconstruction, data correction or duplicate mission occurred. Control Tower
+closed the old idle host and resumed the exact session visibly as parent PID
+63192 / Codex launcher PID 71492. The continuation must use proportional
+SALES/migration/route/read-model/UI/Brain-Guard gates before any broader suite,
+checkpoint WIP before current-main reconciliation, and return the complete
+`CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. The existing outcome remains an
+explicit zero-consideration charity disposition for
+`SALE-A1EE5E3DBC3110D1` that preserves list-price truth while settling
+receivable/payment truth without a data hack. Lifecycle remains `WORKING /
+INTERRUPTION_RECOVERED / IMPLEMENTATION_AND_ACCEPTANCE_REQUIRED`.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
