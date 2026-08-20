@@ -495,6 +495,29 @@ touching frozen PR #1127. Nothing was merged, migrated, deployed or written.
 Lifecycle is `RELEASE_HOLD / PHASE_1_SOURCE_READY`; the completed HERDMASTER
 window was closed.
 
+Charl explicitly approved exact PR #1132 merge and collision-safe Phase 2
+migration/runtime integration. Control Tower freshly verified head `6d132c44`,
+base `9b6aac25`, clean mergeability, six-file bounded scope and all three hosted
+checks green, then merged it without mutation as
+`efccbe37573f6a74cbcedb005146561969fa7bac`. Phase 2 now runs in fresh worktree
+`C:\tmp\herdmaster-welfare-runtime-phase2-20260820` from that exact main,
+visible parent PID 6600, launcher PID 51144 and worker PID 38164. Authority is
+limited to existing-runtime integration, the single reviewed migration through
+the governed Render rail, immutable receipt/schema and zero-row verification,
+plus read-only deployed capability proof. It explicitly excludes creating or
+changing welfare/animal/farm records, protected confirmations, Telegram sends
+and manufactured Prince evidence. Lifecycle is `WORKING /
+PHASE_2_RUNTIME_INTEGRATION_IN_PROGRESS`; process identity is launch evidence
+only.
+
+Charl reported the SALES owner page open and authenticated, but browser-control
+discovery returned no connected browser surface. Therefore Control Tower did not
+read, submit or fabricate a preview. The owner may safely create the zero-write
+preview on the existing page using the approved charitable purpose and exact
+R0.01 workaround correction, but must not press `Confirm charitable
+disposition` until the digest-bound preview is returned to Control Tower for
+review.
+
 The first CORE handshake-repair terminal was interrupted externally during its
 focused pytest run and produced no final handover, commit or PR. Its exact dirty
 candidate is preserved only in
