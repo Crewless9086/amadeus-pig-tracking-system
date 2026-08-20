@@ -3296,3 +3296,40 @@ and reviews, merge/deploy/loaded revision, authenticated production count readba
 desktop/mobile owner approval, later manager cycle and measured owner-work reduction.
 No CSS-only concealment, arbitrary limits, new queue/database/scheduler, invented
 animal status, manual owner tag reconciliation or Telegram-only truth is permitted.
+
+### BEACON corrected publication stage and lane recycle - 2026-08-20
+
+Fresh process-ancestry sweep proves the visible BEACON correction terminal closed.
+Its worktree is clean and PR #1145 is `CLEAN` at exact head
+`b1e15b43e1e59532aa15ee7e7a741a2a8aa668c5`; the corrected source stage adds a
+demand-oriented livestock-enquiry invitation and reports green CI/reviews. The
+saved terminal artifact is only a 588-byte summary that points to itself instead
+of containing the complete populated `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`.
+It is therefore `INVALID_HANDOVER` for mission closure and technical-stage evidence
+only. No publication, deployment, Meta provider result, genuine customer inbound,
+SAM lifecycle or later terminal-independent cycle exists. BEACON remains
+`PROTECTED_BOUNDARY / SOURCE_READY / BUSINESS_INCOMPLETE`.
+
+The protected wake condition is one exact owner decision binding PR #1145 head,
+truthful post bytes, target Page, organic/R0 effect, rollback/containment and all
+prohibited actions. Until then no public post, boost, spend, credential change or
+customer contact is authorized. The released development lane is not left idle.
+
+Fresh evidence for the remaining visible lanes shows ROOTLINE fertilizer has
+advanced to clean PR #1149 head `d35a2e64682446d5a9f322613ab8e81a4a474a76`
+while its process remains present; its current artifact is 975 bytes and cannot
+close the mission. Oom Sakkie owner-attention eligibility has fresh uncommitted
+changes across the shared backend projection, Telegram projection, dashboard/full
+view and tests; it remains active technical work, not operational proof.
+
+Control Tower assigns the released collision-free lane to the existing Documents
+lineage `DMQ-20260816-01`, specifically the Home Assistant Green/CUPS physical
+printing bridge feasibility and bounded implementation stage. It must use exact
+current main, reuse the canonical Documents lifecycle, and deliver a step-by-step
+Green commissioning guide for Charl. It may prepare source, tests, packaging,
+security and rollback evidence, but may not connect hardware, change credentials,
+expose CUPS/Home Assistant publicly, deploy, commission, submit a print job or
+manufacture physical output. Business completion still requires a later genuine
+non-terminal print request, canonical receipt, provider-origin CUPS evidence,
+physical paper, replay containment, later independent print and demonstrated
+removal of the manual download/open/print journey.
