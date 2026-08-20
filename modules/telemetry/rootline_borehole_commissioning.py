@@ -8,11 +8,13 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from modules.telemetry.rootline_device_registry import get_device_contract
+from modules.telemetry.rootline_device_spine import load_device_record
 
 VERSION = "rootline_borehole_commissioning_readiness.v2"
 IDENTITY = "BOREHOLE-1-MINI-R4-CH1"
 READBACK_MAX_AGE = timedelta(minutes=5)
 COMMISSIONING_TEST_MAX_SECONDS = 30
+DEVICE_KEY = "ewelink:ewelink_owner_account:1002851416:1"
 
 
 def assess_borehole_commissioning_readiness(readback, *, canonical=None, physical=None, now=None):
@@ -119,6 +121,66 @@ def prepare_borehole_execution_plan(*, need, commissioned_baseline, authority, p
     return {**material, "plan_sha256": _digest(material),
         "status": "draft_hold_not_authorized_or_executed",
         "eligible_for_coordinator": False}
+
+
+def load_registered_borehole_baseline(*, connect_factory):
+    """Load the canonical device spine and accept only a commissioned pump baseline.
+
+    `load_device_record` already resolves every referenced commissioning-evidence
+    row and standing-authority envelope.  This additional profile check prevents
+    a valid record for a different output, provider, or physical effect from
+    becoming Borehole 1 authority.
+    """
+    loaded = load_device_record(DEVICE_KEY, connect_factory=connect_factory)
+    if not isinstance(loaded, dict):
+        return None
+    record = loaded.get("device_record") or {}
+    exact = (record.get("provider") == "ewelink"
+        and record.get("provider_account_binding") == "ewelink_owner_account"
+        and record.get("device_id") == "1002851416" and record.get("channel") == 1
+        and record.get("device_type") == "pump" and record.get("safe_state") == "OFF"
+        and record.get("physical_effect") == "Borehole 1 pump power"
+        and record.get("commissioning_stage") == "standing_active"
+        and record.get("standing_authority") is True
+        and record.get("independent_physical_identity_proven") is True
+        and record.get("independent_fail_stop_proven") is True
+        and type(record.get("maximum_runtime_seconds")) is int
+        and 0 < record["maximum_runtime_seconds"]
+        and type(record.get("native_fail_stop_seconds")) is int
+        and 0 < record["native_fail_stop_seconds"] <= record["maximum_runtime_seconds"])
+    if not exact:
+        return None
+    return {"current": True, "device_identity": IDENTITY, "device_key": DEVICE_KEY,
+        "provider": record["provider"], "provider_account_binding": record["provider_account_binding"],
+        "device_id": record["device_id"], "channel": record["channel"],
+        "safe_state": record["safe_state"], "registry_generation": loaded["registry_generation"],
+        "baseline_sha256": loaded["evidence_digest"],
+        "maximum_routine_runtime_seconds": record["maximum_runtime_seconds"],
+        "native_fail_stop_seconds": record["native_fail_stop_seconds"],
+        "authority_envelope": dict(record.get("authority_envelope") or {})}
+
+
+def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
+                                      interlocks, energy, requested_seconds, now=None):
+    """Build one immutable canonical eligibility identity; never claim or command."""
+    plan = prepare_borehole_execution_plan(need=need, commissioned_baseline=baseline,
+        authority=authority, provider=provider, interlocks=interlocks, energy=energy,
+        concurrency={"no_conflicting_material_load": True, "borehole_claim_available": True},
+        requested_seconds=requested_seconds, execution_id="PENDING", now=now)
+    blockers = [item for item in plan["blockers"]
+        if item != "canonical_validator_and_coordinator_integration_absent"]
+    material = {"contract_version": "rootline_borehole_runtime_eligibility.v1",
+        "device_key": DEVICE_KEY, "baseline_sha256": baseline.get("baseline_sha256"),
+        "registry_generation": baseline.get("registry_generation"),
+        "need_sha256": _digest(dict(need or {})), "evidence_sha256": plan["evidence_sha256"],
+        "requested_seconds": requested_seconds, "assessed_at": plan["prepared_at"],
+        "gates": plan["gates"], "blockers": blockers}
+    digest = _digest(material)
+    execution_id = "ROOTLINE-BOREHOLE-" + digest[:24].upper()
+    return {**material, "eligibility_sha256": digest, "execution_id": execution_id,
+        "consumption_key": "borehole:" + digest,
+        "eligible": not blockers and all(plan["gates"].values()),
+        "command_authority": False, "hardware_commands": 0}
 
 
 def _canonical_baseline_valid(value, device):
