@@ -457,6 +457,19 @@ to add a Render API key with one-off-job authority for service
 `production / RENDER_API_KEY`; no charity confirmation is authorized. The
 completed visible SALES window was closed.
 
+Charl installed the Render credential as GitHub environment secret
+`production / RENDER_API_KEY`; Control Tower verified the secret name without
+reading or exposing its value. Governed workflow run `32349576448`, bound to
+exact current main `9b6aac25075481eeb35cd32320bf3f0d804ffb61`, passed authority
+validation, created the Render one-off job and completed successfully in 44
+seconds. The prior provider-authority blocker is resolved. A fresh visible SALES
+acceptance terminal was launched in the existing worktree as parent PID 64144,
+launcher PID 102656 and worker PID 21964 to verify the exact immutable migration
+receipt, restored API/schema and produce one authenticated zero-write charitable
+preview. It may not confirm or mutate the sale, order, payment, animal or
+customer. Lifecycle is `WORKING / PRODUCTION_MIGRATION_SUCCEEDED /
+ZERO_WRITE_PREVIEW_IN_PROGRESS`; process identity is launch evidence only.
+
 Control Tower immediately continued the existing CMQ-20260813-05 lineage in a
 fresh source-only repair worktree at exact current main `9b6aac25`: branch
 `fix/core-activation-handshake-20260820`, visible parent PID 44960, launcher PID
