@@ -3003,3 +3003,43 @@ only the resulting exact main revision through the governed lane, run no migrati
 without separate checksum-bound authority, and use only passive read-only
 acceptance observation. Absence of a genuine event becomes a bounded
 `EXTERNAL_HOLD`, not a manufactured test or indefinite terminal wait.
+
+PR #1141 subsequently merged as authoritative revision
+`2548d99ab61d686449a2748614e4da9849c90b3a`. The release handover reports exact
+application/worker loading, two autonomous manager cycles, a later zero-exception
+cycle with twenty unchanged deliveries suppressed, and provider-confirmed Brief
+`3841` superseding and cleaning up prior Brief `3824`. No migration, synthetic
+owner reply, manual Telegram effect, farm write, configuration change or hardware
+action occurred. The genuine owner-reply acceptance branch remains
+`EXTERNAL_HOLD`; no owner test action is requested. The concise final artifact did
+not itself contain the promised fully populated template, so template compliance
+remains an acceptance-process defect rather than being silently marked complete.
+
+### Continuous pipeline dispatch - 2026-08-20
+
+Control Tower corrected an orchestration lapse where safe successor source work
+was not advanced after a terminal handover. A protected boundary pauses only the
+protected effect; it does not pause independent authorized inspection, source,
+test, doctrine or review work already present in the durable mission pipeline.
+The owner is not required to repeat “continue” after each terminal.
+
+At fresh authoritative main
+`2548d99ab61d686449a2748614e4da9849c90b3a`, two disjoint actual visible source
+terminals were dispatched with attributable PowerShell/Codex ancestry:
+
+1. `C:\tmp\core-startup-evidence-20260820`, branch
+   `fix/core-startup-evidence-20260820`: add the smallest secret-safe signed
+   startup-phase/exit evidence needed to diagnose a future pre-publication CORE
+   failure. It may not operate Task Scheduler, start or activate CORE, stage,
+   deploy, dispatch missions or create external/business/farm effects.
+2. `C:\tmp\oom-names-first-attention-20260820`, branch
+   `feat/oom-names-first-attention-20260820`: implement the approved names-first,
+   quiet shared-presentation contract without creating thirteen workflows or
+   activating conditional printing/fertilizer/borehole/publication capabilities.
+
+Both terminals must return the complete
+`CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`, run exact-current tests, Brain Guard
+and independent review, and create at most one clean PR per mission. They are
+source work only; source/PR completion is not deployment or business completion.
+ROOTLINE and deployed OOM natural acceptance remain runtime-owned dependencies,
+not terminal waits.
