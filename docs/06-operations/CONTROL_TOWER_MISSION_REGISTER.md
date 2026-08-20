@@ -106,6 +106,42 @@ queue, scheduler, database, approval or Telegram lifecycle. Together with CORE
 PIDs `14488`/`38740` and SAM PIDs `34384`/`1372`, the three recovery slots remain
 fully allocated without file-surface collision identified at dispatch.
 
+The CORE and SAM terminals subsequently completed their bounded assignments and
+closed normally. CORE issued canonical create-once v2 validation identity
+`aeee1bcb0a4b411fbeea55d5123a9a56` for exact source `b9eefabf`, receipt SHA-256
+`e4fcf8c267b794a77eaf8b88ca6f1da70da8246bea991008187b2b79a1e9dd11`.
+Disposable isolation produced 39 focused passes and 142 proportional passes
+with one platform skip; Brain Guard reported zero findings, a second verifier
+confirmed the receipt binding, and identity replay was rejected without changing
+the receipt. The clean worktree remains exact main. Lifecycle is `WORKING /
+CANONICAL_V2_VALIDATION_PASSED / GOVERNED_STOP`; this is release-integrity
+evidence only. Staging, Task Scheduler operation and activation remain separately
+authorized stages and no such effect occurred.
+
+SAM proved the deployed Livestock observer is independently cycling on exact
+deployed `b9eefabf` under Render supervision. Cycle
+`SAM-LIVE-CYCLE-CC2F1B59CD2B47929A1783CE2EB5E185` completed at
+`2026-08-20T16:01:54Z` after a distinct earlier cycle, with the next scheduled
+cycle recorded one minute later. Fresh Chatwoot inventory reconciliation found
+zero current eligible conversations; historical proposals remained immutable
+and duplicate observations were replay-suppressed. Customer sending and all
+commercial/provider mutation remain disabled in fail-closed shadow mode. The
+clean audit worktree remains exact main. Lifecycle is `EXTERNAL_HOLD /
+AUTONOMOUS_SHADOW_OBSERVER_EVENT_WAITING`; the deployed worker, not a development
+terminal, owns the next genuine inbound. No synthetic event or owner action is
+required.
+
+A fresh Control Tower sweep after both closures found their audit worktrees
+clean and no current-lineage SAM implementation PR. ROOTLINE's exact scoped
+worktree contained active edits to the shared irrigation lifecycle, owner-status
+and Oom Sakkie presentation/reassessment paths while its dispatched Node/Codex
+ancestry remained live. This is fresh attributable implementation progress, not
+an inference from a transparent window or old process. Recovery capacity is now
+one active development slot (ROOTLINE), one governed CORE dependency hold and
+one SAM external-event hold. Empty terminal windows are not restarted merely to
+fill capacity; released slots may be reused only for a freshly reconciled,
+collision-safe mission with authority to advance a business outcome.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
