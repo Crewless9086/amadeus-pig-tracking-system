@@ -21,7 +21,8 @@ DATABASE_URL = os.getenv("RENDER_MIGRATION_TEST_DATABASE_URL", "").strip()
 class RenderProductionMigrationRailTests(unittest.TestCase):
     def test_allowlist_is_ordered_exact_and_checksum_bound(self):
         self.assertEqual([row.filename for row in ALLOWLIST], [
-            "202608200001_add_sales_financial_disposition.sql"
+            "202608200001_add_sales_financial_disposition.sql",
+            "202608200002_create_pig_welfare_case_lifecycle.sql",
         ])
         self.assertEqual(list(ALLOWLIST), sorted(ALLOWLIST, key=lambda row: row.migration_id))
         for row in ALLOWLIST:
