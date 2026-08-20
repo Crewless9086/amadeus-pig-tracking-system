@@ -2384,3 +2384,28 @@ duplicate SALES quotation, CORE recovery, ROOTLINE device work or BEACON
 event-waiting work. Automatic continuation remains the existing provider cron;
 unchanged evidence stays silent and materially changed evidence re-enters the
 same canonical manager-case lifecycle.
+
+### OOM-ROOTLINE-FERTILIZER-CONFIG-20260809 readiness observer - 2026-08-20
+
+Source-only PR #1138 adds one zero-control-call fertilizer-mixer readiness
+collector to the existing provider-owned five-minute Oom Sakkie general-manager
+worker and durable manager-case rail. It verifies the exact registry/account/
+device/channel binding for `100204d497` channel 2, canonical current provider
+freshness, OFF, enabled 300-second native fail-stop and absence of an active
+auxiliary execution. Changing provider receipt clocks are observation evidence,
+not new case generations; unchanged state is replay-silent. The readiness case
+is attention-only and cannot send Telegram, call a provider control method,
+create a claim, write farm data or operate hardware.
+
+Lifecycle: `WORKING / SOURCE_PR_CI_GREEN / RELEASE_HOLD`.
+
+The implementation avoids every file modified by active PR #1127. Focused
+tests, Brain Guard and independent ROOTLINE/replay and security/provider reviews
+passed at source head `5757a1a4`; hosted exact-head CI passed before this durable
+register reconciliation and must repeat against the final PR head. The serialized
+release owner is Control Tower/owner review. Automatic promotion requires PR
+#1127 collision recheck, explicit merge/deployment authority, verified deployed
+revision, one provider-origin canonical readiness result with current/next cycle,
+and a later terminal-independent provider-origin cycle. No owner action, provider
+readback, secret/configuration change, merge, deployment or hardware action was
+performed by the development terminal.
