@@ -160,7 +160,9 @@ def _herdmaster(now):
              f"observed:{item.provenance.observed_at.isoformat()}",
              *item.provenance.source_refs], unknowns,
             item.title + ": " + item.why, item.next_action, due,
-            task_class=task_class))
+            task_class=task_class,
+            welfare_priority=bool(item.metadata.get("welfare_exception")
+                                  or item.metadata.get("mortality_packet"))))
     from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
     snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
@@ -312,12 +314,14 @@ def _runtime(now):
 
 
 def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_action, next_at,
-               *, task_class=None):
+               *, task_class=None, welfare_priority=False):
     result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
     if task_class:
         result["task_class"] = task_class
+    if welfare_priority:
+        result["welfare_priority"] = True
     return result
 
 

@@ -33,6 +33,7 @@ class OwnerAttentionItem:
     category: str
     task_class: str
     priority: str
+    welfare_priority: bool
     specialist_owner: str
     title: str
     exact_owner_action: str
@@ -75,7 +76,8 @@ def build_owner_attention_projection(
             ledger_lifecycle if ledger_lifecycle in {"resolved", "superseded"} else "resolved")
         items.append(_item({**dict(prior), "lifecycle": lifecycle}, now))
     ordered = sorted(items, key=lambda item: (
-        item.lifecycle != "open", PRIORITY_ORDER[item.priority], item.category,
+        item.lifecycle != "open", not item.welfare_priority,
+        PRIORITY_ORDER[item.priority], item.category,
         item.work_id,
     ))
     lifecycle_items = [asdict(item) for item in ordered]
@@ -140,6 +142,7 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         category=_category(source_key, specialist),
         task_class=task_class,
         priority=priority,
+        welfare_priority=raw.get("welfare_priority") is True,
         specialist_owner=specialist,
         title=_required(raw.get("summary"), "summary"),
         exact_owner_action=owner_action,

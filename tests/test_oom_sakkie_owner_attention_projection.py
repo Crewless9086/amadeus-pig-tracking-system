@@ -9,11 +9,13 @@ from modules.oom_sakkie.telegram_direct import _format_daily_command_brief
 NOW = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
 
 
-def candidate(key, specialist, summary, action, *, urgency="due", unknowns=(), lifecycle="open"):
-    return {"dedupe_key": key, "specialist": specialist, "urgency": urgency,
-            "summary": summary, "next_action": action, "unknowns": list(unknowns),
-            "evidence_refs": ["event:E1", "observed:2026-08-19T09:50:00+00:00"],
-            "next_reassessment_at": "2026-08-19T10:05:00+00:00", "lifecycle": lifecycle}
+def candidate(key, specialist, summary, action, *, urgency="due", unknowns=(), lifecycle="open",
+              welfare_priority=False):
+    return ({"dedupe_key": key, "specialist": specialist, "urgency": urgency,
+             "summary": summary, "next_action": action, "unknowns": list(unknowns),
+             "evidence_refs": ["event:E1", "observed:2026-08-19T09:50:00+00:00"],
+             "next_reassessment_at": "2026-08-19T10:05:00+00:00", "lifecycle": lifecycle}
+            | ({"welfare_priority": True} if welfare_priority else {}))
 
 
 def test_same_stable_prince_identity_drives_home_brief_and_telegram():
@@ -72,6 +74,24 @@ def test_rootline_retry_stays_agent_owned_and_top_three_reports_hidden_count():
     assert len(projection["top_items"]) == 3
     assert projection["hidden_count"] == 2
     assert projection["view_all_target"] == "/owner-attention"
+
+
+def test_welfare_priority_precedes_urgent_delivery_and_stays_in_top_three():
+    rows = [candidate("delivery:SAM:provider", "SAM", "Customer delivery is ambiguous.",
+                      "Reconcile provider delivery.", urgency="urgent")]
+    rows.extend(candidate(f"runtime:internal:{number}", "RUNTIME", f"Internal issue {number}",
+                          "Reconcile internal evidence.", urgency="urgent") for number in range(3))
+    rows.append(candidate("herdmaster:welfare:pig-125", "HERDMASTER",
+                          "Pig 125 welfare follow-up is due.",
+                          "HERDMASTER must retain the welfare lifecycle.", urgency="due",
+                          welfare_priority=True))
+
+    projection = build_owner_attention_projection(rows, generated_at=NOW)
+
+    assert projection["items"][0]["source_key"] == "herdmaster:welfare:pig-125"
+    assert projection["items"][0]["welfare_priority"] is True
+    assert any(item["source_key"] == "herdmaster:welfare:pig-125"
+               for item in projection["top_items"])
 
 
 def test_resolved_and_superseded_items_are_not_current():
