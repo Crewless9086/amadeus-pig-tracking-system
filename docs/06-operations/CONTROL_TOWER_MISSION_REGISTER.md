@@ -2,6 +2,33 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-19 - ROOTLINE Slot 2 protected production-evidence boundary
+
+PRs #1106 and #1108 are merged on authoritative main `70baac05`. The retained
+Slot 2 worktree fast-forwarded cleanly to that exact revision and 58 focused
+ROOTLINE authority, execution, commissioning, fertilizer and borehole tests
+passed with one PostgreSQL integration test skipped because its disposable
+test dependency was unavailable. Public production reads at 05:39 UTC proved
+the Render web process healthy, its PostgreSQL connection healthy, and the
+governed weather feed current with no rain or irrigation-caution flag.
+
+Exact Render deployment identity/revision, provider-owned ROOTLINE trigger and
+heartbeat, canonical plan, authority-v2 migration state, device state, commands,
+acknowledgements and physical/canonical completion remain Unknown. The protected
+ROOTLINE summary/readback routes correctly denied unauthenticated access. This
+terminal has no Render control credential, no canonical database credential,
+and no available signed-in browser surface; therefore it issued zero deployment,
+migration, Telegram, provider or hardware actions and inferred no valve, pump,
+fertilizer or borehole state. The first exact boundary is protected production
+evidence and release-lane access, owned by the existing authorized Render/
+Supabase operator surface. Resume only through that normal serialized lane:
+verify/deploy exact `70baac05`, apply and read back migration `202608190001`,
+then observe a fresh deployed ROOTLINE cycle. B/C completion still requires
+provider acknowledgement plus canonical/physical completion. Mixer, injection
+and borehole remain separately uncommissioned/Unknown and receive no transferred
+authority. No owner physical observation is requested while governed evidence
+sources remain the correct first source.
+
 ## 2026-08-19 - Overnight operating-outcome recovery
 
 Owner priority: tomorrow's four-line livestock quote must be usable, while
@@ -1103,3 +1130,41 @@ The later manager case phase failed in both cycles. That pre-existing
 operating-spine timeout remains a separate current defect; Brain Guard audit
 success does not claim a completed manager business cycle. The 72 transitional
 documents remain safely retained behind the two named Batch 28 exit tests.
+
+### ROOTLINE Recovery Slot 2 - Physical Irrigation Outcome - 2026-08-19
+
+Starting from merged PRs #1106 and #1108, production was reconciled through the
+existing Render web service `srv-d6sijjkhg0os73f7regg` and cron
+`crn-d9vvpi9t0dsc738hjc70`. PRs #1121, #1124 and #1125 repaired durable outcome
+truth, aligned the existing request/runtime deadline, and made an unverified
+contained irrigation claim recoverable through the existing OFF/readback path.
+Render deployed exact main revision
+`783a290f8f2478fb74bef6aa089d98a645e73fc0`; the 11:30 SAST schedule and its
+five-minute manager cycle completed on that revision.
+
+The governed recovery issued one real provider OFF command for execution
+`ROOTLINE-EXECUTION-CCFAB503B553115FA33B4108`. Canonical evidence binds the
+previous authoritative B/channel-1 ON observation to an authoritative OFF
+readback at `2026-08-19T09:31:33.953792+00:00`, records exactly 3,599 verified
+runtime seconds, `shutdown_verified=true`, and state `Completed`. Irrigation
+history records `ROOTLINE-HISTORY-A2580C31F1B2E489EB459B21` as `COMPLETED` for
+59.98 minutes. A subsequent read-only provider reconciliation found controller
+`100204e9bc` online on firmware 3.8.2 with channels 1-4 OFF; channels 1 and 2
+retain native 3,599-second auto-off and OFF power restoration.
+
+The schedule outcome is `segment_completed`, with one hardware command. Its two
+Telegram sends were the current plan and the materially distinct completion
+notice; the plan store transitioned one identity from pending to delivered, so
+no second unchanged plan identity was emitted. The stable material-digest repair
+from PR #1111 remains deployed to suppress moving-timestamp-only plan noise.
+
+Fertilizer mixer/injection and borehole were not actuated and gained no broader
+authority. Fertilizer remains at its separate supervised physical-observation
+gate (with injection downstream of mixer proof). Borehole remains at its
+SmartLife binding plus fresh storage/flow evidence gate.
+
+Lifecycle: `COMPLETE / ROOTLINE_RECOVERY_SLOT_2 /
+PHYSICAL_B_SEGMENT_CANONICALLY_COMPLETED_AND_ALL_OUTPUTS_OFF`.
+
+Terminal ownership is released. Normal standing B/C authority remains bounded
+and unchanged; fertilizer and borehole exclusions remain in force.
