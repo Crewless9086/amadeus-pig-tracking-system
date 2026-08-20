@@ -19,6 +19,7 @@ from modules.charlie.core_workflow import (
 )
 from modules.charlie import vault_store
 from modules.charlie.mission_governance import ensure_acceptance_matrix
+from modules.charlie.mission_outcome_gate import evaluate_outcome_handover, mission_lifecycle_projection
 from modules.charlie.final_readiness import evaluate_final_readiness
 from modules.charlie.evidence_reconciliation import (
     applicable_passing_agents,
@@ -54,6 +55,7 @@ MISSION_EVENT_TYPES = {
     "vault_updated",
     "workflow_updated",
     "queue_updated",
+    "outcome_handover_recorded",
 }
 APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
 MISSION_MEDIA_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$")
@@ -853,6 +855,52 @@ def update_mission_status(
         "mission_status": status,
         "approval_level": approval_level,
     }, 200
+
+
+def record_mission_outcome_handover(mission_id, handover, *, database_url=None, connect_factory=None):
+    """Atomically append a handover evaluation; technical status is never business truth."""
+    mission_id = _clean_text(mission_id, 90)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select status,coalesce(metadata_json,'{}'::jsonb)
+                       from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id},
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                technical_status, metadata = rows[0][0], dict(rows[0][1] or {})
+                prior = metadata.get("mission_lifecycle") if isinstance(metadata.get("mission_lifecycle"), dict) else {}
+                evaluation = evaluate_outcome_handover(handover, mission_id=mission_id, prior=prior)
+                history = list(metadata.get("mission_lifecycle_history") or [])
+                same_id = next((row for row in history if row.get("handover_id") and row.get("handover_id") == evaluation["handover_id"]), None)
+                if same_id:
+                    if same_id.get("handover_digest") != evaluation.get("handover_digest"):
+                        return {"success": False, "status": "handover_replay_conflict", "mission_id": mission_id}, 409
+                    return {"success": True, "status": "handover_already_recorded", "mission_id": mission_id,
+                            "technical_status": technical_status, "mission_lifecycle": same_id}, 200
+                history.append(evaluation)
+                metadata["mission_lifecycle"] = evaluation
+                metadata["mission_lifecycle_history"] = history
+                cursor.execute(
+                    """update public.charlie_missions set metadata_json=%(metadata)s::jsonb,updated_at=now()
+                       where mission_id=%(mission_id)s""",
+                    {"mission_id": mission_id, "metadata": json.dumps(metadata)},
+                )
+                _insert_event(cursor, mission_id, "outcome_handover_recorded",
+                              "CORE evaluated a structured mission outcome handover.", evaluation)
+    except Exception as exc:
+        return {"success": False, "status": "outcome_handover_write_failed", "error_type": exc.__class__.__name__}, 503
+    code = 200 if evaluation["handover_status"] == "VALID_HANDOVER" else 422
+    return {"success": code == 200, "status": evaluation["handover_status"], "mission_id": mission_id,
+            "technical_status": technical_status, "mission_lifecycle": evaluation}, code
 
 
 def transition_mission_review_state(
@@ -2658,7 +2706,7 @@ def _mission_row(row):
     queue_priority = _clean_queue_priority(queue.get("priority")) if queue else None
     raw_text = row[5]
     title = row[6]
-    return {
+    result = {
         "mission_id": row[0],
         "status": row[1],
         "source": row[2],
@@ -2686,6 +2734,9 @@ def _mission_row(row):
         "created_at": _iso(row[14]),
         "updated_at": _iso(row[15]),
     }
+    result["technical_status"] = result["status"]
+    result["mission_lifecycle"] = mission_lifecycle_projection(result)
+    return result
 
 
 def _find_open_duplicate_mission(cursor, params):

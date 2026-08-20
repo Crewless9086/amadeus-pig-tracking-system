@@ -2,6 +2,44 @@
 
 Status: mandatory cross-system handover contract
 
+Machine contract: `core_mission_outcome_handover_v1`. The complete human packet
+below remains mandatory, but CORE accepts lifecycle evidence only from the
+structured contract submitted to the canonical mission outcome-handover rail.
+A short summary or claim that this template exists elsewhere is
+`INVALID_HANDOVER`.
+
+```json
+{
+  "contract_version": "core_mission_outcome_handover_v1",
+  "handover_id": "stable append-only identity",
+  "mission_id": "exact canonical mission identity",
+  "reporting_actor_type": "terminal | control_tower | deployed_agent | external_verifier",
+  "terminal_disposition": "stage-qualified disposition; never bare done/complete",
+  "requested_lifecycle": "WORKING | REVIEW_HOLD | RELEASE_HOLD | EXTERNAL_HOLD | PROTECTED_BOUNDARY | BUSINESS_COMPLETE",
+  "technical_milestones": ["source_ready", "tests_passed", "pr_open", "merged", "deployed", "health_passed"],
+  "applicability": {
+    "evidence_row": "required or {state:not_applicable,reason_code,reason,authority,audit_ref}"
+  },
+  "evidence": {
+    "evidence_row": {"evidence_id": "canonical identity", "observed_at": "timezone-aware timestamp"}
+  },
+  "next_safe_stage": "exact automatic continuation stage",
+  "hold": {"type": "EXTERNAL_HOLD or PROTECTED_BOUNDARY", "owner": "exact owner", "reason": "exact reason", "wake_condition": "observable condition", "automatic_continuation_trigger": "durable trigger"}
+}
+```
+
+Required evidence rows are `operational_actor`, `genuine_trigger`,
+`loaded_revision`, `canonical_readback`, `provider_result`,
+`physical_or_customer_result`, `later_independent_cycle`, and
+`owner_work_removal`. Actor evidence must identify a non-terminal deployed
+runtime. Trigger evidence must identify its provider and state
+`created_by_terminal:false`. Revision evidence must carry the exact loaded
+40-character SHA and `exact_match:true`. The later cycle must carry a durable
+correlation ID and `terminal_independent:true`. Owner-work evidence must carry a
+measurement ID and integer before/after manual-step counts with a strict
+reduction. Only Control Tower, deployed-agent or independent-verifier evidence
+may request `BUSINESS_COMPLETE`; a terminal never can.
+
 Controlling references:
 
 - `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`

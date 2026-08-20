@@ -867,12 +867,13 @@
     const contextPack = mission.mission_context_pack || {};
     const queuePriority = queuePriorityValue(mission);
     const missionQueueClass = queueClass(mission);
+    const lifecycle = mission.mission_lifecycle || {};
     const activeFlowMission = currentMissionForFlow();
     if (activeFlowMission && activeFlowMission.mission_id === missionId) card.classList.add("is-current");
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
-          <span class="status-pill">${safeText(mission.status || "unknown")}</span>
+          <span class="status-pill">Business: ${safeText(lifecycle.lifecycle_state || "WORKING")}</span>
           <h3>${escapeHtml(title)}</h3>
         </div>
         <code>${escapeHtml(shortId(missionId))}</code>
@@ -898,6 +899,8 @@
         <button type="button" data-agent-step="reviewer">Reviewer Done</button>
       </div>
       <dl class="charlie-mission-meta">
+        <div><dt>Technical stage</dt><dd>${escapeHtml(safeText(mission.technical_status || mission.status || "unknown"))}</dd></div>
+        <div><dt>Handover</dt><dd>${escapeHtml(safeText(lifecycle.handover_status || "NO_HANDOVER"))}</dd></div>
         <div><dt>Queue</dt><dd>${escapeHtml(String(queuePriority))}</dd></div>
         <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
         <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>

@@ -30,6 +30,7 @@ from modules.charlie.mission_store import (
     mission_status_summary,
     record_mission,
     record_mission_review_decision,
+    record_mission_outcome_handover,
     update_new_mission_intake,
     update_mission_queue_priority,
     update_mission_workflow_step,
@@ -988,6 +989,16 @@ def charlie_build_relay_mission_detail_route(mission_id):
     if denied:
         return denied
     result, status_code = get_mission(mission_id)
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/outcome-handover", methods=["POST"])
+def charlie_build_relay_mission_outcome_handover_route(mission_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_mission_outcome_handover(mission_id, payload)
     return jsonify(result), status_code
 
 
