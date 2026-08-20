@@ -470,6 +470,49 @@ preview. It may not confirm or mutate the sale, order, payment, animal or
 customer. Lifecycle is `WORKING / PRODUCTION_MIGRATION_SUCCEEDED /
 ZERO_WRITE_PREVIEW_IN_PROGRESS`; process identity is launch evidence only.
 
+SALES production verification proved Render job
+`job-da3bom5g1s2s73d8voeg` succeeded from `08:35:37Z` to `08:36:07Z`, the
+production health and sale routes return HTTP 200, the new
+`financial_disposition` and `receivable_total` fields are loaded, and anonymous
+preview access fails closed with `owner_admin_access_denied`. Two canonical sale
+projections remained byte-equivalent at SHA-256
+`8a7ed5964e7f364361edc0c311b08a710b591d4e7fd72b8e12f7be30fed8d3aa`;
+no business write occurred. A genuine preview was not created because no
+authenticated owner-admin browser session was available and the immutable
+`production_migration_receipts` row is not exposed through the approved
+read-only surface. Lifecycle is `OWNER_HOLD / PREVIEW_BLOCKED`; the exact owner
+page is `/sales/transactions/SALE-A1EE5E3DBC3110D1`. No confirmation token
+exists. The completed SALES window was closed.
+
+HERDMASTER longitudinal welfare-case Phase 1 is source-ready in PR #1132, exact
+head `6d132c44`, clean and one commit ahead/zero behind main `9b6aac25`. Nine
+disposable-PostgreSQL tests, 179 proportional tests, Brain Guard, all three
+independent reviews and all hosted CI gates passed. The additive source defines
+stable per-episode case identity, concurrent distinct concerns, recurrence,
+append-only facts/events, deterministic projection, next-check/escalation,
+governed closure/reopening, death terminality and default-deny access without
+touching frozen PR #1127. Nothing was merged, migrated, deployed or written.
+Lifecycle is `RELEASE_HOLD / PHASE_1_SOURCE_READY`; the completed HERDMASTER
+window was closed.
+
+The first CORE handshake-repair terminal was interrupted externally during its
+focused pytest run and produced no final handover, commit or PR. Its exact dirty
+candidate is preserved only in
+`C:\tmp\core-activation-handshake-20260820`: two modified files,
+`modules/charlie/runtime_activation.py` and
+`tests/test_charlie_runtime_activation.py`. This is `INTERRUPTED /
+DIRTY_CANDIDATE_PRESERVED`, not completion and not runtime evidence. The idle
+window was closed; continuation must reuse this exact worktree and must not
+recreate or retry the consumed activation epoch.
+
+Control Tower resumed that exact preserved CORE worktree in a new visible
+source-only terminal, parent PID 50020, launcher PID 46896 and worker PID 47120.
+The continuation must retain the dirty candidate, finish its interrupted tests
+and reviews, and open one PR only if exact-head evidence passes. It remains
+strictly forbidden from activation, staging, Task Scheduler invocation or
+runtime/business effects. Lifecycle is `WORKING /
+PRESERVED_HANDSHAKE_REPAIR_RESUMED`; process identity is launch evidence only.
+
 Control Tower immediately continued the existing CMQ-20260813-05 lineage in a
 fresh source-only repair worktree at exact current main `9b6aac25`: branch
 `fix/core-activation-handshake-20260820`, visible parent PID 44960, launcher PID
