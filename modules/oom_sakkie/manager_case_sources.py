@@ -116,7 +116,8 @@ def _rootline(now):
             f"ROOTLINE current-plan delivery exception: the current-date canonical ROOTLINE observation for {local_date} is missing.",
             ("Automatic acquisition owner: the existing Oom Sakkie ROOTLINE schedule must load "
              f"and persist the canonical observation; retry at {retry_text}. No hardware action is permitted."),
-            retry_at)]
+            retry_at, presentation_identity={"familiar_meaning": "Current water and energy plan",
+                "stable_reference": local_date})]
     event_id, observed, payload = observation_row; payload = payload or {}
     if delivered_row:
         return []
@@ -134,7 +135,9 @@ def _rootline(now):
         "ROOTLINE current-plan delivery exception: provider-confirmed family delivery is missing for the exact current-date material, result and generation.",
         ("Automatic acquisition owner: the existing Oom Sakkie ROOTLINE delivery lifecycle must "
          f"obtain and persist exact Telegram provider confirmation; retry at {retry_text}. "
-         "Do not infer delivery or actuate hardware."), retry_at)]
+         "Do not infer delivery or actuate hardware."), retry_at,
+        presentation_identity={"familiar_meaning": "Current water and energy plan",
+                               "stable_reference": local_date})]
 
 
 def _herdmaster(now):
@@ -153,7 +156,9 @@ def _herdmaster(now):
         for welfare in load_open_welfare_attention_cases():
             projected = project_welfare_case_attention(welfare)
             case_id = projected["case_identity"]
-            pig_label = _welfare_animal_label(welfare)
+            presentation_identity = _welfare_presentation_identity(welfare)
+            pig_label = (presentation_identity.get("human_name") or
+                         presentation_identity.get("familiar_meaning") or "Name unavailable")
             observed = str(welfare.get("welfare_case_observed_at") or now.isoformat())
             due = _time(welfare.get("welfare_case_next_check_at"), now)
             state = str(welfare.get("welfare_case_state") or "open")
@@ -171,7 +176,8 @@ def _herdmaster(now):
                  else ["current_welfare_and_lifecycle_status"]),
                 f"{pig_label} has an active {state} welfare case"
                 + (f": {escalation}" if escalation else "."),
-                action, due, task_class=projected["task_class"], welfare_priority=True))
+                action, due, task_class=projected["task_class"], welfare_priority=True,
+                presentation_identity=presentation_identity))
     for item in tuple(getattr(result, "work_items", ()) or ()):
         metadata = getattr(item, "metadata", {}) or {}
         welfare_priority = bool(metadata.get("welfare_exception")
@@ -208,7 +214,9 @@ def _herdmaster(now):
                 ["withdrawal_clearance", "sales_eligibility"],
                 "Pig 151 does not have proved withdrawal clearance and sales eligibility.",
                 "Delegate to HERDMASTER; retain the hold until canonical withdrawal and allocation evidence both support eligibility.",
-                now + timedelta(minutes=5)))
+                now + timedelta(minutes=5), presentation_identity={
+                    "familiar_meaning": "Pig 151",
+                    "stable_reference": str(row.get("Pig_ID") or "tag 151")}))
     for row in snapshot.get("litter_rows") or ():
         sow = str(row.get("Sow_Tag_Number") or "").strip()
         status = str(row.get("Litter_Status") or "").strip().casefold()
@@ -227,7 +235,9 @@ def _herdmaster(now):
                 "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.",
                 now + timedelta(minutes=30),
                 task_class=("informational_watch" if wean != "unknown"
-                            else "status_reconciliation")))
+                            else "status_reconciliation"),
+                presentation_identity={"human_name": "Molly",
+                                       "stable_reference": litter_id}))
     return candidates
 
 
@@ -265,7 +275,9 @@ def _sam(now):
             [str(value) for value in blockers[:6]] or ["provider_confirmed_customer_outcome"],
             "SAM has a current unresolved customer conversation without provider-confirmed completion.",
             "Delegate to SAM; retain ownership until a supported provider-confirmed result or one precise protected exception is recorded.",
-            now + timedelta(minutes=5)))
+            now + timedelta(minutes=5), presentation_identity={
+                "familiar_meaning": "Customer name unavailable",
+                "stable_reference": f"conversation {digest}"}))
     return result
 
 
@@ -288,7 +300,8 @@ def _beacon(now):
         ["current_sale_opportunity_proposal_or_exact_media_request"],
         "BEACON has no current proposal or exact media request reconciled after the latest sales evidence.",
         "Delegate a protected internal BEACON proposal or exact media request from current canonical sales, inventory and media evidence; never publish, spend, contact customers, reserve stock or infer public-use authority.",
-        now)]
+        now, presentation_identity={"familiar_meaning": "Current sales opportunity",
+                                    "stable_reference": str(packet["packet_id"])})]
 
 
 def _delivery_gaps(now):
@@ -319,7 +332,9 @@ def _delivery_gaps(now):
             ["provider_confirmed_useful_owner_result"],
             f"A current {specialist} result exists internally but its Oom Sakkie delivery is {status}.",
             "Retain the result and use the existing family/protected delivery rail only after its exact retry state is safe.",
-            now + timedelta(minutes=5)))
+            now + timedelta(minutes=5), presentation_identity={
+                "familiar_meaning": f"{specialist.title()} owner result",
+                "stable_reference": digest}))
     return result
 
 
@@ -348,11 +363,14 @@ def _runtime(now):
         [f"payment:{payment[0] if payment else 'none'}", f"rootline:{rootline or 'none'}"], stale,
         "One or more existing Oom Sakkie scheduled workers is stale.",
         "Escalate one precise runtime exception and reassess after the provider schedule or supervisor recovers.",
-        now + timedelta(minutes=5))]
+        now + timedelta(minutes=5), presentation_identity={
+            "familiar_meaning": "Oom Sakkie scheduled operation",
+            "stable_reference": "scheduled-worker-health"})]
 
 
 def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_action, next_at,
-               *, task_class=None, welfare_priority=False):
+               *, task_class=None, welfare_priority=False, presentation_identity=None,
+               message_family=None):
     result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
@@ -360,6 +378,10 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
         result["task_class"] = task_class
     if welfare_priority:
         result["welfare_priority"] = True
+    if presentation_identity:
+        result["presentation_identity"] = dict(presentation_identity)
+    if message_family:
+        result["message_family"] = str(message_family)
     return result
 
 
@@ -368,17 +390,19 @@ def _configured_owner():
     return values[0] if values else ""
 
 
-def _welfare_animal_label(row):
+def _welfare_presentation_identity(row):
     provenance = row.get("welfare_case_provenance") or {}
     context = provenance.get("intake_context") if isinstance(provenance, dict) else {}
     preview = context.get("preview") if isinstance(context, dict) else {}
     evaluator = preview.get("evaluator") if isinstance(preview, dict) else {}
     identity = evaluator.get("identity") if isinstance(evaluator, dict) else {}
-    for key in ("display_name", "name", "tag_number"):
+    for key in ("display_name", "name"):
         value = str(identity.get(key) or "").strip() if isinstance(identity, dict) else ""
         if value:
-            return value
-    return f"Pig {row.get('pig_id') or 'Unknown'}"
+            return {"human_name": value,
+                    "stable_reference": str(identity.get("tag_number") or row.get("pig_id") or "")}
+    return {"familiar_meaning": "Animal name unavailable",
+            "stable_reference": str(identity.get("tag_number") or row.get("pig_id") or "")}
 
 
 def _time(value, fallback):

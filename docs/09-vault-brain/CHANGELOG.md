@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+- 2026-08-20: Consolidated names-first owner-attention presentation in the
+  existing shared projection. Supported human names or familiar farm/business
+  meaning now lead Application, rolling Brief and Telegram titles; missing and
+  duplicate names stay explicit and safe, references remain secondary, and one
+  material-digest/message/owner-work envelope measures unchanged silence. No
+  queue, scheduler, database, Telegram lifecycle or protected authority was
+  added.
+
 - 2026-08-20: Corrected the Oom Sakkie rolling-current Brief continuation.
   A durably received and specialist-reconciled owner answer now recomposes the
   shared projection instead of editing the delivered Brief into a generic

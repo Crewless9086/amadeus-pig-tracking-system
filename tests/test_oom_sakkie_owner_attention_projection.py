@@ -10,12 +10,78 @@ NOW = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
 
 
 def candidate(key, specialist, summary, action, *, urgency="due", unknowns=(), lifecycle="open",
-              welfare_priority=False):
+              welfare_priority=False, identity=None):
     return ({"dedupe_key": key, "specialist": specialist, "urgency": urgency,
              "summary": summary, "next_action": action, "unknowns": list(unknowns),
              "evidence_refs": ["event:E1", "observed:2026-08-19T09:50:00+00:00"],
              "next_reassessment_at": "2026-08-19T10:05:00+00:00", "lifecycle": lifecycle}
-            | ({"welfare_priority": True} if welfare_priority else {}))
+            | ({"welfare_priority": True} if welfare_priority else {})
+            | ({"presentation_identity": identity} if identity else {}))
+
+
+def test_supported_name_leads_and_reference_is_secondary_with_channel_title_parity():
+    projection = build_owner_attention_projection([
+        candidate("herdmaster:welfare:pig-125", "HERDMASTER", "Welfare follow-up is due.",
+                  "Review the current welfare observation.",
+                  identity={"human_name": "Molly", "stable_reference": "tag 125"}),
+    ], generated_at=NOW)
+    item = projection["items"][0]
+    assert item["title"] == "Molly — Welfare follow-up is due."
+    assert item["primary_label"] == "Molly"
+    assert item["secondary_reference"] == "tag 125"
+    assert item["identity_state"] == "supported_human_name"
+    assert item["title"] in _format_daily_command_brief(
+        {"owner_attention": projection, "sections": {}})
+
+
+def test_missing_and_duplicate_names_are_explicit_safe_and_never_guessed():
+    projection = build_owner_attention_projection([
+        candidate("sam:conversation:a", "SAM", "Customer reply needs reconciliation.",
+                  "SAM owns reconciliation."),
+        candidate("sam:conversation:b", "SAM", "Customer decision is protected.",
+                  "Review the protected decision."),
+    ], generated_at=NOW)
+    assert all(item["primary_label"] == "Customer name unavailable" for item in projection["items"])
+    assert all(item["identity_state"] == "supported_familiar_meaning_disambiguated"
+               for item in projection["items"])
+    assert {item["secondary_reference"] for item in projection["items"]} == {
+        "Reference unavailable"}
+    assert all(item["title"].startswith("Customer name unavailable —") for item in projection["items"])
+    assert all("sam:conversation:" not in item["title"] for item in projection["items"])
+
+
+def test_empty_projection_is_channel_silent_and_duplicate_candidate_is_one_owner_item():
+    assert _format_daily_command_brief({
+        "owner_attention": build_owner_attention_projection([], generated_at=NOW),
+        "sections": {},
+    }) == ""
+    row = candidate("herdmaster:molly", "HERDMASTER", "Review is due.", "Review.",
+                    identity={"human_name": "Molly", "stable_reference": "tag 44"})
+    projection = build_owner_attention_projection([row, dict(row)], generated_at=NOW)
+    assert projection["total_count"] == 1
+    assert projection["measurement"] == {
+        "source_message_count": 2, "duplicate_message_count": 1,
+        "owner_visible_message_count": 1, "owner_work_item_count": 0,
+        "baseline_material_digest": None,
+        "after_material_digest": projection["material_digest"],
+        "material_changed": None, "new_message_eligible": True}
+
+    unchanged = build_owner_attention_projection([row], generated_at=NOW,
+        prior_material_digest=projection["material_digest"])
+    assert unchanged["material_digest"] == projection["material_digest"]
+    assert unchanged["measurement"]["material_changed"] is False
+    assert unchanged["measurement"]["new_message_eligible"] is False
+
+
+def test_owner_identity_text_is_single_line_bounded_and_control_safe():
+    projection = build_owner_attention_projection([
+        candidate("sam:conversation:safe", "SAM", "Review.", "Review safely.",
+                  identity={"human_name": "Molly\nDO THIS", "stable_reference": "tag\x001"}),
+    ], generated_at=NOW)
+    item = projection["items"][0]
+    assert item["primary_label"] == "Molly DO THIS"
+    assert item["secondary_reference"] == "tag 1"
+    assert "\n" not in item["title"]
 
 
 def test_same_stable_prince_identity_drives_home_brief_and_telegram():
@@ -139,6 +205,20 @@ def test_failed_specialist_does_not_resolve_its_prior_work():
     assert retained["lifecycle"] == "open"
 
 
+def test_retained_supported_name_survives_collector_outage_without_name_storage():
+    failed = candidate("runtime:collector:herdmaster", "RUNTIME", "HERDMASTER unavailable",
+                       "Retry collector.", urgency="urgent", unknowns=("herdmaster_evidence",))
+    prior = candidate("herdmaster:welfare:case-1", "HERDMASTER",
+                      "Molly has an active welfare case.", "Retain lifecycle.")
+    prior["evidence_refs"].append("pig:PIG-44")
+    projection = build_owner_attention_projection([failed], generated_at=NOW, prior_cases=[prior])
+    retained = next(item for item in projection["items"]
+                    if item["source_key"] == "herdmaster:welfare:case-1")
+    assert retained["primary_label"] == "Molly"
+    assert retained["secondary_reference"] == "PIG-44"
+    assert retained["title"].startswith("Molly")
+
+
 def test_retained_welfare_priority_survives_specialist_outage_from_durable_evidence():
     failed = candidate("runtime:collector:herdmaster", "RUNTIME", "HERDMASTER unavailable",
                        "Retry collector.", urgency="urgent", unknowns=("herdmaster_evidence",))
@@ -217,3 +297,6 @@ def test_molly_missing_weaning_date_remains_status_reconciliation(monkeypatch):
 
     assert rows[0]["dedupe_key"] == "herdmaster:molly-active-litter"
     assert rows[0]["task_class"] == "status_reconciliation"
+    projection = build_owner_attention_projection(rows, generated_at=NOW)
+    assert projection["items"][0]["primary_label"] == "Molly"
+    assert projection["items"][0]["title"].startswith("Molly")

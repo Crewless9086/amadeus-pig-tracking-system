@@ -8,13 +8,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
+import re
 from typing import Any, Callable, Iterable, Mapping
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
 
 
-VERSION = "oom_sakkie_owner_attention_projection.v1"
+VERSION = "oom_sakkie_owner_attention_projection.v2"
 LIFECYCLES = frozenset({"open", "resolved", "superseded"})
 TASK_CLASSES = frozenset({"status_reconciliation", "physical_action_due", "informational_watch", "protected_decision"})
 PRIORITY_ORDER = {"critical": 0, "urgent": 1, "due": 2, "planned": 3, "watch": 4}
@@ -35,6 +36,10 @@ class OwnerAttentionItem:
     priority: str
     welfare_priority: bool
     specialist_owner: str
+    primary_label: str
+    secondary_reference: str
+    identity_state: str
+    message_family: str
     title: str
     exact_owner_action: str
     provenance: tuple[str, ...]
@@ -47,12 +52,14 @@ class OwnerAttentionItem:
 
 def build_owner_attention_projection(
     candidates: Iterable[Mapping[str, Any]], *, generated_at: datetime | None = None,
-    prior_cases: Iterable[Mapping[str, Any]] = (),
+    prior_cases: Iterable[Mapping[str, Any]] = (), prior_material_digest: str | None = None,
 ) -> dict[str, Any]:
     """Normalize existing specialist candidates into one stable ordered view."""
     now = _aware(generated_at or datetime.now(timezone.utc))
     current_by_key: dict[str, Mapping[str, Any]] = {}
+    source_candidate_count = 0
     for candidate in candidates:
+        source_candidate_count += 1
         key = _required(candidate.get("dedupe_key"), "dedupe_key")
         prior = current_by_key.get(key)
         if prior is not None and dict(prior) != dict(candidate):
@@ -75,6 +82,7 @@ def build_owner_attention_projection(
         lifecycle = "open" if unavailable else (
             ledger_lifecycle if ledger_lifecycle in {"resolved", "superseded"} else "resolved")
         items.append(_item({**dict(prior), "lifecycle": lifecycle}, now))
+    items = _disambiguate_duplicate_labels(items)
     ordered = sorted(items, key=lambda item: (
         item.lifecycle != "open", not item.welfare_priority,
         PRIORITY_ORDER[item.priority], item.category,
@@ -82,6 +90,9 @@ def build_owner_attention_projection(
     ))
     lifecycle_items = [asdict(item) for item in ordered]
     current = [item for item in lifecycle_items if item["lifecycle"] == "open"]
+    material_digest = _material_digest(current)
+    material_changed = (None if prior_material_digest is None
+                        else prior_material_digest != material_digest)
     return {
         "success": True,
         "version": VERSION,
@@ -92,6 +103,19 @@ def build_owner_attention_projection(
         "total_count": len(current),
         "top_items": current[:3],
         "hidden_count": max(0, len(current) - 3),
+        "measurement": {
+            "source_message_count": source_candidate_count,
+            "duplicate_message_count": source_candidate_count - len(current_by_key),
+            "owner_visible_message_count": len(current),
+            "owner_work_item_count": sum(
+                item["task_class"] in {"protected_decision", "physical_action_due"}
+                for item in current),
+            "baseline_material_digest": prior_material_digest,
+            "after_material_digest": material_digest,
+            "material_changed": material_changed,
+            "new_message_eligible": bool(current) and material_changed is not False,
+        },
+        "material_digest": material_digest,
         "view_all_target": "/owner-attention",
         "writes_performed": 0,
         "authority": "read_only_projection",
@@ -136,6 +160,10 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         raise ValueError("owner-attention provenance is required")
     task_class = _task_class(raw)
     owner_action = _owner_action(raw, task_class, specialist)
+    primary_label, secondary_reference, identity_state = _presentation_identity(raw, source_key)
+    summary = _required(raw.get("summary"), "summary")
+    display_title = (summary if summary.casefold().startswith(primary_label.casefold())
+                     else f"{primary_label} — {summary}")
     return OwnerAttentionItem(
         work_id="attn_" + hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:24],
         source_key=source_key,
@@ -145,7 +173,11 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         welfare_priority=(raw.get("welfare_priority") is True
                           or "attention:welfare_priority" in refs),
         specialist_owner=specialist,
-        title=_required(raw.get("summary"), "summary"),
+        primary_label=primary_label,
+        secondary_reference=secondary_reference,
+        identity_state=identity_state,
+        message_family=str(raw.get("message_family") or _category(source_key, specialist)),
+        title=display_title,
         exact_owner_action=owner_action,
         provenance=refs,
         observed_at=_observed_at(refs),
@@ -154,6 +186,93 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         lifecycle=lifecycle,
         semantic_emoji=SEMANTIC_EMOJI[task_class],
     )
+
+
+def _presentation_identity(raw: Mapping[str, Any], source_key: str) -> tuple[str, str, str]:
+    """Resolve only source-declared owner meaning; never manufacture a name."""
+    identity = raw.get("presentation_identity")
+    identity = identity if isinstance(identity, Mapping) else {}
+    refs = tuple(str(value) for value in raw.get("evidence_refs") or ())
+    human_name = _owner_text(identity.get("human_name") or _ref_value(refs, "owner_name:"), 100)
+    familiar_meaning = _owner_text(identity.get("familiar_meaning") or
+                                   _ref_value(refs, "owner_meaning:"), 140)
+    reference = _owner_text(identity.get("stable_reference") or
+                            _ref_value(refs, "owner_reference:"), 120)
+    if not human_name and not familiar_meaning:
+        human_name, familiar_meaning, legacy_reference = _supported_retained_identity(raw, source_key)
+        reference = reference or legacy_reference
+    if human_name:
+        return human_name, reference or "Reference unavailable", "supported_human_name"
+    if familiar_meaning:
+        return familiar_meaning, reference or "Reference unavailable", "supported_familiar_meaning"
+    return "Name unavailable", reference or "Reference unavailable", "missing_name_explicit"
+
+
+def _disambiguate_duplicate_labels(items: list[OwnerAttentionItem]) -> list[OwnerAttentionItem]:
+    """Keep a shared name first while exposing stable references for collisions."""
+    counts: dict[str, int] = {}
+    for item in items:
+        counts[item.primary_label.casefold()] = counts.get(item.primary_label.casefold(), 0) + 1
+    result = []
+    ordinal = {item.work_id: index for index, item in enumerate(
+        sorted(items, key=lambda value: value.work_id), 1)}
+    for item in items:
+        if counts[item.primary_label.casefold()] <= 1:
+            result.append(item)
+            continue
+        title = item.title
+        disambiguator = (f"ref: {item.secondary_reference}"
+                         if item.secondary_reference != "Reference unavailable"
+                         else f"item {ordinal[item.work_id]}")
+        title = f"{title} ({disambiguator})"
+        result.append(OwnerAttentionItem(**{**asdict(item), "title": title,
+                                            "identity_state": item.identity_state + "_disambiguated"}))
+    return result
+
+
+def _owner_text(value: Any, limit: int) -> str:
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or ""))
+    return " ".join(text.split())[:limit].strip()
+
+
+def _material_digest(items: list[dict[str, Any]]) -> str:
+    material = [{key: item[key] for key in (
+        "work_id", "primary_label", "secondary_reference", "message_family", "title",
+        "task_class", "priority", "specialist_owner", "exact_owner_action", "lifecycle")}
+        for item in items]
+    import json
+    return hashlib.sha256(json.dumps(material, sort_keys=True,
+                                     separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _ref_value(refs: tuple[str, ...], prefix: str) -> str:
+    return next((value[len(prefix):] for value in refs if value.startswith(prefix)), "")
+
+
+def _supported_retained_identity(raw: Mapping[str, Any], source_key: str) -> tuple[str, str, str]:
+    """Recover only meanings already explicit in retained canonical case text."""
+    summary = _owner_text(raw.get("summary"), 500)
+    refs = tuple(str(value) for value in raw.get("evidence_refs") or ())
+    reference = _ref_value(refs, "litter:") or _ref_value(refs, "pig:")
+    if source_key == "herdmaster:molly-active-litter":
+        return "Molly", "", reference
+    if source_key.startswith("herdmaster:welfare:") and " has an active " in summary:
+        label = summary.split(" has an active ", 1)[0].strip()
+        if label and label.casefold() not in {"name unavailable", "animal name unavailable"}:
+            return _owner_text(label, 100), "", reference
+        return "", "Animal name unavailable", reference
+    meanings = {
+        "rootline:current-plan": "Current water and energy plan",
+        "herdmaster:pig-151-withdrawal-sales": "Pig 151",
+        "beacon:current-sale-opportunity": "Current sales opportunity",
+        "runtime:scheduled-worker-health": "Oom Sakkie scheduled operation",
+    }
+    if source_key.startswith("sam:conversation:"):
+        return "", "Customer name unavailable", ""
+    if source_key.startswith("delivery:"):
+        specialist = str(raw.get("specialist") or "Specialist").title()
+        return "", f"{specialist} owner result", ""
+    return "", meanings.get(source_key, ""), reference
 
 
 def _task_class(raw: Mapping[str, Any]) -> str:

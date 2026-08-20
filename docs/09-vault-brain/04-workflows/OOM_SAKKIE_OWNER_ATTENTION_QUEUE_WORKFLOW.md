@@ -23,6 +23,21 @@ authorized channel consumes the same ordered identities and lifecycle. A
 compact channel may render fewer items, but must expose the total hidden count
 and a governed route to the complete projection.
 
+One names-first presentation identity contract is part of this projection. A
+source-supported human name leads; otherwise a supported familiar farm or
+business meaning leads. If neither exists, `Name unavailable` is explicit and
+never inferred. Stable tags, IDs and references remain secondary and only
+disambiguate collisions. Application, rolling Brief and Telegram consume the
+same projected title. Empty, duplicate, resolved, superseded and unchanged
+material results create no new owner-visible message. The projection exposes a
+material digest plus baseline/after message and owner-work counts for the
+existing rolling lifecycle; it creates no lifecycle or persistence of its own.
+
+The supported categories are a small presentation catalogue over this one
+projection, not separate workflows. Internal success is not an attention item;
+current welfare, shutdown uncertainty and genuine protected exceptions remain
+visible until authoritative resolution.
+
 `status_reconciliation`, `physical_action_due` (including genuine weighing),
 and `informational_watch` are distinct task classes. A missing or conflicting
 animal status remains specialist reconciliation until HERDMASTER proves a
