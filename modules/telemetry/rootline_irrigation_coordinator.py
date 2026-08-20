@@ -222,6 +222,41 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     return _aux_result("auxiliary_started",commands=1,state="Started",execution=active)
 
 
+def emergency_off_auxiliary_execution(*, auxiliary_device_id, device_id, channel,
+                                      store, transport, reason="emergency_off"):
+    """Drive one exact active auxiliary output to authoritative OFF.
+
+    Emergency shutdown never grants ON authority and reuses the existing
+    execution, OFF-attempt and containment rails. The complete canonical
+    binding prevents injection, borehole or unrelated outputs from inheriting
+    a Mixer's stop request.
+    """
+    active = store("load_active_auxiliary", None)
+    if not isinstance(active, dict):
+        return _aux_result("auxiliary_emergency_off_no_active_execution")
+    if (active.get("auxiliary_device_id") != str(auxiliary_device_id)
+            or active.get("device_id") != str(device_id)
+            or str(active.get("channel") or "") != str(channel or "")):
+        return _aux_result("auxiliary_emergency_off_binding_mismatch",
+            state="Intervention", fertilizer_debt=True)
+    recovery = _bounded_auxiliary_off(active, store, transport)
+    shutdown = _read_auxiliary_output(active, transport)
+    verified = (shutdown.get("authoritative") is True
+                and shutdown.get("state") == "OFF")
+    containment = {**active, "reason": str(reason or "emergency_off"),
+        "shutdown_verified": verified, "shutdown_evidence": shutdown}
+    store("contain_auxiliary_device", containment)
+    if not verified:
+        store("record_auxiliary_exception", {**containment,
+            "fertilizer_debt": True})
+    return _aux_result("auxiliary_emergency_off_verified" if verified
+        else "auxiliary_emergency_off_unverified",
+        commands=recovery["commands"], state="Intervention",
+        fertilizer_debt=not verified, auxiliary_contained=True,
+        shutdown_verified=verified, shutdown_evidence=shutdown,
+        execution_id=active.get("execution_id"))
+
+
 def _recover_auxiliary(active,store,transport,now):
     deadline=_timestamp(active.get("primary_stop_deadline"))
     claimed_at=_timestamp(active.get("claimed_at"))
