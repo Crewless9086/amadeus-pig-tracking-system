@@ -33,6 +33,9 @@
   `modules/charlie/runtime_activation.py` and
   `scripts/charlie_runtime_activation.py`. The exact Windows Task Scheduler
   action and Operational audit-channel prior state are transactionally bound;
+  missing post-`RunEx` packets recover only through the HMAC-authenticated
+  consumed instance record, and consumed-plus-pending state is routed to
+  explicit recovery before any repeated provider start;
   focused fail-closed coverage is in
   `tests/test_charlie_runtime_activation.py`. These source references grant no
   staging, activation, process, mission-pickup or release authority.

@@ -45,6 +45,13 @@
 - The exact start now uses Task Scheduler COM `RunEx`; its returned
   `InstanceGuid` is HMAC-signed into the packet before the child may consume
   it, and both running-instance and Event 200 paths must match that GUID.
+- Recovery no longer substitutes the lane's pre-`RunEx` packet after provider
+  consumption. It reconstructs a missing packet only from the authenticated
+  consumed instance identity, rejects ambiguous or unproven post-readback
+  provenance, and preserves the original consumed packet HMAC binding.
+- Ordinary packet validation now detects an authenticated consumed record beside
+  a still-pending packet and requires the explicit recovery path instead of
+  relying on a later exclusive-write collision to fail incidentally.
 
 ## 2026-08-19 - One canonical system across every channel
 
