@@ -43,6 +43,7 @@ from modules.sales.sam_live_stock_contextual_sales import (
 )
 from modules.sales.sam_livestock_offer_loop import build_canonical_livestock_offer
 from modules.sales.sam_customer_front_door import interpret_customer_front_door
+from modules.sales.sam_meta_inbound import evaluate_meta_inbound_attribution
 from modules.sales.sam_customer_context import load_canonical_customer_context
 from modules.sales.sam_live_stock_availability_observation import (
     resolve_authoritative_availability,
@@ -1315,6 +1316,7 @@ def parse_chatwoot_inbound(payload):
     custom_attributes = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
     content_attributes = payload.get("content_attributes") if isinstance(payload.get("content_attributes"), dict) else {}
     identity_evidence = _webhook_identity_evidence(payload, conversation, sender, contact)
+    meta_attribution = evaluate_meta_inbound_attribution(payload) if channel == "chatwoot_facebook" else {}
     return {
         "processable": True,
         "status": "processable",
@@ -1332,6 +1334,7 @@ def parse_chatwoot_inbound(payload):
         "last_inbound_at": _clean(payload.get("created_at") or payload.get("timestamp"), 80),
         "conversation_custom_attributes": custom_attributes,
         "message_context": _public_message_context(payload, content_attributes),
+        "meta_attribution": meta_attribution,
         "identity_provenance": identity_evidence,
         "attachments": attachments,
     }
@@ -1443,6 +1446,11 @@ def _normal_provider_identity(value):
         "website", "genuine_webwidget",
     }:
         return "genuine_webwidget"
+    if value in {
+        "channel::facebookpage", "chatwoot_facebook", "facebook", "messenger",
+        "genuine_meta",
+    }:
+        return "genuine_meta"
     if value in {"chatwoot", "api", "webhook"}:
         return "transport_only"
     if value:
@@ -2937,6 +2945,11 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
                     provider_identity_status = "chatwoot_inbox_provider_identity_loaded"
                 elif channel_class == "genuine_webwidget":
                     provider_identity_class = "genuine_webwidget"
+                    provider_identity_status = "chatwoot_inbox_provider_identity_loaded"
+                elif channel_class == "genuine_meta" and provider_name in {
+                    "facebook", "facebook_page", "messenger",
+                }:
+                    provider_identity_class = "genuine_meta"
                     provider_identity_status = "chatwoot_inbox_provider_identity_loaded"
                 elif not channel_class or not provider_name:
                     provider_identity_status = "chatwoot_inbox_provider_identity_unavailable"

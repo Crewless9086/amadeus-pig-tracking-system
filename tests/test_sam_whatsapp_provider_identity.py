@@ -191,7 +191,7 @@ def test_authoritative_inbox_identity_conflict_fails_provider_closed():
         ({"id": 96568, "provider": "whatsapp_cloud"},
          "chatwoot_inbox_provider_identity_unavailable"),
         ({"id": 96568, "channel_type": "Channel::FacebookPage", "provider": "facebook"},
-         "chatwoot_inbox_provider_identity_conflict"),
+         "chatwoot_inbox_provider_identity_loaded"),
         ({"id": 96568, "channel_type": "Channel::Whatsapp", "provider": "other"},
          "chatwoot_inbox_provider_identity_conflict"),
     ],
