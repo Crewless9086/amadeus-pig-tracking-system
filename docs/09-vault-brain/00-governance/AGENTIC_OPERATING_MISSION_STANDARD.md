@@ -38,6 +38,17 @@ Every final handoff must include a short `Governance preflight` line stating the
 
 The system must reduce Charl's work, not move internal system work onto him.
 
+Universal deployed-agent acceptance target:
+
+> The deployed agent observes genuine events, reasons from shared canonical
+> data, acts inside standing authority, verifies the real result, follows up
+> automatically, and continues after the development terminal closes.
+
+This is the outcome every implementation mission must build toward. Source,
+tests, reviews, PRs, merges, deployments, terminal-operated effects and an open
+development process are intermediate evidence only. They must never replace the
+owner-visible operational outcome or terminal-independent continuity proof.
+
 The target loop is:
 
 1. Observe current evidence and live state.

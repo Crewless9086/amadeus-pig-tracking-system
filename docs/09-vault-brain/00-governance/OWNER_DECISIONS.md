@@ -1,5 +1,25 @@
 # Owner Decisions
 
+## 2026-08-20 - CORE Standing Authority V1
+
+Charl grants CORE recurring authority to validate each exact authoritative-main
+revision once in the governed disposable isolation and, only after a fresh,
+valid, unused and exact-source signed receipt passes every required focused and
+proportional suite plus Brain Guard, stage that same revision through the
+existing receipt-bound rail. Staging must preserve the exact rollback, governed
+stop, disabled Task Scheduler task and stopped supervisor. Authoritative-main
+movement, receipt or identity conflict, occupied serialized lane, uncertain
+rollback or ambiguous staging effect fails closed without retry.
+
+This standing authority does not include activation, runtime start, Task
+Scheduler operation, application deployment, development-mission dispatch,
+credential or signing-key change/exposure, Telegram/customer/provider action,
+database business writes, farm action or hardware control. Activation remains a
+separate protected decision until one fresh observe-only activation proves exact
+worker/task/action/instance ancestry, heartbeat, independent result, next trigger,
+rollback and terminal-close continuity. Historical validation, staging or
+activation identities remain immutable and cannot authorize a later revision.
+
 ## 2026-08-11 - Weaning-led boar exposure, not observed-heat gating
 
 Charl confirmed the farm's mating operating rule. A breeding female becomes due for boar allocation from her governed weaning chronology, subject to genuine lifecycle, welfare, medical, withdrawal and owner holds. HERDMASTER must not require observed standing heat or a `heat/no heat` entry before selecting a boar or scheduling placement. The farm expects heat at roughly four days after weaning and keeps the selected female with the selected boar for 17 days to cover the intended heat opportunities. The exposure count is inclusive: the placement/start date is day 1, so a 17-day exposure beginning on 2026-08-12 has planned removal on 2026-08-28 (start plus 16 calendar days). Those timings are owner-declared farm practice, not universal biological claims.
@@ -105,3 +125,25 @@ If confidence is below 96%, CHARLIE CORE must either reduce scope, add checkpoin
 Beacon is officially a shared Marketing department under CHARLIE.
 
 Beacon should support multiple businesses and environments, not only Amadeus Farm.
+
+## Oom Sakkie names-first, quiet owner-attention policy - 2026-08-20
+
+Owner-facing farm messages must lead with the human-readable name or familiar
+farm meaning. Stable tags, litter IDs, order references and canonical IDs remain
+secondary details for disambiguation and audit. If a required name is absent,
+the system must say that it is unavailable and use supported secondary identity;
+it must never invent or silently promote an ID into a name.
+
+The Telegram catalogue is a small reusable presentation language, not a list of
+messages that must all be sent and not authority to create separate workflows.
+One shared Oom Sakkie owner-attention projection decides whether a canonical
+specialist result deserves owner attention. Normal, empty, internal, duplicated
+and unchanged results remain silent. The ordinary target is one current morning
+Brief, followed only by a material refresh, significant physical start, verified
+completion, urgent exception or protected decision.
+
+The catalogue does not commission or authorize printing, fertilizer, borehole,
+publication or protected actions. Each remains conditional on its own deployed
+implementation, authority, provider evidence and genuine acceptance journey.
+Provider-safe Brief cleanup is optional presentation cleanup and is never a
+condition of successful canonical recording or delivery of the new Brief.

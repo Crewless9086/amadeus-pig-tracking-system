@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-08-20 - Universal deployed-agent acceptance target made explicit
+
+- Recorded the cross-system acceptance target directly in the Agentic Operating
+  Mission Standard: each deployed agent must observe genuine events, reason from
+  shared canonical data, act inside standing authority, verify the real result,
+  follow up automatically and continue after its development terminal closes.
+- This clarifies existing continuous-operations, agent-ownership and operational-
+  reality gates; it does not create a new runtime, agent, queue or authority.
+  Source, tests, PRs, merges, deployments and terminal-operated effects remain
+  intermediate evidence rather than owner-visible or Business completion.
+- The existing active authority/source-map route remains correct because the
+  controlling document path and ownership did not change.
+
+## 2026-08-20 - Shared Oom Sakkie owner-attention projection reconciled
+
 - 2026-08-20: Reconciled the shared Oom Sakkie owner-attention projection with
   HERDMASTER welfare Phase 2 after merging authoritative main. Active canonical
   welfare cases now enter the existing manager collector under their stable
