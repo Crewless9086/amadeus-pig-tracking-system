@@ -3214,3 +3214,25 @@ contract but may not modify BEACON-owned files, manufacture an inbound, publish,
 message customers, reserve stock, create orders, deploy or create another queue/
 scheduler/database. Fresh process ancestry proves dispatch only; progress requires
 later diff/commit/handover evidence.
+
+The ROOTLINE protected-observability terminal subsequently closed at clean,
+CI-green PR #1147, exact head
+`814fac8a64b76ae9f1f20e6a10b3a7be2c8162f5`. It adds one authenticated,
+least-privilege, zero-control-call operational evidence surface and tests; 119
+local proportional tests passed, six PostgreSQL-dependent tests passed in hosted
+disposable-PostgreSQL CI, Brain Guard and independent security/data-integrity/
+ROOTLINE reviews passed. No production/provider/hardware or messaging effect
+occurred. Lifecycle is `RELEASE_HOLD / SOURCE_READY / NO_BUSINESS_OUTCOME`; B Camp
+execution still requires merge/deploy, exact loaded verification and genuine
+scheduled-agent evidence.
+
+Control Tower immediately reused the released ROOTLINE lane at exact main for
+`C:\tmp\rootline-fertilizer-live-outcome-20260820`, branch
+`fix/rootline-fertilizer-live-outcome-20260820`. The visible terminal must reconcile
+current mixer/injection commissioning and implement only the smallest proven gap to
+a deployed subordinate fertilizer lifecycle within an eligible irrigation job:
+exact device/channel, safe mix timing, bounded idempotent pulses, fail-stop,
+concurrency, provider/canonical receipts and final OFF. It may not command any
+mixer, injector, valve or borehole, invoke a live worker, change mapping/credentials,
+deploy or manufacture physical evidence. Fresh process ancestry proves dispatch;
+later progress requires attributable diff/commit/handover evidence.
