@@ -35,6 +35,36 @@ completion and provide the handover. Process presence proves only that the
 prompt is currently executing; subsequent activity and completion still
 require attributable transcript, diff, commit, CI or runtime evidence.
 
+### CORE provider-identity source integration
+
+The visible CORE source terminal completed its bounded source gate and remained
+open only at the post-completion owner-feedback prompt. Its Codex child exited;
+the transcript, clean worktree and exact final artifact prove release rather
+than active work. Exact head
+`3d5e88b4137a6b07557284a6ff7802ed4a78f456` repaired both independent NO-GO
+findings: post-`RunEx` recovery now reconstructs only from the unique
+authenticated consumed identity, and consumed-plus-pending state is explicitly
+routed to recovery before any repeated provider start.
+
+Control Tower validated the exact source in disposable image
+`sha256:dad31c6f6a8da88f6146d6b0302d857df26e451c5891811c2a8b2ec277de1ab8`
+with network disabled, a read-only nested source mount, read-only root, private
+PID namespace, unprivileged user, all capabilities dropped, no-new-privileges
+and tmpfs-only writes. The definitive nine-module gate passed 277 tests with six
+explicit platform skips. The initial shallow-mount invocation executed zero
+tests and is excluded as harness evidence. Deterministic Brain Guard passed with
+zero findings. A fresh independent exact-head security/process-safety review
+returned GO, and all three hosted CI lanes passed.
+
+PR #1117 merged normally as authoritative revision
+`98d13d87a1aac63a37ec2dcf7ad6cad35f79a9c2`. No staging, activation, task,
+provider, supervisor, runner, heartbeat, database, farm, customer or hardware
+effect occurred. Mission `CMQ-20260813-05` remains `WORKING /
+SOURCE_INTEGRATED / EXACT_CURRENT_VALIDATION_AND_STAGING_REQUIRED`; CORE is
+still contained and not operational. The next gate must validate and stage the
+new exact current main while preserving the governed stop. Activation remains a
+separate fresh protected gate and may not reuse any historical epoch.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
