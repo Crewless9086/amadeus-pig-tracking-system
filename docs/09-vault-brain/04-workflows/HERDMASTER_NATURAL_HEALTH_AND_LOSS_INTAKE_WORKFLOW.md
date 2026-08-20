@@ -144,10 +144,18 @@ no authority to create arbitrary litter, mating, medical, movement, disposal,
 availability, customer, or sales effects. Stage 1 neither invokes nor expands
 this writer.
 
-`202608200002_create_pig_welfare_case_lifecycle.sql` is an additive, unapplied
-source foundation for case identity, append-only case events and non-merging
-fact links. It is not wired into intake, recording, manager scheduling or
-Telegram in this phase and grants none of those authorities.
+`202608200002_create_pig_welfare_case_lifecycle.sql` is the reviewed additive
+foundation for case identity, append-only case events and non-merging fact
+links. `modules/pig_weights/pig_welfare_case_runtime.py` is the bounded adapter:
+the existing authenticated health/loss handler opens or appends coordination
+context, prefers durable open cases over its legacy 24-hour compatibility
+chronology, carries HERDMASTER owner/urgency/next-check state and projects the
+same case/work identity for the existing shared-attention contract. It creates
+no second observation, treatment, movement, mortality, manager, queue or
+Telegram lifecycle. Runtime reads and writes remain fail-closed unless
+`PIG_WELFARE_CASE_RUNTIME_ENABLED=true`; production application, explicit
+post-migration activation and exact deployed revision remain separate evidence
+gates until an immutable migration receipt and readiness proof are verified.
 
 ### Production status
 
