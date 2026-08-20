@@ -225,6 +225,23 @@ facts that the pig was donated and R0.01 was entered only because the former UI
 rejected a zero-value giveaway. It must stop before confirmation and return the
 exact preview, before/after no-write evidence and one explicit owner decision.
 
+The first SALES production-acceptance pass then proved a concrete schema
+blocker: application health and the owner page were live, but the canonical sale
+detail returned HTTP 503 `UndefinedColumn`. No preview or confirmation request
+was sent and zero business writes occurred. Migration
+`202608200001_add_sales_financial_disposition.sql` was absent from the existing
+governed GitHub production-migration workflow, while the inspection terminal
+had neither production database nor owner-admin credentials. Charl must press
+no button while this condition remains.
+
+The completed diagnostic host was closed. The same mission continues visibly
+as parent PID 36912 / Codex PID 104320. It must minimally extend the existing
+governed migration rail, pass review/Brain Guard/CI, apply and verify the exact
+production migration under existing secret authority, restore the sale read,
+and generate one authenticated zero-write preview. It must stop before
+confirmation and return the exact owner decision; no duplicate migration rail
+or business-data correction is authorized.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
