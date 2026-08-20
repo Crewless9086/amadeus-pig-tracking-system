@@ -3333,3 +3333,24 @@ manufacture physical output. Business completion still requires a later genuine
 non-terminal print request, canonical receipt, provider-origin CUPS evidence,
 physical paper, replay containment, later independent print and demonstrated
 removal of the manual download/open/print journey.
+
+During the same invocation the ROOTLINE fertilizer process then exited. Fresh
+worktree/PR evidence proves clean PR #1149 at exact head
+`d35a2e64682446d5a9f322613ab8e81a4a474a76` with green hosted checks, but its
+975-byte artifact is an incomplete summary rather than the complete populated
+handover. Classification is `INVALID_HANDOVER` for mission closure and
+`PROTECTED_BOUNDARY / SOURCE_READY / BUSINESS_INCOMPLETE`: no deployed revision,
+genuine scheduled trigger, provider-origin mixer/injector operation, canonical
+completion, physical fertilizer delivery or later independent cycle is proven.
+
+Control Tower immediately recycles that released ROOTLINE lane into the existing
+ROOTLINE physical-operations lineage for bounded borehole commissioning readiness.
+The terminal must reconcile existing borehole doctrine/source/mapping and prepare
+only the smallest safe exact-current implementation, tests, commissioning guide and
+protected owner packet. It may not operate a pump, change credentials/mapping,
+invoke a live worker, deploy or manufacture provider/physical evidence. Any future
+activation must bind exact device/channel identity, dry-run/low-water/interlock and
+shutdown protection, provider/canonical receipts, final OFF and rollback. Mission
+completion requires later deployed-agent actuation under explicit authority,
+provider and physical water evidence, replay containment and terminal-independent
+continuity.
