@@ -3120,3 +3120,32 @@ external hold with wake condition. Tests must prove PR/merge/deployment-only and
 terminal-created evidence cannot close a mission. The terminal is source-only and
 must return the complete feedback template; merge, deployment and live enforcement
 proof remain later protected stages.
+
+Fresh all-terminal sweep later proved the Outcome Gate terminal remained the sole
+active terminal with attributable process ancestry and committed source head
+`d35258f2`. CORE startup-evidence source work closed at clean, CI-green PR #1143,
+exact head `b89c27fd1ed738b46756263dd748675b10527466`; it remains a protected release
+boundary and CORE remains non-operational. Oom Sakkie names-first PR #1142 remains
+clean/CI-green at `e99822dc5179ad92791f0091f08ffa3f114a2b46`; it is source-ready,
+not deployed or business-complete.
+
+Control Tower filled the two released collision-free lanes at exact authoritative
+main `2548d99ab61d686449a2748614e4da9849c90b3a`:
+
+- ROOTLINE protected observability, worktree
+  `C:\tmp\rootline-protected-observability-20260820`, branch
+  `fix/rootline-protected-observability-20260820`: implement one authenticated,
+  least-privilege, zero-control-call evidence surface for current B recommendation,
+  canonical job/claim/gate, autonomous cycle and provider state. No credentials,
+  public diagnostics, writes, worker invocation or hardware action are permitted.
+- BEACON real publication, worktree
+  `C:\tmp\beacon-real-publication-20260820`, branch
+  `feat/beacon-real-publication-20260820`: reconcile historical PR #1024 and prepare
+  one exact truthful Facebook post package and existing protected exact-once publish
+  journey. Publication, boost/spend, credentials, customer messaging and fabricated
+  engagement remain prohibited until an exact owner decision and deployed acceptance.
+
+Fresh visible PowerShell and Codex child ancestry proved both instructions started;
+later progress still requires worktree/commit/handover evidence. All three terminals
+must return the complete `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. No open
+process, old wait or historical provider event is treated as mission activity.
