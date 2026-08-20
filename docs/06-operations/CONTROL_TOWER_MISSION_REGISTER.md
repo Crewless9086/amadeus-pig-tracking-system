@@ -1351,3 +1351,30 @@ deployed ROOTLINE actor to produce a fresh B execution or one exact truthful
 blocker, provider/canonical readback, physical proof and a later
 terminal-independent cycle. This terminal is forbidden from operating B/C,
 invoking the worker, controlling a provider or manufacturing acceptance.
+
+## 2026-08-20 - DOCUMENTS DMQ-20260816-01 Green print continuation
+
+The same `DMQ-20260816-01` mission resumed on branch
+`feat/green-print-bridge-20260820` and PR #1150 from preserved clean head
+`8ca84260`, one commit ahead of exact-current main `2548d99a`. PR #1009 remains
+open and unmerged; its historical two-line registration is lineage evidence
+only and is superseded by the current register record.
+
+The source candidate now includes deterministic A4 weekly-sheet PDF revision
+and SHA-256 binding, an exact existing-protected-claim payload, a private
+crash-recovery adapter ledger with fenced lease, persisted pre-submission
+attempt, reconciliation-before-retry, ambiguous Hold, 48-hour retry then
+protected Continue/Cancel, restart recovery and temporary-PDF deletion, plus an
+unapplied private Supabase canonical job/event migration with append-only audit
+enforcement. Tests are synthetic and non-actuating. No print, Telegram send,
+farm write, migration, deployment, credential, Home Assistant, CUPS, printer or
+network action occurred.
+
+Lifecycle remains `RELEASE_HOLD / ENABLING_SOURCE_ONLY`; strategic class
+`CURRENT_BLOCKER`, recovery WIP slot 3. OWNER OUTCOME ACHIEVED is `NONE` and the
+capability is not usable now. Automatic continuation remains the same mission
+after normal review/merge and an explicitly authorized serialized migration and
+deployment decision. Physical commissioning and one genuine authenticated Oom
+Sakkie request require a later separately protected on-site window; only exact
+canonical/provider/physical proof plus a later terminal-independent cycle can
+close the mission.

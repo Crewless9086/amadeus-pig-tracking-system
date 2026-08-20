@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+- 2026-08-20: Registered the bounded source-only weekly-sheet PDF revision,
+  protected-confirmation binding and Green crash-recovery adapter contract.
+  Oom Sakkie remains operational actor, Supabase remains canonical job truth,
+  and private SQLite remains non-authoritative recovery state. No deployment,
+  configuration, migration or physical authority was added.
+
 - 2026-08-20: Corrected the Oom Sakkie rolling-current Brief continuation.
   A durably received and specialist-reconciled owner answer now recomposes the
   shared projection instead of editing the delivered Brief into a generic

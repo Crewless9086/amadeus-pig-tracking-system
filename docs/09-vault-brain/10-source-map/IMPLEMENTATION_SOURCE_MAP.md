@@ -973,3 +973,18 @@ Current Stage 4 surface:
 - `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md` binds effects to the
   canonical deployed worker and preserves terminal-created output only as
   synthetic or recovery evidence.
+
+## Bounded Documents Green print pilot (source candidate)
+
+- `modules/documents/weekly_weight_sheet.py` produces one immutable weekly
+  weighing-sheet PDF revision and binds its digest and registered identities
+  into the existing Oom Sakkie protected-action claim shape.
+- `modules/documents/green_print_adapter.py` validates authorized envelopes,
+  allowlisted retrieval and trusted CUPS observer evidence without actuation.
+- `modules/documents/green_adapter_runtime.py` provides fenced leases,
+  pre-submission attempts, reconciliation-before-retry, ambiguity Hold,
+  48-hour retry, protected Continue/Cancel and temporary-PDF deletion. Its
+  SQLite ledger is recovery state, never canonical job truth.
+- `supabase/migrations/202608200002_create_green_print_jobs.sql` is an unapplied
+  private canonical job/append-only event schema proposal. It grants no print,
+  migration, deployment or configuration authority.
