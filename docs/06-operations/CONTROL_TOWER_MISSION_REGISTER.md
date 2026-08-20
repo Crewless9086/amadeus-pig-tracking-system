@@ -125,6 +125,46 @@ authorized fresh provider-origin activation, followed by exact provider,
 supervisor/runner, heartbeat, independent-cycle, next-cycle and terminal-close
 continuity proof. Staging success is not operational CORE.
 
+### SALES charity disposition source completion
+
+The resumed SALES terminal completed the reusable zero-consideration charity
+contract and released cleanly. PR #1128 exact reviewed head `76ffbc72` passed
+the three hosted CI lanes and merged normally as
+`52f9d8bb8e7f4e25fe99e787c1a0c80e2fbcdc93`; post-merge CI also passed.
+Focused validation passed 204 tests with two skips and 146 subtests, both
+changed JavaScript files passed syntax checks, Brain Guard passed with zero
+findings, and disposable PostgreSQL acceptance passed migration, concurrency,
+stale-payment, immutability and linked-order atomicity checks.
+
+The hosted application serves the new guarded source and anonymous preview
+fails closed with HTTP 403. Production migration application is still Unknown,
+and no sale, order, payment, animal, customer or farm record was changed. The
+mission therefore remains `WORKING / SOURCE_DEPLOYED /
+PRODUCTION_MIGRATION_AND_ZERO_WRITE_PREVIEW_REQUIRED`, not Business complete.
+Next acceptance is governed production migration followed by authenticated
+owner-admin preview of `SALE-A1EE5E3DBC3110D1`; canonical correction remains a
+separate protected confirmation. The completed visible SALES host was closed.
+
+### CORE activation authority - 2026-08-20
+
+Charl explicitly authorized one CORE activation from exact staged revision
+`98d13d87a1aac63a37ec2dcf7ad6cad35f79a9c2`, requiring a new activation
+identity, preserved rollback, exact provider identity, fresh heartbeat,
+independent cycle and terminal-close continuity proof. Because authoritative
+main subsequently advanced through the SALES-only merge `52f9d8bb`, the
+activation terminal must first prove that the explicitly authorized staged
+revision remains eligible. It may not silently restage, change SourceRef,
+expand authority or activate another revision.
+
+A new visible bounded activation terminal was launched as parent PID 19140 /
+Codex launcher PID 68208. It must use exactly one fresh epoch, fail closed on
+any stale or ambiguous staging/provider evidence, and restore governed stop,
+disable the exact task and durably reconcile without retry if activation fails.
+No farm, customer, Telegram, n8n, Sheets or hardware business action is
+authorized. Lifecycle remains `WORKING / ACTIVATION_AUTHORIZED /
+ELIGIBILITY_AND_PROVIDER_PROOF_IN_PROGRESS`; process presence alone is not
+completion evidence.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
