@@ -142,6 +142,33 @@ one SAM external-event hold. Empty terminal windows are not restarted merely to
 fill capacity; released slots may be reused only for a freshly reconciled,
 collision-safe mission with authority to advance a business outcome.
 
+ROOTLINE then completed the bounded source stage and auto-closed its visible
+terminal. PR #1140 is open at exact head
+`e43c828cd1eccc9d23b7836973e852f9eed1fc4c`, two commits ahead of exact base
+`b9eefabf65f30811c771a484b0459c5280401686`, cleanly mergeable, and all three
+exact-head hosted CI lanes passed. Its shared per-zone lifecycle projects
+`Recommended`, `Revalidating`, `Eligible`, `Authorized`, `Started`, `Completed`,
+`Held` and `Failed` through the existing ROOTLINE/Oom Sakkie paths. Completed
+canonical work no longer maps to `Hold`; fixed no-start/no-completion text is
+removed; partial parent work remains `Revalidating`; supported holds carry one
+reason or `Unknown`; and missing/stale tank evidence remains non-blocking while
+fresh adverse water, weather, controller, concurrency and shutdown gates remain.
+No second scheduler, queue, database, approval or Telegram lifecycle was added.
+
+The clean ROOTLINE worktree is preserved at
+`C:\tmp\rootline-bc-lifecycle-truth-20260820`; its original dispatched process
+ancestry has exited. Lifecycle is `RELEASE_HOLD / SOURCE_PR_1140_CI_GREEN`, not
+Business completion. No merge, deployment, Telegram, database, provider,
+hardware or irrigation action occurred. The exact canonical reason B Camp did
+not progress remains `Unknown` because authenticated owner/canonical access was
+unavailable to the source terminal. Business completion still requires an
+authorized serialized merge/deployment, exact loaded revision, a fresh deployed
+ROOTLINE cycle producing either governed B execution or one exact truthful
+blocker, canonical/provider and physical reconciliation, owner-channel parity,
+and a later terminal-independent cycle. PR #1126 overlaps only the mission
+register and must be reconciled after any #1140 integration; neither open PR nor
+historical worktree is treated as active ownership.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
