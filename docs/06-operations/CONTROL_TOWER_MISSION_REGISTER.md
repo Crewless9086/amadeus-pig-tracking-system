@@ -295,6 +295,27 @@ independent observe-only result, next trigger and terminal-close continuity. Any
 ambiguity must contain without retry; no mission dispatch, deployment,
 credential, message, database business, farm or hardware authority is granted.
 
+While CORE's protected activation terminal remained open, fresh attributable
+state showed the activation lock created, the exact watchdog task enabled and
+running, and governed stop temporarily lifted through the authorized rail. A
+later readback while the same terminal was still reconciling showed the
+activation lock absent and governed stop restored. No success or failure is
+claimed until its immutable handover identifies the activation identity,
+provider/task ancestry, heartbeat/result and exact containment or continuity.
+
+Control Tower then filled one disjoint `CURRENT_BLOCKER` source slot with the
+existing Oom Sakkie rolling-current-Brief defect. Worktree
+`C:\tmp\oom-rolling-current-brief-20260820`, branch
+`fix/oom-rolling-current-brief-20260820`, starts from exact main `39614112` with
+visible PowerShell PID `22020` and Node PID `21752`. These prove delivery/start
+only. The terminal may implement/test/review and open one PR; it may not merge,
+deploy, send/delete Telegram messages, create a synthetic owner answer, mutate
+canonical/business/farm state, change credentials or touch CORE's serialized
+activation lane. The third recovery slot remains deliberately free: SAM is
+deployed event-waiting, ROOTLINE's next B retry belongs to its deployed runtime,
+and the remaining eligible DOCUMENTS/HERDMASTER/BEACON/UI work is expansion or
+collision-prone. This is optimal safe WIP, not maximum window count.
+
 Charl explicitly approved ROOTLINE PR #1138 merge/deployment at exact head
 `b52d0c3a55bed06071f1c00f9433d1c92081b261`, followed only by autonomous
 provider-origin zero-control-call readiness observation. Control Tower rechecked
