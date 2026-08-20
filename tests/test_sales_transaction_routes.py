@@ -753,6 +753,54 @@ class SalesTransactionRoutesTests(unittest.TestCase):
                          "payment_confirmation_token_required")
         service.assert_not_called()
 
+    def test_charitable_disposition_preview_is_owner_governed(self):
+        service_result = {"success": True, "status": "charitable_disposition_preview_ready",
+                          "confirmation_required": True, "preview_digest": "b" * 64,
+                          "writes_to_supabase": False}
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "preview_charitable_disposition",
+            return_value=(service_result, 200)) as service:
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/charitable-disposition/preview",
+                json={"reason": "Charity support", "correction_reason": "Zero was rejected"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["confirmation_token"])
+        service.assert_called_once_with("SALE-1", {
+            "reason": "Charity support", "correction_reason": "Zero was rejected"},
+            actor_id="owner:charl")
+
+    def test_charitable_disposition_confirm_revalidates_signed_preview(self):
+        service_result = {"success": True, "status": "charitable_disposition_recorded"}
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "_validate_disposition_confirmation_token", return_value="valid"), patch.object(
+            sales_transaction_routes, "confirm_charitable_disposition",
+            return_value=(service_result, 200)) as service:
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/charitable-disposition/confirm",
+                json={"reason": "Charity support", "correction_reason": "Zero was rejected",
+                      "confirmed_preview_digest": "b" * 64, "confirmation_token": "signed"})
+        self.assertEqual(response.status_code, 200)
+        service.assert_called_once_with("SALE-1", {
+            "reason": "Charity support", "correction_reason": "Zero was rejected",
+            "confirmed_preview_digest": "b" * 64}, actor_id="owner:charl")
+
+    def test_charitable_disposition_confirm_rejects_payment_action_token(self):
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "confirm_charitable_disposition") as service:
+            with app.app_context():
+                payment_token = sales_transaction_routes._payment_confirmation_token(
+                    "SALE-1", "owner:charl", "b" * 64)
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/charitable-disposition/confirm",
+                json={"reason": "Charity support", "correction_reason": "Zero was rejected",
+                      "confirmed_preview_digest": "b" * 64, "confirmation_token": payment_token})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "disposition_confirmation_token_invalid")
+        service.assert_not_called()
+
     def test_sales_transaction_confirm_pig_exits_route_calls_lifecycle_service(self):
         service_result = {
             "success": True,
