@@ -14,8 +14,13 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from modules.charlie.validation_receipt import (
+    RECEIPT_VERSION,
+    ValidationReceiptError,
+    validate_validation_receipt,
+)
 
-RECEIPT_VERSION = "charlie_isolated_validation_receipt_v1"
+
 STAGING_VERSION = "charlie_core_staging_v1"
 TASK_NAME = "CHARLIE CORE Runner Watchdog"
 
@@ -77,7 +82,8 @@ def plan_runtime_staging(
         raise RuntimeStagingError("sealed_receipt_digest_mismatch")
     receipt = _read_json(receipt_path, "isolated_validation_receipt_invalid")
     receipt_key_path = state_root / "validation-receipt.key"
-    _validate_receipt(receipt, source_ref, _read_receipt_key(receipt_key_path))
+    receipt_identity = _validate_receipt(receipt, source_ref, _read_receipt_key(receipt_key_path))
+    _validate_receipt_history(state_root, receipt_path, receipt_identity, receipt_digest)
     _validate_expected_rollback(
         runtime, execution, manifest, expected_runtime_head,
         expected_execution_head, expected_manifest_commit,
@@ -224,9 +230,12 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
         receipt_key_path = state_root / "validation-receipt.key"
         if _sha256(receipt_key_path) != plan["rollback"]["receipt_key_sha256"]:
             raise RuntimeStagingError("validation_receipt_authority_changed")
-        _validate_receipt(
+        receipt_identity = _validate_receipt(
             _read_json(plan["receipt_path"], "isolated_validation_receipt_invalid"),
             source_ref, _read_receipt_key(receipt_key_path),
+        )
+        _validate_receipt_history(
+            state_root, Path(plan["receipt_path"]), receipt_identity, plan["receipt_sha256"]
         )
         task = (task_reader or read_watchdog_task)()
         _validate_task(task, runtime_root)
@@ -244,6 +253,15 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
             raise RuntimeStagingError("worktree_identity_changed_before_staging")
         if _sha256(state_root / "runtime-manifest.json") != plan["rollback"]["manifest_sha256"]:
             raise RuntimeStagingError("runtime_manifest_changed_before_staging")
+        consumption_path = (
+            state_root / "validation-consumptions" / f"{receipt_identity['validation_id']}.json"
+        )
+        consumption_descriptor = _exclusive_json(consumption_path, {
+            "version": RECEIPT_VERSION, "validation_id": receipt_identity["validation_id"],
+            "receipt_sha256": plan["receipt_sha256"], "source_commit": source_ref,
+            "lane_id": lane_id, "status": "consumed_for_staging", "consumed_at": _now(),
+        })
+        os.close(consumption_descriptor)
         _atomic_json(rollback_path, {
             **plan["rollback"], "lane_id": lane_id, "source_ref": source_ref,
             "recorded_at": _now(), "status": "rollback_tuple_recorded",
@@ -288,6 +306,8 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
             "lane_id": lane_id, "source_ref": source_ref,
             "runtime_head": source_ref, "execution_head": source_ref,
             "manifest": manifest, "rollback_path": str(rollback_path),
+            "validation_receipt_sha256": plan["receipt_sha256"],
+            "validation_consumption_path": str(consumption_path),
             "watchdog_action": "none", "core_started": False,
             "completed_at": _now(),
         }
@@ -444,27 +464,27 @@ def recover_runtime_staging(
 
 
 def _validate_receipt(receipt, source_ref, receipt_key):
-    isolation = receipt.get("isolation") if isinstance(receipt.get("isolation"), dict) else {}
-    signature = str(receipt.get("signature_hmac_sha256") or "").lower()
-    unsigned = {key: value for key, value in receipt.items() if key != "signature_hmac_sha256"}
-    expected_signature = hmac.new(
-        receipt_key,
-        json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    if (
-        receipt.get("version") != RECEIPT_VERSION
-        or receipt.get("issuer") != "control_tower_isolated_validator_v1"
-        or not hmac.compare_digest(signature, expected_signature)
-        or receipt.get("source_commit") != source_ref
-        or receipt.get("status") != "passed"
-        or isolation.get("boundary") != "disposable_process_boundary"
-        or isolation.get("host_processes_visible") is not False
-        or int(isolation.get("outside_boundary_targets") or 0) != 0
-        or int(receipt.get("focused_passed") or 0) <= 0
-        or int(receipt.get("full_suite_passed") or 0) <= 0
-    ):
-        raise RuntimeStagingError("isolated_validation_receipt_not_authorized")
+    try:
+        return validate_validation_receipt(receipt, source_ref, receipt_key)
+    except ValidationReceiptError as exc:
+        raise RuntimeStagingError(str(exc)) from exc
+
+
+def _validate_receipt_history(state_root, receipt_path, identity, receipt_sha256):
+    validation_id = identity["validation_id"]
+    canonical_receipt = state_root / "validation-identities" / f"{validation_id}.json"
+    if receipt_path.resolve() != canonical_receipt.resolve():
+        raise RuntimeStagingError("validation_receipt_path_not_canonical")
+    if _sha256(canonical_receipt) != receipt_sha256:
+        raise RuntimeStagingError("validation_identity_record_invalid")
+    if (state_root / "validation-consumptions" / f"{validation_id}.json").exists():
+        raise RuntimeStagingError("validation_receipt_replay_rejected")
+    ledger = state_root / "promotion-ledger"
+    if ledger.is_dir():
+        for path in ledger.glob("*-result.json"):
+            record = _read_json(path, "promotion_result_invalid")
+            if record.get("success") is True and record.get("validation_receipt_sha256") == receipt_sha256:
+                raise RuntimeStagingError("validation_receipt_replay_rejected")
 
 
 def _read_receipt_key(path):
