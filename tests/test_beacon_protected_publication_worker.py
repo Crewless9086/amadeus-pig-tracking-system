@@ -15,6 +15,7 @@ NOW = datetime(2026, 8, 19, 8, tzinfo=timezone.utc)
 
 def approval(caption="Molly is settling into the morning routine while her piglets stay close."):
     preview = {"contract_version":"beacon_campaign_owner_card_v1","packet_id":"PACKET-1",
+        "target_page_id":"PAGE-1",
         "packet_generation":"G1","exact_post_copy":caption,
         "selected_media":[{"asset_id":"ASSET-1","content_sha256":"a"*64,
           "storage_readback_proof_id":"READBACK-1","library_accept_event_id":"ACCEPT-1",
@@ -94,6 +95,32 @@ def test_success_publishes_once_and_concurrent_or_restarted_cycle_is_silent():
     second=run_protected_publication_cycle(store=store, executor=execute, now=NOW)
     assert first["consumer_status"] == "confirmed" and second["status"] == "beacon_publication_cycle_silent"
     assert len(calls)==1 and calls[0]["exact_text"].startswith("Molly")
+
+
+def test_text_only_publishes_once_without_media_or_spend_authority():
+    item=approval("A quiet farm-life update from Amadeus Farm.")
+    item["preview_payload"]["selected_media"]={"mode":"text_only"}
+    item["preview_payload"]["media_evidence_exception"] = \
+        "Explicit text-only publication; no media is selected or implied."
+    item["preview_payload"]["story_context"]={}
+    item["preview_payload"]["campaign_digest"]=canonical_preview_digest(
+        "beacon_campaign_review", {k:v for k,v in item["preview_payload"].items() if k!="campaign_digest"})
+    item["evidence_generation"]=item["preview_payload"]["campaign_digest"]
+    calls=[]
+    result=run_protected_publication_cycle(store=Store(item), executor=lambda payload,**kwargs: (
+        calls.append(payload) or {"success":True,"status":"facebook_page_post_sent",
+        "facebook_post_id":"PAGE-1_7","provider_readback_confirmed":True},200), now=NOW)
+    assert result["consumer_status"]=="confirmed" and len(calls)==1
+    assert calls[0]["selected_assets"] == [] and calls[0]["asset_id"] == ""
+    assert calls[0]["zero_spend"] is True and calls[0]["target_page_id"] == "PAGE-1"
+
+
+def test_text_only_requires_exact_class_and_target_page_binding():
+    item=approval(); item["preview_payload"]["target_page_id"]=""
+    item["preview_payload"]["campaign_digest"]=canonical_preview_digest(
+        "beacon_campaign_review", {k:v for k,v in item["preview_payload"].items() if k!="campaign_digest"})
+    item["evidence_generation"]=item["preview_payload"]["campaign_digest"]
+    assert validate_claimed_approval(item, now=NOW)=="protected_campaign_target_page_required"
 
 
 def test_concurrent_workers_atomically_publish_once():

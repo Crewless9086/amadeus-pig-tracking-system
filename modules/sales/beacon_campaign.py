@@ -1582,13 +1582,20 @@ def _require_protected_campaign_authority(payload, params, database_url=None):
         return {"success": False, "status": "protected_campaign_authority_not_actionable"}, 409
     preview = row[1] if isinstance(row[1], dict) else {}
     decision = row[2] if isinstance(row[2], dict) else {}
+    configured_page_id = _clean_text(os.getenv(FACEBOOK_PAGE_ID_ENV))
     media_keys = ("asset_id", "content_sha256", "library_accept_event_id", "public_use_event_id")
-    media = [{key:item.get(key) for key in media_keys} for item in preview.get("selected_media") or []]
+    selected_media = preview.get("selected_media")
+    media = [] if selected_media == {"mode": "text_only"} else [
+        {key:item.get(key) for key in media_keys}
+        for item in selected_media or [] if isinstance(item, dict)]
     requested = [{key:item.get(key) for key in media_keys} for item in params.get("selected_assets") or []]
     if (row[0] != digest or preview.get("campaign_digest") != digest
             or decision.get("status") != "beacon_campaign_review_approved"
             or preview.get("packet_id") != params.get("publish_packet_id")
             or preview.get("exact_post_copy") != params.get("exact_text")
+            or not configured_page_id
+            or preview.get("target_page_id") != configured_page_id
+            or _clean_text(payload.get("target_page_id")) != configured_page_id
             or media != requested):
         return {"success": False, "status": "protected_campaign_authority_binding_mismatch"}, 409
     current_projection, current_status = resolve_server_publication_assets(
