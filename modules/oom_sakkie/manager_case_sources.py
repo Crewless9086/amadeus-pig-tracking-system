@@ -145,6 +145,9 @@ def _herdmaster(now):
     result = _load_herdmaster(None, owner, now)
     candidates = []
     for item in tuple(getattr(result, "work_items", ()) or ()):
+        metadata = getattr(item, "metadata", {}) or {}
+        welfare_priority = bool(metadata.get("welfare_exception")
+                                or metadata.get("mortality_packet"))
         unknowns = [item.genuine_question] if str(item.genuine_question or "").strip() else []
         due = item.due_at or now
         urgency = {"urgent": "urgent", "due_today": "due", "planned": "planned",
@@ -158,11 +161,10 @@ def _herdmaster(now):
             "herdmaster:" + str(item.dedupe_key), "HERDMASTER", urgency,
             [f"result:{result.result_id}",
              f"observed:{item.provenance.observed_at.isoformat()}",
+             *(["attention:welfare_priority"] if welfare_priority else []),
              *item.provenance.source_refs], unknowns,
             item.title + ": " + item.why, item.next_action, due,
-            task_class=task_class,
-            welfare_priority=bool(item.metadata.get("welfare_exception")
-                                  or item.metadata.get("mortality_packet"))))
+            task_class=task_class, welfare_priority=welfare_priority))
     from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
     snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)

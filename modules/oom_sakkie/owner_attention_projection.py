@@ -142,7 +142,8 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         category=_category(source_key, specialist),
         task_class=task_class,
         priority=priority,
-        welfare_priority=raw.get("welfare_priority") is True,
+        welfare_priority=(raw.get("welfare_priority") is True
+                          or "attention:welfare_priority" in refs),
         specialist_owner=specialist,
         title=_required(raw.get("summary"), "summary"),
         exact_owner_action=owner_action,

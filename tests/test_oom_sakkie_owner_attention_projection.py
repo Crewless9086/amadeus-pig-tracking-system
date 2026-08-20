@@ -131,6 +131,22 @@ def test_failed_specialist_does_not_resolve_its_prior_work():
     assert retained["lifecycle"] == "open"
 
 
+def test_retained_welfare_priority_survives_specialist_outage_from_durable_evidence():
+    failed = candidate("runtime:collector:herdmaster", "RUNTIME", "HERDMASTER unavailable",
+                       "Retry collector.", urgency="urgent", unknowns=("herdmaster_evidence",))
+    welfare = candidate("herdmaster:welfare:pig-125", "HERDMASTER", "Pig 125 welfare follow-up",
+                        "Retain the welfare lifecycle.", urgency="due")
+    welfare["evidence_refs"].append("attention:welfare_priority")
+    delivery = candidate("delivery:SAM:provider", "SAM", "Delivery is ambiguous.",
+                         "Reconcile provider delivery.", urgency="urgent")
+
+    projection = build_owner_attention_projection([failed, delivery], generated_at=NOW,
+                                                   prior_cases=[welfare])
+
+    assert projection["items"][0]["source_key"] == "herdmaster:welfare:pig-125"
+    assert projection["items"][0]["welfare_priority"] is True
+
+
 def test_herdmaster_protected_state_is_typed_as_owner_decision(monkeypatch):
     class State:
         value = "protected_owner_decision"
