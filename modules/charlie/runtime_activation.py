@@ -1690,10 +1690,13 @@ class WindowsExactTaskController:
             f"[pscustomobject]@{{log_name='{TASK_SCHEDULER_OPERATIONAL_LOG}';"
             "enabled=[bool]$l.IsEnabled}|ConvertTo-Json -Compress"
         )
-        completed = self.runner(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=30, check=False,
-        )
+        try:
+            completed = self.runner(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ActivationError("task_scheduler_audit_provider_error") from exc
         if completed.returncode:
             raise ActivationError("task_scheduler_audit_state_unreadable")
         try:
@@ -1790,14 +1793,26 @@ class WindowsExactTaskController:
             return False
         state = str(bool(enabled)).lower()
         self.audit_mutation_attempted = True
-        completed = self.runner(
-            # Once this command is issued, immediate cleanup may reconcile the
-            # exact channel even if post-mutation readback fails.
-            ["wevtutil", "sl", TASK_SCHEDULER_OPERATIONAL_LOG, f"/e:{state}"],
-            capture_output=True, text=True, timeout=30, check=False,
-        )
+        try:
+            completed = self.runner(
+                # Once this command is issued, immediate cleanup may reconcile the
+                # exact channel even if post-mutation readback fails.
+                ["wevtutil", "sl", TASK_SCHEDULER_OPERATIONAL_LOG, f"/e:{state}"],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            if getattr(exc, "winerror", None) == 5:
+                raise ActivationError("task_scheduler_audit_access_denied") from exc
+            raise ActivationError("task_scheduler_audit_provider_error") from exc
         if completed.returncode:
-            raise ActivationError("task_scheduler_audit_mutation_failed")
+            # Native Windows ERROR_ACCESS_DENIED is stable and does not depend on
+            # the localized wevtutil message.  Keep privilege/configuration
+            # failures distinct from provider/tool failures so recovery never
+            # retries a mutation that the controller cannot authorize.
+            native_code = int(completed.returncode) & 0xffffffff
+            if native_code in {5, 0x80070005}:
+                raise ActivationError("task_scheduler_audit_access_denied")
+            raise ActivationError("task_scheduler_audit_provider_error")
         after = self.read_audit_channel_state()
         if after.get("enabled") is not bool(enabled):
             raise ActivationError("task_scheduler_audit_readback_mismatch")

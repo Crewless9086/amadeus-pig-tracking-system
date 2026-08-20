@@ -1,5 +1,30 @@
 # Vault Brain Changelog
 
+## 2026-08-20 - CORE audit-channel authority boundary classification
+
+- Read-only Windows evidence proved the Task Scheduler Operational channel is
+  present and disabled while the activation-preparation principal is a
+  medium-integrity non-administrator. Channel reads succeed, but native error 5
+  denies configuration mutation; the consumed activation epoch remains sealed
+  and provider launch never occurred.
+- The exact Windows controller now distinguishes OS access denial from other
+  provider/tool and readback errors without parsing localized output. Disabled,
+  already-enabled, concurrent-state change, provider failure, readback mismatch,
+  rollback and reconciliation behavior remain fail closed under mock-only
+  isolated tests.
+- This correction adds no elevation path and does not weaken task action,
+  instance GUID or provider ancestry identity. No activation, task/log mutation,
+  runner/supervisor operation, provider launch or new execution epoch occurred.
+  A fresh validation/staging gate remains blocked until a governed elevated OS
+  authority enables the exact channel and exact readback is available.
+
+- 2026-08-20: Added the governed charitable Livestock disposition contract.
+  Completed sale and animal-transfer history retain normal list-price evidence,
+  while a strict owner-admin digest-bound correction records R0.00 receivable,
+  R0.00 received and payment not applicable. Prior receipt evidence is retained
+  for audit; no duplicate sale, refund, document, customer send or animal effect
+  is authorized.
+
 ## 2026-08-19 - CORE Task Scheduler audit-channel transaction repair
 
 - Reconciled fresh Windows provider evidence with the existing provider-origin
@@ -52,7 +77,6 @@
 - Ordinary packet validation now detects an authenticated consumed record beside
   a still-pending packet and requires the explicit recovery path instead of
   relying on a later exclusive-write collision to fail incidentally.
-
 ## 2026-08-19 - One canonical system across every channel
 
 - Made application, Telegram, voice and scheduled workers explicit adapters to

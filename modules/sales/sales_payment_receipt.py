@@ -126,7 +126,9 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
 _SALE_PAYMENT_SELECT = """select sale_status,payment_status,payment_method,
         payment_date,received_total,net_total,net_settlement_payable,
         sale_channel,notes,buyer_name,destination,external_reference,
-        payment_received_evidence_json,payment_evidence_sha256
+        payment_received_evidence_json,payment_evidence_sha256,
+        coalesce(to_jsonb(sales_transactions)->>'financial_disposition','Commercial'),
+        nullif(to_jsonb(sales_transactions)->>'receivable_total','')::numeric
     from public.sales_transactions where sale_id=%s"""
 
 
@@ -161,6 +163,10 @@ def _blocked_transition(sale_id, row, proposed):
     if str(row[0]) == "Cancelled":
         return {"success": False, "status": "cancelled_sale",
                 "writes_to_supabase": False}, 409
+    if ((len(row) > 14 and str(row[14] or "") == "Charitable_Giveaway")
+            or str(row[1] or "") == "Not_Applicable"):
+        return {"success": False, "status": "payment_not_applicable_no_receivable",
+                "amount_due": "0.00", "writes_to_supabase": False}, 409
     expected_counterparty = proposed.get("expected_counterparty")
     expected_invoice = proposed.get("expected_invoice_reference")
     if expected_counterparty or expected_invoice:
@@ -172,7 +178,8 @@ def _blocked_transition(sale_id, row, proposed):
                 or str(row[11] or "").strip() != expected_invoice):
             return {"success": False, "status": "payment_transaction_identity_changed",
                     "writes_to_supabase": False}, 409
-    due = Decimal(str(row[6] if row[6] is not None else row[5]))
+    due = Decimal(str(row[15] if len(row) > 15 and row[15] is not None
+                      else row[6] if row[6] is not None else row[5]))
     received = proposed["received_amount"]
     status = proposed["payment_status"]
     if status == "Unpaid" and row[4] not in (None, 0, Decimal("0")):
