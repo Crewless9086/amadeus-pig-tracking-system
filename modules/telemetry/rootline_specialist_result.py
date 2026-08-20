@@ -20,6 +20,7 @@ from modules.telemetry.rootline_water_energy_plan import (
     get_current_water_energy_plan,
     read_current_water_energy_evidence,
 )
+from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -105,6 +106,8 @@ def build_rootline_specialist_result(
         "battery_policy": deepcopy(plan["battery_reserve"]),
         "water_observations": deepcopy(plan["tank_evidence"]),
         "recommendations": recommendations,
+        "irrigation_lifecycle": _irrigation_lifecycle(
+            recommendations, evidence.get("irrigation_history")),
         "next_reassessment": reassessment,
         "owner_questions": owner_questions,
         "outcome_separation": {
@@ -119,6 +122,16 @@ def build_rootline_specialist_result(
     }
     result["owner_brief"] = _owner_brief(result)
     return result
+
+
+def _irrigation_lifecycle(recommendations, irrigation_history):
+    histories = ((irrigation_history or {}).get("zones") or {}
+                 if isinstance(irrigation_history, dict) else {})
+    indexed = {str(row.get("subject") or ""): row for row in recommendations
+               if isinstance(row, dict)}
+    return {zone: project_zone_lifecycle(zone_id=zone,
+        recommendation=indexed.get(zone), history=histories.get(zone))
+        for zone in ("B12345", "C12345")}
 
 
 def build_current_rootline_specialist_result(
@@ -274,6 +287,7 @@ def project_water_energy_plan(plan, now=None):
         "tanks": _packet_from_plan_tanks(plan.get("tank_evidence")),
         "water_demand": deepcopy(plan.get("water_demand") or {}),
         "irrigation": {"zones": _zones_from_tasks(plan.get("candidate_tasks"))},
+        "irrigation_history": deepcopy(plan.get("recent_irrigation_history") or {}),
         "history": deepcopy(plan.get("historical_context") or {}),
     }
     # Current Phase 1 plans do not expose all raw weather fields. Preserve their
@@ -322,6 +336,8 @@ def _project_existing_plan(plan, now):
         "battery_policy": deepcopy(plan.get("battery_reserve") or {}),
         "water_observations": deepcopy(plan.get("tank_evidence") or {}),
         "recommendations": recommendations,
+        "irrigation_lifecycle": _irrigation_lifecycle(
+            recommendations, plan.get("recent_irrigation_history")),
         "next_reassessment": (
             {
                 "trigger": "canonical_plan_reassessment",

@@ -150,7 +150,9 @@ def _typed_zone_projection(result):
         rows.append({"zone_id": item["subject"], "decision": decision,
             "reason": str(item.get("reason") or "Canonical reason unavailable."),
             "planned_duration_minutes": item.get("planned_duration_minutes"),
-            "feasible_window": item.get("preferred_window")})
+            "feasible_window": item.get("preferred_window"),
+            "lifecycle": dict(((result.get("irrigation_lifecycle") or {}).get(
+                item["subject"]) or {}))})
     return sorted(rows, key=lambda row: row["zone_id"])
 
 
