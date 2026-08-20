@@ -165,6 +165,36 @@ authorized. Lifecycle remains `WORKING / ACTIVATION_AUTHORIZED /
 ELIGIBILITY_AND_PROVIDER_PROOF_IN_PROGRESS`; process presence alone is not
 completion evidence.
 
+### Safe three-track dispatch after SALES release
+
+PR #1127 exact head `73a949f8` passed all three CI lanes and its authenticated
+local projection proved five stable ordered attention identities, homepage top
+three, hidden count two, full-view parity and 26 focused tests plus three
+subtests. Desktop/mobile screenshot capture could not run because the mandatory
+Codex browser inventory was empty. No screenshot was fabricated, and no merge
+or deployment occurred. The completed preview terminal and its temporary local
+server were closed; the reviewed head remains frozen pending a real browser
+preview and Charl's Approve/Correct decision.
+
+With SALES released and UI preview externally blocked, Control Tower restored
+three collision-bounded visible work tracks:
+
+- CORE activation eligibility/provider proof: parent PID 19140, Codex PID
+  68208;
+- ROOTLINE fertilizer-mixer commissioning readiness with zero actuation: parent
+  PID 9048, Codex PID 48360; and
+- existing BEACON Slot 3 stale-claim correction and provider acceptance: parent
+  PID 53764, Codex PID 7964.
+
+ROOTLINE may establish exact binding, safety, rollback and protected
+commissioning readiness but has no fertilizer or borehole command authority.
+BEACON must retire the stale noncompliant generation-24 claim and prove only a
+sow-named, story-only, Public-Use-media card or precise media exception; it may
+not manufacture approval, publication, inbound or provider evidence. These are
+existing missions, not new lineages. Fresh terminal/session evidence is required
+for continued `ACTIVE` classification; the recorded process identities alone
+are launch receipts, not completion proof.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
