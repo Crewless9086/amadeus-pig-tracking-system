@@ -1,6 +1,7 @@
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import unittest
 
 from modules.charlie.mission_outcome_gate import (
     CONTRACT_VERSION, EVIDENCE_ROWS, evaluate_outcome_handover, mission_lifecycle_projection,
@@ -109,3 +110,10 @@ def test_concurrent_replay_is_deterministic_and_store_serializes_row():
     source = Path("modules/charlie/mission_store.py").read_text(encoding="utf-8")
     assert "where mission_id=%(mission_id)s for update" in source
     assert "handover_replay_conflict" in source
+
+
+def load_tests(_loader, _tests, _pattern):
+    """Keep this fixture family visible to CORE's per-module unittest CI rail."""
+    names = sorted(name for name, value in globals().items()
+                   if name.startswith("test_") and callable(value))
+    return unittest.TestSuite(unittest.FunctionTestCase(globals()[name]) for name in names)
