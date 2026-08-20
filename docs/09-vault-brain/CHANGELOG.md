@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-08-20 - Universal deployed-agent acceptance target made explicit
+
+- Recorded the cross-system acceptance target directly in the Agentic Operating
+  Mission Standard: each deployed agent must observe genuine events, reason from
+  shared canonical data, act inside standing authority, verify the real result,
+  follow up automatically and continue after its development terminal closes.
+- This clarifies existing continuous-operations, agent-ownership and operational-
+  reality gates; it does not create a new runtime, agent, queue or authority.
+  Source, tests, PRs, merges, deployments and terminal-operated effects remain
+  intermediate evidence rather than owner-visible or Business completion.
+- The existing active authority/source-map route remains correct because the
+  controlling document path and ownership did not change.
+
 ## 2026-08-20 - CORE canonical validation-receipt boundary prepared
 
 - Replaced the permissive staging-only receipt shape with one canonical signed
