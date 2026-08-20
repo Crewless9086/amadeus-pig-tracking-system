@@ -2857,3 +2857,52 @@ deployed ROOTLINE actor to produce a fresh B execution or one exact truthful
 blocker, provider/canonical readback, physical proof and a later
 terminal-independent cycle. This terminal is forbidden from operating B/C,
 invoking the worker, controlling a provider or manufacturing acceptance.
+
+### Oom Sakkie names-first owner-attention addendum - 2026-08-20
+
+Classification: `CONSOLIDATION / ADDENDUM` to the existing rolling current Brief
+and shared owner-attention mission. This is not a new mission and does not create
+thirteen message workflows.
+
+Lifecycle: `WORKING / ACTIVE_SOURCE_TERMINAL_PROVEN / ADDENDUM_QUEUED_AT_SAFE_BOUNDARY`.
+
+Fresh process and worktree evidence at Control Tower intake showed the assigned
+OOM terminal still running and modifying only
+`modules/oom_sakkie/daily_farm_manager.py` and
+`modules/oom_sakkie/family_message_lifecycle.py`. Control Tower did not interrupt,
+restart or duplicate that work. The target must return the complete
+`CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`; this addendum is to be applied at
+the next safe handover/reconciliation boundary.
+
+Required invariant: animal, sow/litter, customer, farm area, equipment and
+document messages lead with a supported human-readable name or familiar business
+meaning. Tags and stable references remain available in details. Missing names
+remain explicitly unavailable and are never guessed.
+
+The thirteen families are a presentation catalogue only. Current implementation
+scope is the shared eligibility/materiality/silence contract, the rolling Brief,
+safe identity rendering and suppression of proven duplicate legacy producers.
+Capabilities not yet commissioned or accepted - including printing, fertilizer,
+borehole and some protected/publication actions - remain conditional examples and
+must not be activated by this addendum.
+
+Acceptance requires one shared work identity and truthful state across application,
+Brief and Telegram; names-first rendering with safe missing/duplicate-name
+fallbacks; unchanged and empty-cycle silence; provider-safe Brief replacement;
+no acknowledgement overwrite; no duplicate delivery under replay/concurrency;
+and before/after measurement of bot messages, duplicated semantic work identities,
+owner questions and recurring owner reconciliation. Fewer messages alone is not
+success if unique urgent work is hidden.
+
+### CORE observe-only activation containment - 2026-08-20
+
+Lifecycle: `CONTAINED / NOT_OPERATIONAL / GOVERNED_STOP_RESTORED`.
+
+The authorized activation identity `4ee5c3545bb84873b8f65581736a3caf`
+ended before activation-bound publication with Task Scheduler return code
+`2147942401`. The exact task is disabled, governed stop is restored, runtime
+lanes are free and no retry occurred. Independent result and terminal-close
+continuity were not established. No business, farm, customer, messaging or
+hardware effect occurred. An open or recently closed process is not treated as
+CORE being alive; a fresh diagnosis and separately governed activation are
+required.

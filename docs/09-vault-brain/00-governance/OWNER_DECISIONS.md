@@ -125,3 +125,25 @@ If confidence is below 96%, CHARLIE CORE must either reduce scope, add checkpoin
 Beacon is officially a shared Marketing department under CHARLIE.
 
 Beacon should support multiple businesses and environments, not only Amadeus Farm.
+
+## Oom Sakkie names-first, quiet owner-attention policy - 2026-08-20
+
+Owner-facing farm messages must lead with the human-readable name or familiar
+farm meaning. Stable tags, litter IDs, order references and canonical IDs remain
+secondary details for disambiguation and audit. If a required name is absent,
+the system must say that it is unavailable and use supported secondary identity;
+it must never invent or silently promote an ID into a name.
+
+The Telegram catalogue is a small reusable presentation language, not a list of
+messages that must all be sent and not authority to create separate workflows.
+One shared Oom Sakkie owner-attention projection decides whether a canonical
+specialist result deserves owner attention. Normal, empty, internal, duplicated
+and unchanged results remain silent. The ordinary target is one current morning
+Brief, followed only by a material refresh, significant physical start, verified
+completion, urgent exception or protected decision.
+
+The catalogue does not commission or authorize printing, fertilizer, borehole,
+publication or protected actions. Each remains conditional on its own deployed
+implementation, authority, provider evidence and genuine acceptance journey.
+Provider-safe Brief cleanup is optional presentation cleanup and is never a
+condition of successful canonical recording or delivery of the new Brief.
