@@ -17,7 +17,9 @@ from modules.telemetry.rootline_device_registry import (
     get_device_contract, rootline_device_registry, source_authority_defaults,
     validate_device_registry,
 )
-from modules.telemetry.rootline_irrigation_coordinator import advance_auxiliary_execution
+from modules.telemetry.rootline_irrigation_coordinator import (
+    advance_auxiliary_execution, emergency_off_auxiliary_execution,
+)
 
 NOW=datetime(2026,8,9,8,0,tzinfo=timezone.utc)
 
@@ -298,6 +300,48 @@ def test_concurrent_consumption_creates_exactly_one_on_attempt():
     assert set(row["status"] for row in results)<={"auxiliary_started",
         "auxiliary_claim_conflict","auxiliary_claim_in_progress","auxiliary_active"}
     assert [row["state"] for row in transport.calls]==["ON"]
+
+
+def test_emergency_off_is_exact_bound_and_authoritatively_verified():
+    store=Store();transport=Transport();artifact=mixer_eligibility()
+    started=advance_auxiliary_execution(eligibility=artifact,store=store,
+        transport=transport,revalidate=lambda _artifact:{
+            "plan_generation":"PLAN-MIX-1","injection_active":False,
+            "verified_mixing_minutes_today":0,"verified_mixing_sessions_today":0,
+            "mixing_history_complete_through":NOW.isoformat(),"power_suitable":True},
+        now=NOW)
+    assert started["status"]=="auxiliary_started"
+    stopped=emergency_off_auxiliary_execution(
+        store=store,transport=transport,reason="owner_emergency_stop")
+    assert stopped["status"]=="auxiliary_emergency_off_verified"
+    assert stopped["shutdown_verified"] is True
+    assert [row["state"] for row in transport.calls]==["ON","OFF"]
+
+
+def test_emergency_off_contains_unverified_shutdown_without_other_authority():
+    store=Store();store.active={"execution_id":"MIXER-1",
+        "auxiliary_device_id":"FERTILIZER-MIXER-CH2","device_id":"100204d497",
+        "channel":2,"state":"Active"}
+    transport=Transport(off=False,read="ON")
+    result=emergency_off_auxiliary_execution(
+        store=store,transport=transport)
+    assert result["status"]=="auxiliary_emergency_off_unverified"
+    assert result["shutdown_verified"] is False
+    assert result["auxiliary_contained"] is True
+    assert result["borehole_authority"] is False
+    assert result["channels_3_4_authority"] is False
+    assert [row["state"] for row in transport.calls]==["OFF","OFF","OFF"]
+
+
+def test_emergency_off_rejects_an_active_injection_execution_without_command():
+    store=Store();store.active={"execution_id":"INJECTION-1",
+        "auxiliary_device_id":"FERTILIZER-INJECTION-CH1","device_id":"100204d497",
+        "channel":1,"state":"Active"}
+    transport=Transport(read="ON")
+    result=emergency_off_auxiliary_execution(store=store,transport=transport)
+    assert result["status"]=="auxiliary_emergency_off_binding_mismatch"
+    assert result["hardware_commands"]==0
+    assert transport.calls==[]
 
 
 def test_ambiguous_on_never_retries_and_fertilizer_failure_preserves_irrigation():

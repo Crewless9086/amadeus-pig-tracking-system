@@ -282,6 +282,21 @@ def recover_fertilizer_commissioning(*, now=None, environ=None, store=None,
         transport=transport, revalidate=lambda _artifact: {}, now=now), store)
 
 
+def emergency_off_fertilizer_mixer(*, reason="emergency_off", environ=None,
+                                   store=None, token_store=None, transport=None):
+    """Request deterministic OFF for only the exact active Mixer execution."""
+    from modules.telemetry.rootline_irrigation_coordinator import (
+        emergency_off_auxiliary_execution,
+    )
+    source = environ if environ is not None else os.environ
+    store = store or rootline_irrigation_execution_store
+    token_store = token_store or PostgresOAuthTokenStore()
+    transport = transport or RootlineIFTTTTransport(
+        token_store=token_store, environ=source)
+    return _present(emergency_off_auxiliary_execution(
+        store=store, transport=transport, reason=reason))
+
+
 def _finalize(outcome, store):
     execution = outcome.get("execution") if isinstance(outcome, dict) else None
     if (outcome.get("status") == "auxiliary_completed" and isinstance(execution, dict)
