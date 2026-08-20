@@ -432,6 +432,21 @@ AUTHENTICATED_OWNER_PREVIEW_REQUIRED`; source is not merged or deployed. The
 released reconciliation host was closed. Automatic promotion remains exact-head
 desktop/mobile visual approval when browser inventory becomes available.
 
+The approved longitudinal welfare-case addendum has now entered its first bounded,
+collision-safe source phase in a fresh visible HERDMASTER terminal. Worktree
+`C:\tmp\herdmaster-welfare-cases-20260820` was created from current authoritative
+main on branch `feat/herdmaster-welfare-cases-20260820`; visible parent PID 70232,
+Codex launcher PID 50636 and worker PID 55916 were freshly observed. The terminal
+must extend the existing Oom Sakkie/HERDMASTER health-loss lineage with one durable
+case identity and append-only lifecycle, while keeping observation, treatment,
+movement and pig-lifecycle facts distinct. Phase 1 is limited to doctrine/data
+contract, additive migration, focused tests and reviews; it may not write
+production farm data, send Telegram output, change animal state, deploy UI, or
+touch frozen PR #1127 presentation files. The first launch attempt failed on local
+path quoting before creating a worktree or process and is not mission evidence.
+Lifecycle is `WORKING / PHASE_1_SOURCE_FOUNDATION_IN_PROGRESS`; process identity is
+only a launch receipt and does not establish progress or completion.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
