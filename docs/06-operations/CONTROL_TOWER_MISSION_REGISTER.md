@@ -900,6 +900,47 @@ emoji standard; and exact-revision authenticated desktop/mobile production
 parity is proven. CODEX UI follows only after the shared backend contract is
 established and requires Charl's visual approval.
 
+### Defect addendum - rolling current Telegram Brief
+
+Charl reported that answering the Prince question caused the provider-delivered
+morning Brief to be edited in place into the generic acknowledgement, destroying
+the useful current work view. This is a `DEFECT` inside this existing shared
+owner-attention mission and PR #1127, not a new Brief product, Telegram queue,
+scheduler, priority engine or database.
+
+Required owner outcome: Telegram keeps one clearly current Brief near the latest
+material conversation activity while canonical history remains complete. An
+accepted owner answer first receives an exact durable question receipt, is
+reassessed by the owning specialist and rebuilds the shared attention projection.
+If the owner-facing material digest is unchanged, send nothing. If it changes,
+the deployed Oom Sakkie runtime sends a new Brief, confirms its exact provider
+message identity, marks the previous generation superseded, and only then may
+attempt best-effort deletion of that previous bot-authored Brief.
+
+Replacement delivery is the protected effect; deletion is presentation cleanup.
+A failed or ambiguous deletion must never reverse, duplicate or invalidate a
+successfully confirmed new Brief, and must not be retried blindly. A failed or
+ambiguous new delivery leaves the existing Brief current and records a bounded
+exception. A generic acknowledgement may never reuse or overwrite a Brief card
+identity; routine successful refresh produces no separate acknowledgement.
+
+Retention boundary: never delete Charl's messages, urgent alerts, protected
+decisions, ambiguous outcomes, or important completed/failed/stopped evidence.
+Only a specifically bound superseded bot Brief, obsolete bot clarification or
+temporary bot acknowledgement is cleanup-eligible after its facts are safely
+absorbed. Deletion is never audit deletion. Stable daily lifecycle identity,
+generation identity and provider delivery identity remain distinct.
+
+Lifecycle: `WORKING / ACTIVE-TERMINAL ADDENDUM / OWNER-OBSERVED DEFECT`.
+Acceptance extends PR #1127 with complete/partial/unrelated/ambiguous answers,
+material-change suppression, replacement-before-supersession, provider failure
+and ambiguity, cleanup success/failure/ambiguity, replay/concurrency, urgent-alert
+separation, one-question/top-three limits and identical work identities across
+application and Telegram. Business completion requires a genuine owner reply,
+canonical receipt and specialist reassessment, one provider-confirmed refreshed
+Brief, the former Brief deleted or canonically superseded, zero generic overwrite,
+and a later terminal-independent material refresh or truthful silence.
+
 Promotion is serialized behind current ROOTLINE and Orders/Sales work because
 their manager adapters and presentation paths are collision-prone. The recently
 completed Oom Sakkie timeout repair and autonomous five-minute manager cycles
