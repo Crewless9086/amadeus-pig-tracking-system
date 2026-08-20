@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
@@ -523,6 +524,24 @@ def expected_farrowing_dates_page():
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200
+
+
+@app.route("/health/revision")
+def revision_health():
+    """Expose only the public source revision injected by the deployment provider."""
+    revision = str(os.environ.get("RENDER_GIT_COMMIT") or "").strip().lower()
+    provider_verified = os.environ.get("RENDER") == "true"
+    revision_valid = (
+        len(revision) == 40
+        and all(character in "0123456789abcdef" for character in revision)
+    )
+    identity_complete = provider_verified and revision_valid
+    return {
+        "status": "ok" if identity_complete else "deployment_identity_unavailable",
+        "provider": "render" if provider_verified else "unknown",
+        "revision": revision if identity_complete else "",
+        "identity_complete": identity_complete,
+    }, 200 if identity_complete else 503
 
 
 @app.route("/health/database")
