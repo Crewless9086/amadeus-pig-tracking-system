@@ -33,6 +33,11 @@ class AllowedMigration:
 # Ordered. Append-only review changes are required for every future migration.
 ALLOWLIST = (
     AllowedMigration(
+        migration_id="202608190002_create_beacon_protected_publication_consumer",
+        filename="202608190002_create_beacon_protected_publication_consumer.sql",
+        sha256="2d033bdcdf011f9dd417c5d9ae2659c334e139f7815b20a910b12b50e4df7edd",
+    ),
+    AllowedMigration(
         migration_id="202608200001_add_sales_financial_disposition",
         filename="202608200001_add_sales_financial_disposition.sql",
         sha256="626808c3f6d4e4ee2862cfd78bc6a3bae5f05992006559618d5fb7740db8c920",
