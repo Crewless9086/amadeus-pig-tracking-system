@@ -536,6 +536,20 @@ Lifecycle is `BUSINESS_COMPLETE / CHARITABLE_DISPOSITION_RECORDED`; the R0.01
 workaround is no longer payment truth and remains only in attributable historical
 correction evidence. No further owner action is required for this sale.
 
+With the SALES charity outcome closed, Control Tower allocated the freed third
+collision-audited lane to the existing ROOTLINE device spine. Fresh worktree
+`C:\tmp\rootline-fertilizer-commissioning-20260820` starts from exact main
+`efccbe37`; visible parent PID 55072, launcher PID 92828 and worker PID 86120.
+The bounded mission targets fertilizer-mixer commissioning readiness only:
+exact device/action binding, OFF baseline, native fail-stop/auto-OFF, bounded
+duration, authoritative ON/OFF readback, replay/concurrency containment,
+emergency OFF, rollback and truthful owner preview. Fertilizer injection and
+borehole remain separate and non-operational. No hardware command, valve action,
+mixer start, injection or pumping is authorized before a separate exact owner
+commissioning approval. Lifecycle is `WORKING /
+FERTILIZER_MIXER_READINESS_IN_PROGRESS`; process identity is launch evidence
+only.
+
 The first CORE handshake-repair terminal was interrupted externally during its
 focused pytest run and produced no final handover, commit or PR. Its exact dirty
 candidate is preserved only in
