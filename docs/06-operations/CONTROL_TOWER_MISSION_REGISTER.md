@@ -731,6 +731,21 @@ commissioning approval. Lifecycle is `WORKING /
 FERTILIZER_MIXER_READINESS_IN_PROGRESS`; process identity is launch evidence
 only.
 
+The source/readiness phase subsequently completed through PR #1135. Independent
+Control Tower verification records reviewed head `2f26335b`, merge commit and
+authoritative main `725653a6`, clean worktree and all three exact-head hosted
+checks green. The repair hard-binds emergency OFF to the fertilizer mixer device
+`100204d497`, channel 2 and rejects an active injection execution with zero
+provider calls. No hardware, farm, Telegram or provider mutation occurred.
+Lifecycle is now `INTEGRATED / DEPLOYMENT_PROOF_HOLD /
+PHYSICAL_COMMISSIONING_NOT_AUTHORIZED`. Exact loaded Render revision, protected
+canonical active-execution readback, provider readiness, autonomous trigger,
+heartbeat, physical recirculation and later terminal-independent cycle remain
+Unknown. The source terminal auto-closed after returning its complete handover;
+the release lane is free. Automatic promotion requires exact deployment proof
+and a separately explicit bounded mixer-only commissioning authorization; it
+must not inherit authority for injection, irrigation or borehole.
+
 The first CORE handshake-repair terminal was interrupted externally during its
 focused pytest run and produced no final handover, commit or PR. Its exact dirty
 candidate is preserved only in
