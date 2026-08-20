@@ -510,6 +510,26 @@ and manufactured Prince evidence. Lifecycle is `WORKING /
 PHASE_2_RUNTIME_INTEGRATION_IN_PROGRESS`; process identity is launch evidence
 only.
 
+The fresh canonical receipt gate completed read-only diagnosis and confirmed a
+bounded source defect: tracked source contains the staging receipt validator but
+no canonical producer, while the validator does not require unique validation
+identity, exact source tree, clean/status identity or test-selection digest. It
+correctly produced no receipt/key and performed no validation, staging or runtime
+effect. Lifecycle is `CONTAINED /
+CANONICAL_RECEIPT_PRODUCER_AND_CONTRACT_REPAIR_REQUIRED`; its window was closed.
+Control Tower launched one fresh source-only repair worktree from exact main
+`4b7efb02` at `C:\tmp\core-canonical-validation-receipt-20260820`, visible
+parent PID 14440, launcher PID 61740 and worker PID 66344. It must implement one
+canonical producer plus strengthened validator/tests/reviews/PR/CI and stop before
+merge, validation, staging or activation. Rejected receipt/identity evidence may
+not be modified or reused.
+
+Fresh process inspection separately proved ROOTLINE is not stuck: visible parent
+PID 21804 is responsive and live launcher PID 38260 / worker PID 45100 remain
+bound to the current serialized mixer worktree. The shell's transparent/empty
+appearance is a Windows rendering condition, not accepted by itself as progress;
+the live Codex worker and exact command binding provide current activity evidence.
+
 HERDMASTER welfare Phase 2 completed its serialized recovery and released the
 lane. PR #1134 merged as exact main
 `4b7efb021ccdef3f226ec0433a9f02e0fd134136`; governed Render job
