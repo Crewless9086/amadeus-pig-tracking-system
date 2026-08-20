@@ -1,5 +1,4 @@
 import hashlib
-import hmac
 import json
 import subprocess
 import tempfile
@@ -15,6 +14,11 @@ from modules.charlie.runtime_staging import (
     read_staging_state,
     recover_runtime_staging,
     stage_runtime,
+)
+from modules.charlie.validation_receipt import (
+    VALIDATION_COMMANDS,
+    record_validation_receipt,
+    sign_validation_receipt,
 )
 
 
@@ -87,22 +91,26 @@ class RuntimeStagingTests(unittest.TestCase):
         (self.state / "supervisor.stop").write_text("governed\n", encoding="utf-8")
         self._write("supervisor.json", {"status": "supervisor_stopped"})
         self._write("watchdog.json", {"status": "governed_stop_active"})
-        self.receipt = root / "receipt.json"
         self.receipt_key = b"isolated-control-tower-receipt-key-32-bytes-minimum"
         (self.state / "validation-receipt.key").write_bytes(self.receipt_key)
-        receipt = {
-            "version": RECEIPT_VERSION, "source_commit": SOURCE, "status": "passed",
-            "issuer": "control_tower_isolated_validator_v1",
-            "focused_passed": 9, "full_suite_passed": 57,
+        receipt = sign_validation_receipt({
+            "source_commit": SOURCE,
+            "suites": [
+                {"name": "focused", "command_sha256": hashlib.sha256(
+                    VALIDATION_COMMANDS["focused"].encode()).hexdigest(),
+                 "passed": 9, "failed": 0, "skipped": 0},
+                {"name": "proportional", "command_sha256": hashlib.sha256(
+                    VALIDATION_COMMANDS["proportional"].encode()).hexdigest(),
+                 "passed": 57, "failed": 0, "skipped": 0},
+            ],
             "isolation": {"boundary": "disposable_process_boundary",
-                          "host_processes_visible": False, "outside_boundary_targets": 0},
-        }
-        receipt["signature_hmac_sha256"] = hmac.new(
-            self.receipt_key,
-            json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        self.receipt.write_text(json.dumps(receipt), encoding="utf-8")
+                          "host_processes_visible": False, "outside_boundary_targets": 0,
+                          "network_enabled": False, "source_read_only": True,
+                          "capabilities_dropped": True, "unprivileged": True,
+                          "image_sha256": "3" * 64},
+        }, self.receipt_key, validation_id="4" * 32, issued_at="2026-08-20T10:00:00Z")
+        recorded = record_validation_receipt(receipt, self.state)
+        self.receipt = Path(recorded["path"])
 
     def tearDown(self):
         self.temp.cleanup()
@@ -181,9 +189,30 @@ class RuntimeStagingTests(unittest.TestCase):
 
     def test_plan_rejects_forged_receipt_even_with_matching_digest(self):
         receipt = json.loads(self.receipt.read_text())
-        receipt["full_suite_passed"] = 999
+        receipt["suites"][1]["passed"] = 999
         self.receipt.write_text(json.dumps(receipt), encoding="utf-8")
-        with self.assertRaisesRegex(RuntimeStagingError, "isolated_validation_receipt_not_authorized"):
+        with self.assertRaisesRegex(RuntimeStagingError, "isolated_validation_receipt_evidence_invalid"):
+            self._plan()
+
+    def test_staging_refuses_signed_all_skipped_rejection(self):
+        rejected = sign_validation_receipt({
+            "source_commit": SOURCE,
+            "suites": [
+                {"name": "focused", "command_sha256": hashlib.sha256(
+                    VALIDATION_COMMANDS["focused"].encode()).hexdigest(),
+                 "passed": 0, "failed": 0, "skipped": 1},
+                {"name": "proportional", "command_sha256": hashlib.sha256(
+                    VALIDATION_COMMANDS["proportional"].encode()).hexdigest(),
+                 "passed": 0, "failed": 0, "skipped": 1},
+            ],
+            "isolation": {"boundary": "disposable_process_boundary",
+                          "host_processes_visible": False, "outside_boundary_targets": 0,
+                          "network_enabled": False, "source_read_only": True,
+                          "capabilities_dropped": True, "unprivileged": True,
+                          "image_sha256": "3" * 64},
+        }, self.receipt_key, validation_id="4" * 32, issued_at="2026-08-20T10:00:00Z")
+        self.receipt.write_text(json.dumps(rejected), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeStagingError, "isolated_validation_receipt_rejected"):
             self._plan()
 
     def test_plan_rejects_dirty_or_contradictory_worktree(self):
@@ -488,9 +517,9 @@ class RuntimeStagingTests(unittest.TestCase):
             )
 
     def test_recovery_rejects_clean_unrelated_runtime_or_execution(self):
+        state = self._failed_lane()
         for target in (self.runtime, self.execution):
             with self.subTest(target=target.name):
-                state = self._failed_lane()
                 self.git.heads[str(target.resolve())] = "4" * 40
                 with self.assertRaisesRegex(RuntimeStagingError, "worktree_state_not_authorized_for_recovery"):
                     recover_runtime_staging(
@@ -500,7 +529,6 @@ class RuntimeStagingTests(unittest.TestCase):
                         task_reader=self._task, runner=self.git,
                         git_safety_checker=self._safe_git,
                     )
-                (self.state / "release-staging.lock").unlink()
                 self.git.heads[str(self.runtime.resolve())] = RUNTIME
                 self.git.heads[str(self.execution.resolve())] = EXECUTION
                 self.git.branches[str(self.runtime.resolve())] = "main"
@@ -513,6 +541,26 @@ class RuntimeStagingTests(unittest.TestCase):
             stage_runtime(plan, task_reader=self._task, runner=self.git,
                           git_safety_checker=self._safe_git)
         self.assertEqual(self.git.heads[str(self.runtime.resolve())], RUNTIME)
+
+    def test_successful_receipt_cannot_be_replayed_for_staging(self):
+        plan = self._plan()
+        digest = plan["receipt_sha256"]
+        ledger = self.state / "promotion-ledger"
+        ledger.mkdir()
+        (ledger / "prior-result.json").write_text(json.dumps({
+            "success": True, "validation_receipt_sha256": digest,
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeStagingError, "validation_receipt_replay_rejected"):
+            self._plan()
+
+    def test_consumption_claim_is_durable_before_first_staging_mutation(self):
+        plan = self._plan()
+        self.git.partial_runtime_failure = True
+        with self.assertRaisesRegex(RuntimeStagingError, "git_staging_failed"):
+            stage_runtime(plan, task_reader=self._task, runner=self.git,
+                          git_safety_checker=self._safe_git)
+        with self.assertRaisesRegex(RuntimeStagingError, "validation_receipt_replay_rejected"):
+            self._plan()
 
 
 if __name__ == "__main__":
