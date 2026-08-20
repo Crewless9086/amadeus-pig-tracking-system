@@ -65,6 +65,15 @@ still contained and not operational. The next gate must validate and stage the
 new exact current main while preserving the governed stop. Activation remains a
 separate fresh protected gate and may not reuse any historical epoch.
 
+The completed CORE source window was closed after its Codex child exited and
+its transcript/final artifact were preserved. Control Tower then launched one
+new visible terminal for the next exact-current validation and stop-preserving
+staging gate. Visible parent PID 79996 and Codex launcher PID 44188 were freshly
+verified at launch. This is a new terminal stage, not continuation proof from
+the closed source process. It is forbidden to run process-control tests in its
+Codex ancestry, must use only the disposable isolated validator, and has zero
+activation authority.
+
 Owner priority: use the four remaining days to turn the existing specialist
 spines into terminal-independent operating outcomes. CORE recovery continues in
 parallel but is not a dependency for ROOTLINE, Oom Sakkie, HERDMASTER, SAM or
