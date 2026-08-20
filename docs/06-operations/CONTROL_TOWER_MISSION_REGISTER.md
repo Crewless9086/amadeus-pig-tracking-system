@@ -4,6 +4,78 @@ Status: Active owner-facing dispatch authority
 
 ## 2026-08-20 - Four-day operational reality reset
 
+### DOCUMENTS governed local-printing next phase
+
+Charl approved governed local printing as a `NEXT_PHASE` of existing Documents
+mission `DMQ-20260816-01`, not as a new Home Assistant mission or document
+engine. The canonical catalogue foundation is already integrated: PR #1016
+merged at exact head `c114c371`; GENERAL's statement that it remained open was
+stale. The new phase must reuse that catalogue and the existing document owners,
+Oom Sakkie intake/protected-action rails and canonical backend lifecycle.
+
+Owner outcome: Charl or Anton may make one authenticated, semantically explicit
+request in the application or private Telegram to print a current weekly
+weighing sheet, mating/litter record or loading sheet. Documents selects and
+digest-binds the exact current PDF; Home Assistant Green is only the proposed
+always-on outbound-polling physical adapter; local CUPS submits to the HP
+OfficeJet Pro 8123. One canonical job identity and lifecycle must feed both
+channels. Green/CUPS/printer must never become document truth, a second queue,
+approval system or scheduler, and no inbound farm-network port may be exposed.
+
+Approved pilot and defaults are weekly weighing sheet first; A4, one copy,
+black/monochrome and one-sided. Unambiguous current internal documents may print
+immediately. Ambiguous requests ask one concise selection question. Formal or
+customer documents, unusual settings, colour, multiple copies, superseded
+revisions and every reprint require a concise protected confirmation. A loading
+sheet is immediate only when exact approved order and current revision are
+unambiguous. Every reprint discloses prior time/outcome and creates a linked new
+generation. Ordinary progress is silent; the owner receives one completion or
+one actionable exception.
+
+Offline authorized jobs may remain one canonical job and retry boundedly for 48
+hours; afterward they enter a held state and require Continue or Cancel so stale
+paper cannot emerge unexpectedly. A crash after possible CUPS acceptance enters
+`submission_unknown` and must never be blindly resubmitted. First scope is PDF
+only, with parseability, size/page limits, SHA-256 verification, temporary local
+retention only while unresolved, and durable non-content audit evidence. No
+arbitrary URL/upload printing, conversion, extra printers, labels, bulk copies,
+automatic reprints, public CUPS/printer administration, customer send or voice
+printing is in scope.
+
+Lifecycle is `QUEUED / APPROVED_POLICY / PHYSICAL_AND_PROVIDER_EVIDENCE_BLOCKED`.
+Brain Guard remains blocked for implementation until the incomplete Documents
+doctrine and physical feasibility are reconciled. Delivery is serialized:
+(0) smallest canonical Documents workflow/doctrine reconciliation; (1) read-only
+Green/HA/printer/IPP/IPPS/network/capability discovery and rollback plan; (2)
+reviewed aarch64 local adapter plus driverless CUPS and one labelled non-business
+test page; (3) genuine weekly-weighing pilot; then mating/litter, loading sheet
+and cross-channel parity through the same lifecycle. Business completion needs
+provider job evidence, genuine paper, replay/offline/restart/cleanup proof and a
+later terminal-independent print—not merely source, a queue or CUPS setup.
+
+Charl explicitly requires a beginner-friendly, step-by-step Home Assistant Green
+commissioning guide. Control Tower must provide it only when the reviewed Phase
+1/2 package has established the exact Green version, printer network identity,
+IPP/IPPS URI, advertised capabilities, DHCP strategy, installation route and
+rollback. Charl must not be asked to choose architecture, expose ports, invent
+addresses or troubleshoot unsupported commands. His physical participation is
+limited to following the verified screen-by-screen guide, printing the labelled
+test page and confirming genuine output.
+
+This queued expansion does not displace the active Autonomy Recovery operating
+spines. At intake, fresh process and artifact inspection found no active Codex
+exec terminals: ROOTLINE and CORE had both completed and auto-closed. ROOTLINE
+PR #1138 is source-ready at `b52d0c3a` but awaits explicit merge/deployment;
+CORE issued exact-current canonical validation receipt
+`abacff9fb6b748aeaf5aa46bcf495bf7` (receipt SHA-256
+`8686cf6ba936616ce15bc771fd4f1b6eeb220ba1dfbf82075c359231a31907ea`)
+but remains governed-stop/authority-disabled and requires separate staging
+authority. Oom Sakkie PR #1127 remains on owner visual hold. Therefore no
+Documents implementation or Green/printer action is dispatched at this intake;
+automatic promotion requires a released compatible WIP slot plus fresh
+DMQ/current-main/collision and physical-feasibility preflight. No owner action is
+requested for Green yet.
+
 ### Visible-terminal launch correction
 
 Control Tower initially dispatched three in-session collaboration workers and
@@ -795,6 +867,18 @@ AUTONOMOUS_PROVIDER_READINESS_OBSERVER_IN_PROGRESS`; business completion still
 requires a genuine provider-origin read-only cycle, canonical result, current
 and next trigger identity, and a later terminal-independent cycle.
 
+That observer source terminal subsequently completed and auto-closed. PR #1138
+is clean and CI-green at exact head
+`b52d0c3a55bed06071f1c00f9433d1c92081b261`; 98 focused tests, Brain Guard and
+independent ROOTLINE/replay plus security/provider reviews passed. The candidate
+reuses the existing five-minute general-manager worker, encrypted token store,
+registry-bound readback and manager-case rail, requires CH2 OFF, enabled
+300-second fail-stop, no conflicting execution and exactly zero provider control
+calls, and remains replay-silent on unchanged semantic readiness. It avoids all
+PR #1127 files. Production still loads `986e13e8`, so lifecycle is now `WORKING /
+SOURCE_PR_CI_GREEN / RELEASE_HOLD`; no deployed observer cycle or readiness
+result is claimed. Promotion requires explicit serialized merge/deployment.
+
 The first CORE handshake-repair terminal was interrupted externally during its
 focused pytest run and produced no final handover, commit or PR. Its exact dirty
 candidate is preserved only in
@@ -864,6 +948,20 @@ the dispatch started. Lifecycle is `WORKING /
 EXACT_CURRENT_VALIDATION_IN_PROGRESS`; successful completion requires an
 attributable immutable receipt with exact suite/digest/count/isolation evidence,
 not an open terminal.
+
+That CORE validation terminal subsequently completed and auto-closed with a
+clean exact-main worktree. It issued fresh create-once validation identity
+`abacff9fb6b748aeaf5aa46bcf495bf7`, receipt SHA-256
+`8686cf6ba936616ce15bc771fd4f1b6eeb220ba1dfbf82075c359231a31907ea`
+and evidence SHA-256
+`76c0cc8f8e15542f131f02269e810c55fd8b012a581cb07549ccb6e3b6dc726c`.
+The isolated boundary passed 39 focused tests and 143 proportional tests with
+one explicit skip; replay was rejected as already recorded without changing the
+receipt. No staging, activation, key, Task Scheduler, runtime or business effect
+occurred. Lifecycle is now `REVIEW_HOLD /
+EXACT_CURRENT_VALIDATION_RECEIPT_ISSUED`; CORE remains governed-stop and
+authority-disabled. The next protected boundary is separately authorized exact
+receipt consumption and staging, not activation.
 
 The approved longitudinal welfare-case addendum has now entered its first bounded,
 collision-safe source phase in a fresh visible HERDMASTER terminal. Worktree
