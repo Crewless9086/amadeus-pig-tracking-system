@@ -4471,3 +4471,98 @@ final Auction List approval remain protected. Business completion requires a
 genuine scheduled Anton delivery, canonical confirmation, evidence-backed cohort,
 later reassessment, final protected approval, exactly-once Auction List readback and
 a later terminal-independent month with measured owner-work reduction.
+
+### ROOTLINE fertilizer injection lifecycle release candidate - 2026-08-21
+
+Existing missions `RMQ-20260813-03A / RMQ-20260813-03B` and PR #1149 remain one
+continuous lineage. Independent review approved exact head
+`de1db1a4fe576110b2e1b711233a70ea5756a2c9`; PR #1149 is open, clean and
+mergeable against authoritative main `e027c403978ca3e5ccb5cc03a008c3075b76f941`,
+and all three hosted CI lanes passed. The clean development and review terminals are
+complete and released; no deployed fertilizer agent depends on them.
+
+Target owner outcome: deployed ROOTLINE safely injects during a genuine eligible
+B/C irrigation lifecycle with verified pre-flow, bounded serialized pulses,
+canonical/provider/physical fertilizer delivery, clean-water flush, final injector
+and parent OFF, automatic follow-up, a later terminal-independent cycle and removal
+of manual timing, shutdown monitoring and reconciliation. Owner outcome achieved is
+`NONE`; usable now is `NO`; lifecycle is `RELEASE_HOLD / BUILT_BUT_UNPROVEN /
+UNCOMMISSIONED`.
+
+Enabling-stage progress only: the approved source binds each pulse to the exact
+irrigation execution and separates controller-OFF from physical delivery. If
+injector OFF is unverified, parent shutdown is withheld and physical water flow
+remains `Unknown`. Authoritative early parent `OFF` is immediately urgent, owns
+both final-state reconciliations and cannot be downgraded by deadline equality or
+concurrent replay. No water or fertilizer delivery occurred.
+
+The first missing gate is a protected serialized merge/deployment decision for
+exact approved head `de1db1a4`. After an authorized release, verify the exact loaded
+revision, then continue RMQ-03A isolated control commissioning, RMQ-03B genuine
+real-flow commissioning, separate activation, one genuine deployed cycle and one
+later independent cycle. PR #1151 overlaps the execution store and remains behind
+#1149: release #1149 first, then reconcile and independently re-review #1151. Next
+automatic action is preparation of the exact #1149 release packet. Merge/deploy,
+physical commissioning and activation remain protected holds.
+
+### Anton/Riversdale auction manager release candidate - 2026-08-21
+
+The existing Riversdale Auction and
+`OMQ-20260816-ANTON-FARM-MANAGER-CHANNEL` lineage has PR #1154 at exact head
+`7a7d5392ce96271187dbaaf3562d3c8161e7aac0`. Independent review approved it,
+all hosted CI passed, Brain Guard reported zero findings, and the worktree is clean
+and released. The revision is not merged/deployed; no genuine Anton interaction or
+Auction List write occurred.
+
+Target owner outcome: on a genuine scheduled 14-day or 7-day cycle, deployed Oom
+Sakkie/HERDMASTER asks authenticated Anton one concise Afrikaans auction-date
+question, reads his genuine reply, recomputes the eligible cohort, obtains Charl's
+protected exact-cohort approval, appends only still-eligible new pigs once to the
+existing Auction List, follows up and proves a later independent month. Owner
+outcome achieved is `NONE`; usable now is `NO`; lifecycle is `WORKING /
+SOURCE_PR_CI_GREEN / RELEASE_HOLD / BUILT_BUT_UNPROVEN`.
+
+Enabling-stage progress only: #1154 reuses the existing manager schedule,
+auction-cycle ledger, recommendation, protected claims and append-only Auction List.
+It binds date/phase identity, collapses missed-run fan-out, revalidates the
+incremental cohort and makes replay silent without another scheduler, queue, table,
+list or agent. The first missing gate is governed merge/deployment and loaded-
+revision proof before a genuine date window. The deployed manager then owns the
+automatic schedule. Anton owns the irreducible date fact; Charl later owns only the
+consequential exact-cohort append. Business completion requires genuine provider
+delivery, canonical reply/readback, reassessment, approval, exactly-once list
+readback, follow-up, a later month and measured owner-work reduction.
+
+### Green weekly-sheet repair remains rejected and working - 2026-08-21
+
+Mission `DMQ-20260816-01` continues in PR #1152. Exact reviewed head
+`f5bce7dd92784ad280d94969f9d7a01b3a1544c1` is open, clean and mergeable
+against authoritative main `e027c403978ca3e5ccb5cc03a008c3075b76f941`;
+hosted CI and exact Linux/aarch64 build passed. Independent review returned
+`REJECT_WITH_BLOCKERS`. Terminals are released; the same implementation lineage
+owns repair. Green remains inactive, uninstalled and uncommissioned.
+
+Target owner outcome: Charl naturally asks deployed Oom Sakkie for the current
+weekly weighing sheet; the system creates one authorized canonical job; commissioned
+Green produces one correct A4 monochrome one-sided sheet; canonical/provider/
+physical evidence, cleanup, final state and automatic follow-up are verified; and a
+later independent cycle removes manual generate/transfer/print/check work. Owner
+outcome achieved is `NONE`; usable now is `NO`; lifecycle is `WORKING /
+REVIEW_REJECTED / BUILT_BUT_UNPROVEN / UNCOMMISSIONED`.
+
+Enabling-stage progress only: migration/API/security, atomic claim/recovery,
+provider-versus-physical completion separation, private Home Assistant packaging,
+CUPS/AppArmor, persistent `/data`, tmpfs spool, private CA, private IP-literal IPPS,
+rollback and aarch64 build are present and tested. They prove neither a genuine
+semantic request nor an installed worker, provider job or physical page.
+
+The current pre-semantic regex interception must be replaced by a typed DOCUMENTS
+intent from the approved Oom Sakkie semantic spine. The existing manager/owner-
+attention scheduler must also observe `provider_completed/pending_owner_observation`,
+create/deliver/recover one job-bound physical-acceptance request and own correct,
+incorrect or uncertain results without automatic reprint. Johannesburg weekly
+identity/expiry, paraphrase ambiguity and concurrent/new-message replay require
+tests. The first missing gate is same-lineage repair and fresh independent approval,
+not Home Assistant installation. Next automatic action is repair, renewed tests/CI/
+aarch64 build and review. Merge/deploy/migration, installation, credentials/private
+CA/device mapping, commissioning and any real print remain protected holds.
