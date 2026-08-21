@@ -253,6 +253,21 @@ def test_expired_active_segment_repeats_safe_off_and_requires_readback():
     assert result["status"]=="shutdown_unverified" and notices[-1][0]=="Intervention"
 
 
+def test_unpersisted_stopping_barrier_retains_parent_flow_and_fails_closed():
+    active={"execution_id":"EXEC-BARRIER","zone_id":"B12345","channel":1,
+        "primary_stop_deadline":(NOW-timedelta(seconds=1)).isoformat(),
+        "native_fail_stop_deadline":(NOW+timedelta(minutes=1)).isoformat()}
+    class FailedBarrierStore(Store):
+        def __call__(self,action,payload):
+            if action=="mark_stopping":return {"success":False,"created":False}
+            return super().__call__(action,payload)
+    transport=Transport(readback="ON");notices=[]
+    result=run(FailedBarrierStore(active),transport,notices)
+    assert result["status"]=="canonical_stopping_barrier_unproven"
+    assert result["hardware_commands"]==0 and transport.calls==[]
+    assert notices[-1][0]=="Intervention"
+
+
 def test_off_attempt_bound_is_durable_across_restart():
     active={"execution_id":"EXEC-1","zone_id":"B12345","channel":1,
             "primary_stop_deadline":(NOW-timedelta(minutes=2)).isoformat(),

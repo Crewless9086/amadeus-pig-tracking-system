@@ -19,6 +19,7 @@ from modules.charlie.core_workflow import (
 )
 from modules.charlie import vault_store
 from modules.charlie.mission_governance import ensure_acceptance_matrix
+from modules.charlie.mission_outcome_gate import evaluate_outcome_handover, mission_lifecycle_projection
 from modules.charlie.final_readiness import evaluate_final_readiness
 from modules.charlie.evidence_reconciliation import (
     applicable_passing_agents,
@@ -54,8 +55,11 @@ MISSION_EVENT_TYPES = {
     "vault_updated",
     "workflow_updated",
     "queue_updated",
+    "outcome_handover_recorded",
 }
 APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
+MISSION_LIFECYCLE_HISTORY_LIMIT = 100
+MISSION_OUTCOME_HANDOVER_BYTES_LIMIT = 65536
 MISSION_MEDIA_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$")
 MISSION_MEDIA_DATA_URL_MAX_LEN = 900_000
 MISSION_CONTEXT_DOCS = [
@@ -853,6 +857,179 @@ def update_mission_status(
         "mission_status": status,
         "approval_level": approval_level,
     }, 200
+
+
+def record_mission_outcome_evidence(mission_id, evidence_row, evidence_payload, *, evidence_id,
+                                    authenticated_principal, producer_actor_type="external_verifier",
+                                    database_url=None, connect_factory=None):
+    """Append one producer-bound canonical outcome-evidence event."""
+    from modules.charlie.mission_outcome_gate import EVIDENCE_ROWS
+    mission_id = _clean_text(mission_id, 90)
+    evidence_id = _clean_text(evidence_id, 160)
+    producer_identity = _clean_text(authenticated_principal, 200)
+    producer_actor_type = _clean_text(producer_actor_type, 40).lower()
+    if (not mission_id or not evidence_id or evidence_row not in EVIDENCE_ROWS
+            or producer_actor_type not in {"deployed_agent", "external_verifier"}
+            or not producer_identity or not isinstance(evidence_payload, dict)):
+        return {"success": False, "status": "invalid_outcome_evidence_contract"}, 400
+    payload_digest = hashlib.sha256(json.dumps(
+        evidence_payload, sort_keys=True, separators=(",", ":"), default=str
+    ).encode("utf-8")).hexdigest()
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    metadata = {"outcome_evidence_row": evidence_row, "evidence_payload_digest": payload_digest,
+                "producer_identity": producer_identity, "producer_actor_type": producer_actor_type}
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select mission_id from public.charlie_missions where mission_id=%(mission_id)s for update",
+                               {"mission_id": mission_id})
+                if not cursor.fetchall():
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                cursor.execute(
+                    """insert into public.charlie_mission_events
+                       (event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at)
+                       values (%(event_id)s,%(mission_id)s,'outcome_evidence_recorded',
+                               'Producer-bound canonical mission outcome evidence.',%(recorded_by)s,%(metadata)s::jsonb,now())
+                       on conflict (event_id) do nothing
+                       returning mission_id,metadata_json->>'evidence_payload_digest'""",
+                    {"event_id": evidence_id, "mission_id": mission_id,
+                     "recorded_by": producer_identity, "metadata": json.dumps(metadata)},
+                )
+                inserted = cursor.fetchall()
+                if not inserted:
+                    cursor.execute(
+                        """select mission_id,metadata_json->>'evidence_payload_digest',
+                                  metadata_json->>'outcome_evidence_row',metadata_json->>'producer_identity',
+                                  metadata_json->>'producer_actor_type'
+                           from public.charlie_mission_events where event_id=%(event_id)s for update""",
+                        {"event_id": evidence_id},
+                    )
+                    existing = cursor.fetchall()
+                    if (not existing or existing[0][0] != mission_id or existing[0][1] != payload_digest
+                            or existing[0][2] != evidence_row or existing[0][3] != producer_identity
+                            or existing[0][4] != producer_actor_type):
+                        return {"success": False, "status": "outcome_evidence_replay_conflict",
+                                "mission_id": mission_id}, 409
+    except Exception as exc:
+        return {"success": False, "status": "outcome_evidence_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "outcome_evidence_recorded", "mission_id": mission_id,
+            "evidence_id": evidence_id, "payload_digest": payload_digest}, 201
+
+
+def record_mission_outcome_handover(mission_id, handover, *, authenticated_principal="",
+                                    database_url=None, connect_factory=None):
+    """Atomically append a handover evaluation; technical status is never business truth."""
+    mission_id = _clean_text(mission_id, 90)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    if not isinstance(handover, dict):
+        return {"success": False, "status": "handover_contract_required"}, 400
+    handover_id = _clean_text(handover.get("handover_id"), 160)
+    handover_mission_id = _clean_text(handover.get("mission_id"), 90)
+    if not handover_id:
+        return {"success": False, "status": "handover_id_required", "mission_id": mission_id}, 400
+    if handover_mission_id != mission_id:
+        return {"success": False, "status": "handover_mission_identity_mismatch", "mission_id": mission_id}, 409
+    if len(json.dumps(handover, separators=(",", ":"), default=str).encode("utf-8")) > MISSION_OUTCOME_HANDOVER_BYTES_LIMIT:
+        return {"success": False, "status": "handover_contract_too_large", "mission_id": mission_id}, 413
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select status,coalesce(metadata_json,'{}'::jsonb)
+                       from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id},
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                technical_status, metadata = rows[0][0], dict(rows[0][1] or {})
+                prior = metadata.get("mission_lifecycle") if isinstance(metadata.get("mission_lifecycle"), dict) else {}
+                history = list(metadata.get("mission_lifecycle_history") or [])
+                submitted_digest = hashlib.sha256(json.dumps(
+                    handover, sort_keys=True, separators=(",", ":"), default=str
+                ).encode("utf-8")).hexdigest()
+                cursor.execute(
+                    """select coalesce(metadata_json,'{}'::jsonb)
+                       from public.charlie_mission_events
+                       where mission_id=%(mission_id)s
+                         and event_type='outcome_handover_recorded'
+                         and metadata_json->>'handover_id'=%(handover_id)s
+                       order by created_at asc limit 1""",
+                    {"mission_id": mission_id, "handover_id": handover_id},
+                )
+                replay_rows = cursor.fetchall()
+                if replay_rows:
+                    recorded_evaluation = dict(replay_rows[0][0] or {})
+                    if recorded_evaluation.get("handover_digest") != submitted_digest:
+                        return {"success": False, "status": "handover_replay_conflict", "mission_id": mission_id}, 409
+                    replay_valid = recorded_evaluation.get("handover_status") == "VALID_HANDOVER"
+                    return {"success": replay_valid, "status": "handover_already_recorded", "mission_id": mission_id,
+                            "technical_status": technical_status, "mission_lifecycle": recorded_evaluation}, 200 if replay_valid else 422
+                evidence = handover.get("evidence") if isinstance(handover.get("evidence"), dict) else {}
+                evidence_ids = sorted({str(value.get("evidence_id")) for value in evidence.values()
+                                       if isinstance(value, dict) and value.get("evidence_id")})
+                cursor.execute(
+                    """select event_id,event_type,coalesce(metadata_json,'{}'::jsonb),created_at
+                       from public.charlie_mission_events
+                       where mission_id=%(mission_id)s and event_id=any(%(evidence_ids)s)""",
+                    {"mission_id": mission_id, "evidence_ids": evidence_ids},
+                )
+                canonical_evidence = {}
+                for event_id, event_type, event_metadata, created_at in cursor.fetchall():
+                    event_metadata = dict(event_metadata or {})
+                    canonical_evidence[str(event_id)] = {
+                        "event_type": event_type,
+                        "evidence_row": event_metadata.get("outcome_evidence_row"),
+                        "mission_bound": event_type == "outcome_evidence_recorded",
+                        "payload_digest": event_metadata.get("evidence_payload_digest"),
+                        "producer_identity": event_metadata.get("producer_identity"),
+                        "producer_actor_type": event_metadata.get("producer_actor_type"),
+                        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
+                    }
+                evaluation = evaluate_outcome_handover(
+                    handover, mission_id=mission_id, prior=prior,
+                    canonical_evidence=canonical_evidence,
+                    authenticated_actor_type="control_tower",
+                    authenticated_principal=authenticated_principal,
+                )
+                same_id = next((row for row in history if row.get("handover_id") and row.get("handover_id") == evaluation["handover_id"]), None)
+                if same_id:
+                    if same_id.get("handover_digest") != evaluation.get("handover_digest"):
+                        return {"success": False, "status": "handover_replay_conflict", "mission_id": mission_id}, 409
+                    return {"success": True, "status": "handover_already_recorded", "mission_id": mission_id,
+                            "technical_status": technical_status, "mission_lifecycle": same_id}, 200
+                history.append(evaluation)
+                if len(history) > MISSION_LIFECYCLE_HISTORY_LIMIT:
+                    archived = history.pop(0)
+                    prior_digest = str(metadata.get("mission_lifecycle_history_archive_digest") or "")
+                    metadata["mission_lifecycle_history_archive_digest"] = hashlib.sha256(
+                        f"{prior_digest}:{archived.get('handover_digest', '')}".encode("utf-8")
+                    ).hexdigest()
+                    metadata["mission_lifecycle_history_archived_count"] = int(
+                        metadata.get("mission_lifecycle_history_archived_count") or 0
+                    ) + 1
+                if evaluation["handover_status"] == "VALID_HANDOVER":
+                    metadata["mission_lifecycle"] = evaluation
+                metadata["mission_lifecycle_history"] = history
+                cursor.execute(
+                    """update public.charlie_missions set metadata_json=%(metadata)s::jsonb,updated_at=now()
+                       where mission_id=%(mission_id)s""",
+                    {"mission_id": mission_id, "metadata": json.dumps(metadata)},
+                )
+                _insert_event(cursor, mission_id, "outcome_handover_recorded",
+                              "CORE evaluated a structured mission outcome handover.", evaluation)
+    except Exception as exc:
+        return {"success": False, "status": "outcome_handover_write_failed", "error_type": exc.__class__.__name__}, 503
+    code = 200 if evaluation["handover_status"] == "VALID_HANDOVER" else 422
+    return {"success": code == 200, "status": evaluation["handover_status"], "mission_id": mission_id,
+            "technical_status": technical_status, "mission_lifecycle": evaluation}, code
 
 
 def transition_mission_review_state(
@@ -2658,7 +2835,7 @@ def _mission_row(row):
     queue_priority = _clean_queue_priority(queue.get("priority")) if queue else None
     raw_text = row[5]
     title = row[6]
-    return {
+    result = {
         "mission_id": row[0],
         "status": row[1],
         "source": row[2],
@@ -2686,6 +2863,9 @@ def _mission_row(row):
         "created_at": _iso(row[14]),
         "updated_at": _iso(row[15]),
     }
+    result["technical_status"] = result["status"]
+    result["mission_lifecycle"] = mission_lifecycle_projection(result)
+    return result
 
 
 def _find_open_duplicate_mission(cursor, params):
