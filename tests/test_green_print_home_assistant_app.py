@@ -38,6 +38,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert "SOURCE_COMMIT=${{ inputs.expected_source_commit }}" in workflow
     assert "actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a" in workflow
     assert "actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34" in workflow
+    assert "pytest PyYAML" in workflow
     assert "latest" not in workflow and "push: \"true\"" in workflow
 
 def test_apparmor_denies_admin_and_broad_writes():
