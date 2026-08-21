@@ -1,8 +1,9 @@
 name: Amadeus Green Print Bridge
-version: "0.2.0"
+version: "0.3.0"
 slug: amadeus_green_print_bridge
 description: Private fail-closed weekly weighing-sheet adapter with local CUPS
 url: https://github.com/Crewless9086/amadeus-pig-tracking-system
+image: ghcr.io/crewless9086/amadeus-green-print-bridge
 stage: experimental
 startup: application
 boot: auto
