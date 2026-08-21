@@ -4869,3 +4869,48 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   private IP-literal IPPS endpoint, while keeping Green inactive until verified.
 - Next automatic action: prepare one exact non-secret commissioning decision packet;
   do not install, register, create jobs or print without that authority.
+
+## 2026-08-21 — Green dormant-installation-only authority recorded
+
+- Mission/lineage: existing DOCUMENTS `DMQ-20260816-01`, fixed
+  `farm.weekly_weight_sheet.v1` pilot; no new mission, queue, scheduler, database,
+  credential rail, CUPS path or printer path.
+- Target owner outcome: one genuine natural Oom Sakkie request produces exactly one
+  correct A4 monochrome one-sided physical weekly weighing sheet through the
+  commissioned deployed runtime, with canonical, provider and physical agreement,
+  safe cleanup, automatic follow-up, a later terminal-independent cycle and reduced
+  manual owner work.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; installation authority is not installation evidence, and no
+  Green runtime, commissioned identity/trust path or physical print proof exists.
+- Authority recorded: Charl approved adding the private Amadeus repository and
+  installing `Amadeus Green Print Bridge` `0.2.0` only while GitHub main is verified
+  at `f5d6634b25142d95a943f2c7c10a89fbfd5a4383`. The app must never be started;
+  immediately after installation it must be proven `Stopped` with `Start on boot`
+  OFF before leaving the page or rebooting.
+- Current effect truth: authorization is recorded but the installation has not been
+  exercised or observed. The private repository and app remain recorded as absent
+  until fresh Home Assistant evidence proves otherwise. No terminal may infer the
+  device state from this approval.
+- Deviation/rollback: if the package starts, cannot remain stopped, Start on boot
+  cannot be disabled, or repository/package identity differs, stop/uninstall and
+  report the exact deviation. Do not enter values or improvise.
+- Explicit prohibited boundary: no app Start, commissioning, canonical endpoint or
+  bearer credential, farm/Green/printer/queue/registry identity, private CA, IPPS
+  URI, CUPS/printer mapping or access, job creation, synthetic or genuine trigger,
+  physical print, hardware operation or autonomous activation is authorized.
+- Classification: `PROTECTED_INSTALLATION_AUTHORIZED_NOT_OBSERVED /
+  UNCOMMISSIONED / AUTHORITY_DISABLED`; Business completion is `NO`.
+- Enabling-stage progress: release/migration/backend and exact aarch64 build evidence
+  remain preserved. Package installation is a later enabling action, never an owner
+  outcome.
+- First missing real-life gate: execute only the bounded dormant installation and
+  return fresh on-device proof of exact repository/package identity, `Stopped`,
+  `Start on boot` OFF, no configured options and no job/printer contact—or the exact
+  deviation and rollback evidence.
+- Next automatic action/wake: the Home Assistant installation lane wakes on actual
+  stopped/start-on-boot-off evidence or deviation. Successful dormant evidence then
+  returns the mission to a separate protected commissioning hold; it does not grant
+  credential/device/CA/IPPS/CUPS/printer/job/print authority.
+- Durable decision packet:
+  `C:\tmp\VISIBLE_GREEN_HOME_ASSISTANT_INSTALLATION_DECISION_PACKET_20260821.md`.

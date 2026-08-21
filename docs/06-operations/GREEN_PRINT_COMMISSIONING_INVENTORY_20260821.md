@@ -1,13 +1,21 @@
 # Green Print Commissioning Inventory - 2026-08-21
 
-Status: `LOCAL_BASELINE_PREPARED / NOT_COMMISSIONED / INSTALLATION_NOT_AUTHORIZED`
+Status: `LOCAL_BASELINE_PREPARED / DORMANT_INSTALLATION_ONLY_AUTHORIZED_NOT_OBSERVED / NOT_COMMISSIONED`
 
 Mission: existing DOCUMENTS mission `DMQ-20260816-01`, fixed pilot
 `farm.weekly_weight_sheet.v1`, A4, exactly one copy, monochrome, one-sided.
 
-This is a non-secret preparation record. It authorizes no repository installation,
-app upload/start, migration, credential or certificate registration, CUPS activation,
-printer configuration, print job or physical output.
+Charl has authorized one bounded dormant installation step only: while GitHub main
+is verified at `f5d6634b25142d95a943f2c7c10a89fbfd5a4383`, add the private Amadeus
+repository and install `Amadeus Green Print Bridge` version `0.2.0`, never press
+Start, and immediately prove the app is `Stopped` with `Start on boot` OFF before
+leaving the page or rebooting. This approval has not yet been exercised or observed.
+If the app starts, cannot remain stopped, cannot disable Start on boot, or the
+repository/package identity differs, stop/uninstall it and report the deviation.
+
+This authorization does not include options, credentials, identities, certificates,
+device mapping, CUPS/printer configuration or access, job creation, physical output,
+commissioning or autonomous activation.
 
 ## Confirmed Home Assistant Green baseline
 
@@ -95,20 +103,32 @@ printer configuration, print job or physical output.
 - No canonical, synthetic or farm print job; no document submission; no physical
   page produced.
 
+## Dormant installation authorization
+
+- Approval state: authorized but not yet observed or executed.
+- Exact permitted effect: add the private repository and install package version
+  `0.2.0` only while authoritative main is exact `f5d6634b25142d95a943f2c7c10a89fbfd5a4383`.
+- Required final state: app `Stopped`; `Start on boot` OFF; no configured options;
+  no printer/CUPS contact; no canonical job.
+- Wake condition: fresh on-device evidence of that exact stopped state, or the
+  exact deviation if it cannot be achieved.
+- Prohibited: Start, reboot before Start-on-boot is proven OFF, credentials,
+  registry/device/queue values, private CA, IPPS URI, CUPS/printer access,
+  commissioning, jobs and printing.
+- Rollback on deviation: stop/uninstall the dormant package and report; do not
+  improvise configuration or weaken TLS.
+
 ## First remaining gates
 
-1. Complete PR #1152 operational-gap repair and exact-head independent review,
-   including HAOS 18.2/aarch64 packaging, CUPS, AppArmor, `/data`, tmpfs, private CA,
-   strict private IPPS and rollback packet.
-2. Obtain one exact serialized merge/migration/application release decision.
-3. Verify exact loaded application revision, migration ledger/schema/functions,
-   least-privilege grants and zero-effect route checks while Green remains disabled.
-4. Through protected commissioning, determine the exact IPPS endpoint and
+1. Exercise the bounded dormant-installation authority and prove the package is
+   `Stopped` with `Start on boot` OFF, or report and roll back the exact deviation.
+2. Through separately protected commissioning, determine the exact IPPS endpoint and
    certificate metadata; validate SAN/trust without printing; register the exact
    private identities, queue and least-privilege credential.
-5. Only after explicit `GREEN INSTALLATION AUTHORIZED`, install and perform synthetic
-   non-farm commissioning, followed by separately authorized physical acceptance.
-6. Let deployed Oom Sakkie receive a genuine natural request, prove one correct page,
+3. Prove installed-image provenance and perform separately authorized zero-job,
+   non-farm commissioning without weakening TLS or exposing ports.
+4. Let deployed Oom Sakkie receive a genuine natural request only in a separately
+   authorized physical acceptance window; prove one correct page,
    canonical/provider/physical agreement, safe cleanup/follow-up and a later
    terminal-independent cycle.
 
