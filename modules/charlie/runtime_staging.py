@@ -268,13 +268,17 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
         _validate_receipt_history(
             state_root, Path(plan["receipt_path"]), receipt_identity, plan["receipt_sha256"]
         )
-        sealed_receipt = _read_json(
-            plan["receipt_path"], "isolated_validation_receipt_invalid"
+        sealed_receipt = _read_sealed_json(
+            plan["receipt_path"], plan["receipt_sha256"],
+            "isolated_validation_receipt_invalid",
         )
         sealed_receipt_key = _read_receipt_key(receipt_key_path)
-        receipt_identity = _validate_receipt(
+        final_receipt_identity = _validate_receipt(
             sealed_receipt, source_ref, sealed_receipt_key, now=_sample_clock(now),
         )
+        if final_receipt_identity != receipt_identity:
+            raise RuntimeStagingError("validation_receipt_identity_changed")
+        receipt_identity = final_receipt_identity
         consumption_path = (
             state_root / "validation-consumptions" / f"{receipt_identity['validation_id']}.json"
         )
@@ -799,6 +803,21 @@ def _read_json(path, status):
     try:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError) as exc:
+        raise RuntimeStagingError(status) from exc
+    if not isinstance(value, dict):
+        raise RuntimeStagingError(status)
+    return value
+
+
+def _read_sealed_json(path, expected_sha256, status):
+    try:
+        payload = Path(path).read_bytes()
+        if hashlib.sha256(payload).hexdigest() != expected_sha256:
+            raise RuntimeStagingError("sealed_receipt_changed")
+        value = json.loads(payload.decode("utf-8"))
+    except RuntimeStagingError:
+        raise
+    except (OSError, UnicodeDecodeError, ValueError, TypeError) as exc:
         raise RuntimeStagingError(status) from exc
     if not isinstance(value, dict):
         raise RuntimeStagingError(status)

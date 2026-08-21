@@ -400,6 +400,39 @@ class RuntimeStagingTests(unittest.TestCase):
         self.assertEqual(self.git.heads, runtime_before)
         self.assertTrue((self.state / "supervisor.stop").exists())
 
+    def test_receipt_swap_after_final_history_is_rejected_before_consumption(self):
+        plan = self._plan()
+        original_history = __import__(
+            "modules.charlie.runtime_staging", fromlist=["_validate_receipt_history"]
+        )._validate_receipt_history
+        history_calls = {"count": 0}
+        original = json.loads(self.receipt.read_text(encoding="utf-8"))
+        replacement = sign_validation_receipt(
+            {"source_commit": original["source_commit"], "suites": original["suites"],
+             "isolation": original["isolation"]},
+            self.receipt_key, validation_id="a" * 32,
+        )
+
+        def swapping_history(*args):
+            original_history(*args)
+            history_calls["count"] += 1
+            if history_calls["count"] == 2:
+                self.receipt.write_text(json.dumps(replacement), encoding="utf-8")
+
+        runtime_before = dict(self.git.heads)
+        with mock.patch(
+                "modules.charlie.runtime_staging._validate_receipt_history",
+                side_effect=swapping_history):
+            with self.assertRaisesRegex(RuntimeStagingError, "sealed_receipt_changed"):
+                stage_runtime(plan, task_reader=self._task, runner=self.git,
+                              git_safety_checker=self._safe_git)
+        self.assertEqual(history_calls["count"], 2)
+        self.assertFalse((self.state / "validation-consumptions" / ("4" * 32 + ".json")).exists())
+        self.assertFalse((self.state / "validation-consumptions" / ("a" * 32 + ".json")).exists())
+        self.assertFalse((self.state / "release-staging.lock").exists())
+        self.assertEqual(self.git.heads, runtime_before)
+        self.assertTrue((self.state / "supervisor.stop").exists())
+
     def test_plan_rejects_ambiguous_or_running_task(self):
         with self.assertRaisesRegex(RuntimeStagingError, "scheduled_task_ownership_ambiguous"):
             self._plan(task_reader=lambda: [])
