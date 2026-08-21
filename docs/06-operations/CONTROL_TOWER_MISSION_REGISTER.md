@@ -3895,3 +3895,66 @@ revision `278f4b0b`; ROOTLINE and BEACON remain protected holds; HERDMASTER/CODE
 remain dependent on genuine OOM projection evidence; CORE and SAM remain frozen
 from expansion. Collision result is clear: same mission, branch, PR and serialized
 release lineage; no duplicate mission, watcher or idle-wait terminal was created.
+
+### Final deferred addendum - Oom Sakkie Chromecast television projection - 2026-08-21
+
+Charl supplied a manual Brain Guard assessment for using the Chromecast discovered
+by Home Assistant Green as an Oom Sakkie television display and audio-output
+surface. Control Tower accepts the concept with simplification and records it as
+the **last item in the mission list**. It is not a new independent mission: it is a
+bounded addendum to `Agentic Farm Runtime Programme - Phase 5: Portable Farm Node`,
+the existing Oom Sakkie kiosk/channel-parity lineage and shared owner-attention
+projection.
+
+Priority is `FINAL_DEFERRED_NICE_TO_HAVE`. It must not consume a development lane,
+request an owner decision or compete with DOCUMENTS, OOM SAKKIE operational proof,
+ROOTLINE, irrigation/fertilizer, HERDMASTER, SAM, BEACON or CORE completion. Its
+automatic wake condition is fresh proof that the higher-priority operational
+missions are genuinely usable, their later terminal-independent cycles and owner-
+work reduction are recorded, and safe unallocated capacity exists. Hardware,
+privacy and interruption choices are requested from Charl only when that wake
+condition is reached.
+
+Target owner outcome: Charl or the family makes one authenticated natural request
+through the existing Oom Sakkie intake and the farm television shows one concise
+canonical result or authorized image, optionally speaks the same response, reports
+the truthful Cast result, expires safely and later repeats without a development
+terminal. Owner outcome achieved is `NONE`; usable now is `NO`; classification is
+`DEFERRED / UNCOMMISSIONED / ADDENDUM`. Home Assistant discovery reported by Charl
+is useful inventory evidence only. No exact commissioned Green/Chromecast identity,
+loaded adapter revision, canonical display session, Cast-provider result, physical
+TV presentation, cleanup or later independent cycle has been proven.
+
+The accepted smallest first slice is a quiet read-only television card using the
+existing Oom Sakkie visual identity and canonical owner-attention/specialist output:
+one names-first result, at most one approved image, at most three priorities, no
+controls, no microphone and automatic expiry. Chromecast remains display/speaker;
+Home Assistant Green remains a local channel adapter; Oom Sakkie remains the only
+owner-facing manager; specialists retain reasoning; Supabase retains canonical
+truth and protected-action readback.
+
+Later slices remain explicitly sequenced and independently gated: requested Cast
+display, spoken output bound to the same response identity, authenticated phone or
+approved voice-satellite push-to-talk, and only then possible wake-word operation.
+Chromecast must never be presumed to provide a room microphone. The addendum may
+not create a Home Assistant farm brain, second dashboard authority, alert engine,
+queue, scheduler, canonical store, voice-only rules or direct hardware authority.
+Routine television interruption, private image display, automatic spoken output,
+voice hardware/spend and any protected action remain future owner/privacy authority
+decisions, not current blockers.
+
+First missing real-life gate when eventually promoted: read-only inventory of the
+exact Home Assistant Green, Cast entity, television, network/HTTPS/media reachability,
+HDMI-CEC behavior and shared-room privacy context. Closed-loop proof will then
+require a genuine Oom Sakkie-origin request, canonical response identity, exact
+Cast-provider observation, visible/audible result as applicable, safe expiry and
+quiet-state restoration, replay/failure containment, automatic follow-up, a later
+terminal-independent interaction and measured removal of phone navigation/manual
+explanation work.
+
+Enabling-stage evidence retained: the manual assessment, official-design references,
+existing `/oom-sakkie` kiosk/visual/voice source lineage and Phase 5 doctrine. The
+assessment was performed against a stale divergent local head, so its source-code
+claims are historical inspection evidence and require exact-current verification
+at promotion. No terminal was dispatched for this deferred addendum and no provider,
+production, database, customer or hardware effect occurred.
