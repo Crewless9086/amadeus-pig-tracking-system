@@ -99,6 +99,10 @@ create or replace function app_private.transition_document_print_job(
 returns app_private.document_print_jobs
 language plpgsql security definer set search_path = pg_catalog, app_private as $$
 declare v_job app_private.document_print_jobs;
+        v_event app_private.document_print_job_events;
+        v_attempt_id text;
+        v_cups_job_id text;
+        v_provider_id text;
 begin
   select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
   if not found or v_job.lease_token is distinct from p_lease_token or
@@ -106,17 +110,67 @@ begin
      v_job.pdf_sha256<>p_pdf_sha256 or v_job.authorization_receipt_id<>p_authorization_receipt_id then
     raise exception 'lease fence or binding invalid';
   end if;
-  if p_target_state not in ('claimed','submitting','submitted','provider_completed','held','ambiguous','cancelled','physically_confirmed') then
-    raise exception 'transition invalid';
+  if p_metadata is null or jsonb_typeof(p_metadata) <> 'object'
+     or exists (select 1 from jsonb_object_keys(p_metadata) as key
+                where key not in ('attempt_id','cups_job_id','provider_id','observed_at','reason')) then
+    raise exception 'transition metadata invalid';
   end if;
-  insert into app_private.document_print_job_events(event_id,job_id,event_type,actor_id,worker_id,metadata_json)
-    values(p_event_id,p_job_id,'state_'||p_target_state,'documents-worker',v_job.lease_owner,p_metadata)
+  select * into v_event from app_private.document_print_job_events where event_id=p_event_id;
+  if found then
+    if v_event.job_id<>p_job_id or v_event.event_type<>'state_'||p_target_state
+       or v_event.worker_id is distinct from v_job.lease_owner
+       or v_event.metadata_json is distinct from p_metadata then
+      raise exception 'transition replay identity invalid';
+    end if;
+    return v_job;
+  end if;
+  -- This is the ordinary Green worker rail.  It may advance only one lawful
+  -- provider lifecycle edge (or enter a fail-safe hold).  Physical proof and
+  -- protected cancellation are deliberately outside this credential/function.
+  if not ((v_job.state='claimed' and p_target_state in ('submitting','held','ambiguous')) or
+          (v_job.state='submitting' and p_target_state in ('submitted','held','ambiguous')) or
+          (v_job.state='submitted' and p_target_state in ('provider_completed','held','ambiguous'))) then
+    raise exception 'state transition invalid';
+  end if;
+  v_attempt_id := nullif(p_metadata->>'attempt_id','');
+  v_cups_job_id := nullif(p_metadata->>'cups_job_id','');
+  v_provider_id := nullif(p_metadata->>'provider_id','');
+  if exists (select 1 from jsonb_each(p_metadata) as item
+             where jsonb_typeof(item.value)<>'string') or
+     (v_attempt_id is not null and v_attempt_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') or
+     (v_cups_job_id is not null and v_cups_job_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') or
+     (v_provider_id is not null and (length(v_provider_id)>512 or v_provider_id !~ '^ipps://[^[:space:]]+$')) or
+     (p_metadata ? 'observed_at' and nullif(p_metadata->>'observed_at','') is null) or
+     (p_metadata ? 'reason' and (nullif(p_metadata->>'reason','') is null or length(p_metadata->>'reason')>160)) then
+    raise exception 'transition metadata identity invalid';
+  end if;
+  if (v_job.attempt_id is not null and v_attempt_id is not null and v_job.attempt_id<>v_attempt_id) or
+     (v_job.cups_job_id is not null and v_cups_job_id is not null and v_job.cups_job_id<>v_cups_job_id) or
+     (v_job.provider_id is not null and v_provider_id is not null and v_job.provider_id<>v_provider_id) then
+    raise exception 'transition immutable identity invalid';
+  end if;
+  if p_target_state='submitting' and (v_attempt_id is null or v_cups_job_id is not null or v_provider_id is not null) then
+    raise exception 'submitting identity invalid';
+  end if;
+  if p_target_state='submitted' and
+     (coalesce(v_job.attempt_id,v_attempt_id) is null or v_cups_job_id is null or v_provider_id is null) then
+    raise exception 'submitted identity invalid';
+  end if;
+  if p_target_state='provider_completed' and
+     (v_job.attempt_id is null or v_job.cups_job_id is null or v_job.provider_id is null or
+      v_attempt_id is distinct from v_job.attempt_id or v_cups_job_id is distinct from v_job.cups_job_id or
+      v_provider_id is distinct from v_job.provider_id) then
+    raise exception 'provider completion identity invalid';
+  end if;
+  insert into app_private.document_print_job_events(event_id,job_id,event_type,actor_id,worker_id,attempt_id,cups_job_id,metadata_json)
+    values(p_event_id,p_job_id,'state_'||p_target_state,'documents-worker',v_job.lease_owner,
+      coalesce(v_attempt_id,v_job.attempt_id),coalesce(v_cups_job_id,v_job.cups_job_id),p_metadata)
     on conflict(event_id) do nothing;
   if not found then return v_job; end if;
   update app_private.document_print_jobs set state=p_target_state,
-    attempt_id=coalesce(p_metadata->>'attempt_id',attempt_id),
-    cups_job_id=coalesce(p_metadata->>'cups_job_id',cups_job_id),
-    provider_id=coalesce(p_metadata->>'provider_id',provider_id),updated_at=clock_timestamp()
+    attempt_id=coalesce(v_attempt_id,attempt_id),
+    cups_job_id=coalesce(v_cups_job_id,cups_job_id),
+    provider_id=coalesce(v_provider_id,provider_id),updated_at=clock_timestamp()
     where job_id=p_job_id returning * into v_job;
   return v_job;
 end; $$;
