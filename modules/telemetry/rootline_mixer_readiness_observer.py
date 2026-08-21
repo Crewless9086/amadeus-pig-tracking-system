@@ -75,18 +75,34 @@ def collect_mixer_readiness(*, now: datetime, token_store=None, readback=None,
         "dedupe_key": "rootline-readiness:fertilizer-mixer-ch2",
         "specialist": "ROOTLINE",
         "urgency": "watch" if ready else "urgent",
+        "task_class": "informational_watch" if ready else "status_reconciliation",
+        # Healthy controller readiness is useful equipment-health evidence, not
+        # owner work.  Failed or stale readiness remains one shared exception
+        # owned by ROOTLINE's existing reassessment cycle.
+        "attention_visibility": ("equipment_health_only" if ready
+                                 else "owner_attention_exception"),
+        "presentation_identity": {
+            "human_name": "Fertilizer mixer",
+            "stable_reference": DEVICE_IDENTITY,
+        },
+        "equipment_identity": DEVICE_IDENTITY,
+        "equipment_lifecycle": "ready_for_commissioning" if ready else "held",
+        "equipment_evidence": {
+            "provider_readiness_proven": ready,
+            "current_state_off": checks["current_off"],
+        },
         "evidence_refs": [
             f"readiness:{digest}",
             f"registry:{contract['contract_sha256']}",
             f"observed:{str(provider.get('retrieved_at') or observed_at.isoformat())}",
         ],
         "unknowns": failed,
-        "summary": ("ROOTLINE fertilizer mixer readiness is proven from current provider readback."
+        "summary": ("Fertilizer mixer controller is ready for future commissioning. Automatic mixing is not proven enabled."
                     if ready else
-                    "ROOTLINE fertilizer mixer readiness is not currently proven."),
-        "next_action": ("Remain observation-only; reassess on the next existing manager cycle."
+                    "Fertilizer mixer controller readiness requires ROOTLINE review."),
+        "next_action": ("No owner action now; ROOTLINE will reassess on the next existing manager cycle."
                         if ready else
-                        "Keep mixer execution fail-closed and reassess the failed readiness checks on the next existing manager cycle."),
+                        "Keep automatic mixing disabled; ROOTLINE will reassess the failed readiness checks on the next existing manager cycle."),
         "next_reassessment_at": next_at.isoformat(),
     }]
 
