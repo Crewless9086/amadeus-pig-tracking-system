@@ -5040,3 +5040,62 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   ready now.
 - Source handover:
   `C:\tmp\VISIBLE_GREEN_DORMANT_INSTALLED_STATE_COMMISSIONING_GAP_HANDOVER_20260821.md`.
+
+## 2026-08-21 — Green stopped Info readback completed; provenance repair assessed
+
+- Mission/lineage: existing DOCUMENTS `DMQ-20260816-01`; no new app, mission,
+  queue, scheduler, registry, CUPS or printer path.
+- Owner-observed Info facts: `Amadeus Green Print Bridge 0.2.0`; `Stopped`;
+  `Start on boot` OFF; Watchdog OFF; Auto update OFF; source description
+  `Private aarch64 Home Assistant app repository artifact`; architecture
+  `aarch64`; Protection/AppArmor `NOT EXPOSED`; image revision/digest
+  `NOT EXPOSED`; ports `NOT EXPOSED`; mappings `NOT EXPOSED`.
+- Evidence interpretation: the nine-field observation step is complete. Every
+  `NOT EXPOSED` field remains Unknown and is not converted to a containment or
+  provenance PASS. The app remained stopped; no options or effect occurred.
+- Target owner outcome: one genuine natural request produces exactly one correct
+  physical weekly weighing sheet with canonical/provider/physical agreement,
+  safe cleanup, automatic follow-up and later terminal-independent continuity.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; dormant metadata does not commission routing, trust, identity,
+  credential, queue, provider execution or physical output.
+- Classification: `DORMANT_INSTALLED / INFO_READBACK_COMPLETE /
+  PROVENANCE_UNKNOWN / UNCOMMISSIONED / AUTHORITY_DISABLED`; Business completion
+  is `NO`.
+- Smallest existing-lineage provenance repair: do not depend on Supervisor's local
+  Docker build or the custom `SOURCE_COMMIT` argument. In the existing Green source
+  lineage, use Home Assistant's supported prebuilt-image flow: build/publish the
+  reviewed aarch64 image through the current Home Assistant GitHub Actions builder,
+  set `config.yaml:image` to the existing mission's GHCR image name, use a unique
+  non-reused package version/tag, publish its manifest digest plus OCI source-
+  revision/SBOM/provenance attestation, and make registry tag replacement prohibited.
+  Then update/reinstall only under separate authority and verify the Supervisor-
+  resolved image digest by read-only Supervisor/container metadata before Start.
+  The official Home Assistant contract uses `image` plus `version` as the active
+  tag; an ordinary mutable tag or version label alone is not immutable proof.
+- No implementation edit was authorized or made by this assessment. The repair
+  requires a same-lineage source assignment, tests, exact aarch64 build, independent
+  security/supply-chain review and a later protected dormant package update.
+- Non-actuating canonical-route preparation: define a private HTTPS origin and
+  pinned private endpoint IP whose DNS answer, route from the protected app network,
+  certificate hostname/chain/expiry and no-public-fallback policy can be verified in
+  a separately authorized zero-job preflight.
+- Non-actuating printer-trust preparation: establish the exact private-IP-literal
+  IPPS resource, certificate IP SAN/issuer/fingerprint/expiry and approved private CA
+  using a non-submitting handshake only; never fall back to ordinary/public IPP,
+  weaken TLS, expose ports or print a diagnostic page.
+- Non-actuating identity/queue preparation: use the existing canonical registry to
+  bind exact farm, Green, printer, fixed CUPS queue and registry-version identities;
+  mint one least-privilege Green credential; prepare direct protected option entry
+  and rollback. Do not create a second registry/queue or place protected values in
+  source/chat/logs.
+- Continuing prohibitions: no app Start, config/options, secrets, credentials, IDs,
+  CA upload, IPPS/CUPS/printer access, job, print, hardware actuation or production
+  write under this assessment.
+- First missing gate: assign the bounded same-lineage prebuilt-image provenance
+  repair and complete its exact-head independent review. Private route/IPPS/trust/
+  identity/credential/queue facts may be prepared in parallel only without accessing
+  protected systems or devices.
+- Exact next decision: `NONE` for Charl now. Control Tower should dispatch the
+  source-only provenance repair; return only when an immutable reviewed artifact and
+  exact dormant-update rollback packet are ready.

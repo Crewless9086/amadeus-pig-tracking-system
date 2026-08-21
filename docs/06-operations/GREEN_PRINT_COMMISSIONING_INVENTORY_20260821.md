@@ -130,40 +130,41 @@ commissioning or autonomous activation.
 
 ## First remaining gates
 
-1. Charl performs one observation-only Home Assistant
-   `Settings > Apps > Amadeus Green Print Bridge > Info` readback and returns the
-   nine fields below. This readback is pending and must not be marked complete
-   before Charl supplies it.
-2. Establish exact installed-image/source provenance without starting the app.
-3. Through separately protected commissioning, determine the exact IPPS endpoint and
+1. Establish exact installed-image/source provenance without starting the app,
+   using the existing-lineage prebuilt-image repair and read-only digest verification.
+2. Through separately protected commissioning, determine the exact IPPS endpoint and
    certificate metadata; validate SAN/trust without printing; register the exact
    private identities, queue and least-privilege credential.
-4. Prove installed-image provenance and perform separately authorized zero-job,
+3. Prove installed-image provenance and perform separately authorized zero-job,
    non-farm commissioning without weakening TLS or exposing ports.
-5. Let deployed Oom Sakkie receive a genuine natural request only in a separately
+4. Let deployed Oom Sakkie receive a genuine natural request only in a separately
    authorized physical acceptance window; prove one correct page,
    canonical/provider/physical agreement, safe cleanup/follow-up and a later
    terminal-independent cycle.
 
-## Pending nine-field observation-only Info readback
+## Completed nine-field observation-only Info readback
 
 Do not click Start, change a toggle, edit options, upload a CA, use Terminal/SSH,
 access the printer or test a URL. Record unavailable fields as `NOT EXPOSED`.
 
-1. Exact displayed app name and version — pending.
-2. State remains `Stopped` — pending fresh readback.
-3. `Start on boot` remains OFF — pending fresh readback.
-4. Repository/source label, if displayed — pending / otherwise `NOT EXPOSED`.
-5. Architecture/platform, if displayed — pending / otherwise `NOT EXPOSED`.
-6. Protection mode/AppArmor status, if displayed — pending / otherwise `NOT EXPOSED`.
-7. Image/build identifier or digest, if displayed — pending / otherwise `NOT EXPOSED`.
-8. Network/port section shows no published port, if displayed — pending / otherwise
-   `NOT EXPOSED`.
-9. Mappings show only app/addon configuration and no Home Assistant config, device,
-   USB or Docker mapping, if displayed — pending / otherwise `NOT EXPOSED`.
+1. Exact displayed app name/version: `Amadeus Green Print Bridge 0.2.0`.
+2. State: `Stopped`.
+3. `Start on boot`: OFF.
+4. Repository/source description: `Private aarch64 Home Assistant app repository
+   artifact`.
+5. Architecture/platform: `aarch64`.
+6. Protection mode/AppArmor: `NOT EXPOSED`.
+7. Image/build identifier or digest: `NOT EXPOSED`.
+8. Network/ports: `NOT EXPOSED`.
+9. Mappings: `NOT EXPOSED`.
+
+Additional displayed controls: Watchdog OFF; Auto update OFF.
 
 Leave the page with the app still `Stopped` and `Start on boot` OFF. Version or
 repository name alone never proves installed provenance.
+
+The readback completed the observation step only. `NOT EXPOSED` is not a PASS for
+AppArmor, image provenance, ports or mappings; those gates remain Unknown.
 
 Owner outcome achieved: `NONE`.
 
