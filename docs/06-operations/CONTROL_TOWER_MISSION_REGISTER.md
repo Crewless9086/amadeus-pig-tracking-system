@@ -4071,3 +4071,39 @@ safe cleanup/final state, follow-up and a later terminal-independent cycle. Owne
 outcome achieved is `NONE`; usable now is `NO`. The terminal's automatic wake is its
 complete handover and clean pushed immutable head; the later external wake is Charl
 finishing safe device preparation without treating it as acceptance.
+
+### Green second correction complete; immutable-head review active - 2026-08-21
+
+Fresh inspection validates the complete 11,975-byte DOCUMENTS handover at
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_SECOND_REVIEW_CORRECTION_HANDOVER_20260821.md`
+(SHA-256 `32B63FF0154971DCAB114380D8B99BA5BCF3A3B36CEC73FCC4EFCE749ECBDF54`).
+The same worktree is clean and pushed at PR #1150 head
+`ff0a37e58d10acfb6bb2d8cdf76999983c058ca4`; GitHub reports the PR open, clean and
+mergeable with all three exact-head CI checks successful.
+
+The handover reports the four requested source corrections complete: atomic
+protected-command consumption, lease heartbeat/expired nonterminal recovery,
+provider-readback-bound cancellation and fresh ARM64 image evidence. It reports 40
+focused tests passed and image digest
+`edf3f1c735a815aed72d7e66585d4244d69a8650a8b6dcc40b95dad1501e5c45`, labelled for
+package `0.2.0` and exact source revision. These are enabling-stage facts pending
+independent verification. No deployment, commissioning, genuine request, provider
+operation or physical page occurred; owner outcome remains `NONE`; usable now is
+`NO`; lifecycle is `REVIEW_HOLD / BUILT_BUT_UNPROVEN / UNCOMMISSIONED`.
+
+The completed correction's Node/Codex children had ended while PowerShell PID
+`36916` remained as the visible idle shell Charl reported. Control Tower closed that
+exact stale shell and verified it absent. It then advanced the SAME mission to a
+fresh read-only review of immutable head `ff0a37e58d10acfb6bb2d8cdf76999983c058ca4`.
+The reviewer is bound to PowerShell PID `4196`, Node PID `21300` and Codex PID
+`10380`, prompt `C:\tmp\DOCUMENTS_GREEN_FF0A_INDEPENDENT_REVIEW_PROMPT_20260821.md`
+and required handover
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_FF0A_INDEPENDENT_REVIEW_HANDOVER_20260821.md`.
+
+The review may inspect and run safe synthetic validation only. It may not edit,
+merge, migrate, deploy, install, commission or contact production/Supabase/CUPS/
+printer systems. It must close automatically with `APPROVE`, `REQUEST_CHANGES` or
+`BLOCK`. DOCUMENTS remains `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP slot
+2. Approval reaches only one protected serialized merge decision. Charl's parallel
+Home Assistant Green preparation remains relevant but is not a dependency for this
+source review and is not operational proof.
