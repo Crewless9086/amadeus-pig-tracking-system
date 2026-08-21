@@ -186,7 +186,9 @@ def execute_claimed_physical_page_acceptance(claim, parsed, *, connect_factory=N
     principal=str(parsed.get("telegram_user_id") or "").strip()
     if not principal or principal!=str(parsed.get("telegram_chat_id") or "").strip():
         raise ValueError("authenticated_owner_principal_required")
-    page_correct=True
+    observation_result=str(claim.get("selected_action") or "correct").strip().lower()
+    if observation_result not in {"correct","incorrect","uncertain"}:
+        raise ValueError("physical_observation_result_invalid")
     observed_at=str(parsed.get("provider_timestamp") or preview.get("observed_at") or "").strip()
     if not observed_at:
         raise ValueError("physical_observation_timestamp_required")
@@ -197,12 +199,13 @@ def execute_claimed_physical_page_acceptance(claim, parsed, *, connect_factory=N
             fields=("job_id","document_version","pdf_sha256","cups_job_id","provider_id")
             cursor.execute("select * from app_private.record_document_print_physical_acceptance(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 tuple(preview.get(key) for key in fields)+(principal,evidence_id,
-                    observed_at,page_correct))
+                    observed_at,observation_result))
             row=cursor.fetchone();columns=[item.name for item in cursor.description]
             result=_public_job(dict(zip(columns,row)))
-            result.update({"physical_page_confirmed":page_correct,
+            result.update({"physical_page_confirmed":observation_result=="correct",
+                "physical_observation_result":observation_result,
                 "physical_evidence_id":evidence_id,
-                "follow_up_state":"resolved" if page_correct else "exception_owned",
+                "follow_up_state":"resolved" if observation_result=="correct" else "exception_owned",
                 "automatic_reprint":False})
             return result
 

@@ -119,8 +119,7 @@ def test_physical_acceptance_is_owner_and_exact_job_bound_without_green_authorit
     preview={"contract_version":"documents_green_physical_acceptance_v1",
         "job_id":"JOB-1","document_version":"VER-1","pdf_sha256":"a"*64,
         "cups_job_id":"weekly-a4-7","provider_id":"ipps://192.168.1.20/ipp/print",
-        "evidence_id":"OWNER-PAGE-1","observed_at":"2026-08-21T12:00:00+00:00",
-        "page_correct":True}
+        "evidence_id":"OWNER-PAGE-1","observed_at":"2026-08-21T12:00:00+00:00"}
     claim={"action_kind":"documents_green_physical_acceptance",
         "status":"protected_callback_claimed","preview_payload":preview}
     row={**preview,"state":"physically_confirmed"}
@@ -135,9 +134,38 @@ def test_physical_acceptance_is_owner_and_exact_job_bound_without_green_authorit
     assert args[:5]==("JOB-1","VER-1","a"*64,"weekly-a4-7",
         "ipps://192.168.1.20/ipp/print")
     assert result["physical_page_confirmed"] is True
+    assert result["physical_observation_result"]=="correct"
     assert result["automatic_reprint"] is False
 
     with pytest.raises(ValueError,match="authenticated_owner"):
         green_print_api.execute_claimed_physical_page_acceptance(claim,
             {"telegram_user_id":"owner-1","telegram_chat_id":"group"},
             connect_factory=lambda:connection)
+
+
+@pytest.mark.parametrize("selected_action,expected,follow_up", [
+    ("incorrect",False,"exception_owned"),
+    ("uncertain",False,"exception_owned"),
+])
+def test_physical_exception_result_is_explicit_and_never_auto_reprints(
+        selected_action,expected,follow_up):
+    preview={"contract_version":"documents_green_physical_acceptance_v1",
+        "job_id":"JOB-1","document_version":"VER-1","pdf_sha256":"a"*64,
+        "cups_job_id":"weekly-a4-7","provider_id":"ipps://192.168.1.20/ipp/print",
+        "evidence_id":"OWNER-PAGE-1"}
+    claim={"action_kind":"documents_green_physical_acceptance",
+        "status":"protected_callback_claimed","selected_action":selected_action,
+        "preview_payload":preview}
+    row={**preview,"state":"held"}
+    connection=MagicMock();cursor=connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value=tuple(row.values())
+    cursor.description=[MagicMock(name=key) for key in row]
+    for item,key in zip(cursor.description,row):item.name=key
+    result=green_print_api.execute_claimed_physical_page_acceptance(claim,
+        {"telegram_user_id":"owner-1","telegram_chat_id":"owner-1",
+         "provider_timestamp":"2026-08-21T12:00:00+00:00"},
+        connect_factory=lambda:connection)
+    assert result["physical_page_confirmed"] is expected
+    assert result["physical_observation_result"]==selected_action
+    assert result["follow_up_state"]==follow_up and result["automatic_reprint"] is False
+    assert cursor.execute.call_args.args[1][-1]==selected_action

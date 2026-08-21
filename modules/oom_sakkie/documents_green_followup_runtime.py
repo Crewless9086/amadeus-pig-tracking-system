@@ -4,7 +4,9 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import os
 
-from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
+from modules.oom_sakkie.protected_action_claims import (
+    build_physical_acceptance_buttons, create_claim,
+)
 
 ACTION_KIND = "documents_green_physical_acceptance"
 MISSION_ID = "DMQ-20260816-01:PHYSICAL"
@@ -48,10 +50,11 @@ def recover_documents_green_physical_follow_up(*, owner_user_id, chat_id, trigge
         "status": "documents_physical_acceptance_ready", "specialist": "DOCUMENTS",
         "mission_id": MISSION_ID, "card_mission_id": MISSION_ID + ":" + str(job["job_id"]),
         "callback_token": claim["callback_token"], "preview_digest": claim.get("preview_digest"),
+        "action_kind": ACTION_KIND,
         "answer": ("The printer reports that the weekly weighing sheet completed. "
             "Please confirm only after checking that the physical page is correct. "
-            "If it is not correct, choose Change so the exception remains owned."),
-        "reply_markup": build_buttons(claim["callback_token"]), "printer_calls": 0,
+            "Choose Page incorrect or Not sure so the exception remains owned."),
+        "reply_markup": build_physical_acceptance_buttons(claim["callback_token"]), "printer_calls": 0,
         "automatic_reprint": False, "recovery_required": False}
 
 

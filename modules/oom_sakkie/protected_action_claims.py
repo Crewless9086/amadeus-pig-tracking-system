@@ -18,6 +18,16 @@ def build_buttons(token, *, grouped=False):
         raise ValueError("protected callback exceeds Telegram limit")
     return {"inline_keyboard":rows}
 
+def build_physical_acceptance_buttons(token):
+    token=str(token)
+    values=[("Page correct","confirm"),("Page incorrect","change"),("Not sure","cancel")]
+    rows=[[{"text":label,"callback_data":f"{CALLBACK_PREFIX}{token}:{action}"}
+           for label,action in values]]
+    if any(len(button["callback_data"].encode())>MAX_CALLBACK_BYTES
+           for row in rows for button in row):
+        raise ValueError("protected callback exceeds Telegram limit")
+    return {"inline_keyboard":rows}
+
 def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                  provider_message_id, evidence_generation, preview_payload,
                  ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True,
@@ -274,6 +284,17 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
               "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
               "preview_payload":row[6],"preview_card_message_id":str(row[10] or "")},200
         if action in {"change","cancel","nomedia"}:
+            if row[0]=="documents_green_physical_acceptance" and action in {"change","cancel"}:
+                cur.execute("""update app_private.oom_protected_action_claims
+                  set status='executing',confirmation_provider_message_id=%s,
+                      confirmation_provider_timestamp=%s::timestamptz
+                  where callback_token=%s and status='active'""",
+                  (provider_message_id,provider_timestamp,token))
+                return {"success":True,"status":"protected_callback_claimed",
+                  "callback_token":token,"action_kind":row[0],"mission_id":row[3],
+                  "preview_digest":row[4],"evidence_generation":row[5],
+                  "preview_payload":row[6],
+                  "selected_action":"incorrect" if action=="change" else "uncertain"},200
             if row[0]=="beacon_media_review" and action=="cancel":
                 cur.execute("update app_private.oom_protected_action_claims set status='executing',confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s and status='active'",(provider_message_id,provider_timestamp,token))
                 return {"success":True,"status":"protected_callback_claimed","callback_token":token,

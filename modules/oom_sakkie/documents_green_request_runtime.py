@@ -21,6 +21,14 @@ def handle_documents_green_request(parsed, *, environ=None, pig_loader=None,
     if (semantic.get("domain")!="documents"
             or semantic.get("intent")!="weekly_weighing_sheet_print"):
         return {"handled":False,"status":"documents_green_request_not_applicable"},200
+    if semantic.get("needs_clarification") is True:
+        question=str(semantic.get("clarification_question") or "").strip()
+        return {"handled":True,"success":False,
+            "status":"documents_green_request_clarification_required",
+            "specialist":"DOCUMENTS","mission_id":MISSION_ID,
+            "answer":question or "Do you want me to prepare the weekly weighing sheet for printing?",
+            "canonical_job_created":False,"printer_calls":0,
+            "writes_farm_data":False},200
     owner=str(parsed.get("telegram_user_id") or "")
     chat=str(parsed.get("telegram_chat_id") or "")
     if not owner or owner!=chat or parsed.get("telegram_chat_type")!="private":
@@ -65,6 +73,7 @@ def handle_documents_green_request(parsed, *, environ=None, pig_loader=None,
         "specialist":"DOCUMENTS","mission_id":MISSION_ID,
         "card_mission_id":MISSION_ID+":"+revision.version_id,
         "callback_token":claim["callback_token"],"preview_digest":preview["preview_digest"],
+        "action_kind":PRINT_ACTION_KIND,
         "answer":("Print the weekly weighing sheet?\n\n"
             f"Date: {revision.sheet_date.isoformat()}\nPigs: {len(revision.canonical_rows)}\n"
             "Printer: Green private printer\nCopies: 1, A4, monochrome\n\n"

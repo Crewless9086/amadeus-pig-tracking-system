@@ -1,6 +1,7 @@
 from datetime import datetime,timezone
 
 from modules.oom_sakkie.documents_green_request_runtime import handle_documents_green_request
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 
 NOW=datetime(2026,8,21,8,0,tzinfo=timezone.utc)
 ENV={"DOCUMENTS_FARM_SCOPE_ID":"AMADEUS-FARM",
@@ -21,6 +22,8 @@ def test_genuine_natural_request_builds_one_protected_preview_without_printing()
     result,status=handle_documents_green_request(PARSED,environ=ENV,pig_loader=pigs,
         claim_creator=create,now=NOW)
     assert status==200 and result["status"]=="documents_green_preview_ready"
+    assert result["action_kind"]=="documents_green_print"
+    assert result["action_kind"]=="documents_green_print"
     assert result["canonical_job_created"] is False and result["printer_calls"]==0
     assert len(calls)==1 and calls[0]["action_kind"]=="documents_green_print"
     preview=calls[0]["preview_payload"]
@@ -58,3 +61,40 @@ def test_unrelated_natural_message_is_not_captured():
         "semantic":{"domain":"manager_round","intent":"daily_brief"}},
         environ=ENV,pig_loader=pigs,now=NOW)
     assert status==200 and result["handled"] is False
+
+def test_ambiguous_semantic_result_asks_once_without_creating_claim():
+    calls=[]
+    result,status=handle_documents_green_request({**PARSED,
+        "semantic":{"domain":"documents","intent":"weekly_weighing_sheet_print",
+            "needs_clarification":True,
+            "clarification_question":"Do you want the weekly weighing sheet printed?"}},
+        environ=ENV,pig_loader=pigs,claim_creator=lambda **kw:calls.append(kw),now=NOW)
+    assert status==200 and result["status"]=="documents_green_request_clarification_required"
+    assert result["canonical_job_created"] is False and result["printer_calls"]==0
+    assert result["answer"]=="Do you want the weekly weighing sheet printed?"
+    assert calls==[]
+
+
+def test_presenter_result_enters_exact_protected_delivery_binding():
+    result,status=handle_documents_green_request(PARSED,environ=ENV,pig_loader=pigs,
+        claim_creator=lambda **kw:{"callback_token":"TOKEN123"},now=NOW)
+    captured=[]
+    delivery=deliver_family_result(PARSED,result,specialist="DOCUMENTS",
+        mission_id=result["mission_id"],card_mission_id=result["card_mission_id"],
+        protected_delivery=lambda **kw:(captured.append(kw) or {
+            "success":True,"status":"protected_delivery_replayed_noop",
+            "telegram_sends":0,"telegram_edits":0}))
+    assert status==200 and delivery["success"] is True
+    assert captured[0]["action_kind"]=="documents_green_print"
+
+def test_ambiguous_semantic_result_asks_once_without_creating_claim():
+    calls=[]
+    result,status=handle_documents_green_request({**PARSED,
+        "semantic":{"domain":"documents","intent":"weekly_weighing_sheet_print",
+            "needs_clarification":True,
+            "clarification_question":"Do you want the weekly weighing sheet printed?"}},
+        environ=ENV,pig_loader=pigs,claim_creator=lambda **kw:calls.append(kw),now=NOW)
+    assert status==200 and result["status"]=="documents_green_request_clarification_required"
+    assert result["canonical_job_created"] is False and result["printer_calls"]==0
+    assert result["answer"]=="Do you want the weekly weighing sheet printed?"
+    assert calls==[]

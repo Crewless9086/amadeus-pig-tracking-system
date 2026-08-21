@@ -511,7 +511,7 @@ end; $$;
 create or replace function app_private.record_document_print_physical_acceptance(
   p_job_id text,p_document_version text,p_pdf_sha256 text,p_cups_job_id text,
   p_provider_id text,p_authenticated_principal_id text,p_evidence_id text,
-  p_observed_at timestamptz,p_page_correct boolean)
+  p_observed_at timestamptz,p_observation_result text)
 returns app_private.document_print_jobs language plpgsql security definer
 set search_path=pg_catalog,app_private as $$
 declare v_job app_private.document_print_jobs;
@@ -522,16 +522,24 @@ begin
      or v_job.provider_id<>p_provider_id
      or v_job.authenticated_principal_id<>p_authenticated_principal_id
      or v_job.state not in ('provider_completed','physically_confirmed','held')
-     or v_job.physical_follow_up_state is null
-     or p_evidence_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-     or p_observed_at is null or p_observed_at>clock_timestamp()+interval '2 minutes' then
+      or v_job.physical_follow_up_state is null
+      or p_evidence_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+      or p_observation_result not in ('correct','incorrect','uncertain')
+      or p_observed_at is null or p_observed_at>clock_timestamp()+interval '2 minutes' then
     raise exception 'physical acceptance binding invalid';
   end if;
   if v_job.physical_evidence_id is not null then
     if v_job.physical_evidence_id<>p_evidence_id
        or v_job.physical_observer_id<>p_authenticated_principal_id
        or v_job.physical_observed_at<>p_observed_at
-       or (v_job.state='physically_confirmed') is distinct from p_page_correct then
+       or (case when v_job.state='physically_confirmed' then 'correct'
+                when v_job.state='held' then
+                  coalesce((select e.metadata_json->>'observation_result'
+                    from app_private.document_print_job_events e
+                    where e.job_id=v_job.job_id
+                      and e.event_type='physical_page_exception'
+                    order by e.event_at desc,e.event_id desc limit 1),'incorrect')
+                else null end) is distinct from p_observation_result then
       raise exception 'physical acceptance replay conflict';
     end if;
     return v_job;
@@ -540,18 +548,21 @@ begin
     raise exception 'physical acceptance binding invalid';
   end if;
   update app_private.document_print_jobs set
-    state=case when p_page_correct then 'physically_confirmed' else 'held' end,
-    physical_follow_up_state=case when p_page_correct then 'resolved' else 'exception_owned' end,
+    state=case when p_observation_result='correct' then 'physically_confirmed' else 'held' end,
+    physical_follow_up_state=case when p_observation_result='correct' then 'resolved' else 'exception_owned' end,
     physical_evidence_id=p_evidence_id,physical_observer_id=p_authenticated_principal_id,
     physical_observed_at=p_observed_at,updated_at=clock_timestamp()
     where job_id=p_job_id returning * into v_job;
   insert into app_private.document_print_job_events(job_id,event_type,actor_id,
     worker_id,attempt_id,cups_job_id,evidence_sha256,metadata_json)
-  values(v_job.job_id,case when p_page_correct then 'physical_page_confirmed'
+  values(v_job.job_id,case when p_observation_result='correct' then 'physical_page_confirmed'
     else 'physical_page_exception' end,p_authenticated_principal_id,v_job.lease_owner,
     v_job.attempt_id,v_job.cups_job_id,null,
     jsonb_build_object('evidence_id',p_evidence_id,'observed_at',p_observed_at,
-      'page_correct',p_page_correct,'provider_id',v_job.provider_id));
+      'observation_result',p_observation_result,
+      'page_correct',case when p_observation_result='uncertain' then null
+                          else p_observation_result='correct' end,
+      'provider_id',v_job.provider_id));
   return v_job;
 end; $$;
 
@@ -622,12 +633,12 @@ grant execute on function app_private.create_authorized_document_print_job(jsonb
 grant execute on function app_private.read_pending_document_print_physical_follow_up(text,text)
   to documents_api_executor;
 grant execute on function app_private.record_document_print_physical_acceptance(
-  text,text,text,text,text,text,text,timestamptz,boolean) to documents_api_executor;
+  text,text,text,text,text,text,text,timestamptz,text) to documents_api_executor;
 revoke all on function app_private.create_authorized_document_print_job(jsonb,bytea,text,text,text),
   app_private.read_document_print_job(text,text,text,text,text),
   app_private.read_document_print_pdf(text,text,text,text,text)
   from public,anon,authenticated;
 revoke all on function app_private.record_document_print_physical_acceptance(
-  text,text,text,text,text,text,text,timestamptz,boolean) from public,anon,authenticated;
+  text,text,text,text,text,text,text,timestamptz,text) from public,anon,authenticated;
 revoke all on function app_private.read_pending_document_print_physical_follow_up(text,text)
   from public,anon,authenticated;
