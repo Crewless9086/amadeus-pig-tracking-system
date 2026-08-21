@@ -4566,3 +4566,64 @@ tests. The first missing gate is same-lineage repair and fresh independent appro
 not Home Assistant installation. Next automatic action is repair, renewed tests/CI/
 aarch64 build and review. Merge/deploy/migration, installation, credentials/private
 CA/device mapping, commissioning and any real print remain protected holds.
+
+### Sunday weekly weighing planning-to-print addendum - 2026-08-21
+
+Control Tower accepts the Sunday weekly-weighing request as an `ADDENDUM /
+COLLISION_HOLD` spanning existing `DMQ-20260816-01`,
+`OMQ-20260816-ANTON-FARM-MANAGER-CHANNEL` and HERDMASTER weekly-weighing
+lineages. It is not a new mission, scheduler, queue, bot, database, page, generator,
+document type, cohort authority or print path.
+
+Target owner outcome: on a genuine weekly planning cycle, HERDMASTER determines the
+exact canonical Sunday date and eligible cohort; authenticated Anton receives one
+concise Afrikaans work item and confirms or corrects it once; one stable work item
+persists the final canonical date/cohort digest; the existing
+`farm.weekly_weight_sheet.v1` / `web.print_sheets.v1` generator creates one immutable
+sheet; one exact protected Green confirmation prints one correct A4, one-copy,
+monochrome, one-sided physical page; and canonical/provider/physical evidence,
+cleanup, follow-up and a later terminal-independent week remove manual planning,
+relay, file transfer, printing and reconciliation. Owner outcome achieved is
+`NONE`; usable now is `NO`; Business completion is `NO`.
+
+HERDMASTER retains sole date/cohort reasoning authority from current canonical
+weighing schedules, weights and lifecycle evidence. Anton remains the existing
+authenticated `farm_manager`; he may confirm or correct bounded planning facts but
+cannot invent an arbitrary cohort, gain Charl's authority or directly mutate weight
+records. Material evidence change invalidates the prior digest/PDF/claim and updates
+the same work item instead of creating another alert or one item per pig.
+
+The default recommendation is immediate printing after the final exact protected
+confirmation. That one confirmation must bind the finalized canonical date/cohort,
+immutable PDF revision/digest, registered Green/printer pair, fixed defaults and
+expiry. No extra recurring Charl policy approval is proposed because the existing
+document catalogue permits authenticated `FARM_MANAGER`; implementation must verify
+the deployed binding and fail closed if it is absent. Green remains only the
+commissioned executor, stops at provider completion and requires separate automatic
+physical-page follow-up without automatic reprint.
+
+Fresh collision evidence prevents immediate implementation. Approved PR #1154 head
+`7a7d5392ce96271187dbaaf3562d3c8161e7aac0` is clean/released but overlaps Green
+in `protected_action_runtime.py` and `telegram_direct.py` and semantically across
+manager delivery/authenticated routing. Green PR #1152 remains pushed at rejected
+head `f5bce7dd92784ad280d94969f9d7a01b3a1544c1`, while its preserved worktree has
+active uncommitted semantic-intent, protected-claim, Telegram/gateway, migration and
+automatic physical-follow-up repairs. Those bytes own the shared surface and must
+not be overwritten, stashed, reset or duplicated.
+
+The first missing gate is a clean immutable independently reviewed Green repair plus
+Control Tower serialization/reconciliation of approved #1154 and Green. Preferred
+order is governed #1154 integration first, then reconcile/finish Green on resulting
+main; any different order requires an explicit combined reconciliation and fresh
+cross-domain review. Only after collision clearance may the same lineages add the
+single Sunday work item, Johannesburg week/date boundaries, canonical finalization,
+protected print and automatic physical follow-up.
+
+Next automatic action: preserve the active Green worktree, complete its current
+repair/review, serialize #1154 integration, then dispatch the bounded shared addendum
+without new infrastructure. Protected holds remain governed integration/deployment,
+Home Assistant/credential/private-CA/device commissioning and real printing. The
+external wake condition is the genuine deployed Sunday manager cycle and Anton's
+real reply, never a terminal-manufactured event. The assessment terminal closed with
+handover `C:\tmp\VISIBLE_SUNDAY_WEEKLY_WEIGHING_ADDENDUM_ASSESSMENT_HANDOVER_20260821.md`,
+SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
