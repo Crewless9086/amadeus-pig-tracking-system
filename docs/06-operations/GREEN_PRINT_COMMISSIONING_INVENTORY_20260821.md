@@ -13,11 +13,13 @@ printer configuration, print job or physical output.
 
 - Device: Home Assistant Green; Home Assistant OS installation; `aarch64`.
 - Core `2026.8.2`; Supervisor `2026.07.5`; OS `18.2`; kernel `6.18.39-haos`.
-- Apps settings available. Advanced Mode and the current account's private custom-
-  repository menu remain unverified.
-- Last observed resources before final update/reboot: 28 GB usable, 6.8 GB used,
-  21.1 GB free; 4 GB RAM, approximately 1 GB/20% used; CPU approximately 1%; no
-  hardware warning. Recheck immediately before an authorized installation.
+- Apps store, three-dot menu, Repositories option and repository URL field are
+  available. Advanced Mode is not separately exposed in this current UI, but the
+  app/repository management functions required for commissioning are available.
+  No private repository has been added.
+- Post-update resources: 28 GB usable, 7.1 GB used (7.0 GB system data), 20.9 GB
+  free; storage lifetime indicator 0% used; 4 GB RAM with 0.9 GB/20% used; CPU 1%;
+  no storage or hardware warning.
 - Full Home Assistant backup completed and downloaded; Emergency Kit stored outside
   Green.
 
@@ -36,7 +38,9 @@ printer configuration, print job or physical output.
 ## Printer and LAN baseline
 
 - Physical printer: HP OfficeJet Pro 8123; discovered IPP identity reports HP
-  OfficeJet Pro 8120 series; firmware unknown.
+  OfficeJet Pro 8120 series; firmware `6.23.6.41-202605070458`.
+- A firmware update is available but was deliberately not installed; the printer
+  was not restarted and no diagnostic or test page was printed.
 - Wi-Fi/private LAN; current state idle; A4 loaded; black ink low; colour ink empty;
   no printer warnings.
 - Existing Home Assistant IPP integration is installed and can read state/ink. It is
@@ -99,13 +103,12 @@ printer configuration, print job or physical output.
 2. Obtain one exact serialized merge/migration/application release decision.
 3. Verify exact loaded application revision, migration ledger/schema/functions,
    least-privilege grants and zero-effect route checks while Green remains disabled.
-4. Confirm Advanced Mode/private repository availability and refreshed resources.
-5. Through protected commissioning, determine firmware, exact IPPS endpoint and
+4. Through protected commissioning, determine the exact IPPS endpoint and
    certificate metadata; validate SAN/trust without printing; register the exact
    private identities, queue and least-privilege credential.
-6. Only after explicit `GREEN INSTALLATION AUTHORIZED`, install and perform synthetic
+5. Only after explicit `GREEN INSTALLATION AUTHORIZED`, install and perform synthetic
    non-farm commissioning, followed by separately authorized physical acceptance.
-7. Let deployed Oom Sakkie receive a genuine natural request, prove one correct page,
+6. Let deployed Oom Sakkie receive a genuine natural request, prove one correct page,
    canonical/provider/physical agreement, safe cleanup/follow-up and a later
    terminal-independent cycle.
 
