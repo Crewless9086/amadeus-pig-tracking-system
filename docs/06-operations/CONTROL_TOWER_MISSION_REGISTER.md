@@ -4738,3 +4738,42 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   autonomous activation remain separate protected missions.
 - Complete independent handover:
   `C:\tmp\VISIBLE_FERTILIZER_PR1153_EBEB_EXACT_REVIEW_HANDOVER_20260821.md`.
+
+## 2026-08-21 — Fertilizer presentation PR #1153 governed rollout verification
+
+- Mission/lineage: existing Oom Sakkie shared owner-attention projection and
+  `OOM-ROOTLINE-FERTILIZER-CONFIG-20260809`, PR #1153.
+- Target owner outcome: healthy mixer readiness is absent from Owner Attention;
+  failed/stale/unknown readiness remains one truthful names-first ROOTLINE-owned
+  exception; mixer and injector remain separate.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; exact source deployment is healthy, but no authenticated
+  genuine production manager cycle was available to prove presentation behavior,
+  follow-up, later independent continuity or reduced owner work.
+- Enabling-stage progress: approved head
+  `ebeb4deddaf3abfca76cc539d12632baa194f348` merged as exact commit
+  `2f5637ea07a7fb3b331fdb80d3d3231d92374f1c`. Render deploy
+  `dep-da49mptckfvc738ftpf0` reached `live` at that exact commit. Production
+  `/health` returned HTTP 200 `ok`; `/health/revision` returned HTTP 200,
+  `provider=render`, `identity_complete=true` and the exact revision; database
+  health returned HTTP 200 `ok` with PostgreSQL configured.
+- Authenticated readback: unavailable. The in-app browser exposed no browser/session,
+  so no authenticated Owner Attention or manager projection was inspected and no
+  synthetic readiness state was created. Healthy silence, failure visibility and
+  mixer/injector separation therefore remain `Unknown` in production rather than
+  inferred from source or health.
+- Safety/effects: zero writes, messages, migrations, flag changes, provider control
+  calls or hardware operations. No revision mismatch, hidden genuine failure,
+  misleading production rendering or runtime regression was demonstrated; rollback
+  was not triggered.
+- Classification: `DEPLOYED_BUT_UNPROVEN / RELEASE_ACCEPTANCE_HOLD`; Business
+  completion is `NO`.
+- First missing real-life gate: an existing governed authenticated session plus a
+  genuine deployed manager cycle showing healthy readiness absent and any genuine
+  failed/stale/unknown readiness as one names-first ROOTLINE-owned exception.
+- Next automatic action: perform authenticated read-only projection verification
+  when the governed session is available, then observe a later terminal-independent
+  manager cycle and measure removed owner interpretation work.
+- Protected/external wake: session availability and genuine runtime evidence. Mixer
+  and injector commissioning, authority activation and physical operation remain
+  separate protected missions.
