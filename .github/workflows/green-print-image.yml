@@ -143,7 +143,7 @@ jobs:
           docker buildx imagetools inspect "${tag_ref}" --raw > pushed-index.json
           jq -e --arg manifest "${BUILD_MANIFEST_DIGEST}" '
             .mediaType == "application/vnd.oci.image.index.v1+json" and
-            ([.manifests[] | select(.platform.os != "unknown" or .platform.architecture != "unknown")] | length) == 1 and
+            (.manifests | length) == 1 and
             ([.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64" and .digest == $manifest)] | length) == 1
           ' pushed-index.json >/dev/null
           digest_ref="${IMAGE}@${resolved_digest}"

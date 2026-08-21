@@ -73,6 +73,7 @@ def test_031_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     assert verify < names.index("Attest build provenance")
     raw=steps[verify]["run"]
     assert '.mediaType == "application/vnd.oci.image.index.v1+json"' in raw
+    assert '(.manifests | length) == 1' in raw
     assert '.platform.os == "linux" and .platform.architecture == "arm64"' in raw
     assert '.architecture == "arm64" and .os == "linux"' in raw
     assert "push-by-digest=true" in workflow and "name-canonical=true" in workflow
