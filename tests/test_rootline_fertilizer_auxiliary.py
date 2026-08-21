@@ -442,9 +442,13 @@ class ParentAuxStore:
 
 
 class ParentAuxTransport:
-    def __init__(self, injector_state="ON", accept_injector_off=False):
+    def __init__(self, injector_state="ON", accept_injector_off=False,
+                 parent_state="ON", parent_authoritative=True,
+                 parent_read_raises=False):
         self.injector_state=injector_state
         self.accept_injector_off=accept_injector_off;self.calls=[]
+        self.parent_state=parent_state;self.parent_authoritative=parent_authoritative
+        self.parent_read_raises=parent_read_raises
     def set_state(self,**kwargs):
         self.calls.append(kwargs)
         injection=kwargs["device_id"]=="100204d497" and kwargs["channel"]==1
@@ -454,7 +458,10 @@ class ParentAuxTransport:
         return {"accepted_unambiguous":accepted}
     def read_output_state(self,**kwargs):
         injection=kwargs["device_id"]=="100204d497" and kwargs["channel"]==1
+        if not injection and self.parent_read_raises:raise RuntimeError("provider unavailable")
         return {"authoritative":True,"state":self.injector_state if injection else "ON",
+            **({} if injection else {"authoritative":self.parent_authoritative,
+                "state":self.parent_state}),
             "evidence_id":"INJECTOR-READ" if injection else "PARENT-READ",
             "retrieved_at":NOW.isoformat()}
 
@@ -484,8 +491,12 @@ def test_deadline_abort_and_restart_retain_parent_flow_when_injector_off_unverif
     result=_recover_or_observe(parent,store,transport,
         lambda *_:{"success":True,"provider_delivery_confirmed":True,
             "provider_message_id":"MSG-1"},lambda _:None,NOW)
-    assert result["status"]=="parent_flow_retained_injector_off_unverified"
-    assert result["irrigation_flow_retained"] is True
+    assert result["status"]=="parent_off_withheld_injector_off_unverified"
+    assert result["irrigation_flow_retained"] is None
+    assert result["irrigation_flow_state"]=="Unknown"
+    assert result["parent_output_authoritative"] is True
+    assert result["parent_output_state"]=="ON"
+    assert result["parent_off_command_withheld"] is True
     assert result["parent_shutdown_aborted"] is True
     assert not any(call["device_id"]!="100204d497" for call in transport.calls)
     conflict=next(payload for action,payload in store.rows
@@ -502,7 +513,7 @@ def test_binding_mismatch_is_explicit_and_parent_flow_stays_on_until_injector_of
     transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False)
     result=_recover_or_observe(parent,store,transport,
         lambda *_:{"success":False},lambda _:None,NOW)
-    assert result["status"]=="parent_flow_retained_injector_off_unverified"
+    assert result["status"]=="parent_off_withheld_injector_off_unverified"
     assert result["parent_binding_mismatch"] is True
     assert all(call["device_id"]=="100204d497" for call in transport.calls)
 
@@ -513,7 +524,7 @@ def test_restart_replay_reads_injector_off_then_allows_exactly_one_parent_off():
     transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False)
     first=_recover_or_observe(parent,store,transport,
         lambda *_:{"success":False},lambda _:None,NOW)
-    assert first["status"]=="parent_flow_retained_injector_off_unverified"
+    assert first["status"]=="parent_off_withheld_injector_off_unverified"
     assert len(transport.calls)==3
     transport.injector_state="OFF"
     second=_recover_or_observe(store.parent,store,transport,
@@ -530,10 +541,61 @@ def test_concurrent_parent_shutdown_recovery_never_bypasses_unverified_injector_
     with ThreadPoolExecutor(max_workers=2) as pool:
         results=list(pool.map(lambda _index:_recover_or_observe(parent,store,transport,
             lambda *_:{"success":False},lambda _:None,NOW),range(2)))
-    assert all(row["status"]=="parent_flow_retained_injector_off_unverified"
+    assert all(row["status"]=="parent_off_withheld_injector_off_unverified"
         for row in results)
     assert len(transport.calls)==3
     assert all(call["device_id"]=="100204d497" for call in transport.calls)
+
+
+@pytest.mark.parametrize("parent_state,parent_authoritative",[("Unknown",False),("FAULT",True)])
+def test_unavailable_or_contradictory_parent_readback_never_claims_flow(
+        parent_state,parent_authoritative):
+    parent,auxiliary=parent_and_injection()
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False,
+        parent_state=parent_state,parent_authoritative=parent_authoritative)
+    result=_recover_or_observe(parent,store,transport,
+        lambda *_:{"success":False},lambda _:None,NOW)
+    assert result["status"]=="parent_output_unverified_injector_off_unverified"
+    assert result["parent_output_authoritative"] is False
+    assert result["parent_output_state"]=="Unknown"
+    assert result["irrigation_flow_retained"] is None
+    assert result["irrigation_flow_state"]=="Unknown"
+
+
+def test_parent_provider_exception_is_durable_unknown_not_assumed_flow():
+    parent,auxiliary=parent_and_injection()
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False,
+        parent_read_raises=True)
+    result=_recover_or_observe(parent,store,transport,
+        lambda *_:{"success":False},lambda _:None,NOW)
+    assert result["status"]=="parent_output_unverified_injector_off_unverified"
+    assert result["parent_output_state"]=="Unknown"
+    conflict=next(payload for action,payload in store.rows
+        if action=="contain_zone" and payload.get("safety_conflict_owner"))
+    assert conflict["parent_output_evidence"]=={
+        "authoritative":False,"state":"Unknown"}
+
+
+@pytest.mark.parametrize("state",["Active","claimed_recovery_required","stopping"])
+def test_native_deadline_elapsed_escalates_and_never_claims_clean_water(state):
+    parent,auxiliary=parent_and_injection(state=state)
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False,
+        parent_state="OFF")
+    result=_recover_or_observe(parent,store,transport,
+        lambda *_:{"success":False},lambda _:None,NOW+timedelta(minutes=2))
+    assert result["status"]=="injector_off_unverified_native_deadline_elapsed"
+    assert result["native_deadline_phase"]=="at_or_after"
+    assert result["urgent_intervention_required"] is True
+    assert result["parent_output_state"]=="OFF"
+    assert result["irrigation_flow_retained"] is None
+    assert not any(call["device_id"]!="100204d497" for call in transport.calls)
+    conflict=next(payload for action,payload in store.rows
+        if action=="contain_zone" and payload.get("safety_conflict_owner"))
+    assert conflict["automatic_continuation"]==(
+        "urgent_reverify_injector_and_parent_final_states")
 
 
 def test_ambiguous_on_never_retries_and_fertilizer_failure_preserves_irrigation():

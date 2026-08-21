@@ -405,7 +405,8 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
               "shutdown_verified": False, "reason": "restart_after_pre_on_claim"})
         auxiliary_stop = _stop_bound_injection(active,store,transport)
         blocked = _hold_parent_flow_if_injector_off_unverified(
-            active,auxiliary_stop,store,notify,now,"restart_after_pre_on_claim")
+            active,auxiliary_stop,store,transport,notify,now,
+            "restart_after_pre_on_claim")
         if blocked:
             return blocked
         recovery = _bounded_off(active, store, transport)
@@ -430,7 +431,8 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
             return _stopping_barrier_hold(active,store,notify)
         auxiliary_stop = _stop_bound_injection(active,store,transport)
         blocked = _hold_parent_flow_if_injector_off_unverified(
-            active,auxiliary_stop,store,notify,now,"fail_stop_deadline_missing")
+            active,auxiliary_stop,store,transport,notify,now,
+            "fail_stop_deadline_missing")
         if blocked:
             return blocked
         recovery = _bounded_off(active, store, transport)
@@ -447,7 +449,8 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
         return _stopping_barrier_hold(active,store,notify)
     auxiliary_stop = _stop_bound_injection(active,store,transport)
     blocked = _hold_parent_flow_if_injector_off_unverified(
-        active,auxiliary_stop,store,notify,now,"primary_deadline_reached")
+        active,auxiliary_stop,store,transport,notify,now,
+        "primary_deadline_reached")
     if blocked:
         return blocked
     recovery = _bounded_off(active, store, transport)
@@ -516,32 +519,63 @@ def _stop_bound_injection(parent,store,transport):
 
 
 def _hold_parent_flow_if_injector_off_unverified(parent,auxiliary_stop,store,
-                                                  notify,now,stop_reason):
-    """Retain clean-water flow until the exact active injector is proven OFF."""
+                                                  transport,notify,now,stop_reason):
+    """Withhold parent OFF without confusing that command fact with water flow."""
     status=str((auxiliary_stop or {}).get("status") or "")
     if status in {"no_bound_injection","auxiliary_emergency_off_no_active_execution"}:
         return None
     if (auxiliary_stop.get("shutdown_verified") is True
             and status=="auxiliary_emergency_off_verified"):
         return None
+    native_deadline=_timestamp(parent.get("native_fail_stop_deadline"))
+    deadline_phase=("unknown" if native_deadline is None else
+        "before" if now<native_deadline else "at_or_after")
+    try:
+        parent_output=transport.read_output_state(
+            device_id=_output_binding(parent)["device_id"],channel=parent["channel"])
+    except Exception:
+        parent_output={"authoritative":False,"state":"Unknown"}
+    parent_state=str(parent_output.get("state") or "Unknown")
+    parent_authoritative=(parent_output.get("authoritative") is True
+        and parent_state in {"ON","OFF"})
+    if deadline_phase=="at_or_after":
+        conflict_status="injector_off_unverified_native_deadline_elapsed"
+    elif not parent_authoritative:
+        conflict_status="parent_output_unverified_injector_off_unverified"
+    elif parent_state=="OFF":
+        conflict_status="parent_off_observed_injector_off_unverified"
+    else:
+        conflict_status="parent_off_withheld_injector_off_unverified"
     conflict={**parent,"state":"stopping","reason":
-        "injector_off_unverified_parent_flow_retained",
+        conflict_status,
         "parent_stop_reason":stop_reason,"shutdown_verified":False,
-        "parent_shutdown_aborted":True,"irrigation_flow_retained":True,
+        "parent_shutdown_aborted":True,"parent_off_command_withheld":True,
+        "parent_output_authoritative":parent_authoritative,
+        "parent_output_state":parent_state if parent_authoritative else "Unknown",
+        "parent_output_evidence":parent_output,
+        "irrigation_flow_state":"Unknown","irrigation_flow_retained":None,
         "safety_conflict_owner":"rootline_irrigation_coordinator",
-        "automatic_continuation":"reload_stopping_execution_and_reverify_injector_off",
+        "automatic_continuation":("urgent_reverify_injector_and_parent_final_states"
+            if deadline_phase=="at_or_after" else
+            "reload_stopping_execution_and_reverify_injector_off"),
         "conflict_observed_at":now.isoformat(),
         "conflict_deadline":parent.get("native_fail_stop_deadline"),
+        "native_deadline_phase":deadline_phase,
+        "urgent_intervention_required":deadline_phase=="at_or_after",
         "parent_binding_mismatch":auxiliary_stop.get("parent_binding_mismatch") is True,
         "injector_stop_status":status,
         "injector_shutdown_evidence":auxiliary_stop.get("shutdown_evidence")}
     store("contain_zone",conflict)
     delivery=_notify(notify,store,"Intervention",conflict)
-    return _result("parent_flow_retained_injector_off_unverified",
+    return _result(conflict_status,
         commands=int(auxiliary_stop.get("hardware_commands") or 0),
         messages=delivery["confirmed"],notification=delivery,execution=conflict,
-        writes_farm_data=False,degraded=True,irrigation_flow_retained=True,
-        parent_shutdown_aborted=True,
+        writes_farm_data=False,degraded=True,irrigation_flow_retained=None,
+        irrigation_flow_state="Unknown",parent_output_state=conflict["parent_output_state"],
+        parent_output_authoritative=parent_authoritative,
+        parent_off_command_withheld=True,parent_shutdown_aborted=True,
+        native_deadline_phase=deadline_phase,
+        urgent_intervention_required=conflict["urgent_intervention_required"],
         parent_binding_mismatch=conflict["parent_binding_mismatch"])
 
 
