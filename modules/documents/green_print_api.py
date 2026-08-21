@@ -172,6 +172,40 @@ def execute_claimed_weekly_print(claim, parsed, *, connect_factory=None):
     )
 
 
+def execute_claimed_physical_page_acceptance(claim, parsed, *, connect_factory=None):
+    """Record owner-observed paper truth; Green/CUPS never receives this authority."""
+    if claim.get("action_kind") != "documents_green_physical_acceptance":
+        raise ValueError("physical_acceptance_action_kind_mismatch")
+    if claim.get("status") not in {"protected_callback_claimed",
+            "protected_callback_recovered"}:
+        raise ValueError("physical_acceptance_claim_not_executing")
+    preview=claim.get("preview_payload")
+    if not isinstance(preview,dict) or preview.get("contract_version") != (
+            "documents_green_physical_acceptance_v1"):
+        raise ValueError("physical_acceptance_preview_invalid")
+    principal=str(parsed.get("telegram_user_id") or "").strip()
+    if not principal or principal!=str(parsed.get("telegram_chat_id") or "").strip():
+        raise ValueError("authenticated_owner_principal_required")
+    page_correct=preview.get("page_correct")
+    if page_correct is not True and page_correct is not False:
+        raise ValueError("physical_page_result_required")
+    evidence_id=_bounded_id(preview.get("evidence_id"),"physical_evidence_id")
+    db=(connect_factory or _connect_api)()
+    with db:
+        with db.cursor() as cursor:
+            fields=("job_id","document_version","pdf_sha256","cups_job_id","provider_id")
+            cursor.execute("select * from app_private.record_document_print_physical_acceptance(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                tuple(preview.get(key) for key in fields)+(principal,evidence_id,
+                    preview.get("observed_at"),page_correct))
+            row=cursor.fetchone();columns=[item.name for item in cursor.description]
+            result=_public_job(dict(zip(columns,row)))
+            result.update({"physical_page_confirmed":page_correct,
+                "physical_evidence_id":evidence_id,
+                "follow_up_state":"resolved" if page_correct else "exception_owned",
+                "automatic_reprint":False})
+            return result
+
+
 def _public_job(row):
     if not row:
         return None

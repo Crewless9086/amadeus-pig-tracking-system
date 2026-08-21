@@ -37,6 +37,7 @@ from modules.beacon.media_intake import (
     telegram_media_envelope,
 )
 from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
+from modules.oom_sakkie.documents_green_request_runtime import handle_documents_green_request
 
 
 DIRECT_ENABLED_ENV = "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED"
@@ -356,6 +357,29 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         if family_result.get("callback_token"):
             body["preview_card_bound"] = bind_family_rootline_preview_card(family_result, delivery)
         return body, family_status if delivery.get("success") else 202
+
+    documents_result, documents_status = handle_documents_green_request(
+        parsed, environ=source)
+    if documents_result.get("handled"):
+        delivery=deliver_family_result(parsed,documents_result,specialist="DOCUMENTS",
+            mission_id=str(documents_result.get("mission_id") or ""),
+            card_mission_id=str(documents_result.get("card_mission_id") or ""))
+        if documents_result.get("callback_token"):
+            from modules.oom_sakkie.protected_action_claims import bind_claim_card
+            message_id=str(delivery.get("telegram_message_id") or "")
+            bound=bool(message_id and delivery.get("success") and
+                bind_claim_card(documents_result["callback_token"],message_id))
+            documents_result["preview_card_bound"]=bound
+            if not bound:
+                documents_result.update({"success":False,
+                    "status":"documents_green_preview_card_binding_unavailable"})
+                documents_status=503
+        body,_=_direct_result(documents_result.get("success") is True,
+            documents_result["status"],policy,documents_status)
+        body.update({"message":documents_result,"answer":documents_result.get("answer",""),
+            "delivery":delivery,"sends_telegram":int(delivery.get("telegram_sends") or 0)>0,
+            "writes":False,"hardware_commands":0,"physical_controls_enabled":False})
+        return body,documents_status
 
     owner_task, owner_task_status = handle_owner_task_input(
         payload,

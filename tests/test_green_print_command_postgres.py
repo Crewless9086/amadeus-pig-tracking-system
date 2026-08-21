@@ -303,8 +303,74 @@ def test_lawful_worker_path_preserves_immutable_provider_identities(db):
                                                    "observed_at": "2026-08-21T12:00:02Z"},
                       "00000000-0000-0000-0000-000000000003")
     with db.cursor() as cursor:
-        cursor.execute("select state,attempt_id,cups_job_id,provider_id from app_private.document_print_jobs where job_id='JOB-DB-1'")
-        assert cursor.fetchone() == ("provider_completed", "ATTEMPT-1", "weekly-a4-42", "ipps://printer/ipp/print")
+        cursor.execute("select state,attempt_id,cups_job_id,provider_id,physical_follow_up_state from app_private.document_print_jobs where job_id='JOB-DB-1'")
+        assert cursor.fetchone() == ("provider_completed", "ATTEMPT-1", "weekly-a4-42", "ipps://printer/ipp/print", "pending_owner_observation")
+
+
+def record_physical_acceptance(db, evidence="PHYSICAL-DB-1", principal="principal",
+                               version="DOC-DB-1.r1", digest=PDF_SHA,
+                               cups="weekly-a4-42", provider="ipps://printer/ipp/print",
+                               correct=True):
+    with db.cursor() as cursor:
+        cursor.execute("""select state,physical_follow_up_state,physical_evidence_id
+          from app_private.record_document_print_physical_acceptance(
+            %s,%s,%s,%s,%s,%s,%s,clock_timestamp(),%s)""",
+          ("JOB-DB-1", version, digest, cups, provider, principal, evidence, correct))
+        return cursor.fetchone()
+
+
+def test_physical_acceptance_is_separate_exact_bound_and_replay_stable(db):
+    prepare_worker_job(db, "provider_completed", "ATTEMPT-1", "weekly-a4-42",
+                       "ipps://printer/ipp/print")
+    with db.cursor() as cursor:
+        cursor.execute("""update app_private.document_print_jobs
+          set physical_follow_up_state='pending_owner_observation',updated_at=clock_timestamp()-interval '1 second'
+          where job_id='JOB-DB-1'""")
+    first = record_physical_acceptance(db)
+    assert first == ("physically_confirmed", "resolved", "PHYSICAL-DB-1")
+    with db.cursor() as cursor:
+        cursor.execute("select physical_observed_at from app_private.document_print_jobs where job_id='JOB-DB-1'")
+        observed_at = cursor.fetchone()[0]
+        cursor.execute("""select state,physical_follow_up_state,physical_evidence_id
+          from app_private.record_document_print_physical_acceptance(
+            %s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+          ("JOB-DB-1", "DOC-DB-1.r1", PDF_SHA, "weekly-a4-42",
+           "ipps://printer/ipp/print", "principal", "PHYSICAL-DB-1", observed_at, True))
+        assert cursor.fetchone() == first
+        cursor.execute("select count(*) from app_private.document_print_job_events where event_type='physical_page_confirmed'")
+        assert cursor.fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("field,value", [
+    ("principal", "wrong-principal"), ("version", "DOC-DB-1.r2"),
+    ("digest", "f" * 64), ("cups", "weekly-a4-99"),
+    ("provider", "ipps://other/ipp/print"),
+])
+def test_physical_acceptance_binding_mismatch_has_zero_effect(db, field, value):
+    prepare_worker_job(db, "provider_completed", "ATTEMPT-1", "weekly-a4-42",
+                       "ipps://printer/ipp/print")
+    with db.cursor() as cursor:
+        cursor.execute("""update app_private.document_print_jobs
+          set physical_follow_up_state='pending_owner_observation',updated_at=clock_timestamp()-interval '1 second'
+          where job_id='JOB-DB-1'""")
+        cursor.execute("savepoint rejected_physical_acceptance")
+    with pytest.raises(psycopg.errors.RaiseException, match="physical acceptance binding invalid"):
+        record_physical_acceptance(db, **{field: value})
+    with db.cursor() as cursor:
+        cursor.execute("rollback to savepoint rejected_physical_acceptance")
+        cursor.execute("select state,physical_evidence_id from app_private.document_print_jobs where job_id='JOB-DB-1'")
+        assert cursor.fetchone() == ("provider_completed", None)
+
+
+def test_incorrect_physical_page_is_held_without_automatic_reprint(db):
+    prepare_worker_job(db, "provider_completed", "ATTEMPT-1", "weekly-a4-42",
+                       "ipps://printer/ipp/print")
+    with db.cursor() as cursor:
+        cursor.execute("""update app_private.document_print_jobs
+          set physical_follow_up_state='pending_owner_observation',updated_at=clock_timestamp()-interval '1 second'
+          where job_id='JOB-DB-1'""")
+    assert record_physical_acceptance(db, evidence="PHYSICAL-EXCEPTION-1", correct=False) == (
+        "held", "exception_owned", "PHYSICAL-EXCEPTION-1")
 
 
 def test_provider_completion_cannot_replace_established_identities(db):

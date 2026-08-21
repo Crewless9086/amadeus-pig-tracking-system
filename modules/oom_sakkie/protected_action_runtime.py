@@ -130,6 +130,23 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         return {"handled":True,"success":True,
             "status":"documents_green_print_authorized",
             **canonical,"printer_calls":0,"suppress_owner_delivery":True},200
+    if claimed["action_kind"]=="documents_green_physical_acceptance":
+        from modules.documents.green_print_api import execute_claimed_physical_page_acceptance
+        try:
+            result=execute_claimed_physical_page_acceptance(
+                claimed,parsed,connect_factory=connect_factory)
+        except Exception as exc:
+            return {"handled":True,"success":False,
+                "status":"documents_physical_acceptance_recovery_pending",
+                "recovery_required":True,"printer_calls":0,
+                "automatic_reprint":False,"error_type":type(exc).__name__},503
+        completion=complete_claim(claimed["callback_token"],result,
+            connect_factory=connect_factory)
+        canonical=completion.get("result") if isinstance(completion.get("result"),dict) else result
+        return {"handled":True,"success":True,
+            "status":"documents_physical_page_confirmed" if canonical.get(
+                "physical_page_confirmed") is True else "documents_physical_page_exception_owned",
+            **canonical,"printer_calls":0,"automatic_reprint":False},200
     if claimed["action_kind"]=="beacon_campaign_review":
         preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
         if (preview.get("contract_version")!="beacon_campaign_owner_card_v1"

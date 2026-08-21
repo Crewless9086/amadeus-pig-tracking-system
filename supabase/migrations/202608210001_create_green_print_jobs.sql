@@ -38,7 +38,8 @@ do $$ begin
       'rootline_irrigation_segment','sam_sale_payment','beacon_private_album_finish',
       'beacon_media_review','rootline_fertilizer_mixer_commissioning',
       'rootline_fertilizer_mixer_presence_refresh','rootline_delegated_family',
-      'beacon_campaign_review','documents_green_print'));
+      'beacon_campaign_review','documents_green_print',
+      'documents_green_physical_acceptance'));
 end $$;
 
 -- Resolve pgcrypto by its catalog-owned extension schema, never by caller
@@ -94,6 +95,11 @@ create table if not exists app_private.document_print_jobs (
     command_completed_at timestamptz,
     state text not null default 'prepared' check (state in
       ('prepared','authorized','claimed','submitting','submitted','provider_completed','held','ambiguous','cancelled','physically_confirmed')),
+    physical_follow_up_state text check (physical_follow_up_state in
+      ('pending_owner_observation','resolved','exception_owned')),
+    physical_evidence_id text,
+    physical_observer_id text,
+    physical_observed_at timestamptz,
     retry_deadline timestamptz not null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
@@ -242,7 +248,10 @@ begin
   update app_private.document_print_jobs set state=p_target_state,
     attempt_id=coalesce(v_attempt_id,attempt_id),
     cups_job_id=coalesce(v_cups_job_id,cups_job_id),
-    provider_id=coalesce(v_provider_id,provider_id),updated_at=clock_timestamp()
+    provider_id=coalesce(v_provider_id,provider_id),
+    physical_follow_up_state=case when p_target_state='provider_completed'
+      then 'pending_owner_observation' else physical_follow_up_state end,
+    updated_at=clock_timestamp()
     where job_id=p_job_id returning * into v_job;
   return v_job;
 end; $$;
@@ -499,6 +508,51 @@ begin
   return v_job;
 end; $$;
 
+create or replace function app_private.record_document_print_physical_acceptance(
+  p_job_id text,p_document_version text,p_pdf_sha256 text,p_cups_job_id text,
+  p_provider_id text,p_authenticated_principal_id text,p_evidence_id text,
+  p_observed_at timestamptz,p_page_correct boolean)
+returns app_private.document_print_jobs language plpgsql security definer
+set search_path=pg_catalog,app_private as $$
+declare v_job app_private.document_print_jobs;
+begin
+  select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
+  if not found or v_job.document_version<>p_document_version
+     or v_job.pdf_sha256<>p_pdf_sha256 or v_job.cups_job_id<>p_cups_job_id
+     or v_job.provider_id<>p_provider_id
+     or v_job.authenticated_principal_id<>p_authenticated_principal_id
+     or v_job.state not in ('provider_completed','physically_confirmed','held')
+     or v_job.physical_follow_up_state is null
+     or p_evidence_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+     or p_observed_at is null or p_observed_at>clock_timestamp()+interval '2 minutes'
+     or p_observed_at<v_job.updated_at then
+    raise exception 'physical acceptance binding invalid';
+  end if;
+  if v_job.physical_evidence_id is not null then
+    if v_job.physical_evidence_id<>p_evidence_id
+       or v_job.physical_observer_id<>p_authenticated_principal_id
+       or v_job.physical_observed_at<>p_observed_at
+       or (v_job.state='physically_confirmed') is distinct from p_page_correct then
+      raise exception 'physical acceptance replay conflict';
+    end if;
+    return v_job;
+  end if;
+  update app_private.document_print_jobs set
+    state=case when p_page_correct then 'physically_confirmed' else 'held' end,
+    physical_follow_up_state=case when p_page_correct then 'resolved' else 'exception_owned' end,
+    physical_evidence_id=p_evidence_id,physical_observer_id=p_authenticated_principal_id,
+    physical_observed_at=p_observed_at,updated_at=clock_timestamp()
+    where job_id=p_job_id returning * into v_job;
+  insert into app_private.document_print_job_events(job_id,event_type,actor_id,
+    worker_id,attempt_id,cups_job_id,evidence_sha256,metadata_json)
+  values(v_job.job_id,case when p_page_correct then 'physical_page_confirmed'
+    else 'physical_page_exception' end,p_authenticated_principal_id,v_job.lease_owner,
+    v_job.attempt_id,v_job.cups_job_id,null,
+    jsonb_build_object('evidence_id',p_evidence_id,'observed_at',p_observed_at,
+      'page_correct',p_page_correct,'provider_id',v_job.provider_id));
+  return v_job;
+end; $$;
+
 create or replace function app_private.read_document_print_job(
   p_job_id text,p_lease_token text,p_farm_scope_id text,p_green_id text,p_worker_id text)
 returns app_private.document_print_jobs language plpgsql security definer
@@ -549,7 +603,11 @@ grant execute on function app_private.claim_document_print_job(text,text,text,in
   to documents_green_worker_executor;
 grant execute on function app_private.create_authorized_document_print_job(jsonb,bytea,text,text,text)
   to documents_api_executor;
+grant execute on function app_private.record_document_print_physical_acceptance(
+  text,text,text,text,text,text,text,timestamptz,boolean) to documents_api_executor;
 revoke all on function app_private.create_authorized_document_print_job(jsonb,bytea,text,text,text),
   app_private.read_document_print_job(text,text,text,text,text),
   app_private.read_document_print_pdf(text,text,text,text,text)
   from public,anon,authenticated;
+revoke all on function app_private.record_document_print_physical_acceptance(
+  text,text,text,text,text,text,text,timestamptz,boolean) from public,anon,authenticated;
