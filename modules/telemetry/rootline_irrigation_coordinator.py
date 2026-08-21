@@ -299,10 +299,14 @@ def _recover_auxiliary(active,store,transport,now):
             commands=recovery["commands"],state="Intervention",fertilizer_debt=True,
             auxiliary_contained=True)
     physical = store("load_auxiliary_physical_outcome", active["execution_id"])
-    physical_verified = (isinstance(physical, dict)
-        and physical.get("mixer_recirculating") is True
-        and physical.get("pump_expected") is True
-        and physical.get("other_outputs_off") is True)
+    injection = active.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
+    if injection:
+        physical_verified = _injection_delivery_verified(active, physical, shutdown)
+    else:
+        physical_verified = (isinstance(physical, dict)
+            and physical.get("mixer_recirculating") is True
+            and physical.get("pump_expected") is True
+            and physical.get("other_outputs_off") is True)
     completed={**active,"state":"Completed","shutdown_verified":True,
         "shutdown_evidence":shutdown,"completed_at":now.isoformat(),
         "maximum_runtime_seconds":active["maximum_duration_seconds"],
@@ -311,12 +315,51 @@ def _recover_auxiliary(active,store,transport,now):
         "delivered_volume":"Unavailable",
         "physical_outcome_verified":physical_verified,
         "physical_outcome_evidence":physical if physical_verified else None}
-    recorded=store("record_auxiliary_completed",completed)
+    # An authoritative OFF readback proves only that the bounded control pulse
+    # stopped. It is not fertilizer-delivery evidence. Keep an unverified
+    # injection out of completed history so pulse count, real-flow
+    # commissioning and owner-facing completion cannot inherit an OFF receipt.
+    completion_action = ("record_auxiliary_completed" if physical_verified
+        or not injection else "record_auxiliary_control_pulse_stopped")
+    if injection and not physical_verified:
+        completed.update({"state":"ControlPulseStopped",
+            "delivery_state":"Unverified","fertilizer_delivery_verified":False,
+            "completion_scope":"control_off_only","fertilizer_debt":True})
+    elif injection:
+        completed.update({"delivery_state":"Verified",
+            "fertilizer_delivery_verified":True,
+            "completion_scope":"provider_canonical_physical_pulse_delivery",
+            "fertilizer_lifecycle_completed":False,
+            "postflow_flush_required":True})
+    recorded=store(completion_action,completed)
     if not isinstance(recorded,dict) or recorded.get("success") is not True:
         return _aux_result("auxiliary_completion_persistence_unproven",
             commands=recovery["commands"],state="Intervention",fertilizer_debt=True)
-    return _aux_result("auxiliary_completed",commands=recovery["commands"],
-        state="Completed",execution=completed)
+    if injection and not physical_verified:
+        return _aux_result("auxiliary_control_pulse_off_verified",
+            commands=recovery["commands"],state="Intervention",fertilizer_debt=True,
+            execution=completed,physical_delivery_verified=False)
+    return _aux_result("auxiliary_injection_delivery_verified" if injection
+        else "auxiliary_completed",commands=recovery["commands"],
+        state="Completed",execution=completed,
+        physical_delivery_verified=physical_verified)
+
+
+def _injection_delivery_verified(active, physical, shutdown):
+    """Require evidence bound to this exact pulse before delivery completion."""
+    if not isinstance(physical,dict):
+        return False
+    immutable=("execution_id","job_id","job_sha256","segment_identity",
+        "zone_id","zone_execution_id","pulse_number")
+    if any(physical.get(key)!=active.get(key) for key in immutable):
+        return False
+    return (shutdown.get("authoritative") is True and shutdown.get("state")=="OFF"
+        and physical.get("canonical_pulse_recorded") is True
+        and physical.get("provider_pulse_on_verified") is True
+        and physical.get("provider_pulse_off_verified") is True
+        and physical.get("physical_fertilizer_flow_verified") is True
+        and physical.get("clean_water_preflow_verified") is True
+        and bool(str(physical.get("evidence_id") or "").strip()))
 
 
 def _bounded_auxiliary_off(execution,store,transport):
@@ -361,6 +404,10 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
         store("contain_zone", {**active, "state": "ambiguous",
               "shutdown_verified": False, "reason": "restart_after_pre_on_claim"})
         auxiliary_stop = _stop_bound_injection(active,store,transport)
+        blocked = _hold_parent_flow_if_injector_off_unverified(
+            active,auxiliary_stop,store,notify,now,"restart_after_pre_on_claim")
+        if blocked:
+            return blocked
         recovery = _bounded_off(active, store, transport)
         try:
             shutdown = transport.read_output_state(device_id=_output_binding(active)["device_id"], channel=active["channel"])
@@ -382,6 +429,10 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
         if not isinstance(barrier,dict) or barrier.get("success") is not True:
             return _stopping_barrier_hold(active,store,notify)
         auxiliary_stop = _stop_bound_injection(active,store,transport)
+        blocked = _hold_parent_flow_if_injector_off_unverified(
+            active,auxiliary_stop,store,notify,now,"fail_stop_deadline_missing")
+        if blocked:
+            return blocked
         recovery = _bounded_off(active, store, transport)
         delivery = _notify(notify, store, "Intervention", {**active,
             "reason": "fail_stop_deadline_missing", "recovery": recovery})
@@ -395,6 +446,10 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
     if not isinstance(barrier,dict) or barrier.get("success") is not True:
         return _stopping_barrier_hold(active,store,notify)
     auxiliary_stop = _stop_bound_injection(active,store,transport)
+    blocked = _hold_parent_flow_if_injector_off_unverified(
+        active,auxiliary_stop,store,notify,now,"primary_deadline_reached")
+    if blocked:
+        return blocked
     recovery = _bounded_off(active, store, transport)
     shutdown = transport.read_output_state(device_id=_output_binding(active)["device_id"], channel=active["channel"])
     if shutdown.get("state") != "OFF" or shutdown.get("authoritative") is not True:
@@ -458,6 +513,36 @@ def _stop_bound_injection(parent,store,transport):
         reason=("parent_binding_mismatch" if mismatch else "parent_irrigation_stopping"),
         expected_device_id="FERTILIZER-INJECTION-CH1")
     return {**result,"parent_binding_mismatch":mismatch}
+
+
+def _hold_parent_flow_if_injector_off_unverified(parent,auxiliary_stop,store,
+                                                  notify,now,stop_reason):
+    """Retain clean-water flow until the exact active injector is proven OFF."""
+    status=str((auxiliary_stop or {}).get("status") or "")
+    if status in {"no_bound_injection","auxiliary_emergency_off_no_active_execution"}:
+        return None
+    if (auxiliary_stop.get("shutdown_verified") is True
+            and status=="auxiliary_emergency_off_verified"):
+        return None
+    conflict={**parent,"state":"stopping","reason":
+        "injector_off_unverified_parent_flow_retained",
+        "parent_stop_reason":stop_reason,"shutdown_verified":False,
+        "parent_shutdown_aborted":True,"irrigation_flow_retained":True,
+        "safety_conflict_owner":"rootline_irrigation_coordinator",
+        "automatic_continuation":"reload_stopping_execution_and_reverify_injector_off",
+        "conflict_observed_at":now.isoformat(),
+        "conflict_deadline":parent.get("native_fail_stop_deadline"),
+        "parent_binding_mismatch":auxiliary_stop.get("parent_binding_mismatch") is True,
+        "injector_stop_status":status,
+        "injector_shutdown_evidence":auxiliary_stop.get("shutdown_evidence")}
+    store("contain_zone",conflict)
+    delivery=_notify(notify,store,"Intervention",conflict)
+    return _result("parent_flow_retained_injector_off_unverified",
+        commands=int(auxiliary_stop.get("hardware_commands") or 0),
+        messages=delivery["confirmed"],notification=delivery,execution=conflict,
+        writes_farm_data=False,degraded=True,irrigation_flow_retained=True,
+        parent_shutdown_aborted=True,
+        parent_binding_mismatch=conflict["parent_binding_mismatch"])
 
 
 def _stopping_barrier_hold(active,store,notify):

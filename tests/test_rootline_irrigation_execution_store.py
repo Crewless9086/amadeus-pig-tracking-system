@@ -26,6 +26,12 @@ def test_unverified_irrigation_containment_remains_recoverable_active_truth():
     assert _terminal_closes_active({"action":"record_claim_recovery",
         "shutdown_verified":True}) is True
     assert _terminal_closes_active({"action":"record_completed"}) is True
+    assert _terminal_closes_active({"action":"contain_auxiliary_device",
+        "shutdown_verified":False},auxiliary=True) is False
+    assert _terminal_closes_active({"action":"contain_auxiliary_device",
+        "shutdown_verified":True},auxiliary=True) is True
+    assert _terminal_closes_active({
+        "action":"record_auxiliary_control_pulse_stopped"},auxiliary=True) is True
 
 
 class FailedConnection:

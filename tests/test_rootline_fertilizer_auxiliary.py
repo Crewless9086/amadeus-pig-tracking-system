@@ -19,6 +19,7 @@ from modules.telemetry.rootline_device_registry import (
 )
 from modules.telemetry.rootline_irrigation_coordinator import (
     advance_auxiliary_execution, emergency_off_auxiliary_execution,
+    _recover_or_observe,
 )
 
 NOW=datetime(2026,8,9,8,0,tzinfo=timezone.utc)
@@ -241,11 +242,12 @@ def test_auxiliary_tasks_never_become_zones_and_power_only_defers_mixing():
 class Store:
     def __init__(self):
         self.active=None;self.rows=[];self.consumed=set();self.off=[];self.lock=Lock()
-        self.contained=False
+        self.contained=False;self.physical=None
     def __call__(self,action,payload):
         if action=="load_active_auxiliary":return self.active
         if action=="load_auxiliary_containment":return {"contained":self.contained}
         if action=="load_auxiliary_off_attempts":return list(self.off)
+        if action=="load_auxiliary_physical_outcome":return self.physical
         if action=="claim_auxiliary_before_on":
             with self.lock:
                 key=payload["consumption_key"]
@@ -257,7 +259,10 @@ class Store:
             row={"attempt":payload["attempt"]};self.off.append(row);return {"created":True,"success":True}
         self.rows.append((action,payload))
         if action=="mark_auxiliary_active":self.active=payload
-        if action in {"record_auxiliary_completed","contain_auxiliary_device"}:self.active=None
+        if action in {"record_auxiliary_completed","record_auxiliary_control_pulse_stopped"}:
+            self.active=None
+        if action=="contain_auxiliary_device" and payload.get("shutdown_verified") is True:
+            self.active=None
         return {"success":True,"created":True}
 
 
@@ -286,12 +291,62 @@ def test_coordinator_exactly_once_replay_completion_and_bounded_off():
         transport=transport,revalidate=lambda _artifact:injection_context(),
         now=NOW+timedelta(seconds=121))
     assert started["status"]=="auxiliary_started" and replay["status"]=="auxiliary_active"
-    assert completed["status"]=="auxiliary_completed"
+    assert completed["status"]=="auxiliary_control_pulse_off_verified"
     assert duplicate["status"]=="auxiliary_claim_conflict"
     assert [row["state"] for row in transport.calls]==["ON","OFF"]
     assert completed["execution"]["nutrient_dose"]=="Unknown"
     assert completed["execution"]["verified_runtime_seconds"] is None
     assert completed["execution"]["maximum_runtime_seconds"]==120
+    assert completed["execution"]["completion_scope"]=="control_off_only"
+    assert not any(action=="record_auxiliary_completed" for action,_ in store.rows)
+
+
+def test_injection_delivery_completion_requires_exact_bound_canonical_provider_and_physical_evidence():
+    artifact=injection_eligibility();store=Store();transport=Transport()
+    started=advance_auxiliary_execution(eligibility=artifact,store=store,
+        transport=transport,revalidate=lambda _artifact:injection_context(),now=NOW)
+    active=started["execution"]
+    complete={key:active.get(key) for key in ("execution_id","job_id","job_sha256",
+        "segment_identity","zone_id","zone_execution_id","pulse_number")}
+    store.physical={**complete,"evidence_id":"PHYSICAL-INJECTION-1",
+        "canonical_pulse_recorded":True,"provider_pulse_on_verified":True,
+        "provider_pulse_off_verified":True,"physical_fertilizer_flow_verified":True,
+        "clean_water_preflow_verified":True,"clean_water_flush_verified":False}
+    result=advance_auxiliary_execution(eligibility=artifact,store=store,
+        transport=transport,now=NOW+timedelta(seconds=121))
+    assert result["status"]=="auxiliary_injection_delivery_verified"
+    assert result["physical_delivery_verified"] is True
+    assert result["execution"]["completion_scope"]==(
+        "provider_canonical_physical_pulse_delivery")
+    assert result["execution"]["fertilizer_lifecycle_completed"] is False
+    assert result["execution"]["postflow_flush_required"] is True
+    assert any(action=="record_auxiliary_completed" for action,_ in store.rows)
+
+
+@pytest.mark.parametrize("field,replacement",[
+    ("execution_id","WRONG"),("job_sha256","b"*64),
+    ("zone_execution_id","WRONG"),("pulse_number",2),
+    ("canonical_pulse_recorded",False),("provider_pulse_on_verified",False),
+    ("provider_pulse_off_verified",False),("physical_fertilizer_flow_verified",False),
+    ("clean_water_preflow_verified",False),
+])
+def test_injection_mismatched_or_incomplete_evidence_never_promotes_delivery(field,replacement):
+    artifact=injection_eligibility();store=Store();transport=Transport()
+    started=advance_auxiliary_execution(eligibility=artifact,store=store,
+        transport=transport,revalidate=lambda _artifact:injection_context(),now=NOW)
+    active=started["execution"]
+    store.physical={key:active.get(key) for key in ("execution_id","job_id","job_sha256",
+        "segment_identity","zone_id","zone_execution_id","pulse_number")}
+    store.physical.update({"evidence_id":"PHYSICAL-INJECTION-1",
+        "canonical_pulse_recorded":True,"provider_pulse_on_verified":True,
+        "provider_pulse_off_verified":True,"physical_fertilizer_flow_verified":True,
+        "clean_water_preflow_verified":True,"clean_water_flush_verified":False,
+        field:replacement})
+    result=advance_auxiliary_execution(eligibility=artifact,store=store,
+        transport=transport,now=NOW+timedelta(seconds=121))
+    assert result["status"]=="auxiliary_control_pulse_off_verified"
+    assert result["physical_delivery_verified"] is False
+    assert not any(action=="record_auxiliary_completed" for action,_ in store.rows)
 
 
 def test_concurrent_consumption_creates_exactly_one_on_attempt():
@@ -358,6 +413,127 @@ def test_irrigation_abort_can_stop_exact_active_injection_and_verify_off():
     assert result["status"]=="auxiliary_emergency_off_verified"
     assert result["shutdown_verified"] is True
     assert [row["state"] for row in transport.calls]==["OFF"]
+
+
+class ParentAuxStore:
+    def __init__(self, parent, auxiliary):
+        self.parent=parent;self.auxiliary=auxiliary;self.rows=[];self.off=[];self.lock=Lock()
+    def __call__(self,action,payload):
+        if action=="load_active_auxiliary":return self.auxiliary
+        if action=="load_auxiliary_off_attempts":return list(self.off)
+        if action=="mark_stopping":
+            self.parent=dict(payload);self.rows.append((action,payload))
+            return {"success":True,"created":True}
+        if action=="claim_auxiliary_off_attempt":
+            with self.lock:
+                if any(row.get("attempt")==payload["attempt"] for row in self.off):
+                    return {"success":True,"created":False}
+                self.off.append({"attempt":payload["attempt"]})
+                return {"success":True,"created":True}
+        if action=="record_auxiliary_off_outcome":
+            self.rows.append((action,payload));return {"success":True,"created":True}
+        if action=="contain_auxiliary_device":
+            self.rows.append((action,payload))
+            if payload.get("shutdown_verified") is True:self.auxiliary=None
+            return {"success":True,"created":True}
+        if action=="claim_notification":
+            self.rows.append((action,payload));return {"success":True,"created":True}
+        self.rows.append((action,payload));return {"success":True,"created":True}
+
+
+class ParentAuxTransport:
+    def __init__(self, injector_state="ON", accept_injector_off=False):
+        self.injector_state=injector_state
+        self.accept_injector_off=accept_injector_off;self.calls=[]
+    def set_state(self,**kwargs):
+        self.calls.append(kwargs)
+        injection=kwargs["device_id"]=="100204d497" and kwargs["channel"]==1
+        accepted=self.accept_injector_off if injection else True
+        if accepted and kwargs["state"]=="OFF":
+            if injection:self.injector_state="OFF"
+        return {"accepted_unambiguous":accepted}
+    def read_output_state(self,**kwargs):
+        injection=kwargs["device_id"]=="100204d497" and kwargs["channel"]==1
+        return {"authoritative":True,"state":self.injector_state if injection else "ON",
+            "evidence_id":"INJECTOR-READ" if injection else "PARENT-READ",
+            "retrieved_at":NOW.isoformat()}
+
+
+def parent_and_injection(*,mismatch=False,state="Active"):
+    parent={"execution_id":"PARENT-1","zone_id":"B12345","channel":1,
+        "state":state,"job_id":"JOB-1","job_sha256":"a"*64,
+        "segment_identity":"SEGMENT-1","zone_execution_id":"PARENT-1",
+        "primary_stop_deadline":(NOW-timedelta(seconds=1)).isoformat(),
+        "native_fail_stop_deadline":(NOW+timedelta(minutes=1)).isoformat()}
+    auxiliary={"execution_id":"INJECTION-BOUND-1",
+        "auxiliary_device_id":"FERTILIZER-INJECTION-CH1","device_id":"100204d497",
+        "channel":1,"state":"Active","job_id":"OTHER" if mismatch else "JOB-1",
+        "job_sha256":"a"*64,"segment_identity":"SEGMENT-1","zone_id":"B12345",
+        "zone_execution_id":"PARENT-1","pulse_number":1}
+    return parent,auxiliary
+
+
+@pytest.mark.parametrize("state,deadline_missing",[
+    ("Active",False),("claimed_recovery_required",False),("Active",True)])
+def test_deadline_abort_and_restart_retain_parent_flow_when_injector_off_unverified(
+        state,deadline_missing):
+    parent,auxiliary=parent_and_injection(state=state)
+    if deadline_missing:parent["primary_stop_deadline"]=None
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False)
+    result=_recover_or_observe(parent,store,transport,
+        lambda *_:{"success":True,"provider_delivery_confirmed":True,
+            "provider_message_id":"MSG-1"},lambda _:None,NOW)
+    assert result["status"]=="parent_flow_retained_injector_off_unverified"
+    assert result["irrigation_flow_retained"] is True
+    assert result["parent_shutdown_aborted"] is True
+    assert not any(call["device_id"]!="100204d497" for call in transport.calls)
+    conflict=next(payload for action,payload in store.rows
+        if action=="contain_zone" and payload.get("safety_conflict_owner"))
+    assert conflict["safety_conflict_owner"]=="rootline_irrigation_coordinator"
+    assert conflict["automatic_continuation"]==(
+        "reload_stopping_execution_and_reverify_injector_off")
+    assert conflict["conflict_deadline"]==parent["native_fail_stop_deadline"]
+
+
+def test_binding_mismatch_is_explicit_and_parent_flow_stays_on_until_injector_off():
+    parent,auxiliary=parent_and_injection(mismatch=True)
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False)
+    result=_recover_or_observe(parent,store,transport,
+        lambda *_:{"success":False},lambda _:None,NOW)
+    assert result["status"]=="parent_flow_retained_injector_off_unverified"
+    assert result["parent_binding_mismatch"] is True
+    assert all(call["device_id"]=="100204d497" for call in transport.calls)
+
+
+def test_restart_replay_reads_injector_off_then_allows_exactly_one_parent_off():
+    parent,auxiliary=parent_and_injection()
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False)
+    first=_recover_or_observe(parent,store,transport,
+        lambda *_:{"success":False},lambda _:None,NOW)
+    assert first["status"]=="parent_flow_retained_injector_off_unverified"
+    assert len(transport.calls)==3
+    transport.injector_state="OFF"
+    second=_recover_or_observe(store.parent,store,transport,
+        lambda *_:{"success":False},lambda _:None,NOW+timedelta(seconds=1))
+    parent_off=[call for call in transport.calls if call["device_id"]!="100204d497"]
+    assert len(parent_off)==1 and parent_off[0]["state"]=="OFF"
+    assert second["status"] in {"shutdown_unverified","segment_stopped_outcome_unconfirmed"}
+
+
+def test_concurrent_parent_shutdown_recovery_never_bypasses_unverified_injector_off():
+    parent,auxiliary=parent_and_injection()
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _index:_recover_or_observe(parent,store,transport,
+            lambda *_:{"success":False},lambda _:None,NOW),range(2)))
+    assert all(row["status"]=="parent_flow_retained_injector_off_unverified"
+        for row in results)
+    assert len(transport.calls)==3
+    assert all(call["device_id"]=="100204d497" for call in transport.calls)
 
 
 def test_ambiguous_on_never_retries_and_fertilizer_failure_preserves_irrigation():

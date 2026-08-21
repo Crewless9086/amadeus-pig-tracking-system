@@ -110,7 +110,8 @@ def _load(action, payload):
                 auxiliary=action=="load_active_auxiliary"
                 claim_action="claim_auxiliary_before_on" if auxiliary else "claim_before_on"
                 active_action="mark_auxiliary_active" if auxiliary else "mark_active"
-                terminal_actions=({"record_auxiliary_completed","contain_auxiliary_device"}
+                terminal_actions=({"record_auxiliary_completed",
+                    "record_auxiliary_control_pulse_stopped","contain_auxiliary_device"}
                     if auxiliary else {"record_completed","contain_zone",
                         "record_ambiguous_shutdown","record_claim_recovery"})
                 cursor.execute("""select review_json->'rootline_execution'
@@ -219,7 +220,10 @@ def _load(action, payload):
 def _terminal_closes_active(item, *, auxiliary=False):
     action = str(item.get("action") or "") if isinstance(item, dict) else ""
     if auxiliary:
-        return action in {"record_auxiliary_completed", "contain_auxiliary_device"}
+        return (action in {"record_auxiliary_completed",
+                "record_auxiliary_control_pulse_stopped"}
+            or (action == "contain_auxiliary_device"
+                and item.get("shutdown_verified") is True))
     if action == "record_completed":
         return True
     if action in {"contain_zone", "record_ambiguous_shutdown", "record_claim_recovery"}:
@@ -463,8 +467,12 @@ def _claim_single_auxiliary(body):
                     where terminal.event_source=%s
                       and terminal.review_json->'rootline_execution'->>'execution_id'=
                           claim.review_json->'rootline_execution'->>'execution_id'
-                      and terminal.review_json->'rootline_execution'->>'action'
-                          in ('record_auxiliary_completed','contain_auxiliary_device')) limit 1""",
+                      and (terminal.review_json->'rootline_execution'->>'action'
+                          in ('record_auxiliary_completed','record_auxiliary_control_pulse_stopped')
+                        or (terminal.review_json->'rootline_execution'->>'action'=
+                              'contain_auxiliary_device'
+                            and terminal.review_json->'rootline_execution'->>
+                              'shutdown_verified'='true'))) limit 1""",
                 (EVENT_SOURCE,EVENT_SOURCE))
             if cursor.fetchone():
                 return {"success":True,"created":False,"status":"auxiliary_active"}
