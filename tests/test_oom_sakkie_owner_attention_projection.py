@@ -669,6 +669,76 @@ def test_context_change_does_not_retrigger_unchanged_primary_owner_work():
     assert after["measurement"]["new_message_eligible"] is False
 
 
+def test_purpose_review_day_boundary_uses_one_stable_grouped_work_identity(monkeypatch):
+    from modules.oom_sakkie.manager_case_sources import _purpose_review_candidates
+
+    base = {"pig_id": "PIG-1", "tag_number": "Rosie", "litter_id": "LIT-1",
+            "sow_tag_number": "Molly", "status": "Active", "on_farm": "Yes",
+            "purpose": "Unknown", "suggested_purpose": "Breeding Review",
+            "purpose_review_due_after_days": 14}
+    state = {"rows": []}
+    monkeypatch.setattr("modules.pig_weights.pig_weights_service.get_pig_allocation_readiness",
+                        lambda **_kwargs: {"success": True, "pigs": state["rows"]})
+    args = {"now": NOW, "today": NOW.date(), "observed_at": NOW}
+    assert _purpose_review_candidates({}, **args) == []
+
+    state["rows"] = [{**base, "purpose_review_state": "weight_due",
+                      "purpose_review_eligible": True}]
+    weight = _purpose_review_candidates({}, **args)[0]
+    assert weight["dedupe_key"] == "herdmaster:purpose-review:LIT-1"
+    assert weight["task_class"] == "physical_action_due"
+    assert weight["physical_work_ready"] is True
+
+    state["rows"] = [{**base, "purpose_review_state": "decision_due",
+                      "purpose_review_eligible": True}]
+    decision = _purpose_review_candidates({}, **args)[0]
+    assert decision["dedupe_key"] == weight["dedupe_key"]
+    assert decision["task_class"] == "protected_decision"
+    assert decision["owner_question_eligible"] is True
+    assert decision["detail_target"] == "/pig-allocation?mode=purpose-review&litter_id=LIT-1"
+
+
+def test_purpose_review_resolved_and_deferred_lifecycle_do_not_repeat(monkeypatch):
+    from modules.oom_sakkie.manager_case_sources import _purpose_review_candidates
+
+    row = {"pig_id": "PIG-1", "tag_number": "Rosie", "litter_id": "LIT-1",
+           "sow_tag_number": "Molly", "status": "Active", "on_farm": "Yes",
+           "purpose": "Unknown", "suggested_purpose": "Breeding Review",
+           "purpose_review_state": "decision_due", "purpose_review_eligible": True,
+           "purpose_review_due_after_days": 14}
+    monkeypatch.setattr("modules.pig_weights.pig_weights_service.get_pig_allocation_readiness",
+                        lambda **_kwargs: {"success": True, "pigs": [row]})
+    current = _purpose_review_candidates({}, now=NOW, today=NOW.date(), observed_at=NOW)[0]
+    deferred = {**current, "operational_status": "waiting_reassessment",
+                "assigned_worker_id": "herdmaster-worker"}
+    projection = build_owner_attention_projection([current], generated_at=NOW,
+                                                  prior_cases=[deferred])
+    assert projection["total_count"] == 0
+    assert projection["items"][0]["attention_group"] == "oom_sakkie_checking"
+
+    resolved = {**current, "operational_status": "completed", "lifecycle": "resolved"}
+    projection = build_owner_attention_projection([], generated_at=NOW,
+                                                  prior_cases=[resolved])
+    assert projection["total_count"] == 0
+    assert projection["groups"]["recently_completed"][0]["source_key"] == current["dedupe_key"]
+
+
+def test_purpose_review_deep_link_rejects_unsafe_canonical_identifier(monkeypatch):
+    from modules.oom_sakkie.manager_case_sources import _purpose_review_candidates
+
+    row = {"pig_id": "PIG-1", "tag_number": "Rosie", "litter_id": "../owner-attention",
+           "sow_tag_number": "Molly", "status": "Active", "on_farm": "Yes",
+           "purpose": "Unknown", "suggested_purpose": "Grow Out",
+           "purpose_review_state": "decision_due", "purpose_review_eligible": True,
+           "purpose_review_due_after_days": 14}
+    monkeypatch.setattr("modules.pig_weights.pig_weights_service.get_pig_allocation_readiness",
+                        lambda **_kwargs: {"success": True, "pigs": [row]})
+    candidate_row = _purpose_review_candidates(
+        {}, now=NOW, today=NOW.date(), observed_at=NOW,
+    )[0]
+    assert candidate_row["detail_target"] == "/pig-allocation?mode=purpose-review"
+
+
 def test_telegram_preserves_shared_group_meaning_without_raw_tag_dump():
     projection = build_owner_attention_projection([
         candidate("herdmaster:decision", "HERDMASTER", "Molly purpose choice", "Choose.",

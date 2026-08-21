@@ -1752,3 +1752,9 @@
   operational finding without designing the fix; GENERAL investigates and
   scopes, Control Tower queues it, and CORE eventually removes the temporary
   relay.
+# 2026-08-21 — HERDMASTER purpose work joins canonical Oom Sakkie attention
+
+- Made Pig Allocation readiness the single day-14/post-wean eligibility and recommendation path for purpose-review work.
+- Projected one stable litter/cohort identity through weighing, protected purpose decision, deferment/reassessment and resolution using the existing Oom Sakkie manager-case lifecycle and shared owner-attention projection.
+- Made Pig Allocation the unified workspace while preserving `/purpose-review` as a compatibility deep link; no allocation, reservation, sale, customer, Telegram or farm-write authority was added.
+- Corrected HERDMASTER's stale purpose/data doctrine references to the authoritative Vault paths.

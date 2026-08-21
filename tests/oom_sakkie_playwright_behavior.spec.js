@@ -357,3 +357,33 @@ test("dry-run/result/message POSTs require explicit owner clicks", async ({ page
   )).toBe(true);
   await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
 });
+
+test("purpose review compatibility opens the responsive unified allocation mode", async ({ page }) => {
+  await page.route("**/api/pig-weights/pig-allocation-readiness", route => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({
+      success: true, generated_date: "2026-08-21",
+      summary: { total: 1, buckets: { "Needs Classification": 1 } },
+      business_rules: { source: "terminal-invoked synthetic fixture" },
+      pigs: [{ pig_id: "PIG-SYNTH-1", tag_number: "Rosie", litter_id: "LIT-SYNTH-1",
+        sow_tag_number: "Molly", status: "Active", on_farm: "Yes", purpose: "Unknown",
+        readiness_bucket: "Needs Classification", suggested_purpose: "Breeding Review",
+        suggested_purpose_reason: "Synthetic growth and litter evidence.",
+        recommended_action: "Review purpose", current_pen_name: "Weaner pen" }],
+    }),
+  }));
+  await page.route("**/api/pig-weights/riversdale-auction-**", route => route.fulfill({
+    status: 503, contentType: "application/json", body: JSON.stringify({ success: false }),
+  }));
+  await page.goto("/purpose-review?litter_id=LIT-SYNTH-1");
+  await expect(page).toHaveURL(/\/pig-allocation\?mode=purpose-review&litter_id=LIT-SYNTH-1$/);
+  await expect(page.getByRole("heading", { name: "Pig Allocation · Purpose Review" })).toBeVisible();
+  await expect(page.getByText("Rosie", { exact: true })).toBeVisible();
+  await expect(page.locator("#riversdale_auction_panel")).toBeHidden();
+  await expect(page.locator("label[for='search_filter']")).toHaveText("Search");
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    await expect(page.locator("#allocation_review_panel")).toBeVisible();
+  }
+});

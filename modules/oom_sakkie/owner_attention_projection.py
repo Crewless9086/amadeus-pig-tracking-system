@@ -415,6 +415,9 @@ def _category(source_key: str, specialist: str) -> str:
 
 
 def _detail_target(raw: Mapping[str, Any], source_key: str, specialist: str) -> str:
+    declared = str(raw.get("detail_target") or "").strip()
+    if declared.startswith("/") and not declared.startswith("//") and ".." not in declared:
+        return declared
     refs = tuple(str(value) for value in raw.get("evidence_refs") or ())
     litter_id = _safe_identifier(_ref_value(refs, "litter:"))
     pig_id = _safe_identifier(_ref_value(refs, "pig:"))

@@ -227,6 +227,9 @@ def _herdmaster(now):
             raise
         snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
+    candidates.extend(_purpose_review_candidates(
+        snapshot, now=now, today=farm_today, observed_at=snapshot_observed,
+    ))
     for row in snapshot.get("overview_rows") or ():
         if str(row.get("Tag_Number") or "").strip().casefold() != "151":
             continue
@@ -285,6 +288,87 @@ def _herdmaster(now):
     return candidates
 
 
+def _purpose_review_candidates(snapshot, *, now, today, observed_at):
+    """Project one governed purpose-work identity per canonical litter/cohort."""
+    from modules.pig_weights.pig_weights_service import get_pig_allocation_readiness
+
+    allocation = get_pig_allocation_readiness(
+        today=today, allow_sheet_fallback=False, canonical_inputs=snapshot,
+    )
+    if allocation.get("success") is not True:
+        return []
+
+    grouped = {}
+    for row in allocation.get("pigs") or ():
+        purpose = str(row.get("purpose") or "").strip().casefold()
+        if (str(row.get("status") or "").casefold() != "active"
+                or str(row.get("on_farm") or "").casefold() != "yes"
+                or purpose not in {"", "unknown", "unallocated", "not allocated", "not_allocated"}):
+            continue
+        if row.get("purpose_review_eligible") is not True:
+            continue
+        litter_id = str(row.get("litter_id") or "").strip()
+        cohort_key = litter_id or str(row.get("pig_id") or "").strip()
+        if not cohort_key:
+            continue
+        grouped.setdefault(cohort_key, {"litter_id": litter_id, "rows": []})["rows"].append(row)
+
+    result = []
+    for cohort_key, cohort in sorted(grouped.items()):
+        rows = cohort["rows"]
+        missing = [row for row in rows if row.get("purpose_review_state") == "weight_due"]
+        sow_name = next((str(row.get("sow_tag_number") or "").strip()
+                         for row in rows if str(row.get("sow_tag_number") or "").strip()), "")
+        row_names = [str(row.get("tag_number") or "").strip() or "Name unavailable"
+                     for row in rows]
+        animal_names = [name for name in row_names if name != "Name unavailable"]
+        label = sow_name or (animal_names[0] if len(animal_names) == 1 else "Purpose review cohort")
+        stable_reference = cohort["litter_id"] or str(rows[0].get("pig_id") or cohort_key)
+        refs = [f"litter:{cohort['litter_id']}" if cohort["litter_id"] else f"pig:{stable_reference}",
+                f"purpose_work:{cohort_key}", f"rule_day:{rows[0].get('purpose_review_due_after_days') or 14}",
+                f"observed:{observed_at.isoformat()}"]
+        detail = "/pig-allocation?mode=purpose-review"
+        if cohort["litter_id"] and _safe_detail_identifier(cohort["litter_id"]):
+            detail += f"&litter_id={cohort['litter_id']}"
+        if missing:
+            names = [str(row.get("tag_number") or "Name unavailable") for row in missing]
+            result.append(_candidate(
+                f"herdmaster:purpose-review:{cohort_key}", "HERDMASTER", "due", refs + [
+                    "phase:post_wean_weight", *[f"pig:{row.get('pig_id')}" for row in missing]], [],
+                f"{label}'s purpose cohort needs {len(missing)} qualifying post-wean weight"
+                f"{'s' if len(missing) != 1 else ''} before one grouped decision.",
+                "Physically weigh and record through the existing grouped weighing rail: "
+                + ", ".join(names) + ".", now,
+                task_class="physical_action_due", physical_work_ready=True,
+                physical_assignee="Farm team", exceptional_weighing_due_now=True,
+                message_family="purpose_review", detail_target=detail,
+                presentation_identity={"human_name": sow_name,
+                    "familiar_meaning": "Purpose review cohort" if not sow_name else "",
+                    "stable_reference": stable_reference}))
+            continue
+        suggestions = [str(row.get("suggested_purpose") or "Manual Review") for row in rows]
+        result.append(_candidate(
+            f"herdmaster:purpose-review:{cohort_key}", "HERDMASTER", "due",
+            refs + ["phase:owner_decision", *[f"pig:{row.get('pig_id')}" for row in rows]], [],
+            f"{label}'s purpose cohort has qualifying day-{rows[0].get('purpose_review_due_after_days') or 14} evidence for {len(rows)} animal"
+            f"{'s' if len(rows) != 1 else ''}.",
+            "Review one grouped HERDMASTER recommendation in Pig Allocation: "
+            + ", ".join(f"{name} — {suggestion}"
+                        for name, suggestion in zip(row_names, suggestions))
+            + ". Purpose approval does not allocate, reserve, sell, or publish an animal.",
+            now, task_class="protected_decision", owner_question_eligible=True,
+            message_family="purpose_review", detail_target=detail,
+            presentation_identity={"human_name": sow_name,
+                "familiar_meaning": "Purpose review cohort" if not sow_name else "",
+                "stable_reference": stable_reference}))
+    return result
+
+
+def _safe_detail_identifier(value):
+    text = str(value or "")
+    return bool(text) and len(text) <= 120 and all(
+        character.isalnum() or character in "-_." for character in text
+    )
 def _sam(now):
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
@@ -417,7 +501,7 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
                message_family=None, physical_work_ready=False,
                physical_assignee=None, owner_question_eligible=False,
                irreducible_owner_exception=False, routine_weekly_weighing=False,
-               exceptional_weighing_due_now=False):
+               exceptional_weighing_due_now=False, detail_target=None):
     result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
@@ -441,6 +525,8 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
         result["routine_weekly_weighing"] = True
     if exceptional_weighing_due_now:
         result["exceptional_weighing_due_now"] = True
+    if detail_target:
+        result["detail_target"] = str(detail_target)
     return result
 
 
