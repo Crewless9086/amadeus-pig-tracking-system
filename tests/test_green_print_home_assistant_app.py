@@ -20,7 +20,52 @@ def test_package_is_bounded_and_privilege_split():
     assert cfg["arch"]==["aarch64"] and cfg["privileged"]==[] and cfg["host_network"] is False
     assert "adduser -S -D -H" in docker and "su-exec greenprint:greenprint" in init and "su-exec cupsd:cupsd" in init
     assert "lpadmin" not in init and "exec su-exec greenprint" in init
-    assert docker.startswith("FROM ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
+    assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
+
+def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
+    cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
+    assert cfg["version"]=="0.3.0"
+    assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
+    assert not (APP/"build.yaml").exists()
+    assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
+    assert 'org.opencontainers.image.revision="${SOURCE_COMMIT}"' in docker
+
+def test_image_workflow_is_manual_publish_fail_closed_and_attested():
+    workflow=(ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in workflow and "pull_request:" in workflow
+    assert "if: github.event_name == 'workflow_dispatch' && inputs.publish" in workflow
+    assert "Prohibit version-tag replacement" in workflow
+    assert "SOURCE_COMMIT=${{ inputs.expected_source_commit }}" in workflow
+    assert "actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a" in workflow
+    assert "actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34" in workflow
+    assert "pytest PyYAML" in workflow
+    assert "latest" not in workflow and "push: \"true\"" in workflow
+    assert 'test "${GITHUB_REF}" = "refs/heads/main"' in workflow
+    assert workflow.count('test "${resolved_digest}" = "${PRODUCED_DIGEST}"') == 1
+    assert 'cosign verify --certificate-identity "${identity}"' in workflow
+    assert 'gh attestation verify "oci://${digest_ref}"' in workflow
+    assert 'GH_TOKEN: ${{ github.token }}' in workflow
+    assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
+    assert "green-print-0.3.0-verified-release-packet" in workflow
+
+def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
+    docs=(APP/"DOCS.md").read_text(encoding="utf-8")
+    assert "build.yaml remains" not in docs
+    assert "local Supervisor build" not in docs
+    assert "There is no current local Supervisor-build fallback" in docs
+    assert "GHCR does not provide a registry-level" in docs
+
+def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
+    path=ROOT/".github/workflows/green-print-image.yml"
+    workflow=path.read_text(encoding="utf-8")
+    parsed=yaml.safe_load(workflow)
+    steps=parsed["jobs"]["publish"]["steps"]
+    names=[step.get("name") for step in steps]
+    verify=steps[names.index("Verify signature and digest-bound attestations")]
+    assert verify["env"]["GH_TOKEN"]=="${{ github.token }}"
+    assert workflow.count("GH_TOKEN: ${{ github.token }}")==1
+    assert "gh attestation verify" in verify["run"] and "|| true" not in verify["run"]
+    assert names.index("Verify signature and digest-bound attestations") < names.index("Emit digest-bound non-secret release receipt") < names.index("Preserve non-secret verified release packet")
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
