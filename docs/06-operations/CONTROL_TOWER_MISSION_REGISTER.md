@@ -4819,3 +4819,53 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   and genuine mission execution remain later separate decisions.
 - Next automatic action: prepare the immutable stop-preserving validation/staging
   packet; do not remove the stop marker or enable/start the task.
+
+## 2026-08-21 — Green PR #1152 governed web release and canonical migration
+
+- Mission/lineage: existing `DMQ-20260816-01` fixed weekly weighing-sheet pilot,
+  PR #1152; no duplicate mission, queue, scheduler, database or print path.
+- Target owner outcome: one genuine natural Oom Sakkie request produces exactly one
+  correct A4 monochrome one-sided physical weekly weighing sheet through commissioned
+  Green, with canonical/provider/physical proof, safe final state, owned follow-up,
+  a later terminal-independent cycle and removed manual print work.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; canonical release prerequisites are loaded, but Home Assistant,
+  credential/device/private-CA/CUPS/printer commissioning and a genuine physical
+  print cycle have not occurred.
+- Enabling-stage progress: approved PR head
+  `411da4b57c7e2d1a4606e36004b2d986d2f0bba2` merged as exact main
+  `f5d6634b25142d95a943f2c7c10a89fbfd5a4383`. Render deploy
+  `dep-da4a6ptckfvc738ggs8g` reached terminal `live` at that exact commit.
+  Production `/health`, `/health/revision` and `/health/database` returned HTTP 200,
+  with exact Render identity and healthy PostgreSQL before and after migration.
+- Migration execution: from clean detached exact checkout
+  `C:\tmp\green-release-f5d6634`, the repository governed single-file runner applied
+  only `supabase/migrations/202608210001_create_green_print_jobs.sql`. The local
+  `DATABASE_URL` remained secret and was not printed. The superseded
+  `202608200002_create_green_print_jobs.sql` is absent from the exact checkout and
+  was not executed by this action.
+- Canonical verification: required device registry, print-job and event tables exist;
+  all 11 reviewed functions exist with fixed `pg_catalog,app_private` search paths.
+  `documents_api_executor` and `documents_green_worker_executor` are non-login,
+  non-inheriting and non-elevated. Only the reviewed EXECUTE grants exist; neither
+  executor has direct table privileges, and PUBLIC/anon/authenticated have no
+  reviewed-function privileges.
+- Job safety: total canonical print jobs `0`; unresolved print jobs `0`. No claim,
+  job, provider submission, CUPS access, printer access or physical page occurred.
+- Migration-ledger truth: this production database has no
+  `supabase_migrations.schema_migrations` relation. Therefore no ledger row is
+  claimed or manufactured. Exact runner receipt plus read-only schema/function/
+  role/grant fingerprint is the current migration evidence; the absence of a native
+  ledger is retained as a truthful governance gap for future migration tooling.
+- Effects/boundaries: no Home Assistant installation, credential/device/queue/CA
+  registration, CUPS/printer configuration, message, provider call or hardware
+  action. No migration/runtime failure, unexpected job, privilege expansion or
+  health regression occurred, so rollback was not triggered.
+- Classification: `DEPLOYED_CANONICAL_FOUNDATION / UNCOMMISSIONED /
+  PROTECTED_BOUNDARY`; Business completion is `NO`.
+- First missing real-life gate: separate protected installation and commissioning
+  authority binding the exact aarch64 image, Home Assistant app, private CA,
+  least-privilege credential, farm/Green/printer/CUPS queue/registry identities and
+  private IP-literal IPPS endpoint, while keeping Green inactive until verified.
+- Next automatic action: prepare one exact non-secret commissioning decision packet;
+  do not install, register, create jobs or print without that authority.
