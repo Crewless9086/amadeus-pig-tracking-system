@@ -3958,3 +3958,47 @@ assessment was performed against a stale divergent local head, so its source-cod
 claims are historical inspection evidence and require exact-current verification
 at promotion. No terminal was dispatched for this deferred addendum and no provider,
 production, database, customer or hardware effect occurred.
+
+### Green correction closeout and corrected-head review dispatch - 2026-08-21
+
+Charl reported that the DOCUMENTS correction terminal completed but did not close.
+Fresh inspection found the complete populated 12,488-byte handover at
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_REVIEW_CORRECTION_HANDOVER_20260821.md` (SHA-256
+`605599D58F0280925849A2BAB76A5E6076440B30650710909E09D5064D0DB622`). It is bound
+to clean, pushed PR #1150 head `a4b61e873892c1f419cd5052082c681f07050268`.
+GitHub freshly reports the PR open, non-draft, clean and mergeable with all three
+exact-head CI checks successful. The handover reports 34 focused tests passed,
+Python compilation and diff checks passed, and a local `linux/arm64` image build and
+identity inspection passed. These remain enabling-stage evidence only.
+
+The correction handover is valid for its bounded source assignment. It reports the
+seven prior findings repaired in source: canonical atomic lease fencing, separated
+non-root identities, endpoint pinning, protected Continue/Cancel, queue-bound CUPS
+identity, restore/disk/Hold safety and adversarial tests. No migration, deployment,
+installation, commissioning, genuine request, provider operation, physical page,
+cleanup/follow-up or later independent print occurred. Target owner outcome remains
+the genuine natural-request-to-correct-physical-page journey; owner outcome achieved
+is `NONE`; usable now is `NO`; lifecycle is `REVIEW_HOLD / BUILT_BUT_UNPROVEN /
+UNCOMMISSIONED`.
+
+The terminal's Node and Codex work had ended, but PowerShell PID `37996` remained as
+an idle `-NoExit` shell. Control Tower closed only that stale shell and verified it
+no longer exists. This is terminal hygiene, not mission completion.
+
+Control Tower then automatically advanced the SAME DOCUMENTS mission to a fresh
+read-only independent review of immutable head `a4b61e873892c1f419cd5052082c681f07050268`.
+The visible review lane is freshly bound to PowerShell PID `13516`, Node PID `41436`
+and Codex PID `28076`, prompt
+`C:\tmp\DOCUMENTS_GREEN_CORRECTED_HEAD_REVIEW_PROMPT_20260821.md` and required full
+handover `C:\tmp\VISIBLE_DOCUMENTS_GREEN_CORRECTED_HEAD_REVIEW_HANDOVER_20260821.md`.
+It may inspect and run safe synthetic validation only; it may not edit, commit,
+comment, merge, migrate, deploy, install, commission or operate production/CUPS/
+printer resources. It must return `APPROVE`, `REQUEST_CHANGES` or `BLOCK` and close
+automatically.
+
+DOCUMENTS remains `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, recovery WIP slot
+2. Approval would reach only the protected serialized merge-decision gate; it would
+not authorize migration, deployment, installation or commissioning. OOM SAKKIE
+remains an external runtime-owned evidence wait; ROOTLINE and BEACON remain protected
+holds; the Chromecast addendum remains final/deferred. No duplicate mission,
+implementation branch, watcher or status-only lane was created.
