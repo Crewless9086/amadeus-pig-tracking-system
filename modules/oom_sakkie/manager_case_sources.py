@@ -116,7 +116,8 @@ def _rootline(now):
             f"ROOTLINE current-plan delivery exception: the current-date canonical ROOTLINE observation for {local_date} is missing.",
             ("Automatic acquisition owner: the existing Oom Sakkie ROOTLINE schedule must load "
              f"and persist the canonical observation; retry at {retry_text}. No hardware action is permitted."),
-            retry_at)]
+            retry_at, presentation_identity={"familiar_meaning": "Current water and energy plan",
+                "stable_reference": local_date})]
     event_id, observed, payload = observation_row; payload = payload or {}
     if delivered_row:
         return []
@@ -134,7 +135,9 @@ def _rootline(now):
         "ROOTLINE current-plan delivery exception: provider-confirmed family delivery is missing for the exact current-date material, result and generation.",
         ("Automatic acquisition owner: the existing Oom Sakkie ROOTLINE delivery lifecycle must "
          f"obtain and persist exact Telegram provider confirmation; retry at {retry_text}. "
-         "Do not infer delivery or actuate hardware."), retry_at)]
+         "Do not infer delivery or actuate hardware."), retry_at,
+        presentation_identity={"familiar_meaning": "Current water and energy plan",
+                               "stable_reference": local_date})]
 
 
 def _herdmaster(now):
@@ -153,7 +156,9 @@ def _herdmaster(now):
         for welfare in load_open_welfare_attention_cases():
             projected = project_welfare_case_attention(welfare)
             case_id = projected["case_identity"]
-            pig_label = _welfare_animal_label(welfare)
+            presentation_identity = _welfare_presentation_identity(welfare)
+            pig_label = (presentation_identity.get("human_name") or
+                         presentation_identity.get("familiar_meaning") or "Name unavailable")
             observed = str(welfare.get("welfare_case_observed_at") or now.isoformat())
             due = _time(welfare.get("welfare_case_next_check_at"), now)
             state = str(welfare.get("welfare_case_state") or "open")
@@ -171,7 +176,9 @@ def _herdmaster(now):
                  else ["current_welfare_and_lifecycle_status"]),
                 f"{pig_label} has an active {state} welfare case"
                 + (f": {escalation}" if escalation else "."),
-                action, due, task_class=projected["task_class"], welfare_priority=True))
+                action, due, task_class=projected["task_class"], welfare_priority=True,
+                physical_work_ready=projected["task_class"] == "physical_action_due",
+                presentation_identity=presentation_identity))
     for item in tuple(getattr(result, "work_items", ()) or ()):
         metadata = getattr(item, "metadata", {}) or {}
         welfare_priority = bool(metadata.get("welfare_exception")
@@ -180,7 +187,14 @@ def _herdmaster(now):
         due = item.due_at or now
         urgency = {"urgent": "urgent", "due_today": "due", "planned": "planned",
                    "waiting_for_evidence": "urgent", "protected_owner_decision": "due"}.get(item.state.value, "watch")
-        task_class = ("protected_decision" if item.state.value == "protected_owner_decision"
+        exact_owner_question = bool(
+            str(item.genuine_question or "").strip()
+            and str(item.assignee or "").casefold() == "charl"
+            and str(item.question_for or "").casefold() == "charl"
+            and item.state.value in {"urgent", "due_today", "protected_owner_decision"}
+            and item.authority.value in {"advisory", "owner_decision"})
+        task_class = ("protected_decision" if (
+                          item.state.value == "protected_owner_decision" or exact_owner_question)
                       else ("status_reconciliation" if unknowns or item.state.value == "waiting_for_evidence"
                       else ("physical_action_due" if any(term in item.next_action.casefold()
                             for term in ("record weight", "weigh now", "physical weighing"))
@@ -192,10 +206,30 @@ def _herdmaster(now):
              *(["attention:welfare_priority"] if welfare_priority else []),
              *item.provenance.source_refs], unknowns,
             item.title + ": " + item.why, item.next_action, due,
-            task_class=task_class, welfare_priority=welfare_priority))
+            task_class=task_class, welfare_priority=welfare_priority,
+            physical_work_ready=(task_class == "physical_action_due"
+                                 and metadata.get("physical_work_ready") is True
+                                 and not unknowns),
+            routine_weekly_weighing=metadata.get("routine_weekly_weighing") is True,
+            exceptional_weighing_due_now=metadata.get("exceptional_weighing_due_now") is True,
+            physical_assignee=(item.assignee if task_class == "physical_action_due" else None),
+            owner_question_eligible=exact_owner_question or (
+                task_class == "protected_decision" and not unknowns)))
     from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
-    snapshot = get_allocation_input_rows()
+    farm_today = _aware(now).astimezone(ZoneInfo("Africa/Johannesburg")).date()
+    try:
+        snapshot = get_allocation_input_rows(today=farm_today)
+    except TypeError as exc:
+        # Preserve narrow dependency-injected adapters that predate the
+        # optional deterministic date argument; production uses the canonical
+        # adapter above.
+        if "today" not in str(exc):
+            raise
+        snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
+    candidates.extend(_purpose_review_candidates(
+        snapshot, now=now, today=farm_today, observed_at=snapshot_observed,
+    ))
     for row in snapshot.get("overview_rows") or ():
         if str(row.get("Tag_Number") or "").strip().casefold() != "151":
             continue
@@ -208,7 +242,9 @@ def _herdmaster(now):
                 ["withdrawal_clearance", "sales_eligibility"],
                 "Pig 151 does not have proved withdrawal clearance and sales eligibility.",
                 "Delegate to HERDMASTER; retain the hold until canonical withdrawal and allocation evidence both support eligibility.",
-                now + timedelta(minutes=5)))
+                now + timedelta(minutes=5), presentation_identity={
+                    "familiar_meaning": "Pig 151",
+                    "stable_reference": str(row.get("Pig_ID") or "tag 151")}))
     for row in snapshot.get("litter_rows") or ():
         sow = str(row.get("Sow_Tag_Number") or "").strip()
         status = str(row.get("Litter_Status") or "").strip().casefold()
@@ -217,20 +253,122 @@ def _herdmaster(now):
             farrowing = str(row.get("Farrowing_Date") or "unknown")
             wean = str(row.get("Wean_Date") or "unknown")
             weaned = row.get("Weaned_Count")
+            treatment_state = str(row.get("first_treatment_evidence_state") or "unknown").casefold()
+            treatment_due = (treatment_state == "due"
+                             and row.get("first_treatment_attention_due") is True
+                             and int(row.get("Active_Pig_Count") or 0) > 0)
+            treatment_date = str(row.get("first_treatment_attention_date") or "unknown")
             candidates.append(_candidate("herdmaster:molly-active-litter", "HERDMASTER", "due",
                 [f"litter:{litter_id}", f"status:{status or 'unknown'}",
                  f"farrowing:{farrowing}", f"wean_due:{wean}",
                  f"weaned_count:{weaned if weaned is not None else 'unknown'}",
+                 f"first_treatment_due:{str(treatment_due).lower()}",
+                 f"first_treatment_state:{treatment_state}",
+                 f"first_treatment_attention_date:{treatment_date}",
                  f"observed:{snapshot_observed.isoformat()}"],
-                ([] if wean != "unknown" else ["current_litter_weaning_due_date"]),
-                f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}.",
-                "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.",
+                ([] if treatment_due or treatment_state in {"not_due", "completed", "skipped"}
+                 else [f"first_treatment_{treatment_state}_reconciliation"]),
+                ("Molly's litter first treatment is due and ready."
+                 if treatment_due else
+                 f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}."),
+                ("Molly's litter — perform the first treatment now in the existing litter treatment journey."
+                 if treatment_due else
+                 "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation."),
                 now + timedelta(minutes=30),
-                task_class=("informational_watch" if wean != "unknown"
-                            else "status_reconciliation")))
+                task_class=("physical_action_due" if treatment_due else
+                            ("informational_watch" if treatment_state in {
+                                "not_due", "completed", "skipped"}
+                             else "status_reconciliation")),
+                welfare_priority=treatment_due,
+                physical_work_ready=treatment_due,
+                physical_assignee=("Farm team" if treatment_due else None),
+                message_family=("litter_first_treatment" if treatment_due else "litter_care"),
+                presentation_identity={"human_name": "Molly",
+                                       "stable_reference": litter_id}))
     return candidates
 
 
+def _purpose_review_candidates(snapshot, *, now, today, observed_at):
+    """Project one governed purpose-work identity per canonical litter/cohort."""
+    from modules.pig_weights.pig_weights_service import get_pig_allocation_readiness
+
+    allocation = get_pig_allocation_readiness(
+        today=today, allow_sheet_fallback=False, canonical_inputs=snapshot,
+    )
+    if allocation.get("success") is not True:
+        return []
+
+    grouped = {}
+    for row in allocation.get("pigs") or ():
+        purpose = str(row.get("purpose") or "").strip().casefold()
+        if (str(row.get("status") or "").casefold() != "active"
+                or str(row.get("on_farm") or "").casefold() != "yes"
+                or purpose not in {"", "unknown", "unallocated", "not allocated", "not_allocated"}):
+            continue
+        if row.get("purpose_review_eligible") is not True:
+            continue
+        litter_id = str(row.get("litter_id") or "").strip()
+        cohort_key = litter_id or str(row.get("pig_id") or "").strip()
+        if not cohort_key:
+            continue
+        grouped.setdefault(cohort_key, {"litter_id": litter_id, "rows": []})["rows"].append(row)
+
+    result = []
+    for cohort_key, cohort in sorted(grouped.items()):
+        rows = cohort["rows"]
+        missing = [row for row in rows if row.get("purpose_review_state") == "weight_due"]
+        sow_name = next((str(row.get("sow_tag_number") or "").strip()
+                         for row in rows if str(row.get("sow_tag_number") or "").strip()), "")
+        row_names = [str(row.get("tag_number") or "").strip() or "Name unavailable"
+                     for row in rows]
+        animal_names = [name for name in row_names if name != "Name unavailable"]
+        label = sow_name or (animal_names[0] if len(animal_names) == 1 else "Purpose review cohort")
+        stable_reference = cohort["litter_id"] or str(rows[0].get("pig_id") or cohort_key)
+        refs = [f"litter:{cohort['litter_id']}" if cohort["litter_id"] else f"pig:{stable_reference}",
+                f"purpose_work:{cohort_key}", f"rule_day:{rows[0].get('purpose_review_due_after_days') or 14}",
+                f"observed:{observed_at.isoformat()}"]
+        detail = "/pig-allocation?mode=purpose-review"
+        if cohort["litter_id"] and _safe_detail_identifier(cohort["litter_id"]):
+            detail += f"&litter_id={cohort['litter_id']}"
+        if missing:
+            names = [str(row.get("tag_number") or "Name unavailable") for row in missing]
+            result.append(_candidate(
+                f"herdmaster:purpose-review:{cohort_key}", "HERDMASTER", "due", refs + [
+                    "phase:post_wean_weight", *[f"pig:{row.get('pig_id')}" for row in missing]], [],
+                f"{label}'s purpose cohort needs {len(missing)} qualifying post-wean weight"
+                f"{'s' if len(missing) != 1 else ''} before one grouped decision.",
+                "Physically weigh and record through the existing grouped weighing rail: "
+                + ", ".join(names) + ".", now,
+                task_class="physical_action_due", physical_work_ready=True,
+                physical_assignee="Farm team", exceptional_weighing_due_now=True,
+                message_family="purpose_review", detail_target=detail,
+                presentation_identity={"human_name": sow_name,
+                    "familiar_meaning": "Purpose review cohort" if not sow_name else "",
+                    "stable_reference": stable_reference}))
+            continue
+        suggestions = [str(row.get("suggested_purpose") or "Manual Review") for row in rows]
+        result.append(_candidate(
+            f"herdmaster:purpose-review:{cohort_key}", "HERDMASTER", "due",
+            refs + ["phase:owner_decision", *[f"pig:{row.get('pig_id')}" for row in rows]], [],
+            f"{label}'s purpose cohort has qualifying day-{rows[0].get('purpose_review_due_after_days') or 14} evidence for {len(rows)} animal"
+            f"{'s' if len(rows) != 1 else ''}.",
+            "Review one grouped HERDMASTER recommendation in Pig Allocation: "
+            + ", ".join(f"{name} — {suggestion}"
+                        for name, suggestion in zip(row_names, suggestions))
+            + ". Purpose approval does not allocate, reserve, sell, or publish an animal.",
+            now, task_class="protected_decision", owner_question_eligible=True,
+            message_family="purpose_review", detail_target=detail,
+            presentation_identity={"human_name": sow_name,
+                "familiar_meaning": "Purpose review cohort" if not sow_name else "",
+                "stable_reference": stable_reference}))
+    return result
+
+
+def _safe_detail_identifier(value):
+    text = str(value or "")
+    return bool(text) and len(text) <= 120 and all(
+        character.isalnum() or character in "-_." for character in text
+    )
 def _sam(now):
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
@@ -265,7 +403,9 @@ def _sam(now):
             [str(value) for value in blockers[:6]] or ["provider_confirmed_customer_outcome"],
             "SAM has a current unresolved customer conversation without provider-confirmed completion.",
             "Delegate to SAM; retain ownership until a supported provider-confirmed result or one precise protected exception is recorded.",
-            now + timedelta(minutes=5)))
+            now + timedelta(minutes=5), presentation_identity={
+                "familiar_meaning": "Customer name unavailable",
+                "stable_reference": f"conversation {digest}"}))
     return result
 
 
@@ -288,7 +428,8 @@ def _beacon(now):
         ["current_sale_opportunity_proposal_or_exact_media_request"],
         "BEACON has no current proposal or exact media request reconciled after the latest sales evidence.",
         "Delegate a protected internal BEACON proposal or exact media request from current canonical sales, inventory and media evidence; never publish, spend, contact customers, reserve stock or infer public-use authority.",
-        now)]
+        now, presentation_identity={"familiar_meaning": "Current sales opportunity",
+                                    "stable_reference": str(packet["packet_id"])})]
 
 
 def _delivery_gaps(now):
@@ -319,7 +460,9 @@ def _delivery_gaps(now):
             ["provider_confirmed_useful_owner_result"],
             f"A current {specialist} result exists internally but its Oom Sakkie delivery is {status}.",
             "Retain the result and use the existing family/protected delivery rail only after its exact retry state is safe.",
-            now + timedelta(minutes=5)))
+            now + timedelta(minutes=5), presentation_identity={
+                "familiar_meaning": f"{specialist.title()} owner result",
+                "stable_reference": digest}))
     return result
 
 
@@ -348,11 +491,17 @@ def _runtime(now):
         [f"payment:{payment[0] if payment else 'none'}", f"rootline:{rootline or 'none'}"], stale,
         "One or more existing Oom Sakkie scheduled workers is stale.",
         "Escalate one precise runtime exception and reassess after the provider schedule or supervisor recovers.",
-        now + timedelta(minutes=5))]
+        now + timedelta(minutes=5), presentation_identity={
+            "familiar_meaning": "Oom Sakkie scheduled operation",
+            "stable_reference": "scheduled-worker-health"})]
 
 
 def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_action, next_at,
-               *, task_class=None, welfare_priority=False):
+               *, task_class=None, welfare_priority=False, presentation_identity=None,
+               message_family=None, physical_work_ready=False,
+               physical_assignee=None, owner_question_eligible=False,
+               irreducible_owner_exception=False, routine_weekly_weighing=False,
+               exceptional_weighing_due_now=False, detail_target=None):
     result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
@@ -360,6 +509,24 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
         result["task_class"] = task_class
     if welfare_priority:
         result["welfare_priority"] = True
+    if presentation_identity:
+        result["presentation_identity"] = dict(presentation_identity)
+    if message_family:
+        result["message_family"] = str(message_family)
+    if physical_work_ready:
+        result["physical_work_ready"] = True
+    if physical_assignee:
+        result["physical_assignee"] = str(physical_assignee)
+    if owner_question_eligible:
+        result["owner_question_eligible"] = True
+    if irreducible_owner_exception:
+        result["irreducible_owner_exception"] = True
+    if routine_weekly_weighing:
+        result["routine_weekly_weighing"] = True
+    if exceptional_weighing_due_now:
+        result["exceptional_weighing_due_now"] = True
+    if detail_target:
+        result["detail_target"] = str(detail_target)
     return result
 
 
@@ -368,17 +535,19 @@ def _configured_owner():
     return values[0] if values else ""
 
 
-def _welfare_animal_label(row):
+def _welfare_presentation_identity(row):
     provenance = row.get("welfare_case_provenance") or {}
     context = provenance.get("intake_context") if isinstance(provenance, dict) else {}
     preview = context.get("preview") if isinstance(context, dict) else {}
     evaluator = preview.get("evaluator") if isinstance(preview, dict) else {}
     identity = evaluator.get("identity") if isinstance(evaluator, dict) else {}
-    for key in ("display_name", "name", "tag_number"):
+    for key in ("display_name", "name"):
         value = str(identity.get(key) or "").strip() if isinstance(identity, dict) else ""
         if value:
-            return value
-    return f"Pig {row.get('pig_id') or 'Unknown'}"
+            return {"human_name": value,
+                    "stable_reference": str(identity.get("tag_number") or row.get("pig_id") or "")}
+    return {"familiar_meaning": "Animal name unavailable",
+            "stable_reference": str(identity.get("tag_number") or row.get("pig_id") or "")}
 
 
 def _time(value, fallback):

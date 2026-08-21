@@ -2514,7 +2514,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         docs = Path("docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md").read_text(encoding="utf-8")
 
         self.assertIn('@app.route("/purpose-review")', app_source)
-        self.assertIn('render_template("purpose-review.html")', app_source)
+        self.assertIn('redirect(f"/pig-allocation?mode=purpose-review', app_source)
         self.assertIn('@pig_weights_bp.route("/purpose-review", methods=["GET"])', routes)
         self.assertIn('@pig_weights_bp.route("/purpose-review/apply", methods=["POST"])', routes)
         self.assertIn('@pig_weights_bp.route("/purpose-review/recheck", methods=["POST"])', routes)
@@ -2553,6 +2553,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/bulk-weights?return_to=", dashboard_js)
         self.assertIn(".purpose-review-actions", css)
         self.assertIn(".purpose-review-recheck", css)
+        allocation_js = Path("static/js/pigAllocation.js").read_text(encoding="utf-8")
+        self.assertIn('allocationQuery.get("mode") === "purpose-review"', allocation_js)
+        self.assertIn("purposeReviewLitterId", allocation_js)
         self.assertIn("## Herdmaster Boundary", docs)
         self.assertIn("It cannot change records without approved backend actions", docs)
 

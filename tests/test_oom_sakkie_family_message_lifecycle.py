@@ -77,6 +77,24 @@ def test_brief_replacement_requires_exact_prior_owner_provider_binding():
     assert value["status"] == "brief_replacement_prior_binding_unproven"
 
 
+def test_unchanged_rolling_brief_is_silent_before_provider_io():
+    digest = "9" * 64
+    rows = [{"state":"delivered", "event_id":"D-GENERATION-9-DELIVERED",
+        "telegram_message_id":"100", "owner_user_id":"42", "chat_id":"42",
+        "specialist_identity":"OOM_SAKKIE", "task_state":"daily_farm_manager_ready",
+        "generation_digest":digest}]
+    value = replace_current_brief({"telegram_user_id":"42", "telegram_chat_id":"42",
+        "provider_message_id":"2", "provider_timestamp":"2026-08-20T08:00:00+00:00",
+        "text":"answer"}, {"answer":"unchanged brief", "status":"daily_farm_manager_ready",
+        "rolling_brief_replacement":True}, mission_id="D:G2", card_mission_id="D",
+        previous_message_id="100", generation_digest=digest,
+        event_store=lambda action, *_args: rows if action == "load" else pytest.fail("must not write"),
+        sender=lambda *_args: pytest.fail("must not send"),
+        deleter=lambda *_args: pytest.fail("must not delete"))
+    assert value["status"] == "brief_replacement_unchanged_suppressed"
+    assert value["telegram_sends"] == value["telegram_edits"] == value["telegram_deletes"] == 0
+
+
 def test_different_material_generations_serialize_against_one_current_brief():
     rows={"prior":{"event_id":"prior","state":"delivered","task_state":"daily_farm_manager_ready",
         "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
