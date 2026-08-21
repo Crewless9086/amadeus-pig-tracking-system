@@ -578,6 +578,76 @@ def test_parent_provider_exception_is_durable_unknown_not_assumed_flow():
         "authoritative":False,"state":"Unknown"}
 
 
+def test_early_authoritative_parent_off_is_immediately_urgent_and_owns_both_final_states():
+    parent,auxiliary=parent_and_injection()
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False,
+        parent_state="OFF")
+    result=_recover_or_observe(parent,store,transport,
+        lambda *_:{"success":False},lambda _:None,NOW)
+    assert result["status"]=="parent_off_observed_injector_off_unverified"
+    assert result["native_deadline_phase"]=="before"
+    assert result["urgent_intervention_required"] is True
+    assert result["irrigation_flow_state"]=="Unknown"
+    assert result["irrigation_flow_retained"] is None
+    assert result["parent_off_command_withheld"] is True
+    assert not any(call["device_id"]!="100204d497" for call in transport.calls)
+    conflict=next(payload for action,payload in store.rows
+        if action=="contain_zone" and payload.get("safety_conflict_owner"))
+    assert conflict["automatic_continuation"]==(
+        "urgent_reverify_injector_and_parent_final_states")
+    assert conflict["safety_conflict_owner"]=="rootline_irrigation_coordinator"
+
+
+def test_exact_native_deadline_equality_is_urgent_and_preserves_unknown_flow():
+    parent,auxiliary=parent_and_injection()
+    parent["native_fail_stop_deadline"]=NOW.isoformat()
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False,
+        parent_state="ON")
+    result=_recover_or_observe(parent,store,transport,
+        lambda *_:{"success":False},lambda _:None,NOW)
+    assert result["status"]=="injector_off_unverified_native_deadline_elapsed"
+    assert result["native_deadline_phase"]=="at_or_after"
+    assert result["urgent_intervention_required"] is True
+    assert result["irrigation_flow_state"]=="Unknown"
+    assert result["irrigation_flow_retained"] is None
+    assert not any(call["device_id"]!="100204d497" for call in transport.calls)
+
+
+def test_concurrent_early_parent_off_replay_cannot_downgrade_urgency_or_command_parent():
+    parent,auxiliary=parent_and_injection()
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False,
+        parent_state="OFF")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _index:_recover_or_observe(parent,store,transport,
+            lambda *_:{"success":False},lambda _:None,NOW),range(2)))
+    assert all(result["status"]=="parent_off_observed_injector_off_unverified"
+        and result["urgent_intervention_required"] is True
+        and result["irrigation_flow_state"]=="Unknown" for result in results)
+    assert all(call["device_id"]=="100204d497" for call in transport.calls)
+    conflicts=[payload for action,payload in store.rows
+        if action=="contain_zone" and payload.get("safety_conflict_owner")]
+    assert conflicts and all(item["automatic_continuation"]==
+        "urgent_reverify_injector_and_parent_final_states" for item in conflicts)
+
+
+def test_concurrent_deadline_elapsed_replay_stays_urgent_and_never_commands_parent():
+    parent,auxiliary=parent_and_injection()
+    parent["native_fail_stop_deadline"]=(NOW-timedelta(seconds=1)).isoformat()
+    store=ParentAuxStore(parent,auxiliary)
+    transport=ParentAuxTransport(injector_state="ON",accept_injector_off=False,
+        parent_state="ON")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _index:_recover_or_observe(parent,store,transport,
+            lambda *_:{"success":False},lambda _:None,NOW),range(2)))
+    assert all(result["status"]=="injector_off_unverified_native_deadline_elapsed"
+        and result["urgent_intervention_required"] is True
+        and result["irrigation_flow_state"]=="Unknown" for result in results)
+    assert all(call["device_id"]=="100204d497" for call in transport.calls)
+
+
 @pytest.mark.parametrize("state",["Active","claimed_recovery_required","stopping"])
 def test_native_deadline_elapsed_escalates_and_never_claims_clean_water(state):
     parent,auxiliary=parent_and_injection(state=state)

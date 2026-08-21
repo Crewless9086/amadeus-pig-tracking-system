@@ -556,12 +556,14 @@ def _hold_parent_flow_if_injector_off_unverified(parent,auxiliary_stop,store,
         "irrigation_flow_state":"Unknown","irrigation_flow_retained":None,
         "safety_conflict_owner":"rootline_irrigation_coordinator",
         "automatic_continuation":("urgent_reverify_injector_and_parent_final_states"
-            if deadline_phase=="at_or_after" else
+            if deadline_phase=="at_or_after" or
+            (parent_authoritative and parent_state=="OFF") else
             "reload_stopping_execution_and_reverify_injector_off"),
         "conflict_observed_at":now.isoformat(),
         "conflict_deadline":parent.get("native_fail_stop_deadline"),
         "native_deadline_phase":deadline_phase,
-        "urgent_intervention_required":deadline_phase=="at_or_after",
+        "urgent_intervention_required":(deadline_phase=="at_or_after" or
+            (parent_authoritative and parent_state=="OFF")),
         "parent_binding_mismatch":auxiliary_stop.get("parent_binding_mismatch") is True,
         "injector_stop_status":status,
         "injector_shutdown_evidence":auxiliary_stop.get("shutdown_evidence")}
