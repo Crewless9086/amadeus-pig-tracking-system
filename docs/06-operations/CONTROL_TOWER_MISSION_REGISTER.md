@@ -4138,3 +4138,38 @@ deployment, installation, commissioning, production/CUPS/printer access or physi
 print is authorized. The terminal must close automatically. DOCUMENTS remains
 `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP slot 2; all other holds and the
 final deferred Chromecast addendum remain unchanged.
+
+### Green crash recovery and source-build correction complete; review active - 2026-08-21
+
+Fresh inspection validates the complete 21,256-byte correction handover at
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_THIRD_REVIEW_CORRECTION_HANDOVER_20260821.md`
+(SHA-256 `7E5D7236025BE26D2E6FE7682B5B05F4AFB724464958B1E6A37D0267FF1045D7`).
+The same DOCUMENTS worktree is clean and pushed at PR #1150 head
+`253cf25c287da215f0d28b196a3fe294352f6483`; GitHub reports the PR open, clean and
+mergeable with all three exact-head CI checks successful.
+
+The handover reports canonical resumable protected-command state and crash/takeover
+tests, 44 focused tests passed, and two direct no-cache ARM64 builds through the
+repository Dockerfile with pinned base, exact revision/package labels, build logs,
+history and runtime identity/filesystem inspection. The two build digests differ,
+so byte-for-byte reproducibility is explicitly not claimed and must be dispositioned
+by the independent reviewer. All facts remain enabling-stage evidence. No deployed
+worker, genuine request, provider operation or physical page exists; owner outcome
+is `NONE`; usable now is `NO`; lifecycle is `REVIEW_HOLD / BUILT_BUT_UNPROVEN /
+UNCOMMISSIONED`.
+
+The correction's Node/Codex children had ended while PowerShell PID `18652` remained
+as an idle shell. Control Tower closed it and verified it absent. The SAME mission
+then advanced to read-only review of immutable head
+`253cf25c287da215f0d28b196a3fe294352f6483`, bound to PowerShell PID `26304`, Node
+PID `40612` and Codex PID `39080`, prompt
+`C:\tmp\DOCUMENTS_GREEN_253C_INDEPENDENT_REVIEW_PROMPT_20260821.md` and mandatory
+handover `C:\tmp\VISIBLE_DOCUMENTS_GREEN_253C_INDEPENDENT_REVIEW_HANDOVER_20260821.md`.
+
+The reviewer may inspect and run safe synthetic validation only; no edit, merge,
+migration, deployment, installation, commissioning or production/device/provider
+access is authorized. It must close automatically with `APPROVE`, `REQUEST_CHANGES`
+or `BLOCK`. DOCUMENTS remains `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP
+slot 2. Approval reaches only one protected serialized merge decision; Charl's Green
+setup remains parallel preparation, not a source-review dependency or operational
+proof.
