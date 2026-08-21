@@ -13,13 +13,13 @@ NOW = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
 def candidate(key, specialist, summary, action, *, urgency="due", unknowns=(), lifecycle="open",
               welfare_priority=False, identity=None, task_class=None, operational_status="open",
               assigned_worker_id=None, physical_work_ready=False,
-              owner_question_eligible=False, irreducible_owner_exception=False):
+              owner_question_eligible=False, irreducible_owner_exception=False, **extra):
     return ({"dedupe_key": key, "specialist": specialist, "urgency": urgency,
              "summary": summary, "next_action": action, "unknowns": list(unknowns),
              "evidence_refs": ["event:E1", "observed:2026-08-19T09:50:00+00:00"],
              "next_reassessment_at": "2026-08-19T10:05:00+00:00", "lifecycle": lifecycle,
              "operational_status": operational_status,
-             "assigned_worker_id": assigned_worker_id}
+             "assigned_worker_id": assigned_worker_id, **extra}
             | ({"welfare_priority": True} if welfare_priority else {})
             | ({"presentation_identity": identity} if identity else {})
             | ({"task_class": task_class} if task_class else {})
@@ -573,6 +573,93 @@ def test_operational_urgency_does_not_create_owner_urgency():
     assert item["attention_group"] == "oom_sakkie_checking"
     assert item["owner_urgency"] == "none"
     assert projection["total_count"] == 0
+
+
+def test_healthy_mixer_readiness_is_silent_in_owner_attention():
+    row = candidate(
+        "rootline-readiness:fertilizer-mixer-ch2", "ROOTLINE",
+        "Fertilizer mixer controller is ready for future commissioning.",
+        "No owner action now; ROOTLINE will reassess.",
+        task_class="informational_watch",
+        presentation_identity={"human_name": "Fertilizer mixer",
+                               "stable_reference": "FERTILIZER-MIXER-CH2"},
+        attention_visibility="equipment_health_only",
+        equipment_identity="FERTILIZER-MIXER-CH2",
+        equipment_lifecycle="ready_for_commissioning",
+        equipment_evidence={"provider_readiness_proven": True,
+                            "current_state_off": True},
+    )
+    projection = build_owner_attention_projection([row], generated_at=NOW,
+        prior_cases=[dict(row, operational_status="open")])
+    assert projection["items"] == []
+    assert projection["total_count"] == 0
+    assert projection["open_context_count"] == 0
+    assert projection["suppressed_equipment_health_count"] == 1
+    assert projection["measurement"]["duplicate_message_count"] == 0
+
+    retained = candidate(
+        "rootline-readiness:fertilizer-mixer-ch2", "ROOTLINE",
+        "Fertilizer mixer controller is ready for future commissioning.",
+        "No owner action now; ROOTLINE will reassess.", urgency="watch",
+        task_class="informational_watch")
+    later = build_owner_attention_projection([], generated_at=NOW,
+                                             prior_cases=[retained])
+    assert later["items"] == []
+    assert later["suppressed_equipment_health_count"] == 1
+    assert later["measurement"]["duplicate_message_count"] == 0
+
+
+def test_failed_mixer_readiness_is_one_names_first_agent_owned_exception():
+    row = candidate(
+        "rootline-readiness:fertilizer-mixer-ch2", "ROOTLINE",
+        "Fertilizer mixer controller readiness requires ROOTLINE review.",
+        "Keep automatic mixing disabled; ROOTLINE will reassess.",
+        urgency="urgent", unknowns=("provider_observation_fresh",),
+        task_class="status_reconciliation",
+        presentation_identity={"human_name": "Fertilizer mixer",
+                               "stable_reference": "FERTILIZER-MIXER-CH2"},
+        attention_visibility="owner_attention_exception",
+        equipment_identity="FERTILIZER-MIXER-CH2", equipment_lifecycle="held",
+        equipment_evidence={"provider_readiness_proven": False,
+                            "current_state_off": True},
+    )
+    projection = build_owner_attention_projection([row, dict(row)], generated_at=NOW)
+    assert projection["open_context_count"] == 1
+    assert projection["total_count"] == 0
+    item = projection["groups"]["oom_sakkie_checking"][0]
+    assert item["primary_label"] == "Fertilizer mixer"
+    assert item["equipment_identity"] == "FERTILIZER-MIXER-CH2"
+    assert item["equipment_lifecycle"] == "held"
+    assert item["owner_action_eligible"] is False
+
+
+def test_mixer_and_injector_remain_separate_and_later_labels_are_evidence_gated():
+    rows = [
+        candidate("rootline-equipment:fertilizer-mixer", "ROOTLINE", "Mixer held",
+                  "ROOTLINE reassesses.", task_class="status_reconciliation",
+                  unknowns=("commissioning",),
+                  presentation_identity={"human_name": "Fertilizer mixer"},
+                  equipment_identity="FERTILIZER-MIXER-CH2",
+                  equipment_lifecycle="held"),
+        candidate("rootline-equipment:fertilizer-injector", "ROOTLINE", "Injector held",
+                  "ROOTLINE reassesses.", task_class="status_reconciliation",
+                  unknowns=("commissioning",),
+                  presentation_identity={"human_name": "Fertilizer injector"},
+                  equipment_identity="FERTILIZER-INJECTION-CH1",
+                  equipment_lifecycle="held"),
+    ]
+    projection = build_owner_attention_projection(rows, generated_at=NOW)
+    assert {item["primary_label"] for item in projection["items"]} == {
+        "Fertilizer mixer", "Fertilizer injector"}
+    unsupported = dict(rows[0], equipment_lifecycle="commissioned",
+                       equipment_evidence={"physical_commissioning_proven": False})
+    import pytest
+    with pytest.raises(ValueError, match="lacks required evidence"):
+        build_owner_attention_projection([unsupported], generated_at=NOW)
+    for non_boolean in (0, 1):
+        invalid = dict(rows[0], equipment_evidence={"current_state_off": non_boolean})
+        with pytest.raises(ValueError, match="must be boolean"):
+            build_owner_attention_projection([invalid], generated_at=NOW)
 
 
 def test_urgent_physical_exception_and_completed_history_are_separate():
