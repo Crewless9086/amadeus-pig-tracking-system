@@ -72,25 +72,25 @@ def build_owner_attention_projection(
     prior_case_rows = [dict(row) for row in prior_cases]
     prior_by_key = {str(row.get("dedupe_key") or ""): row for row in prior_case_rows}
     current_by_key: dict[str, Mapping[str, Any]] = {}
+    normalized_by_key: dict[str, Mapping[str, Any]] = {}
     suppressed_keys: set[str] = set()
-    suppressed_current_keys: set[str] = set()
     source_candidate_count = 0
     for candidate in candidates:
         source_candidate_count += 1
         key = _required(candidate.get("dedupe_key"), "dedupe_key")
         equipment_lifecycle, equipment_evidence = _equipment_state(candidate)
-        if _attention_visibility(candidate) == "equipment_health_only":
+        normalized = {**dict(candidate), "equipment_lifecycle": equipment_lifecycle,
+                      "equipment_evidence": equipment_evidence}
+        prior_normalized = normalized_by_key.get(key)
+        if prior_normalized is not None and dict(prior_normalized) != normalized:
+            raise ValueError("conflicting owner-attention candidates share one stable identity")
+        normalized_by_key[key] = normalized
+        if _attention_visibility(normalized) == "equipment_health_only":
             # This projection has no Equipment Health surface.  Keep healthy,
             # no-action readiness entirely out of Owner Attention instead of
             # creating a second channel-specific status calculation.
             suppressed_keys.add(key)
-            suppressed_current_keys.add(key)
             continue
-        normalized = {**dict(candidate), "equipment_lifecycle": equipment_lifecycle,
-                      "equipment_evidence": equipment_evidence}
-        prior = current_by_key.get(key)
-        if prior is not None and dict(prior) != normalized:
-            raise ValueError("conflicting owner-attention candidates share one stable identity")
         prior_case = prior_by_key.get(key) or {}
         prior_status = str(prior_case.get("operational_status") or "").lower()
         prior_lifecycle = str(prior_case.get("lifecycle") or "").lower()
@@ -159,8 +159,7 @@ def build_owner_attention_projection(
         "group_counts": {name: len(values) for name, values in groups.items()},
         "measurement": {
             "source_message_count": source_candidate_count,
-            "duplicate_message_count": (
-                source_candidate_count - len(current_by_key) - len(suppressed_current_keys)),
+            "duplicate_message_count": source_candidate_count - len(normalized_by_key),
             "owner_visible_message_count": len(current),
             "owner_work_item_count": len(primary),
             "baseline_material_digest": prior_material_digest,
@@ -306,13 +305,24 @@ def _equipment_state(raw: Mapping[str, Any]) -> tuple[str, dict[str, bool]]:
 
 def _attention_visibility(raw: Mapping[str, Any]) -> str:
     explicit = str(raw.get("attention_visibility") or "").strip().lower()
+    if explicit and explicit not in {"equipment_health_only", "owner_attention_exception"}:
+        raise ValueError("unsupported attention visibility")
+    readiness_key = str(raw.get("dedupe_key") or "") == "rootline-readiness:fertilizer-mixer-ch2"
+    if readiness_key:
+        lifecycle, evidence = _equipment_state(raw)
+        healthy = (
+            not tuple(raw.get("unknowns") or ())
+            and lifecycle == "ready_for_commissioning"
+            and evidence.get("provider_readiness_proven") is True
+            and evidence.get("current_state_off") is True
+        )
+        return "equipment_health_only" if healthy else "owner_attention_exception"
+    if explicit == "equipment_health_only":
+        # Health-only suppression is reserved for normalized known equipment
+        # readiness.  Unknown item classes fail visible instead of disappearing.
+        return "owner_attention_exception"
     if explicit:
-        if explicit not in {"equipment_health_only", "owner_attention_exception"}:
-            raise ValueError("unsupported attention visibility")
         return explicit
-    if str(raw.get("dedupe_key") or "") == "rootline-readiness:fertilizer-mixer-ch2":
-        return ("equipment_health_only" if not tuple(raw.get("unknowns") or ())
-                else "owner_attention_exception")
     return "owner_attention"
 
 

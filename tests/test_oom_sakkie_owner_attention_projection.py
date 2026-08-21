@@ -632,6 +632,26 @@ def test_failed_mixer_readiness_is_one_names_first_agent_owned_exception():
     assert item["equipment_lifecycle"] == "held"
     assert item["owner_action_eligible"] is False
 
+    falsely_suppressed = dict(row, attention_visibility="equipment_health_only")
+    failed = build_owner_attention_projection([falsely_suppressed], generated_at=NOW)
+    assert failed["suppressed_equipment_health_count"] == 0
+    assert len(failed["items"]) == 1
+    assert failed["items"][0]["primary_label"] == "Fertilizer mixer"
+
+
+def test_conflicting_health_only_readiness_fails_before_suppression():
+    healthy = candidate(
+        "rootline-readiness:fertilizer-mixer-ch2", "ROOTLINE", "Healthy A",
+        "No owner action.", urgency="watch", task_class="informational_watch",
+        attention_visibility="equipment_health_only",
+        equipment_lifecycle="ready_for_commissioning",
+        equipment_evidence={"provider_readiness_proven": True,
+                            "current_state_off": True})
+    conflicting = dict(healthy, summary="Healthy B")
+    import pytest
+    with pytest.raises(ValueError, match="conflicting owner-attention candidates"):
+        build_owner_attention_projection([healthy, conflicting], generated_at=NOW)
+
 
 def test_mixer_and_injector_remain_separate_and_later_labels_are_evidence_gated():
     rows = [
