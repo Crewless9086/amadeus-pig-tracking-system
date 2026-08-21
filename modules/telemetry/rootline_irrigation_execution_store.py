@@ -339,24 +339,24 @@ def _claim_irrigation_output(body):
                       and (terminal.review_json->'rootline_execution'->>'action'='record_completed'
                         or (terminal.review_json->'rootline_execution'->>'action'='record_borehole_completed'
                           and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true'
-                          and length(coalesce(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''))>0
+                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id','')))>0
                           and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
                             terminal.review_json->'rootline_execution'->>'execution_id'
                           and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'final_state'='OFF'
-                          and length(coalesce(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',''))>0
+                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id','')))>0
                           and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'execution_id'=
                             terminal.review_json->'rootline_execution'->>'execution_id'
                           and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true'
                           and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF'
-                          and length(coalesce(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''))>0
+                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id','')))>0
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
                             terminal.review_json->'rootline_execution'->>'execution_id'
-                          and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id' <>
-                            terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id'
-                          and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id' <>
-                            terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id'
-                          and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id' <>
-                            terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id'
+                          and btrim(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id') <>
+                            btrim(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id')
+                          and btrim(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id') <>
+                            btrim(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id')
+                          and btrim(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id') <>
+                            btrim(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id')
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true'
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true')
                         or (terminal.review_json->'rootline_execution'->>'action'
@@ -596,24 +596,24 @@ def _claim_borehole_material_load(body):
                   t.review_json->'rootline_execution'->>'shutdown_verified'='true') or
                  (t.review_json->'rootline_execution'->>'action'='record_borehole_completed' and
                   t.review_json->'rootline_execution'->>'shutdown_verified'='true' and
-                  length(coalesce(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''))>0 and
+                  length(btrim(coalesce(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id','')))>0 and
                   t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
                     t.review_json->'rootline_execution'->>'execution_id' and
                   t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'final_state'='OFF' and
-                  length(coalesce(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',''))>0 and
+                  length(btrim(coalesce(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id','')))>0 and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'execution_id'=
                     t.review_json->'rootline_execution'->>'execution_id' and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true' and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF' and
-                  length(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''))>0 and
+                  length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id','')))>0 and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
                     t.review_json->'rootline_execution'->>'execution_id' and
-                  t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id' <>
-                    t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id' and
-                  t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id' <>
-                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id' and
-                  t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id' <>
-                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id' and
+                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id') <>
+                    btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id') and
+                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id') <>
+                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id') and
+                  btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id') <>
+                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id') and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true') or
                  (t.review_json->'rootline_execution'->>'action' in

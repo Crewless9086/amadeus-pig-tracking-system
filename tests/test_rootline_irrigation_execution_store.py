@@ -72,6 +72,22 @@ def test_borehole_completion_requires_bound_canonical_provider_physical_final_of
         "provider_final_off_evidence":{**complete["provider_final_off_evidence"],
             "evidence_id":complete["canonical_completion_evidence"]["evidence_id"]}}
     assert _terminal_closes_active(two_equal,borehole=True) is False
+    whitespace_only={**complete,
+        "physical_completion_evidence":{**complete["physical_completion_evidence"],
+            "evidence_id":" \t "}}
+    assert _terminal_closes_active(whitespace_only,borehole=True) is False
+    trim_equivalent={**complete,
+        "provider_final_off_evidence":{**complete["provider_final_off_evidence"],
+            "evidence_id":" CANON-1 "}}
+    assert _terminal_closes_active(trim_equivalent,borehole=True) is False
+    normalized_distinct={**complete,
+        "canonical_completion_evidence":{**complete["canonical_completion_evidence"],
+            "evidence_id":" CANON-1 "},
+        "provider_final_off_evidence":{**complete["provider_final_off_evidence"],
+            "evidence_id":" PROVIDER-1 "},
+        "physical_completion_evidence":{**complete["physical_completion_evidence"],
+            "evidence_id":" PHYSICAL-1 "}}
+    assert _terminal_closes_active(normalized_distinct,borehole=True) is True
 
 
 def test_borehole_claim_and_off_identities_are_replay_stable_and_attempt_bounded():
@@ -407,7 +423,28 @@ def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatc
             "authoritative":True,"state":"OFF"}}
     insert(f"BH-TWO-EQUAL-{suffix}",execution,"record_borehole_completed",two_equal)
     assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
+    whitespace_only={**_borehole_completion(execution),
+        "physical_completion_evidence":{
+            "evidence_id":" \t ","execution_id":execution,
+            "pump_stopped":True,"water_flow_stopped":True}}
+    insert(f"BH-WHITESPACE-EVIDENCE-{suffix}",execution,
+        "record_borehole_completed",whitespace_only)
+    assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
+    trim_equivalent={**_borehole_completion(execution),
+        "provider_final_off_evidence":{
+            "evidence_id":" CANON-1 ","execution_id":execution,
+            "authoritative":True,"state":"OFF"}}
+    insert(f"BH-TRIM-EQUIVALENT-{suffix}",execution,
+        "record_borehole_completed",trim_equivalent)
+    assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
     complete=_borehole_completion(execution)
+    complete={**complete,
+        "canonical_completion_evidence":{**complete["canonical_completion_evidence"],
+            "evidence_id":" CANON-1 "},
+        "provider_final_off_evidence":{**complete["provider_final_off_evidence"],
+            "evidence_id":" PROVIDER-1 "},
+        "physical_completion_evidence":{**complete["physical_completion_evidence"],
+            "evidence_id":" PHYSICAL-1 "}}
     insert(f"BH-COMPLETE-{suffix}",execution,"record_borehole_completed",complete)
     assert rootline_irrigation_execution_store("load_active_borehole",None) is None
     replay=_claim_borehole_material_load(body)
