@@ -3429,3 +3429,40 @@ a result-only terminal or a new mission. Database/farm/customer writes, Telegram
 effects, worker invocation, merge/deploy and manufactured evidence remain forbidden.
 Fresh process ancestry proves dispatch only; progress requires later attributable
 readback, diff/commit where justified and the complete populated handover.
+### All three outcome-depth terminals closed at protected boundaries - 2026-08-21
+
+Fresh process-ancestry sweep proves the Oom Sakkie owner-attention, DOCUMENTS Green
+printing and ROOTLINE borehole terminals are all closed. Complete continuation
+artifacts were inspected. None claims a usable owner outcome; all correctly report
+`OWNER OUTCOME ACHIEVED: NONE` and `USABLE NOW: NO`.
+
+Oom Sakkie PR #1142 is preserved at exact head
+`0fe30829986cdc98c5df5bce039b6fd27cd5a00a`. Fresh read-only production diagnosis
+proved deployed revision `2548d99a`, approximately 197-198 agent-owned checking
+items and zero proven owner actions/ready physical tasks; 0/78 is coverage/status
+reconciliation, not an instruction to weigh 78 pigs. No further source defect was
+found. First missing real-life gate is Charl's exact-head desktop/mobile visual
+approval followed by protected merge/deploy and genuine manager-cycle acceptance.
+The exact-head app is served locally at `http://127.0.0.1:5000/` for review; local
+HTTP 200 was proven. The in-app browser was unavailable, so visual approval is not
+inferred.
+
+DOCUMENTS PR #1150 is preserved at exact handover head
+`9616e4846114358e8f64980900896bedb636c559`. It contains the canonical weekly-sheet
+PDF/digest, protected-confirmation binding, private crash-safe exact-once adapter
+contract and unapplied schema. First missing gate is protected normal merge; that
+does not authorize migration, deployment, Green/CUPS configuration or printing.
+
+ROOTLINE PR #1151 is preserved at exact head
+`def542a5c3adc853e7c7bc4b7bee49d39ffabab5`. It contains canonical baseline
+validation, deterministic claim identity, restart/OFF rails and inert existing-
+runtime integration. First missing gate is protected merge/release; deployment,
+mapping, configuration and supervised physical commissioning remain separate.
+
+All three missions are `RELEASE_HOLD / BUILT_BUT_UNPROVEN`; business completion is
+false. Completion-depth policy forbids opening replacement source missions while
+these protected release gates are current. One decision is presented at a time,
+starting with Oom Sakkie because it is closest to a deployed owner-visible result.
+Fresh GitHub API refresh was attempted twice but unavailable; exact remote check
+claims are limited to the completed handovers and previously observed evidence,
+not promoted to a newer observation.
