@@ -44,6 +44,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert workflow.count('test "${resolved_digest}" = "${PRODUCED_DIGEST}"') == 1
     assert 'cosign verify --certificate-identity "${identity}"' in workflow
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
+    assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
     assert "green-print-0.3.0-verified-release-packet" in workflow
 
@@ -53,6 +54,18 @@ def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     assert "local Supervisor build" not in docs
     assert "There is no current local Supervisor-build fallback" in docs
     assert "GHCR does not provide a registry-level" in docs
+
+def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
+    path=ROOT/".github/workflows/green-print-image.yml"
+    workflow=path.read_text(encoding="utf-8")
+    parsed=yaml.safe_load(workflow)
+    steps=parsed["jobs"]["publish"]["steps"]
+    names=[step.get("name") for step in steps]
+    verify=steps[names.index("Verify signature and digest-bound attestations")]
+    assert verify["env"]["GH_TOKEN"]=="${{ github.token }}"
+    assert workflow.count("GH_TOKEN: ${{ github.token }}")==1
+    assert "gh attestation verify" in verify["run"] and "|| true" not in verify["run"]
+    assert names.index("Verify signature and digest-bound attestations") < names.index("Emit digest-bound non-secret release receipt") < names.index("Preserve non-secret verified release packet")
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")

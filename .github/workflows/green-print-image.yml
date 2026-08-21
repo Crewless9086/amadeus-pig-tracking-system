@@ -159,6 +159,7 @@ jobs:
         env:
           PRODUCED_DIGEST: ${{ steps.build.outputs.digest }}
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           digest_ref="${IMAGE}@${PRODUCED_DIGEST}"
