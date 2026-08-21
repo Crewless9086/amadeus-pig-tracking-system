@@ -4205,3 +4205,33 @@ migration, deployment, installation, commissioning or production/provider/printe
 effect is authorized. The terminal must close automatically. DOCUMENTS remains
 `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP slot 2; other mission holds and
 the final deferred Chromecast addendum remain unchanged.
+
+### Owner-side Green installation activity detected during active source correction - 2026-08-21
+
+Charl supplied guidance from his personal ChatGPT session stating that it is busy
+installing the Green Printer App while also instructing an independent PR #1150
+release review. Fresh Control Tower evidence shows the software is not at an approved
+installable release gate: the existing DOCUMENTS terminal remains live as PowerShell
+PID `21176`, Node PID `40172` and Codex PID `40352`; three tracked files are modified;
+the mandatory correction handover does not exist; and pushed PR head remains the
+previous reviewed `253cf25c287da215f0d28b196a3fe294352f6483`.
+
+This creates a protected-boundary/collision risk if “installing” means loading or
+starting an unfinished local build, registering credentials, applying the Supabase
+migration, mapping the private CA/printer, starting CUPS or creating a print job.
+Those actions are not authorized by the current source-review lane and must remain
+paused until an independently approved immutable head, exact package identity and
+one explicit commissioning authority decision exist. Control Tower did not infer
+that any such consequential action has already completed.
+
+Safe parallel preparation remains allowed: read-only Home Assistant OS/aarch64 and
+entity inventory, printer model/network capability inventory, private-CA planning,
+non-secret repository-access preparation and review of the commissioning/rollback
+packet. No secret values belong in chat, Git or a general `.env`. Do not weaken TLS,
+expose ports or change from commissioned private IPPS merely to make setup succeed.
+
+Owner outcome remains `NONE`; usable now remains `NO`. The first technical gate is
+the active terminal's clean immutable correction plus complete handover, followed by
+independent approval. The first protected physical gate later is explicit authority
+to install the exact approved package and commission identities/trust/printer. The
+active terminal is not interrupted or duplicated; it owns the next automatic action.
