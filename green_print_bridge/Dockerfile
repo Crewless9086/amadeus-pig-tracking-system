@@ -2,12 +2,14 @@ FROM ghcr.io/home-assistant/aarch64-base:3.22
 
 ARG BUILD_ARCH=aarch64
 ARG BUILD_VERSION=0.2.0
+ARG SOURCE_COMMIT=unknown
 LABEL io.hass.type="app" \
       io.hass.arch="${BUILD_ARCH}" \
       io.hass.version="${BUILD_VERSION}" \
       org.opencontainers.image.title="Amadeus Green Print Bridge" \
       org.opencontainers.image.description="Private CUPS adapter for the bounded weekly-sheet pilot" \
-      org.opencontainers.image.source="https://github.com/Crewless9086/amadeus-pig-tracking-system"
+      org.opencontainers.image.source="https://github.com/Crewless9086/amadeus-pig-tracking-system" \
+      org.opencontainers.image.revision="${SOURCE_COMMIT}"
 
 RUN apk add --no-cache cups cups-client cups-filters ca-certificates python3 su-exec \
     && addgroup -S greenprint && adduser -S -D -H -s /sbin/nologin -G greenprint greenprint \

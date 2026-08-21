@@ -16,6 +16,7 @@ CANONICAL_INTAKE_PATH=CLAIM_PATH; CA_CERTIFICATE_PATH="/config/private-ca.crt"
 FIXED_OPTIONS={"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}
 ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"); DIGEST=re.compile(r"^[0-9a-f]{64}$")
 TERMINAL={"provider_completed","physically_confirmed","cancelled","ambiguous"}; MIN_FREE_BYTES=64*1024*1024
+CANCEL_READBACK_ATTEMPTS=3
 
 class Hold(RuntimeError): pass
 def utcnow(): return datetime.now(timezone.utc)
@@ -44,6 +45,10 @@ class Ledger:
             db.execute("begin immediate"); row=db.execute("select envelope_sha256 from jobs where job_id=?",(envelope["job_id"],)).fetchone()
             if row and row[0]!=digest: raise Hold("job_identity_envelope_conflict")
             db.execute("insert into jobs values(?,?,?,?,?,?,?,?,?,?) on conflict(job_id) do update set lease_token=excluded.lease_token,lease_until=excluded.lease_until,updated_at=excluded.updated_at",(envelope["job_id"],material,digest,"claimed",token,lease_until,None,None,iso(now),None))
+    def renew(self,job_id,token,lease_until,now):
+        with self.connect() as db:
+            db.execute("begin immediate")
+            if db.execute("update jobs set lease_token=?,lease_until=?,updated_at=? where job_id=?",(token,lease_until,iso(now),job_id)).rowcount!=1: raise Hold("local_recovery_row_missing")
     def get(self,job_id):
         try:
             with self.connect() as db:
@@ -113,6 +118,16 @@ class CanonicalClient:
         body={"event_id":event_id,"lease_token":token,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"target_state":state,**evidence}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/transition",body)
     def command(self,worker_id): return self.request("POST",COMMAND_PATH,{"worker_id":worker_id})
+    def consume_command(self,command,target_state):
+        job=command["job"]
+        body={"lease_token":command["lease_token"],"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"command_receipt_id":command["command_receipt_id"],"command_kind":command["command"],"target_state":target_state}
+        return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/commands/transition",body)
+    def renew(self,job,token,worker_id):
+        body={"lease_token":token,"worker_id":worker_id,"lease_seconds":300,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"]}
+        return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/lease/renew",body)
+    def recover(self,job,worker_id):
+        body={"worker_id":worker_id,"lease_seconds":300,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"]}
+        return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/lease/recover",body)
     def pdf(self,url):
         parsed=urlparse(url); origin=urlparse(self.config["canonical_api_origin"])
         if (parsed.scheme,parsed.hostname,parsed.port)!=("https",origin.hostname,origin.port): raise Hold("pdf_origin_mismatch")
@@ -133,13 +148,22 @@ class Cups:
     def observe(self,cups_id):
         if not cups_id.startswith(self.queue+"-"): raise Hold("cups_queue_identity_mismatch")
         pending=subprocess.run(["lpstat","-W","all","-o",self.queue],capture_output=True,text=True,timeout=15)
+        if pending.returncode!=0: return "unavailable"
         if cups_id in cups_job_ids(pending.stdout): return "pending"
         done=subprocess.run(["lpstat","-W","completed","-o",self.queue],capture_output=True,text=True,timeout=15)
-        return "completed" if cups_id in cups_job_ids(done.stdout) else "unknown"
+        if done.returncode!=0: return "unavailable"
+        return "completed" if cups_id in cups_job_ids(done.stdout) else "absent"
     def cancel(self,cups_id):
         if not cups_id.startswith(self.queue+"-"): raise Hold("cups_queue_identity_mismatch")
         result=subprocess.run(["cancel",cups_id],capture_output=True,text=True,timeout=15)
         if result.returncode!=0: raise Hold("cups_cancel_ambiguous")
+    def cancel_readback(self,cups_id):
+        self.cancel(cups_id); observations=[]
+        for _ in range(CANCEL_READBACK_ATTEMPTS):
+            observed=self.observe(cups_id); observations.append(observed)
+            if observed=="absent": return "cancelled",observations
+            if observed in {"completed","unavailable"}: break
+        return "ambiguous",observations
 def cups_job_ids(output): return {line.split()[0] for line in output.splitlines() if line.split()}
 def ensure_space(path,required=MIN_FREE_BYTES):
     if shutil.disk_usage(path).free<required: raise Hold("disk_space_fail_safe")
@@ -147,18 +171,36 @@ def ensure_space(path,required=MIN_FREE_BYTES):
 def process_command(command,ledger,client,cups,config,now):
     if not command: return None
     job=command.get("job") or {}; token=command.get("lease_token"); kind=command.get("command"); validate(job,config,now)
-    if kind not in {"continue","cancel"} or not token: raise Hold("protected_command_invalid")
+    receipt=command.get("command_receipt_id")
+    if kind not in {"continue","cancel"} or not token or not ID.fullmatch(str(receipt or "")): raise Hold("protected_command_invalid")
     current=client.state(job["job_id"],token)
-    if current.get("document_version")!=job["document_version"] or current.get("pdf_sha256")!=job["pdf_sha256"]: raise Hold("canonical_reconciliation_conflict")
+    if current.get("document_version")!=job["document_version"] or current.get("pdf_sha256")!=job["pdf_sha256"] or current.get("authorization_receipt_id")!=job["authorization_receipt_id"]: raise Hold("canonical_reconciliation_conflict")
     local=ledger.get(job["job_id"])
+    consumed=client.consume_command(command,"claimed" if kind=="continue" else "held") or {}
+    if consumed.get("command_replay"):
+        return consumed.get("state") or ("continued" if kind=="continue" else "held")
     if kind=="cancel":
-        if local and local.get("cups_job_id"):
-            state=cups.observe(local["cups_job_id"])
-            if state=="pending": cups.cancel(local["cups_job_id"])
-            elif state=="unknown": raise Hold("cups_cancel_ambiguous")
-        client.transition(job,token,"cancelled",cups_job_id=local.get("cups_job_id") if local else None,provider_id=cups.provider,observed_at=iso(now)); ledger.clear(job["job_id"]); return "cancelled"
+        cups_job_id=(local or {}).get("cups_job_id") or current.get("cups_job_id")
+        if cups_job_id:
+            state=cups.observe(cups_job_id)
+            if state=="pending": target,observations=cups.cancel_readback(cups_job_id)
+            elif state=="absent": target,observations="cancelled",[state]
+            else: target,observations="ambiguous",[state]
+        else: target,observations="cancelled",["no_provider_job"]
+        acknowledged=client.transition(job,token,target,cups_job_id=cups_job_id,provider_id=cups.provider,observed_at=iso(now),cancel_readback=observations)
+        if target=="cancelled" and (acknowledged or {}).get("state")=="cancelled": ledger.clear(job["job_id"])
+        elif local: ledger.update(job["job_id"],"ambiguous",now,error="cups_cancel_readback_ambiguous")
+        return target
     if current.get("state") not in {"held","claimed"}: raise Hold("continue_state_invalid")
     ledger.clear(job["job_id"]); ledger.put_claim(job,token,command["lease_expires_at"],now); return "continued"
+
+def ensure_live_lease(local,job,client,ledger,worker_id,now):
+    if parse_time(local["lease_until"])<=now:
+        lease=client.recover(job,worker_id)
+    else:
+        lease=client.renew(job,local["lease_token"],worker_id)
+    if not lease or not ID.fullmatch(str(lease.get("lease_token",""))) or parse_time(lease.get("lease_expires_at"))<=now: raise Hold("canonical_lease_refresh_invalid")
+    ledger.renew(job["job_id"],lease["lease_token"],lease["lease_expires_at"],now); return lease["lease_token"]
 
 def cycle(ledger,client,cups,config,worker_id):
     spool=config.get("spool_path","/tmp/green-spool")
@@ -166,16 +208,16 @@ def cycle(ledger,client,cups,config,worker_id):
     result=process_command(client.command(worker_id),ledger,client,cups,config,now)
     if result: return result
     for local in ledger.recoverable():
-        canonical=client.state(local["job_id"],local["lease_token"])
+        job=json.loads(local["envelope_json"]); token=ensure_live_lease(local,job,client,ledger,worker_id,now)
+        canonical=client.state(local["job_id"],token)
         if canonical.get("state") in TERMINAL: ledger.clear(local["job_id"]); return canonical["state"]
-        if canonical.get("lease_token")!=local["lease_token"]: raise Hold("restore_lease_conflict")
-        job=json.loads(local["envelope_json"])
+        if canonical.get("lease_token")!=token: raise Hold("restore_lease_conflict")
         if not local["cups_job_id"]:
-            client.transition(job,local["lease_token"],"ambiguous",reason="submission_outcome_unknown"); ledger.update(local["job_id"],"ambiguous",now,error="submission_outcome_unknown"); return "ambiguous"
+            client.transition(job,token,"ambiguous",reason="submission_outcome_unknown"); ledger.update(local["job_id"],"ambiguous",now,error="submission_outcome_unknown"); return "ambiguous"
         observed=cups.observe(local["cups_job_id"])
-        if observed=="unknown": raise Hold("cups_observation_ambiguous")
+        if observed in {"absent","unavailable"}: raise Hold("cups_observation_ambiguous")
         target="provider_completed" if observed=="completed" else "submitted"
-        client.transition(job,local["lease_token"],target,cups_job_id=local["cups_job_id"],provider_id=cups.provider,observed_at=iso(now)); ledger.update(local["job_id"],target,now); return target
+        client.transition(job,token,target,cups_job_id=local["cups_job_id"],provider_id=cups.provider,observed_at=iso(now)); ledger.update(local["job_id"],target,now); return target
     claim=client.claim(worker_id)
     if not claim: return "event_waiting"
     job=claim["job"]; token=claim["lease_token"]; validate(job,config,now); ledger.put_claim(job,token,claim["lease_expires_at"],now)

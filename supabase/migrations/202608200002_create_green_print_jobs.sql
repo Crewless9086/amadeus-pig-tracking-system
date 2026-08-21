@@ -23,6 +23,9 @@ create table if not exists app_private.document_print_jobs (
     lease_owner text,
     lease_token text unique,
     lease_expires_at timestamptz,
+    attempt_id text,
+    cups_job_id text,
+    provider_id text,
     command_kind text check (command_kind in ('continue','cancel')),
     command_receipt_id text unique,
     command_authorized_at timestamptz,
@@ -106,9 +109,85 @@ begin
     values(p_event_id,p_job_id,'state_'||p_target_state,'documents-worker',v_job.lease_owner,p_metadata)
     on conflict(event_id) do nothing;
   if not found then return v_job; end if;
-  update app_private.document_print_jobs set state=p_target_state,updated_at=clock_timestamp()
+  update app_private.document_print_jobs set state=p_target_state,
+    attempt_id=coalesce(p_metadata->>'attempt_id',attempt_id),
+    cups_job_id=coalesce(p_metadata->>'cups_job_id',cups_job_id),
+    provider_id=coalesce(p_metadata->>'provider_id',provider_id),updated_at=clock_timestamp()
     where job_id=p_job_id returning * into v_job;
   return v_job;
+end; $$;
+
+create or replace function app_private.transition_document_print_command(
+  p_job_id text, p_lease_token text, p_document_version text, p_pdf_sha256 text,
+  p_authorization_receipt_id text, p_command_receipt_id text, p_command_kind text,
+  p_target_state text)
+returns jsonb language plpgsql security definer set search_path = pg_catalog, app_private as $$
+declare v_job app_private.document_print_jobs; v_prior app_private.document_print_job_events;
+begin
+  select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
+  if not found then raise exception 'command job missing'; end if;
+  select * into v_prior from app_private.document_print_job_events
+    where job_id=p_job_id and event_type='command_'||p_command_kind
+      and metadata_json->>'command_receipt_id'=p_command_receipt_id order by event_at limit 1;
+  if found then
+    return jsonb_build_object('state',v_job.state,'command_replay',true,
+      'command_receipt_id',p_command_receipt_id);
+  end if;
+  if v_job.lease_token is distinct from p_lease_token or v_job.lease_expires_at<=clock_timestamp()
+     or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
+     or v_job.authorization_receipt_id<>p_authorization_receipt_id
+     or v_job.command_receipt_id<>p_command_receipt_id or v_job.command_kind<>p_command_kind then
+    raise exception 'command fence or binding invalid';
+  end if;
+  if not ((p_command_kind='continue' and v_job.state='held' and p_target_state='claimed') or
+          (p_command_kind='cancel' and v_job.state in ('claimed','submitting','submitted','held','ambiguous') and p_target_state='held')) then
+    raise exception 'command transition invalid';
+  end if;
+  insert into app_private.document_print_job_events(job_id,event_type,actor_id,worker_id,metadata_json)
+    values(p_job_id,'command_'||p_command_kind,'documents-command-service',v_job.lease_owner,
+      jsonb_build_object('command_receipt_id',p_command_receipt_id,'result_state',p_target_state));
+  update app_private.document_print_jobs set state=p_target_state,command_kind=null,
+    command_receipt_id=null,command_authorized_at=null,updated_at=clock_timestamp()
+    where job_id=p_job_id returning * into v_job;
+  return jsonb_build_object('state',v_job.state,'command_replay',false,
+    'command_receipt_id',p_command_receipt_id);
+end; $$;
+
+create or replace function app_private.renew_document_print_job_lease(
+  p_job_id text,p_lease_token text,p_worker_id text,p_lease_seconds integer,
+  p_document_version text,p_pdf_sha256 text,p_authorization_receipt_id text)
+returns app_private.document_print_jobs language plpgsql security definer set search_path=pg_catalog,app_private as $$
+declare v_job app_private.document_print_jobs;
+begin
+  select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
+  if not found then raise exception 'lease renewal job missing'; end if;
+  if v_job.lease_token is distinct from p_lease_token or v_job.lease_owner<>p_worker_id
+     or v_job.lease_expires_at<=clock_timestamp() or p_lease_seconds not between 30 and 300
+     or v_job.state not in ('claimed','submitting','submitted','held')
+     or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
+     or v_job.authorization_receipt_id<>p_authorization_receipt_id then raise exception 'lease renewal invalid'; end if;
+  update app_private.document_print_jobs set lease_expires_at=clock_timestamp()+make_interval(secs=>p_lease_seconds),updated_at=clock_timestamp()
+    where job_id=p_job_id returning * into v_job; return v_job;
+end; $$;
+
+create or replace function app_private.recover_document_print_job_lease(
+  p_job_id text,p_worker_id text,p_lease_seconds integer,p_document_version text,
+  p_pdf_sha256 text,p_authorization_receipt_id text)
+returns app_private.document_print_jobs language plpgsql security definer set search_path=pg_catalog,app_private as $$
+declare v_job app_private.document_print_jobs; v_token text:=encode(gen_random_bytes(24),'hex');
+begin
+  select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
+  if not found then raise exception 'lease recovery job missing'; end if;
+  if v_job.lease_expires_at>clock_timestamp() or p_lease_seconds not between 30 and 300
+     or v_job.state not in ('claimed','submitting','submitted','held')
+     or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
+     or v_job.authorization_receipt_id<>p_authorization_receipt_id then raise exception 'lease recovery invalid'; end if;
+  update app_private.document_print_jobs set lease_owner=p_worker_id,lease_token=v_token,
+    lease_expires_at=clock_timestamp()+make_interval(secs=>p_lease_seconds),updated_at=clock_timestamp()
+    where job_id=p_job_id returning * into v_job;
+  insert into app_private.document_print_job_events(job_id,event_type,actor_id,worker_id,attempt_id,cups_job_id,metadata_json)
+    values(p_job_id,'lease_recovered','documents-claim-service',p_worker_id,v_job.attempt_id,v_job.cups_job_id,
+      jsonb_build_object('provider_id',v_job.provider_id)); return v_job;
 end; $$;
 
 create or replace function app_private.claim_document_print_command(
@@ -134,6 +213,9 @@ end; $$;
 revoke all on function app_private.claim_document_print_job(text,integer) from public, anon, authenticated;
 revoke all on function app_private.transition_document_print_job(text,text,text,text,text,text,uuid,jsonb) from public, anon, authenticated;
 revoke all on function app_private.claim_document_print_command(text,integer) from public, anon, authenticated;
+revoke all on function app_private.transition_document_print_command(text,text,text,text,text,text,text,text) from public, anon, authenticated;
+revoke all on function app_private.renew_document_print_job_lease(text,text,text,integer,text,text,text) from public, anon, authenticated;
+revoke all on function app_private.recover_document_print_job_lease(text,text,integer,text,text,text) from public, anon, authenticated;
 
 create or replace function app_private.reject_document_print_event_mutation()
 returns trigger language plpgsql as $$

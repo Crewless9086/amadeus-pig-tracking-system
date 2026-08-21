@@ -46,7 +46,7 @@ def test_dns_rebinding_cannot_change_transport_target(tmp_path,monkeypatch):
     assert conn.pinned_ip=="10.23.0.5" and next(calls)[0][4][0]=="8.8.8.8"
 
 class Canonical:
-    def __init__(self): self.claimed=None; self.events=[]; self.job=envelope(); self.state_value="authorized"; self.token="lease-token-1"
+    def __init__(self): self.claimed=None; self.events=[]; self.job=envelope(); self.state_value="authorized"; self.token="lease-token-1"; self.commands=set(); self.recoveries=0
     def claim(self,worker):
         if self.claimed:return None
         self.claimed=worker; return {"job":self.job,"lease_token":self.token,"lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
@@ -56,7 +56,15 @@ class Canonical:
         return {**self.job,"state":self.state_value,"lease_token":token}
     def transition(self,job,token,state,**evidence):
         assert token==self.token and job["document_version"]==self.job["document_version"] and job["pdf_sha256"]==self.job["pdf_sha256"]
-        self.events.append((state,evidence)); self.state_value=state
+        self.events.append((state,evidence)); self.state_value=state; return {**self.job,"state":state,"lease_token":token}
+    def consume_command(self,command,target):
+        receipt=command["command_receipt_id"]
+        if receipt in self.commands:return {"state":self.state_value,"command_replay":True}
+        self.commands.add(receipt); self.state_value=target; return {"state":target,"command_replay":False}
+    def renew(self,job,token,worker):
+        assert token==self.token; return {"lease_token":token,"lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
+    def recover(self,job,worker):
+        self.recoveries+=1; self.token=f"lease-recovered-{self.recoveries}"; return {"lease_token":self.token,"lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
     def pdf(self,_url): return PDF
 class Cups:
     provider="ipps://10.23.0.9/ipp/print"
@@ -64,6 +72,7 @@ class Cups:
     def submit(self,_path): self.submissions+=1; return "weekly-a4-42"
     def observe(self,_id): return self.observed
     def cancel(self,cups_id): self.cancelled.append(cups_id)
+    def cancel_readback(self,cups_id): self.cancel(cups_id); return "cancelled",["absent"]
 
 def test_two_independent_workers_ledgers_have_one_canonical_winner(tmp_path,monkeypatch):
     canonical=Canonical(); cups=Cups(); monkeypatch.setattr(S,"utcnow",lambda:NOW); monkeypatch.setattr(S,"ensure_space",lambda *_a:None)
@@ -85,20 +94,47 @@ def test_cups_receipt_is_bound_to_configured_queue_and_provider(monkeypatch):
 
 def test_cancel_known_cups_job_reconciles_and_cleans(tmp_path):
     ledger=S.Ledger(str(tmp_path/"l.db")); job=envelope(); ledger.put_claim(job,"lease-token-1",(NOW+timedelta(minutes=5)).isoformat(),NOW); ledger.update(job["job_id"],"submitted",NOW,attempt_id="ATTEMPT-1",cups_job_id="weekly-a4-42")
-    canonical=Canonical(); canonical.state_value="submitted"; cups=Cups(); command={"command":"cancel","job":job,"lease_token":"lease-token-1","lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
+    canonical=Canonical(); canonical.state_value="submitted"; cups=Cups(); command={"command":"cancel","command_receipt_id":"COMMAND-CANCEL-1","job":job,"lease_token":"lease-token-1","lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
     assert S.process_command(command,ledger,canonical,cups,config(tmp_path),NOW)=="cancelled" and cups.cancelled==["weekly-a4-42"] and ledger.get(job["job_id"]) is None
 
 def test_cancel_unknown_provider_outcome_is_ambiguous_and_not_closed(tmp_path):
     ledger=S.Ledger(str(tmp_path/"l.db")); job=envelope(); ledger.put_claim(job,"lease-token-1",(NOW+timedelta(minutes=5)).isoformat(),NOW); ledger.update(job["job_id"],"submitted",NOW,cups_job_id="weekly-a4-42")
-    canonical=Canonical(); cups=Cups(); cups.observed="unknown"
-    with pytest.raises(S.Hold,match="cups_cancel_ambiguous"): S.process_command({"command":"cancel","job":job,"lease_token":"lease-token-1"},ledger,canonical,cups,config(tmp_path),NOW)
-    assert ledger.get(job["job_id"]) is not None and not canonical.events
+    canonical=Canonical(); cups=Cups(); cups.observed="unavailable"
+    assert S.process_command({"command":"cancel","command_receipt_id":"COMMAND-CANCEL-2","job":job,"lease_token":"lease-token-1"},ledger,canonical,cups,config(tmp_path),NOW)=="ambiguous"
+    assert ledger.get(job["job_id"]) is not None and canonical.events[-1][0]=="ambiguous"
 
 def test_continue_requires_fresh_authorization_and_canonical_binding(tmp_path):
     ledger=S.Ledger(str(tmp_path/"l.db")); canonical=Canonical(); canonical.state_value="held"; cups=Cups()
-    with pytest.raises(S.Hold,match="authorization_expired"): S.process_command({"command":"continue","job":envelope(authorization_expires_at=NOW.isoformat()),"lease_token":"lease-token-1"},ledger,canonical,cups,config(tmp_path),NOW)
+    with pytest.raises(S.Hold,match="authorization_expired"): S.process_command({"command":"continue","command_receipt_id":"COMMAND-CONTINUE-1","job":envelope(authorization_expires_at=NOW.isoformat()),"lease_token":"lease-token-1"},ledger,canonical,cups,config(tmp_path),NOW)
     bad=Canonical(); bad.state=lambda *_a:{**envelope(),"document_version":"wrong","state":"held"}
-    with pytest.raises(S.Hold,match="canonical_reconciliation_conflict"): S.process_command({"command":"continue","job":envelope(),"lease_token":"lease-token-1","lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()},ledger,bad,cups,config(tmp_path),NOW)
+    with pytest.raises(S.Hold,match="canonical_reconciliation_conflict"): S.process_command({"command":"continue","command_receipt_id":"COMMAND-CONTINUE-2","job":envelope(),"lease_token":"lease-token-1","lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()},ledger,bad,cups,config(tmp_path),NOW)
+
+@pytest.mark.parametrize("kind",["continue","cancel"])
+def test_protected_command_replay_across_independent_ledgers_has_no_second_effect(tmp_path,kind):
+    job=envelope(); canonical=Canonical(); canonical.state_value="held" if kind=="continue" else "submitted"; cups=Cups()
+    ledgers=[S.Ledger(str(tmp_path/f"{kind}-{i}.db")) for i in range(2)]
+    for ledger in ledgers:
+        ledger.put_claim(job,"lease-token-1",(NOW+timedelta(minutes=5)).isoformat(),NOW)
+        if kind=="cancel": ledger.update(job["job_id"],"submitted",NOW,attempt_id="ATTEMPT-1",cups_job_id="weekly-a4-42")
+    command={"command":kind,"command_receipt_id":f"COMMAND-{kind.upper()}-REPLAY","job":job,"lease_token":"lease-token-1","lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
+    first=S.process_command(command,ledgers[0],canonical,cups,config(tmp_path),NOW)
+    before=(cups.submissions,len(cups.cancelled),ledgers[1].get(job["job_id"])["updated_at"])
+    second=S.process_command(command,ledgers[1],canonical,cups,config(tmp_path),NOW)
+    assert second in {first,canonical.state_value} and (cups.submissions,len(cups.cancelled),ledgers[1].get(job["job_id"])["updated_at"])==before
+
+def test_expired_submitted_lease_recovers_without_resubmission(tmp_path,monkeypatch):
+    job=envelope(); ledger=S.Ledger(str(tmp_path/"expired.db")); ledger.put_claim(job,"lease-token-1",(NOW-timedelta(seconds=1)).isoformat(),NOW-timedelta(seconds=301)); ledger.update(job["job_id"],"submitted",NOW-timedelta(seconds=301),attempt_id="ATTEMPT-1",cups_job_id="weekly-a4-42")
+    canonical=Canonical(); canonical.state_value="submitted"; cups=Cups(); cups.observed="completed"; monkeypatch.setattr(S,"utcnow",lambda:NOW); monkeypatch.setattr(S,"ensure_space",lambda *_a:None)
+    assert S.cycle(ledger,canonical,cups,config(tmp_path),"worker-2")=="provider_completed"
+    assert canonical.recoveries==1 and cups.submissions==0 and canonical.events[-1][1]["cups_job_id"]=="weekly-a4-42"
+
+@pytest.mark.parametrize("observations",[["pending","pending","pending"],["completed"],["unavailable"]])
+def test_zero_exit_cancel_nonclosure_is_ambiguous_and_restart_safe(tmp_path,observations):
+    job=envelope(); ledger=S.Ledger(str(tmp_path/"cancel.db")); ledger.put_claim(job,"lease-token-1",(NOW+timedelta(minutes=5)).isoformat(),NOW); ledger.update(job["job_id"],"submitted",NOW,attempt_id="ATTEMPT-1",cups_job_id="weekly-a4-42")
+    canonical=Canonical(); canonical.state_value="submitted"; cups=Cups(); values=iter(observations); cups.observe=lambda _id:next(values,observations[-1]); cups.cancel_readback=lambda cups_id:(cups.cancel(cups_id) or ("ambiguous",observations))
+    command={"command":"cancel","command_receipt_id":"COMMAND-CANCEL-UNCERTAIN","job":job,"lease_token":"lease-token-1"}
+    assert S.process_command(command,ledger,canonical,cups,config(tmp_path),NOW)=="ambiguous"
+    reopened=S.Ledger(str(tmp_path/"cancel.db")); assert reopened.get(job["job_id"])["state"]=="ambiguous" and reopened.get(job["job_id"])["cups_job_id"]=="weekly-a4-42"
 
 def test_restore_reconciles_canonical_before_provider(tmp_path,monkeypatch):
     ledger=S.Ledger(str(tmp_path/"l.db")); job=envelope(); ledger.put_claim(job,"lease-token-1",(NOW+timedelta(minutes=5)).isoformat(),NOW); ledger.update(job["job_id"],"submitted",NOW,attempt_id="A",cups_job_id="weekly-a4-42")
