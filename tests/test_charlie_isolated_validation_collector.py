@@ -9,6 +9,7 @@ from modules.charlie.validation_receipt import ValidationReceiptError
 
 SOURCE = "a" * 40
 IMAGE_ID = "b" * 64
+MANIFEST_DIGEST = "c" * 64
 
 
 class DockerProvider:
@@ -56,12 +57,13 @@ class IsolatedCollectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             provider = DockerProvider(directory)
             result = collect_docker_validation_evidence(
-                directory, SOURCE, "core-validator@sha256:" + IMAGE_ID, runner=provider
+                directory, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider
             )
         self.assertEqual(result["source_commit"], SOURCE)
         self.assertEqual([row["failed"] for row in result["suites"]], [0, 0])
         self.assertEqual(result["isolation"]["provider"], "docker_engine")
-        self.assertEqual(result["isolation"]["image_sha256"], IMAGE_ID)
+        self.assertEqual(result["isolation"]["image_manifest_sha256"], MANIFEST_DIGEST)
+        self.assertEqual(result["isolation"]["image_config_sha256"], IMAGE_ID)
         self.assertEqual(len(result["isolation"]["provider_execution_id"]), 64)
         self.assertEqual(result["isolation"]["provider_execution_ids"], ["1" * 64, "2" * 64])
         self.assertEqual(sum(1 for row in provider.commands if row[:2] == ["docker", "create"]), 2)
@@ -74,14 +76,14 @@ class IsolatedCollectorTests(unittest.TestCase):
                 {"NetworkMode": "default"}))
             with self.assertRaisesRegex(ValidationReceiptError, "attestation_invalid"):
                 collect_docker_validation_evidence(
-                    directory, SOURCE, "core-validator@sha256:" + IMAGE_ID, runner=provider
+                    directory, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider
                 )
         self.assertTrue(any(row[:3] == ["docker", "rm", "--force"] for row in provider.commands))
 
     def test_failed_provider_suite_is_preserved_as_rejected_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             result = collect_docker_validation_evidence(
-                directory, SOURCE, "core-validator@sha256:" + IMAGE_ID,
+                directory, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST,
                 runner=DockerProvider(directory, failed=True),
             )
         self.assertEqual([row["failed"] for row in result["suites"]], [1, 1])

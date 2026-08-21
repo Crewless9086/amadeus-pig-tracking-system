@@ -32,7 +32,8 @@ def collect_docker_validation_evidence(source_root, source_commit, image, *, run
     match = _IMAGE.fullmatch(str(image_row[0].get("Id") or ""))
     if not match:
         raise ValidationReceiptError("validation_provider_image_invalid")
-    image_sha256 = match.group(1)
+    image_manifest_sha256 = requested.group(1)
+    image_config_sha256 = match.group(1)
     if image not in (image_row[0].get("RepoDigests") or []):
         raise ValidationReceiptError("validation_provider_image_mismatch")
     rows, container_ids = [], []
@@ -55,7 +56,7 @@ def collect_docker_validation_evidence(source_root, source_commit, image, *, run
         container_ids.append(container_id)
         try:
             inspected = _json(run(["docker", "inspect", container_id]))
-            _verify_container(inspected, source_root, image_sha256, provider_command)
+            _verify_container(inspected, source_root, image_config_sha256, provider_command)
             completed = run(["docker", "start", "--attach", container_id], allow_failure=True)
             rows.append(_suite_row(name, command, completed))
         finally:
@@ -64,6 +65,8 @@ def collect_docker_validation_evidence(source_root, source_commit, image, *, run
         "provider": "docker_engine", "network": "none", "rootfs_read_only": True,
         "source_read_only": True, "cap_drop": ["ALL"], "no_new_privileges": True,
         "user": "65532:65532", "pid_mode": "private", "pids_limit": 256,
+        "image_manifest_sha256": image_manifest_sha256,
+        "image_config_sha256": image_config_sha256,
     }
     return {
         "source_commit": source_commit,
@@ -72,7 +75,9 @@ def collect_docker_validation_evidence(source_root, source_commit, image, *, run
             "boundary": "disposable_process_boundary", "host_processes_visible": False,
             "outside_boundary_targets": 0, "network_enabled": False,
             "source_read_only": True, "capabilities_dropped": True,
-            "unprivileged": True, "image_sha256": image_sha256,
+            "unprivileged": True,
+            "image_manifest_sha256": image_manifest_sha256,
+            "image_config_sha256": image_config_sha256,
             "provider": "docker_engine",
             "provider_actor": "control_tower_isolated_validator_v2",
             "provider_execution_id": _digest(container_ids),

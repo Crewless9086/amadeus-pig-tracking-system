@@ -35,7 +35,8 @@ VALIDATION_COMMANDS = {
 }
 _ISOLATION_FIELDS = frozenset({
     "boundary", "host_processes_visible", "outside_boundary_targets", "network_enabled",
-    "source_read_only", "capabilities_dropped", "unprivileged", "image_sha256",
+    "source_read_only", "capabilities_dropped", "unprivileged",
+    "image_manifest_sha256", "image_config_sha256",
     "provider", "provider_actor", "provider_execution_id", "provider_execution_ids",
     "provider_config_sha256",
 })
@@ -193,8 +194,9 @@ def _validate_isolation(isolation):
     }
     if any(isolation.get(key) != value for key, value in expected.items()):
         raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
-    if not _SHA256.fullmatch(str(isolation.get("image_sha256") or "")):
-        raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
+    for field in ("image_manifest_sha256", "image_config_sha256"):
+        if not _SHA256.fullmatch(str(isolation.get(field) or "")):
+            raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
     if not _SHA256.fullmatch(str(isolation.get("provider_execution_id") or "")):
         raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
     executions = isolation.get("provider_execution_ids")
@@ -205,6 +207,17 @@ def _validate_isolation(isolation):
     if isolation["provider_execution_id"] != hashlib.sha256(canonical_json(executions)).hexdigest():
         raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
     if not _SHA256.fullmatch(str(isolation.get("provider_config_sha256") or "")):
+        raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
+    provider_config = {
+        "provider": isolation["provider"], "network": "none",
+        "rootfs_read_only": True, "source_read_only": isolation["source_read_only"],
+        "cap_drop": ["ALL"], "no_new_privileges": True,
+        "user": "65532:65532", "pid_mode": "private", "pids_limit": 256,
+        "image_manifest_sha256": isolation["image_manifest_sha256"],
+        "image_config_sha256": isolation["image_config_sha256"],
+    }
+    if isolation["provider_config_sha256"] != hashlib.sha256(
+            canonical_json(provider_config)).hexdigest():
         raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
 
 

@@ -21,6 +21,12 @@ KEY = b"canonical-validation-receipt-test-key-material"
 
 
 def evidence(failed=0):
+    provider_config = {
+        "provider": "docker_engine", "network": "none", "rootfs_read_only": True,
+        "source_read_only": True, "cap_drop": ["ALL"], "no_new_privileges": True,
+        "user": "65532:65532", "pid_mode": "private", "pids_limit": 256,
+        "image_manifest_sha256": "b" * 64, "image_config_sha256": "c" * 64,
+    }
     return {
         "source_commit": SOURCE,
         "suites": [
@@ -35,14 +41,17 @@ def evidence(failed=0):
             "boundary": "disposable_process_boundary", "host_processes_visible": False,
             "outside_boundary_targets": 0, "network_enabled": False,
             "source_read_only": True, "capabilities_dropped": True,
-            "unprivileged": True, "image_sha256": "c" * 64,
+            "unprivileged": True, "image_manifest_sha256": "b" * 64,
+            "image_config_sha256": "c" * 64,
             "provider": "docker_engine",
             "provider_actor": "control_tower_isolated_validator_v2",
             "provider_execution_ids": ["1" * 64, "2" * 64],
             "provider_execution_id": hashlib.sha256(json.dumps(
                 ["1" * 64, "2" * 64], separators=(",", ":")
             ).encode()).hexdigest(),
-            "provider_config_sha256": "f" * 64,
+            "provider_config_sha256": hashlib.sha256(json.dumps(
+                provider_config, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest(),
         },
     }
 
