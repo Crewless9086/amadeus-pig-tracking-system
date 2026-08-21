@@ -38,6 +38,16 @@ projection, not separate workflows. Internal success is not an attention item;
 current welfare, shutdown uncertainty and genuine protected exceptions remain
 visible until authoritative resolution.
 
+Healthy equipment readiness that requires no owner action is not Owner
+Attention. It stays silent here and may be consumed later by an Equipment
+Health surface only from this same shared projection contract. A failed or
+stale readiness observation remains one names-first, specialist-owned
+exception with automatic reassessment. Mixer and injector are separate device
+identities; neither inherits the other's readiness, commissioning or authority.
+`Commissioned`, `Autonomous authority enabled`, `Active` and `Completed` may be
+projected only from their explicit physical, runtime, canonical and provider
+evidence respectively. Controller readiness or OFF state cannot imply them.
+
 `status_reconciliation`, `physical_action_due` (including genuine weighing),
 and `informational_watch` are distinct task classes. A missing or conflicting
 animal status remains specialist reconciliation until HERDMASTER proves a

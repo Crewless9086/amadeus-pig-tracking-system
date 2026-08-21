@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+## 2026-08-21 - Fertilizer readiness removed from owner work
+
+- Kept healthy observation-only fertilizer-mixer readiness silent in the shared
+  Owner Attention projection while retaining failed or stale readiness as one
+  ROOTLINE-owned exception.
+- Added the supported `Fertilizer mixer` identity and evidence-gated equipment
+  lifecycle fields without inferring injector state, commissioning, autonomous
+  authority, active execution or physical completion.
+- Reused the existing manager cycle, retained manager-case identity and shared
+  channel projection; no queue, scheduler, status engine or hardware path was
+  added.
+
 - 2026-08-21: Packaged the bounded DOCUMENTS Green adapter as a source-only,
   private aarch64 Home Assistant app repository after review of official app,
   configuration, repository, publishing and security constraints. The protected

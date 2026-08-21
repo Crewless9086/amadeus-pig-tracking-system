@@ -58,6 +58,9 @@ class OwnerAttentionItem:
     owner_urgency: str
     operational_status: str
     assigned_to: str
+    equipment_identity: str
+    equipment_lifecycle: str
+    equipment_evidence: Mapping[str, bool]
 
 
 def build_owner_attention_projection(
@@ -69,13 +72,25 @@ def build_owner_attention_projection(
     prior_case_rows = [dict(row) for row in prior_cases]
     prior_by_key = {str(row.get("dedupe_key") or ""): row for row in prior_case_rows}
     current_by_key: dict[str, Mapping[str, Any]] = {}
+    normalized_by_key: dict[str, Mapping[str, Any]] = {}
+    suppressed_keys: set[str] = set()
     source_candidate_count = 0
     for candidate in candidates:
         source_candidate_count += 1
         key = _required(candidate.get("dedupe_key"), "dedupe_key")
-        prior = current_by_key.get(key)
-        if prior is not None and dict(prior) != dict(candidate):
+        equipment_lifecycle, equipment_evidence = _equipment_state(candidate)
+        normalized = {**dict(candidate), "equipment_lifecycle": equipment_lifecycle,
+                      "equipment_evidence": equipment_evidence}
+        prior_normalized = normalized_by_key.get(key)
+        if prior_normalized is not None and dict(prior_normalized) != normalized:
             raise ValueError("conflicting owner-attention candidates share one stable identity")
+        normalized_by_key[key] = normalized
+        if _attention_visibility(normalized) == "equipment_health_only":
+            # This projection has no Equipment Health surface.  Keep healthy,
+            # no-action readiness entirely out of Owner Attention instead of
+            # creating a second channel-specific status calculation.
+            suppressed_keys.add(key)
+            continue
         prior_case = prior_by_key.get(key) or {}
         prior_status = str(prior_case.get("operational_status") or "").lower()
         prior_lifecycle = str(prior_case.get("lifecycle") or "").lower()
@@ -83,7 +98,7 @@ def build_owner_attention_projection(
             prior_lifecycle if prior_lifecycle in {"resolved", "superseded"} else "resolved"
         ) if prior_status in {"completed", "contained", "resolved", "superseded", "stale"} else None
         current_by_key[key] = {
-            **dict(candidate),
+            **normalized,
             **({"operational_status": prior_case.get("operational_status"),
                 "assigned_worker_id": prior_case.get("assigned_worker_id"),
                 **({"lifecycle": terminal_lifecycle} if terminal_lifecycle else {})}
@@ -96,7 +111,10 @@ def build_owner_attention_projection(
     items = [_item(candidate, now) for candidate in current_by_key.values()]
     for prior in prior_case_rows:
         key = _required(prior.get("dedupe_key"), "dedupe_key")
-        if key in current_by_key:
+        if key in current_by_key or key in suppressed_keys:
+            continue
+        if _attention_visibility(prior) == "equipment_health_only":
+            suppressed_keys.add(key)
             continue
         unavailable = (
             _required(prior.get("specialist"), "specialist").upper() in unavailable_specialists
@@ -134,13 +152,14 @@ def build_owner_attention_projection(
         # owner work.
         "total_count": len(primary),
         "open_context_count": len(current),
+        "suppressed_equipment_health_count": len(suppressed_keys),
         "top_items": primary[:3],
         "hidden_count": max(0, len(primary) - 3),
         "groups": groups,
         "group_counts": {name: len(values) for name, values in groups.items()},
         "measurement": {
             "source_message_count": source_candidate_count,
-            "duplicate_message_count": source_candidate_count - len(current_by_key),
+            "duplicate_message_count": source_candidate_count - len(normalized_by_key),
             "owner_visible_message_count": len(current),
             "owner_work_item_count": len(primary),
             "baseline_material_digest": prior_material_digest,
@@ -210,6 +229,7 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         raw, task_class=task_class, lifecycle=lifecycle,
         operational_status=operational_status, priority=priority, now=now)
     assigned_to = _assigned_to(raw, specialist, attention_group)
+    equipment_lifecycle, equipment_evidence = _equipment_state(raw)
     return OwnerAttentionItem(
         work_id="attn_" + hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:24],
         source_key=source_key,
@@ -236,7 +256,74 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         owner_urgency=(priority if eligible else "none"),
         operational_status=operational_status,
         assigned_to=assigned_to,
+        equipment_identity=_owner_text(raw.get("equipment_identity") or (
+            "FERTILIZER-MIXER-CH2" if source_key ==
+            "rootline-readiness:fertilizer-mixer-ch2" else ""), 120),
+        equipment_lifecycle=equipment_lifecycle,
+        equipment_evidence=equipment_evidence,
     )
+
+
+def _equipment_state(raw: Mapping[str, Any]) -> tuple[str, dict[str, bool]]:
+    """Accept equipment labels only when their required evidence is explicit."""
+    source_key = str(raw.get("dedupe_key") or "")
+    retained_mixer_readiness = source_key == "rootline-readiness:fertilizer-mixer-ch2"
+    retained_ready = retained_mixer_readiness and not tuple(raw.get("unknowns") or ())
+    lifecycle = str(raw.get("equipment_lifecycle") or (
+        "ready_for_commissioning" if retained_ready else
+        ("held" if retained_mixer_readiness else "not_applicable")
+    )).strip().lower()
+    allowed = {
+        "not_applicable", "registered", "ready_for_commissioning",
+        "commissioning_required", "commissioned",
+        "autonomous_authority_enabled", "active", "completed", "held", "failed",
+    }
+    if lifecycle not in allowed:
+        raise ValueError("unsupported equipment lifecycle")
+    supplied = raw.get("equipment_evidence")
+    evidence = ({str(key): value for key, value in supplied.items()}
+                if isinstance(supplied, Mapping) else ({
+                    "provider_readiness_proven": retained_ready,
+                    "current_state_off": retained_ready,
+                } if retained_mixer_readiness else {}))
+    if any(type(value) is not bool for value in evidence.values()):
+        raise ValueError("equipment lifecycle evidence must be boolean")
+    required = {
+        "ready_for_commissioning": ("provider_readiness_proven", "current_state_off"),
+        "commissioned": ("physical_commissioning_proven",),
+        "autonomous_authority_enabled": ("physical_commissioning_proven",
+                                           "autonomous_authority_enabled"),
+        "active": ("autonomous_authority_enabled", "canonical_execution_active",
+                   "provider_execution_active"),
+        "completed": ("canonical_execution_completed", "provider_final_state_verified",
+                      "physical_outcome_verified"),
+    }.get(lifecycle, ())
+    if any(evidence.get(key) is not True for key in required):
+        raise ValueError("equipment lifecycle lacks required evidence")
+    return lifecycle, evidence
+
+
+def _attention_visibility(raw: Mapping[str, Any]) -> str:
+    explicit = str(raw.get("attention_visibility") or "").strip().lower()
+    if explicit and explicit not in {"equipment_health_only", "owner_attention_exception"}:
+        raise ValueError("unsupported attention visibility")
+    readiness_key = str(raw.get("dedupe_key") or "") == "rootline-readiness:fertilizer-mixer-ch2"
+    if readiness_key:
+        lifecycle, evidence = _equipment_state(raw)
+        healthy = (
+            not tuple(raw.get("unknowns") or ())
+            and lifecycle == "ready_for_commissioning"
+            and evidence.get("provider_readiness_proven") is True
+            and evidence.get("current_state_off") is True
+        )
+        return "equipment_health_only" if healthy else "owner_attention_exception"
+    if explicit == "equipment_health_only":
+        # Health-only suppression is reserved for normalized known equipment
+        # readiness.  Unknown item classes fail visible instead of disappearing.
+        return "owner_attention_exception"
+    if explicit:
+        return explicit
+    return "owner_attention"
 
 
 def _attention_eligibility(raw: Mapping[str, Any], *, task_class: str, lifecycle: str,
@@ -360,6 +447,7 @@ def _supported_retained_identity(raw: Mapping[str, Any], source_key: str) -> tup
         "herdmaster:pig-151-withdrawal-sales": "Pig 151",
         "beacon:current-sale-opportunity": "Current sales opportunity",
         "runtime:scheduled-worker-health": "Oom Sakkie scheduled operation",
+        "rootline-readiness:fertilizer-mixer-ch2": "Fertilizer mixer",
     }
     if source_key.startswith("sam:conversation:"):
         return "", "Customer name unavailable", ""
