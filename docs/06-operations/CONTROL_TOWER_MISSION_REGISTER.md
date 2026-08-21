@@ -4299,3 +4299,47 @@ No owner decision or physical presence is required now. No terminal was dispatch
 because the DOCUMENTS lane has active attributable work and remains the current
 blocker. The queued wake condition is the first released safe lane after DOCUMENTS
 has no eligible continuation, with fresh PR/worktree collision clearance.
+
+### DOCUMENTS misrouted owner-approved merge and automatic deployment audit - 2026-08-21
+
+Charl confirmed that he personally approved the merge but entered that approval in
+the wrong GENERAL terminal, then asked Control Tower to take charge. PR #1150 head
+`35cdb8d7ce245e9192cad9e250be44909db34a38` was merged by Charl's GitHub account
+`Crewless9086` at `2026-08-21T12:11:42Z` as merge commit
+`e027c403978ca3e5ccb5cc03a008c3075b76f941`. The merge is therefore owner-initiated,
+not an unknown or malicious external action. The control defect is misrouted
+authority: the assigned DOCUMENTS terminal handover prohibited merge and expected an
+independent review plus separate Control Tower merge assessment, so exact deployment
+effects still require reconciliation before any further protected stage.
+
+The merge triggered automatic Render deployment. Fresh public provider readback at
+`/health/revision` returned HTTP 200, `provider=render`, `identity_complete=true` and
+exact revision `e027c403978ca3e5ccb5cc03a008c3075b76f941`; `/health/database`
+returned healthy PostgreSQL status. All three merge-commit CI checks passed. No
+governed production migration workflow was run for this revision: the newest
+migration run remains the previously authorized 2026-08-20 run bound to
+`b9eefabf65f30811c771a484b0459c5280401686`.
+
+Classification is `CONTAINED / OWNER_APPROVAL_MISROUTED /
+DEPLOYED_SOURCE_DORMANCY_UNDER_AUDIT`. The merge and deployment are enabling-stage
+effects only. No evidence shows the new migration applied, Green app installed,
+credentials/device/private CA registered, CUPS or printer contacted, canonical print
+job created or physical page produced. Owner outcome remains `NONE`; usable now is
+`NO`. Charl must keep Home Assistant installation, migration, secrets, printer
+mapping, CUPS startup and print jobs paused.
+
+Control Tower performed no revert, rollback, migration, deployment or destructive
+action because each would require exact evidence and protected authority. It started
+one read-only containment audit of exact source head `35cdb8d7` and deployed merge
+`e027c403`, bound to PowerShell PID `37540`, Node PID `43984` and Codex PID `2324`,
+prompt `C:\tmp\DOCUMENTS_UNAUTHORIZED_MERGE_CONTAINMENT_AUDIT_PROMPT_20260821.md`
+and mandatory handover
+`C:\tmp\VISIBLE_DOCUMENTS_UNAUTHORIZED_MERGE_CONTAINMENT_AUDIT_HANDOVER_20260821.md`.
+
+The auditor may use read-only Git/GitHub, public health and safe local validation
+only. It must recommend exactly `RETAIN_DORMANT`, `REVERT_REQUIRED` or
+`BLOCK_PENDING_EVIDENCE`, prepare exact rollback scope if applicable and identify at
+most one protected owner decision. It may not edit, merge, revert, deploy, migrate,
+install, access production data/providers or print. No other mission lane is opened
+until containment disposition is returned. The queued fertilizer-presentation defect
+and final Chromecast addendum remain deferred and unaffected.
