@@ -17,6 +17,7 @@ options:
   canonical_api_origin: null
   canonical_endpoint_ip: null
   canonical_bearer_token: null
+  farm_scope_id: null
   green_id: null
   printer_id: null
   cups_queue_id: null
@@ -27,6 +28,7 @@ schema:
   canonical_api_origin: url
   canonical_endpoint_ip: str
   canonical_bearer_token: password
+  farm_scope_id: str
   green_id: str
   printer_id: str
   cups_queue_id: str
