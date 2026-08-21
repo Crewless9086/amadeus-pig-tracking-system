@@ -118,7 +118,7 @@ class CanonicalClient:
         body={"event_id":event_id,"lease_token":token,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"target_state":state,**evidence}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/transition",body)
     def command(self,worker_id): return self.request("POST",COMMAND_PATH,{"worker_id":worker_id})
-    def consume_command(self,command,target_state):
+    def transition_command(self,command,target_state):
         job=command["job"]
         body={"lease_token":command["lease_token"],"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"command_receipt_id":command["command_receipt_id"],"command_kind":command["command"],"target_state":target_state}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/commands/transition",body)
@@ -176,23 +176,35 @@ def process_command(command,ledger,client,cups,config,now):
     current=client.state(job["job_id"],token)
     if current.get("document_version")!=job["document_version"] or current.get("pdf_sha256")!=job["pdf_sha256"] or current.get("authorization_receipt_id")!=job["authorization_receipt_id"]: raise Hold("canonical_reconciliation_conflict")
     local=ledger.get(job["job_id"])
-    consumed=client.consume_command(command,"claimed" if kind=="continue" else "held") or {}
-    if consumed.get("command_replay"):
-        return consumed.get("state") or ("continued" if kind=="continue" else "held")
+    accepted=client.transition_command(command,"accepted") or {}
+    if accepted.get("command_status")=="completed":
+        return accepted.get("command_outcome")
+    if accepted.get("command_status")!="in_progress": raise Hold("command_acceptance_invalid")
+    canonical_cups_id=accepted.get("cups_job_id") or current.get("cups_job_id")
+    canonical_attempt=accepted.get("attempt_id") or current.get("attempt_id")
+    if local and ((local.get("cups_job_id") and canonical_cups_id and local["cups_job_id"]!=canonical_cups_id) or
+                  (local.get("attempt_id") and canonical_attempt and local["attempt_id"]!=canonical_attempt)):
+        raise Hold("command_provider_identity_conflict")
     if kind=="cancel":
-        cups_job_id=(local or {}).get("cups_job_id") or current.get("cups_job_id")
+        cups_job_id=canonical_cups_id or (local or {}).get("cups_job_id")
         if cups_job_id:
             state=cups.observe(cups_job_id)
             if state=="pending": target,observations=cups.cancel_readback(cups_job_id)
             elif state=="absent": target,observations="cancelled",[state]
             else: target,observations="ambiguous",[state]
         else: target,observations="cancelled",["no_provider_job"]
-        acknowledged=client.transition(job,token,target,cups_job_id=cups_job_id,provider_id=cups.provider,observed_at=iso(now),cancel_readback=observations)
-        if target=="cancelled" and (acknowledged or {}).get("state")=="cancelled": ledger.clear(job["job_id"])
+        acknowledged=client.transition_command(command,target) or {}
+        if target=="cancelled" and acknowledged.get("command_outcome")=="cancelled": ledger.clear(job["job_id"])
         elif local: ledger.update(job["job_id"],"ambiguous",now,error="cups_cancel_readback_ambiguous")
         return target
     if current.get("state") not in {"held","claimed"}: raise Hold("continue_state_invalid")
-    ledger.clear(job["job_id"]); ledger.put_claim(job,token,command["lease_expires_at"],now); return "continued"
+    if not local:
+        ledger.put_claim(job,token,command["lease_expires_at"],now)
+        if canonical_attempt or canonical_cups_id: ledger.update(job["job_id"],current.get("state","claimed"),now,attempt_id=canonical_attempt,cups_job_id=canonical_cups_id)
+    else: ledger.renew(job["job_id"],token,command["lease_expires_at"],now)
+    completed=client.transition_command(command,"continued") or {}
+    if completed.get("command_outcome")!="continued": raise Hold("command_completion_invalid")
+    return "continued"
 
 def ensure_live_lease(local,job,client,ledger,worker_id,now):
     if parse_time(local["lease_until"])<=now:

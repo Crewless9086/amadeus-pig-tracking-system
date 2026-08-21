@@ -29,6 +29,10 @@ create table if not exists app_private.document_print_jobs (
     command_kind text check (command_kind in ('continue','cancel')),
     command_receipt_id text unique,
     command_authorized_at timestamptz,
+    command_status text check (command_status in ('accepted','in_progress','completed')),
+    command_outcome text check (command_outcome in ('continued','cancelled','ambiguous')),
+    command_accepted_at timestamptz,
+    command_completed_at timestamptz,
     state text not null default 'prepared' check (state in
       ('prepared','authorized','claimed','submitting','submitted','provider_completed','held','ambiguous','cancelled','physically_confirmed')),
     retry_deadline timestamptz not null,
@@ -122,16 +126,16 @@ create or replace function app_private.transition_document_print_command(
   p_authorization_receipt_id text, p_command_receipt_id text, p_command_kind text,
   p_target_state text)
 returns jsonb language plpgsql security definer set search_path = pg_catalog, app_private as $$
-declare v_job app_private.document_print_jobs; v_prior app_private.document_print_job_events;
+declare v_job app_private.document_print_jobs;
 begin
   select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
   if not found then raise exception 'command job missing'; end if;
-  select * into v_prior from app_private.document_print_job_events
-    where job_id=p_job_id and event_type='command_'||p_command_kind
-      and metadata_json->>'command_receipt_id'=p_command_receipt_id order by event_at limit 1;
-  if found then
-    return jsonb_build_object('state',v_job.state,'command_replay',true,
-      'command_receipt_id',p_command_receipt_id);
+  if v_job.command_receipt_id=p_command_receipt_id and v_job.command_kind=p_command_kind
+     and v_job.command_status='completed' then
+    return jsonb_build_object('state',v_job.state,'command_status','completed',
+      'command_outcome',v_job.command_outcome,'command_replay',true,
+      'command_receipt_id',p_command_receipt_id,'attempt_id',v_job.attempt_id,
+      'cups_job_id',v_job.cups_job_id,'provider_id',v_job.provider_id);
   end if;
   if v_job.lease_token is distinct from p_lease_token or v_job.lease_expires_at<=clock_timestamp()
      or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
@@ -139,18 +143,45 @@ begin
      or v_job.command_receipt_id<>p_command_receipt_id or v_job.command_kind<>p_command_kind then
     raise exception 'command fence or binding invalid';
   end if;
-  if not ((p_command_kind='continue' and v_job.state='held' and p_target_state='claimed') or
-          (p_command_kind='cancel' and v_job.state in ('claimed','submitting','submitted','held','ambiguous') and p_target_state='held')) then
-    raise exception 'command transition invalid';
+  if p_target_state='accepted' then
+    if v_job.command_status in ('accepted','in_progress') then
+      return jsonb_build_object('state',v_job.state,'command_status','in_progress',
+        'command_replay',true,'command_receipt_id',p_command_receipt_id,
+        'attempt_id',v_job.attempt_id,'cups_job_id',v_job.cups_job_id,
+        'provider_id',v_job.provider_id);
+    end if;
+    if not ((p_command_kind='continue' and v_job.state='held') or
+            (p_command_kind='cancel' and v_job.state in ('claimed','submitting','submitted','held','ambiguous'))) then
+      raise exception 'command acceptance invalid';
+    end if;
+    insert into app_private.document_print_job_events(job_id,event_type,actor_id,worker_id,attempt_id,cups_job_id,metadata_json)
+      values(p_job_id,'command_'||p_command_kind||'_accepted','documents-command-service',v_job.lease_owner,
+        v_job.attempt_id,v_job.cups_job_id,jsonb_build_object('command_receipt_id',p_command_receipt_id,
+        'authorization_receipt_id',v_job.authorization_receipt_id,'document_version',v_job.document_version,
+        'pdf_sha256',v_job.pdf_sha256,'provider_id',v_job.provider_id));
+    update app_private.document_print_jobs set command_status='in_progress',command_accepted_at=clock_timestamp(),
+      updated_at=clock_timestamp() where job_id=p_job_id returning * into v_job;
+    return jsonb_build_object('state',v_job.state,'command_status','in_progress',
+      'command_replay',false,'command_receipt_id',p_command_receipt_id,
+      'attempt_id',v_job.attempt_id,'cups_job_id',v_job.cups_job_id,'provider_id',v_job.provider_id);
   end if;
-  insert into app_private.document_print_job_events(job_id,event_type,actor_id,worker_id,metadata_json)
-    values(p_job_id,'command_'||p_command_kind,'documents-command-service',v_job.lease_owner,
-      jsonb_build_object('command_receipt_id',p_command_receipt_id,'result_state',p_target_state));
-  update app_private.document_print_jobs set state=p_target_state,command_kind=null,
-    command_receipt_id=null,command_authorized_at=null,updated_at=clock_timestamp()
+  if v_job.command_status not in ('accepted','in_progress') or
+     not ((p_command_kind='continue' and p_target_state='continued') or
+          (p_command_kind='cancel' and p_target_state in ('cancelled','ambiguous'))) then
+    raise exception 'command completion invalid';
+  end if;
+  insert into app_private.document_print_job_events(job_id,event_type,actor_id,worker_id,attempt_id,cups_job_id,metadata_json)
+    values(p_job_id,'command_'||p_command_kind||'_completed','documents-command-service',v_job.lease_owner,
+      v_job.attempt_id,v_job.cups_job_id,jsonb_build_object('command_receipt_id',p_command_receipt_id,
+      'command_outcome',p_target_state,'provider_id',v_job.provider_id));
+  update app_private.document_print_jobs set
+    state=case when p_target_state='continued' then 'claimed' else p_target_state end,
+    command_status='completed',command_outcome=p_target_state,command_completed_at=clock_timestamp(),updated_at=clock_timestamp()
     where job_id=p_job_id returning * into v_job;
-  return jsonb_build_object('state',v_job.state,'command_replay',false,
-    'command_receipt_id',p_command_receipt_id);
+  return jsonb_build_object('state',v_job.state,'command_status','completed',
+    'command_outcome',v_job.command_outcome,'command_replay',false,
+    'command_receipt_id',p_command_receipt_id,'attempt_id',v_job.attempt_id,
+    'cups_job_id',v_job.cups_job_id,'provider_id',v_job.provider_id);
 end; $$;
 
 create or replace function app_private.renew_document_print_job_lease(
@@ -198,9 +229,11 @@ declare v_job_id text; v_token text := encode(gen_random_bytes(24), 'hex');
 begin
   select job_id into v_job_id from app_private.document_print_jobs
    where command_kind in ('continue','cancel') and command_receipt_id is not null
-     and command_authorized_at > clock_timestamp()-interval '5 minutes'
-     and authorization_expires_at > clock_timestamp()
-     and ((command_kind='continue' and state='held') or
+     and (command_status in ('accepted','in_progress') or
+       (command_status is null and command_authorized_at > clock_timestamp()-interval '5 minutes'
+        and authorization_expires_at > clock_timestamp()))
+     and (lease_expires_at is null or lease_expires_at<=clock_timestamp() or lease_owner=p_worker_id)
+     and ((command_kind='continue' and state in ('held','claimed')) or
           (command_kind='cancel' and state in ('claimed','submitting','submitted','held','ambiguous')))
    order by command_authorized_at,job_id for update skip locked limit 1;
   if v_job_id is null then return; end if;
