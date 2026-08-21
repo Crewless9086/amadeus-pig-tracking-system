@@ -332,8 +332,24 @@ def _claim_irrigation_output(body):
                       and terminal.review_json->'rootline_execution'->>'execution_id'=
                           claim.review_json->'rootline_execution'->>'execution_id'
                       and (terminal.review_json->'rootline_execution'->>'action'='record_completed'
+                        or (terminal.review_json->'rootline_execution'->>'action'='record_borehole_completed'
+                          and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true'
+                          and length(coalesce(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''))>0
+                          and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
+                            terminal.review_json->'rootline_execution'->>'execution_id'
+                          and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'final_state'='OFF'
+                          and length(coalesce(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',''))>0
+                          and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'execution_id'=
+                            terminal.review_json->'rootline_execution'->>'execution_id'
+                          and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true'
+                          and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF'
+                          and length(coalesce(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''))>0
+                          and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
+                            terminal.review_json->'rootline_execution'->>'execution_id'
+                          and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true'
+                          and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true')
                         or (terminal.review_json->'rootline_execution'->>'action'
-                              in ('contain_zone','record_ambiguous_shutdown','record_claim_recovery')
+                              in ('contain_zone','contain_borehole','record_ambiguous_shutdown','record_claim_recovery')
                             and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true')))
                 limit 1""", (EVENT_SOURCE, EVENT_SOURCE))
             if cursor.fetchone():
