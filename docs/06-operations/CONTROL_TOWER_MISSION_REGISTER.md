@@ -3642,3 +3642,47 @@ remain protected release/commissioning holds with no physical outcomes. BEACON P
 publication boundary. CORE and SAM have no freshly attributable eligible terminal
 work in this sweep and remain frozen under strategic WIP rather than receiving
 manufactured expansion tasks.
+
+### Purpose-review complete handover and exact release decision - 2026-08-21
+
+Fresh process and artifact inspection proves the closeout-recovery terminal closed
+and produced a complete populated 25,695-byte handover at
+`C:\tmp\VISIBLE_OOM_PURPOSE_REVIEW_COMPLETE_HANDOVER_20260821.md`. The exact
+worktree is clean and pushed at PR #1142 head
+`ea4247ec1b571f89b91fe4550c47cbd1d2aadfad`, four commits ahead and zero behind
+fresh authoritative main `2548d99ab61d686449a2748614e4da9849c90b3a`.
+GitHub freshly verifies PR #1142 open, non-draft, clean, mergeable and all three
+exact-head checks successful. The recovery audit independently reports a fresh
+targeted suite of 215 passed tests plus 32 passed subtests.
+
+The handover truthfully records `OWNER OUTCOME ACHIEVED: NONE`, `USABLE NOW: NO`
+and `RELEASE_HOLD / BUILT_BUT_UNPROVEN`. No exact deployed revision, autonomous
+worker heartbeat, genuine scheduled execution, current canonical owner-attention
+contents, Telegram/provider presentation, protected purpose decision, canonical
+closure or later terminal-independent cycle exists for this head. The mission
+therefore remains open and Business completion is false.
+
+All safe bounded implementation and closeout work is exhausted. The first missing
+gate is one protected decision authorizing normal serialized merge and deployment
+of exact PR #1142 head `ea4247ec`, after collision reconciliation. PR #1143 and PR
+#1150 overlap only the implementation source map/changelog/register surfaces; PR
+#1145 overlaps the changelog. Their unique runtime/source work must remain preserved
+and governance-document additions reconciled rather than overwritten. No release
+terminal is dispatched until this exact authority is granted.
+
+After authorization, automatic continuation is the same OOM SAKKIE release and
+acceptance mission: reconcile current main and overlapping documentation, merge and
+deploy normally, verify the loaded revision, then allow the deployed Oom Sakkie
+managerâ€”not a terminalâ€”to receive a genuine schedule/material-change trigger and
+prove one shared names-first Application/Telegram identity, correct counts and
+purpose routing. The terminal then closes and a later independent cycle proves
+continuity. No medication, purpose decision, farm/customer/public write, migration,
+credential change or hardware authority is implied.
+
+Fresh terminal allocation: OOM SAKKIE is `DEPENDENCY IDLE` at the exact protected
+release decision; HERDMASTER and CODEX UI are serialized behind it. DOCUMENTS and
+ROOTLINE borehole remain separate protected release/physical commissioning holds.
+BEACON remains at protected publication authority. CORE and SAM remain strategically
+frozen from new expansion in the absence of freshly attributable current terminal
+work. No eligible safe implementation lane is left idle: the nearest continuation
+crosses the protected PR #1142 merge/deploy boundary.
