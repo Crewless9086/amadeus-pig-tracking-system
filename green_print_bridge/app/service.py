@@ -97,7 +97,7 @@ class CanonicalClient:
     def request(self,method,path,body=None):
         parsed=urlparse(self.config["canonical_api_origin"])
         if not path.startswith("/") or "?" in path or "#" in path: raise Hold("canonical_path_invalid")
-        payload=canonical_json(body).encode() if body is not None else None; headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"Accept":"application/json","Host":parsed.netloc}
+        payload=canonical_json(body).encode() if body is not None else None; headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"X-Amadeus-Green-Id":self.config["green_id"],"Accept":"application/json","Host":parsed.netloc}
         if payload is not None: headers["Content-Type"]="application/json"
         conn=PinnedHTTPSConnection(parsed.hostname,self.config["canonical_endpoint_ip"],parsed.port or 443,self.context,20)
         try:
@@ -133,7 +133,7 @@ class CanonicalClient:
         if (parsed.scheme,parsed.hostname,parsed.port)!=("https",origin.hostname,origin.port): raise Hold("pdf_origin_mismatch")
         conn=PinnedHTTPSConnection(parsed.hostname,self.config["canonical_endpoint_ip"],parsed.port or 443,self.context,30)
         try:
-            conn.request("GET",parsed.path,headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"Host":parsed.netloc}); response=conn.getresponse()
+            conn.request("GET",parsed.path,headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"X-Amadeus-Green-Id":self.config["green_id"],"Host":parsed.netloc}); response=conn.getresponse()
             if response.status!=200 or response.getheader("Content-Type","").split(";",1)[0].lower()!="application/pdf": raise Hold("pdf_response_invalid")
             return response.read(25*1024*1024+1)
         finally: conn.close()

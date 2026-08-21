@@ -22,6 +22,17 @@ def test_green_migration_has_a_unique_release_version():
     assert matches == [MIGRATION.name]
 
 
+def test_migration_has_schema_safe_pgcrypto_and_least_privilege_grants():
+    source = MIGRATION.read_text(encoding="utf-8")
+    assert "pg_catalog.pg_extension" in source
+    assert "%I.gen_random_bytes" in source and "%I.digest" in source
+    assert "documents_green_worker_executor" in source
+    assert "documents_api_executor" in source
+    assert "revoke all on app_private.document_print_jobs from public, anon, authenticated" in source
+    assert "grant execute on function app_private.create_authorized_document_print_job" in source
+    assert "grant select" not in source and "grant insert" not in source and "grant update" not in source
+
+
 @pytest.fixture
 def db():
     if not URL:
@@ -45,20 +56,20 @@ def db():
             cursor.execute(MIGRATION.read_text(encoding="utf-8"))
             cursor.execute("""insert into app_private.document_print_jobs
                 (job_id,document_id,document_version,document_revision,document_type,
-                 generator_id,pdf_sha256,canonical_input_sha256,authenticated_principal_id,
+                 generator_id,pdf_sha256,canonical_input_sha256,pdf_bytes,authenticated_principal_id,
                  requester,request_channel,green_id,printer_id,cups_queue_id,registry_version,
                  authorization_receipt_id,authorization_expires_at,lease_owner,lease_token,
                  lease_expires_at,attempt_id,cups_job_id,provider_id,command_kind,
                  command_receipt_id,command_authorized_at,command_status,command_outcome,
                  command_accepted_at,command_completed_at,state,retry_deadline)
                 values ('JOB-DB-1','DOC-DB-1','DOC-DB-1.r1',1,
-                 'farm.weekly_weight_sheet.v1','web.print_sheets.v1',%s,%s,
+                 'farm.weekly_weight_sheet.v1','web.print_sheets.v1',%s,%s,%s,
                  'principal','requester','private','green','printer','weekly-a4','registry-v1',
                  'AUTH-DB-1',clock_timestamp()+interval '1 hour','old-worker','old-lease',
                  clock_timestamp()-interval '1 second','ATTEMPT-DB-1','weekly-a4-42','ipps://printer',
                  'continue','COMMAND-DB-1',clock_timestamp()-interval '2 minutes','completed',
                  'continued',clock_timestamp()-interval '2 minutes',clock_timestamp()-interval '1 minute',
-                 'claimed',clock_timestamp()+interval '1 hour')""", (PDF_SHA, "b" * 64))
+                 'claimed',clock_timestamp()+interval '1 hour')""", (PDF_SHA, "b" * 64, b"%PDF-" + b"x" * 80))
         yield connection
     finally:
         connection.rollback()
