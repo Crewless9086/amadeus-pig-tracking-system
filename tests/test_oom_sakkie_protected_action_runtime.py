@@ -5,6 +5,7 @@ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie import telegram_direct
 from modules.oom_sakkie.telegram_direct import handle_telegram_direct_webhook
 import json
+import pytest
 
 
 def parsed(text="I confirm this"):
@@ -55,6 +56,61 @@ def test_proven_replay_is_silent_and_has_no_effects(monkeypatch):
         {**parsed(""), "callback_data": "oompa:opaque:confirm"}, authority())
     assert status == 200 and result["suppress_owner_delivery"] is True
     assert result["writes_farm_data"] is False
+
+
+def test_documents_confirmation_dispatches_server_producer_and_completes_claim(monkeypatch):
+    claim={"success":True,"status":"protected_callback_claimed",
+        "callback_token":"AUTH-GREEN-1","action_kind":"documents_green_print",
+        "mission_id":"DMQ-20260816-01","preview_payload":{"bound":True}}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:(claim,200))
+    monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:{
+        "completed":True,"result":args[1]})
+    producer=lambda claimed,owner:{"job_id":"JOB-GREEN-1","state":"authorized"}
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"callback_data":"oompa:AUTH-GREEN-1:confirm"},authority(),
+        documents_handler=producer)
+    assert status==200 and result["job_id"]=="JOB-GREEN-1"
+    assert result["status"]=="documents_green_print_authorized"
+    assert result["printer_calls"]==0 and result["suppress_owner_delivery"] is True
+
+
+def test_documents_producer_failure_remains_recoverable(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+        "success":True,"status":"protected_callback_recovered",
+        "callback_token":"AUTH-GREEN-1","action_kind":"documents_green_print",
+        "mission_id":"DMQ-20260816-01","preview_payload":{"bound":True}},200))
+    def fail(*args,**kwargs): raise RuntimeError("database unavailable")
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"callback_data":"oompa:AUTH-GREEN-1:confirm"},authority(),
+        documents_handler=fail)
+    assert status==503 and result["recovery_required"] is True
+    assert result["canonical_job_created"] is False and result["printer_calls"]==0
+
+
+@pytest.mark.parametrize("selected_action,confirmed,expected_status", [
+    ("incorrect",False,"documents_physical_page_exception_owned"),
+    ("uncertain",False,"documents_physical_page_exception_owned"),
+])
+def test_documents_physical_exception_callback_is_canonical_and_no_reprint(
+        monkeypatch,selected_action,confirmed,expected_status):
+    claim={"success":True,"status":"protected_callback_claimed",
+        "callback_token":"PHYSICAL-1","action_kind":"documents_green_physical_acceptance",
+        "mission_id":"DMQ-20260816-01:PHYSICAL:JOB-1","selected_action":selected_action,
+        "preview_payload":{"contract_version":"documents_green_physical_acceptance_v1"}}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:(claim,200))
+    monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:{
+        "completed":True,"result":args[1]})
+    import modules.documents.green_print_api as api
+    monkeypatch.setattr(api,"execute_claimed_physical_page_acceptance",
+        lambda claimed,owner,connect_factory=None:{
+            "physical_page_confirmed":confirmed,
+            "physical_observation_result":claimed["selected_action"],
+            "follow_up_state":"exception_owned","automatic_reprint":False})
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"callback_data":"oompa:PHYSICAL-1:change"},authority())
+    assert status==200 and result["status"]==expected_status
+    assert result["physical_observation_result"]==selected_action
+    assert result["automatic_reprint"] is False and result["printer_calls"]==0
 
 
 def test_beacon_finish_callback_returns_private_summary_and_separate_later_actions(monkeypatch):

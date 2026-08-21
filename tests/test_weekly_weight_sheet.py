@@ -35,7 +35,8 @@ def test_duplicate_or_untrusted_rows_fail_closed():
 def test_protected_claim_binds_every_print_dimension():
     item = revision()
     payload = protected_print_preview(revision=item, job_id="JOB-1",
-        green_id="green-1", printer_id="printer-1", cups_queue_id="weekly-a4",
+        farm_scope_id="farm-amadeus", green_id="green-1",
+        printer_id="printer-1", cups_queue_id="weekly-a4",
         registry_version="registry-v1",
         retrieval_url=f"https://documents.internal/api/documents/{item.document_id}/versions/{item.version_id}/pdf",
         authorization_expires_at=NOW + timedelta(minutes=10))

@@ -35,6 +35,7 @@ class WeeklySheetRevision:
     pdf_bytes: bytes
     pdf_sha256: str
     canonical_input_sha256: str
+    canonical_rows: tuple
 
 
 def build_weekly_sheet_revision(*, authenticated_principal_id, requester, sheet_date,
@@ -54,11 +55,13 @@ def build_weekly_sheet_revision(*, authenticated_principal_id, requester, sheet_
     document_id = _identity(document_id or f"WWS-{sheet_date:%Y%m%d}", "document_id")
     version_id = f"{document_id}.r{revision}.{input_digest[:12]}"
     pdf = _render(sheet_date, normalized, version_id)
+    frozen_rows = tuple((row["pig_id"], row["tag_number"], row["pen_id"])
+                        for row in normalized)
     return WeeklySheetRevision(document_id, version_id, revision, sheet_date, pdf,
-                               sha256(pdf).hexdigest(), input_digest)
+                               sha256(pdf).hexdigest(), input_digest, frozen_rows)
 
 
-def protected_print_preview(*, revision, job_id, green_id, printer_id,
+def protected_print_preview(*, revision, job_id, farm_scope_id, green_id, printer_id,
                             cups_queue_id, registry_version, retrieval_url,
                             authorization_expires_at):
     """Return the exact payload to pass to the existing protected-claim rail."""
@@ -67,6 +70,7 @@ def protected_print_preview(*, revision, job_id, green_id, printer_id,
     payload = {
         "contract_version": "documents_green_print_preview_v1",
         "job_id": _identity(job_id, "job_id"),
+        "farm_scope_id": _identity(farm_scope_id, "farm_scope_id"),
         "document_id": revision.document_id,
         "document_version": revision.version_id,
         "document_revision": revision.revision,
@@ -74,6 +78,11 @@ def protected_print_preview(*, revision, job_id, green_id, printer_id,
         "generator_id": PILOT_GENERATOR,
         "pdf_sha256": revision.pdf_sha256,
         "canonical_input_sha256": revision.canonical_input_sha256,
+        "sheet_date": revision.sheet_date.isoformat(),
+        "canonical_rows": [
+            {"pig_id": row[0], "tag_number": row[1], "pen_id": row[2]}
+            for row in revision.canonical_rows
+        ],
         "retrieval_url": str(retrieval_url),
         "green_id": _identity(green_id, "green_id"),
         "printer_id": _identity(printer_id, "printer_id"),

@@ -18,7 +18,7 @@ from urllib import request as urllib_request
 from modules.oom_sakkie.llm_router import API_KEY_ENV, API_URL_ENV, DEFAULT_API_URL, MODEL_ENV, TIMEOUT_ENV
 
 ENABLED_ENV = "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED"
-DOMAINS = frozenset({"herd_health", "herd_management", "rootline", "manager_round", "sam", "beacon", "general"})
+DOMAINS = frozenset({"herd_health", "herd_management", "rootline", "manager_round", "sam", "beacon", "documents", "general"})
 MESSAGE_KINDS = frozenset({"observation", "question", "request", "command", "confirmation", "correction", "general"})
 MAX_CONTEXT_ITEMS = 8
 CONTEXT_MAX_AGE_SECONDS = 6 * 60 * 60
@@ -181,7 +181,8 @@ def _payload(parsed, context, source):
         "Domains: herd_health only for a specific animal welfare/death/loss/health report; herd_management for herd, "
         "breeding, weighing, farrowing or animal-work planning; rootline for water, tanks, irrigation, power, valves "
         "or confirmation that a camp started/stopped; manager_round for farm briefs and priorities; "
-        "sam for customers/livestock sales; beacon for marketing/media/posts; general otherwise. "
+        "sam for customers/livestock sales; beacon for marketing/media/posts; documents for requests to prepare or print the fixed weekly weighing sheet; general otherwise. "
+        "For any natural English, Afrikaans, mixed-language, paraphrased or contextual request to print the weekly weighing sheet, use domain documents and stable intent weekly_weighing_sheet_print. A short follow-up may retain this intent only when bounded recent context identifies that same document. "
         "For a request to prepare farm-awareness, non-availability livestock content, or a farm story that must not sell, "
         "use domain beacon and the stable intent live_stock_awareness. Preserve that intent on English, Afrikaans, mixed-language "
         "and contextual follow-up requests; zero buyer demand does not change the awareness intent into a sales campaign. "
