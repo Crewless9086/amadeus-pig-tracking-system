@@ -362,6 +362,44 @@ class RuntimeStagingTests(unittest.TestCase):
         self.assertFalse((self.state / "validation-consumptions" / ("8" * 32 + ".json")).exists())
         self.assertTrue((self.state / "supervisor.stop").exists())
 
+    def test_receipt_expiring_during_history_scan_is_rejected_before_consumption(self):
+        issued = "2026-08-21T10:00:00Z"
+        receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+        evidence = {"source_commit": receipt["source_commit"], "suites": receipt["suites"],
+                    "isolation": receipt["isolation"]}
+        refreshed = sign_validation_receipt(
+            evidence, self.receipt_key, validation_id="9" * 32,
+            issued_at=issued, expires_at="2026-08-21T10:30:00Z",
+        )
+        recorded = record_validation_receipt(refreshed, self.state)
+        self.receipt = Path(recorded["path"])
+        plan = self._plan(now="2026-08-21T10:29:58Z")
+        clock = {"value": "2026-08-21T10:29:59Z"}
+        original_history = __import__(
+            "modules.charlie.runtime_staging", fromlist=["_validate_receipt_history"]
+        )._validate_receipt_history
+        history_calls = {"count": 0}
+
+        def slow_history(*args):
+            original_history(*args)
+            history_calls["count"] += 1
+            if history_calls["count"] == 2:
+                clock["value"] = "2026-08-21T10:30:00Z"
+
+        runtime_before = dict(self.git.heads)
+        with mock.patch(
+                "modules.charlie.runtime_staging._validate_receipt_history",
+                side_effect=slow_history):
+            with self.assertRaisesRegex(RuntimeStagingError, "receipt_expired"):
+                stage_runtime(plan, task_reader=self._task, runner=self.git,
+                              git_safety_checker=self._safe_git,
+                              now=lambda: clock["value"])
+        self.assertEqual(history_calls["count"], 2)
+        self.assertFalse((self.state / "validation-consumptions" / ("9" * 32 + ".json")).exists())
+        self.assertFalse((self.state / "release-staging.lock").exists())
+        self.assertEqual(self.git.heads, runtime_before)
+        self.assertTrue((self.state / "supervisor.stop").exists())
+
     def test_plan_rejects_ambiguous_or_running_task(self):
         with self.assertRaisesRegex(RuntimeStagingError, "scheduled_task_ownership_ambiguous"):
             self._plan(task_reader=lambda: [])

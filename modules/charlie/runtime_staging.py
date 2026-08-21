@@ -262,14 +262,18 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
             raise RuntimeStagingError("worktree_identity_changed_before_staging")
         if _sha256(state_root / "runtime-manifest.json") != plan["rollback"]["manifest_sha256"]:
             raise RuntimeStagingError("runtime_manifest_changed_before_staging")
-        # Re-sample after every potentially slow task/Git/worktree/manifest check.
-        # A receipt valid at lane entry must not be consumed after it expires.
-        receipt_identity = _validate_receipt(
-            _read_json(plan["receipt_path"], "isolated_validation_receipt_invalid"),
-            source_ref, _read_receipt_key(receipt_key_path), now=_sample_clock(now),
-        )
+        # Complete every potentially slow task/Git/worktree/manifest/history check
+        # before the final clock sample. A receipt valid at lane entry must not be
+        # consumed after it expires while those checks run.
         _validate_receipt_history(
             state_root, Path(plan["receipt_path"]), receipt_identity, plan["receipt_sha256"]
+        )
+        sealed_receipt = _read_json(
+            plan["receipt_path"], "isolated_validation_receipt_invalid"
+        )
+        sealed_receipt_key = _read_receipt_key(receipt_key_path)
+        receipt_identity = _validate_receipt(
+            sealed_receipt, source_ref, sealed_receipt_key, now=_sample_clock(now),
         )
         consumption_path = (
             state_root / "validation-consumptions" / f"{receipt_identity['validation_id']}.json"
