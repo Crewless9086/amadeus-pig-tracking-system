@@ -90,6 +90,57 @@ def test_private_media_review_semantic_family_preserves_stable_intent(text, lang
     assert "stable intent private_media_library_review" in captured["messages"][0]["content"]
 
 
+@pytest.mark.parametrize("text,language,continuation", [
+    ("Please print the weekly weighing sheet.", "en", False),
+    ("Druk asseblief die weeklikse weegstaat.", "af", False),
+    ("Kan Oom die pigs se weekly sheet laat druk?", "mixed", False),
+    ("Ja, druk daardie staat.", "af", True),
+])
+def test_documents_print_semantic_family_uses_one_stable_intent(
+        text,language,continuation):
+    captured={}
+    def open_request(request,timeout):
+        captured.update(json.loads(request.data.decode()))
+        return _HttpResponse(_response(_semantic("documents",
+            "weekly_weighing_sheet_print",message_kind="request",
+            language=language,continuation=continuation,
+            protected_preview_required=True)))
+    result=interpret_owner_message({"text":text,"provider_message_id":"DOC-PRINT-1"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+        context_loader=lambda parsed:({"recent_turns":[{
+            "semantic_domain":"documents",
+            "semantic_intent":"weekly_weighing_sheet_print"}]} if continuation else {}),
+        http_open=open_request)
+    assert result.domain=="documents" and result.intent=="weekly_weighing_sheet_print"
+    assert result.language==language and result.continuation is continuation
+    assert result.protected_preview_required is True
+    assert "stable intent weekly_weighing_sheet_print" in captured["messages"][0]["content"]
+
+
+def test_ambiguous_documents_semantic_result_retains_one_clarification():
+    payload=_semantic("documents","weekly_weighing_sheet_print",message_kind="request")
+    payload.update({"needs_clarification":True,
+        "clarification_question":"Do you want the weekly weighing sheet printed?"})
+    result=interpret_owner_message({"text":"Print that one","provider_message_id":"DOC-2"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+        context_loader=lambda parsed:{},
+        http_open=lambda request,timeout:_HttpResponse(_response(payload)))
+    assert result.domain=="documents" and result.needs_clarification is True
+    assert result.clarification_question=="Do you want the weekly weighing sheet printed?"
+
+
+def test_unrelated_print_language_is_not_documents_intent():
+    result=interpret_owner_message({"text":"What is today's farm plan?",
+        "provider_message_id":"DOC-3"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+        context_loader=lambda parsed:{},http_open=lambda request,timeout:_HttpResponse(
+            _response(_semantic("manager_round","daily_brief",message_kind="question"))))
+    assert result.domain=="manager_round" and result.intent=="daily_brief"
+
+
 def test_english_death_update_is_typed_as_herd_evidence():
     result = parse_semantic_response(_response(_semantic("herd_health", "death_report",
         entity_refs=["Pig 127"], continuation=True,
@@ -356,6 +407,34 @@ def test_gateway_attaches_semantic_hint_before_specialist_routing(interpret, ope
     assert status == 200 and result["message"]["specialist_identity"] == "ROOTLINE"
     routed = operational.call_args.args[0]
     assert routed["semantic"]["intent"] == "irrigation_shutdown_observed"
+
+
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result",
+       return_value={"success":True,"telegram_sends":1,"telegram_edits":0})
+@patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message")
+def test_gateway_documents_ambiguity_asks_once_without_print_claim(interpret,deliver):
+    interpret.return_value=SemanticInterpretation(domain="documents",
+        intent="weekly_weighing_sheet_print",message_kind="request",confidence=.55,
+        needs_clarification=True,
+        clarification_question="Do you want the weekly weighing sheet printed?")
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"g"*40,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42",
+        "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"}
+    payload={"message":{"message_id":3220,"date":1785790001,"text":"Print that one",
+        "from":{"id":42},"chat":{"id":42,"type":"private"}}}
+    with patch.dict("os.environ",env,clear=True), patch(
+            "modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",
+            return_value=None):
+        result,status=handle_telegram_gateway_message(payload,
+            headers={"Authorization":"Bearer "+"g"*40})
+    assert status==200 and result["message"]["status"]==(
+        "documents_green_request_clarification_required")
+    assert result["message"]["canonical_job_created"] is False
+    delivered=deliver.call_args.args[1]
+    assert delivered.get("callback_token") is None
+    assert delivered["answer"]=="Do you want the weekly weighing sheet printed?"
 
 
 @patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message",

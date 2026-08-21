@@ -11,7 +11,7 @@ NATURAL_CONFIRM=re.compile(r"^(?:i\s+confirm(?:\s+this)?|confirm(?:\s+all)?|yes[
 
 def handle_protected_action_input(parsed, gateway_authority, *, callback_data="",
                                   connect_factory=None, health_handler=None,
-                                  irrigation_handler=None):
+                                  irrigation_handler=None, documents_handler=None):
     owner=str(parsed.get("telegram_user_id") or "");chat=str(parsed.get("telegram_chat_id") or "")
     if not validates_gateway_owner_authority(gateway_authority) or not owner or owner!=chat:
         return {"handled":False,"status":"protected_action_not_applicable"},200
@@ -113,6 +113,40 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
                   "owner_visible_completion_policy":"verified_edit_or_new_message"})
         return {"handled":True,**claimed,"writes_farm_data":False,"suppress_owner_delivery":claimed.get("status")=="protected_callback_replayed_noop"},status
     claimed["callback_token"]=data.split(":")[1]
+    if claimed["action_kind"]=="documents_green_print":
+        if documents_handler is None:
+            from modules.documents.green_print_api import execute_claimed_weekly_print
+            documents_handler=execute_claimed_weekly_print
+        try:
+            result=documents_handler(claimed,parsed)
+        except Exception as exc:
+            return {"handled":True,"success":False,
+                "status":"documents_green_print_recovery_pending",
+                "canonical_job_created":False,"printer_calls":0,
+                "recovery_required":True,"error_type":type(exc).__name__},503
+        completion=complete_claim(claimed["callback_token"],result,
+            connect_factory=connect_factory)
+        canonical=completion.get("result") if isinstance(completion.get("result"),dict) else result
+        return {"handled":True,"success":True,
+            "status":"documents_green_print_authorized",
+            **canonical,"printer_calls":0,"suppress_owner_delivery":True},200
+    if claimed["action_kind"]=="documents_green_physical_acceptance":
+        from modules.documents.green_print_api import execute_claimed_physical_page_acceptance
+        try:
+            result=execute_claimed_physical_page_acceptance(
+                claimed,parsed,connect_factory=connect_factory)
+        except Exception as exc:
+            return {"handled":True,"success":False,
+                "status":"documents_physical_acceptance_recovery_pending",
+                "recovery_required":True,"printer_calls":0,
+                "automatic_reprint":False,"error_type":type(exc).__name__},503
+        completion=complete_claim(claimed["callback_token"],result,
+            connect_factory=connect_factory)
+        canonical=completion.get("result") if isinstance(completion.get("result"),dict) else result
+        return {"handled":True,"success":True,
+            "status":"documents_physical_page_confirmed" if canonical.get(
+                "physical_page_confirmed") is True else "documents_physical_page_exception_owned",
+            **canonical,"printer_calls":0,"automatic_reprint":False},200
     if claimed["action_kind"]=="beacon_campaign_review":
         preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
         if (preview.get("contract_version")!="beacon_campaign_owner_card_v1"

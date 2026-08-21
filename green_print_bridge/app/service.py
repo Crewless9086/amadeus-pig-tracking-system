@@ -67,13 +67,13 @@ class Ledger:
         with self.connect() as db: db.execute("delete from jobs where job_id=?",(job_id,))
 
 def validate(e,c,now):
-    required=("job_id","document_id","document_version","document_revision","pdf_sha256","retrieval_url","green_id","printer_id","cups_queue_id","registry_version","authorization_receipt_id","authorization_expires_at")
+    required=("job_id","farm_scope_id","document_id","document_version","document_revision","pdf_sha256","retrieval_url","green_id","printer_id","cups_queue_id","registry_version","authorization_receipt_id","authorization_expires_at")
     if any(e.get(k) in (None,"") for k in required): raise Hold("required_binding_missing")
     if e.get("document_type")!=PILOT_DOCUMENT or e.get("generator_id")!=PILOT_GENERATOR: raise Hold("document_or_generator_not_allowlisted")
     if e.get("options")!=FIXED_OPTIONS: raise Hold("print_options_not_allowlisted")
-    for k in ("job_id","document_id","document_version","green_id","printer_id","cups_queue_id","registry_version","authorization_receipt_id"):
+    for k in ("job_id","farm_scope_id","document_id","document_version","green_id","printer_id","cups_queue_id","registry_version","authorization_receipt_id"):
         if not ID.fullmatch(str(e[k])): raise Hold("invalid_identity")
-    for k in ("green_id","printer_id","cups_queue_id","registry_version"):
+    for k in ("farm_scope_id","green_id","printer_id","cups_queue_id","registry_version"):
         if e[k]!=c[k]: raise Hold("registered_identity_pair_mismatch")
     if not DIGEST.fullmatch(str(e["pdf_sha256"]).lower()): raise Hold("invalid_pdf_digest")
     if parse_time(e["authorization_expires_at"])<=now: raise Hold("authorization_expired")
@@ -93,11 +93,12 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
         raw=socket.create_connection((self.pinned_ip,self.port),self.timeout); self.sock=self._context.wrap_socket(raw,server_hostname=self.host)
 
 class CanonicalClient:
-    def __init__(self,c): self.config=c; self.context=ssl.create_default_context(cafile=c["ca_certificate_path"])
+    def __init__(self,c): self.config=c; self.context=ssl.create_default_context(cafile=c["ca_certificate_path"]); self.worker_id=None
     def request(self,method,path,body=None):
         parsed=urlparse(self.config["canonical_api_origin"])
         if not path.startswith("/") or "?" in path or "#" in path: raise Hold("canonical_path_invalid")
-        payload=canonical_json(body).encode() if body is not None else None; headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"Accept":"application/json","Host":parsed.netloc}
+        payload=canonical_json(body).encode() if body is not None else None; headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"X-Amadeus-Farm-Scope-Id":self.config["farm_scope_id"],"X-Amadeus-Green-Id":self.config["green_id"],"Accept":"application/json","Host":parsed.netloc}
+        if self.worker_id: headers["X-Amadeus-Worker-Id"]=self.worker_id
         if payload is not None: headers["Content-Type"]="application/json"
         conn=PinnedHTTPSConnection(parsed.hostname,self.config["canonical_endpoint_ip"],parsed.port or 443,self.context,20)
         try:
@@ -107,6 +108,7 @@ class CanonicalClient:
         finally: conn.close()
         return json.loads(data) if data else None
     def claim(self,worker_id):
+        self.worker_id=worker_id
         value=self.request("POST",CLAIM_PATH,{"worker_id":worker_id,"lease_seconds":300}) or {}
         if not value.get("job"): return None
         if not ID.fullmatch(str(value.get("lease_token",""))) or parse_time(value.get("lease_expires_at"))<=utcnow(): raise Hold("canonical_claim_invalid")
@@ -117,15 +119,17 @@ class CanonicalClient:
         event_id=str(uuid.uuid5(uuid.NAMESPACE_URL,event_material))
         body={"event_id":event_id,"lease_token":token,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"target_state":state,**evidence}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/transition",body)
-    def command(self,worker_id): return self.request("POST",COMMAND_PATH,{"worker_id":worker_id})
+    def command(self,worker_id): self.worker_id=worker_id; return self.request("POST",COMMAND_PATH,{"worker_id":worker_id})
     def transition_command(self,command,target_state):
         job=command["job"]
         body={"lease_token":command["lease_token"],"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"command_receipt_id":command["command_receipt_id"],"command_kind":command["command"],"target_state":target_state}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/commands/transition",body)
     def renew(self,job,token,worker_id):
+        self.worker_id=worker_id
         body={"lease_token":token,"worker_id":worker_id,"lease_seconds":300,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"]}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/lease/renew",body)
     def recover(self,job,worker_id):
+        self.worker_id=worker_id
         body={"worker_id":worker_id,"lease_seconds":300,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"]}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/lease/recover",body)
     def pdf(self,url):
@@ -133,7 +137,9 @@ class CanonicalClient:
         if (parsed.scheme,parsed.hostname,parsed.port)!=("https",origin.hostname,origin.port): raise Hold("pdf_origin_mismatch")
         conn=PinnedHTTPSConnection(parsed.hostname,self.config["canonical_endpoint_ip"],parsed.port or 443,self.context,30)
         try:
-            conn.request("GET",parsed.path,headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"Host":parsed.netloc}); response=conn.getresponse()
+            headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"X-Amadeus-Farm-Scope-Id":self.config["farm_scope_id"],"X-Amadeus-Green-Id":self.config["green_id"],"Host":parsed.netloc}
+            if self.worker_id: headers["X-Amadeus-Worker-Id"]=self.worker_id
+            conn.request("GET",parsed.path,headers=headers); response=conn.getresponse()
             if response.status!=200 or response.getheader("Content-Type","").split(";",1)[0].lower()!="application/pdf": raise Hold("pdf_response_invalid")
             return response.read(25*1024*1024+1)
         finally: conn.close()
@@ -248,7 +254,7 @@ def cycle(ledger,client,cups,config,worker_id):
     finally: path.unlink(missing_ok=True)
 
 def load_config(path="/data/options.json"):
-    value=json.loads(Path(path).read_text(encoding="utf-8")); required=("canonical_api_origin","canonical_endpoint_ip","canonical_bearer_token","green_id","printer_id","cups_queue_id","registry_version","printer_uri","poll_seconds")
+    value=json.loads(Path(path).read_text(encoding="utf-8")); required=("canonical_api_origin","canonical_endpoint_ip","canonical_bearer_token","farm_scope_id","green_id","printer_id","cups_queue_id","registry_version","printer_uri","poll_seconds")
     if any(value.get(k) in (None,"") for k in required): raise Hold("runtime_option_missing")
     origin,printer=urlparse(value["canonical_api_origin"]),urlparse(value["printer_uri"])
     if origin.scheme!="https" or origin.username or origin.password or origin.query or origin.fragment: raise Hold("canonical_origin_invalid")
@@ -258,7 +264,7 @@ def load_config(path="/data/options.json"):
     if value["canonical_endpoint_ip"] not in private_addresses(origin.hostname): raise Hold("canonical_pin_not_in_resolution_set")
     value["ca_certificate_path"]=CA_CERTIFICATE_PATH; value["canonical_intake_path"]=CLAIM_PATH
     if not Path(value["ca_certificate_path"]).is_file(): raise Hold("private_ca_missing")
-    if not all(ID.fullmatch(str(value[k])) for k in ("green_id","printer_id","cups_queue_id","registry_version")): raise Hold("invalid_registered_option")
+    if not all(ID.fullmatch(str(value[k])) for k in ("farm_scope_id","green_id","printer_id","cups_queue_id","registry_version")): raise Hold("invalid_registered_option")
     return value
 
 def write_health(status,worker_id,result,next_poll):

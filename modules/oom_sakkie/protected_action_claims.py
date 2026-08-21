@@ -18,9 +18,20 @@ def build_buttons(token, *, grouped=False):
         raise ValueError("protected callback exceeds Telegram limit")
     return {"inline_keyboard":rows}
 
+def build_physical_acceptance_buttons(token):
+    token=str(token)
+    values=[("Page correct","confirm"),("Page incorrect","change"),("Not sure","cancel")]
+    rows=[[{"text":label,"callback_data":f"{CALLBACK_PREFIX}{token}:{action}"}
+           for label,action in values]]
+    if any(len(button["callback_data"].encode())>MAX_CALLBACK_BYTES
+           for row in rows for button in row):
+        raise ValueError("protected callback exceeds Telegram limit")
+    return {"inline_keyboard":rows}
+
 def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                  provider_message_id, evidence_generation, preview_payload,
-                 ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True):
+                 ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True,
+                 reuse_active_provider_identity=False):
     digest=canonical_preview_digest(action_kind,preview_payload)
     token=secrets.token_urlsafe(12).replace("-","").replace("_","")[:16]
     expires=(datetime.fromisoformat(str(expires_at).replace("Z","+00:00"))
@@ -29,6 +40,10 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
         raise ValueError("protected_claim_expiry_invalid")
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
+        if reuse_active_provider_identity:
+            # Serialize one logical preview before the unique-key read/insert so
+            # concurrent provider deliveries recover the winner, not an error.
+            cur.execute("select pg_advisory_xact_lock(%s)",(int(digest[:15],16),))
         cur.execute("""select callback_token,status,expires_at,owner_user_id,private_chat_id,
           provider_message_id,evidence_generation,preview_payload,preview_card_message_id
           from app_private.oom_protected_action_claims
@@ -36,11 +51,16 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
           (action_kind,mission_id,digest))
         prior=cur.fetchone()
         if prior:
-            exact=(str(prior[3])==str(owner_user_id) and str(prior[4])==str(private_chat_id)
-              and str(prior[5])==str(provider_message_id) and str(prior[6])==str(evidence_generation)
+            same_request=(str(prior[3])==str(owner_user_id) and str(prior[4])==str(private_chat_id)
+              and str(prior[6])==str(evidence_generation)
               and prior[7]==preview_payload)
-            rearmable=(action_kind=="beacon_media_review"
+            exact=same_request and (str(prior[5])==str(provider_message_id)
+              or reuse_active_provider_identity)
+            rearmable=((action_kind=="beacon_media_review"
                 and prior[1] in {"active","expired"} and exact)
+                or (action_kind=="documents_green_physical_acceptance"
+                    and prior[1] in {"changed","cancelled","expired"}
+                    and same_request and reuse_active_provider_identity))
             if prior[1]=="active" and exact and prior[2]>datetime.now(timezone.utc):
                 return {"success":True,"status":"protected_claim_existing","callback_token":prior[0],
                   "preview_digest":digest,"expires_at":prior[2].isoformat(),
@@ -48,7 +68,7 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
             if rearmable:
                     cur.execute("""update app_private.oom_protected_action_claims
                       set status='active',expires_at=%s where callback_token=%s
-                      and status in('active','expired')""",
+                      and status in('active','changed','cancelled','expired')""",
                       (expires,prior[0]))
                     return {"success":True,"status":"protected_claim_rearmed",
                   "callback_token":prior[0],"preview_digest":digest,
@@ -264,6 +284,17 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
               "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
               "preview_payload":row[6],"preview_card_message_id":str(row[10] or "")},200
         if action in {"change","cancel","nomedia"}:
+            if row[0]=="documents_green_physical_acceptance" and action in {"change","cancel"}:
+                cur.execute("""update app_private.oom_protected_action_claims
+                  set status='executing',confirmation_provider_message_id=%s,
+                      confirmation_provider_timestamp=%s::timestamptz
+                  where callback_token=%s and status='active'""",
+                  (provider_message_id,provider_timestamp,token))
+                return {"success":True,"status":"protected_callback_claimed",
+                  "callback_token":token,"action_kind":row[0],"mission_id":row[3],
+                  "preview_digest":row[4],"evidence_generation":row[5],
+                  "preview_payload":row[6],
+                  "selected_action":"incorrect" if action=="change" else "uncertain"},200
             if row[0]=="beacon_media_review" and action=="cancel":
                 cur.execute("update app_private.oom_protected_action_claims set status='executing',confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s and status='active'",(provider_message_id,provider_timestamp,token))
                 return {"success":True,"status":"protected_callback_claimed","callback_token":token,
