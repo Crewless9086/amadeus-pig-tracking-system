@@ -1,0 +1,142 @@
+name: Green Print immutable image
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/green-print-image.yml"
+      - "green_print_bridge/**"
+      - "tests/test_green_print_home_assistant_app.py"
+  workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        description: Exact reviewed 40-character commit to publish
+        required: true
+        type: string
+      publish:
+        description: Publish the immutable 0.3.0 package artifact
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: green-print-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/crewless9086/amadeus-green-print-bridge
+  VERSION: 0.3.0
+
+jobs:
+  verify:
+    name: Verify aarch64 package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify package contract
+        run: python -m pytest tests/test_green_print_home_assistant_app.py -q
+      - name: Build exact aarch64 image without publishing
+        uses: home-assistant/builder/actions/build-image@4de35182ce1e329181bffcbcc84d33db5e2c7e10 # 2026.06.0
+        with:
+          arch: aarch64
+          build-args: SOURCE_COMMIT=${{ github.event.pull_request.head.sha || github.sha }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: green_print_bridge
+          cosign: "false"
+          image: ${{ env.IMAGE }}
+          image-tags: ${{ env.VERSION }}
+          push: "false"
+          version: ${{ env.VERSION }}
+
+  publish:
+    name: Publish signed immutable aarch64 package
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+        with:
+          ref: ${{ inputs.expected_source_commit }}
+      - name: Bind publication to exact reviewed commit and package version
+        shell: bash
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+        run: |
+          [[ "${EXPECTED_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SOURCE_COMMIT}"
+          grep -Fqx 'version: "0.3.0"' green_print_bridge/config.yaml
+          grep -Fqx 'image: ghcr.io/crewless9086/amadeus-green-print-bridge' green_print_bridge/config.yaml
+      - name: Authenticate only for the bounded package publication
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prohibit version-tag replacement
+        shell: bash
+        run: |
+          if docker buildx imagetools inspect "${IMAGE}:${VERSION}" >/dev/null 2>&1; then
+            echo "Refusing to replace existing ${IMAGE}:${VERSION}" >&2
+            exit 1
+          fi
+      - name: Build, push and keylessly sign exact aarch64 image
+        id: build
+        uses: home-assistant/builder/actions/build-image@4de35182ce1e329181bffcbcc84d33db5e2c7e10 # 2026.06.0
+        with:
+          arch: aarch64
+          build-args: SOURCE_COMMIT=${{ inputs.expected_source_commit }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: green_print_bridge
+          cosign: "true"
+          image: ${{ env.IMAGE }}
+          image-tags: ${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.expected_source_commit }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          push: "true"
+          version: ${{ env.VERSION }}
+      - name: Generate image SBOM by immutable digest
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          registry-username: ${{ github.repository_owner }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: green-print-0.3.0.spdx.json
+          upload-artifact: true
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: green-print-0.3.0.spdx.json
+          push-to-registry: true
+      - name: Emit non-secret immutable release receipt
+        shell: bash
+        run: |
+          printf '%s\n' \
+            "image=${IMAGE}" \
+            "version=${VERSION}" \
+            "source_commit=${{ inputs.expected_source_commit }}" \
+            "digest=${{ steps.build.outputs.digest }}" \
+            "architecture=aarch64" | tee green-print-image-receipt.txt

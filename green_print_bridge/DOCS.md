@@ -1,5 +1,14 @@
 # Amadeus Green Print Bridge
 
+Version 0.3.0 uses the Home Assistant supported prebuilt image reference
+`ghcr.io/crewless9086/amadeus-green-print-bridge`. Its tag may be published only
+once by the guarded manual workflow. The release receipt must bind the exact source
+commit, aarch64 digest, Cosign signature, SBOM and GitHub provenance attestations.
+The displayed app version or repository description alone is never provenance.
+Before starting, a technical maintainer must verify the Supervisor-resolved image
+digest equals the approved receipt. Publishing, updating the dormant installation,
+starting and commissioning are separate protected actions.
+
 This private app hosts a local CUPS daemon and the bounded Documents adapter on Home Assistant Green. It is source-only and uncommissioned until the separate physical acceptance journey succeeds.
 
 ## Security and configuration

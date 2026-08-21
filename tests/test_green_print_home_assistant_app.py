@@ -22,6 +22,24 @@ def test_package_is_bounded_and_privilege_split():
     assert "lpadmin" not in init and "exec su-exec greenprint" in init
     assert docker.startswith("FROM ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
 
+def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
+    cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
+    assert cfg["version"]=="0.3.0"
+    assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
+    assert not (APP/"build.yaml").exists()
+    assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
+    assert 'org.opencontainers.image.revision="${SOURCE_COMMIT}"' in docker
+
+def test_image_workflow_is_manual_publish_fail_closed_and_attested():
+    workflow=(ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in workflow and "pull_request:" in workflow
+    assert "if: github.event_name == 'workflow_dispatch' && inputs.publish" in workflow
+    assert "Prohibit version-tag replacement" in workflow
+    assert "SOURCE_COMMIT=${{ inputs.expected_source_commit }}" in workflow
+    assert "actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a" in workflow
+    assert "actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34" in workflow
+    assert "latest" not in workflow and "push: \"true\"" in workflow
+
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
     assert "deny /usr/sbin/lpadmin x" in policy and "/etc/cups/** rwk" not in policy and "/tmp/** rwk" not in policy
