@@ -1,5 +1,6 @@
 """Disposable-Postgres contract tests for durable Green command outcomes."""
 import os
+from hashlib import sha256
 from pathlib import Path
 
 import psycopg
@@ -45,6 +46,16 @@ def db():
                 if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
             end $$""")
             cursor.execute("create schema if not exists app_private")
+            cursor.execute("""create table if not exists app_private.oom_protected_action_claims(
+                callback_token text primary key, action_kind text not null,
+                owner_user_id text not null, private_chat_id text not null,
+                mission_id text not null, provider_message_id text not null,
+                preview_card_message_id text, preview_digest text not null,
+                evidence_generation text not null, preview_payload jsonb not null,
+                status text not null, expires_at timestamptz not null,
+                confirmation_provider_message_id text,
+                confirmation_provider_timestamp timestamptz,result_payload jsonb,
+                created_at timestamptz default now(),completed_at timestamptz)""")
             cursor.execute("create extension if not exists pgcrypto with schema app_private")
             cursor.execute("""select n.nspname from pg_extension e join pg_namespace n
                 on n.oid=e.extnamespace where e.extname='pgcrypto'""")
@@ -54,15 +65,20 @@ def db():
                     returns bytea language sql as 'select {}.gen_random_bytes($1)'""").format(
                         sql.Identifier(extension_schema)))
             cursor.execute(MIGRATION.read_text(encoding="utf-8"))
+            cursor.execute("""insert into app_private.document_print_device_registry
+                (farm_scope_id,green_id,printer_id,cups_queue_id,registry_version,
+                 canonical_api_origin,active,commissioned_at,evidence_sha256)
+                values('farm-amadeus','green','printer','weekly-a4','registry-v1',
+                 'https://documents.internal',true,clock_timestamp(),%s)""", ("c" * 64,))
             cursor.execute("""insert into app_private.document_print_jobs
-                (job_id,document_id,document_version,document_revision,document_type,
+                (job_id,farm_scope_id,document_id,document_version,document_revision,document_type,
                  generator_id,pdf_sha256,canonical_input_sha256,pdf_bytes,retrieval_url,options_json,authenticated_principal_id,
                  requester,request_channel,green_id,printer_id,cups_queue_id,registry_version,
                  authorization_receipt_id,authorization_expires_at,lease_owner,lease_token,
                  lease_expires_at,attempt_id,cups_job_id,provider_id,command_kind,
                  command_receipt_id,command_authorized_at,command_status,command_outcome,
                  command_accepted_at,command_completed_at,state,retry_deadline)
-                values ('JOB-DB-1','DOC-DB-1','DOC-DB-1.r1',1,
+                values ('JOB-DB-1','farm-amadeus','DOC-DB-1','DOC-DB-1.r1',1,
                  'farm.weekly_weight_sheet.v1','web.print_sheets.v1',%s,%s,%s,
                  'https://documents.internal/api/documents/DOC-DB-1/versions/DOC-DB-1.r1/pdf',
                  '{"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}'::jsonb,
@@ -81,17 +97,19 @@ def db():
 def transition(db, lease="old-lease", version="DOC-DB-1.r1", digest=PDF_SHA,
                authorization="AUTH-DB-1", receipt="COMMAND-DB-1", kind="continue"):
     with db.cursor() as cursor:
-        cursor.execute("select app_private.transition_document_print_command(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        cursor.execute("select app_private.transition_document_print_command(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                        ("JOB-DB-1", lease, version, digest, authorization, receipt, kind, "accepted",
-                        "green", "recovered-worker"))
+                        "farm-amadeus", "green", "recovered-worker"))
         return cursor.fetchone()[0]
 
 
-def worker_transition(db, target, metadata=None, event=EVENT, worker="green-worker", green="green"):
+def worker_transition(db, target, metadata=None, event=EVENT, worker="green-worker", green="green",
+                      farm="farm-amadeus"):
     with db.cursor() as cursor:
-        cursor.execute("select app_private.transition_document_print_job(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        cursor.execute("select app_private.transition_document_print_job(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                        ("JOB-DB-1", "worker-lease", "DOC-DB-1.r1", PDF_SHA,
-                        "AUTH-DB-1", target, event, green, worker, Jsonb(metadata or {})))
+                        "AUTH-DB-1", target, event, farm, green, worker,
+                        Jsonb(metadata or {})))
         return cursor.fetchone()[0]
 
 
@@ -103,6 +121,71 @@ def prepare_worker_job(db, state="claimed", attempt=None, cups=None, provider=No
             cups_job_id=%s,provider_id=%s,command_kind=null,command_receipt_id=null,
             command_status=null,command_outcome=null where job_id='JOB-DB-1'""",
                        (state, attempt, cups, provider))
+
+
+def producer_job(**changes):
+    pdf=b"%PDF-1.4\n"+b"x"*80
+    value={"job_id":"JOB-PRODUCER-1","farm_scope_id":"farm-amadeus",
+        "document_id":"DOC-PRODUCER-1","document_version":"DOC-PRODUCER-1.r1",
+        "document_revision":1,"document_type":"farm.weekly_weight_sheet.v1",
+        "generator_id":"web.print_sheets.v1","pdf_sha256":sha256(pdf).hexdigest(),
+        "canonical_input_sha256":"d"*64,
+        "retrieval_url":"https://documents.internal/api/documents/DOC-PRODUCER-1/versions/DOC-PRODUCER-1.r1/pdf",
+        "options":{"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"},
+        "green_id":"green","printer_id":"printer","cups_queue_id":"weekly-a4",
+        "registry_version":"registry-v1","authorization_receipt_id":"AUTH-PRODUCER-1",
+        "authorization_expires_at":"2099-08-21T10:00:00+00:00",
+        "retry_deadline":"2099-08-21T10:00:00+00:00"}
+    value.update(changes)
+    return value,pdf
+
+
+def install_producer_claim(db,job):
+    preview={key:job[key] for key in ("job_id","document_id","document_version",
+        "pdf_sha256","farm_scope_id","green_id","printer_id","cups_queue_id",
+        "registry_version")}
+    with db.cursor() as cursor:
+        cursor.execute("""insert into app_private.oom_protected_action_claims(
+          callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
+          provider_message_id,preview_digest,evidence_generation,preview_payload,status,expires_at)
+          values(%s,'documents_green_print','owner-1','owner-1','DMQ-20260816-01',
+          'provider-1','digest','generation',%s,'executing','2099-08-21T10:00:00Z')""",
+          (job["authorization_receipt_id"],Jsonb(preview)))
+
+
+def call_producer(db,job,pdf):
+    with db.cursor() as cursor:
+        cursor.execute("select (app_private.create_authorized_document_print_job(%s,%s,%s,%s,%s)).job_id",
+            (Jsonb(job),pdf,"owner-1","oom_sakkie","telegram"))
+        return cursor.fetchone()[0]
+
+
+def test_producer_requires_claim_registered_pair_exact_origin_and_is_replay_stable(db):
+    job,pdf=producer_job();install_producer_claim(db,job)
+    assert call_producer(db,job,pdf)==job["job_id"]
+    assert call_producer(db,job,pdf)==job["job_id"]
+    with db.cursor() as cursor:
+        cursor.execute("select count(*) from app_private.document_print_job_events where job_id=%s",
+            (job["job_id"],))
+        assert cursor.fetchone()[0]==1
+
+
+@pytest.mark.parametrize("field,value,error",[
+    ("farm_scope_id","other-farm","protected document claim invalid"),
+    ("green_id","other-green","protected document claim invalid"),
+    ("printer_id","other-printer","protected document claim invalid"),
+    ("retrieval_url","https://evil.invalid/api/documents/DOC-PRODUCER-1/versions/DOC-PRODUCER-1.r1/pdf","registered document device pair invalid"),
+])
+def test_producer_wrong_scope_device_or_origin_has_zero_effects(db,field,value,error):
+    job,pdf=producer_job();install_producer_claim(db,job);job[field]=value
+    with db.cursor() as cursor: cursor.execute("savepoint rejected_producer")
+    with pytest.raises(psycopg.errors.RaiseException,match=error): call_producer(db,job,pdf)
+    with db.cursor() as cursor:
+        cursor.execute("rollback to savepoint rejected_producer")
+        cursor.execute("select count(*) from app_private.document_print_jobs where job_id=%s",(job["job_id"],))
+        assert cursor.fetchone()[0]==0
+        cursor.execute("select count(*) from app_private.document_print_job_events where job_id=%s",(job["job_id"],))
+        assert cursor.fetchone()[0]==0
 
 
 def rejected_worker_transition(db, target, metadata=None):
@@ -140,7 +223,7 @@ def test_completed_outcome_rejects_stale_lease_and_every_wrong_binding(db, field
 
 def test_reclaimed_current_lease_reads_same_outcome_without_mutation(db):
     with db.cursor() as cursor:
-        cursor.execute("select * from app_private.claim_document_print_command('green','recovered-worker',300)")
+        cursor.execute("select * from app_private.claim_document_print_command('farm-amadeus','green','recovered-worker',300)")
         claimed = cursor.fetchone()
         lease = claimed[next(i for i, column in enumerate(cursor.description) if column.name == "lease_token")]
         cursor.execute("select row_to_json(j), (select count(*) from app_private.document_print_job_events) from app_private.document_print_jobs j where job_id='JOB-DB-1'")
@@ -177,6 +260,23 @@ def test_transition_rejects_wrong_authenticated_execution_identity(db, worker, g
     with pytest.raises(psycopg.errors.RaiseException, match="lease fence or binding invalid"):
         worker_transition(db, "submitting", {"attempt_id": "ATTEMPT-1"}, worker=worker, green=green)
     with db.cursor() as cursor: cursor.execute("rollback to savepoint wrong_execution_identity")
+
+
+def test_transition_and_expired_recovery_reject_wrong_farm_or_green(db):
+    prepare_worker_job(db)
+    with db.cursor() as cursor: cursor.execute("savepoint wrong_scope")
+    with pytest.raises(psycopg.errors.RaiseException, match="lease fence or binding invalid"):
+        worker_transition(db, "submitting", {"attempt_id":"ATTEMPT-1"}, farm="wrong-farm")
+    with db.cursor() as cursor:
+        cursor.execute("rollback to savepoint wrong_scope")
+        cursor.execute("update app_private.document_print_jobs set lease_expires_at=clock_timestamp()-interval '1 second'")
+        cursor.execute("savepoint wrong_recovery_scope")
+    with pytest.raises(psycopg.errors.RaiseException, match="lease recovery invalid"):
+        with db.cursor() as cursor:
+            cursor.execute("select app_private.recover_document_print_job_lease(%s,%s,%s,%s,%s,%s,%s,%s)",
+                ("JOB-DB-1","recovered-worker",300,"DOC-DB-1.r1",PDF_SHA,"AUTH-DB-1",
+                 "farm-amadeus","wrong-green"))
+    with db.cursor() as cursor: cursor.execute("rollback to savepoint wrong_recovery_scope")
 
 
 @pytest.mark.parametrize("state,target", [

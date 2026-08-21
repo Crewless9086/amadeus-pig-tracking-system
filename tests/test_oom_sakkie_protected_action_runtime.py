@@ -57,6 +57,35 @@ def test_proven_replay_is_silent_and_has_no_effects(monkeypatch):
     assert result["writes_farm_data"] is False
 
 
+def test_documents_confirmation_dispatches_server_producer_and_completes_claim(monkeypatch):
+    claim={"success":True,"status":"protected_callback_claimed",
+        "callback_token":"AUTH-GREEN-1","action_kind":"documents_green_print",
+        "mission_id":"DMQ-20260816-01","preview_payload":{"bound":True}}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:(claim,200))
+    monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:{
+        "completed":True,"result":args[1]})
+    producer=lambda claimed,owner:{"job_id":"JOB-GREEN-1","state":"authorized"}
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"callback_data":"oompa:AUTH-GREEN-1:confirm"},authority(),
+        documents_handler=producer)
+    assert status==200 and result["job_id"]=="JOB-GREEN-1"
+    assert result["status"]=="documents_green_print_authorized"
+    assert result["printer_calls"]==0 and result["suppress_owner_delivery"] is True
+
+
+def test_documents_producer_failure_remains_recoverable(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+        "success":True,"status":"protected_callback_recovered",
+        "callback_token":"AUTH-GREEN-1","action_kind":"documents_green_print",
+        "mission_id":"DMQ-20260816-01","preview_payload":{"bound":True}},200))
+    def fail(*args,**kwargs): raise RuntimeError("database unavailable")
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"callback_data":"oompa:AUTH-GREEN-1:confirm"},authority(),
+        documents_handler=fail)
+    assert status==503 and result["recovery_required"] is True
+    assert result["canonical_job_created"] is False and result["printer_calls"]==0
+
+
 def test_beacon_finish_callback_returns_private_summary_and_separate_later_actions(monkeypatch):
     preview={"contract_version":"beacon_private_album_finish_v1",
         "intake_group_id":"BEACON-INTAKE-GROUP-ONE","canonical_digest":"d"*64,

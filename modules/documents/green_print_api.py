@@ -7,6 +7,7 @@ import hmac
 import os
 import re
 import time
+from urllib.parse import quote, urlparse
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -27,12 +28,15 @@ def _deny(status, code):
 def _authenticate():
     expected_token = os.getenv("DOCUMENTS_GREEN_WORKER_TOKEN", "").strip()
     expected_green = os.getenv("DOCUMENTS_GREEN_ID", "").strip()
+    expected_farm = os.getenv("DOCUMENTS_FARM_SCOPE_ID", "").strip()
     auth = request.headers.get("Authorization", "")
     green_id = request.headers.get("X-Amadeus-Green-Id", "").strip()
-    if (not expected_token or not expected_green or
+    farm_scope_id = request.headers.get("X-Amadeus-Farm-Scope-Id", "").strip()
+    if (not expected_token or not expected_green or not expected_farm or
             not auth.startswith("Bearer ") or
             not hmac.compare_digest(auth[7:].strip(), expected_token) or
-            not hmac.compare_digest(green_id, expected_green)):
+            not hmac.compare_digest(green_id, expected_green) or
+            not hmac.compare_digest(farm_scope_id, expected_farm)):
         return None, _deny(401, "documents_worker_authentication_required")
     now = time.monotonic(); bucket = _LIMITS[green_id]
     while bucket and bucket[0] <= now - RATE_WINDOW:
@@ -42,7 +46,7 @@ def _authenticate():
     bucket.append(now)
     worker_id = request.headers.get("X-Amadeus-Worker-Id", "").strip()
     if not _ID.fullmatch(worker_id): return None, _deny(401, "documents_worker_identity_required")
-    return (green_id, worker_id), None
+    return (farm_scope_id, green_id, worker_id), None
 
 
 def _json_body():
@@ -65,6 +69,15 @@ def _connect():
         options="-c role=documents_green_worker_executor -c statement_timeout=5000 -c lock_timeout=2000")
 
 
+def _connect_api():
+    import psycopg
+    url = os.getenv("DOCUMENTS_API_DATABASE_URL", "").strip()
+    if not url:
+        raise RuntimeError("documents_api_database_unavailable")
+    return psycopg.connect(url, connect_timeout=5,
+        options="-c role=documents_api_executor -c statement_timeout=5000 -c lock_timeout=2000")
+
+
 def _call(function, args=(), *, many=False):
     placeholders = ",".join(["%s"] * len(args))
     with _connect() as connection:
@@ -81,10 +94,88 @@ def _call(function, args=(), *, many=False):
             return dict(zip([item.name for item in cursor.description], row))
 
 
+def create_authorized_job_from_claim(claim, revision, *, authenticated_principal_id,
+                                     request_channel, farm_scope_id,
+                                     canonical_api_origin, connect_factory=None):
+    """Persist one server-generated revision after the existing protected claim.
+
+    This is an application service callable, not a public/browser route.  The
+    caller must be the authenticated Oom Sakkie protected-action runtime; PDF
+    bytes come only from the server-side ``WeeklySheetRevision`` object.
+    """
+    from modules.documents.weekly_weight_sheet import (
+        WeeklySheetRevision, authorized_job_from_claim,
+    )
+    if not isinstance(revision, WeeklySheetRevision):
+        raise ValueError("weekly_sheet_revision_required")
+    if claim.get("status") not in {"protected_callback_claimed", "protected_callback_recovered"}:
+        raise ValueError("protected_print_claim_not_executing")
+    job = authorized_job_from_claim(claim)
+    principal = _bounded_id(authenticated_principal_id, "authenticated_principal_id")
+    farm = _bounded_id(farm_scope_id, "farm_scope_id")
+    if request_channel not in {"telegram", "browser", "voice"}:
+        raise ValueError("invalid_request_channel")
+    if (job.get("document_id") != revision.document_id or
+            job.get("document_version") != revision.version_id or
+            job.get("document_revision") != revision.revision or
+            job.get("pdf_sha256") != revision.pdf_sha256 or
+            job.get("canonical_input_sha256") != revision.canonical_input_sha256):
+        raise ValueError("protected_print_revision_binding_mismatch")
+    origin = urlparse(str(canonical_api_origin or ""))
+    if (origin.scheme != "https" or not origin.hostname or origin.username or
+            origin.password or origin.query or origin.fragment or
+            origin.path not in {"", "/"}):
+        raise ValueError("canonical_private_origin_invalid")
+    path = (f"/api/documents/{quote(revision.document_id, safe='')}/versions/"
+            f"{quote(revision.version_id, safe='')}/pdf")
+    port = f":{origin.port}" if origin.port else ""
+    expected_url = f"https://{origin.hostname}{port}{path}"
+    if job.get("farm_scope_id") != farm or job.get("retrieval_url") != expected_url:
+        raise ValueError("protected_print_scope_or_retrieval_mismatch")
+    # The bounded retry horizon is authority-derived, never supplied by Green.
+    job = {**job, "retry_deadline": job["authorization_expires_at"]}
+    db = (connect_factory or _connect_api)()
+    with db:
+        with db.cursor() as cursor:
+            from psycopg.types.json import Jsonb
+            cursor.execute("select * from app_private.create_authorized_document_print_job(%s,%s,%s,%s,%s)",
+                (Jsonb(job), revision.pdf_bytes, principal, "oom_sakkie", request_channel))
+            row = cursor.fetchone()
+            columns = [item.name for item in cursor.description]
+            return _public_job(dict(zip(columns, row)))
+
+
+def execute_claimed_weekly_print(claim, parsed, *, connect_factory=None):
+    """Turn an Oom Sakkie protected confirmation into one canonical job."""
+    from datetime import date
+    from modules.documents.weekly_weight_sheet import build_weekly_sheet_revision
+    preview = claim.get("preview_payload")
+    if not isinstance(preview, dict):
+        raise ValueError("protected_print_preview_missing")
+    principal = str(parsed.get("telegram_user_id") or "").strip()
+    if not principal or principal != str(parsed.get("telegram_chat_id") or "").strip():
+        raise ValueError("authenticated_owner_principal_required")
+    revision = build_weekly_sheet_revision(
+        authenticated_principal_id=principal,
+        requester="oom_sakkie",
+        sheet_date=date.fromisoformat(str(preview.get("sheet_date") or "")),
+        rows=preview.get("canonical_rows"),
+        revision=int(preview.get("document_revision") or 0),
+        document_id=preview.get("document_id"),
+    )
+    return create_authorized_job_from_claim(
+        claim, revision, authenticated_principal_id=principal,
+        request_channel="telegram",
+        farm_scope_id=os.getenv("DOCUMENTS_FARM_SCOPE_ID", "").strip(),
+        canonical_api_origin=os.getenv("DOCUMENTS_CANONICAL_API_ORIGIN", "").strip(),
+        connect_factory=connect_factory,
+    )
+
+
 def _public_job(row):
     if not row:
         return None
-    allowed = ("job_id", "document_id", "document_version", "document_revision",
+    allowed = ("job_id", "farm_scope_id", "document_id", "document_version", "document_revision",
                "document_type", "generator_id", "pdf_sha256", "retrieval_url",
                "green_id", "printer_id", "cups_queue_id", "registry_version",
                "authorization_receipt_id", "authorization_expires_at", "lease_token",
@@ -108,7 +199,8 @@ def _guard():
     worker, error = _authenticate()
     if error:
         return error
-    request.documents_green_id, request.documents_worker_id = worker
+    (request.documents_farm_scope_id, request.documents_green_id,
+     request.documents_worker_id) = worker
 
 
 @green_print_api_bp.post("/documents/print-jobs/claims")
@@ -118,7 +210,8 @@ def claim_job():
         return _deny(400, "claim_fields_invalid")
     worker = _bounded_id(body.get("worker_id"), "worker_id")
     if worker != request.documents_worker_id: return _deny(403, "worker_identity_mismatch")
-    rows = _call("claim_document_print_job", (request.documents_green_id, worker,
+    rows = _call("claim_document_print_job", (request.documents_farm_scope_id,
+                 request.documents_green_id, worker,
                  int(body.get("lease_seconds", 300))), many=True)
     job = _public_job(rows[0]) if rows else None
     return jsonify({"job": job, "lease_token": job.get("lease_token") if job else None,
@@ -132,7 +225,8 @@ def claim_command():
         return _deny(400, "command_claim_fields_invalid")
     worker = _bounded_id(body.get("worker_id"), "worker_id")
     if worker != request.documents_worker_id: return _deny(403, "worker_identity_mismatch")
-    rows = _call("claim_document_print_command", (request.documents_green_id, worker,
+    rows = _call("claim_document_print_command", (request.documents_farm_scope_id,
+                 request.documents_green_id, worker,
                  int(body.get("lease_seconds", 300))), many=True)
     job = _public_job(rows[0]) if rows else None
     return jsonify({"job": job, "lease_token": job.get("lease_token") if job else None,
@@ -157,7 +251,8 @@ def transition(job_id):
     if any(name not in body for name in base): return _deny(400, "transition_binding_fields_invalid")
     metadata = {key: value for key, value in body.items() if key not in base}
     value = _call("transition_document_print_job", tuple([job_id] + [body[k] for k in base] +
-        [request.documents_green_id, request.documents_worker_id, metadata]))
+        [request.documents_farm_scope_id, request.documents_green_id,
+         request.documents_worker_id, metadata]))
     return jsonify(_public_job(value)), 200
 
 
@@ -168,7 +263,8 @@ def transition_command(job_id):
               "command_receipt_id", "command_kind", "target_state")
     if set(body) != set(fields): return _deny(400, "transition_binding_fields_invalid")
     value = _call("transition_document_print_command", tuple([job_id] + [body[k] for k in fields] +
-        [request.documents_green_id, request.documents_worker_id]))
+        [request.documents_farm_scope_id, request.documents_green_id,
+         request.documents_worker_id]))
     return jsonify(value), 200
 
 
@@ -179,7 +275,8 @@ def renew(job_id):
     fields = ("lease_token", "worker_id", "lease_seconds", "document_version",
               "pdf_sha256", "authorization_receipt_id")
     if set(body) != set(fields): return _deny(400, "lease_binding_fields_invalid")
-    value = _call("renew_document_print_job_lease", tuple([job_id] + [body[k] for k in fields]))
+    value = _call("renew_document_print_job_lease", tuple([job_id] + [body[k] for k in fields] +
+        [request.documents_farm_scope_id, request.documents_green_id]))
     return jsonify(_public_job(value)), 200
 
 
@@ -190,7 +287,8 @@ def recover(job_id):
     fields = ("worker_id", "lease_seconds", "document_version", "pdf_sha256",
               "authorization_receipt_id")
     if set(body) != set(fields): return _deny(400, "recovery_binding_fields_invalid")
-    value = _call("recover_document_print_job_lease", tuple([job_id] + [body[k] for k in fields]))
+    value = _call("recover_document_print_job_lease", tuple([job_id] + [body[k] for k in fields] +
+        [request.documents_farm_scope_id, request.documents_green_id]))
     return jsonify(_public_job(value)), 200
 
 
@@ -198,13 +296,17 @@ def recover(job_id):
 def reconcile(job_id):
     body = _json_body()
     if set(body) != {"lease_token"}: return _deny(400, "reconcile_binding_fields_invalid")
-    value = _call("read_document_print_job", (job_id, body["lease_token"], request.documents_green_id, request.documents_worker_id))
+    value = _call("read_document_print_job", (job_id, body["lease_token"],
+        request.documents_farm_scope_id, request.documents_green_id,
+        request.documents_worker_id))
     return jsonify(_public_job(value)), 200
 
 
 @green_print_api_bp.get("/documents/<document_id>/versions/<version_id>/pdf")
 def pdf(document_id, version_id):
-    value = _call("read_document_print_pdf", (document_id, version_id, request.documents_green_id, request.documents_worker_id))
+    value = _call("read_document_print_pdf", (document_id, version_id,
+        request.documents_farm_scope_id, request.documents_green_id,
+        request.documents_worker_id))
     if not value: return _deny(404, "document_version_not_found")
     return Response(bytes(value), 200, {"Content-Type": "application/pdf", "Cache-Control": "no-store",
                                        "Content-Length": str(len(value))})

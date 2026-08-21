@@ -2,6 +2,45 @@
 -- This migration is source-only until separately approved and applied.
 create schema if not exists app_private;
 
+-- One canonical commissioned Documents device pair.  Commissioning inserts or
+-- advances this row through a separately protected process; job producers and
+-- workers can only consume an exact active generation.
+create table if not exists app_private.document_print_device_registry (
+    farm_scope_id text not null,
+    green_id text not null,
+    printer_id text not null,
+    cups_queue_id text not null,
+    registry_version text not null,
+    canonical_api_origin text not null check (
+      canonical_api_origin ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$'),
+    active boolean not null default false,
+    commissioned_at timestamptz,
+    evidence_sha256 text not null check (evidence_sha256 ~ '^[0-9a-f]{64}$'),
+    created_at timestamptz not null default now(),
+    primary key (farm_scope_id, green_id, printer_id, cups_queue_id, registry_version),
+    check ((active and commissioned_at is not null) or not active)
+);
+
+-- Extend the existing protected-action spine; do not create a Documents claim
+-- rail.  This migration runs after every earlier action-kind reconciliation.
+do $$ begin
+  if exists(select 1 from pg_catalog.pg_constraint c
+    join pg_catalog.pg_class t on t.oid=c.conrelid
+    join pg_catalog.pg_namespace n on n.oid=t.relnamespace
+    where n.nspname='app_private' and t.relname='oom_protected_action_claims'
+      and c.contype='c' and c.conname='oom_protected_action_claims_action_kind_check') then
+    alter table app_private.oom_protected_action_claims
+      drop constraint oom_protected_action_claims_action_kind_check;
+  end if;
+  alter table app_private.oom_protected_action_claims
+    add constraint oom_protected_action_claims_action_kind_check check (action_kind in (
+      'mortality','grouped_weights','herdmaster_breeding_grouped',
+      'rootline_irrigation_segment','sam_sale_payment','beacon_private_album_finish',
+      'beacon_media_review','rootline_fertilizer_mixer_commissioning',
+      'rootline_fertilizer_mixer_presence_refresh','rootline_delegated_family',
+      'beacon_campaign_review','documents_green_print'));
+end $$;
+
 -- Resolve pgcrypto by its catalog-owned extension schema, never by caller
 -- search_path. Supabase commonly installs it in extensions; disposable review
 -- databases may use another schema.
@@ -20,6 +59,7 @@ end; $$;
 
 create table if not exists app_private.document_print_jobs (
     job_id text primary key,
+    farm_scope_id text not null,
     document_id text not null,
     document_version text not null,
     document_revision integer not null check (document_revision > 0),
@@ -82,6 +122,7 @@ create index if not exists idx_document_print_events_job_time
 
 revoke all on app_private.document_print_jobs from public, anon, authenticated;
 revoke all on app_private.document_print_job_events from public, anon, authenticated;
+revoke all on app_private.document_print_device_registry from public, anon, authenticated;
 
 comment on table app_private.document_print_jobs is
   'Canonical Documents print-job identity; local Green SQLite is recovery state only.';
@@ -91,7 +132,8 @@ comment on table app_private.document_print_job_events is
 -- API roles call these SECURITY DEFINER functions through a bounded Documents
 -- service endpoint. No worker receives direct table authority.
 create or replace function app_private.claim_document_print_job(
-  p_green_id text, p_worker_id text, p_lease_seconds integer default 300)
+  p_farm_scope_id text, p_green_id text, p_worker_id text,
+  p_lease_seconds integer default 300)
 returns setof app_private.document_print_jobs
 language plpgsql security definer set search_path = pg_catalog, app_private as $$
 declare v_job_id text; v_token text := app_private.pgcrypto_random_hex(24);
@@ -100,7 +142,14 @@ begin
     raise exception 'invalid claim';
   end if;
   select job_id into v_job_id from app_private.document_print_jobs
-   where state = 'authorized' and green_id=p_green_id and retry_deadline > clock_timestamp()
+   where state = 'authorized' and farm_scope_id=p_farm_scope_id
+     and green_id=p_green_id and retry_deadline > clock_timestamp()
+     and exists(select 1 from app_private.document_print_device_registry r
+       where r.farm_scope_id=document_print_jobs.farm_scope_id
+         and r.green_id=document_print_jobs.green_id
+         and r.printer_id=document_print_jobs.printer_id
+         and r.cups_queue_id=document_print_jobs.cups_queue_id
+         and r.registry_version=document_print_jobs.registry_version and r.active)
      and authorization_expires_at > clock_timestamp()
    order by created_at, job_id for update skip locked limit 1;
   if v_job_id is null then return; end if;
@@ -115,7 +164,8 @@ end; $$;
 create or replace function app_private.transition_document_print_job(
   p_job_id text, p_lease_token text, p_document_version text, p_pdf_sha256 text,
   p_authorization_receipt_id text, p_target_state text, p_event_id uuid,
-  p_green_id text,p_worker_id text,p_metadata jsonb default '{}'::jsonb)
+  p_farm_scope_id text,p_green_id text,p_worker_id text,
+  p_metadata jsonb default '{}'::jsonb)
 returns app_private.document_print_jobs
 language plpgsql security definer set search_path = pg_catalog, app_private as $$
 declare v_job app_private.document_print_jobs;
@@ -126,6 +176,7 @@ declare v_job app_private.document_print_jobs;
 begin
   select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
   if not found or v_job.lease_token is distinct from p_lease_token or
+     v_job.farm_scope_id is distinct from p_farm_scope_id or
      v_job.green_id is distinct from p_green_id or v_job.lease_owner is distinct from p_worker_id or
      v_job.lease_expires_at <= clock_timestamp() or v_job.document_version<>p_document_version or
      v_job.pdf_sha256<>p_pdf_sha256 or v_job.authorization_receipt_id<>p_authorization_receipt_id then
@@ -199,7 +250,7 @@ end; $$;
 create or replace function app_private.transition_document_print_command(
   p_job_id text, p_lease_token text, p_document_version text, p_pdf_sha256 text,
   p_authorization_receipt_id text, p_command_receipt_id text, p_command_kind text,
-  p_target_state text,p_green_id text,p_worker_id text)
+  p_target_state text,p_farm_scope_id text,p_green_id text,p_worker_id text)
 returns jsonb language plpgsql security definer set search_path = pg_catalog, app_private as $$
 declare v_job app_private.document_print_jobs;
 begin
@@ -210,6 +261,7 @@ begin
   -- recovering worker a current lease; this path never authorizes or resumes
   -- provider work.
   if v_job.lease_token is distinct from p_lease_token or v_job.lease_expires_at<=clock_timestamp()
+     or v_job.farm_scope_id is distinct from p_farm_scope_id
      or v_job.green_id is distinct from p_green_id or v_job.lease_owner is distinct from p_worker_id
      or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
      or v_job.authorization_receipt_id<>p_authorization_receipt_id
@@ -266,7 +318,8 @@ end; $$;
 
 create or replace function app_private.renew_document_print_job_lease(
   p_job_id text,p_lease_token text,p_worker_id text,p_lease_seconds integer,
-  p_document_version text,p_pdf_sha256 text,p_authorization_receipt_id text)
+  p_document_version text,p_pdf_sha256 text,p_authorization_receipt_id text,
+  p_farm_scope_id text,p_green_id text)
 returns app_private.document_print_jobs language plpgsql security definer set search_path=pg_catalog,app_private as $$
 declare v_job app_private.document_print_jobs;
 begin
@@ -275,6 +328,8 @@ begin
   if v_job.lease_token is distinct from p_lease_token or v_job.lease_owner<>p_worker_id
      or v_job.lease_expires_at<=clock_timestamp() or p_lease_seconds not between 30 and 300
      or v_job.state not in ('claimed','submitting','submitted','held')
+     or v_job.farm_scope_id is distinct from p_farm_scope_id
+     or v_job.green_id is distinct from p_green_id
      or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
      or v_job.authorization_receipt_id<>p_authorization_receipt_id then raise exception 'lease renewal invalid'; end if;
   update app_private.document_print_jobs set lease_expires_at=clock_timestamp()+make_interval(secs=>p_lease_seconds),updated_at=clock_timestamp()
@@ -283,7 +338,7 @@ end; $$;
 
 create or replace function app_private.recover_document_print_job_lease(
   p_job_id text,p_worker_id text,p_lease_seconds integer,p_document_version text,
-  p_pdf_sha256 text,p_authorization_receipt_id text)
+  p_pdf_sha256 text,p_authorization_receipt_id text,p_farm_scope_id text,p_green_id text)
 returns app_private.document_print_jobs language plpgsql security definer set search_path=pg_catalog,app_private as $$
 declare v_job app_private.document_print_jobs; v_token text:=app_private.pgcrypto_random_hex(24);
 begin
@@ -291,6 +346,8 @@ begin
   if not found then raise exception 'lease recovery job missing'; end if;
   if v_job.lease_expires_at>clock_timestamp() or p_lease_seconds not between 30 and 300
      or v_job.state not in ('claimed','submitting','submitted','held')
+     or v_job.farm_scope_id is distinct from p_farm_scope_id
+     or v_job.green_id is distinct from p_green_id
      or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
      or v_job.authorization_receipt_id<>p_authorization_receipt_id then raise exception 'lease recovery invalid'; end if;
   update app_private.document_print_jobs set lease_owner=p_worker_id,lease_token=v_token,
@@ -302,13 +359,15 @@ begin
 end; $$;
 
 create or replace function app_private.claim_document_print_command(
-  p_green_id text, p_worker_id text, p_lease_seconds integer default 300)
+  p_farm_scope_id text, p_green_id text, p_worker_id text,
+  p_lease_seconds integer default 300)
 returns setof app_private.document_print_jobs
 language plpgsql security definer set search_path = pg_catalog, app_private as $$
 declare v_job_id text; v_token text := app_private.pgcrypto_random_hex(24);
 begin
   select job_id into v_job_id from app_private.document_print_jobs
-   where green_id=p_green_id and command_kind in ('continue','cancel') and command_receipt_id is not null
+   where farm_scope_id=p_farm_scope_id and green_id=p_green_id
+     and command_kind in ('continue','cancel') and command_receipt_id is not null
      and (command_status in ('accepted','in_progress','completed') or
        (command_status is null and command_authorized_at > clock_timestamp()-interval '5 minutes'
         and authorization_expires_at > clock_timestamp()))
@@ -323,12 +382,12 @@ begin
   return query select * from app_private.document_print_jobs where job_id=v_job_id;
 end; $$;
 
-revoke all on function app_private.claim_document_print_job(text,text,integer) from public, anon, authenticated;
-revoke all on function app_private.transition_document_print_job(text,text,text,text,text,text,uuid,text,text,jsonb) from public, anon, authenticated;
-revoke all on function app_private.claim_document_print_command(text,text,integer) from public, anon, authenticated;
-revoke all on function app_private.transition_document_print_command(text,text,text,text,text,text,text,text,text,text) from public, anon, authenticated;
-revoke all on function app_private.renew_document_print_job_lease(text,text,text,integer,text,text,text) from public, anon, authenticated;
-revoke all on function app_private.recover_document_print_job_lease(text,text,integer,text,text,text) from public, anon, authenticated;
+revoke all on function app_private.claim_document_print_job(text,text,text,integer) from public, anon, authenticated;
+revoke all on function app_private.transition_document_print_job(text,text,text,text,text,text,uuid,text,text,text,jsonb) from public, anon, authenticated;
+revoke all on function app_private.claim_document_print_command(text,text,text,integer) from public, anon, authenticated;
+revoke all on function app_private.transition_document_print_command(text,text,text,text,text,text,text,text,text,text,text) from public, anon, authenticated;
+revoke all on function app_private.renew_document_print_job_lease(text,text,text,integer,text,text,text,text,text) from public, anon, authenticated;
+revoke all on function app_private.recover_document_print_job_lease(text,text,integer,text,text,text,text,text) from public, anon, authenticated;
 
 create or replace function app_private.reject_document_print_event_mutation()
 returns trigger language plpgsql as $$
@@ -347,6 +406,7 @@ create or replace function app_private.create_authorized_document_print_job(
 returns app_private.document_print_jobs
 language plpgsql security definer set search_path=pg_catalog,app_private as $$
 declare v_job app_private.document_print_jobs; v_pdf_digest text;
+        v_claim app_private.oom_protected_action_claims;
 begin
   if p_job is null or jsonb_typeof(p_job)<>'object' or p_pdf_bytes is null
      or octet_length(p_pdf_bytes) not between 64 and 5242880
@@ -355,22 +415,49 @@ begin
      or p_job->>'document_type'<>'farm.weekly_weight_sheet.v1'
      or p_job->>'generator_id'<>'web.print_sheets.v1'
      or p_job->>'retrieval_url' is null
+     or p_job->>'farm_scope_id' is null
+     or p_job->>'authorization_expires_at' is null
+     or p_job->>'retry_deadline' is null
      or p_job->'options' is distinct from '{"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}'::jsonb
      or p_job->>'authorization_receipt_id' is null
      or (p_job->>'authorization_expires_at')::timestamptz<=clock_timestamp()
      or (p_job->>'retry_deadline')::timestamptz<=clock_timestamp() then
     raise exception 'authorized document job invalid';
   end if;
+  select * into v_claim from app_private.oom_protected_action_claims
+   where callback_token=p_job->>'authorization_receipt_id' for update;
+  if not found or v_claim.action_kind<>'documents_green_print'
+     or v_claim.status<>'executing' or v_claim.owner_user_id<>p_authenticated_principal_id
+     or v_claim.expires_at<=clock_timestamp()
+     or v_claim.preview_payload->>'job_id' is distinct from p_job->>'job_id'
+     or v_claim.preview_payload->>'document_id' is distinct from p_job->>'document_id'
+     or v_claim.preview_payload->>'document_version' is distinct from p_job->>'document_version'
+     or v_claim.preview_payload->>'pdf_sha256' is distinct from p_job->>'pdf_sha256'
+     or v_claim.preview_payload->>'farm_scope_id' is distinct from p_job->>'farm_scope_id'
+     or v_claim.preview_payload->>'green_id' is distinct from p_job->>'green_id'
+     or v_claim.preview_payload->>'printer_id' is distinct from p_job->>'printer_id'
+     or v_claim.preview_payload->>'cups_queue_id' is distinct from p_job->>'cups_queue_id'
+     or v_claim.preview_payload->>'registry_version' is distinct from p_job->>'registry_version' then
+    raise exception 'protected document claim invalid';
+  end if;
+  if not exists(select 1 from app_private.document_print_device_registry r
+      where r.farm_scope_id=p_job->>'farm_scope_id' and r.green_id=p_job->>'green_id'
+        and r.printer_id=p_job->>'printer_id' and r.cups_queue_id=p_job->>'cups_queue_id'
+        and r.registry_version=p_job->>'registry_version' and r.active
+        and p_job->>'retrieval_url'=r.canonical_api_origin||'/api/documents/'||
+          (p_job->>'document_id')||'/versions/'||(p_job->>'document_version')||'/pdf') then
+    raise exception 'registered document device pair invalid';
+  end if;
   execute format('select encode(%I.digest($1,''sha256''),''hex'')',
     (select n.nspname from pg_catalog.pg_extension e join pg_catalog.pg_namespace n
       on n.oid=e.extnamespace where e.extname='pgcrypto')) into v_pdf_digest using p_pdf_bytes;
   if v_pdf_digest is distinct from p_job->>'pdf_sha256' then raise exception 'pdf digest mismatch'; end if;
   insert into app_private.document_print_jobs(
-    job_id,document_id,document_version,document_revision,document_type,generator_id,
+    job_id,farm_scope_id,document_id,document_version,document_revision,document_type,generator_id,
     pdf_sha256,canonical_input_sha256,pdf_bytes,retrieval_url,options_json,authenticated_principal_id,requester,
     request_channel,green_id,printer_id,cups_queue_id,registry_version,
     authorization_receipt_id,authorization_expires_at,state,retry_deadline)
-  values(p_job->>'job_id',p_job->>'document_id',p_job->>'document_version',
+  values(p_job->>'job_id',p_job->>'farm_scope_id',p_job->>'document_id',p_job->>'document_version',
     (p_job->>'document_revision')::integer,p_job->>'document_type',p_job->>'generator_id',
     p_job->>'pdf_sha256',p_job->>'canonical_input_sha256',p_pdf_bytes,p_job->>'retrieval_url',
     p_job->'options',
@@ -382,6 +469,7 @@ begin
   if not found then
     select * into v_job from app_private.document_print_jobs where job_id=p_job->>'job_id';
     if v_job.document_id is distinct from p_job->>'document_id'
+       or v_job.farm_scope_id is distinct from p_job->>'farm_scope_id'
        or v_job.document_version is distinct from p_job->>'document_version'
        or v_job.document_revision is distinct from (p_job->>'document_revision')::integer
        or v_job.document_type is distinct from p_job->>'document_type'
@@ -412,13 +500,14 @@ begin
 end; $$;
 
 create or replace function app_private.read_document_print_job(
-  p_job_id text,p_lease_token text,p_green_id text,p_worker_id text)
+  p_job_id text,p_lease_token text,p_farm_scope_id text,p_green_id text,p_worker_id text)
 returns app_private.document_print_jobs language plpgsql security definer
 set search_path=pg_catalog,app_private as $$
 declare v_job app_private.document_print_jobs;
 begin
   select * into v_job from app_private.document_print_jobs where job_id=p_job_id;
   if not found or v_job.lease_token is distinct from p_lease_token
+     or v_job.farm_scope_id is distinct from p_farm_scope_id
      or v_job.green_id is distinct from p_green_id
      or v_job.lease_owner is distinct from p_worker_id
      or v_job.lease_expires_at<=clock_timestamp() then raise exception 'job read fence invalid'; end if;
@@ -426,12 +515,13 @@ begin
 end; $$;
 
 create or replace function app_private.read_document_print_pdf(
-  p_document_id text,p_document_version text,p_green_id text,p_worker_id text)
+  p_document_id text,p_document_version text,p_farm_scope_id text,p_green_id text,p_worker_id text)
 returns bytea language plpgsql security definer set search_path=pg_catalog,app_private as $$
 declare v_pdf bytea;
 begin
   select pdf_bytes into v_pdf from app_private.document_print_jobs
    where document_id=p_document_id and document_version=p_document_version
+     and farm_scope_id=p_farm_scope_id
      and green_id=p_green_id and lease_owner=p_worker_id and lease_expires_at>clock_timestamp()
      and state in ('claimed','submitting','submitted');
   return v_pdf;
@@ -448,17 +538,18 @@ end $$;
 revoke all on schema app_private from public,anon,authenticated;
 revoke all on function app_private.pgcrypto_random_hex(integer) from public,anon,authenticated;
 grant usage on schema app_private to documents_green_worker_executor,documents_api_executor;
-grant execute on function app_private.claim_document_print_job(text,text,integer),
-  app_private.claim_document_print_command(text,text,integer),
-  app_private.transition_document_print_job(text,text,text,text,text,text,uuid,text,text,jsonb),
-  app_private.transition_document_print_command(text,text,text,text,text,text,text,text,text,text),
-  app_private.renew_document_print_job_lease(text,text,text,integer,text,text,text),
-  app_private.recover_document_print_job_lease(text,text,integer,text,text,text),
-  app_private.read_document_print_job(text,text,text,text),
-  app_private.read_document_print_pdf(text,text,text,text)
+grant execute on function app_private.claim_document_print_job(text,text,text,integer),
+  app_private.claim_document_print_command(text,text,text,integer),
+  app_private.transition_document_print_job(text,text,text,text,text,text,uuid,text,text,text,jsonb),
+  app_private.transition_document_print_command(text,text,text,text,text,text,text,text,text,text,text),
+  app_private.renew_document_print_job_lease(text,text,text,integer,text,text,text,text,text),
+  app_private.recover_document_print_job_lease(text,text,integer,text,text,text,text,text),
+  app_private.read_document_print_job(text,text,text,text,text),
+  app_private.read_document_print_pdf(text,text,text,text,text)
   to documents_green_worker_executor;
 grant execute on function app_private.create_authorized_document_print_job(jsonb,bytea,text,text,text)
   to documents_api_executor;
 revoke all on function app_private.create_authorized_document_print_job(jsonb,bytea,text,text,text),
-  app_private.read_document_print_job(text,text,text,text),app_private.read_document_print_pdf(text,text,text,text)
+  app_private.read_document_print_job(text,text,text,text,text),
+  app_private.read_document_print_pdf(text,text,text,text,text)
   from public,anon,authenticated;
