@@ -107,8 +107,14 @@ class RuntimeStagingTests(unittest.TestCase):
                           "host_processes_visible": False, "outside_boundary_targets": 0,
                           "network_enabled": False, "source_read_only": True,
                           "capabilities_dropped": True, "unprivileged": True,
-                          "image_sha256": "3" * 64},
-        }, self.receipt_key, validation_id="4" * 32, issued_at="2026-08-20T10:00:00Z")
+                          "image_sha256": "3" * 64, "provider": "docker_engine",
+                          "provider_actor": "control_tower_isolated_validator_v2",
+                          "provider_execution_ids": ["5" * 64, "7" * 64],
+                          "provider_execution_id": hashlib.sha256(json.dumps(
+                              ["5" * 64, "7" * 64], separators=(",", ":")
+                          ).encode()).hexdigest(),
+                          "provider_config_sha256": "6" * 64},
+        }, self.receipt_key, validation_id="4" * 32)
         recorded = record_validation_receipt(receipt, self.state)
         self.receipt = Path(recorded["path"])
 
@@ -283,8 +289,14 @@ class RuntimeStagingTests(unittest.TestCase):
                           "host_processes_visible": False, "outside_boundary_targets": 0,
                           "network_enabled": False, "source_read_only": True,
                           "capabilities_dropped": True, "unprivileged": True,
-                          "image_sha256": "3" * 64},
-        }, self.receipt_key, validation_id="4" * 32, issued_at="2026-08-20T10:00:00Z")
+                          "image_sha256": "3" * 64, "provider": "docker_engine",
+                          "provider_actor": "control_tower_isolated_validator_v2",
+                          "provider_execution_ids": ["5" * 64, "7" * 64],
+                          "provider_execution_id": hashlib.sha256(json.dumps(
+                              ["5" * 64, "7" * 64], separators=(",", ":")
+                          ).encode()).hexdigest(),
+                          "provider_config_sha256": "6" * 64},
+        }, self.receipt_key, validation_id="4" * 32)
         self.receipt.write_text(json.dumps(rejected), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeStagingError, "isolated_validation_receipt_rejected"):
             self._plan()
@@ -296,6 +308,25 @@ class RuntimeStagingTests(unittest.TestCase):
         self.git.dirty.clear()
         with self.assertRaisesRegex(RuntimeStagingError, "current_state_contradicts_expected_rollback"):
             self._plan(expected_runtime_head="1" * 40)
+
+    def test_receipt_expiring_after_plan_is_rejected_before_consumption(self):
+        issued = "2026-08-21T10:00:00Z"
+        receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+        evidence = {"source_commit": receipt["source_commit"], "suites": receipt["suites"],
+                    "isolation": receipt["isolation"]}
+        refreshed = sign_validation_receipt(
+            evidence, self.receipt_key, validation_id="7" * 32,
+            issued_at=issued, expires_at="2026-08-21T10:30:00Z",
+        )
+        recorded = record_validation_receipt(refreshed, self.state)
+        self.receipt = Path(recorded["path"])
+        plan = self._plan(now="2026-08-21T10:29:59Z")
+        with self.assertRaisesRegex(RuntimeStagingError, "receipt_expired"):
+            stage_runtime(plan, task_reader=self._task, runner=self.git,
+                          git_safety_checker=self._safe_git,
+                          now="2026-08-21T10:30:00Z")
+        self.assertFalse((self.state / "validation-consumptions" / ("7" * 32 + ".json")).exists())
+        self.assertTrue((self.state / "supervisor.stop").exists())
 
     def test_plan_rejects_ambiguous_or_running_task(self):
         with self.assertRaisesRegex(RuntimeStagingError, "scheduled_task_ownership_ambiguous"):

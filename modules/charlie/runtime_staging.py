@@ -36,7 +36,7 @@ def plan_runtime_staging(
     *, source_ref, runtime_root, execution_root, state_root, receipt_path,
     receipt_sha256, expected_runtime_head, expected_execution_head,
     expected_manifest_commit, task_reader=None, runner=subprocess.run,
-    expected_task_sha256=None, git_safety_checker=None,
+    expected_task_sha256=None, git_safety_checker=None, now=None,
 ):
     source_ref = str(source_ref or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{40}", source_ref):
@@ -82,7 +82,9 @@ def plan_runtime_staging(
         raise RuntimeStagingError("sealed_receipt_digest_mismatch")
     receipt = _read_json(receipt_path, "isolated_validation_receipt_invalid")
     receipt_key_path = state_root / "validation-receipt.key"
-    receipt_identity = _validate_receipt(receipt, source_ref, _read_receipt_key(receipt_key_path))
+    receipt_identity = _validate_receipt(
+        receipt, source_ref, _read_receipt_key(receipt_key_path), now=now
+    )
     _validate_receipt_history(state_root, receipt_path, receipt_identity, receipt_digest)
     _validate_expected_rollback(
         runtime, execution, manifest, expected_runtime_head,
@@ -198,7 +200,7 @@ def _record_hmac(record, key, signature_field):
 
 
 def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess.run,
-                  git_safety_checker=None):
+                  git_safety_checker=None, now=None):
     if not isinstance(plan, dict) or plan.get("status") != "runtime_staging_plan_ready":
         raise RuntimeStagingError("validated_staging_plan_required")
     supplied_digest = plan.get("plan_sha256")
@@ -237,7 +239,7 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
             raise RuntimeStagingError("validation_receipt_authority_changed")
         receipt_identity = _validate_receipt(
             _read_json(plan["receipt_path"], "isolated_validation_receipt_invalid"),
-            source_ref, _read_receipt_key(receipt_key_path),
+            source_ref, _read_receipt_key(receipt_key_path), now=now,
         )
         _validate_receipt_history(
             state_root, Path(plan["receipt_path"]), receipt_identity, plan["receipt_sha256"]
@@ -511,9 +513,9 @@ def recover_runtime_staging(
     return result
 
 
-def _validate_receipt(receipt, source_ref, receipt_key):
+def _validate_receipt(receipt, source_ref, receipt_key, *, now=None):
     try:
-        return validate_validation_receipt(receipt, source_ref, receipt_key)
+        return validate_validation_receipt(receipt, source_ref, receipt_key, now=now)
     except ValidationReceiptError as exc:
         raise RuntimeStagingError(str(exc)) from exc
 

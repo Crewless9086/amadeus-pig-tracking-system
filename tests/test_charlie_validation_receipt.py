@@ -1,7 +1,9 @@
 import hashlib
 import copy
+import json
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from modules.charlie.validation_receipt import (
@@ -34,6 +36,13 @@ def evidence(failed=0):
             "outside_boundary_targets": 0, "network_enabled": False,
             "source_read_only": True, "capabilities_dropped": True,
             "unprivileged": True, "image_sha256": "c" * 64,
+            "provider": "docker_engine",
+            "provider_actor": "control_tower_isolated_validator_v2",
+            "provider_execution_ids": ["1" * 64, "2" * 64],
+            "provider_execution_id": hashlib.sha256(json.dumps(
+                ["1" * 64, "2" * 64], separators=(",", ":")
+            ).encode()).hexdigest(),
+            "provider_config_sha256": "f" * 64,
         },
     }
 
@@ -42,7 +51,6 @@ class ValidationReceiptTests(unittest.TestCase):
     def receipt(self, failed=0):
         return sign_validation_receipt(
             evidence(failed), KEY, validation_id="d" * 32,
-            issued_at="2026-08-20T10:00:00Z",
         )
 
     def test_producer_signs_canonical_receipt_accepted_by_validator(self):
@@ -77,7 +85,7 @@ class ValidationReceiptTests(unittest.TestCase):
         candidate = evidence()
         candidate["suites"][0].update({"passed": 0, "failed": 1})
         receipt = sign_validation_receipt(
-            candidate, KEY, validation_id="d" * 32, issued_at="2026-08-20T10:00:00Z"
+            candidate, KEY, validation_id="d" * 32
         )
         self.assertEqual(receipt["status"], "rejected")
         with tempfile.TemporaryDirectory() as directory:
@@ -92,7 +100,7 @@ class ValidationReceiptTests(unittest.TestCase):
             candidate = evidence()
             candidate["suites"][0].update(counts)
             receipt = sign_validation_receipt(
-                candidate, KEY, validation_id="d" * 32, issued_at="2026-08-20T10:00:00Z"
+                candidate, KEY, validation_id="d" * 32
             )
             self.assertEqual(receipt["status"], "rejected")
             with tempfile.TemporaryDirectory() as directory:
@@ -139,6 +147,30 @@ class ValidationReceiptTests(unittest.TestCase):
         candidate["suites"][0]["command_sha256"] = "f" * 64
         with self.assertRaisesRegex(ValidationReceiptError, "schema_invalid"):
             sign_validation_receipt(candidate, KEY, validation_id="d" * 32)
+
+    def test_expiry_is_signed_bounded_and_enforced_at_eligibility(self):
+        issued = datetime(2026, 8, 21, 10, 0, tzinfo=timezone.utc)
+        receipt = sign_validation_receipt(
+            evidence(), KEY, validation_id="d" * 32,
+            issued_at=issued.isoformat().replace("+00:00", "Z"),
+            expires_at=(issued + timedelta(minutes=30)).isoformat().replace("+00:00", "Z"),
+        )
+        validate_validation_receipt(receipt, SOURCE, KEY, now="2026-08-21T10:29:59Z")
+        with self.assertRaisesRegex(ValidationReceiptError, "expired"):
+            validate_validation_receipt(receipt, SOURCE, KEY, now="2026-08-21T10:30:00Z")
+
+    def test_future_and_overlong_receipts_fail_closed(self):
+        receipt = sign_validation_receipt(
+            evidence(), KEY, validation_id="d" * 32,
+            issued_at="2026-08-21T10:10:01Z", expires_at="2026-08-21T10:30:00Z",
+        )
+        with self.assertRaisesRegex(ValidationReceiptError, "not_yet_valid"):
+            validate_validation_receipt(receipt, SOURCE, KEY, now="2026-08-21T10:05:00Z")
+        with self.assertRaisesRegex(ValidationReceiptError, "expiry_invalid"):
+            sign_validation_receipt(
+                evidence(), KEY, validation_id="1" * 32,
+                issued_at="2026-08-21T10:00:00Z", expires_at="2026-08-21T10:30:01Z",
+            )
 
 
 if __name__ == "__main__":
