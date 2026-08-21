@@ -9,7 +9,8 @@ ENV={"DOCUMENTS_FARM_SCOPE_ID":"AMADEUS-FARM",
     "DOCUMENTS_CANONICAL_API_ORIGIN":"https://amadeus.internal"}
 PARSED={"text":"Please print the weekly weighing sheet",
     "telegram_user_id":"5721652188","telegram_chat_id":"5721652188",
-    "telegram_chat_type":"private","provider_message_id":"MSG-1"}
+    "telegram_chat_type":"private","provider_message_id":"MSG-1",
+    "semantic":{"domain":"documents","intent":"weekly_weighing_sheet_print"}}
 
 def pigs():return [{"pig_id":"PIG-1","tag_number":"127","current_pen_id":"B1"}]
 
@@ -33,6 +34,15 @@ def test_request_replay_identity_is_stable_for_same_canonical_day():
     assert calls[0]["mission_id"]==calls[1]["mission_id"]
     assert calls[0]["preview_payload"]==calls[1]["preview_payload"]
 
+def test_farm_day_uses_johannesburg_and_recovers_new_provider_identity():
+    calls=[];create=lambda **kwargs:(calls.append(kwargs) or {"callback_token":"TOKEN123"})
+    handle_documents_green_request({**PARSED,"provider_message_id":"MSG-2"},environ=ENV,
+        pig_loader=pigs,claim_creator=create,
+        now=datetime(2026,8,20,22,30,tzinfo=timezone.utc))
+    assert calls[0]["preview_payload"]["sheet_date"]=="2026-08-21"
+    assert calls[0]["expires_at"]=="2026-08-21T22:00:00+00:00"
+    assert calls[0]["reuse_active_provider_identity"] is True
+
 def test_unauthorized_or_uncommissioned_request_has_zero_claim_and_print_effects():
     calls=[];create=lambda **kwargs:calls.append(kwargs)
     bad={**PARSED,"telegram_chat_id":"GROUP","telegram_chat_type":"group"}
@@ -44,6 +54,7 @@ def test_unauthorized_or_uncommissioned_request_has_zero_claim_and_print_effects
     assert calls==[]
 
 def test_unrelated_natural_message_is_not_captured():
-    result,status=handle_documents_green_request({**PARSED,"text":"What needs attention?"},
+    result,status=handle_documents_green_request({**PARSED,"text":"What needs attention?",
+        "semantic":{"domain":"manager_round","intent":"daily_brief"}},
         environ=ENV,pig_loader=pigs,now=NOW)
     assert status==200 and result["handled"] is False

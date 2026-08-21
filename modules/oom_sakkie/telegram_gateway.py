@@ -32,6 +32,7 @@ from modules.oom_sakkie.protected_action_runtime import handle_protected_action_
 from modules.oom_sakkie.herdmaster_request_runtime import (
     delivery_retry_authority_for, handle_herdmaster_request)
 from modules.oom_sakkie.beacon_request_runtime import handle_beacon_request
+from modules.oom_sakkie.documents_green_request_runtime import handle_documents_green_request
 from modules.oom_sakkie.manager_question_runtime import (
     handle_manager_question_reply, load_active_manager_question,
     semantic_context_with_manager_question)
@@ -522,6 +523,25 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
 
+    documents_result, documents_status = handle_documents_green_request(parsed, environ=source)
+    if documents_result.get("handled"):
+        delivery = deliver_family_result(parsed, documents_result, specialist="DOCUMENTS",
+            mission_id=str(documents_result.get("mission_id") or ""),
+            card_mission_id=str(documents_result.get("card_mission_id") or ""))
+        if documents_result.get("callback_token"):
+            delivery = _bind_protected_preview_card(documents_result, delivery)
+        body, _ = _gateway_result(documents_result.get("success") is True,
+            str(documents_result.get("status") or "documents_green_request_contained"),
+            policy, documents_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": documents_result.get("answer", ""), "message": documents_result,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": False})
+        return body, documents_status if delivery.get("success") else 202
+
     beacon_result, beacon_status = handle_beacon_request(parsed, gateway_authority)
     if beacon_result.get("handled"):
         delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
@@ -963,6 +983,37 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "writes_farm_data": False, "automatic_irrigation_authority": False,
                         "answer": ("The scheduled assessment could not load its durable context. "
                                    "No provider or hardware action was attempted.")}
+            try:
+                from modules.oom_sakkie.documents_green_followup_runtime import (
+                    recover_documents_green_physical_follow_up)
+                documents_follow_up = recover_documents_green_physical_follow_up(
+                    owner_user_id=str(manual_payload.get("owner_user_id") or ""),
+                    chat_id=str(manual_payload.get("chat_id") or ""),
+                    trigger_id=str(manual_payload.get("trigger_id") or ""),
+                    now=scheduler_now, environ=source)
+                if documents_follow_up.get("handled"):
+                    documents_delivery = deliver({
+                        "telegram_user_id": str(manual_payload.get("owner_user_id") or ""),
+                        "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
+                        "provider_message_id": "scheduled:documents:" + str(
+                            manual_payload.get("trigger_id") or ""),
+                        "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")},
+                        documents_follow_up, specialist="DOCUMENTS",
+                        mission_id=str(documents_follow_up.get("mission_id") or ""),
+                        card_mission_id=str(documents_follow_up.get("card_mission_id") or ""))
+                    if documents_follow_up.get("callback_token"):
+                        documents_delivery = _bind_protected_preview_card(
+                            documents_follow_up, documents_delivery)
+                    return {**documents_follow_up,
+                        "success": documents_delivery.get("success") is True,
+                        "delivery": documents_delivery,
+                        "telegram_sends": int(documents_delivery.get("telegram_sends") or 0)}
+            except Exception as exc:
+                return {"success": False,
+                    "status": "documents_physical_follow_up_recovery_pending",
+                    "error_type": type(exc).__name__, "telegram_sends": 0,
+                    "printer_calls": 0, "hardware_commands": 0,
+                    "writes_farm_data": False, "recovery_required": True}
             presence_recovery = recover_pending_protected_delivery()
             if presence_recovery.get("status") not in {"no_reassessable_mixer_presence",
                     "protected_delivery_terminal_noop",

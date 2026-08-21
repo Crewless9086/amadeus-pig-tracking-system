@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import os
-import re
+from zoneinfo import ZoneInfo
 
 from modules.documents.weekly_weight_sheet import (
     PRINT_ACTION_KIND, build_weekly_sheet_revision, protected_print_preview,
@@ -11,18 +11,15 @@ from modules.documents.weekly_weight_sheet import (
 from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
 
 MISSION_ID = "DMQ-20260816-01"
-_REQUEST = re.compile(
-    r"\b(?:print|druk)\b.*\b(?:weekly\s+(?:weighing|weight)\s+sheet|weeklikse\s+weegstaat|weegstaat)\b|"
-    r"\b(?:weekly\s+(?:weighing|weight)\s+sheet|weeklikse\s+weegstaat|weegstaat)\b.*\b(?:print|druk)\b",
-    re.I,
-)
+OPERATING_TZ = ZoneInfo("Africa/Johannesburg")
 
 
 def handle_documents_green_request(parsed, *, environ=None, pig_loader=None,
                                    claim_creator=create_claim, now=None):
     """Create one exact protected preview from a genuine private owner request."""
-    text=str(parsed.get("text") or "").strip()
-    if not _REQUEST.search(text):
+    semantic=parsed.get("semantic") if isinstance(parsed.get("semantic"),dict) else {}
+    if (semantic.get("domain")!="documents"
+            or semantic.get("intent")!="weekly_weighing_sheet_print"):
         return {"handled":False,"status":"documents_green_request_not_applicable"},200
     owner=str(parsed.get("telegram_user_id") or "")
     chat=str(parsed.get("telegram_chat_id") or "")
@@ -36,17 +33,17 @@ def handle_documents_green_request(parsed, *, environ=None, pig_loader=None,
         "canonical_api_origin":"DOCUMENTS_CANONICAL_API_ORIGIN"}.items()}
     if any(not value for value in required.values()):
         return _hold("documents_green_commissioning_incomplete"),503
-    observed=(now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    observed=(now or datetime.now(timezone.utc)).astimezone(OPERATING_TZ)
     try:
         rows=(pig_loader or _active_pigs)()
         canonical=[{"pig_id":row.get("pig_id"),"tag_number":row.get("tag_number"),
             "pen_id":row.get("current_pen_id")} for row in rows]
         revision=build_weekly_sheet_revision(authenticated_principal_id=owner,
             requester="oom_sakkie",sheet_date=observed.date(),rows=canonical)
-        # Stable until UTC midnight: replay/concurrent delivery of the same
+        # Stable until the farm's Johannesburg midnight: replay/concurrent delivery of the same
         # weekly revision retains one preview digest and one canonical job.
         expires=(datetime.combine(observed.date()+timedelta(days=1),
-            datetime.min.time(),tzinfo=timezone.utc))
+            datetime.min.time(),tzinfo=OPERATING_TZ).astimezone(timezone.utc))
         job_id="GREEN-WWS-"+revision.version_id
         path=(f"/api/documents/{revision.document_id}/versions/"
               f"{revision.version_id}/pdf")
@@ -59,7 +56,8 @@ def handle_documents_green_request(parsed, *, environ=None, pig_loader=None,
             private_chat_id=chat,mission_id=MISSION_ID+":"+revision.version_id,
             provider_message_id=str(parsed.get("provider_message_id") or ""),
             evidence_generation=revision.canonical_input_sha256,
-            preview_payload=preview,expires_at=expires.isoformat())
+            preview_payload=preview,expires_at=expires.isoformat(),
+            reuse_active_provider_identity=True)
     except Exception as exc:
         return {**_hold("documents_green_preview_contained"),
             "error_type":type(exc).__name__},503

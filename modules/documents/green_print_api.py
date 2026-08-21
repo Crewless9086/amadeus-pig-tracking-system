@@ -186,9 +186,10 @@ def execute_claimed_physical_page_acceptance(claim, parsed, *, connect_factory=N
     principal=str(parsed.get("telegram_user_id") or "").strip()
     if not principal or principal!=str(parsed.get("telegram_chat_id") or "").strip():
         raise ValueError("authenticated_owner_principal_required")
-    page_correct=preview.get("page_correct")
-    if page_correct is not True and page_correct is not False:
-        raise ValueError("physical_page_result_required")
+    page_correct=True
+    observed_at=str(parsed.get("provider_timestamp") or preview.get("observed_at") or "").strip()
+    if not observed_at:
+        raise ValueError("physical_observation_timestamp_required")
     evidence_id=_bounded_id(preview.get("evidence_id"),"physical_evidence_id")
     db=(connect_factory or _connect_api)()
     with db:
@@ -196,7 +197,7 @@ def execute_claimed_physical_page_acceptance(claim, parsed, *, connect_factory=N
             fields=("job_id","document_version","pdf_sha256","cups_job_id","provider_id")
             cursor.execute("select * from app_private.record_document_print_physical_acceptance(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 tuple(preview.get(key) for key in fields)+(principal,evidence_id,
-                    preview.get("observed_at"),page_correct))
+                    observed_at,page_correct))
             row=cursor.fetchone();columns=[item.name for item in cursor.description]
             result=_public_job(dict(zip(columns,row)))
             result.update({"physical_page_confirmed":page_correct,
@@ -204,6 +205,20 @@ def execute_claimed_physical_page_acceptance(claim, parsed, *, connect_factory=N
                 "follow_up_state":"resolved" if page_correct else "exception_owned",
                 "automatic_reprint":False})
             return result
+
+
+def load_pending_physical_follow_up(*, farm_scope_id, authenticated_principal_id,
+                                    connect_factory=None):
+    """Read one owner-bound provider-completed job through the API executor."""
+    db=(connect_factory or _connect_api)()
+    with db:
+        with db.cursor() as cursor:
+            cursor.execute("select * from app_private.read_pending_document_print_physical_follow_up(%s,%s)",
+                (_bounded_id(farm_scope_id,"farm_scope_id"),
+                 _bounded_id(authenticated_principal_id,"authenticated_principal_id")))
+            row=cursor.fetchone()
+            if row is None:return None
+            return dict(zip([item.name for item in cursor.description],row))
 
 
 def _public_job(row):

@@ -570,6 +570,20 @@ begin
   v_job.pdf_bytes:=null; return v_job;
 end; $$;
 
+create or replace function app_private.read_pending_document_print_physical_follow_up(
+  p_farm_scope_id text,p_authenticated_principal_id text)
+returns table(job_id text,document_version text,pdf_sha256 text,cups_job_id text,provider_id text)
+language sql security definer
+set search_path=pg_catalog,app_private as $$
+  select j.job_id,j.document_version,j.pdf_sha256,j.cups_job_id,j.provider_id
+   from app_private.document_print_jobs j
+   where j.farm_scope_id=p_farm_scope_id
+     and j.authenticated_principal_id=p_authenticated_principal_id
+     and j.state='provider_completed'
+     and j.physical_follow_up_state='pending_owner_observation'
+   order by j.updated_at,j.job_id limit 1
+$$;
+
 create or replace function app_private.read_document_print_pdf(
   p_document_id text,p_document_version text,p_farm_scope_id text,p_green_id text,p_worker_id text)
 returns bytea language plpgsql security definer set search_path=pg_catalog,app_private as $$
@@ -605,6 +619,8 @@ grant execute on function app_private.claim_document_print_job(text,text,text,in
   to documents_green_worker_executor;
 grant execute on function app_private.create_authorized_document_print_job(jsonb,bytea,text,text,text)
   to documents_api_executor;
+grant execute on function app_private.read_pending_document_print_physical_follow_up(text,text)
+  to documents_api_executor;
 grant execute on function app_private.record_document_print_physical_acceptance(
   text,text,text,text,text,text,text,timestamptz,boolean) to documents_api_executor;
 revoke all on function app_private.create_authorized_document_print_job(jsonb,bytea,text,text,text),
@@ -613,3 +629,5 @@ revoke all on function app_private.create_authorized_document_print_job(jsonb,by
   from public,anon,authenticated;
 revoke all on function app_private.record_document_print_physical_acceptance(
   text,text,text,text,text,text,text,timestamptz,boolean) from public,anon,authenticated;
+revoke all on function app_private.read_pending_document_print_physical_follow_up(text,text)
+  from public,anon,authenticated;

@@ -20,7 +20,8 @@ def build_buttons(token, *, grouped=False):
 
 def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                  provider_message_id, evidence_generation, preview_payload,
-                 ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True):
+                 ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True,
+                 reuse_active_provider_identity=False):
     digest=canonical_preview_digest(action_kind,preview_payload)
     token=secrets.token_urlsafe(12).replace("-","").replace("_","")[:16]
     expires=(datetime.fromisoformat(str(expires_at).replace("Z","+00:00"))
@@ -29,6 +30,10 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
         raise ValueError("protected_claim_expiry_invalid")
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
+        if reuse_active_provider_identity:
+            # Serialize one logical preview before the unique-key read/insert so
+            # concurrent provider deliveries recover the winner, not an error.
+            cur.execute("select pg_advisory_xact_lock(%s)",(int(digest[:15],16),))
         cur.execute("""select callback_token,status,expires_at,owner_user_id,private_chat_id,
           provider_message_id,evidence_generation,preview_payload,preview_card_message_id
           from app_private.oom_protected_action_claims
@@ -36,11 +41,16 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
           (action_kind,mission_id,digest))
         prior=cur.fetchone()
         if prior:
-            exact=(str(prior[3])==str(owner_user_id) and str(prior[4])==str(private_chat_id)
-              and str(prior[5])==str(provider_message_id) and str(prior[6])==str(evidence_generation)
+            same_request=(str(prior[3])==str(owner_user_id) and str(prior[4])==str(private_chat_id)
+              and str(prior[6])==str(evidence_generation)
               and prior[7]==preview_payload)
-            rearmable=(action_kind=="beacon_media_review"
+            exact=same_request and (str(prior[5])==str(provider_message_id)
+              or reuse_active_provider_identity)
+            rearmable=((action_kind=="beacon_media_review"
                 and prior[1] in {"active","expired"} and exact)
+                or (action_kind=="documents_green_physical_acceptance"
+                    and prior[1] in {"changed","cancelled","expired"}
+                    and same_request and reuse_active_provider_identity))
             if prior[1]=="active" and exact and prior[2]>datetime.now(timezone.utc):
                 return {"success":True,"status":"protected_claim_existing","callback_token":prior[0],
                   "preview_digest":digest,"expires_at":prior[2].isoformat(),
@@ -48,7 +58,7 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
             if rearmable:
                     cur.execute("""update app_private.oom_protected_action_claims
                       set status='active',expires_at=%s where callback_token=%s
-                      and status in('active','expired')""",
+                      and status in('active','changed','cancelled','expired')""",
                       (expires,prior[0]))
                     return {"success":True,"status":"protected_claim_rearmed",
                   "callback_token":prior[0],"preview_digest":digest,
