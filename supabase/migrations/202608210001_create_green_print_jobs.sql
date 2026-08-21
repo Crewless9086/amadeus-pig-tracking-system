@@ -524,8 +524,7 @@ begin
      or v_job.state not in ('provider_completed','physically_confirmed','held')
      or v_job.physical_follow_up_state is null
      or p_evidence_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-     or p_observed_at is null or p_observed_at>clock_timestamp()+interval '2 minutes'
-     or p_observed_at<v_job.updated_at then
+     or p_observed_at is null or p_observed_at>clock_timestamp()+interval '2 minutes' then
     raise exception 'physical acceptance binding invalid';
   end if;
   if v_job.physical_evidence_id is not null then
@@ -536,6 +535,9 @@ begin
       raise exception 'physical acceptance replay conflict';
     end if;
     return v_job;
+  end if;
+  if p_observed_at<v_job.updated_at then
+    raise exception 'physical acceptance binding invalid';
   end if;
   update app_private.document_print_jobs set
     state=case when p_page_correct then 'physically_confirmed' else 'held' end,
