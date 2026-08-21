@@ -1410,3 +1410,23 @@ completion still requires the deployed Oom Sakkie actor's fresh authenticated
 natural request, one canonical job, provider-origin CUPS readback, exactly one
 physically confirmed page, cleanup/follow-up and a later terminal-independent
 cycle.
+
+#### 2026-08-21 DMQ exact-head review correction
+
+Independent review requested changes at `4b6734fbed58ef29b3301cabdbd89332f68e82c7`.
+The same mission and branch now replace the installable worker's plain claimable
+GET/local-only fence with canonical atomic claim leases and fenced idempotent
+transitions; add protected Continue/Cancel and known-CUPS cancellation; pin
+canonical HTTPS and private IPPS transport; bind queue/provider evidence; fail
+closed on restore conflict, corrupt/partial ledger and low disk; and separate
+process liveness from business Hold. Bounded initialization launches dedicated
+non-root `greenprint` and `cupsd` identities with narrowed AppArmor access.
+
+This is correction-stage source and synthetic test evidence only. No migration,
+installation, deployment, credential, endpoint, Supabase, Telegram, CUPS,
+printer or physical effect occurred. OWNER OUTCOME ACHIEVED remains `NONE`;
+usability remains `NO`. Lifecycle becomes `REVIEW_HOLD / ENABLING_SOURCE_ONLY`
+after push. The automatic next action is fresh independent exact-head review of
+PR #1150. Only later separately authorized migration/deployment/commissioning,
+a genuine natural request, exact canonical/provider evidence, one correct page,
+cleanup/follow-up and a later terminal-independent cycle can close the mission.

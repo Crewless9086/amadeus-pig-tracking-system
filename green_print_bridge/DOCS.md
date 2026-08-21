@@ -4,15 +4,17 @@ This private app hosts a local CUPS daemon and the bounded Documents adapter on 
 
 ## Security and configuration
 
-Keep Home Assistant, the printer and the canonical Documents endpoint on the private farm network. Do not publish ports or use a tunnel. Install the private CA certificate at the fixed `/config/private-ca.crt` path through this app's Home Assistant `addon_config` directory; the app refuses missing certificate trust and never disables TLS verification. The canonical intake path is fixed in source and cannot be changed through options. Enter the remaining runtime values only in the Home Assistant app options UI. Do not place them in Git, examples, screenshots, support bundles or shell history.
+Keep every endpoint on the private farm network; publish no ports or tunnels. Install the private CA at fixed `/config/private-ca.crt`. The canonical claim and protected-command paths are source-fixed. Commission `canonical_endpoint_ip` from the private DNS answer set: HTTPS connects only to that address while TLS verifies the configured hostname. The IPPS URI must use a private IP literal whose certificate contains that IP identity, avoiding later CUPS DNS resolution. Enter values only in the Home Assistant app options UI.
 
-The configured `cups_queue_id` and `printer_uri` are commissioning-time registry values, never request fields. The app accepts only `farm.weekly_weight_sheet.v1`, generator `web.print_sheets.v1`, A4, one copy, monochrome and one-sided. The canonical bearer credential must have only claim/read/event permissions for the print-job API and digest-bound PDFs.
+The configured queue and printer URI are commissioning registry values, never request fields. The app accepts only the fixed pilot document/options. The credential has only atomic-claim, fenced reconcile/transition, protected-command and digest-bound-PDF permissions. No plain claimable-job GET exists. Lease token, version, digest and authorization receipt bind every transition; stable event IDs make replay idempotent.
 
 ## Runtime, recovery and health
 
 Supervisor starts the app automatically and restarts it after failure. `/data/green-print-ledger.sqlite3` is crash-recovery state only; Supabase/Documents remains canonical. PDFs exist only under the tmpfs spool and are deleted after each attempt. `/data/health.json` reports worker identity, heartbeat, last/next poll and the last bounded result without secrets or document content. A cold backup stops the app before copying `/data`; temporary spool is excluded.
 
-On restart, persisted submission attempts are reconciled before the app polls new canonical intake. An attempt with a known CUPS job is observed before any retry. A persisted attempt without a provider job identity becomes ambiguous and cannot auto-retry. Provider completion is not physical completion. HTTPS redirects are refused; the canonical and printer hostnames must resolve only to private or link-local addresses.
+On restart, persisted attempts reconcile canonical state and lease before CUPS observation or intake. Corrupt/partial local state fails closed. Missing provider identity becomes canonically ambiguous. Free-space thresholds run before claim/download. Protected fresh Continue retains the job and clears only retry-safe local state. Cancel reconciles, cancels a known pending CUPS job, holds on unknown provider outcome, then closes canonically and cleans recovery. Provider completion is not physical completion. Health separates liveness from business Hold.
+
+The root entrypoint only prepares owned directories, validates/writes the commissioned queue file and launches processes. CUPS runs as `cupsd`; the Documents worker runs as `greenprint`. The long-lived worker cannot administer queues or write CUPS configuration.
 
 ## Install and commissioning
 

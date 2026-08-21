@@ -993,18 +993,18 @@ Current Stage 4 surface:
   local CUPS, fixed options/registered queue, read-only private-CA injection,
   `/data` crash ledger and health, tmpfs spool, cold backup, restart worker,
   AppArmor and no exposed ports, host network, Docker socket or hardware maps.
-- `green_print_bridge/app/service.py` polls one authenticated canonical intake,
-  accepts only the protected digest/version envelope, retrieves from its exact
-  private HTTPS origin with certificate verification, submits by argument-array
-  to the configured CUPS queue, observes before retry and emits content-free
-  canonical provider evidence. Supabase remains truth; local SQLite remains
-  recovery only.
-- The intake route and private-CA mount path are source-fixed, HTTPS redirects
-  and public endpoint resolution fail closed, CUPS observations match exact job
-  identities, and restart reconciliation drains persisted attempts before new
-  canonical intake. These controls prevent option text or recovery races from
-  creating an alternate queue, retrieval route or second physical effect.
+- `green_print_bridge/app/service.py` uses fixed atomic claim and protected-command
+  endpoints. Lease token, version, digest and authorization receipt fence every
+  reconcile/transition; stable event identities make replay safe. SQLite is
+  recovery evidence only.
+- Canonical HTTPS connects to a commissioned validated IP while TLS verifies the
+  configured hostname. IPPS uses a private IP literal with matching certificate
+  identity. Exact CUPS receipts bind queue/provider evidence. Restore, corrupt
+  ledger and disk checks precede any new claim or provider action.
+- Bounded root initialization launches dedicated `cupsd` and `greenprint`
+  identities. The worker cannot administer queues or write CUPS configuration;
+  health separates process liveness from a durable business Hold.
 - `tests/test_green_print_home_assistant_app.py` uses synthetic non-farm fixtures
   to cover packaging, security, digest and fixed-policy binding, replay,
-  concurrency, restart state, ambiguity, CUPS argument safety and log/health
-  redaction.
+  two-ledger canonical claiming, rebinding, identities/denials, Continue/Cancel,
+  restore/corruption/disk failure, queue/provider binding and Hold liveness.
