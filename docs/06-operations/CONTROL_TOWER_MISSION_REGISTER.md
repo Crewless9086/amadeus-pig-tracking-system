@@ -3808,3 +3808,44 @@ deployed revision `278f4b0b`; ROOTLINE borehole and BEACON remain protected hold
 HERDMASTER/CODEX UI depend on the OOM projection evidence; CORE and SAM remain
 strategically frozen from expansion. No duplicate implementation or watcher terminal
 was dispatched.
+
+### Green app package source closure and independent review dispatch - 2026-08-21
+
+Fresh inspection proves the DOCUMENTS recovery terminal closed correctly and
+returned a complete populated 20,260-byte handover. The exact worktree is clean and
+pushed at PR #1150 head `4b6734fbed58ef29b3301cabdbd89332f68e82c7`, four
+commits ahead and zero behind authoritative main `278f4b0b`. GitHub freshly reports
+the PR open, non-draft, clean, mergeable and all three exact-head checks successful.
+The handover reports 33 focused tests passed, zero Brain Guard findings and a local
+`linux/arm64` image build/inspection with required CUPS tooling and labels.
+
+This evidence closes only the bounded installable-source stage. Target owner outcome
+remains a genuine natural Oom Sakkie request producing exactly one correct physical
+weekly weighing sheet through the commissioned private Green/CUPS adapter. Owner
+outcome achieved is `NONE`; usable now is `NO`; lifecycle is `REVIEW_HOLD /
+BUILT_BUT_UNPROVEN / UNCOMMISSIONED`. No deployed adapter, canonical print job,
+protected production authority, registered device pair, provider CUPS result,
+physical page, cleanup/follow-up or later independent print exists.
+
+Fresh PR metadata contains no formal review record. Because high-risk physical
+adapter review is safe and required before any protected merge/install decision,
+Control Tower promotes the SAME DOCUMENTS mission into a read-only exact-head
+security/data-integrity/package review. The visible review terminal is directly
+started in the same clean worktree, bound to PowerShell `37676`, Node `43436` and
+Codex `36896`, prompt
+`C:\tmp\DOCUMENTS_GREEN_EXACT_HEAD_REVIEW_PROMPT_20260821.md` and mandatory full
+handover `C:\tmp\VISIBLE_DOCUMENTS_GREEN_EXACT_HEAD_REVIEW_HANDOVER_20260821.md`.
+Dispatch is `delivered / started`; review findings and a complete handover are
+required for progress. It is `CURRENT_BLOCKER`, recovery WIP slot 2, and must close
+automatically.
+
+The reviewer has read-only authority. It may not edit, commit, push, comment, merge,
+deploy, install, configure devices/network/secrets, access production/canonical data,
+submit to CUPS or print. Any defect must return to the same preserved worktree as a
+bounded correction; approval advances to one exact protected review/merge decision,
+not automatically to migration, deployment, installation or physical commissioning.
+
+Fresh allocation: DOCUMENTS is `ACTIVE - DO NOT INTERRUPT`; OOM SAKKIE remains a
+runtime-owned external evidence wait; ROOTLINE and BEACON remain protected holds;
+HERDMASTER/CODEX UI depend on OOM evidence; CORE and SAM remain strategically frozen
+from expansion. No duplicate mission or idle watcher exists.
