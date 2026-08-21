@@ -114,7 +114,8 @@ end; $$;
 
 create or replace function app_private.transition_document_print_job(
   p_job_id text, p_lease_token text, p_document_version text, p_pdf_sha256 text,
-  p_authorization_receipt_id text, p_target_state text, p_event_id uuid, p_metadata jsonb default '{}'::jsonb)
+  p_authorization_receipt_id text, p_target_state text, p_event_id uuid,
+  p_green_id text,p_worker_id text,p_metadata jsonb default '{}'::jsonb)
 returns app_private.document_print_jobs
 language plpgsql security definer set search_path = pg_catalog, app_private as $$
 declare v_job app_private.document_print_jobs;
@@ -125,6 +126,7 @@ declare v_job app_private.document_print_jobs;
 begin
   select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
   if not found or v_job.lease_token is distinct from p_lease_token or
+     v_job.green_id is distinct from p_green_id or v_job.lease_owner is distinct from p_worker_id or
      v_job.lease_expires_at <= clock_timestamp() or v_job.document_version<>p_document_version or
      v_job.pdf_sha256<>p_pdf_sha256 or v_job.authorization_receipt_id<>p_authorization_receipt_id then
     raise exception 'lease fence or binding invalid';
@@ -197,7 +199,7 @@ end; $$;
 create or replace function app_private.transition_document_print_command(
   p_job_id text, p_lease_token text, p_document_version text, p_pdf_sha256 text,
   p_authorization_receipt_id text, p_command_receipt_id text, p_command_kind text,
-  p_target_state text)
+  p_target_state text,p_green_id text,p_worker_id text)
 returns jsonb language plpgsql security definer set search_path = pg_catalog, app_private as $$
 declare v_job app_private.document_print_jobs;
 begin
@@ -208,6 +210,7 @@ begin
   -- recovering worker a current lease; this path never authorizes or resumes
   -- provider work.
   if v_job.lease_token is distinct from p_lease_token or v_job.lease_expires_at<=clock_timestamp()
+     or v_job.green_id is distinct from p_green_id or v_job.lease_owner is distinct from p_worker_id
      or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
      or v_job.authorization_receipt_id<>p_authorization_receipt_id
      or v_job.command_receipt_id<>p_command_receipt_id or v_job.command_kind<>p_command_kind then
@@ -321,9 +324,9 @@ begin
 end; $$;
 
 revoke all on function app_private.claim_document_print_job(text,text,integer) from public, anon, authenticated;
-revoke all on function app_private.transition_document_print_job(text,text,text,text,text,text,uuid,jsonb) from public, anon, authenticated;
+revoke all on function app_private.transition_document_print_job(text,text,text,text,text,text,uuid,text,text,jsonb) from public, anon, authenticated;
 revoke all on function app_private.claim_document_print_command(text,text,integer) from public, anon, authenticated;
-revoke all on function app_private.transition_document_print_command(text,text,text,text,text,text,text,text) from public, anon, authenticated;
+revoke all on function app_private.transition_document_print_command(text,text,text,text,text,text,text,text,text,text) from public, anon, authenticated;
 revoke all on function app_private.renew_document_print_job_lease(text,text,text,integer,text,text,text) from public, anon, authenticated;
 revoke all on function app_private.recover_document_print_job_lease(text,text,integer,text,text,text) from public, anon, authenticated;
 
@@ -447,8 +450,8 @@ revoke all on function app_private.pgcrypto_random_hex(integer) from public,anon
 grant usage on schema app_private to documents_green_worker_executor,documents_api_executor;
 grant execute on function app_private.claim_document_print_job(text,text,integer),
   app_private.claim_document_print_command(text,text,integer),
-  app_private.transition_document_print_job(text,text,text,text,text,text,uuid,jsonb),
-  app_private.transition_document_print_command(text,text,text,text,text,text,text,text),
+  app_private.transition_document_print_job(text,text,text,text,text,text,uuid,text,text,jsonb),
+  app_private.transition_document_print_command(text,text,text,text,text,text,text,text,text,text),
   app_private.renew_document_print_job_lease(text,text,text,integer,text,text,text),
   app_private.recover_document_print_job_lease(text,text,integer,text,text,text),
   app_private.read_document_print_job(text,text,text,text),

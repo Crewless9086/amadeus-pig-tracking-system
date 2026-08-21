@@ -156,15 +156,20 @@ def transition(job_id):
             "target_state", "event_id")
     if any(name not in body for name in base): return _deny(400, "transition_binding_fields_invalid")
     metadata = {key: value for key, value in body.items() if key not in base}
-    value = _call("transition_document_print_job", tuple([job_id] + [body[k] for k in base] + [metadata]))
+    value = _call("transition_document_print_job", tuple([job_id] + [body[k] for k in base] +
+        [request.documents_green_id, request.documents_worker_id, metadata]))
     return jsonify(_public_job(value)), 200
 
 
 @green_print_api_bp.post("/documents/print-jobs/<job_id>/commands/transition")
 def transition_command(job_id):
-    return _bound_job_call(job_id, "transition_document_print_command",
-        ("lease_token", "document_version", "pdf_sha256", "authorization_receipt_id",
-         "command_receipt_id", "command_kind", "target_state"))
+    body = _json_body(); _bounded_id(job_id, "job_id")
+    fields = ("lease_token", "document_version", "pdf_sha256", "authorization_receipt_id",
+              "command_receipt_id", "command_kind", "target_state")
+    if set(body) != set(fields): return _deny(400, "transition_binding_fields_invalid")
+    value = _call("transition_document_print_command", tuple([job_id] + [body[k] for k in fields] +
+        [request.documents_green_id, request.documents_worker_id]))
+    return jsonify(value), 200
 
 
 @green_print_api_bp.post("/documents/print-jobs/<job_id>/lease/renew")

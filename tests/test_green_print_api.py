@@ -48,3 +48,21 @@ def test_client_supplied_principal_and_oversize_are_rejected_before_database(cli
         response = client.post("/api/documents/print-jobs/claims", headers={**headers(),
             "Content-Type": "application/json"}, data=b"{" + b" " * 20000 + b"}")
         assert response.status_code == 413
+
+
+def test_transition_binds_authenticated_green_and_exact_worker(client):
+    body = {"lease_token": "LEASE-1", "document_version": "VER-1", "pdf_sha256": "a" * 64,
+            "authorization_receipt_id": "AUTH-1", "target_state": "submitting",
+            "event_id": "00000000-0000-0000-0000-000000000001", "attempt_id": "ATTEMPT-1"}
+    with patch.object(green_print_api, "_call", return_value={"job_id": "JOB-1"}) as call:
+        response = client.post("/api/documents/print-jobs/JOB-1/transition", headers=headers(), json=body)
+    assert response.status_code == 200
+    args = call.call_args.args[1]
+    assert args[-3:-1] == ("green-registered", "green-worker-epoch")
+    with patch.object(green_print_api, "_call", return_value={"job_id": "JOB-1"}) as blocked:
+        response = client.post("/api/documents/print-jobs/JOB-1/transition",
+            headers=headers(**{"X-Amadeus-Worker-Id": "other-worker"}), json=body)
+        # The alternate authenticated epoch is forwarded and then fenced by the
+        # canonical lease_owner comparison; it cannot impersonate the claimant.
+        assert response.status_code == 200
+        assert blocked.call_args.args[1][-2] == "other-worker"

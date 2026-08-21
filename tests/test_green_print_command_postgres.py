@@ -81,16 +81,17 @@ def db():
 def transition(db, lease="old-lease", version="DOC-DB-1.r1", digest=PDF_SHA,
                authorization="AUTH-DB-1", receipt="COMMAND-DB-1", kind="continue"):
     with db.cursor() as cursor:
-        cursor.execute("select app_private.transition_document_print_command(%s,%s,%s,%s,%s,%s,%s,%s)",
-                       ("JOB-DB-1", lease, version, digest, authorization, receipt, kind, "accepted"))
+        cursor.execute("select app_private.transition_document_print_command(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                       ("JOB-DB-1", lease, version, digest, authorization, receipt, kind, "accepted",
+                        "green", "recovered-worker"))
         return cursor.fetchone()[0]
 
 
-def worker_transition(db, target, metadata=None, event=EVENT):
+def worker_transition(db, target, metadata=None, event=EVENT, worker="green-worker", green="green"):
     with db.cursor() as cursor:
-        cursor.execute("select app_private.transition_document_print_job(%s,%s,%s,%s,%s,%s,%s,%s)",
+        cursor.execute("select app_private.transition_document_print_job(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                        ("JOB-DB-1", "worker-lease", "DOC-DB-1.r1", PDF_SHA,
-                        "AUTH-DB-1", target, event, Jsonb(metadata or {})))
+                        "AUTH-DB-1", target, event, green, worker, Jsonb(metadata or {})))
         return cursor.fetchone()[0]
 
 
@@ -167,6 +168,15 @@ def test_ordinary_worker_cannot_skip_or_claim_protected_outcomes(db, target):
     with db.cursor() as cursor:
         cursor.execute("select state,attempt_id,cups_job_id,provider_id from app_private.document_print_jobs where job_id='JOB-DB-1'")
         assert cursor.fetchone() == ("claimed", None, None, None)
+
+
+@pytest.mark.parametrize("worker,green", [("wrong-worker", "green"), ("green-worker", "wrong-green")])
+def test_transition_rejects_wrong_authenticated_execution_identity(db, worker, green):
+    prepare_worker_job(db)
+    with db.cursor() as cursor: cursor.execute("savepoint wrong_execution_identity")
+    with pytest.raises(psycopg.errors.RaiseException, match="lease fence or binding invalid"):
+        worker_transition(db, "submitting", {"attempt_id": "ATTEMPT-1"}, worker=worker, green=green)
+    with db.cursor() as cursor: cursor.execute("rollback to savepoint wrong_execution_identity")
 
 
 @pytest.mark.parametrize("state,target", [
