@@ -3549,3 +3549,56 @@ reconciled PR #1142 base, after the current semantic repair returns a complete
 handover. Capacity remains serialized because the active work and this addendum
 touch the same attention, HERDMASTER, routing and UI surfaces. No additional
 terminal is dispatched while that collision-prone lane is actively changing them.
+
+### PR #1142 semantic repair closure and purpose-review promotion - 2026-08-21
+
+Fresh process ancestry proves the bounded owner-attention semantics terminal
+closed. Its actual 21,027-byte handover is a complete populated current template,
+not a short summary. The registered worktree
+`C:\tmp\oom-names-first-attention-20260820` is clean and pushed at exact PR #1142
+head `0636fc3a2b84129605c19f0ceecf39cb05a5d429`, three commits ahead and zero
+behind authoritative main `2548d99ab61d686449a2748614e4da9849c90b3a` at
+handover observation. The handover reports 627 passed/7 skipped plus 239 subtests,
+a 120-test affected suite, three responsive Playwright checks, zero Brain Guard
+findings, 21 focused governance/worker tests, three green hosted exact-head checks
+and independent HERDMASTER, integrity/security and UX/accessibility approvals.
+
+This evidence closes only the bounded source/review stage. Target owner outcome
+remains correct-time, names-first, identity-bound owner attention operated by the
+deployed Oom Sakkie manager. Owner outcome achieved is `NONE`; usable now is `NO`.
+Exact deployed revision, fresh worker heartbeat, genuine scheduled correlation,
+canonical/provider readback, Molly's actual current treatment state and later
+terminal-independent continuity all remain Unknown. Classification is
+`RELEASE_HOLD / BUILT_BUT_UNPROVEN`, never Business complete.
+
+Because merge/deployment remains a protected boundary and the already-registered
+same-lineage HERDMASTER purpose-review addendum has safe eligible implementation
+work, Control Tower promotes that addendum into the released WIP slot without
+creating another mission or worktree. A visible terminal was directly started in
+the same preserved PR #1142 worktree with prompt
+`C:\tmp\OOM_HERDMASTER_PURPOSE_REVIEW_ADDENDUM_PROMPT_20260821.md`; fresh process
+ancestry binds PowerShell `35784`, Node `38072` and Codex `40504` to that worktree
+and output artifact
+`C:\tmp\VISIBLE_OOM_PURPOSE_REVIEW_ADDENDUM_LAST_MESSAGE_20260821.md`. Dispatch
+truth is `delivered / started`; later diff, commit, tests and the complete handover
+are required for progress. The assignment is `OPERATING_SPINE`, recovery WIP slot
+1, and must close automatically.
+
+No production, merge, deployment, migration, credential/configuration, Telegram,
+canonical farm/customer write, medication, publication or hardware authority was
+granted. Historical conflicting PR #991 remains evidence-only. The addendum must
+reuse one canonical identity and existing eligibility/recommendation, correction-
+batch and shared-attention rails; consolidate presentation only after backend
+identity; and return the complete populated handover. Automatic promotion after
+that handover is exact release reconciliation and one protected merge/deploy
+decision, followed by genuine deployed-agent acceptance and a later independent
+cycle.
+
+Fresh all-terminal classification: OOM SAKKIE is `ACTIVE - DO NOT INTERRUPT` on
+the purpose-review addendum. HERDMASTER and CODEX UI are serialized into that same
+lane and must not receive duplicate overlapping work. CORE, ROOTLINE, SAM and
+BEACON have no freshly attributable development-terminal work from the current
+sweep; their preserved queues remain `FROZEN - STRATEGIC WIP` or protected release
+holds rather than manufactured utilization. DOCUMENTS and ROOTLINE borehole retain
+their exact source-ready protected release evidence; neither is operational or
+usable. No open terminal shell alone is classified as productive work.
