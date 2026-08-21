@@ -3772,3 +3772,39 @@ Fresh terminal allocation: DOCUMENTS is `ACTIVE - DO NOT INTERRUPT`; OOM SAKKIE 
 that same deployed evidence. ROOTLINE borehole and BEACON remain protected holds.
 CORE and SAM remain frozen from expansion without fresh attributable work. No watcher
 or idle-wait terminal was created.
+
+### Green installable-app incomplete closeout and exact-worktree recovery - 2026-08-21
+
+Charl reported the DOCUMENTS terminal done, but fresh process, artifact and Git
+inspection rejects completion. The terminal processes closed, yet required handover
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_INSTALLABLE_APP_HANDOVER_20260821.md` does not
+exist. The exact worktree is dirty and six commits ahead of upstream at local merge
+HEAD `2f543a906f36541a1e633ff35dc7ec39df3555f4`, with additive current-main
+reconciliation plus modified register/commissioning/source-map/changelog files and
+untracked `green_print_bridge/`, `repository.yaml` and Home Assistant app tests.
+Classification is `INVALID_HANDOVER / WORKING`; terminal closure is not mission or
+stage completion.
+
+All unique work is preserved in place. Control Tower performed no reset, restore,
+stash, delete, overwrite or duplicate worktree. It directly resumed the SAME
+DOCUMENTS mission and dirty worktree for bounded audit, completion, exact-current
+tests/reviews, commit, push, PR #1150 update and the complete mandatory handover.
+Fresh process ancestry binds PowerShell `30776`, Node `17108` and Codex `23020` to
+prompt `C:\tmp\DOCUMENTS_GREEN_DIRTY_RECOVERY_PROMPT_20260821.md` and output
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_DIRTY_RECOVERY_HANDOVER_20260821.md`. Dispatch is
+`delivered / started`; later attributable diff, commit, tests and full handover are
+required for progress. DOCUMENTS remains `ACTIVE - DO NOT INTERRUPT`,
+`CURRENT_BLOCKER`, recovery WIP slot 2.
+
+Owner outcome achieved remains `NONE`; usable now remains `NO`. No merge, migration,
+deployment, Green installation, CUPS/printer/network configuration, credential or
+device mapping, canonical/farm/customer effect or physical page is authorized or
+proven. The target remains one genuine natural Oom Sakkie request producing exactly
+one correct physical page with canonical/provider/physical proof and a later
+terminal-independent print cycle.
+
+OOM SAKKIE remains `DEPENDENCY IDLE` on genuine provider-owned cycle evidence at
+deployed revision `278f4b0b`; ROOTLINE borehole and BEACON remain protected holds;
+HERDMASTER/CODEX UI depend on the OOM projection evidence; CORE and SAM remain
+strategically frozen from expansion. No duplicate implementation or watcher terminal
+was dispatched.
