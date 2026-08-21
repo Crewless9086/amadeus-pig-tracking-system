@@ -4701,3 +4701,40 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   acceptance and separate autonomous activation. A genuine eligible irrigation
   trigger must come from the deployed runtime, never a terminal-manufactured event.
 - Business completion: `NO`; deployment evidence is enabling-stage progress only.
+
+## 2026-08-21 — Fertilizer owner-attention projection PR #1153 approved release packet
+
+- Mission/lineage: existing Oom Sakkie shared owner-attention projection and
+  `OOM-ROOTLINE-FERTILIZER-CONFIG-20260809`; no duplicate mission or status rail.
+- Authoritative main: `a50ae724826e567f18c9c6aec8581a5a20e49eab`.
+- Exact approved PR/head: #1153,
+  `ebeb4deddaf3abfca76cc539d12632baa194f348`.
+- Target owner outcome: healthy fertilizer-mixer readiness is silent in Owner
+  Attention; failed, stale or unknown readiness remains exactly one names-first
+  ROOTLINE-owned exception; mixer and injector stay separate; commissioning,
+  autonomy, active and completed labels remain evidence-gated.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; the approved source is not merged/deployed and no authenticated
+  genuine deployed manager cycle has proven the corrected presentation.
+- Classification: `BUILT_BUT_UNPROVEN / RELEASE_HOLD /
+  APPROVE_RELEASE_PACKET`; Business completion is `NO`.
+- Enabling-stage progress: mandatory independent exact-head review approved the
+  exact six-file diff; focused/current-main safety tests passed `155` with `3`
+  skipped; Brain Guard/vault alignment passed; Playwright, disposable PostgreSQL
+  audit and CHARLIE CORE exact-head CI all passed.
+- Collision result: zero Green or execution-path collision. PR #1153 changes only
+  the shared presentation/readiness projection, tests and existing doctrine;
+  post-#1149 ROOTLINE execution/control behavior remains intact. No Green source,
+  migration, queue, claim, API, CUPS or printer path changes.
+- Operational truth: no genuine trigger, agent-owned production execution,
+  canonical/provider/physical fertilizer result, safe operational cycle, later
+  terminal-independent cycle or measured owner-work reduction was produced.
+- First missing real-life gate: exact governed merge/deployment of the immutable
+  approved head, followed by exact loaded-revision and authenticated genuine
+  manager-cycle proof that healthy readiness is absent while failed/stale/unknown
+  readiness remains one useful exception.
+- Next automatic action: preserve the approved head and prepare one serialized
+  merge/deployment decision packet. Physical mixer/injector commissioning and
+  autonomous activation remain separate protected missions.
+- Complete independent handover:
+  `C:\tmp\VISIBLE_FERTILIZER_PR1153_EBEB_EXACT_REVIEW_HANDOVER_20260821.md`.
