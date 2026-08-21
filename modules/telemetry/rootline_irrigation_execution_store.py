@@ -251,10 +251,15 @@ def _verified_borehole_completion(item):
     provider = item.get("provider_final_off_evidence") or {}
     physical = item.get("physical_completion_evidence") or {}
     evidence = (canonical, provider, physical)
+    evidence_ids = tuple(str(row.get("evidence_id") or "").strip()
+        for row in evidence)
     identities_match = bool(execution_id) and all(
         str(row.get("execution_id") or "") == execution_id
-        and bool(str(row.get("evidence_id") or "").strip()) for row in evidence)
+        for row in evidence)
+    evidence_domains_distinct = (all(evidence_ids)
+        and len(set(evidence_ids)) == len(evidence_ids))
     return (item.get("shutdown_verified") is True and identities_match
+        and evidence_domains_distinct
         and canonical.get("final_state") == "OFF"
         and provider.get("authoritative") is True and provider.get("state") == "OFF"
         and physical.get("pump_stopped") is True
@@ -346,6 +351,12 @@ def _claim_irrigation_output(body):
                           and length(coalesce(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''))>0
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
                             terminal.review_json->'rootline_execution'->>'execution_id'
+                          and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id' <>
+                            terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id'
+                          and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id' <>
+                            terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id'
+                          and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id' <>
+                            terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id'
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true'
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true')
                         or (terminal.review_json->'rootline_execution'->>'action'
@@ -597,6 +608,12 @@ def _claim_borehole_material_load(body):
                   length(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''))>0 and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
                     t.review_json->'rootline_execution'->>'execution_id' and
+                  t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id' <>
+                    t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id' and
+                  t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id' <>
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id' and
+                  t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id' <>
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id' and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true') or
                  (t.review_json->'rootline_execution'->>'action' in
