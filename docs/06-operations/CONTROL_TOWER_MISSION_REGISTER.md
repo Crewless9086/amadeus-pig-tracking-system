@@ -4403,3 +4403,34 @@ and verification scope, and return the complete populated Control Tower handover
 It may repair demonstrable source defects in an isolated branch but may not merge,
 deploy, apply a migration, access production data, install Green, register secrets
 or devices, contact CUPS/the printer, or create a print job.
+
+### DOCUMENTS Green migration/API review closeout - 2026-08-21
+
+The bounded review terminal closed with complete handover
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_MIGRATION_API_RELEASE_REVIEW_HANDOVER_20260821.md`,
+SHA-256 `7011EBAE4B6C6D3D606BC20CDC89DDF0EC108F73D2DBDCD0820DEFDC4A67D969`,
+29,438 bytes and 176 measured lines. Control Tower read the complete artifact.
+
+The review found that Green's migration shared version `202608200002` with the
+pig-welfare migration. Commit `320763efe3774b9cb5584dcf589704298e68d27d`
+renames the unapplied Green migration to unique version `202608210001` without SQL
+content changes and adds a uniqueness regression. PR #1152 is open, clean and
+mergeable; CHARLIE CORE, disposable-Postgres audit rails and Playwright browser
+checks all passed. Independent Control Tower diff review found no blocker. The PR
+is preserved but not merged because merge authority was not granted.
+
+Owner outcome remains `NONE`; usable now remains `NO`; lifecycle is
+`REVIEW_HOLD / ENABLING_SOURCE_ONLY / RETAIN_DORMANT`. The audit proved the next
+missing gate is not installation: current main lacks the canonical authenticated
+Documents server routes, immutable farm/tenant/worker/authorization boundary and
+dedicated least-privilege function execution grants required by the Green client.
+Applying the migration alone would create unreachable private primitives and is
+prohibited.
+
+The next safe automatic continuation is the same mission's source-only canonical
+API/security implementation from exact reviewed head `320763ef` in a fresh
+collision-free worktree. It may create tests, commits and a review PR, but may not
+merge, deploy, apply migrations, access production data, install Green, register
+credentials or mappings, contact CUPS/printer, create a print job or manufacture
+operational evidence. The next protected decision remains deferred until that
+compatible migration/application candidate and independent review packet exist.
