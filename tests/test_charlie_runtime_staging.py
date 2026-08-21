@@ -122,10 +122,7 @@ class RuntimeStagingTests(unittest.TestCase):
         canonical = self.state.parent
         return [{"task_name": "CHARLIE CORE Runner Watchdog", "state": "Ready",
                  "action_count": 1, "execute": str(canonical / "venv" / "Scripts" / "pythonw.exe"),
-                 "arguments": ('-c "from dotenv import load_dotenv; '
-                    f"load_dotenv(r'{canonical / '.env'}', override=True); import runpy,sys; "
-                    f"sys.argv=[r'{self.runtime / 'scripts' / 'charlie_runner_watchdog.py'}','--json']; "
-                    f"runpy.run_path(r'{self.runtime / 'scripts' / 'charlie_runner_watchdog.py'}', run_name='__main__')\""),
+                 "arguments": f'"{self.runtime / "scripts" / "charlie_runner_task_launcher.py"}"',
                  "working_directory": str(self.runtime)}]
 
     @staticmethod

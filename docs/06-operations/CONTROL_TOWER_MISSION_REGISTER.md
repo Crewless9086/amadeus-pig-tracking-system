@@ -202,6 +202,21 @@ stop digest, disabled task identity, observe-only mode and a new activation
 identity/expiry; until then no task enablement, stop removal, worker start,
 mission pickup or autonomy claim is permitted.
 
+Later exact owner evidence supersedes that pre-activation hold for historical
+state only: activation `4ee5c3545bb84873b8f65581736a3caf` is sealed and
+non-replayable. Task Scheduler instance
+`{E66790D2-FAD2-4A7D-98AC-540CEC3BC444}` reached its registered action and
+exited `2147942401` (`0x80070001`) before supervisor or runner publication.
+Containment restored governed stop and disabled that exact task. The retained
+evidence cannot distinguish quoting, path, environment, launcher or early
+Python failure because the inline `pythonw -c` boundary retained no secret-safe
+stderr or startup phases. Current `CMQ-20260813-05` work is therefore
+`WORKING / SOURCE_ONLY_STARTUP_EVIDENCE_REPAIR`; it may repair and review the
+reusable pre-publication evidence boundary but may not stage, deploy, mutate or
+run Task Scheduler, start CORE, or reuse any sealed epoch. Promotion after a
+clean PR requires a new serialized validation/staging journey and a separately
+authorized fresh activation identity.
+
 Automatic promotion: each development lane continues through source, tests,
 review, normal integration, deployment and genuine deployed-agent acceptance,
 stopping only at a real protected, physical, external or serialized-release

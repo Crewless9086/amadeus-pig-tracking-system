@@ -161,12 +161,8 @@ class RuntimeActivationTests(unittest.TestCase):
 
     def _task(self):
         canonical = self.state.parent
-        watchdog = self.runtime / "scripts" / "charlie_runner_watchdog.py"
-        arguments = (
-            '-c "from dotenv import load_dotenv; load_dotenv(r\'{0}\', override=True); '
-            "import runpy,sys; sys.argv=[r'{1}','--json']; "
-            "runpy.run_path(r'{1}', run_name='__main__')\""
-        ).format(canonical / ".env", watchdog)
+        launcher = self.runtime / "scripts" / "charlie_runner_task_launcher.py"
+        arguments = f'"{launcher}"'
         return [{
             "task_name": "CHARLIE CORE Runner Watchdog", "task_path": "\\", "state": "Disabled",
             "action_count": 1,

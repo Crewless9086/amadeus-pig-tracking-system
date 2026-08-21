@@ -55,6 +55,23 @@
   and private SQLite remains non-authoritative recovery state. No deployment,
   configuration, migration or physical authority was added.
 
+## 2026-08-20 - CORE secret-safe pre-publication startup evidence prepared
+
+- Replaced the scheduled task's opaque inline `pythonw -c` bootstrap with a
+  dedicated stdlib-first launcher. Before dotenv or watchdog import it creates
+  bounded, exclusive HMAC-authenticated per-epoch phase records containing the exact launcher,
+  interpreter, working directory and action-argument digest; failures retain
+  only a sanitized capped stderr tail, exception type and exit code.
+- Activation verification now attaches only signature-valid records bound to
+  the fresh activation identity when a provider instance exits before normal
+  supervisor/runner publication. Tampered, partial and other-epoch records do
+  not become diagnostic truth, and concurrent or later epochs cannot displace
+  the current epoch's immutable evidence.
+- This is source/test evidence only. It did not change, enable or run Task
+  Scheduler, remove governed stop, activate CORE, reuse a sealed identity,
+  stage/deploy source, dispatch a mission or create any provider, database,
+  customer, farm, hardware or credential effect.
+
 - 2026-08-20: Corrected the Oom Sakkie rolling-current Brief continuation.
   A durably received and specialist-reconciled owner answer now recomposes the
   shared projection instead of editing the delivered Brief into a generic
