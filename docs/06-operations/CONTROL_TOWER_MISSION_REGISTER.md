@@ -4914,3 +4914,38 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   credential/device/CA/IPPS/CUPS/printer/job/print authority.
 - Durable decision packet:
   `C:\tmp\VISIBLE_GREEN_HOME_ASSISTANT_INSTALLATION_DECISION_PACKET_20260821.md`.
+
+## 2026-08-21 — Green dormant installation owner-observed complete
+
+- Mission/lineage: existing DOCUMENTS `DMQ-20260816-01`; this is the observed
+  completion of the bounded installation authority recorded immediately above,
+  not a new mission or commissioning authority.
+- Owner-observed device evidence: `Amadeus Green Print Bridge` version `0.2.0` is
+  installed; status `Stopped`; `Start on boot` OFF; app never started `YES`;
+  deviation `NONE`.
+- Target owner outcome: one genuine natural Oom Sakkie request produces exactly one
+  correct physical weekly weighing sheet through the commissioned deployed runtime,
+  with canonical/provider/physical proof, safe cleanup, automatic follow-up, a later
+  terminal-independent cycle and reduced manual printing work.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; dormant package placement did not configure, start, commission
+  or physically prove the printing capability.
+- Classification: `DORMANT_INSTALLATION_COMPLETE / UNCOMMISSIONED /
+  AUTHORITY_DISABLED`; Business completion is `NO`.
+- Enabling-stage progress: the reversible Home Assistant package installation gate
+  is complete with the required safe stopped state. No agent execution occurred.
+- Provenance limitation: displayed version `0.2.0` alone does not prove the exact
+  installed container image or source revision. The reviewed Dockerfile defaults
+  `SOURCE_COMMIT=unknown`; installed-image provenance remains an exact commissioning
+  prerequisite and must not be inferred from version or repository main.
+- Explicit continuing prohibition: no app Start, options, canonical credential,
+  farm/Green/printer/queue/registry identity, private CA, IPPS URI, CUPS/printer
+  mapping or access, job creation, synthetic/genuine print trigger, physical print,
+  hardware operation or autonomous activation is authorized.
+- First missing real-life gate: complete every safe read-only provenance and private
+  endpoint/IPPS/identity preparation step, then present one separate exact protected
+  commissioning decision. The app remains stopped and start-on-boot disabled.
+- Next automatic action/wake: Control Tower continues non-actuating commissioning
+  preparation; wake the protected lane only when immutable installed-image identity,
+  private route/trust/device facts and exact rollback are ready. Physical printing
+  remains a later separate acceptance boundary.

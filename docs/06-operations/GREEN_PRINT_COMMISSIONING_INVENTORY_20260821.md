@@ -1,6 +1,6 @@
 # Green Print Commissioning Inventory - 2026-08-21
 
-Status: `LOCAL_BASELINE_PREPARED / DORMANT_INSTALLATION_ONLY_AUTHORIZED_NOT_OBSERVED / NOT_COMMISSIONED`
+Status: `DORMANT_INSTALLATION_OWNER_OBSERVED / STOPPED / START_ON_BOOT_OFF / NOT_COMMISSIONED`
 
 Mission: existing DOCUMENTS mission `DMQ-20260816-01`, fixed pilot
 `farm.weekly_weight_sheet.v1`, A4, exactly one copy, monochrome, one-sided.
@@ -9,7 +9,9 @@ Charl has authorized one bounded dormant installation step only: while GitHub ma
 is verified at `f5d6634b25142d95a943f2c7c10a89fbfd5a4383`, add the private Amadeus
 repository and install `Amadeus Green Print Bridge` version `0.2.0`, never press
 Start, and immediately prove the app is `Stopped` with `Start on boot` OFF before
-leaving the page or rebooting. This approval has not yet been exercised or observed.
+leaving the page or rebooting. Charl subsequently observed that exact bounded
+installation state: version `0.2.0` installed, `Stopped`, `Start on boot` OFF,
+app never started, and no deviation.
 If the app starts, cannot remain stopped, cannot disable Start on boot, or the
 repository/package identity differs, stop/uninstall it and report the deviation.
 
@@ -96,8 +98,13 @@ commissioning or autonomous activation.
 
 ## Explicit zero-activation state
 
-- Private repository not added; app not uploaded/installed/built locally/started.
-- CUPS app/service not installed or started; no fixed queue or printer configuration.
+- Private repository added and app version `0.2.0` installed; owner-observed status
+  `Stopped`; `Start on boot` OFF; app never started; deviation none.
+- Installation/version alone does not prove the exact installed image/source commit.
+  `Dockerfile` defaults `SOURCE_COMMIT=unknown`, and no installed-image provenance
+  inspection has occurred. Do not infer exact head `411da4b` or source `f5d6634b`
+  from the displayed package version.
+- CUPS app/service not started; no fixed queue or printer configuration.
 - Private CA and adapter credential not installed.
 - Green/printer registry pair not registered from Green.
 - No canonical, synthetic or farm print job; no document submission; no physical
@@ -105,13 +112,16 @@ commissioning or autonomous activation.
 
 ## Dormant installation authorization
 
-- Approval state: authorized but not yet observed or executed.
+- Approval state: exercised within scope and owner-observed complete; installation is
+  enabling-stage progress only.
 - Exact permitted effect: add the private repository and install package version
   `0.2.0` only while authoritative main is exact `f5d6634b25142d95a943f2c7c10a89fbfd5a4383`.
 - Required final state: app `Stopped`; `Start on boot` OFF; no configured options;
   no printer/CUPS contact; no canonical job.
-- Wake condition: fresh on-device evidence of that exact stopped state, or the
-  exact deviation if it cannot be achieved.
+- Observed final state: version `0.2.0`; `Stopped`; `Start on boot` OFF; never
+  started; deviation none.
+- Wake condition: a separately prepared protected commissioning decision after all
+  safe provenance/private-endpoint/IPPS/identity preparation is complete.
 - Prohibited: Start, reboot before Start-on-boot is proven OFF, credentials,
   registry/device/queue values, private CA, IPPS URI, CUPS/printer access,
   commissioning, jobs and printing.
@@ -120,8 +130,7 @@ commissioning or autonomous activation.
 
 ## First remaining gates
 
-1. Exercise the bounded dormant-installation authority and prove the package is
-   `Stopped` with `Start on boot` OFF, or report and roll back the exact deviation.
+1. Establish exact installed-image/source provenance without starting the app.
 2. Through separately protected commissioning, determine the exact IPPS endpoint and
    certificate metadata; validate SAN/trust without printing; register the exact
    private identities, queue and least-privilege credential.
