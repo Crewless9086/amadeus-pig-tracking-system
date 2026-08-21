@@ -2,6 +2,34 @@
 
 Lifecycle classification: transitional commissioning guide; not commissioned. Pilot: `farm.weekly_weight_sheet.v1` only. It becomes active only after canonical PDF/request/confirmation source, a reviewed crash-safe adapter, deployment, and fresh physical acceptance succeed.
 
+## Reviewed Home Assistant OS architecture decision
+
+The smallest supported target is the private aarch64 Home Assistant app in
+`green_print_bridge/`, not a privileged host modification and not a separate
+computer. Official Home Assistant app constraints provide an isolated container,
+persistent `/data`, tmpfs, automatic boot, cold backup, option schemas, read-only
+`addon_config` certificate injection and AppArmor. The candidate maps no Home
+Assistant configuration, Docker socket, hardware bus or host network; publishes
+no port; and requests no privileged capability. Local CUPS and the adapter can
+therefore run inside protection mode. A separate private host becomes necessary
+only if commissioning proves the printer cannot be reached through ordinary
+private container networking or its driver cannot run on aarch64 without
+privileged device/host access. That blocker is not currently demonstrated.
+
+Architecture sources reviewed on 2026-08-21:
+
+- https://developers.home-assistant.io/docs/apps/
+- https://developers.home-assistant.io/docs/apps/configuration/
+- https://developers.home-assistant.io/docs/apps/repository/
+- https://developers.home-assistant.io/docs/apps/security/
+- https://developers.home-assistant.io/docs/apps/publishing/
+
+Current Home Assistant documentation deprecates `build.yaml` for current build
+pipelines. The app's pinned base image and OCI/Home Assistant labels therefore
+live in `Dockerfile`; the retained `build.yaml` is compatibility-only and may be
+removed in a later separately reviewed cleanup after supported Supervisor
+versions no longer consume it.
+
 This guide is for Charl's later, explicitly authorized on-site commissioning. It does not authorize a print, configuration change, credential change, deployment, public exposure, or farm-data write. Stop whenever an observation differs; record it as Unknown and return it to the technical maintainer. Do not improvise.
 
 ## Before the appointment
@@ -11,6 +39,8 @@ This guide is for Charl's later, explicitly authorized on-site commissioning. It
 3. Ask the technical maintainer for a one-use commissioning window and the protected identity-registration procedure. Charl must not invent IDs, URLs, tokens, certificates, queue names, or passwords.
 4. Keep Home Assistant, Green, CUPS, and the printer on the private farm network. No router port-forward, public DNS, public tunnel, cloud webhook, or Internet-exposed CUPS/Home Assistant endpoint is allowed.
 5. Have A4 paper available. Do not load confidential discarded sheets for reuse.
+6. Review the exact app commit and `green_print_bridge/DOCS.md`. Preserve the
+   prior manual print path; installation does not retire it.
 
 ## Observe without changing anything
 
@@ -30,6 +60,13 @@ This guide is for Charl's later, explicitly authorized on-site commissioning. It
 6. The maintainer sets the only allowed options: A4, one copy, monochrome, one-sided. No request can override them.
 7. The maintainer verifies restart recovery, expired-lease recovery, storage-exhaustion fail-safe, 48-hour retry-to-held transition, Continue/Cancel handling, and deletion of temporary PDFs after completion, cancellation, or held resolution using synthetic non-farm fixtures only.
 8. The maintainer proves that Green/CUPS is only a local execution adapter: the canonical Documents service owns request/job identity and Oom Sakkie delegates exactly one job. No Home Assistant automation, CUPS queue, spreadsheet, or local database becomes an authoritative document queue.
+9. Add the private repository and configure the app through Home Assistant only
+   after the exact artifact passes review. Place the private CA in the app's
+   read-only `addon_config` directory. Never paste options into a shell or log.
+10. Confirm the app starts in protection mode with no published ports, host
+    network, Docker socket, Home Assistant config map, USB or privileged access.
+    Confirm `/data/health.json` reports a fresh `event_waiting` heartbeat and no
+    eligible job before the genuine acceptance window.
 
 ## Authorized pilot acceptance (separate future window)
 
@@ -57,3 +94,7 @@ This guide is for Charl's later, explicitly authorized on-site commissioning. It
 3. Preserve durable non-content metadata/evidence for audit; remove temporary PDFs through the adapter cleanup path.
 4. Remove the local CUPS queue only if the maintainer confirms it has no unrelated owner. Do not alter printer/network/Home Assistant configuration merely to roll back source.
 5. The prior manual weekly-sheet journey remains available until the operational pilot is proven and explicitly retired.
+6. Before restore or uninstall, stop the app and reconcile every local
+   non-terminal job against canonical Supabase and CUPS. Restoring SQLite never
+   authorizes submission. Revoke the credential before uninstall; retain required
+   content-free audit evidence because Supervisor removal deletes `/data`.

@@ -988,3 +988,23 @@ Current Stage 4 surface:
 - `supabase/migrations/202608200002_create_green_print_jobs.sql` is an unapplied
   private canonical job/append-only event schema proposal. It grants no print,
   migration, deployment or configuration authority.
+- `repository.yaml` and `green_print_bridge/` form the smallest private
+  Home Assistant app repository artifact: aarch64-only protected container,
+  local CUPS, fixed options/registered queue, read-only private-CA injection,
+  `/data` crash ledger and health, tmpfs spool, cold backup, restart worker,
+  AppArmor and no exposed ports, host network, Docker socket or hardware maps.
+- `green_print_bridge/app/service.py` polls one authenticated canonical intake,
+  accepts only the protected digest/version envelope, retrieves from its exact
+  private HTTPS origin with certificate verification, submits by argument-array
+  to the configured CUPS queue, observes before retry and emits content-free
+  canonical provider evidence. Supabase remains truth; local SQLite remains
+  recovery only.
+- The intake route and private-CA mount path are source-fixed, HTTPS redirects
+  and public endpoint resolution fail closed, CUPS observations match exact job
+  identities, and restart reconciliation drains persisted attempts before new
+  canonical intake. These controls prevent option text or recovery races from
+  creating an alternate queue, retrieval route or second physical effect.
+- `tests/test_green_print_home_assistant_app.py` uses synthetic non-farm fixtures
+  to cover packaging, security, digest and fixed-policy binding, replay,
+  concurrency, restart state, ambiguity, CUPS argument safety and log/health
+  redaction.

@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+- 2026-08-21: Packaged the bounded DOCUMENTS Green adapter as a source-only,
+  private aarch64 Home Assistant app repository after review of official app,
+  configuration, repository, publishing and security constraints. The protected
+  container hosts local CUPS without host privilege or public ports, polls the
+  canonical HTTPS intake, verifies private certificate trust and document
+  digest, uses a fixed registered queue/options, persists recovery metadata in
+  `/data`, spools on tmpfs and reports redacted health. No installation,
+  credentials, migration, deployment, provider call or physical print occurred.
+  Exact-current review then fixed redirect/rebinding exposure, intake ambiguity,
+  CUPS substring matching and restart ordering; 33 focused tests, Brain Guard,
+  diff validation and a `linux/arm64` container build/inspection pass.
+
 - 2026-08-21: Bound routine weekly weighing to the farm-local Monday owner-work
   window unless separate canonical evidence explicitly proves an exceptional
   weighing due now. Promoted canonically due Molly litter first treatment to

@@ -1378,3 +1378,35 @@ deployment decision. Physical commissioning and one genuine authenticated Oom
 Sakkie request require a later separately protected on-site window; only exact
 canonical/provider/physical proof plus a later terminal-independent cycle can
 close the mission.
+
+Exact-current source evidence: 33 focused document/app tests pass, deterministic
+Brain Guard reports zero findings, `git diff --check` passes, and Docker builds
+and inspects the package as `linux/arm64` with the required Home Assistant and
+OCI labels. Container inspection finds CUPS `cupsd`, `lp`, `lpstat` and
+`lpadmin`, compiles the embedded Python, and validates the entrypoint shell.
+Security/data-integrity review additionally binds the intake path and private-CA
+path in source, rejects redirects and public DNS resolution, requires exact
+CUPS provider identities, and reconciles persisted local attempts before new
+intake. This remains synthetic terminal-invoked engineering evidence only.
+
+#### 2026-08-21 installable-app continuation
+
+The same branch was additively reconciled with authoritative main
+`278f4b0b75be72a0a0e5f9af09e9b67699c1912a`, preserving the newly merged Oom
+Sakkie owner-attention work. Official Home Assistant constraints support an
+aarch64 protected app without privileged host access. `repository.yaml` and
+`green_print_bridge/` now provide local CUPS, automatic worker polling, exact
+canonical/protected envelope intake, verified private HTTPS PDF retrieval,
+fixed queue/options, provider observation, `/data` recovery, tmpfs cleanup,
+redacted health/logs, cold backup and rollback/uninstall guidance. Tests remain
+synthetic and non-actuating.
+
+Lifecycle remains `RELEASE_HOLD / ENABLING_SOURCE_ONLY`; strategic class
+`CURRENT_BLOCKER`, recovery WIP slot 3. No app was installed or registered, no
+secret/certificate/device fact was collected, and no canonical/provider/hardware
+effect occurred. Automatic promotion trigger: reviewed PR merge, separately
+authorized migration/deployment and private on-site commissioning. Business
+completion still requires the deployed Oom Sakkie actor's fresh authenticated
+natural request, one canonical job, provider-origin CUPS readback, exactly one
+physically confirmed page, cleanup/follow-up and a later terminal-independent
+cycle.
