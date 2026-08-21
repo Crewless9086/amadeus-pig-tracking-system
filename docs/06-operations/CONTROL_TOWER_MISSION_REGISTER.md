@@ -3686,3 +3686,36 @@ BEACON remains at protected publication authority. CORE and SAM remain strategic
 frozen from new expansion in the absence of freshly attributable current terminal
 work. No eligible safe implementation lane is left idle: the nearest continuation
 crosses the protected PR #1142 merge/deploy boundary.
+
+### PR #1142 exact release authority and dispatch - 2026-08-21
+
+Charl explicitly authorized merge and deployment of exact PR #1142 head
+`ea4247ec1b571f89b91fe4550c47cbd1d2aadfad` through the normal serialized release
+lane after overlapping-document reconciliation. Fresh pre-dispatch evidence proves
+the PR remains open, non-draft, clean, mergeable, exact-head bound and all three
+hosted checks successful; authoritative main remains `2548d99a`. No other attributable
+`codex exec` release terminal was active, so the serialized lane was clear.
+
+Control Tower directly started the visible OOM SAKKIE release-and-acceptance
+terminal in the preserved clean PR #1142 worktree. Fresh ancestry binds PowerShell
+`30624`, Node `38600` and Codex `36452` to prompt
+`C:\tmp\OOM_PR1142_RELEASE_ACCEPTANCE_PROMPT_20260821.md` and required full handover
+`C:\tmp\VISIBLE_OOM_PR1142_RELEASE_ACCEPTANCE_HANDOVER_20260821.md`. Dispatch is
+`delivered / started`; later merge, deployment, loaded-revision, runtime and
+handover evidence are required for progress. OOM SAKKIE is now `ACTIVE - DO NOT
+INTERRUPT`, `OPERATING_SPINE`, recovery WIP slot 2.
+
+Authority is immutable-content merge, governed deployment and read-only genuine
+runtime observation only. It excludes medication, purpose or farm/customer/public
+writes, migrations, credentials/devices, terminal-created Telegram output,
+publication, spend and hardware action. Runtime/source work in PRs #1143, #1145 and
+#1150 must be preserved while overlapping register/source-map/changelog additions
+are reconciled. If the merged/deployed content would materially differ from the
+authorized head, a new exact protected decision is required.
+
+Automatic continuation is exact loaded-revision verification and genuine deployed
+Oom Sakkie manager observation. Business completion remains false until the deployed
+actor receives a genuine trigger, produces canonical and provider/owner-channel
+readback, owns follow-up and proves a later terminal-independent cycle. DOCUMENTS,
+ROOTLINE borehole and BEACON remain on their separate protected boundaries; CORE,
+SAM, HERDMASTER and CODEX UI receive no duplicate collision-prone dispatch.
