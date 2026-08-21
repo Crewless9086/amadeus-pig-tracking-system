@@ -325,7 +325,7 @@ def _claim_irrigation_output(body):
                 where review_event_id=%s""", (event_id,))
             if cursor.fetchone():
                 return {"success": True, "created": False, "status": "execution_replay"}
-            cursor.execute(f"""select 1
+            cursor.execute("""select 1
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
                   and review_json->'rootline_execution'->>'action'='claim_before_on'
@@ -341,7 +341,7 @@ def _claim_irrigation_output(body):
                 segment_number=int(body.get("segment_number") or 0))
             if blocked:
                 return {"success": True, "created": False, "status": blocked}
-            cursor.execute("""select 1
+            cursor.execute(f"""select 1
                 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
                   and claim.review_json->'rootline_execution'->>'action'
