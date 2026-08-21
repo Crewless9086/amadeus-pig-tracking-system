@@ -16,7 +16,8 @@ def client(monkeypatch):
 
 
 def headers(**extra):
-    return {"Authorization": "Bearer exact-secret", "X-Amadeus-Green-Id": "green-registered", **extra}
+    return {"Authorization": "Bearer exact-secret", "X-Amadeus-Green-Id": "green-registered",
+            "X-Amadeus-Worker-Id": "green-worker-epoch", **extra}
 
 
 def test_browser_roles_and_wrong_worker_identity_are_denied(client):
@@ -33,7 +34,7 @@ def test_claim_uses_authenticated_boundary_and_minimized_response(client):
         response = client.post("/api/documents/print-jobs/claims", headers=headers(),
                                json={"worker_id": "green-worker-epoch", "lease_seconds": 300})
     assert response.status_code == 200
-    assert call.call_args.args[1] == ("green-worker-epoch", 300)
+    assert call.call_args.args[1] == ("green-registered", "green-worker-epoch", 300)
     assert "pdf_bytes" not in response.get_json()["job"]
     assert "authenticated_principal_id" not in response.get_json()["job"]
 

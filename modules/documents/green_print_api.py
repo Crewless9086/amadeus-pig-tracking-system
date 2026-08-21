@@ -40,7 +40,9 @@ def _authenticate():
     if len(bucket) >= RATE_LIMIT:
         return None, _deny(429, "documents_worker_rate_limited")
     bucket.append(now)
-    return green_id, None
+    worker_id = request.headers.get("X-Amadeus-Worker-Id", "").strip()
+    if not _ID.fullmatch(worker_id): return None, _deny(401, "documents_worker_identity_required")
+    return (green_id, worker_id), None
 
 
 def _json_body():
@@ -56,11 +58,11 @@ def _json_body():
 
 def _connect():
     import psycopg
-    url = os.getenv(DATABASE_URL_ENV, "").strip()
+    url = os.getenv("DOCUMENTS_GREEN_DATABASE_URL", "").strip()
     if not url:
-        raise RuntimeError("documents_database_unavailable")
+        raise RuntimeError("documents_worker_database_unavailable")
     return psycopg.connect(url, connect_timeout=5,
-                           options="-c statement_timeout=5000 -c lock_timeout=2000")
+        options="-c role=documents_green_worker_executor -c statement_timeout=5000 -c lock_timeout=2000")
 
 
 def _call(function, args=(), *, many=False):
@@ -88,7 +90,10 @@ def _public_job(row):
                "authorization_receipt_id", "authorization_expires_at", "lease_token",
                "lease_expires_at", "attempt_id", "cups_job_id", "provider_id", "state",
                "command_kind", "command_receipt_id", "command_status", "command_outcome")
-    return {key: row[key] for key in allowed if key in row and row[key] is not None}
+    result = {key: row[key] for key in allowed if key in row and row[key] is not None}
+    if row.get("options_json") is not None:
+        result["options"] = row["options_json"]
+    return result
 
 
 def _bounded_id(value, field):
@@ -103,7 +108,7 @@ def _guard():
     worker, error = _authenticate()
     if error:
         return error
-    request.documents_green_id = worker
+    request.documents_green_id, request.documents_worker_id = worker
 
 
 @green_print_api_bp.post("/documents/print-jobs/claims")
@@ -112,7 +117,8 @@ def claim_job():
     if set(body) - {"worker_id", "lease_seconds"}:
         return _deny(400, "claim_fields_invalid")
     worker = _bounded_id(body.get("worker_id"), "worker_id")
-    rows = _call("claim_document_print_job", (worker,
+    if worker != request.documents_worker_id: return _deny(403, "worker_identity_mismatch")
+    rows = _call("claim_document_print_job", (request.documents_green_id, worker,
                  int(body.get("lease_seconds", 300))), many=True)
     job = _public_job(rows[0]) if rows else None
     return jsonify({"job": job, "lease_token": job.get("lease_token") if job else None,
@@ -125,7 +131,8 @@ def claim_command():
     if set(body) - {"worker_id", "lease_seconds"}:
         return _deny(400, "command_claim_fields_invalid")
     worker = _bounded_id(body.get("worker_id"), "worker_id")
-    rows = _call("claim_document_print_command", (worker,
+    if worker != request.documents_worker_id: return _deny(403, "worker_identity_mismatch")
+    rows = _call("claim_document_print_command", (request.documents_green_id, worker,
                  int(body.get("lease_seconds", 300))), many=True)
     job = _public_job(rows[0]) if rows else None
     return jsonify({"job": job, "lease_token": job.get("lease_token") if job else None,
@@ -139,7 +146,7 @@ def _bound_job_call(job_id, function, fields):
         return _deny(400, "transition_binding_fields_invalid")
     args = [job_id] + [body[name] for name in fields]
     value = _call(function, tuple(args))
-    return jsonify({"result": _public_job(value) if isinstance(value, dict) else value}), 200
+    return jsonify(_public_job(value) if isinstance(value, dict) else value), 200
 
 
 @green_print_api_bp.post("/documents/print-jobs/<job_id>/transition")
@@ -150,7 +157,7 @@ def transition(job_id):
     if any(name not in body for name in base): return _deny(400, "transition_binding_fields_invalid")
     metadata = {key: value for key, value in body.items() if key not in base}
     value = _call("transition_document_print_job", tuple([job_id] + [body[k] for k in base] + [metadata]))
-    return jsonify({"result": _public_job(value)}), 200
+    return jsonify(_public_job(value)), 200
 
 
 @green_print_api_bp.post("/documents/print-jobs/<job_id>/commands/transition")
@@ -163,34 +170,36 @@ def transition_command(job_id):
 @green_print_api_bp.post("/documents/print-jobs/<job_id>/lease/renew")
 def renew(job_id):
     body = _json_body()
+    if body.get("worker_id") != request.documents_worker_id: return _deny(403, "worker_identity_mismatch")
     fields = ("lease_token", "worker_id", "lease_seconds", "document_version",
               "pdf_sha256", "authorization_receipt_id")
     if set(body) != set(fields): return _deny(400, "lease_binding_fields_invalid")
     value = _call("renew_document_print_job_lease", tuple([job_id] + [body[k] for k in fields]))
-    return jsonify({"result": _public_job(value)}), 200
+    return jsonify(_public_job(value)), 200
 
 
 @green_print_api_bp.post("/documents/print-jobs/<job_id>/lease/recover")
 def recover(job_id):
     body = _json_body()
+    if body.get("worker_id") != request.documents_worker_id: return _deny(403, "worker_identity_mismatch")
     fields = ("worker_id", "lease_seconds", "document_version", "pdf_sha256",
               "authorization_receipt_id")
     if set(body) != set(fields): return _deny(400, "recovery_binding_fields_invalid")
     value = _call("recover_document_print_job_lease", tuple([job_id] + [body[k] for k in fields]))
-    return jsonify({"result": _public_job(value)}), 200
+    return jsonify(_public_job(value)), 200
 
 
 @green_print_api_bp.post("/documents/print-jobs/<job_id>/reconcile")
 def reconcile(job_id):
     body = _json_body()
     if set(body) != {"lease_token"}: return _deny(400, "reconcile_binding_fields_invalid")
-    value = _call("read_document_print_job", (job_id, body["lease_token"], request.documents_green_id))
-    return jsonify({"job": _public_job(value)}), 200
+    value = _call("read_document_print_job", (job_id, body["lease_token"], request.documents_green_id, request.documents_worker_id))
+    return jsonify(_public_job(value)), 200
 
 
 @green_print_api_bp.get("/documents/<document_id>/versions/<version_id>/pdf")
 def pdf(document_id, version_id):
-    value = _call("read_document_print_pdf", (document_id, version_id, request.documents_green_id))
+    value = _call("read_document_print_pdf", (document_id, version_id, request.documents_green_id, request.documents_worker_id))
     if not value: return _deny(404, "document_version_not_found")
     return Response(bytes(value), 200, {"Content-Type": "application/pdf", "Cache-Control": "no-store",
                                        "Content-Length": str(len(value))})

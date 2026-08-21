@@ -56,7 +56,7 @@ def db():
             cursor.execute(MIGRATION.read_text(encoding="utf-8"))
             cursor.execute("""insert into app_private.document_print_jobs
                 (job_id,document_id,document_version,document_revision,document_type,
-                 generator_id,pdf_sha256,canonical_input_sha256,pdf_bytes,authenticated_principal_id,
+                 generator_id,pdf_sha256,canonical_input_sha256,pdf_bytes,retrieval_url,options_json,authenticated_principal_id,
                  requester,request_channel,green_id,printer_id,cups_queue_id,registry_version,
                  authorization_receipt_id,authorization_expires_at,lease_owner,lease_token,
                  lease_expires_at,attempt_id,cups_job_id,provider_id,command_kind,
@@ -64,6 +64,8 @@ def db():
                  command_accepted_at,command_completed_at,state,retry_deadline)
                 values ('JOB-DB-1','DOC-DB-1','DOC-DB-1.r1',1,
                  'farm.weekly_weight_sheet.v1','web.print_sheets.v1',%s,%s,%s,
+                 'https://documents.internal/api/documents/DOC-DB-1/versions/DOC-DB-1.r1/pdf',
+                 '{"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}'::jsonb,
                  'principal','requester','private','green','printer','weekly-a4','registry-v1',
                  'AUTH-DB-1',clock_timestamp()+interval '1 hour','old-worker','old-lease',
                  clock_timestamp()-interval '1 second','ATTEMPT-DB-1','weekly-a4-42','ipps://printer',
