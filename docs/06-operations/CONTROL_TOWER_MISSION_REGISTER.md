@@ -4383,3 +4383,23 @@ was only a finished idle shell and may be closed as terminal hygiene. No deploye
 agent loop depends on it. The next automatic action is passive containment of exact
 revision `e027c403` and preparation of the smallest migration/API decision packet;
 no migration, installation, commissioning, print or revert occurs automatically.
+
+### DOCUMENTS owner-ratified dormant retention - 2026-08-21
+
+Charl explicitly approved `RETAIN_DORMANT` for exact merge
+`e027c403978ca3e5ccb5cc03a008c3075b76f941` and instructed Control Tower to keep
+Green inactive while continuing automatically with safe preparation and review of
+the canonical migration/API release. This approval does not authorize migration,
+installation, credential registration, printer mapping, commissioning, printing or
+hardware operation.
+
+Containment disposition is therefore `RATIFIED / RETAIN_DORMANT`. Mission
+`DMQ-20260816-01` remains owner-outcome `NONE`, usable `NO`, and
+`CONTAINED / INTEGRATED_SOURCE / DEPLOYED_GREEN_DORMANT`. The next authorized
+enabling stage is a bounded, non-secret, read-only migration/API release review at
+exact authoritative main. It must reconcile the unapplied Green migration, missing
+canonical API route and least-privilege executable-role grants, produce rollback
+and verification scope, and return the complete populated Control Tower handover.
+It may repair demonstrable source defects in an isolated branch but may not merge,
+deploy, apply a migration, access production data, install Green, register secrets
+or devices, contact CUPS/the printer, or create a print job.
