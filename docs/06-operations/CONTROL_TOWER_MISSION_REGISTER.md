@@ -4995,3 +4995,48 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   tuple. Activation remains a separate later decision.
 - Next automatic action: Control Tower prepares the isolated validation and stopped
   staging packet without waking Charl for avoidable technical work.
+
+## 2026-08-21 — Green stopped-state commissioning-gap procedure persisted
+
+- Mission/lineage: existing DOCUMENTS `DMQ-20260816-01`; no new mission, queue,
+  scheduler, database, registry or printer path.
+- Current dormant facts: app `Amadeus Green Print Bridge` version `0.2.0` is
+  owner-observed installed; `Stopped`; `Start on boot` OFF; never started; no
+  options, credential, IDs, CA, printer URI or queue entered; deviation none.
+- Target owner outcome: a genuine natural weekly-sheet request produces exactly one
+  correct physical A4 monochrome one-sided sheet through the commissioned deployed
+  Green worker, with canonical/CUPS/physical evidence, safe cleanup, automatic
+  follow-up and a later terminal-independent cycle.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; installed dormant is enabling-stage progress only and no Green
+  runtime, provider result or physical page exists.
+- Classification: `WORKING / COMMISSIONING_REQUIRED / UNCOMMISSIONED /
+  AUTHORITY_DISABLED / DORMANT_INSTALLED`; Business completion is `NO`.
+- First exact action: Charl returns one observation-only Home Assistant Info readback
+  containing nine facts: exact name/version; Stopped; Start on boot OFF; displayed
+  repository/source label; architecture/platform; Protection/AppArmor; image/build
+  identifier or digest; published-port display; and mappings display. Any unavailable
+  field must be `NOT EXPOSED`. This readback is `PENDING` and is not completed by
+  this register entry.
+- Observation boundary: do not Start, toggle, edit options, upload CA, use
+  Terminal/SSH, install another app, access the printer or test a URL. Leave the app
+  Stopped with boot OFF; report any deviation rather than repairing ad hoc.
+- Provenance hold: installed version/repository label alone does not prove exact
+  installed source/image. Supervisor-built image identity is `UNKNOWN` until a
+  digest/revision is exposed or a governed technical attestation exists.
+- Commissioning holds: private canonical DNS/route/pinned endpoint and TLS chain;
+  exact printer IPPS resource and private-IP SAN/trust; registered farm/Green/
+  printer/queue/registry identities; least-privilege bearer credential; private CA;
+  protected CUPS queue; real HAOS containment enforcement.
+- Continuing prohibitions: no app Start, commissioning, options, credentials, IDs,
+  CA, IPPS/CUPS/printer access or mapping, canonical/synthetic/genuine job, physical
+  print, TLS weakening, public/ordinary IPP, port exposure or autonomous activation.
+- Next automatic action: Control Tower validates the nine supplied fields; the
+  technical maintainer then resolves installed provenance and prepares one exact
+  non-actuating private-route/IPPS/trust/registry commissioning packet. Charl is not
+  asked to invent technical values or repeat installation authority.
+- Wake condition: Charl supplies the nine-field text readback or reports a stopped-
+  state deviation. Commissioning authority remains separately protected and is not
+  ready now.
+- Source handover:
+  `C:\tmp\VISIBLE_GREEN_DORMANT_INSTALLED_STATE_COMMISSIONING_GAP_HANDOVER_20260821.md`.
