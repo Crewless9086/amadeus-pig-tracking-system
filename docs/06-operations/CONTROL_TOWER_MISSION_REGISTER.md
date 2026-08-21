@@ -4107,3 +4107,34 @@ printer systems. It must close automatically with `APPROVE`, `REQUEST_CHANGES` o
 2. Approval reaches only one protected serialized merge decision. Charl's parallel
 Home Assistant Green preparation remains relevant but is not a dependency for this
 source review and is not operational proof.
+
+### Green immutable-head review requests two final bounded corrections - 2026-08-21
+
+Fresh inspection validates the independent 19,162-byte review handover at
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_FF0A_INDEPENDENT_REVIEW_HANDOVER_20260821.md`
+(SHA-256 `A7DA4C146FA7ABF18552570BFDE0A617B3D820AC9D47F80F820C85BE1F480089`).
+It is bound to clean PR #1150 head `ff0a37e58d10acfb6bb2d8cdf76999983c058ca4`,
+which remains open, clean and mergeable with all exact-head CI checks successful.
+
+The verdict is `REQUEST_CHANGES`, narrowed to two demonstrated gates. First,
+Continue/Cancel receipts are marked consumed before the local/provider work and
+durable final command outcome, leaving a crash window that can strand an accepted
+command. Second, the fresh ARM64 inspection image did not traverse the repository's
+actual Dockerfile/Home Assistant builder path, so its correct labels and identities
+do not establish exact package-build provenance. The mission remains `WORKING /
+DEFECTIVE / ENABLING_SOURCE_ONLY`; owner outcome is `NONE`; usable now is `NO`.
+
+The review's Node/Codex work had ended while PowerShell PID `4196` remained as the
+visible idle shell Charl reported. Control Tower closed only that shell and verified
+it absent. It automatically continued the SAME mission/worktree/branch/PR for only
+the two corrections. The visible implementation terminal is freshly bound to
+PowerShell PID `18652`, Node PID `39000` and Codex PID `28612`, prompt
+`C:\tmp\DOCUMENTS_GREEN_THIRD_REVIEW_CORRECTION_PROMPT_20260821.md` and mandatory
+handover `C:\tmp\VISIBLE_DOCUMENTS_GREEN_THIRD_REVIEW_CORRECTION_HANDOVER_20260821.md`.
+
+Authority is source/tests, exact repository-Dockerfile build evidence, commit/push
+to PR #1150 and a new independent-review request only. No merge, migration,
+deployment, installation, commissioning, production/CUPS/printer access or physical
+print is authorized. The terminal must close automatically. DOCUMENTS remains
+`ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP slot 2; all other holds and the
+final deferred Chromecast addendum remain unchanged.
