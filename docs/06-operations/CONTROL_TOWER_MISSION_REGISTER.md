@@ -3602,3 +3602,43 @@ sweep; their preserved queues remain `FROZEN - STRATEGIC WIP` or protected relea
 holds rather than manufactured utilization. DOCUMENTS and ROOTLINE borehole retain
 their exact source-ready protected release evidence; neither is operational or
 usable. No open terminal shell alone is classified as productive work.
+
+### Purpose-review addendum stopped-terminal containment - 2026-08-21
+
+Charl reported that the OOM SAKKIE terminal stopped but did not close. Fresh
+inspection confirms the implementation advanced cleanly to pushed PR #1142 head
+`ea4247ec1b571f89b91fe4550c47cbd1d2aadfad`, preserving `0636fc3a` in ancestry.
+GitHub reports the PR open, mergeable and all three exact-head hosted checks green.
+The branch worktree is clean. The terminal reports 216 passed tests, 11 environment
+skips, 32 subtests, 119 Brain Guard inputs and responsive Playwright evidence.
+These are enabling-stage facts only.
+
+The purported handover at
+`C:\tmp\VISIBLE_OOM_PURPOSE_REVIEW_ADDENDUM_LAST_MESSAGE_20260821.md` is only 945
+bytes and points to itself as the complete handover. It does not populate the
+mandatory template and is therefore `INVALID_HANDOVER`. The original PowerShell,
+Node and Codex processes remained open after source work stopped, with no fresh
+diff or activity; process existence was rejected as productive work. Control Tower
+closed those stale process descendants while preserving the clean pushed worktree.
+
+Mission classification remains `REVIEW_HOLD / BUILT_BUT_UNPROVEN`, owner outcome
+achieved `NONE`, usable now `NO`. No deployed revision, autonomous trigger/worker
+heartbeat, genuine canonical case, provider/channel result, protected purpose
+decision, canonical closure or later independent cycle is proven. Control Tower
+directly started a visible closeout-recovery terminal in the same worktree, bound
+to PowerShell `37700`, Node `8024` and Codex `21272`. It may validate exact-head
+evidence and return the complete populated template only; it has no merge,
+deployment, production, Telegram, medication, customer, migration or hardware
+authority. Output must be the full handover at
+`C:\tmp\VISIBLE_OOM_PURPOSE_REVIEW_COMPLETE_HANDOVER_20260821.md`, after which the
+terminal must close automatically.
+
+Current recovery WIP remains one `OPERATING_SPINE` slot. OOM SAKKIE is `ACTIVE -
+DO NOT INTERRUPT` on closeout recovery. HERDMASTER and CODEX UI remain serialized
+into the same PR #1142 mission. DOCUMENTS PR #1150 at `9616e484` and ROOTLINE
+borehole PR #1151 at `def542a5` are freshly verified open, mergeable and green but
+remain protected release/commissioning holds with no physical outcomes. BEACON PR
+#1145 at `b1e15b43` is open, mergeable and green but remains at the protected public
+publication boundary. CORE and SAM have no freshly attributable eligible terminal
+work in this sweep and remain frozen under strategic WIP rather than receiving
+manufactured expansion tasks.
