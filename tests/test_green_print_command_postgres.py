@@ -4,6 +4,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from psycopg import sql
 
 
 URL = os.getenv("GREEN_PRINT_DISPOSABLE_POSTGRES_URL", "").strip()
@@ -23,9 +24,15 @@ def db():
                 if not exists (select 1 from pg_roles where rolname='anon') then create role anon; end if;
                 if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
             end $$""")
-            cursor.execute("drop schema if exists app_private cascade")
-            cursor.execute("create schema app_private")
+            cursor.execute("create schema if not exists app_private")
             cursor.execute("create extension if not exists pgcrypto with schema app_private")
+            cursor.execute("""select n.nspname from pg_extension e join pg_namespace n
+                on n.oid=e.extnamespace where e.extname='pgcrypto'""")
+            extension_schema = cursor.fetchone()[0]
+            if extension_schema != "app_private":
+                cursor.execute(sql.SQL("""create or replace function app_private.gen_random_bytes(integer)
+                    returns bytea language sql as 'select {}.gen_random_bytes($1)'""").format(
+                        sql.Identifier(extension_schema)))
             cursor.execute(MIGRATION.read_text(encoding="utf-8"))
             cursor.execute("""insert into app_private.document_print_jobs
                 (job_id,document_id,document_version,document_revision,document_type,
@@ -43,13 +50,9 @@ def db():
                  'continue','COMMAND-DB-1',clock_timestamp()-interval '2 minutes','completed',
                  'continued',clock_timestamp()-interval '2 minutes',clock_timestamp()-interval '1 minute',
                  'claimed',clock_timestamp()+interval '1 hour')""", (PDF_SHA, "b" * 64))
-        connection.commit()
         yield connection
     finally:
         connection.rollback()
-        with connection.cursor() as cursor:
-            cursor.execute("drop schema if exists app_private cascade")
-        connection.commit()
         connection.close()
 
 
@@ -73,11 +76,12 @@ def test_completed_outcome_rejects_stale_lease_and_every_wrong_binding(db, field
     with db.cursor() as cursor:
         cursor.execute("select count(*) from app_private.document_print_job_events")
         before = cursor.fetchone()[0]
+        cursor.execute("savepoint rejected_replay")
     kwargs = {field: value}
     with pytest.raises(psycopg.errors.RaiseException, match="command fence or binding invalid"):
         transition(db, **kwargs)
-    db.rollback()
     with db.cursor() as cursor:
+        cursor.execute("rollback to savepoint rejected_replay")
         cursor.execute("select command_status,command_outcome,count(*) over() from app_private.document_print_jobs")
         assert cursor.fetchone() == ("completed", "continued", 1)
         cursor.execute("select count(*) from app_private.document_print_job_events")
