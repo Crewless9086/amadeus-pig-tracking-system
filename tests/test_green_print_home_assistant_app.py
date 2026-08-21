@@ -20,7 +20,7 @@ def test_package_is_bounded_and_privilege_split():
     assert cfg["arch"]==["aarch64"] and cfg["privileged"]==[] and cfg["host_network"] is False
     assert "adduser -S -D -H" in docker and "su-exec greenprint:greenprint" in init and "su-exec cupsd:cupsd" in init
     assert "lpadmin" not in init and "exec su-exec greenprint" in init
-    assert docker.startswith("FROM ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
+    assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
