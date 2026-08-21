@@ -4655,3 +4655,49 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
 - Protected/external wake: authenticated session availability and genuine
   authorized mission receipt; no activation, production write or synthetic owner
   result is authorized by this record.
+
+## 2026-08-21 — ROOTLINE #1149 governed rollout verification
+
+- Mission/lineage: existing `RMQ-20260813-03A / RMQ-20260813-03B`, PR #1149.
+- Target owner outcome: deployed ROOTLINE safely performs fertilizer injection
+  during a genuine eligible irrigation lifecycle with verified clean-water
+  pre-flow, serialized bounded pulses, canonical/provider/physical delivery,
+  clean-water flush, final injector and parent OFF, automatic follow-up, a later
+  terminal-independent cycle and removed manual timing/reconciliation.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; no commissioned injector run, genuine fertilizer delivery,
+  physical result, final production OFF, later independent cycle or owner-work
+  reduction is proven.
+- Enabling-stage progress: independently approved PR #1149 merged as exact commit
+  `a50ae724826e567f18c9c6aec8581a5a20e49eab`. Render deployment
+  `dep-da49f3ks728c73b8nju0` reached the exact revision. Production `/health`
+  returned HTTP 200 with `status=ok`; `/health/revision` returned HTTP 200,
+  `provider=render`, `identity_complete=true` and exact revision `a50ae724...`.
+- Runtime safety truth: verification made zero provider control calls, zero writes,
+  zero flag changes and zero hardware actions. The protected provider-readback and
+  irrigation-plan routes returned HTTP 403 without an owner session, proving their
+  access guard and zero effect but not current device state. No governed
+  authenticated session or provider credential was available; mixer/injector
+  authority, current provider OFF and canonical unresolved-conflict state therefore
+  remain `Unknown`, not operationally proven. No unexpected actuation or regression
+  was observed from the available evidence, so rollback was not triggered.
+- Terminal status: post-merge verifier complete and released after handover.
+  Deployed-agent status: source loaded but fertilizer capability remains dormant /
+  uncommissioned and not proven operational.
+- Collision/serialization: PR #1151 still overlaps the irrigation execution store
+  and must be reconciled to post-#1149 main, retested and independently reviewed;
+  it cannot overwrite or bypass the released #1149 safety lifecycle.
+- First missing real-life gate: obtain already-governed authenticated read-only
+  canonical/provider evidence of registered injector identity, authority disabled,
+  deterministic OFF/native fail-stop and absence or ownership of any unresolved
+  parent-flow/OFF conflict; then request the separate protected RMQ-03A physical
+  commissioning decision.
+- Next automatic action: Control Tower continues read-only runtime verification when
+  its governed session is available, then prepares one exact protected isolated
+  injector commissioning request. RMQ-03B real-flow commissioning follows only
+  after RMQ-03A passes.
+- Protected/external wake: Charl is not needed now. Later protected owner authority
+  and physical presence are required for isolated commissioning, real-flow
+  acceptance and separate autonomous activation. A genuine eligible irrigation
+  trigger must come from the deployed runtime, never a terminal-manufactured event.
+- Business completion: `NO`; deployment evidence is enabling-stage progress only.
