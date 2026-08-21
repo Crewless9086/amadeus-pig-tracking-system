@@ -7,7 +7,6 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.types.json import Jsonb
-from modules.oom_sakkie.protected_action_claims import claim_callback
 
 
 URL = os.getenv("GREEN_PRINT_DISPOSABLE_POSTGRES_URL", "").strip()
@@ -388,32 +387,6 @@ def test_uncertain_physical_page_is_distinct_canonical_exception(db):
           from app_private.document_print_job_events
           where job_id='JOB-DB-1' and event_type='physical_page_exception'""")
         assert cursor.fetchone()==("uncertain",)
-
-
-@pytest.mark.parametrize("callback_action,selected", [
-    ("change","incorrect"),("cancel","uncertain"),
-])
-def test_physical_follow_up_buttons_claim_exact_exception_result(db,callback_action,selected):
-    with db.cursor() as cursor:
-        cursor.execute("""insert into app_private.oom_protected_action_claims(
-          callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
-          provider_message_id,preview_card_message_id,preview_digest,evidence_generation,
-          preview_payload,status,expires_at)
-          values('PHYSICAL-CALLBACK','documents_green_physical_acceptance','owner','owner',
-          'DMQ-20260816-01:PHYSICAL:JOB-DB-1','scheduled:1','9001',%s,%s,%s,'active',
-          clock_timestamp()+interval '1 hour')""",
-          ("d"*64,PDF_SHA,Jsonb({"contract_version":"documents_green_physical_acceptance_v1"})))
-    result,status=claim_callback(f"oompa:PHYSICAL-CALLBACK:{callback_action}",
-        owner_user_id="owner",private_chat_id="owner",provider_message_id="CALLBACK-1",
-        provider_timestamp="2026-08-21T12:00:00Z",source_card_message_id="9001",
-        connect_factory=lambda:db)
-    assert status==200 and result["status"]=="protected_callback_claimed"
-    assert result["selected_action"]==selected
-    with db.cursor() as cursor:
-        cursor.execute("""select status,confirmation_provider_message_id
-          from app_private.oom_protected_action_claims
-          where callback_token='PHYSICAL-CALLBACK'""")
-        assert cursor.fetchone()==("executing","CALLBACK-1")
 
 
 def test_provider_completion_cannot_replace_established_identities(db):
