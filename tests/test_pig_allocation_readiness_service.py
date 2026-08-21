@@ -788,6 +788,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "suggested_purpose": "Grow Out",
                     "suggested_purpose_reason": "Pig is active/on farm.",
                     "suggested_purpose_confidence": "Medium",
+                    "purpose_review_state": "decision_due",
                 },
                 {
                     "pig_id": "PIG-CLASSIFIED",
@@ -800,6 +801,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "suggested_purpose": "Grow Out",
                     "suggested_purpose_reason": "Keep growing.",
                     "suggested_purpose_confidence": "Medium",
+                    "purpose_review_state": "resolved",
                 },
                 {
                     "pig_id": "PIG-OTHER",
@@ -813,6 +815,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "suggested_purpose": "Needs Review",
                     "suggested_purpose_reason": "Complete missing data.",
                     "suggested_purpose_confidence": "Low",
+                    "purpose_review_state": "weight_due",
                 },
             ],
         }
@@ -821,15 +824,14 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
             default_result = pig_weights_service.get_purpose_review_queue()
             litter_result = pig_weights_service.get_purpose_review_queue(litter_id="LIT-1")
 
-        self.assertEqual([row["pig_id"] for row in default_result["pigs"]], ["PIG-UNKNOWN", "PIG-OTHER"])
+        self.assertEqual([row["pig_id"] for row in default_result["pigs"]], ["PIG-UNKNOWN"])
         self.assertEqual(default_result["summary"]["needs_owner_decision"], 1)
-        self.assertEqual(default_result["summary"]["needs_data"], 1)
+        self.assertEqual(default_result["summary"]["needs_data"], 0)
         self.assertFalse(default_result["writes_to_sheets"])
         self.assertEqual(default_result["owner_agent"], "Herdmaster")
         by_id = {row["pig_id"]: row for row in litter_result["pigs"]}
-        self.assertEqual(set(by_id), {"PIG-UNKNOWN", "PIG-CLASSIFIED"})
+        self.assertEqual(set(by_id), {"PIG-UNKNOWN"})
         self.assertEqual(by_id["PIG-UNKNOWN"]["proposed_purpose"], "Grow_Out")
-        self.assertEqual(by_id["PIG-CLASSIFIED"]["review_status"], "classified")
 
     def test_apply_purpose_review_decisions_rejects_direct_write_without_batch(self):
         pig_rows = [

@@ -18,6 +18,7 @@ venv/
 .review_*/
 test-results/
 .pytest_cache/
+.testtmp/
 .mypy_cache/
 .ruff_cache/
 instance/*.sqlite3

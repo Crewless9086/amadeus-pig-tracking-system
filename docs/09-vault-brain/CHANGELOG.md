@@ -1,5 +1,48 @@
 # Vault Brain Changelog
 
+- 2026-08-21: Packaged the bounded DOCUMENTS Green adapter as a source-only,
+  private aarch64 Home Assistant app repository after review of official app,
+  configuration, repository, publishing and security constraints. The protected
+  container hosts local CUPS without host privilege or public ports, polls the
+  canonical HTTPS intake, verifies private certificate trust and document
+  digest, uses a fixed registered queue/options, persists recovery metadata in
+  `/data`, spools on tmpfs and reports redacted health. No installation,
+  credentials, migration, deployment, provider call or physical print occurred.
+  Exact-current review then fixed redirect/rebinding exposure, intake ambiguity,
+  CUPS substring matching and restart ordering; 33 focused tests, Brain Guard,
+  diff validation and a `linux/arm64` container build/inspection pass.
+
+- 2026-08-21: Bound routine weekly weighing to the farm-local Monday owner-work
+  window unless separate canonical evidence explicitly proves an exceptional
+  weighing due now. Promoted canonically due Molly litter first treatment to
+  names-first physical farm work without inferring product, dose or completion;
+  Unknown/completed evidence fails closed. Added allowlisted focused litter,
+  animal and bulk-weighing targets to the existing shared projection, preserving
+  homepage/full-view/Brief/Telegram parity and approved presentation styling.
+
+- 2026-08-20: Separated shared owner-action eligibility from specialist manager
+  urgency. Only exact owner needs and proved physical farm work now count;
+  delegated/waiting reconciliation remains Oom Sakkie-owned, watch context and
+  compact completed history remain separate, and raw tags/provenance stay in
+  collapsed detail across homepage, full view, Brief, Telegram and later voice.
+  No migration, new queue, farm write, provider send or inferred weighing
+  cohort was authorized; the observed 198-case composition and 0/78 cause
+  remain Unknown pending authenticated production readback.
+
+- 2026-08-20: Consolidated names-first owner-attention presentation in the
+  existing shared projection. Supported human names or familiar farm/business
+  meaning now lead Application, rolling Brief and Telegram titles; missing and
+  duplicate names stay explicit and safe, references remain secondary, and one
+  material-digest/message/owner-work envelope measures unchanged silence. No
+  queue, scheduler, database, Telegram lifecycle or protected authority was
+  added.
+
+- 2026-08-20: Registered the bounded source-only weekly-sheet PDF revision,
+  protected-confirmation binding and Green crash-recovery adapter contract.
+  Oom Sakkie remains operational actor, Supabase remains canonical job truth,
+  and private SQLite remains non-authoritative recovery state. No deployment,
+  configuration, migration or physical authority was added.
+
 ## 2026-08-20 - CORE secret-safe pre-publication startup evidence prepared
 
 - Replaced the scheduled task's opaque inline `pythonw -c` bootstrap with a
@@ -1744,3 +1787,9 @@
   operational finding without designing the fix; GENERAL investigates and
   scopes, Control Tower queues it, and CORE eventually removes the temporary
   relay.
+# 2026-08-21 — HERDMASTER purpose work joins canonical Oom Sakkie attention
+
+- Made Pig Allocation readiness the single day-14/post-wean eligibility and recommendation path for purpose-review work.
+- Projected one stable litter/cohort identity through weighing, protected purpose decision, deferment/reassessment and resolution using the existing Oom Sakkie manager-case lifecycle and shared owner-attention projection.
+- Made Pig Allocation the unified workspace while preserving `/purpose-review` as a compatibility deep link; no allocation, reservation, sale, customer, Telegram or farm-write authority was added.
+- Corrected HERDMASTER's stale purpose/data doctrine references to the authoritative Vault paths.

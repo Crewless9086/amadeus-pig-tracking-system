@@ -132,6 +132,10 @@ class SpecialistWorkItem:
             "mortality_fingerprints": dict,
             "welfare_exception": bool,
             "mortality_packet": dict,
+            "physical_work_ready": bool,
+            "routine_weekly_weighing": bool,
+            "exceptional_weighing_due_now": bool,
+            "pig_id": str,
         }
         unknown = set(self.metadata) - set(allowed_metadata)
         if unknown:

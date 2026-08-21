@@ -69,6 +69,11 @@ def test_breeding_animals_are_excluded_unless_individually_scheduled():
         "effective_at": "2026-08-11T06:00:00+02:00"}])
     assert scheduled["weight"]["breeding_excluded"] == []
     assert scheduled["weight"]["current_snapshot"]["eligible_tagged"] == 1
+    assert scheduled["weight"]["individual_weighing_due_now"][0]["pig_id"] == "S1"
+    item = consume_daily_manager_evidence(scheduled, observed_at=NOW).work_items[0]
+    assert item.metadata["physical_work_ready"] is True
+    assert item.metadata["exceptional_weighing_due_now"] is True
+    assert "pig:S1" in item.provenance.source_refs
 
 
 def test_breeder_weight_observation_or_cancelled_event_is_not_a_schedule():
@@ -85,6 +90,17 @@ def test_breeder_weight_observation_or_cancelled_event_is_not_a_schedule():
         {"pig_id": "S1", "event_type": "individual_weighing_cancelled",
          "effective_at": "2026-08-11T07:00:00+02:00"}])
     assert packet["weight"]["current_snapshot"]["eligible_tagged"] == 0
+
+
+def test_future_effective_individual_weighing_is_scheduled_but_not_due_now():
+    packet = build_daily_manager_evidence(
+        pigs=[pig("S1", "Maya", animal_type="Sow", purpose="Breeding")],
+        window_weights=[], prior_weights=[], lifecycle_events=[{
+            "pig_id": "S1", "event_type": "individual_weighing_due",
+            "effective_at": "2026-08-19T06:00:00+02:00"}],
+        analysis_date=date(2026, 8, 18))
+    assert packet["weight"]["current_snapshot"]["eligible_tagged"] == 1
+    assert packet["weight"]["individual_weighing_due_now"] == []
 
 
 def test_scheduled_breeder_without_usable_tag_remains_untagged_excluded():

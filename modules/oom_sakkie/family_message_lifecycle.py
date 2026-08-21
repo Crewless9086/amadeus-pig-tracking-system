@@ -450,6 +450,11 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     if not prior or str(prior.get("telegram_message_id") or "") != prior_id:
         return {"success": False, "status": "brief_replacement_prior_binding_unproven",
             "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    if str(prior.get("generation_digest") or "").lower() == digest:
+        return {"success": True, "status": "brief_replacement_unchanged_suppressed",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": prior_id, "previous_telegram_message_id": prior_id,
+            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
     if generation_events and any(
             str(row.get("owner_user_id") or "") != str(parsed.get("telegram_user_id") or "")
             or str(row.get("chat_id") or "") != str(parsed.get("telegram_chat_id") or "")

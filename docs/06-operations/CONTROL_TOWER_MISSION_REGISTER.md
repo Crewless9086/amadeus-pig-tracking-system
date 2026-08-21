@@ -1366,3 +1366,82 @@ deployed ROOTLINE actor to produce a fresh B execution or one exact truthful
 blocker, provider/canonical readback, physical proof and a later
 terminal-independent cycle. This terminal is forbidden from operating B/C,
 invoking the worker, controlling a provider or manufacturing acceptance.
+
+## 2026-08-20 - DOCUMENTS DMQ-20260816-01 Green print continuation
+
+The same `DMQ-20260816-01` mission resumed on branch
+`feat/green-print-bridge-20260820` and PR #1150 from preserved clean head
+`8ca84260`, one commit ahead of exact-current main `2548d99a`. PR #1009 remains
+open and unmerged; its historical two-line registration is lineage evidence
+only and is superseded by the current register record.
+
+The source candidate now includes deterministic A4 weekly-sheet PDF revision
+and SHA-256 binding, an exact existing-protected-claim payload, a private
+crash-recovery adapter ledger with fenced lease, persisted pre-submission
+attempt, reconciliation-before-retry, ambiguous Hold, 48-hour retry then
+protected Continue/Cancel, restart recovery and temporary-PDF deletion, plus an
+unapplied private Supabase canonical job/event migration with append-only audit
+enforcement. Tests are synthetic and non-actuating. No print, Telegram send,
+farm write, migration, deployment, credential, Home Assistant, CUPS, printer or
+network action occurred.
+
+Lifecycle remains `RELEASE_HOLD / ENABLING_SOURCE_ONLY`; strategic class
+`CURRENT_BLOCKER`, recovery WIP slot 3. OWNER OUTCOME ACHIEVED is `NONE` and the
+capability is not usable now. Automatic continuation remains the same mission
+after normal review/merge and an explicitly authorized serialized migration and
+deployment decision. Physical commissioning and one genuine authenticated Oom
+Sakkie request require a later separately protected on-site window; only exact
+canonical/provider/physical proof plus a later terminal-independent cycle can
+close the mission.
+
+Exact-current source evidence: 33 focused document/app tests pass, deterministic
+Brain Guard reports zero findings, `git diff --check` passes, and Docker builds
+and inspects the package as `linux/arm64` with the required Home Assistant and
+OCI labels. Container inspection finds CUPS `cupsd`, `lp`, `lpstat` and
+`lpadmin`, compiles the embedded Python, and validates the entrypoint shell.
+Security/data-integrity review additionally binds the intake path and private-CA
+path in source, rejects redirects and public DNS resolution, requires exact
+CUPS provider identities, and reconciles persisted local attempts before new
+intake. This remains synthetic terminal-invoked engineering evidence only.
+
+#### 2026-08-21 installable-app continuation
+
+The same branch was additively reconciled with authoritative main
+`278f4b0b75be72a0a0e5f9af09e9b67699c1912a`, preserving the newly merged Oom
+Sakkie owner-attention work. Official Home Assistant constraints support an
+aarch64 protected app without privileged host access. `repository.yaml` and
+`green_print_bridge/` now provide local CUPS, automatic worker polling, exact
+canonical/protected envelope intake, verified private HTTPS PDF retrieval,
+fixed queue/options, provider observation, `/data` recovery, tmpfs cleanup,
+redacted health/logs, cold backup and rollback/uninstall guidance. Tests remain
+synthetic and non-actuating.
+
+Lifecycle remains `RELEASE_HOLD / ENABLING_SOURCE_ONLY`; strategic class
+`CURRENT_BLOCKER`, recovery WIP slot 3. No app was installed or registered, no
+secret/certificate/device fact was collected, and no canonical/provider/hardware
+effect occurred. Automatic promotion trigger: reviewed PR merge, separately
+authorized migration/deployment and private on-site commissioning. Business
+completion still requires the deployed Oom Sakkie actor's fresh authenticated
+natural request, one canonical job, provider-origin CUPS readback, exactly one
+physically confirmed page, cleanup/follow-up and a later terminal-independent
+cycle.
+
+#### 2026-08-21 DMQ exact-head review correction
+
+Independent review requested changes at `4b6734fbed58ef29b3301cabdbd89332f68e82c7`.
+The same mission and branch now replace the installable worker's plain claimable
+GET/local-only fence with canonical atomic claim leases and fenced idempotent
+transitions; add protected Continue/Cancel and known-CUPS cancellation; pin
+canonical HTTPS and private IPPS transport; bind queue/provider evidence; fail
+closed on restore conflict, corrupt/partial ledger and low disk; and separate
+process liveness from business Hold. Bounded initialization launches dedicated
+non-root `greenprint` and `cupsd` identities with narrowed AppArmor access.
+
+This is correction-stage source and synthetic test evidence only. No migration,
+installation, deployment, credential, endpoint, Supabase, Telegram, CUPS,
+printer or physical effect occurred. OWNER OUTCOME ACHIEVED remains `NONE`;
+usability remains `NO`. Lifecycle becomes `REVIEW_HOLD / ENABLING_SOURCE_ONLY`
+after push. The automatic next action is fresh independent exact-head review of
+PR #1150. Only later separately authorized migration/deployment/commissioning,
+a genuine natural request, exact canonical/provider evidence, one correct page,
+cleanup/follow-up and a later terminal-independent cycle can close the mission.
