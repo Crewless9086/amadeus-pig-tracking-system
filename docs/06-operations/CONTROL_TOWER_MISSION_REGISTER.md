@@ -3849,3 +3849,49 @@ Fresh allocation: DOCUMENTS is `ACTIVE - DO NOT INTERRUPT`; OOM SAKKIE remains a
 runtime-owned external evidence wait; ROOTLINE and BEACON remain protected holds;
 HERDMASTER/CODEX UI depend on OOM evidence; CORE and SAM remain strategically frozen
 from expansion. No duplicate mission or idle watcher exists.
+
+### Green exact-head review request-changes and same-lineage correction - 2026-08-21
+
+Fresh inspection proves the independent DOCUMENTS review terminal closed and
+returned the complete populated 29,768-byte handover at
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_EXACT_HEAD_REVIEW_HANDOVER_20260821.md` (SHA-256
+`FD0456949B395CE0E78C53935E80B9F10BFC428428FACA0647E183B554572142`). The review
+is bound to unchanged PR #1150 head `4b6734fbed58ef29b3301cabdbd89332f68e82c7`;
+the worktree remains clean, the PR open/non-draft/mergeable/clean, and all three
+exact-head CI checks remain successful. These are enabling-stage facts only.
+
+The independent verdict is `REQUEST_CHANGES`. Its first demonstrated gate is a
+critical cross-worker duplicate-print risk: canonical atomic claiming and lease
+fencing are absent, while current protection applies only to one local SQLite
+ledger. Additional bounded findings require non-root runtime separation and tighter
+AppArmor, DNS-rebinding-safe canonical/IPPS transport, packaged protected Continue
+and Cancel, configured-queue binding for CUPS identity, restore/disk-exhaustion and
+Hold-liveness controls, and adversarial exact-current validation. Therefore the
+mission is `WORKING / DEFECTIVE / ENABLING_SOURCE_ONLY`, not merge-ready.
+
+Target owner outcome remains one genuine natural Oom Sakkie request producing the
+correct physical weekly weighing sheet through the commissioned private Green/CUPS
+adapter, with canonical receipt/readback, exact provider identity, physical proof,
+safe cleanup/final state, automatic follow-up and a later terminal-independent
+cycle. Owner outcome achieved is `NONE`; usable now is `NO`. No deployment, schema
+application, Green installation, commissioned identity, provider operation or
+physical page exists.
+
+Control Tower directly continued existing mission `DMQ-20260816-01` in the same
+worktree and branch. After rejecting two launcher attempts that produced only idle
+PowerShell shells, the visible correction terminal was freshly proven as PowerShell
+PID `37996`, Node PID `40308` and Codex PID `40652`, using prompt
+`C:\tmp\DOCUMENTS_GREEN_REVIEW_CORRECTION_PROMPT_20260821.md` and mandatory output
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_REVIEW_CORRECTION_HANDOVER_20260821.md`. Its
+authority is limited to the seven reusable corrections, synthetic/adversarial
+tests, documentation truth, commit/push to existing PR #1150 and a request for a
+fresh independent exact-head review. It may not merge, migrate, deploy, install,
+commission, use production identities or operate CUPS/printer hardware. It must
+close automatically with the complete handover.
+
+Fresh allocation: DOCUMENTS is `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP
+slot 2. OOM SAKKIE remains an external runtime-owned evidence wait at deployed
+revision `278f4b0b`; ROOTLINE and BEACON remain protected holds; HERDMASTER/CODEX UI
+remain dependent on genuine OOM projection evidence; CORE and SAM remain frozen
+from expansion. Collision result is clear: same mission, branch, PR and serialized
+release lineage; no duplicate mission, watcher or idle-wait terminal was created.
