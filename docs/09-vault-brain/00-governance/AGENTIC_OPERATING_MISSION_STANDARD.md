@@ -70,15 +70,24 @@ leave the prior open lifecycle unchanged.
 `BUSINESS_COMPLETE` is a separate canonical lifecycle projection and requires
 evidence identities and observation times for the deployed operational actor,
 non-terminal genuine trigger, exact 40-character loaded revision, canonical
-readback, provider and physical/customer results where applicable, a later
-terminal-independent cycle, and a measured reduction in owner manual steps.
+readback, provider and physical/customer results where applicable, verified
+safe final state, replay and concurrency containment, automatic follow-up or
+one exact unresolved-work owner, a later terminal-independent cycle, and a
+measured reduction in owner manual steps. Canonical readback, safe final state,
+replay/concurrency containment and follow-up/ownership are never optional.
 Conditional evidence may be `not_applicable` only with a bounded reason code,
 reason, governing authority and audit reference. On terminal release CORE must
 retain the same mission, calculate remaining acceptance rows, and select the
 next safe stage; `EXTERNAL_HOLD` and `PROTECTED_BOUNDARY` additionally require
 the exact owner, reason, wake condition and automatic continuation trigger.
 Outcome handovers and evaluations are append-only, mission-bound, idempotent
-under replay and serialized under the canonical mission row lock. No second
+under replay and serialized under the canonical mission row lock. Submitted
+evidence identities must resolve to mission-bound, producer-identified
+canonical evidence records with an exact payload digest;
+payload assertions alone cannot prove completion. Invalid evaluations remain
+audit events without replacing the last valid lifecycle projection. Bounded
+inline history rolls into a digest-chained archive counter while the canonical
+event ledger remains append-only, so history limits cannot halt continuation. No second
 mission database or workflow is permitted.
 
 An agent mission is not the delivery of one brief, page, reply, card, proposal,

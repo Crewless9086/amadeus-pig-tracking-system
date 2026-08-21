@@ -868,12 +868,15 @@
     const queuePriority = queuePriorityValue(mission);
     const missionQueueClass = queueClass(mission);
     const lifecycle = mission.mission_lifecycle || {};
+    const followUpProven = lifecycle.follow_up_proven === true;
+    const businessState = lifecycle.lifecycle_state === "BUSINESS_COMPLETE" && !followUpProven
+      ? "WORKING" : (lifecycle.lifecycle_state || "WORKING");
     const activeFlowMission = currentMissionForFlow();
     if (activeFlowMission && activeFlowMission.mission_id === missionId) card.classList.add("is-current");
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
-          <span class="status-pill">Business: ${safeText(lifecycle.lifecycle_state || "WORKING")}</span>
+          <span class="status-pill">Business: ${safeText(businessState)}</span>
           <h3>${escapeHtml(title)}</h3>
         </div>
         <code>${escapeHtml(shortId(missionId))}</code>

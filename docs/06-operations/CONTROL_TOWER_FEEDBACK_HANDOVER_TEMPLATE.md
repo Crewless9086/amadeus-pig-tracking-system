@@ -31,13 +31,25 @@ A short summary or claim that this template exists elsewhere is
 Required evidence rows are `operational_actor`, `genuine_trigger`,
 `loaded_revision`, `canonical_readback`, `provider_result`,
 `physical_or_customer_result`, `later_independent_cycle`, and
-`owner_work_removal`. Actor evidence must identify a non-terminal deployed
+`safe_final_state`, `replay_and_concurrency_containment`,
+`automatic_follow_up_or_unresolved_work_ownership`, and `owner_work_removal`.
+Canonical readback and the safety, containment, follow-up/ownership rows cannot
+be marked not applicable. Actor evidence must identify a non-terminal deployed
 runtime. Trigger evidence must identify its provider and state
 `created_by_terminal:false`. Revision evidence must carry the exact loaded
-40-character SHA and `exact_match:true`. The later cycle must carry a durable
+40-character SHA and `exact_match:true`. Canonical evidence must bind a receipt
+to matching readback. Required provider and physical/customer evidence must
+bind the originating result to the mission correlation. Safe-final-state
+evidence must identify and verify the resulting safe state. Replay/concurrency
+evidence must identify the enforcing control. Follow-up evidence must prove an
+automatic next trigger or one exact blocker, owner and wake condition. The
+later cycle must carry a durable
 correlation ID and `terminal_independent:true`. Owner-work evidence must carry a
 measurement ID and integer before/after manual-step counts with a strict
-reduction. Only Control Tower, deployed-agent or independent-verifier evidence
+reduction. Every required `evidence_id` must already resolve to a mission-bound
+canonical mission event whose producer identity, evidence row and immutable
+payload digest match the submitted evidence;
+caller-supplied labels alone are rejected. Only Control Tower, deployed-agent or independent-verifier evidence
 may request `BUSINESS_COMPLETE`; a terminal never can.
 
 Controlling references:

@@ -31,6 +31,7 @@ from modules.charlie.mission_store import (
     record_mission,
     record_mission_review_decision,
     record_mission_outcome_handover,
+    record_mission_outcome_evidence,
     update_new_mission_intake,
     update_mission_queue_priority,
     update_mission_workflow_step,
@@ -994,11 +995,28 @@ def charlie_build_relay_mission_detail_route(mission_id):
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/outcome-handover", methods=["POST"])
 def charlie_build_relay_mission_outcome_handover_route(mission_id):
-    denied = require_owner_admin_access()
+    denied = require_strict_owner_admin_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
-    result, status_code = record_mission_outcome_handover(mission_id, payload)
+    result, status_code = record_mission_outcome_handover(
+        mission_id, payload, authenticated_principal=strict_owner_admin_principal())
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/outcome-evidence", methods=["POST"])
+def charlie_build_relay_mission_outcome_evidence_route(mission_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_mission_outcome_evidence(
+        mission_id, str(payload.get("evidence_row") or ""),
+        payload.get("evidence_payload") if isinstance(payload.get("evidence_payload"), dict) else {},
+        evidence_id=str(payload.get("evidence_id") or ""),
+        authenticated_principal=strict_owner_admin_principal(),
+        producer_actor_type="external_verifier",
+    )
     return jsonify(result), status_code
 
 
