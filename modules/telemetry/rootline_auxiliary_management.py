@@ -214,6 +214,8 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None):
         start_evidence=context["zone_start_evidence"]
         output_evidence=context["zone_output_evidence"]
         material.update({"zone_id":context["active_zone_ids"][0],
+            "job_id":context["job_id"],"job_sha256":context["job_sha256"],
+            "segment_identity":context["segment_identity"],
             "zone_execution_id":context["zone_execution_id"],
             "pulse_number":int(context["completed_pulses"])+1,
             "batch_generation":context.get("batch_generation") or
@@ -234,7 +236,10 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None):
         "eligibility_id":"ROOTLINE-AUX-ELIGIBILITY-"+digest[:24].upper(),
         "execution_id":"ROOTLINE-AUX-EXECUTION-"+digest[:24].upper(),
         "consumption_key":"ROOTLINE-AUX-CONSUME-"+_digest({
-            "plan":generation,"device":identity,"pulse":material.get("pulse_number",1)})[:24].upper(),
+            "plan":generation,"job":material.get("job_id"),
+            "job_sha256":material.get("job_sha256"),
+            "segment":material.get("segment_identity"),"device":identity,
+            "pulse":material.get("pulse_number",1)})[:24].upper(),
         "eligibility_sha256":digest,"command_authority":True,"hardware_control":True,
         **material}
 
@@ -248,7 +253,9 @@ def validate_auxiliary_eligibility(value, *, now=None):
     digest=_digest(material)
     contract=get_device_contract(value.get("auxiliary_device_id"))
     expected_consumption="ROOTLINE-AUX-CONSUME-"+_digest({
-        "plan":value.get("plan_generation"),"device":value.get("auxiliary_device_id"),
+        "plan":value.get("plan_generation"),"job":value.get("job_id"),
+        "job_sha256":value.get("job_sha256"),
+        "segment":value.get("segment_identity"),"device":value.get("auxiliary_device_id"),
         "pulse":value.get("pulse_number",1)})[:24].upper()
     expected_runtime=(INJECTION_SECONDS if value.get("device_type")==
                       "fertilizer_injection_valve" else MAX_MIX_SECONDS)
@@ -284,7 +291,10 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
             "controller_safety_generation"):
         return False
     if value["device_type"]=="fertilizer_injection_valve":
-        if (current_context.get("zone_execution_id")!=value.get("zone_execution_id")
+        if (current_context.get("job_id")!=value.get("job_id")
+                or current_context.get("job_sha256")!=value.get("job_sha256")
+                or current_context.get("segment_identity")!=value.get("segment_identity")
+                or current_context.get("zone_execution_id")!=value.get("zone_execution_id")
                 or current_context.get("active_zone_ids")!=[value.get("zone_id")]
                 or _time(current_context.get("irrigation_stop_deadline"))!=
                     _time(value.get("irrigation_stop_deadline"))):
@@ -304,6 +314,11 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
 def _injection_gate(context,now):
     zones=context.get("active_zone_ids") if isinstance(context.get("active_zone_ids"),list) else []
     pulse=int(context.get("completed_pulses") or 0)
+    if (not str(context.get("job_id") or "").startswith("ROOTLINE-IRRIGATION-JOB-")
+            or len(str(context.get("job_sha256") or "")) != 64
+            or not str(context.get("segment_identity") or "").startswith(
+                "ROOTLINE-JOB-SEGMENT-")):
+        return "irrigation_job_binding_incomplete"
     if len(zones)!=1 or zones[0] not in {"B12345","C12345"}: return "exactly_one_bc_zone_required"
     start=context.get("zone_start_evidence") if isinstance(
         context.get("zone_start_evidence"),dict) else {}
