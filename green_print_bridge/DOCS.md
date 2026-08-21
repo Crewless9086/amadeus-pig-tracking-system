@@ -2,8 +2,12 @@
 
 Version 0.3.0 uses the Home Assistant supported prebuilt image reference
 `ghcr.io/crewless9086/amadeus-green-print-bridge`. Its tag may be published only
-once by the guarded manual workflow. The release receipt must bind the exact source
-commit, aarch64 digest, Cosign signature, SBOM and GitHub provenance attestations.
+once through the guarded manual workflow. GHCR does not provide a registry-level
+immutability guarantee for this private tag: the workflow refuses reuse, verifies
+the tag-to-digest mapping twice, and every release and installation decision must
+bind the immutable digest. The verified release packet binds the exact source
+commit, arm64 digest and OCI labels, Cosign identity, SBOM digest, and GitHub build
+and SBOM attestations.
 The displayed app version or repository description alone is never provenance.
 Before starting, a technical maintainer must verify the Supervisor-resolved image
 digest equals the approved receipt. Publishing, updating the dormant installation,
@@ -27,8 +31,8 @@ The root entrypoint only prepares owned directories, validates/writes the commis
 
 ## Install and commissioning
 
-1. Review the exact commit and build the aarch64 artifact from its pinned Dockerfile or add this private repository for a local Supervisor build. `build.yaml` remains only as a backward-compatible Supervisor hint; current builds take their base image and labels from `Dockerfile`.
-2. Add the repository in the Home Assistant app store; install but do not start until the canonical endpoint, least-privilege token, registry identities, printer URI and private CA are commissioned.
+1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.0 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
+2. Add the private repository in the Home Assistant app store and install or update only when Supervisor resolves the exact approved digest. Do not start until the canonical endpoint, least-privilege token, registry identities, printer URI and private CA are commissioned.
 3. Validate options and start the app. Confirm health is `event_waiting`, the local queue exists, logs contain no option values, and no job is eligible.
 4. Follow `docs/06-operations/GREEN_PRINT_BRIDGE_PHYSICAL_COMMISSIONING_GUIDE.md`. The development terminal must never manufacture the genuine request or operate the printer.
 

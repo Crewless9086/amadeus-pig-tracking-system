@@ -40,6 +40,19 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert "actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34" in workflow
     assert "pytest PyYAML" in workflow
     assert "latest" not in workflow and "push: \"true\"" in workflow
+    assert 'test "${GITHUB_REF}" = "refs/heads/main"' in workflow
+    assert workflow.count('test "${resolved_digest}" = "${PRODUCED_DIGEST}"') == 1
+    assert 'cosign verify --certificate-identity "${identity}"' in workflow
+    assert 'gh attestation verify "oci://${digest_ref}"' in workflow
+    assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
+    assert "green-print-0.3.0-verified-release-packet" in workflow
+
+def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
+    docs=(APP/"DOCS.md").read_text(encoding="utf-8")
+    assert "build.yaml remains" not in docs
+    assert "local Supervisor build" not in docs
+    assert "There is no current local Supervisor-build fallback" in docs
+    assert "GHCR does not provide a registry-level" in docs
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
