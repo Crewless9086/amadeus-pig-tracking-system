@@ -4002,3 +4002,39 @@ not authorize migration, deployment, installation or commissioning. OOM SAKKIE
 remains an external runtime-owned evidence wait; ROOTLINE and BEACON remain protected
 holds; the Chromecast addendum remains final/deferred. No duplicate mission,
 implementation branch, watcher or status-only lane was created.
+
+### Green second review request-changes and bounded continuation - 2026-08-21
+
+Charl reported the corrected-head review terminal completed but did not close.
+Fresh inspection validates its complete 13,442-byte handover at
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_CORRECTED_HEAD_REVIEW_HANDOVER_20260821.md`
+(SHA-256 `278FF051B3AC7B19BCE8814CF973C600EC4D65BAA4188472E738596D4746ECA8`).
+The handover is bound to clean, pushed PR #1150 head
+`a4b61e873892c1f419cd5052082c681f07050268`; GitHub still reports the PR open,
+non-draft, clean and mergeable with three successful exact-head checks.
+
+The independent verdict is `REQUEST_CHANGES`. Four source gates remain: protected
+Continue/Cancel commands are not atomically consumed and can replay; a five-minute
+canonical lease has no renewal/takeover path for ordinary long-running provider
+work; Cancel closes canonically from command exit status without exact provider
+readback; and the cited ARM64 image predates/version-mismatches the corrected head.
+These findings keep the mission `WORKING / DEFECTIVE / ENABLING_SOURCE_ONLY`, not
+merge-ready. The target physical print outcome remains unchanged; owner outcome
+achieved is `NONE`; usable now is `NO`.
+
+The review's Node/Codex work had ended while PowerShell PID `13516` remained as an
+idle `-NoExit` shell. Control Tower closed that exact stale shell and verified it no
+longer exists. It then automatically continued the SAME mission, worktree, branch
+and PR for only the four reusable corrections. The visible implementation lane is
+freshly bound to PowerShell PID `36916`, Node PID `26928` and Codex PID `38980`,
+prompt `C:\tmp\DOCUMENTS_GREEN_SECOND_REVIEW_CORRECTION_PROMPT_20260821.md` and
+required full handover
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_SECOND_REVIEW_CORRECTION_HANDOVER_20260821.md`.
+
+The terminal may implement/test, build and inspect a fresh local ARM64 image,
+commit/push to existing PR #1150 and request another exact-head review. It may not
+merge, migrate, deploy, install, commission, access production/CUPS/printer systems,
+manufacture a genuine request or claim physical/provider output. It must close
+automatically. DOCUMENTS remains `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP
+slot 2. Other mission holds and the final deferred Chromecast addendum are unchanged;
+no duplicate mission, branch, authority rail, watcher or status lane was created.
