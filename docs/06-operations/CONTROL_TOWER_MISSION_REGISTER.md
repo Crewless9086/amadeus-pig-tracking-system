@@ -5099,3 +5099,50 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
 - Exact next decision: `NONE` for Charl now. Control Tower should dispatch the
   source-only provenance repair; return only when an immutable reviewed artifact and
   exact dormant-update rollback packet are ready.
+
+## 2026-08-22 — Overnight Control Tower release and containment reconciliation
+
+- Authoritative main and deployed web revision: `b75153f274d17aa62c05cee562a961d5b8ec8027`;
+  Render health and revision readback were exact and healthy after Green provenance
+  PR #1156 merged. This is enabling-stage evidence only.
+- Green target owner outcome: one genuine natural weekly-sheet request produces one
+  correct physical A4 monochrome one-sided page through commissioned Green/CUPS,
+  with canonical, provider and physical agreement, safe cleanup, automatic follow-up
+  and a later terminal-independent cycle. Owner outcome achieved: `NONE`. Usable now:
+  `NO`.
+- Green 0.3.0 publication containment: authorized workflow run `32526725297` pushed
+  index digest `sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3`.
+  Its runnable manifest `sha256:4b738c69245a6b4721a7f4b58135acf3d2308f355b7c8c4008c4149763e11b32`
+  was described as `linux/amd64` while its config/history were `linux/arm64`; SBOM
+  generation then failed and provenance/SBOM attestations and the final receipt were
+  not emitted. Classify this artifact `INVALID / CONTAINED / NEVER_INSTALL`: do not
+  attest, install, use, overwrite, delete or reuse its version/tag. No Home Assistant,
+  credential, CUPS, printer, job or physical-page effect occurred.
+- Green repair progress: PR #1158 exact head
+  `ebefdbcff952a45ce319f01b0f6a822686c6ce2d` on main `b75153f...` is independently
+  approved for source merge only with all hosted checks green and publication skipped.
+  It creates unique 0.3.1 publication rails that require exactly one raw OCI
+  `linux/arm64` descriptor plus matching config/source/version before signing, explicit
+  arm64 SBOM generation, attestations and final digest-bound receipt. First gate: one
+  exact protected merge decision; publication, dormant update, commissioning and Start
+  remain separate. Installed 0.2.0 remains owner-observed `Stopped`, Start on boot OFF,
+  Watchdog OFF and Auto update OFF.
+- CORE target owner outcome: stopped CORE eventually receives and completes a genuine
+  authorised mission independently, with canonical result, safe follow-up and later
+  terminal-independent continuity. Owner outcome: `NONE`; usable now: `NO`. PR #1157
+  renewed exact head `12f8ff89dc3acdfc453b3bd573f7c0f19fb11e9b` on `b75153f...`
+  is independently approved for source merge only. Receipt creation, runtime staging,
+  Scheduled Task mutation, stop removal, activation and mission execution remain
+  prohibited and separately gated.
+- ROOTLINE borehole target owner outcome: the real borehole safely pumps under approved
+  deployed-agent authority with canonical, provider and physical confirmation and
+  verified OFF, followed by a later independent cycle. Owner outcome: `NONE`; usable
+  now: `NO`. PR #1151 renewed exact head
+  `845a946cdba3d10df41e7774fa459e82265bca29` on `b75153f...` is independently
+  approved for source merge only. Commissioning, provider access and hardware operation
+  remain prohibited and separately gated.
+- Collision/serialization: Green #1158 is nearest to a usable owner outcome and owns
+  first release priority. CORE #1157 and ROOTLINE #1151 are disjoint approval-ready
+  source packets, but whichever follows a main advance must be refreshed and reviewed
+  against that new exact main before merge. No terminal may substitute a synthetic job,
+  receipt or hardware action for genuine deployed-agent acceptance.
