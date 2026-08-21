@@ -130,18 +130,22 @@ declare v_job app_private.document_print_jobs;
 begin
   select * into v_job from app_private.document_print_jobs where job_id=p_job_id for update;
   if not found then raise exception 'command job missing'; end if;
+  -- Completed outcomes remain protected command data.  A takeover may read the
+  -- durable outcome only after claim_document_print_command has issued the
+  -- recovering worker a current lease; this path never authorizes or resumes
+  -- provider work.
+  if v_job.lease_token is distinct from p_lease_token or v_job.lease_expires_at<=clock_timestamp()
+     or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
+     or v_job.authorization_receipt_id<>p_authorization_receipt_id
+     or v_job.command_receipt_id<>p_command_receipt_id or v_job.command_kind<>p_command_kind then
+    raise exception 'command fence or binding invalid';
+  end if;
   if v_job.command_receipt_id=p_command_receipt_id and v_job.command_kind=p_command_kind
      and v_job.command_status='completed' then
     return jsonb_build_object('state',v_job.state,'command_status','completed',
       'command_outcome',v_job.command_outcome,'command_replay',true,
       'command_receipt_id',p_command_receipt_id,'attempt_id',v_job.attempt_id,
       'cups_job_id',v_job.cups_job_id,'provider_id',v_job.provider_id);
-  end if;
-  if v_job.lease_token is distinct from p_lease_token or v_job.lease_expires_at<=clock_timestamp()
-     or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
-     or v_job.authorization_receipt_id<>p_authorization_receipt_id
-     or v_job.command_receipt_id<>p_command_receipt_id or v_job.command_kind<>p_command_kind then
-    raise exception 'command fence or binding invalid';
   end if;
   if p_target_state='accepted' then
     if v_job.command_status in ('accepted','in_progress') then
@@ -229,12 +233,12 @@ declare v_job_id text; v_token text := encode(gen_random_bytes(24), 'hex');
 begin
   select job_id into v_job_id from app_private.document_print_jobs
    where command_kind in ('continue','cancel') and command_receipt_id is not null
-     and (command_status in ('accepted','in_progress') or
+     and (command_status in ('accepted','in_progress','completed') or
        (command_status is null and command_authorized_at > clock_timestamp()-interval '5 minutes'
         and authorization_expires_at > clock_timestamp()))
      and (lease_expires_at is null or lease_expires_at<=clock_timestamp() or lease_owner=p_worker_id)
      and ((command_kind='continue' and state in ('held','claimed')) or
-          (command_kind='cancel' and state in ('claimed','submitting','submitted','held','ambiguous')))
+          (command_kind='cancel' and state in ('claimed','submitting','submitted','held','ambiguous','cancelled')))
    order by command_authorized_at,job_id for update skip locked limit 1;
   if v_job_id is null then return; end if;
   update app_private.document_print_jobs set lease_owner=p_worker_id,lease_token=v_token,

@@ -20,6 +20,7 @@ def test_package_is_bounded_and_privilege_split():
     assert cfg["arch"]==["aarch64"] and cfg["privileged"]==[] and cfg["host_network"] is False
     assert "adduser -S -D -H" in docker and "su-exec greenprint:greenprint" in init and "su-exec cupsd:cupsd" in init
     assert "lpadmin" not in init and "exec su-exec greenprint" in init
+    assert docker.startswith("FROM ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
@@ -46,7 +47,7 @@ def test_dns_rebinding_cannot_change_transport_target(tmp_path,monkeypatch):
     assert conn.pinned_ip=="10.23.0.5" and next(calls)[0][4][0]=="8.8.8.8"
 
 class Canonical:
-    def __init__(self): self.claimed=None; self.events=[]; self.job=envelope(); self.state_value="authorized"; self.token="lease-token-1"; self.commands={}; self.recoveries=0; self.fail_after_accept=False; self.fail_before_final_ack=False
+    def __init__(self): self.claimed=None; self.events=[]; self.job=envelope(); self.state_value="authorized"; self.token="lease-token-1"; self.commands={}; self.command_receipt_id=None; self.command_kind=None; self.recoveries=0; self.fail_after_accept=False; self.fail_before_final_ack=False
     def claim(self,worker):
         if self.claimed:return None
         self.claimed=worker; return {"job":self.job,"lease_token":self.token,"lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
@@ -60,9 +61,17 @@ class Canonical:
     def transition_command(self,command,target):
         receipt=command["command_receipt_id"]
         record=self.commands.get(receipt)
+        if command.get("lease_token")!=self.token: raise S.Hold("command fence or binding invalid")
+        expected=(self.job["document_version"],self.job["pdf_sha256"],self.job["authorization_receipt_id"],command["command"])
+        actual=(command["job"]["document_version"],command["job"]["pdf_sha256"],command["job"]["authorization_receipt_id"],command["command"])
+        if actual!=expected or (self.command_receipt_id is not None and
+           (receipt!=self.command_receipt_id or command["command"]!=self.command_kind)):
+            raise S.Hold("command fence or binding invalid")
         if record and record["status"]=="completed": return {"state":self.state_value,"command_status":"completed","command_outcome":record["outcome"],"command_replay":True,"attempt_id":self.job.get("attempt_id"),"cups_job_id":self.job.get("cups_job_id")}
         if target=="accepted":
-            if not record: self.commands[receipt]={"status":"in_progress","outcome":None}
+            if not record:
+                self.command_receipt_id=receipt; self.command_kind=command["command"]
+                self.commands[receipt]={"status":"in_progress","outcome":None,"kind":command["command"]}
             result={"state":self.state_value,"command_status":"in_progress","command_replay":record is not None,"attempt_id":self.job.get("attempt_id"),"cups_job_id":self.job.get("cups_job_id")}
             if self.fail_after_accept: self.fail_after_accept=False; raise RuntimeError("crash_after_command_acceptance")
             return result
@@ -162,8 +171,39 @@ def test_independent_worker_gets_durable_outcome_after_crash_before_final_ack(tm
     canonical.fail_before_final_ack=True
     with pytest.raises(RuntimeError,match="crash_before_command_final_ack"): S.process_command(command,ledgers[0],canonical,cups,config(tmp_path),NOW)
     effects=(cups.submissions,len(cups.cancelled))
+    reclaimed=canonical.recover(job,"worker-recovered")
+    command={**command,"lease_token":reclaimed["lease_token"],"lease_expires_at":reclaimed["lease_expires_at"]}
+    before_local=ledgers[1].get(job["job_id"])["updated_at"]
     assert S.process_command(command,ledgers[1],canonical,cups,config(tmp_path),NOW)==("continued" if kind=="continue" else "cancelled")
     assert (cups.submissions,len(cups.cancelled))==effects
+    assert ledgers[1].get(job["job_id"])["updated_at"]==before_local
+
+@pytest.mark.parametrize("field,bad",[("lease_token","stale-lease"),("document_version","WWS-SYNTHETIC.r2.wrong"),("pdf_sha256","f"*64),("authorization_receipt_id","AUTH-WRONG")])
+def test_completed_outcome_replay_fails_closed_on_stale_lease_or_immutable_mismatch(tmp_path,field,bad):
+    job=envelope(); canonical=Canonical(); canonical.state_value="held"; cups=Cups()
+    first=S.Ledger(str(tmp_path/"first.db")); first.put_claim(job,canonical.token,(NOW+timedelta(minutes=5)).isoformat(),NOW)
+    command={"command":"continue","command_receipt_id":"COMMAND-CONTINUE-BOUND","job":job,"lease_token":canonical.token,"lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
+    assert S.process_command(command,first,canonical,cups,config(tmp_path),NOW)=="continued"
+    reclaimed=canonical.recover(job,"worker-recovered")
+    replay_job={**job}
+    replay={**command,"lease_token":reclaimed["lease_token"],"lease_expires_at":reclaimed["lease_expires_at"],"job":replay_job}
+    if field=="lease_token": replay[field]=bad
+    else: replay_job[field]=bad
+    second=S.Ledger(str(tmp_path/"second.db")); second.put_claim(job,reclaimed["lease_token"],reclaimed["lease_expires_at"],NOW)
+    before=second.get(job["job_id"])["updated_at"]
+    with pytest.raises(S.Hold): S.process_command(replay,second,canonical,cups,config(tmp_path),NOW)
+    assert cups.submissions==0 and cups.cancelled==[] and second.get(job["job_id"])["updated_at"]==before
+
+def test_completed_outcome_replay_fails_closed_on_wrong_receipt_or_kind(tmp_path):
+    job=envelope(); canonical=Canonical(); canonical.state_value="held"; cups=Cups(); ledger=S.Ledger(str(tmp_path/"l.db"))
+    ledger.put_claim(job,canonical.token,(NOW+timedelta(minutes=5)).isoformat(),NOW)
+    command={"command":"continue","command_receipt_id":"COMMAND-CONTINUE-BOUND","job":job,"lease_token":canonical.token,"lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
+    assert S.process_command(command,ledger,canonical,cups,config(tmp_path),NOW)=="continued"
+    reclaimed=canonical.recover(job,"worker-recovered")
+    for change in ({"command_receipt_id":"COMMAND-WRONG"},{"command":"cancel"}):
+        replay={**command,**change,"lease_token":reclaimed["lease_token"],"lease_expires_at":reclaimed["lease_expires_at"]}
+        with pytest.raises(S.Hold): S.process_command(replay,ledger,canonical,cups,config(tmp_path),NOW)
+    assert cups.submissions==0 and cups.cancelled==[]
 
 def test_expired_submitted_lease_recovers_without_resubmission(tmp_path,monkeypatch):
     job=envelope(); ledger=S.Ledger(str(tmp_path/"expired.db")); ledger.put_claim(job,"lease-token-1",(NOW-timedelta(seconds=1)).isoformat(),NOW-timedelta(seconds=301)); ledger.update(job["job_id"],"submitted",NOW-timedelta(seconds=301),attempt_id="ATTEMPT-1",cups_job_id="weekly-a4-42")

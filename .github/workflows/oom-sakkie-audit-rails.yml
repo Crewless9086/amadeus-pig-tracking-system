@@ -167,6 +167,11 @@ jobs:
           BEACON_GENERATION_POSTGRES_URL: ${{ env.DATABASE_URL }}
         run: python -m unittest tests.test_beacon_generation_retirement_postgres
 
+      - name: Run Green protected-command durable-outcome gates
+        env:
+          GREEN_PRINT_DISPOSABLE_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m pytest -q tests/test_green_print_command_postgres.py
+
       - name: Run Beacon weekly owner-decision permission gates
         env:
           BEACON_WEEKLY_REVIEW_POSTGRES_URL: ${{ env.DATABASE_URL }}
