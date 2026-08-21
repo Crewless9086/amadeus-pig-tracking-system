@@ -3485,3 +3485,67 @@ redesigned. First missing gate returns to bounded source repair and preview:
 schedule-aware weighing eligibility, treatment-due physical-work projection,
 identity-bound contextual routes and proportional regression/browser tests. No
 database, farm, Telegram or production effect is authorized.
+
+### HERDMASTER purpose-review and allocation addendum ordering - 2026-08-21
+
+Charl supplied the completed governance assessment for the previously discussed
+Pig Allocation and Purpose Review consolidation. Control Tower accepts its
+classification as an `ADDENDUM`, not a new mission. It continues the existing
+2026-08-19 Oom Sakkie shared owner-attention mission and preserves historical
+HERDMASTER allocation-loop lineage `HMQ-20260816-01` without creating another
+mission, database, queue, scheduler, alert engine, decision rail or page.
+
+Target owner outcome: deployed HERDMASTER automatically discovers genuine
+post-weaning purpose-review work, applies the governed 14-day and post-wean
+evidence rules, prepares evidence-based recommendations, retains deferment and
+follow-up, and presents Charl with one grouped names-first decision through the
+same canonical attention identity. A protected decision must produce canonical
+readback and closure in every channel, followed by a later terminal-independent
+reassessment cycle. Owner outcome achieved: `NONE`. Usable now: `NO`; no current
+deployed-revision, genuine HERDMASTER-origin discovery, provider/channel readback,
+protected owner decision, canonical closure or later autonomous-cycle proof was
+provided.
+
+The serialized mission order is:
+
+1. **CURRENT - PR #1142 attention semantics.** Finish and verify the already
+   active bounded repair for Monday-only routine weighing, canonically due Molly
+   treatment as primary physical work, and identity-bound contextual routes while
+   preserving Charl's approved tile style. This worktree currently has fresh
+   source/test changes and remains the sole owner-attention file owner.
+2. **NEXT - same-lineage HERDMASTER purpose-review work family.** On that exact
+   reconciled base, establish one canonical work identity and one authoritative
+   eligibility/recommendation path. Day 13 remains quiet; day 14 without a valid
+   post-wean weight creates one physical weighing task; qualifying evidence creates
+   one grouped purpose decision; deferment is retained and reassessed; unchanged
+   work is suppressed; resolution closes the item everywhere.
+3. **THEN - presentation consolidation.** Make Pig Allocation the unified owner
+   workspace and Purpose Review a filtered decision mode/deep link, preserving
+   compatibility and keeping purpose, allocation, reservation, sale and customer
+   availability distinct. Names or sow/litter descriptions lead; stable IDs remain
+   in details, audit evidence and deep links. UI consolidation may not duplicate
+   backend eligibility or alert logic.
+4. **ACCEPTANCE - real operation.** Complete exact-current tests and specialist
+   review, governed merge/deployment decisions, exact loaded-revision proof,
+   authenticated canonical/provider readback, one genuine non-terminal HERDMASTER
+   discovery, one genuine owner decision, cross-channel closure and a later
+   terminal-independent reassessment. Only then may business completion be tested.
+
+Fresh collision evidence records open conflicting PR #991 at
+`4662465adfd59d4830082d832835c3a2e378cc26` as historical implementation evidence
+only; it must not be merged directly. Open PR #830 at
+`d7c7038e4ec7d52704d542d306d97f77b76b48fb` overlaps the herd-register UI, and
+open PR #1146 at `2e19e621ab77fa9f5d7b158494965e6f36caaacc` overlaps HERDMASTER/Oom
+Sakkie consumption. Both require exact file and semantic reconciliation before
+ownership or integration. The two source-map documents the assessment reported as
+missing are present on current authoritative main at
+`docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md` and
+`docs/09-vault-brain/06-data/FARM_DATA_MODEL.md`; a stale-path reference remains in
+`HERDMASTER.md` and is enabling-stage routing repair, not a new mission.
+
+First missing real-life gate for the addendum is not UI construction. It is a
+verified single backend work identity and authoritative eligibility path on the
+reconciled PR #1142 base, after the current semantic repair returns a complete
+handover. Capacity remains serialized because the active work and this addendum
+touch the same attention, HERDMASTER, routing and UI surfaces. No additional
+terminal is dispatched while that collision-prone lane is actively changing them.
