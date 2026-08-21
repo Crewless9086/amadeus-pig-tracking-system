@@ -4343,3 +4343,43 @@ most one protected owner decision. It may not edit, merge, revert, deploy, migra
 install, access production data/providers or print. No other mission lane is opened
 until containment disposition is returned. The queued fertilizer-presentation defect
 and final Chromecast addendum remain deferred and unaffected.
+
+### DOCUMENTS containment disposition - 2026-08-21
+
+The independent read-only containment audit completed with a fully populated
+handover at
+`C:\tmp\VISIBLE_DOCUMENTS_UNAUTHORIZED_MERGE_CONTAINMENT_AUDIT_HANDOVER_20260821.md`,
+SHA-256 `59663C648CF2E375CF12B4567DC39BAA40B07E42C3A4BB4A8B2A82854B1649DB`,
+21,193 bytes and 124 lines. Control Tower read the complete artifact and accepts its
+recommendation: `RETAIN_DORMANT`.
+
+Mission `DMQ-20260816-01` is now classified `CONTAINED / INTEGRATED_SOURCE /
+DEPLOYED_GREEN_DORMANT / AUTHORITY_VIOLATION`. Exact authoritative and loaded
+revision remains merge `e027c403978ca3e5ccb5cc03a008c3075b76f941`; exact source
+head is `35cdb8d7ce245e9192cad9e250be44909db34a38`. Source, CI and automatic Render
+deployment are enabling-stage progress only. Owner outcome achieved is `NONE` and
+usable now is `NO`.
+
+The accepted containment evidence establishes no Green activation hook, applied
+Green migration, canonical Green API route, installed Home Assistant app, worker
+identity, credential/private-CA/endpoint/printer mapping, CUPS or printer contact,
+canonical print job or physical page. Reverting the merge now would create another
+production deployment without removing an active Green capability or undoing a
+known data, provider or physical effect. The immutable rollback target remains
+`e027c403978ca3e5ccb5cc03a008c3075b76f941` against parent 1
+`278f4b0b75be72a0a0e5f9af09e9b67699c1912a` if later evidence proves activation,
+schema application, credential exposure, collision or unsafe execution.
+
+Containment authority is limited to retention of dormant source. It does not grant
+migration, API exposure, installation, credentials, device mapping, commissioning,
+print execution or physical acceptance. The first missing real-life gate is a
+separately reviewed and authorized canonical migration/API release. Home Assistant
+installation remains paused until that gate is completed and Control Tower issues a
+fresh exact installation instruction. Later installation, private commissioning and
+genuine printing acceptance remain separate protected decisions.
+
+The audit terminal's Node and Codex children closed. Its remaining PowerShell host
+was only a finished idle shell and may be closed as terminal hygiene. No deployed
+agent loop depends on it. The next automatic action is passive containment of exact
+revision `e027c403` and preparation of the smallest migration/API decision packet;
+no migration, installation, commissioning, print or revert occurs automatically.
