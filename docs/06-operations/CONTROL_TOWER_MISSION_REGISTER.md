@@ -4235,3 +4235,67 @@ the active terminal's clean immutable correction plus complete handover, followe
 independent approval. The first protected physical gate later is explicit authority
 to install the exact approved package and commission identities/trust/printer. The
 active terminal is not interrupted or duplicated; it owns the next automatic action.
+
+### Queued shared owner-attention defect - fertilizer readiness wording - 2026-08-21
+
+Charl supplied a GENERAL manual Brain Guard assessment of the owner-visible ROOTLINE
+fertilizer-mixer readiness card. Control Tower accepts the core finding with one
+freshness qualification: the assessment's local source baseline was 2,311 commits
+behind authoritative main, so all code/deployment assertions require exact-current
+verification at promotion. Charl's observed card remains valid owner evidence that
+the current presentation can be reasonably misread as operational completion.
+
+Classification is `DEFECT / ADDENDUM / QUEUED_NEXT_SAFE_BOUNDARY` within the existing
+Oom Sakkie shared owner-attention, `OOM-ROOTLINE-FERTILIZER-CONFIG-20260809`, ROOTLINE
+mixer commissioning and `RMQ-20260813-03A/03B` injector lineages. This is not a new
+mission, equipment failure, status engine, queue, scheduler, dashboard authority or
+hardware-control path.
+
+Target owner outcome: Owner Attention truthfully and consistently distinguishes
+`Registered`, `Ready for commissioning`, `Commissioning required`, `Commissioned`,
+`Autonomous authority enabled`, `Active`, `Completed`, `Held` and `Failed`; healthy
+observation-only readiness stays silent or appears under Equipment Health; the
+Fertilizer mixer and Fertilizer injector remain separate names-first devices; and
+Charl receives only an exact action, verified start/completion or meaningful
+exception. Owner outcome achieved is `NONE`; usable operational fertilizer control
+is `NO`. The observed card proves only the registered mixer controller/channel was
+freshly read OFF with a five-minute native fail-stop, no conflicting execution and
+zero control calls. It proves neither physical mixing nor autonomous authority.
+
+Priority placement: this defect is next eligible owner-attention repair after the
+current DOCUMENTS lane reaches a freshly proven protected/review/external hold and
+no safe DOCUMENTS continuation exists. It ranks before new breadth and before the
+final deferred Chromecast addendum because misleading hardware-status language can
+cause unsafe owner interpretation. It does not pre-empt active DOCUMENTS correction,
+genuine welfare/safety recovery or an eligible operational acceptance step.
+
+Fresh collision evidence: PR #1147 (`814fac8a64b76ae9f1f20e6a10b3a7be2c8162f5`,
+protected ROOTLINE evidence) and PR #1149
+(`d35a2e64682446d5a9f322613ab8e81a4a474a76`, injection-to-irrigation binding) are
+both open, clean/mergeable and CI-green but remain source-only and based on earlier
+lineage. Promotion must audit their exact-current diffs/worktrees plus the deployed
+owner-attention revision before file ownership. It may consume their contracts but
+must not merge them implicitly, infer injector readiness, enable flags or operate
+hardware.
+
+Smallest accepted scope: repair one shared canonical equipment-lifecycle projection
+consumed by dashboard, Telegram and future channels; replace `Name unavailable`
+with the supported equipment name; suppress healthy no-action readiness from Owner
+Attention; retain failed/stale readiness as one useful exception; source every
+operational label from current canonical/runtime/provider/physical evidence; and
+keep IDs/channels in Details. No page-only wording patch may create cross-channel
+drift.
+
+First missing gate at promotion: fresh authoritative-main/deployed-revision and
+collision audit establishing the exact shared projection currently producing the
+card. Automatic continuation then performs bounded source repair, exact-current
+tests/Brain Guard/security/data-integrity and cross-channel visual review, followed
+by governed release/deployment and authenticated production rendering verification.
+Physical mixer commissioning, autonomous activation and injector control/real-flow
+commissioning remain separate protected missions requiring their own provider,
+canonical and physical proof plus later terminal-independent cycles.
+
+No owner decision or physical presence is required now. No terminal was dispatched
+because the DOCUMENTS lane has active attributable work and remains the current
+blocker. The queued wake condition is the first released safe lane after DOCUMENTS
+has no eligible continuation, with fresh PR/worktree collision clearance.
