@@ -10,7 +10,9 @@ import pytest
 from modules.telemetry.rootline_irrigation_execution_store import (
     _claim_single_auxiliary, _claim_irrigation_output, _daily_dispatch_blocker,
     _event_id, _stored_event_body, _terminal_closes_active,
-    _is_active_candidate, RootlineExecutionStoreUnavailable, rootline_irrigation_execution_store,
+    _is_active_candidate, _verified_borehole_completion,
+    _claim_borehole_material_load, RootlineExecutionStoreUnavailable,
+    rootline_irrigation_execution_store,
 )
 
 
@@ -32,6 +34,41 @@ def test_unverified_irrigation_containment_remains_recoverable_active_truth():
         "shutdown_verified":True},auxiliary=True) is True
     assert _terminal_closes_active({
         "action":"record_auxiliary_control_pulse_stopped"},auxiliary=True) is True
+
+
+def _borehole_completion(execution_id="BOREHOLE-1"):
+    return {"action":"record_borehole_completed","execution_id":execution_id,
+        "shutdown_verified":True,
+        "canonical_completion_evidence":{"evidence_id":"CANON-1",
+            "execution_id":execution_id,"final_state":"OFF"},
+        "provider_final_off_evidence":{"evidence_id":"PROVIDER-1",
+            "execution_id":execution_id,"authoritative":True,"state":"OFF"},
+        "physical_completion_evidence":{"evidence_id":"PHYSICAL-1",
+            "execution_id":execution_id,"pump_stopped":True,"water_flow_stopped":True}}
+
+
+def test_borehole_completion_requires_bound_canonical_provider_physical_final_off():
+    complete=_borehole_completion()
+    assert _verified_borehole_completion(complete) is True
+    assert _terminal_closes_active(complete,borehole=True) is True
+    for field in ("canonical_completion_evidence","provider_final_off_evidence",
+                  "physical_completion_evidence"):
+        incomplete={**complete,field:{}}
+        assert _verified_borehole_completion(incomplete) is False
+        assert _terminal_closes_active(incomplete,borehole=True) is False
+    assert _terminal_closes_active({**complete,"shutdown_verified":False},borehole=True) is False
+    mismatched={**complete,"provider_final_off_evidence":{
+        **complete["provider_final_off_evidence"],"execution_id":"OTHER"}}
+    assert _terminal_closes_active(mismatched,borehole=True) is False
+
+
+def test_borehole_claim_and_off_identities_are_replay_stable_and_attempt_bounded():
+    claim=_event_id("claim_borehole_before_on",{"execution_id":"BH-1"})
+    assert claim==_event_id("claim_borehole_before_on",{
+        "execution_id":"BH-1","untrusted_extra":"ignored"})
+    attempts={_event_id("claim_borehole_off_attempt",{
+        "execution_id":"BH-1","attempt":attempt}) for attempt in (1,2,3)}
+    assert len(attempts)==3
 
 
 class FailedConnection:
@@ -289,6 +326,66 @@ def test_auxiliary_consumption_is_atomic_without_blocking_bc_claim(monkeypatch):
                 (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
                 values (%s,%s,'rootline_irrigation_execution',%s,%s::jsonb)""",
                 (event_id,execution,action,json.dumps({"rootline_execution":body})))
+
+
+@pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),
+                    reason="disposable ROOTLINE PostgreSQL URL is required")
+def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatch):
+    import hashlib
+    import psycopg
+    url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"];monkeypatch.setenv("DATABASE_URL",url)
+    migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
+    with psycopg.connect(url) as connection:connection.execute(migration.read_text(encoding="utf-8"))
+    suffix=uuid.uuid4().hex;execution=f"ROOTLINE-BOREHOLE-{suffix[:24].upper()}"
+    aux=f"ROOTLINE-AUX-{suffix}";digest="b"*64
+    material={"contract_version":"rootline_borehole_runtime_eligibility.v1",
+        "device_key":"ewelink:ewelink_owner_account:1002851416:1","baseline_sha256":"a"*64,
+        "registry_generation":7,"need_sha256":"c"*64,"evidence_sha256":"d"*64,
+        "requested_seconds":900,"assessed_at":"2026-08-21T12:00:00+00:00",
+        "gates":{key:True for key in ("canonical_need","commissioned_baseline",
+            "standing_authority","provider_off","dry_run","low_water","supply_pressure",
+            "full_tank","energy","concurrency","bounded_runtime")},"blockers":[]}
+    eligibility_digest=hashlib.sha256(json.dumps(material,sort_keys=True,
+        separators=(",",":"),default=str).encode()).hexdigest()
+    artifact={**material,"eligibility_sha256":eligibility_digest,
+        "execution_id":"ROOTLINE-BOREHOLE-"+eligibility_digest[:24].upper(),
+        "consumption_key":"borehole:"+eligibility_digest,"eligible":True,
+        "command_authority":False,"hardware_commands":0}
+    execution=artifact["execution_id"]
+    def insert(event_id,identity,action,body):
+        with psycopg.connect(url) as connection:
+            connection.execute("""insert into public.sam_live_stock_conversation_review_events
+              (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+              values (%s,%s,'rootline_irrigation_execution',%s,%s::jsonb)""",
+              (event_id,identity,action,json.dumps({"rootline_execution":body})))
+    insert(f"ELIG-{suffix}",execution,"record_borehole_eligibility",
+        {"action":"record_borehole_eligibility",**artifact})
+    insert(f"AUX-CLAIM-{suffix}",aux,"claim_auxiliary_before_on",
+        {"action":"claim_auxiliary_before_on","execution_id":aux})
+    insert(f"AUX-CONTAIN-{suffix}",aux,"contain_auxiliary_device",
+        {"action":"contain_auxiliary_device","execution_id":aux,"shutdown_verified":False})
+    body=dict(artifact)
+    blocked=_claim_borehole_material_load(body)
+    assert blocked["status"]=="material_load_active"
+    insert(f"AUX-CONTAIN-VERIFIED-{suffix}",aux,"contain_auxiliary_device",
+        {"action":"contain_auxiliary_device","execution_id":aux,"shutdown_verified":True})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims=list(pool.map(lambda _:_claim_borehole_material_load(body),(1,2)))
+    assert sum(row.get("created") is True for row in claims)==1
+    assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
+    for attempt in (1,2):
+        rootline_irrigation_execution_store("record_borehole_off_outcome",{
+            "execution_id":execution,"attempt":attempt,"accepted":True})
+    assert [row["attempt"] for row in rootline_irrigation_execution_store(
+        "load_borehole_off_attempts",execution)]==[1,2]
+    incomplete={**_borehole_completion(execution),"physical_completion_evidence":{}}
+    insert(f"BH-INCOMPLETE-{suffix}",execution,"record_borehole_completed",incomplete)
+    assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
+    complete=_borehole_completion(execution)
+    insert(f"BH-COMPLETE-{suffix}",execution,"record_borehole_completed",complete)
+    assert rootline_irrigation_execution_store("load_active_borehole",None) is None
+    replay=_claim_borehole_material_load(body)
+    assert replay["created"] is False and replay["status"]=="execution_replay"
 
 
 @pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),

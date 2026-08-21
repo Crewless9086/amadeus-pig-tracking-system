@@ -86,7 +86,7 @@ def _stored_event_body(action, body, event_id):
 
 def _event_id(action, body):
     execution = str(body.get("execution_id") or "")
-    if action in {"claim_before_on", "claim_auxiliary_before_on"}:
+    if action in {"claim_before_on", "claim_auxiliary_before_on", "claim_borehole_before_on"}:
         material = f"{execution}:CLAIM"
     elif action == "claim_notification":
         material = f"{execution}:NOTIFY:{body.get('notification_state')}"
@@ -94,7 +94,8 @@ def _event_id(action, body):
             and body.get("contract_version") == "rootline_parent_job_terminal_resolution.v1"
             and body.get("resolution") == "Cancelled"):
         material = f"{body.get('job_id')}:{body.get('job_sha256')}:CANCELLED"
-    elif action in {"claim_off_attempt", "claim_auxiliary_off_attempt"}:
+    elif action in {"claim_off_attempt", "claim_auxiliary_off_attempt",
+                    "claim_borehole_off_attempt"}:
         material = f"{execution}:OFF:{int(body.get('attempt') or 0)}"
     else:
         material = json.dumps({"action": action, "body": body}, sort_keys=True,
@@ -227,7 +228,7 @@ def _load(action, payload):
 def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
     action = str(item.get("action") or "") if isinstance(item, dict) else ""
     if borehole:
-        return (action == "record_borehole_completed" or
+        return (_verified_borehole_completion(item) or
             (action == "contain_borehole" and item.get("shutdown_verified") is True))
     if auxiliary:
         return (action in {"record_auxiliary_completed",
@@ -239,6 +240,25 @@ def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
     if action in {"contain_zone", "record_ambiguous_shutdown", "record_claim_recovery"}:
         return item.get("shutdown_verified") is True
     return False
+
+
+def _verified_borehole_completion(item):
+    """Require distinct canonical, provider and physical final-state evidence."""
+    if not isinstance(item, dict) or item.get("action") != "record_borehole_completed":
+        return False
+    execution_id = str(item.get("execution_id") or "")
+    canonical = item.get("canonical_completion_evidence") or {}
+    provider = item.get("provider_final_off_evidence") or {}
+    physical = item.get("physical_completion_evidence") or {}
+    evidence = (canonical, provider, physical)
+    identities_match = bool(execution_id) and all(
+        str(row.get("execution_id") or "") == execution_id
+        and bool(str(row.get("evidence_id") or "").strip()) for row in evidence)
+    return (item.get("shutdown_verified") is True and identities_match
+        and canonical.get("final_state") == "OFF"
+        and provider.get("authoritative") is True and provider.get("state") == "OFF"
+        and physical.get("pump_stopped") is True
+        and physical.get("water_flow_stopped") is True)
 
 
 def _is_active_candidate(item, active_action, claim_action):
@@ -543,8 +563,26 @@ def _claim_borehole_material_load(body):
               where t.event_source=%s and t.review_json->'rootline_execution'->>'execution_id'=
                 c.review_json->'rootline_execution'->>'execution_id' and
                 (t.review_json->'rootline_execution'->>'action' in
-                  ('record_completed','record_auxiliary_completed','contain_auxiliary_device',
-                   'record_borehole_completed') or
+                  ('record_completed','record_auxiliary_completed',
+                   'record_auxiliary_control_pulse_stopped') or
+                 (t.review_json->'rootline_execution'->>'action'='contain_auxiliary_device' and
+                  t.review_json->'rootline_execution'->>'shutdown_verified'='true') or
+                 (t.review_json->'rootline_execution'->>'action'='record_borehole_completed' and
+                  t.review_json->'rootline_execution'->>'shutdown_verified'='true' and
+                  length(coalesce(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''))>0 and
+                  t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
+                    t.review_json->'rootline_execution'->>'execution_id' and
+                  t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'final_state'='OFF' and
+                  length(coalesce(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',''))>0 and
+                  t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'execution_id'=
+                    t.review_json->'rootline_execution'->>'execution_id' and
+                  t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true' and
+                  t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF' and
+                  length(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''))>0 and
+                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
+                    t.review_json->'rootline_execution'->>'execution_id' and
+                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
+                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true') or
                  (t.review_json->'rootline_execution'->>'action' in
                    ('contain_zone','contain_borehole') and
                   t.review_json->'rootline_execution'->>'shutdown_verified'='true'))) limit 1""",
