@@ -97,7 +97,7 @@ def plan_runtime_staging(
     if watchdog.get("version") == "charlie_activation_recovery_projection_v1":
         _validate_recovery_projection(watchdog, state_root)
     task = (task_reader or read_watchdog_task)()
-    _validate_task(task, runtime_root)
+    task_mode = _validate_task(task, runtime_root, allow_historical=True)
     task_sha256 = _payload_sha256(task)
     if not re.fullmatch(r"[0-9a-f]{64}", str(expected_task_sha256 or "").lower()):
         raise RuntimeStagingError("exact_scheduled_task_digest_required")
@@ -115,6 +115,10 @@ def plan_runtime_staging(
         "watchdog_state_sha256": _sha256(watchdog_path),
         "task_ownership": task,
         "task_ownership_sha256": task_sha256,
+        "task_action_mode": task_mode,
+        "task_launcher_ownership": (
+            _launcher_task(task, runtime_root) if task_mode == "historical_inline_disabled" else task
+        ),
         "git_checkout_safety_sha256": _payload_sha256(git_safety),
         "receipt_key_sha256": _sha256(receipt_key_path),
     }
@@ -193,7 +197,8 @@ def _record_hmac(record, key, signature_field):
     ).encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_checker=None):
+def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess.run,
+                  git_safety_checker=None):
     if not isinstance(plan, dict) or plan.get("status") != "runtime_staging_plan_ready":
         raise RuntimeStagingError("validated_staging_plan_required")
     supplied_digest = plan.get("plan_sha256")
@@ -238,9 +243,11 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
             state_root, Path(plan["receipt_path"]), receipt_identity, plan["receipt_sha256"]
         )
         task = (task_reader or read_watchdog_task)()
-        _validate_task(task, runtime_root)
+        task_mode = _validate_task(task, runtime_root, allow_historical=True)
         if _payload_sha256(task) != plan["rollback"]["task_ownership_sha256"]:
             raise RuntimeStagingError("scheduled_task_ownership_changed")
+        if task_mode != plan["rollback"]["task_action_mode"]:
+            raise RuntimeStagingError("scheduled_task_action_mode_changed")
         git_safety = {
             "runtime": (git_safety_checker or inspect_git_checkout_safety)(runtime_root, runner),
             "execution": (git_safety_checker or inspect_git_checkout_safety)(execution_root, runner),
@@ -270,6 +277,15 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
             raise RuntimeStagingError("governed_stop_marker_changed")
         _validate_governed_state_unchanged(state_root, plan["rollback"])
         mutated = True
+        if task_mode == "historical_inline_disabled":
+            (task_writer or write_watchdog_task_action)(
+                plan["rollback"]["task_launcher_ownership"], runner=runner
+            )
+            task = (task_reader or read_watchdog_task)()
+            _validate_task(task, runtime_root)
+            if _payload_sha256(task) != _payload_sha256(
+                    plan["rollback"]["task_launcher_ownership"]):
+                raise RuntimeStagingError("scheduled_task_launcher_readback_mismatch")
         _git_mutate(runtime_root, ["switch", "--detach", source_ref], runner)
         _git_mutate(execution_root, ["switch", "--detach", source_ref], runner)
         if _git(runtime_root, ["rev-parse", "HEAD"], runner) != source_ref:
@@ -280,7 +296,9 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
             raise RuntimeStagingError("governed_stop_marker_changed")
         _validate_governed_state_unchanged(state_root, plan["rollback"])
         task_after = (task_reader or read_watchdog_task)()
-        if _payload_sha256(task_after) != plan["rollback"]["task_ownership_sha256"]:
+        expected_task = plan["rollback"]["task_launcher_ownership"]
+        _validate_task(task_after, runtime_root)
+        if _payload_sha256(task_after) != _payload_sha256(expected_task):
             raise RuntimeStagingError("scheduled_task_ownership_changed")
         if _sha256(state_root / "runtime-manifest.json") != plan["rollback"]["manifest_sha256"]:
             raise RuntimeStagingError("runtime_manifest_changed_during_staging")
@@ -308,7 +326,13 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
             "manifest": manifest, "rollback_path": str(rollback_path),
             "validation_receipt_sha256": plan["receipt_sha256"],
             "validation_consumption_path": str(consumption_path),
-            "watchdog_action": "none", "core_started": False,
+            "watchdog_action": (
+                "migrated_disabled_launcher"
+                if task_mode == "historical_inline_disabled" else "none"
+            ),
+            "scheduled_task_sha256": _payload_sha256(task_after),
+            "scheduled_task_state": task_after[0]["state"],
+            "core_started": False,
             "completed_at": _now(),
         }
         _atomic_json(result_path, result)
@@ -316,7 +340,7 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
     except Exception as exc:
         if mutated:
             try:
-                _restore_rollback(plan, runner)
+                _restore_rollback(plan, runner, task_reader=task_reader, task_writer=task_writer)
             except Exception as recovery_exc:
                 recovery_error = {
                     "status": getattr(recovery_exc, "status", "rollback_recovery_failed"),
@@ -363,6 +387,26 @@ def read_watchdog_task(runner=subprocess.run):
     return rows if isinstance(rows, list) else [rows]
 
 
+def write_watchdog_task_action(rows, *, runner=subprocess.run):
+    """Replace only the watchdog action and force the task to remain disabled."""
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise RuntimeStagingError("scheduled_task_restore_tuple_invalid")
+    row = rows[0]
+    encoded = base64.b64encode(json.dumps(row).encode("utf-8")).decode("ascii")
+    script = (
+        "$ErrorActionPreference='Stop';"
+        f"$r=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded}'))|ConvertFrom-Json;"
+        "$a=New-ScheduledTaskAction -Execute $r.execute -Argument $r.arguments "
+        "-WorkingDirectory $r.working_directory;"
+        "Set-ScheduledTask -TaskName $r.task_name -TaskPath $r.task_path -Action $a|Out-Null;"
+        "Disable-ScheduledTask -TaskName $r.task_name -TaskPath $r.task_path|Out-Null"
+    )
+    completed = runner(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                       capture_output=True, text=True, timeout=30, check=False)
+    if completed.returncode != 0:
+        raise RuntimeStagingError("scheduled_task_action_write_failed")
+
+
 def read_staging_state(state_root):
     state_root = Path(state_root).resolve()
     lane_path = state_root / "release-staging.lock"
@@ -389,7 +433,7 @@ def read_staging_state(state_root):
 
 def recover_runtime_staging(
     *, state_root, lane_id, rollback_sha256, failure_result_sha256=None, task_reader=None,
-    runner=subprocess.run, git_safety_checker=None,
+    task_writer=None, runner=subprocess.run, git_safety_checker=None,
 ):
     state_root = Path(state_root).resolve()
     evidence = read_staging_state(state_root)
@@ -405,8 +449,12 @@ def recover_runtime_staging(
     execution_root = Path(rollback.get("execution", {}).get("root", "")).resolve()
     _validate_target_roots(runtime_root, execution_root, state_root)
     task = (task_reader or read_watchdog_task)()
-    _validate_task(task, runtime_root)
-    if _payload_sha256(task) != rollback.get("task_ownership_sha256"):
+    _validate_task(task, runtime_root, allow_historical=True)
+    allowed_task_digests = {
+        rollback.get("task_ownership_sha256"),
+        _payload_sha256(rollback.get("task_launcher_ownership")),
+    }
+    if _payload_sha256(task) not in allowed_task_digests:
         raise RuntimeStagingError("scheduled_task_ownership_changed")
     current_identities = {}
     for name, root in (("runtime", runtime_root), ("execution", execution_root)):
@@ -444,7 +492,7 @@ def recover_runtime_staging(
         "runtime_root": str(runtime_root), "execution_root": str(execution_root),
         "state_root": str(state_root), "rollback": rollback,
     }
-    _restore_rollback(recovery_plan, runner)
+    _restore_rollback(recovery_plan, runner, task_reader=task_reader, task_writer=task_writer)
     if _worktree_identity(runtime_root, runner) != rollback["runtime"]:
         raise RuntimeStagingError("runtime_recovery_readback_mismatch")
     if _worktree_identity(execution_root, runner) != rollback["execution"]:
@@ -497,7 +545,7 @@ def _read_receipt_key(path):
     return key
 
 
-def _validate_task(rows, runtime_root):
+def _validate_task(rows, runtime_root, allow_historical=False):
     if not isinstance(rows, list) or len(rows) != 1:
         raise RuntimeStagingError("scheduled_task_ownership_ambiguous")
     row = rows[0] if isinstance(rows[0], dict) else {}
@@ -508,14 +556,30 @@ def _validate_task(rows, runtime_root):
     execute = str(Path(str(row.get("execute") or "")).resolve()).casefold()
     working = str(Path(str(row.get("working_directory") or "")).resolve()).casefold()
     arguments = str(row.get("arguments") or "").casefold()
-    if (
+    common_valid = (
         row.get("task_name") != TASK_NAME or int(row.get("action_count") or 0) != 1
         or execute != str(expected_execute.resolve()).casefold()
         or working != str(runtime_root).casefold()
         or str(row.get("state") or "").casefold() not in {"ready", "disabled"}
-        or arguments != expected_arguments.casefold()
-    ):
+    )
+    if common_valid:
         raise RuntimeStagingError("scheduled_task_ownership_ambiguous")
+    if arguments == expected_arguments.casefold():
+        return "launcher"
+    watchdog = str((runtime_root / "scripts" / "charlie_runner_watchdog.py").resolve()).casefold()
+    env_file = str((canonical_root / ".env").resolve()).casefold()
+    if (allow_historical and str(row.get("state") or "").casefold() == "disabled"
+            and arguments.lstrip().startswith("-c ")
+            and watchdog in arguments and env_file in arguments):
+        return "historical_inline_disabled"
+    raise RuntimeStagingError("scheduled_task_ownership_ambiguous")
+
+
+def _launcher_task(rows, runtime_root):
+    row = dict(rows[0])
+    row["state"] = "Disabled"
+    row["arguments"] = f'"{runtime_root / "scripts" / "charlie_runner_task_launcher.py"}"'
+    return [row]
 
 
 def _validate_expected_rollback(runtime, execution, manifest, expected_runtime,
@@ -535,9 +599,20 @@ def _validate_governed_state_unchanged(state_root, rollback):
         raise RuntimeStagingError("watchdog_state_changed")
 
 
-def _restore_rollback(plan, runner):
+def _restore_rollback(plan, runner, *, task_reader=None, task_writer=None):
     rollback = plan["rollback"]
     errors = []
+    try:
+        current = (task_reader or read_watchdog_task)()
+        original = rollback["task_ownership"]
+        if _payload_sha256(current) != rollback["task_ownership_sha256"]:
+            (task_writer or write_watchdog_task_action)(original, runner=runner)
+        restored = (task_reader or read_watchdog_task)()
+        _validate_task(restored, Path(plan["runtime_root"]), allow_historical=True)
+        if _payload_sha256(restored) != rollback["task_ownership_sha256"]:
+            raise RuntimeStagingError("scheduled_task_rollback_readback_mismatch")
+    except Exception as exc:
+        errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
     for name in ("runtime", "execution"):
         identity = rollback[name]
         try:
