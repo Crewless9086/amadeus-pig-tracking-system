@@ -10,9 +10,16 @@ from psycopg.types.json import Jsonb
 
 URL = os.getenv("GREEN_PRINT_DISPOSABLE_POSTGRES_URL", "").strip()
 MIGRATION = (Path(__file__).parents[1] / "supabase" / "migrations" /
-             "202608200002_create_green_print_jobs.sql")
+             "202608210001_create_green_print_jobs.sql")
 PDF_SHA = "a" * 64
 EVENT = "00000000-0000-0000-0000-000000000001"
+
+
+def test_green_migration_has_a_unique_release_version():
+    migration_dir = MIGRATION.parent
+    version = MIGRATION.name.split("_", 1)[0]
+    matches = sorted(path.name for path in migration_dir.glob(f"{version}_*.sql"))
+    assert matches == [MIGRATION.name]
 
 
 @pytest.fixture
