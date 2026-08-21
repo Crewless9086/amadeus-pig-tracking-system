@@ -4949,3 +4949,49 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   preparation; wake the protected lane only when immutable installed-image identity,
   private route/trust/device facts and exact rollback are ready. Physical printing
   remains a later separate acceptance boundary.
+
+## 2026-08-21 - CORE #1155 merged web release verified; local stopped tuple unchanged
+
+- Mission/lineage: existing CORE `CMQ-20260813-05`; no new mission, runner,
+  scheduler, receipt, activation or execution identity.
+- Target owner outcome: deployed CORE independently receives, executes and follows
+  through a genuine authorised development mission after terminals close, owns
+  unresolved follow-up, restarts safely and proves a later terminal-independent
+  cycle with reduced Charl relay/monitoring.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; the web source is live, but local runtime/execution remain at
+  historical `3961411236fca3329abaac2d34cfb863167c1c73`, governed stopped and
+  authority-disabled with no worker or genuine mission cycle.
+- Enabling-stage progress: independently approved PR #1155 head
+  `04581ff4bdf94ff00f20e881a56a1df7810df9a1` merged as exact main
+  `8f218381b1f3061ba9d848b1e9c24abe832dec41`. Render deploy
+  `dep-da4anv3l550s73e826fg` reached terminal `live`; `/health` returned HTTP 200
+  `status=ok`, and `/health/revision` returned HTTP 200 with
+  `provider=render`, `identity_complete=true` and that exact merge revision.
+- Fresh read-only local non-effect proof: runtime HEAD, execution HEAD and manifest
+  remain `3961411236fca3329abaac2d34cfb863167c1c73`. `supervisor.stop` remains
+  present with unchanged SHA-256 `8887C0C06D040B60FEF580C0135761019FE7E416D594538CF86FCF18D1E594B1`;
+  supervisor/watchdog hashes remain `5C7E7E8A...` / `4D0E81B2...`, exactly matching
+  the pre-merge tuple.
+- Scheduled Task truth: exactly one `CHARLIE CORE Runner Watchdog`, still
+  `Disabled`, one historical inline action, interactive/limited principal and
+  canonical payload SHA-256
+  `5ed7dc9b85eb13f6bd0ac46f67d22680935d2d8c79e800d319298bad8de66fb5`,
+  unchanged from the pre-merge assessment. No task action/state mutation occurred.
+- Worker/receipt/write truth: zero matching CORE watchdog/launcher worker processes;
+  supervisor remains `supervisor_stopped`; watchdog remains
+  `governed_stop_active`; no heartbeat or next executable cycle. Validation identity
+  and consumption counts remain 2/2, latest identity timestamp 20 August 2026;
+  release-staging, activation and activation-reconciliation locks remain absent.
+  No receipt, staging lane, mission execution or local runtime write was created.
+- Classification: `WEB_DEPLOYED / LOCAL_DEPLOYED_DORMANT / AUTHORITY_DISABLED /
+  STAGING_RECEIPT_REQUIRED`; Business completion is `NO`.
+- Protected boundary: this verification did not authorise or perform runtime copy/
+  staging, Scheduled Task migration, receipt creation, stop removal, activation,
+  mission execution or production action.
+- First missing real-life gate: generate one genuine canonical isolated-validation
+  v2 receipt for exact merged source, then prepare one exact atomic stop-preserving
+  staging/task-migration decision against a freshly captured unchanged rollback
+  tuple. Activation remains a separate later decision.
+- Next automatic action: Control Tower prepares the isolated validation and stopped
+  staging packet without waking Charl for avoidable technical work.
