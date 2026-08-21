@@ -3719,3 +3719,56 @@ actor receives a genuine trigger, produces canonical and provider/owner-channel
 readback, owns follow-up and proves a later terminal-independent cycle. DOCUMENTS,
 ROOTLINE borehole and BEACON remain on their separate protected boundaries; CORE,
 SAM, HERDMASTER and CODEX UI receive no duplicate collision-prone dispatch.
+
+### PR #1142 integrated deployment and Green printing slot promotion - 2026-08-21
+
+Fresh complete 22,526-byte release handover and independent GitHub verification
+prove PR #1142 merged normally at `2026-08-21T08:22:19Z` as authoritative main
+`278f4b0b75be72a0a0e5f9af09e9b67699c1912a`. Independent Render-origin readback
+returns `status=ok`, `provider=render`, `identity_complete=true` and that exact
+revision; `/health/database` returns configured healthy PostgreSQL time. The visible
+release terminal is closed and its processes are absent. The serialized release lane
+is free.
+
+This is `INTEGRATED / EXTERNAL_HOLD / AUTONOMOUS_CYCLE_EVIDENCE_UNAVAILABLE`, not
+an owner outcome. Owner outcome achieved remains `NONE`; usable now remains `NO`.
+No readable production cycle proves scheduler enablement, worker heartbeat,
+supervisor/restart state, canonical correlation/result, current Application/Telegram
+projection, next exact trigger or later terminal-independent continuity. The exact
+runtime wake condition is a new provider-owned
+`app_private.oom_manager_worker_cycles` record after deployment, bound to worker
+`oom-sakkie-general-manager-v1`, trigger
+`oom-sakkie-morning-scheduler:general-manager` and source revision `278f4b0b`,
+followed by a distinct later cycle after terminal closure. The deployed runtime owns
+that wait; Charl and a development terminal must not manufacture or monitor it.
+
+Because the OOM wait consumes no development WIP slot and Charl is actively
+preparing the Home Assistant Green privately, Control Tower promotes existing
+DOCUMENTS mission `DMQ-20260816-01` into the released slot. Fresh evidence shows
+PR #1150 worktree clean at preserved head `9616e4846114358e8f64980900896bedb636c559`
+but GitHub now reports the PR conflicting/dirty against merged main, with its prior
+three checks green only for the old head. The demonstrated first missing technical
+gate is exact-current additive reconciliation and an actually installable private
+aarch64 Home Assistant app: current source is a safe contract/recovery ledger but
+does not package CUPS, worker scheduling, secure configuration, certificate trust
+or canonical intake.
+
+Control Tower directly started the visible DOCUMENTS terminal in the same preserved
+worktree, bound to PowerShell `38464`, Node `40632` and Codex `38024`, prompt
+`C:\tmp\DOCUMENTS_GREEN_INSTALLABLE_APP_PROMPT_20260821.md` and required full
+handover `C:\tmp\VISIBLE_DOCUMENTS_GREEN_INSTALLABLE_APP_HANDOVER_20260821.md`.
+Dispatch is `delivered / started`; attributable diff/commit/tests are required for
+progress. It is `CURRENT_BLOCKER`, recovery WIP slot 2, and must close automatically.
+
+Authority is source/current-main reconciliation, private app packaging, synthetic
+tests, review, commit/push and PR update only. No PR merge, migration, production or
+Green installation, CUPS/printer/network setup, secret/device mapping, Supabase/farm
+write, Telegram effect or physical print is authorized. The final printing outcome
+remains exactly one genuine natural Oom Sakkie request producing one correct physical
+page with canonical/provider/physical proof and a later terminal-independent print.
+
+Fresh terminal allocation: DOCUMENTS is `ACTIVE - DO NOT INTERRUPT`; OOM SAKKIE is
+`DEPENDENCY IDLE` on provider-owned cycle evidence; HERDMASTER and CODEX UI depend on
+that same deployed evidence. ROOTLINE borehole and BEACON remain protected holds.
+CORE and SAM remain frozen from expansion without fresh attributable work. No watcher
+or idle-wait terminal was created.
