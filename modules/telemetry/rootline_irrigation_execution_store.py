@@ -242,6 +242,21 @@ def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
     return False
 
 
+_EVIDENCE_ID_TRIM_CODEPOINTS = (
+    9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760,
+    8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
+    8232, 8233, 8239, 8287, 12288,
+)
+_EVIDENCE_ID_TRIM_CHARS = "".join(chr(value) for value in _EVIDENCE_ID_TRIM_CODEPOINTS)
+_EVIDENCE_ID_TRIM_SQL = "(" + "||".join(
+    f"chr({value})" for value in _EVIDENCE_ID_TRIM_CODEPOINTS) + ")"
+
+
+def _normalize_evidence_id(value):
+    """Apply the explicit evidence-ID boundary contract shared with PostgreSQL."""
+    return str(value or "").strip(_EVIDENCE_ID_TRIM_CHARS)
+
+
 def _verified_borehole_completion(item):
     """Require distinct canonical, provider and physical final-state evidence."""
     if not isinstance(item, dict) or item.get("action") != "record_borehole_completed":
@@ -251,7 +266,7 @@ def _verified_borehole_completion(item):
     provider = item.get("provider_final_off_evidence") or {}
     physical = item.get("physical_completion_evidence") or {}
     evidence = (canonical, provider, physical)
-    evidence_ids = tuple(str(row.get("evidence_id") or "").strip()
+    evidence_ids = tuple(_normalize_evidence_id(row.get("evidence_id"))
         for row in evidence)
     identities_match = bool(execution_id) and all(
         str(row.get("execution_id") or "") == execution_id
@@ -310,7 +325,7 @@ def _claim_irrigation_output(body):
                 where review_event_id=%s""", (event_id,))
             if cursor.fetchone():
                 return {"success": True, "created": False, "status": "execution_replay"}
-            cursor.execute("""select 1
+            cursor.execute(f"""select 1
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
                   and review_json->'rootline_execution'->>'action'='claim_before_on'
@@ -339,24 +354,24 @@ def _claim_irrigation_output(body):
                       and (terminal.review_json->'rootline_execution'->>'action'='record_completed'
                         or (terminal.review_json->'rootline_execution'->>'action'='record_borehole_completed'
                           and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true'
-                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id','')))>0
+                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0
                           and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
                             terminal.review_json->'rootline_execution'->>'execution_id'
                           and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'final_state'='OFF'
-                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id','')))>0
+                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0
                           and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'execution_id'=
                             terminal.review_json->'rootline_execution'->>'execution_id'
                           and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true'
                           and terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF'
-                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id','')))>0
+                          and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
                             terminal.review_json->'rootline_execution'->>'execution_id'
-                          and btrim(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id') <>
-                            btrim(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id')
-                          and btrim(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id') <>
-                            btrim(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id')
-                          and btrim(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id') <>
-                            btrim(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id')
+                          and btrim(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                            btrim(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL})
+                          and btrim(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                            btrim(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL})
+                          and btrim(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                            btrim(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL})
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true'
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true')
                         or (terminal.review_json->'rootline_execution'->>'action'
@@ -583,7 +598,7 @@ def _claim_borehole_material_load(body):
         if (not _valid_borehole_eligibility(canonical)
                 or any(body.get(field)!=canonical.get(field) for field in immutable)):
             return {"success":True,"created":False,"status":"canonical_borehole_eligibility_unproven"}
-        cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events c
+        cursor.execute(f"""select 1 from public.sam_live_stock_conversation_review_events c
           where c.event_source=%s and c.review_json->'rootline_execution'->>'action'
             in ('claim_before_on','claim_auxiliary_before_on','claim_borehole_before_on') and not exists(
               select 1 from public.sam_live_stock_conversation_review_events t
@@ -596,24 +611,24 @@ def _claim_borehole_material_load(body):
                   t.review_json->'rootline_execution'->>'shutdown_verified'='true') or
                  (t.review_json->'rootline_execution'->>'action'='record_borehole_completed' and
                   t.review_json->'rootline_execution'->>'shutdown_verified'='true' and
-                  length(btrim(coalesce(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id','')))>0 and
+                  length(btrim(coalesce(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
                   t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
                     t.review_json->'rootline_execution'->>'execution_id' and
                   t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'final_state'='OFF' and
-                  length(btrim(coalesce(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id','')))>0 and
+                  length(btrim(coalesce(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'execution_id'=
                     t.review_json->'rootline_execution'->>'execution_id' and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true' and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF' and
-                  length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id','')))>0 and
+                  length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
                     t.review_json->'rootline_execution'->>'execution_id' and
-                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id') <>
-                    btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id') and
-                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id') <>
-                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id') and
-                  btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id') <>
-                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id') and
+                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                    btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
+                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
+                  btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true') or
                  (t.review_json->'rootline_execution'->>'action' in

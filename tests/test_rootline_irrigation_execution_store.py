@@ -76,6 +76,15 @@ def test_borehole_completion_requires_bound_canonical_provider_physical_final_of
         "physical_completion_evidence":{**complete["physical_completion_evidence"],
             "evidence_id":" \t "}}
     assert _terminal_closes_active(whitespace_only,borehole=True) is False
+    for whitespace in ("\n", "\r", "\u00a0", "\u2007", "\u202f"):
+        whitespace_only={**complete,
+            "physical_completion_evidence":{**complete["physical_completion_evidence"],
+                "evidence_id":whitespace}}
+        assert _terminal_closes_active(whitespace_only,borehole=True) is False
+        normalized_duplicate={**complete,
+            "provider_final_off_evidence":{**complete["provider_final_off_evidence"],
+                "evidence_id":whitespace + "CANON-1" + whitespace}}
+        assert _terminal_closes_active(normalized_duplicate,borehole=True) is False
     trim_equivalent={**complete,
         "provider_final_off_evidence":{**complete["provider_final_off_evidence"],
             "evidence_id":" CANON-1 "}}
@@ -430,6 +439,21 @@ def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatc
     insert(f"BH-WHITESPACE-EVIDENCE-{suffix}",execution,
         "record_borehole_completed",whitespace_only)
     assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
+    for index,whitespace in enumerate(("\n", "\r", "\u00a0", "\u2007", "\u202f")):
+        whitespace_only={**_borehole_completion(execution),
+            "physical_completion_evidence":{
+                "evidence_id":whitespace,"execution_id":execution,
+                "pump_stopped":True,"water_flow_stopped":True}}
+        insert(f"BH-UNICODE-WHITESPACE-{index}-{suffix}",execution,
+            "record_borehole_completed",whitespace_only)
+        assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
+        normalized_duplicate={**_borehole_completion(execution),
+            "provider_final_off_evidence":{
+                "evidence_id":whitespace + "CANON-1" + whitespace,
+                "execution_id":execution,"authoritative":True,"state":"OFF"}}
+        insert(f"BH-UNICODE-DUPLICATE-{index}-{suffix}",execution,
+            "record_borehole_completed",normalized_duplicate)
+        assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
     trim_equivalent={**_borehole_completion(execution),
         "provider_final_off_evidence":{
             "evidence_id":" CANON-1 ","execution_id":execution,
