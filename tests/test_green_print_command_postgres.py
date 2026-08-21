@@ -140,7 +140,7 @@ def test_completed_outcome_rejects_stale_lease_and_every_wrong_binding(db, field
 
 def test_reclaimed_current_lease_reads_same_outcome_without_mutation(db):
     with db.cursor() as cursor:
-        cursor.execute("select * from app_private.claim_document_print_command('recovered-worker',300)")
+        cursor.execute("select * from app_private.claim_document_print_command('green','recovered-worker',300)")
         claimed = cursor.fetchone()
         lease = claimed[next(i for i, column in enumerate(cursor.description) if column.name == "lease_token")]
         cursor.execute("select row_to_json(j), (select count(*) from app_private.document_print_job_events) from app_private.document_print_jobs j where job_id='JOB-DB-1'")
