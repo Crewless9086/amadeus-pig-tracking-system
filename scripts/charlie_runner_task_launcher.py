@@ -37,19 +37,13 @@ class _BoundedStderr(io.TextIOBase):
     def write(self, value):
         text = str(value or "")
         self.tail = (self.tail + text)[-self.limit:]
-        if self.prior is not None:
-            try:
-                self.prior.write(_sanitize_text(text))
-            except (OSError, ValueError):
-                pass
+        # Never forward untrusted exception text to Task Scheduler/process
+        # stderr. Redaction cannot be stream-safe when a secret spans writes;
+        # only the bounded, sanitized evidence record is published.
         return len(text)
 
     def flush(self):
-        if self.prior is not None:
-            try:
-                self.prior.flush()
-            except (OSError, ValueError):
-                pass
+        return None
 
 
 def _canonical(value):

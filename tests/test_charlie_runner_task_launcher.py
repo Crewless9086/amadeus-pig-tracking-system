@@ -67,9 +67,12 @@ class CharlieRunnerTaskLauncherTests(unittest.TestCase):
         prior = io.StringIO()
         with patch.dict(os.environ, {"API_TOKEN": "top-secret-token"}):
             stream = launcher._BoundedStderr(prior)
-            stream.write("Bearer abc.def top-secret-token")
-        self.assertNotIn("abc.def", prior.getvalue())
-        self.assertNotIn("top-secret-token", prior.getvalue())
+            stream.write("Bearer abc.")
+            stream.write("def top-secret-")
+            stream.write("token")
+            stream.flush()
+        self.assertEqual(prior.getvalue(), "")
+        self.assertIn("top-secret-token", stream.tail)
 
     def test_action_identity_does_not_record_environment_values(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -155,6 +158,26 @@ class CharlieRunnerTaskLauncherTests(unittest.TestCase):
         self.assertEqual([row["phase"] for row in result["records"]], ["environment_loaded"])
         self.assertEqual(result["invalid_or_unbound_records_ignored"], 3)
         self.assertRegex(result["evidence_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_reader_accepts_original_hmac_from_authenticated_transitioned_packet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); key = b"r" * 32; activation_id = "a" * 32
+            (root / "activation-authority.key").write_bytes(key)
+            pending_hmac = "3" * 64
+            packet = {"activation_id": activation_id,
+                "consumed_packet_hmac_sha256": pending_hmac, "status": "provider_started"}
+            packet["packet_hmac_sha256"] = hmac.new(
+                key, launcher._canonical(packet), hashlib.sha256).hexdigest()
+            (root / "activation-packet.json").write_text(json.dumps(packet), encoding="utf-8")
+            evidence = root / "activation-ledger" / "startup-evidence" / activation_id
+            evidence.mkdir(parents=True)
+            record = {"version": launcher.VERSION, "activation_id": activation_id,
+                "activation_packet_hmac_sha256": pending_hmac, "phase": "environment_loaded"}
+            record["record_hmac_sha256"] = hmac.new(
+                key, launcher._canonical(record), hashlib.sha256).hexdigest()
+            (evidence / "1.json").write_text(json.dumps(record), encoding="utf-8")
+            result = read_startup_evidence(root, activation_id)
+        self.assertEqual(result["status"], "startup_evidence_authenticated")
 
 
 if __name__ == "__main__":

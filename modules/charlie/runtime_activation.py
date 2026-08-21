@@ -2390,7 +2390,11 @@ def read_startup_evidence(state_root, activation_id, *, limit=32):
         return {"status": "startup_evidence_limit_exceeded", "records": []}
     packet_candidates = [state_root / "activation-packet.json"]
     ledger = state_root / "activation-ledger"
-    packet_candidates.extend(sorted(ledger.glob(f"{activation_id}-*activation-packet.json"))[-8:])
+    archived = [path for _, path in zip(
+        range(65), ledger.glob(f"{activation_id}-*activation-packet.json"))]
+    if len(archived) > 64:
+        return {"status": "startup_evidence_packet_limit_exceeded", "records": []}
+    packet_candidates.extend(sorted(archived)[-8:])
     expected_packet_hmacs = set()
     for packet_path in packet_candidates:
         try:
@@ -2399,6 +2403,9 @@ def read_startup_evidence(state_root, activation_id, *, limit=32):
             if (packet.get("activation_id") == activation_id
                     and hmac.compare_digest(packet_hmac, _sign_packet(packet, key))):
                 expected_packet_hmacs.add(packet_hmac)
+                consumed = str(packet.get("consumed_packet_hmac_sha256") or "")
+                if re.fullmatch(r"[0-9a-f]{64}", consumed):
+                    expected_packet_hmacs.add(consumed)
         except ActivationError:
             continue
     records = []
