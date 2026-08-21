@@ -1,8 +1,9 @@
 from pathlib import Path
 import os
+from urllib.parse import quote
 
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory
 from modules.auth.owner_access import (
     configure_owner_access,
     owner_login_get,
@@ -324,7 +325,9 @@ def pig_allocation_page():
 
 @app.route("/purpose-review")
 def purpose_review_page():
-    return render_template("purpose-review.html")
+    litter_id = str(request.args.get("litter_id") or "").strip()
+    suffix = f"&litter_id={quote(litter_id, safe='')}" if litter_id else ""
+    return redirect(f"/pig-allocation?mode=purpose-review{suffix}", code=302)
 
 
 @app.route("/meat-planning")

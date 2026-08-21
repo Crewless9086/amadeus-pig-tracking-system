@@ -42,9 +42,13 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
         if (event_type in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS
                 or event_type in INDIVIDUAL_WEIGHING_CANCEL_EVENTS) \
                 and window_start <= _day(row.get("effective_at")) <= window_end:
-            schedule_state[str(row.get("pig_id") or "")] = event_type
-    scheduled = {pig_id for pig_id, event_type in schedule_state.items()
+            schedule_state[str(row.get("pig_id") or "")] = (
+                event_type, _day(row.get("effective_at")))
+    scheduled = {pig_id for pig_id, (event_type, _effective_day) in schedule_state.items()
                  if event_type in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS}
+    individually_due = {pig_id for pig_id, (event_type, effective_day) in schedule_state.items()
+                        if event_type == "individual_weighing_due"
+                        and effective_day <= analysis_date}
     groups = defaultdict(list)
     pig_by_id = {}
     for raw in pigs or ():
@@ -145,6 +149,8 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
             "status": "conflicting" if conflicts else "complete" if denominator and not missing
                       else "unknown" if not denominator and groups["unknown"] else "partial"},
         "missing_eligible_tagged": missing,
+        "individual_weighing_due_now": [row for row in missing
+                                         if row["pig_id"] in individually_due],
         "breeding_excluded": groups["breeding_excluded"],
         "untagged_excluded": groups["untagged"],
         "inactive_off_farm": groups["inactive_off_farm"],
