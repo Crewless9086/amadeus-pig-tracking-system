@@ -4,6 +4,7 @@ import inspect
 from modules.oom_sakkie.manager_case_sources import _herdmaster, _sam
 from modules.oom_sakkie.owner_attention_projection import build_owner_attention_projection
 from modules.oom_sakkie.telegram_direct import _format_daily_command_brief
+from modules.pig_weights.farm_supabase_read_service import _first_treatment_timing
 
 
 NOW = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
@@ -397,6 +398,140 @@ def test_molly_missing_weaning_date_remains_status_reconciliation(monkeypatch):
     projection = build_owner_attention_projection(rows, generated_at=NOW)
     assert projection["items"][0]["primary_label"] == "Molly"
     assert projection["items"][0]["title"].startswith("Molly")
+
+
+def test_routine_weekly_weighing_is_primary_only_on_farm_local_monday():
+    row = candidate("herdmaster:weekly-weighing:cohort", "HERDMASTER",
+                    "Weekly weighing is ready", "Weigh now and record weight.",
+                    task_class="physical_action_due", physical_work_ready=True)
+    sunday = build_owner_attention_projection(
+        [row], generated_at=datetime(2026, 8, 23, 10, tzinfo=timezone.utc))
+    monday = build_owner_attention_projection(
+        [row], generated_at=datetime(2026, 8, 24, 10, tzinfo=timezone.utc))
+    tuesday = build_owner_attention_projection(
+        [row], generated_at=datetime(2026, 8, 25, 10, tzinfo=timezone.utc))
+    assert sunday["total_count"] == tuesday["total_count"] == 0
+    assert sunday["groups"]["watch"][0]["detail_target"] == "/bulk-weights"
+    assert monday["total_count"] == 1
+    assert monday["groups"]["farm_work_ready"][0]["detail_target"] == "/bulk-weights"
+
+
+def test_explicit_canonical_exception_allows_individual_weighing_outside_monday():
+    row = candidate("herdmaster:weekly-weighing:exception", "HERDMASTER",
+                    "Weekly weighing exception is due", "Weigh now and record weight.",
+                    task_class="physical_action_due", physical_work_ready=True)
+    row["exceptional_weighing_due_now"] = True
+    projection = build_owner_attention_projection(
+        [row], generated_at=datetime(2026, 8, 25, 10, tzinfo=timezone.utc))
+    assert projection["total_count"] == 1
+    assert projection["groups"]["farm_work_ready"][0]["detail_target"] == "/bulk-weights"
+
+
+def test_due_molly_treatment_is_names_first_primary_and_routes_to_exact_litter(monkeypatch):
+    class Result:
+        result_id = "herd-result-molly-treatment"
+        work_items = ()
+
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "owner-1")
+    monkeypatch.delenv("PIG_WELFARE_CASE_RUNTIME_ENABLED", raising=False)
+    monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
+                        lambda *_args: Result())
+    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
+                        lambda **_kwargs: {"snapshot_observed_at": NOW.isoformat(),
+                            "overview_rows": [], "litter_rows": [{
+                                "Sow_Tag_Number": "Molly", "Litter_Status": "Active",
+                                "Litter_ID": "LIT-MOLLY", "Farrowing_Date": "2026-08-11",
+                                "Wean_Date": None, "Weaned_Count": None,
+                                "Active_Pig_Count": 8,
+                                "first_treatment_attention_due": True,
+                                "first_treatment_evidence_state": "due",
+                                "first_treatment_attention_date": "2026-08-14"}]})
+    projection = build_owner_attention_projection(_herdmaster(NOW), generated_at=NOW)
+    item = projection["groups"]["farm_work_ready"][0]
+    assert projection["total_count"] == 1
+    assert item["primary_label"] == "Molly"
+    assert item["title"].startswith("Molly")
+    assert item["message_family"] == "litter_first_treatment"
+    assert item["detail_target"] == "/litter/LIT-MOLLY"
+    assert "product" not in item["exact_owner_action"].casefold()
+    assert "dose" not in item["exact_owner_action"].casefold()
+
+
+def test_valid_individual_and_specialist_focused_routes_exist():
+    animal = candidate("herdmaster:individual-weighing:PIG-44", "HERDMASTER",
+                       "Pig 44 weighing is due", "Weigh now.",
+                       task_class="physical_action_due", physical_work_ready=True)
+    animal["exceptional_weighing_due_now"] = True
+    animal["evidence_refs"].append("pig:PIG-44")
+    beacon = candidate("beacon:current-sale-opportunity", "BEACON", "Media review",
+                       "Review.", task_class="informational_watch")
+    policy = candidate("rootline:policy-review", "ROOTLINE", "Policy review",
+                       "Review.", task_class="informational_watch")
+    projection = build_owner_attention_projection([animal, beacon, policy], generated_at=NOW)
+    routes = {item["source_key"]: item["detail_target"] for item in projection["items"]}
+    assert routes[animal["dedupe_key"]] == "/pig/PIG-44"
+    assert routes[beacon["dedupe_key"]] == "/sales/beacon-media"
+    assert routes[policy["dedupe_key"]] == "/rootline/policy-review"
+
+
+def test_unknown_or_completed_molly_treatment_never_becomes_primary():
+    for due in (None, False):
+        row = candidate("herdmaster:molly-active-litter", "HERDMASTER",
+                        "Molly's litter remains under care.", "HERDMASTER checks.",
+                        task_class="status_reconciliation" if due is None else "informational_watch",
+                        unknowns=("first_treatment_due_state",) if due is None else ())
+        row["evidence_refs"].append("litter:LIT-MOLLY")
+        projection = build_owner_attention_projection([row], generated_at=NOW)
+        assert projection["total_count"] == 0
+        assert projection["items"][0]["detail_target"] == "/litter/LIT-MOLLY"
+    completed = candidate("herdmaster:molly-active-litter", "HERDMASTER",
+                          "Molly's litter first treatment completed.", "No action.",
+                          lifecycle="resolved", operational_status="completed",
+                          task_class="physical_action_due", physical_work_ready=True)
+    completed["evidence_refs"].append("litter:LIT-MOLLY")
+    projection = build_owner_attention_projection([], generated_at=NOW,
+                                                   prior_cases=[completed])
+    assert projection["total_count"] == 0
+    assert projection["groups"]["recently_completed"][0]["detail_target"] == "/litter/LIT-MOLLY"
+
+
+def test_canonical_treatment_timing_distinguishes_unknown_zero_partial_and_completed():
+    today = datetime(2026, 8, 21, tzinfo=timezone.utc).date()
+    litter = {"farrowing_date": "2026-08-11", "first_treatment_skipped_at": None}
+    assert _first_treatment_timing(litter, (), today=today, active_count=0)[
+        "first_treatment_evidence_state"] == "unknown"
+    assert _first_treatment_timing(litter, (), today=today, active_count=8, partial=True)[
+        "first_treatment_evidence_state"] == "partial"
+    assert _first_treatment_timing(litter, (), today=today, active_count=8, complete=True)[
+        "first_treatment_evidence_state"] == "completed"
+    due = _first_treatment_timing(litter, (), today=today, active_count=8)
+    assert due["first_treatment_evidence_state"] == "due"
+    assert due["first_treatment_attention_due"] is True
+
+
+def test_treatment_completion_query_counts_only_current_active_on_farm_piglets():
+    source = inspect.getsource(__import__(
+        "modules.pig_weights.farm_supabase_read_service", fromlist=["x"]
+    )._get_allocation_input_rows_queries)
+    treatment_case = source.split("as first_treatment_treated_count", 1)[0].rsplit(
+        "count(distinct case", 1)[1]
+    assert "pig.on_farm is true" in treatment_case
+    assert "lower(coalesce(pig.status, '')) = 'active'" in treatment_case
+    # Exited/dead/weaned treated members therefore cannot compensate for an
+    # untreated member of the current performable population.
+
+
+def test_focused_routes_reject_unsafe_or_missing_identifiers():
+    unsafe = candidate("herdmaster:welfare:unsafe", "HERDMASTER", "Animal welfare",
+                       "Reconcile.", task_class="status_reconciliation")
+    unsafe["evidence_refs"].append("pig:../owner-attention")
+    missing = candidate("herdmaster:molly-active-litter", "HERDMASTER", "Molly care",
+                        "Watch.", task_class="informational_watch")
+    projection = build_owner_attention_projection([unsafe, missing], generated_at=NOW)
+    routes = {item["source_key"]: item["detail_target"] for item in projection["items"]}
+    assert routes["herdmaster:welfare:unsafe"] == "/pigs"
+    assert routes["herdmaster:molly-active-litter"] == "/litters"
+    assert all(".." not in route for route in routes.values())
 
 
 def test_primary_count_includes_only_protected_decision_and_proven_physical_work():

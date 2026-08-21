@@ -947,12 +947,13 @@ def get_allocation_input_rows(
     *,
     deadline_seconds=ALLOCATION_TOTAL_DEADLINE_SECONDS,
     now_fn=monotonic,
+    today=None,
 ):
     # Preserve dependency-injected/unit-test behavior when no canonical
     # database is configured; real canonical reads and explicit factories use
     # the shared snapshot below.
     if connect_factory is None and not farm_supabase_reads_available():
-        result = _get_allocation_input_rows_queries(connect_factory=None)
+        result = _get_allocation_input_rows_queries(connect_factory=None, today=today)
         result["snapshot_observed_at"] = datetime.now().astimezone().isoformat()
         return result
     acquired_started = now_fn()
@@ -976,7 +977,7 @@ def get_allocation_input_rows(
         with connection.cursor() as cursor:
             cursor.execute("select transaction_timestamp()")
             snapshot_observed_at = cursor.fetchone()[0]
-        result = _get_allocation_input_rows_queries(connect_factory=snapshot)
+        result = _get_allocation_input_rows_queries(connect_factory=snapshot, today=today)
         if snapshot.remaining_seconds() < 0:
             raise TimeoutError("canonical allocation read deadline exhausted during result projection")
         result["read_progress"] = snapshot.progress()
@@ -1174,7 +1175,7 @@ def get_full_lifecycle_merit(cutoff, pig_id=None, connect_factory=None):
     return result
 
 
-def _get_allocation_input_rows_queries(connect_factory):
+def _get_allocation_input_rows_queries(connect_factory, today=None):
     current_rows = _current_state_rows(connect_factory=connect_factory)
     allocated_rows = _fetch_all(
         """
@@ -1210,7 +1211,7 @@ def _get_allocation_input_rows_queries(connect_factory):
         pig_id = medical_row["pig_id"]
         medical_by_pig.setdefault(pig_id, medical_row)
         medical_history_by_pig.setdefault(pig_id, []).append(medical_row)
-    today = date.today()
+    today = today or date.today()
     for row in current_rows:
         allocation = allocated_by_pig.get(row.get("pig_id"), {})
         row["reserved_status"] = "Reserved" if _text(allocation.get("line_status")).lower() == "reserved" else (
@@ -1271,9 +1272,28 @@ def _get_allocation_input_rows_queries(connect_factory):
     )
     litter_rows = _fetch_all(
         """
-        select litter_id, sow_pig_id, boar_pig_id, sow_tag_number, boar_tag_number,
-               farrowing_date, wean_date, born_alive, weaned_count, litter_status
-        from public.current_canonical_litters
+        select litter.litter_id, litter.sow_pig_id, litter.boar_pig_id,
+               litter.sow_tag_number, litter.boar_tag_number, litter.farrowing_date,
+               litter.wean_date, litter.born_alive, litter.weaned_count,
+               litter.litter_status, litter.first_treatment_skipped_at,
+               count(distinct case when pig.on_farm is true
+                   and lower(coalesce(pig.status, '')) = 'active'
+                   and medical.treatment_date >= litter.farrowing_date and (
+                   position(lower('Litter ' || litter.litter_id || ' newborn health action')
+                            in lower(coalesce(medical.medical_notes, ''))) > 0
+                   or position(lower('Litter ' || litter.litter_id || ' newborn health action')
+                            in lower(coalesce(medical.reason_for_treatment, ''))) > 0
+               ) then medical.pig_id end) as first_treatment_treated_count,
+               count(distinct case when pig.on_farm is true
+                   and lower(coalesce(pig.status, '')) = 'active' then pig.pig_id end)
+                   as active_pig_count
+        from public.current_canonical_litters litter
+        left join public.current_canonical_pigs pig on pig.litter_id = litter.litter_id
+        left join public.pig_medical_events medical on medical.pig_id = pig.pig_id
+        group by litter.litter_id, litter.sow_pig_id, litter.boar_pig_id,
+                 litter.sow_tag_number, litter.boar_tag_number, litter.farrowing_date,
+                 litter.wean_date, litter.born_alive, litter.weaned_count,
+                 litter.litter_status, litter.first_treatment_skipped_at
         order by litter_id
         """,
         connect_factory=connect_factory,
@@ -1304,6 +1324,19 @@ def _get_allocation_input_rows_queries(connect_factory):
         "Born_Alive": _float_or_none(row.get("born_alive")),
         "Weaned_Count": _float_or_none(row.get("weaned_count")),
         "Litter_Status": _text(row.get("litter_status")),
+        "Active_Pig_Count": int(row.get("active_pig_count") or 0),
+        "First_Treatment_Treated_Count": int(row.get("first_treatment_treated_count") or 0),
+        **_first_treatment_timing(
+            row, (),
+            complete=bool(int(row.get("active_pig_count") or 0)
+                          and int(row.get("first_treatment_treated_count") or 0)
+                          >= int(row.get("active_pig_count") or 0)),
+            partial=bool(int(row.get("first_treatment_treated_count") or 0)
+                         and int(row.get("first_treatment_treated_count") or 0)
+                         < int(row.get("active_pig_count") or 0)),
+            today=today,
+            active_count=int(row.get("active_pig_count") or 0),
+        ),
     } for row in litter_rows]
     pen_lookup = {
         _text(row.get("pen_id")): {
@@ -1972,16 +2005,23 @@ def get_litter_detail(litter_id, connect_factory=None):
     }
 
 
-def _first_treatment_timing(litter, pigs, *, complete=False, partial=False, today=None):
+def _first_treatment_timing(litter, pigs, *, complete=False, partial=False, today=None,
+                            active_count=None):
     today = today or date.today()
     birth_date = _litter_birth_date(litter, pigs)
     due_date = birth_date + timedelta(days=FIRST_TREATMENT_ATTENTION_DAY) if birth_date else None
     skipped = litter.get("first_treatment_skipped_at") is not None
+    due = bool(
+        due_date and today >= due_date and not complete and not partial and not skipped
+        and (active_count is None or active_count > 0)
+    )
+    state = ("completed" if complete else "partial" if partial else "skipped" if skipped
+             else "unknown" if not due_date or active_count == 0
+             else "due" if due else "not_due")
     return {
         "first_treatment_attention_date": _date_text(due_date),
-        "first_treatment_attention_due": bool(
-            due_date and today >= due_date and not complete and not partial and not skipped
-        ),
+        "first_treatment_attention_due": due,
+        "first_treatment_evidence_state": state,
         "first_treatment_skipped": skipped,
         "first_treatment_skipped_at": _date_text(litter.get("first_treatment_skipped_at")),
         "first_treatment_skipped_by": _text(litter.get("first_treatment_skipped_by")),

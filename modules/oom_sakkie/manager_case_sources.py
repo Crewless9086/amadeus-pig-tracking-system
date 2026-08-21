@@ -210,11 +210,22 @@ def _herdmaster(now):
             physical_work_ready=(task_class == "physical_action_due"
                                  and metadata.get("physical_work_ready") is True
                                  and not unknowns),
+            routine_weekly_weighing=metadata.get("routine_weekly_weighing") is True,
+            exceptional_weighing_due_now=metadata.get("exceptional_weighing_due_now") is True,
             physical_assignee=(item.assignee if task_class == "physical_action_due" else None),
             owner_question_eligible=exact_owner_question or (
                 task_class == "protected_decision" and not unknowns)))
     from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
-    snapshot = get_allocation_input_rows()
+    farm_today = _aware(now).astimezone(ZoneInfo("Africa/Johannesburg")).date()
+    try:
+        snapshot = get_allocation_input_rows(today=farm_today)
+    except TypeError as exc:
+        # Preserve narrow dependency-injected adapters that predate the
+        # optional deterministic date argument; production uses the canonical
+        # adapter above.
+        if "today" not in str(exc):
+            raise
+        snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
     for row in snapshot.get("overview_rows") or ():
         if str(row.get("Tag_Number") or "").strip().casefold() != "151":
@@ -239,17 +250,36 @@ def _herdmaster(now):
             farrowing = str(row.get("Farrowing_Date") or "unknown")
             wean = str(row.get("Wean_Date") or "unknown")
             weaned = row.get("Weaned_Count")
+            treatment_state = str(row.get("first_treatment_evidence_state") or "unknown").casefold()
+            treatment_due = (treatment_state == "due"
+                             and row.get("first_treatment_attention_due") is True
+                             and int(row.get("Active_Pig_Count") or 0) > 0)
+            treatment_date = str(row.get("first_treatment_attention_date") or "unknown")
             candidates.append(_candidate("herdmaster:molly-active-litter", "HERDMASTER", "due",
                 [f"litter:{litter_id}", f"status:{status or 'unknown'}",
                  f"farrowing:{farrowing}", f"wean_due:{wean}",
                  f"weaned_count:{weaned if weaned is not None else 'unknown'}",
+                 f"first_treatment_due:{str(treatment_due).lower()}",
+                 f"first_treatment_state:{treatment_state}",
+                 f"first_treatment_attention_date:{treatment_date}",
                  f"observed:{snapshot_observed.isoformat()}"],
-                ([] if wean != "unknown" else ["current_litter_weaning_due_date"]),
-                f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}.",
-                "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.",
+                ([] if treatment_due or treatment_state in {"not_due", "completed", "skipped"}
+                 else [f"first_treatment_{treatment_state}_reconciliation"]),
+                ("Molly's litter first treatment is due and ready."
+                 if treatment_due else
+                 f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}."),
+                ("Molly's litter — perform the first treatment now in the existing litter treatment journey."
+                 if treatment_due else
+                 "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation."),
                 now + timedelta(minutes=30),
-                task_class=("informational_watch" if wean != "unknown"
-                            else "status_reconciliation"),
+                task_class=("physical_action_due" if treatment_due else
+                            ("informational_watch" if treatment_state in {
+                                "not_due", "completed", "skipped"}
+                             else "status_reconciliation")),
+                welfare_priority=treatment_due,
+                physical_work_ready=treatment_due,
+                physical_assignee=("Farm team" if treatment_due else None),
+                message_family=("litter_first_treatment" if treatment_due else "litter_care"),
                 presentation_identity={"human_name": "Molly",
                                        "stable_reference": litter_id}))
     return candidates
@@ -386,7 +416,8 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
                *, task_class=None, welfare_priority=False, presentation_identity=None,
                message_family=None, physical_work_ready=False,
                physical_assignee=None, owner_question_eligible=False,
-               irreducible_owner_exception=False):
+               irreducible_owner_exception=False, routine_weekly_weighing=False,
+               exceptional_weighing_due_now=False):
     result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
@@ -406,6 +437,10 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
         result["owner_question_eligible"] = True
     if irreducible_owner_exception:
         result["irreducible_owner_exception"] = True
+    if routine_weekly_weighing:
+        result["routine_weekly_weighing"] = True
+    if exceptional_weighing_due_now:
+        result["exceptional_weighing_due_now"] = True
     return result
 
 

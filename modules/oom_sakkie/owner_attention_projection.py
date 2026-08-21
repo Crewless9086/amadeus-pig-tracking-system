@@ -11,6 +11,7 @@ from datetime import timedelta
 import hashlib
 import re
 from typing import Any, Callable, Iterable, Mapping
+from zoneinfo import ZoneInfo
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
@@ -108,7 +109,7 @@ def build_owner_attention_projection(
     items = _disambiguate_duplicate_labels(items)
     ordered = sorted(items, key=lambda item: (
         item.lifecycle != "open", not item.welfare_priority,
-        PRIORITY_ORDER[item.priority], item.category,
+        PRIORITY_ORDER[item.priority], _routine_weighing_item(item), item.category,
         item.work_id,
     ))
     lifecycle_items = [asdict(item) for item in ordered]
@@ -207,7 +208,7 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
     operational_status = str(raw.get("operational_status") or "open").strip().lower()
     attention_group, eligible = _attention_eligibility(
         raw, task_class=task_class, lifecycle=lifecycle,
-        operational_status=operational_status, priority=priority)
+        operational_status=operational_status, priority=priority, now=now)
     assigned_to = _assigned_to(raw, specialist, attention_group)
     return OwnerAttentionItem(
         work_id="attn_" + hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:24],
@@ -227,7 +228,7 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
         provenance=refs,
         observed_at=_observed_at(refs),
         freshness=_freshness(refs, now),
-        detail_target=_detail_target(source_key, specialist),
+        detail_target=_detail_target(raw, source_key, specialist),
         lifecycle=lifecycle,
         semantic_emoji=SEMANTIC_EMOJI[task_class],
         attention_group=attention_group,
@@ -239,7 +240,8 @@ def _item(raw: Mapping[str, Any], now: datetime) -> OwnerAttentionItem:
 
 
 def _attention_eligibility(raw: Mapping[str, Any], *, task_class: str, lifecycle: str,
-                           operational_status: str, priority: str) -> tuple[str, bool]:
+                           operational_status: str, priority: str,
+                           now: datetime) -> tuple[str, bool]:
     """Derive owner eligibility only from existing canonical case semantics."""
     if lifecycle != "open" or operational_status in {"completed", "contained", "resolved", "superseded", "stale"}:
         return "recently_completed", False
@@ -250,6 +252,10 @@ def _attention_eligibility(raw: Mapping[str, Any], *, task_class: str, lifecycle
             and raw.get("owner_question_eligible") is True):
         return "needs_you", True
     if task_class == "physical_action_due" and raw.get("physical_work_ready") is True:
+        if (_routine_weighing_raw(raw)
+                and _aware(now).astimezone(ZoneInfo("Africa/Johannesburg")).weekday() != 0
+                and raw.get("exceptional_weighing_due_now") is not True):
+            return "watch", False
         # A physical task is owner-visible work only when the specialist has
         # proved it ready. Urgent welfare/shutdown exceptions remain an exact
         # owner need; ordinary physical work stays farm work ready.
@@ -408,13 +414,41 @@ def _category(source_key: str, specialist: str) -> str:
     return specialist.casefold()
 
 
-def _detail_target(source_key: str, specialist: str) -> str:
+def _detail_target(raw: Mapping[str, Any], source_key: str, specialist: str) -> str:
+    refs = tuple(str(value) for value in raw.get("evidence_refs") or ())
+    litter_id = _safe_identifier(_ref_value(refs, "litter:"))
+    pig_id = _safe_identifier(_ref_value(refs, "pig:"))
+    if litter_id:
+        return f"/litter/{litter_id}"
     if "molly-active-litter" in source_key:
         return "/litters"
+    if specialist == "HERDMASTER" and pig_id:
+        return f"/pig/{pig_id}"
+    if _routine_weighing_raw(raw):
+        return "/bulk-weights"
     if "pig-151" in source_key:
         return "/pig-allocation"
+    if specialist == "ROOTLINE" and "policy" in source_key.casefold():
+        return "/rootline/policy-review"
     return {"HERDMASTER": "/pigs", "ROOTLINE": "/irrigation", "SAM": "/sales-dashboard",
-            "BEACON": "/beacon/media", "RUNTIME": "/oom-sakkie"}.get(specialist, "/oom-sakkie")
+            "BEACON": "/sales/beacon-media", "RUNTIME": "/oom-sakkie"}.get(specialist, "/oom-sakkie")
+
+
+def _safe_identifier(value: str) -> str:
+    return value if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", value or "") else ""
+
+
+def _routine_weighing_raw(raw: Mapping[str, Any]) -> bool:
+    if raw.get("routine_weekly_weighing") is True:
+        return True
+    text = " ".join(str(raw.get(key) or "") for key in (
+        "dedupe_key", "summary", "next_action", "message_family")).casefold()
+    return "monday weigh" in text or "weekly weigh" in text
+
+
+def _routine_weighing_item(item: OwnerAttentionItem) -> bool:
+    text = " ".join((item.source_key, item.title, item.message_family)).casefold()
+    return "monday weigh" in text or "weekly weigh" in text
 
 
 def _observed_at(refs: tuple[str, ...]) -> str | None:

@@ -31,6 +31,7 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
         (PACKET_TYPE, packet["material_digest"]), observed_at, 1.0)
     items = []
     missing = weight["missing_eligible_tagged"]
+    exceptional_due = weight.get("individual_weighing_due_now") or []
     findings = weight["material_weight_findings"]
     conflicts = weight["conflicting_weight_evidence"]
     is_af = str(language).casefold().startswith("af")
@@ -43,18 +44,39 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
             assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.READ_ONLY,
             provenance=provenance, business_value=120))
     elif missing:
-        tags = ", ".join(str(row["tag"]) for row in missing)
-        items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":weight-missing",
+        for row in exceptional_due:
+            pig_id = str(row["pig_id"])
+            tag = str(row["tag"])
+            item_provenance = replace(
+                provenance, source_refs=(*provenance.source_refs, f"pig:{pig_id}",
+                                         "event:individual_weighing_due"))
+            items.append(SpecialistWorkItem(
+                item_id=packet["material_digest"] + ":individual-weight:" + pig_id,
+                dedupe_key="herdmaster:individual-weighing:" + pig_id,
+                domain="herd", title=f"Pig {tag} individual weighing is due",
+                why="Canonical HERDMASTER lifecycle evidence explicitly marks this individual weighing due now.",
+                next_action=f"Weigh Pig {tag} now and record the weight through the governed rail.",
+                assignee="charl", state=WorkState.DUE_TODAY,
+                authority=Authority.ADVISORY, provenance=item_provenance,
+                business_value=115, metadata={"physical_work_ready": True,
+                    "exceptional_weighing_due_now": True, "pig_id": pig_id}))
+        routine_missing = [row for row in missing if row not in exceptional_due]
+        if not routine_missing:
+            routine_missing = []
+        if routine_missing:
+            tags = ", ".join(str(row["tag"]) for row in routine_missing)
+            items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":weight-missing",
             dedupe_key="herdmaster:weekly-weight-evidence", domain="herd",
             title=(f"Weighing: {snapshot['covered']} of {snapshot['eligible_tagged']} recorded; "
-                   f"{len(missing)} tag(s) need status reconciliation"),
+                   f"{len(routine_missing)} tag(s) need status reconciliation"),
             why=(f"Current-snapshot coverage is {snapshot['covered']}/{snapshot['eligible_tagged']}. "
                  "Breeding, untagged, inactive/off-farm and Unknown eligibility remain separate."),
             next_action=(f"Reconcile sale/order or other canonical status for tags {tags}; "
                          "do not classify them for reweighing until that evidence exists."),
             assignee="charl", state=WorkState.WAITING_EVIDENCE,
             authority=Authority.READ_ONLY,
-            provenance=provenance, business_value=110))
+            provenance=provenance, business_value=110,
+            metadata={"routine_weekly_weighing": True}))
     elif snapshot["status"] == "complete":
         finding_text = _findings(findings)
         window = weight.get("window") or {}
@@ -147,7 +169,7 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
         **({"mortality_packet": dict(packet.get("specialist_mortality_packet") or {})}
            if mortality.get("digest_changed") else {}),
     } if no_mortality_item else {})
-    rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id),
+    rebound = tuple(replace(item, provenance=replace(item.provenance, result_id=result_id),
                       metadata={**dict(item.metadata), **baseline}) for item in items)
     return SpecialistResult("herdmaster", result_id, observed_at,
         SpecialistAvailability.AVAILABLE, work_items=rebound)

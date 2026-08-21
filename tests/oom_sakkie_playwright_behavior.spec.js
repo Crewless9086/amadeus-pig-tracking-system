@@ -34,14 +34,14 @@ async function stubOomSakkieApi(page) {
       };
     } else if (url.endsWith("/owner-attention") && request.method() === "GET") {
       const attentionItems = [
-        { work_id: "attn-welfare", title: "Prince has an active welfare case.", specialist_owner: "HERDMASTER", task_class: "status_reconciliation", priority: "urgent", freshness: "current", exact_owner_action: "HERDMASTER owns current status reconciliation.", semantic_emoji: "🔄", detail_target: "/pigs" },
-        { work_id: "attn-molly", title: "Molly's litter remains under care.", specialist_owner: "HERDMASTER", task_class: "informational_watch", priority: "due", freshness: "current", exact_owner_action: "Review at the planned weaning boundary.", semantic_emoji: "👀", detail_target: "/litters" },
-        { work_id: "attn-weight", title: "Physical weighing is due.", specialist_owner: "HERDMASTER", task_class: "physical_action_due", priority: "due", freshness: "current", exact_owner_action: "Weigh now and record weight.", semantic_emoji: "⚖️", detail_target: "/pigs" },
+        { work_id: "attn-welfare", title: "Prince has an active welfare case.", specialist_owner: "HERDMASTER", task_class: "status_reconciliation", priority: "urgent", freshness: "current", exact_owner_action: "HERDMASTER owns current status reconciliation.", semantic_emoji: "🔄", detail_target: "/pig/PIG-125" },
+        { work_id: "attn-molly", title: "Molly — litter first treatment is due and ready.", specialist_owner: "HERDMASTER", task_class: "physical_action_due", priority: "due", freshness: "current", exact_owner_action: "Molly's litter — perform the first treatment now in the existing litter treatment journey.", semantic_emoji: "⚖️", detail_target: "/litter/LIT-MOLLY" },
+        { work_id: "attn-weight", title: "Weekly weighing is upcoming.", specialist_owner: "HERDMASTER", task_class: "physical_action_due", priority: "planned", freshness: "current", exact_owner_action: "Weigh during the governed Monday window.", semantic_emoji: "👀", detail_target: "/bulk-weights" },
         { work_id: "attn-rootline", title: "ROOTLINE retry is pending.", specialist_owner: "ROOTLINE", task_class: "status_reconciliation", priority: "watch", freshness: "aging", exact_owner_action: "No owner action now — ROOTLINE owns the retry.", semantic_emoji: "🔄", detail_target: "/irrigation" },
       ];
       attentionItems[0] = { ...attentionItems[0], attention_group: "oom_sakkie_checking", owner_action_eligible: false, owner_urgency: "none", operational_status: "waiting_reassessment", assigned_to: "Oom Sakkie / Herdmaster", secondary_reference: "tag 125", provenance: ["pig:PIG-125"] };
-      attentionItems[1] = { ...attentionItems[1], attention_group: "watch", owner_action_eligible: false, owner_urgency: "none", operational_status: "open", assigned_to: "Herdmaster", secondary_reference: "litter", provenance: ["litter:current"] };
-      attentionItems[2] = { ...attentionItems[2], attention_group: "farm_work_ready", owner_action_eligible: true, owner_urgency: "due", operational_status: "open", assigned_to: "Farm team", secondary_reference: "weekly cohort", provenance: ["cohort:weekly"] };
+      attentionItems[1] = { ...attentionItems[1], attention_group: "farm_work_ready", owner_action_eligible: true, owner_urgency: "due", operational_status: "open", assigned_to: "Farm team", secondary_reference: "LIT-MOLLY", provenance: ["litter:LIT-MOLLY"] };
+      attentionItems[2] = { ...attentionItems[2], attention_group: "watch", owner_action_eligible: false, owner_urgency: "none", operational_status: "open", assigned_to: "Herdmaster", secondary_reference: "weekly cohort", provenance: ["cohort:weekly"] };
       attentionItems[3] = { ...attentionItems[3], attention_group: "oom_sakkie_checking", owner_action_eligible: false, owner_urgency: "none", operational_status: "delegated", assigned_to: "oom-manager-cycle", secondary_reference: "current plan", provenance: ["plan:current"] };
       body = {
         success: true,
@@ -50,8 +50,8 @@ async function stubOomSakkieApi(page) {
         hidden_count: 0,
         view_all_target: "/owner-attention",
         items: attentionItems,
-        top_items: [attentionItems[2]],
-        groups: { needs_you: [], farm_work_ready: [attentionItems[2]], oom_sakkie_checking: [attentionItems[0], attentionItems[3]], watch: [attentionItems[1]], recently_completed: [] },
+        top_items: [attentionItems[1]],
+        groups: { needs_you: [], farm_work_ready: [attentionItems[1]], oom_sakkie_checking: [attentionItems[0], attentionItems[3]], watch: [attentionItems[2]], recently_completed: [] },
         group_counts: { needs_you: 0, farm_work_ready: 1, oom_sakkie_checking: 2, watch: 1, recently_completed: 0 },
       };
     } else if (url.endsWith("/agent-dry-runs") && request.method() === "POST") {
@@ -204,7 +204,8 @@ test("authenticated owner attention is accessible and responsive", async ({ page
   await authenticateOwner(page);
   await page.goto("/");
   await expect(page.locator(".attention-item")).toHaveCount(1);
-  await expect(page.locator(".attention-item").first()).toHaveAttribute("data-work-id", "attn-weight");
+  await expect(page.locator(".attention-item").first()).toHaveAttribute("data-work-id", "attn-molly");
+  await expect(page.locator(".attention-item").first()).toHaveAttribute("href", "/litter/LIT-MOLLY");
   await expect(page.locator("#attention_view_all")).toHaveText("Full view · 4 current");
   await testInfo.attach("owner-attention-home-desktop", {
     body: await page.screenshot({ fullPage: true }), contentType: "image/png",
@@ -219,6 +220,9 @@ test("authenticated owner attention is accessible and responsive", async ({ page
   await page.setViewportSize({ width: 1280, height: 720 });
   await expect(page.getByRole("heading", { name: "Owner attention" })).toBeVisible();
   await expect(page.locator(".attention-all-item")).toHaveCount(4);
+  await expect(page.locator(".attention-all-item").first().locator(".attention-detail-link"))
+    .toHaveAttribute("href", "/litter/LIT-MOLLY");
+  await expect(page.locator(".attention-all-item").first()).toContainText("Molly");
   await expect(page.getByText("Prince has an active welfare case.")).not.toBeVisible();
   await page.getByText("Oom Sakkie is checking").click();
   await expect(page.getByText("Prince has an active welfare case.")).toBeVisible();
@@ -235,6 +239,8 @@ test("authenticated owner attention is accessible and responsive", async ({ page
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".attention-all-item").first()).toBeVisible();
+  await page.locator(".attention-detail-link").first().focus();
+  await expect(page.locator(".attention-detail-link").first()).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await testInfo.attach("owner-attention-mobile", {
     body: await page.screenshot({ fullPage: true }),

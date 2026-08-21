@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+- 2026-08-21: Bound routine weekly weighing to the farm-local Monday owner-work
+  window unless separate canonical evidence explicitly proves an exceptional
+  weighing due now. Promoted canonically due Molly litter first treatment to
+  names-first physical farm work without inferring product, dose or completion;
+  Unknown/completed evidence fails closed. Added allowlisted focused litter,
+  animal and bulk-weighing targets to the existing shared projection, preserving
+  homepage/full-view/Brief/Telegram parity and approved presentation styling.
+
 - 2026-08-20: Separated shared owner-action eligibility from specialist manager
   urgency. Only exact owner needs and proved physical farm work now count;
   delegated/waiting reconciliation remains Oom Sakkie-owned, watch context and

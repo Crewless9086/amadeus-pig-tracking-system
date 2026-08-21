@@ -171,6 +171,23 @@ exception signal. Recently completed presentation is bounded to manager cases
 updated in the preceding seven days; older immutable history stays canonical
 and outside the ordinary owner projection.
 
+Routine weekly weighing is `Farm work ready` only during the farm-local Monday
+calendar window. Before or after Monday it is Watch or silent; incomplete
+coverage and unresolved status remain `Oom Sakkie is checking`. A separate
+individual weighing may enter primary attention outside Monday only when its
+canonical specialist evidence explicitly proves that exceptional weighing is
+due now. Canonical litter first-treatment evidence follows the same fail-closed
+rule: due and ready treatment is physical farm work, while Unknown, partial,
+completed or durably skipped treatment is not primary work. No product, dose or
+completion is inferred.
+
+Every item carries one validated focused target. Canonical litter identity
+routes to `/litter/<litter_id>`, animal welfare identity to `/pig/<pig_id>`, and
+routine weighing to `/bulk-weights`; specialist items use their existing
+focused surface. Identifiers are allowlisted before interpolation. Missing or
+unsafe identity falls back to the safest existing collection surface and never
+becomes a path fragment.
+
 ## Actionable daily-manager continuation
 
 The provider-delivered Brief is a rolling projection, not an acknowledgement
