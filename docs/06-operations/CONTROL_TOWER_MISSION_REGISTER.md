@@ -4173,3 +4173,35 @@ or `BLOCK`. DOCUMENTS remains `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WI
 slot 2. Approval reaches only one protected serialized merge decision; Charl's Green
 setup remains parallel preparation, not a source-review dependency or operational
 proof.
+
+### Green 253c review requests replay-fence and immutable-base corrections - 2026-08-21
+
+Fresh inspection validates the complete 20,156-byte independent review handover at
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_253C_INDEPENDENT_REVIEW_HANDOVER_20260821.md`
+(SHA-256 `9741E69295A9A0BA3775D99278DFB95095665A65123B6601D25A6FCCD5DBF16F`).
+It is bound to clean PR #1150 head `253cf25c287da215f0d28b196a3fe294352f6483`,
+which remains open, clean and mergeable with all exact-head CI checks successful.
+
+The verdict is `REQUEST_CHANGES`, narrowed to two bounded defects. Completed
+protected-command replay returns its durable outcome before validating the current
+lease and immutable version/digest/original-authority bindings. The direct repository
+Dockerfile builds resolve a recorded base digest, but the actual Dockerfile input
+still uses a mutable tag rather than pinning that digest. Differing final no-cache
+image digests are accepted as an honestly documented reproducibility limitation and
+are not independently blocking. The mission remains `WORKING / DEFECTIVE /
+ENABLING_SOURCE_ONLY`; owner outcome is `NONE`; usable now is `NO`.
+
+The reviewer’s Node/Codex work had ended while PowerShell PID `26304` remained as an
+idle shell. Control Tower closed it and verified it absent. It then automatically
+continued the SAME mission/worktree/branch/PR for only those two corrections. The
+implementation terminal is freshly bound to PowerShell PID `21176`, Node PID `40172`
+and Codex PID `40352`, prompt
+`C:\tmp\DOCUMENTS_GREEN_FOURTH_REVIEW_CORRECTION_PROMPT_20260821.md` and mandatory
+handover `C:\tmp\VISIBLE_DOCUMENTS_GREEN_FOURTH_REVIEW_CORRECTION_HANDOVER_20260821.md`.
+
+Authority is limited to source/tests, a digest-pinned direct ARM64 source build,
+commit/push to existing PR #1150 and another exact-head review request. No merge,
+migration, deployment, installation, commissioning or production/provider/printer
+effect is authorized. The terminal must close automatically. DOCUMENTS remains
+`ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP slot 2; other mission holds and
+the final deferred Chromecast addendum remain unchanged.
