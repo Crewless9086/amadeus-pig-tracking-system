@@ -24,6 +24,10 @@ from modules.oom_sakkie.family_rootline_callback import (
     CALLBACK_PREFIX as FAMILY_CALLBACK_PREFIX, bind_family_rootline_preview_card,
     prepare_family_rootline_preview, handle_family_rootline_callback,
 )
+from modules.oom_sakkie.riversdale_auction_manager import (
+    CALLBACK_PREFIX as AUCTION_CALLBACK_PREFIX, handle_anton_callback,
+    handle_anton_date_reply,
+)
 from modules.oom_sakkie.telegram_gateway import (
     ALLOWED_USER_IDS_ENV,
     MAX_TELEGRAM_TEXT_CHARS,
@@ -184,6 +188,39 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         return _direct_result(False, "telegram_direct_auth_denied", policy, 403)
 
     callback = _parse_telegram_callback_payload(payload)
+    if callback["callback_data"].startswith(AUCTION_CALLBACK_PREFIX):
+        allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
+        source = environ if environ is not None else os.environ
+        parsed = {"telegram_user_id": callback["telegram_user_id"],
+            "telegram_chat_id": callback["telegram_chat_id"], "telegram_chat_type": "private",
+            "provider_message_id": callback["callback_query_id"],
+            "provider_timestamp": datetime.now(timezone.utc).isoformat(),
+            "reply_to_message_id": callback["telegram_message_id"],
+            "callback_query_id": callback["callback_query_id"],
+            "callback_data": callback["callback_data"], "text": ""}
+        principal = resolve_family_principal(parsed, source)
+        if (callback["telegram_user_id"] not in allowed_ids
+                or callback["telegram_user_id"] != callback["telegram_chat_id"]
+                or callback.get("telegram_chat_type") != "private"):
+            action_result, action_status = ({"success": False,
+                "status": "auction_callback_unauthorized", "writes_farm_data": False}, 403)
+        else:
+            action_result, action_status = handle_anton_callback(parsed, principal,
+                callback_data=callback["callback_data"])
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
+            if not action_result.get("answer") else
+            deliver_family_result(parsed, action_result, specialist="HERDMASTER"))
+        ack_result, ack_status = acknowledge_telegram_callback(
+            callback["callback_query_id"], environ=environ)
+        body, _ = _direct_result(action_result.get("success") is True and ack_status < 400,
+            str(action_result.get("status") or "auction_callback_contained"), policy,
+            action_status)
+        body.update({"message": action_result, "delivery": delivery,
+            "callback_acknowledgement": ack_result,
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": action_result.get("writes_farm_data") is True,
+            "hardware_commands": 0})
+        return body, ack_status if ack_status >= 400 else action_status
     if callback["callback_data"].startswith(FAMILY_CALLBACK_PREFIX):
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
         source = environ if environ is not None else os.environ
@@ -329,6 +366,19 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     if family_principal.role is FamilyRole.UNKNOWN_SENDER and not is_owner_ingress:
         return _direct_result(False, "telegram_family_identity_not_authorized", policy, 403)
     if not is_owner_ingress and family_principal.role is not FamilyRole.OWNER:
+        date_result, date_status = handle_anton_date_reply(parsed, family_principal)
+        if date_result.get("handled"):
+            delivery = (deliver_family_result(parsed, date_result, specialist="HERDMASTER")
+                        if date_result.get("answer") else
+                        {"success": True, "telegram_sends": 0, "telegram_edits": 0})
+            body, _ = _direct_result(date_result.get("success") is True,
+                str(date_result.get("status") or "auction_date_reply_contained"), policy,
+                date_status)
+            body.update({"message": date_result, "delivery": delivery,
+                "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+                "writes": date_result.get("writes_farm_data") is True,
+                "hardware_commands": 0})
+            return body, date_status if delivery.get("success") else 202
         family_result, family_status = handle_family_runtime_message(
             parsed, family_principal, summary_loader=load_family_summary,
             observation_adapter=herdmaster_family_observation,
