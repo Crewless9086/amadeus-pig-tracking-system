@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Prepare a uniquely versioned, signed prebuilt aarch64 GHCR image with exact source
+  revision, immutable digest receipt, SBOM and build provenance attestations.
+- Refuse publication when the version tag already exists; publication remains a
+  separate explicitly triggered protected action.
+- Keep the installed 0.2.0 app stopped until a separately authorized dormant update.
+
 ## 0.2.0
 
 - Consume protected command receipts atomically, renew/recover nonterminal leases, and require exact post-cancel CUPS readback before durable cleanup.

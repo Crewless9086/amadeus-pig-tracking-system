@@ -1,15 +1,19 @@
-FROM ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a
+FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a
 
 ARG BUILD_ARCH=aarch64
-ARG BUILD_VERSION=0.2.0
-ARG SOURCE_COMMIT=unknown
+ARG BUILD_VERSION=0.3.0
+ARG SOURCE_COMMIT
+RUN test -n "${SOURCE_COMMIT}" \
+    && test "${#SOURCE_COMMIT}" -eq 40 \
+    && ! printf '%s' "${SOURCE_COMMIT}" | grep -Eq '[^0-9a-f]'
 LABEL io.hass.type="app" \
       io.hass.arch="${BUILD_ARCH}" \
       io.hass.version="${BUILD_VERSION}" \
       org.opencontainers.image.title="Amadeus Green Print Bridge" \
       org.opencontainers.image.description="Private CUPS adapter for the bounded weekly-sheet pilot" \
       org.opencontainers.image.source="https://github.com/Crewless9086/amadeus-pig-tracking-system" \
-      org.opencontainers.image.revision="${SOURCE_COMMIT}"
+      org.opencontainers.image.revision="${SOURCE_COMMIT}" \
+      org.opencontainers.image.version="${BUILD_VERSION}"
 
 RUN apk add --no-cache cups cups-client cups-filters ca-certificates python3 su-exec \
     && addgroup -S greenprint && adduser -S -D -H -s /sbin/nologin -G greenprint greenprint \

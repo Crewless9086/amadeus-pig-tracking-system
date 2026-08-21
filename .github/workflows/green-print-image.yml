@@ -1,0 +1,205 @@
+name: Green Print immutable image
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/green-print-image.yml"
+      - "green_print_bridge/**"
+      - "tests/test_green_print_home_assistant_app.py"
+  workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        description: Exact reviewed 40-character commit to publish
+        required: true
+        type: string
+      publish:
+        description: Publish the immutable 0.3.0 package artifact
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: green-print-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/crewless9086/amadeus-green-print-bridge
+  VERSION: 0.3.0
+
+jobs:
+  verify:
+    name: Verify aarch64 package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt pytest PyYAML
+      - name: Verify package contract
+        run: python -m pytest tests/test_green_print_home_assistant_app.py -q
+      - name: Build exact aarch64 image without publishing
+        uses: home-assistant/builder/actions/build-image@4de35182ce1e329181bffcbcc84d33db5e2c7e10 # 2026.06.0
+        with:
+          arch: aarch64
+          build-args: SOURCE_COMMIT=${{ github.event.pull_request.head.sha || github.sha }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: green_print_bridge
+          cosign: "false"
+          image: ${{ env.IMAGE }}
+          image-tags: ${{ env.VERSION }}
+          push: "false"
+          version: ${{ env.VERSION }}
+
+  publish:
+    name: Publish signed immutable aarch64 package
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+        with:
+          ref: ${{ inputs.expected_source_commit }}
+      - name: Bind publication to exact reviewed commit and package version
+        shell: bash
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+        run: |
+          [[ "${EXPECTED_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+          test "${GITHUB_SHA}" = "${EXPECTED_SOURCE_COMMIT}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SOURCE_COMMIT}"
+          test "${GITHUB_REF}" = "refs/heads/main"
+          grep -Fqx 'version: "0.3.0"' green_print_bridge/config.yaml
+          grep -Fqx 'image: ghcr.io/crewless9086/amadeus-green-print-bridge' green_print_bridge/config.yaml
+      - name: Authenticate only for the bounded package publication
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prohibit version-tag replacement
+        shell: bash
+        run: |
+          if docker buildx imagetools inspect "${IMAGE}:${VERSION}" >/dev/null 2>&1; then
+            echo "Refusing to replace existing ${IMAGE}:${VERSION}" >&2
+            exit 1
+          fi
+      - name: Build, push and keylessly sign exact aarch64 image
+        id: build
+        uses: home-assistant/builder/actions/build-image@4de35182ce1e329181bffcbcc84d33db5e2c7e10 # 2026.06.0
+        with:
+          arch: aarch64
+          build-args: SOURCE_COMMIT=${{ inputs.expected_source_commit }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: green_print_bridge
+          cosign: "true"
+          image: ${{ env.IMAGE }}
+          image-tags: ${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.expected_source_commit }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          push: "true"
+          version: ${{ env.VERSION }}
+      - name: Verify pushed tag, immutable digest, platform and OCI bindings
+        id: pushed
+        shell: bash
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          PRODUCED_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          tag_ref="${IMAGE}:${VERSION}"
+          digest_ref="${IMAGE}@${PRODUCED_DIGEST}"
+          resolved_digest="$(docker buildx imagetools inspect "${tag_ref}" | awk '$1 == "Digest:" {print $2; exit}')"
+          test -n "${resolved_digest}"
+          test "${resolved_digest}" = "${PRODUCED_DIGEST}"
+          docker buildx imagetools inspect "${digest_ref}" --format '{{json .Image}}' > pushed-image-config.json
+          jq -e '.architecture == "arm64"' pushed-image-config.json >/dev/null
+          jq -e --arg source "${EXPECTED_SOURCE_COMMIT}" '.config.Labels["org.opencontainers.image.revision"] == $source' pushed-image-config.json >/dev/null
+          jq -e --arg repo "https://github.com/${GITHUB_REPOSITORY}" '.config.Labels["org.opencontainers.image.source"] == $repo' pushed-image-config.json >/dev/null
+          jq -e --arg version "${VERSION}" '.config.Labels["org.opencontainers.image.version"] == $version' pushed-image-config.json >/dev/null
+          echo "resolved_digest=${resolved_digest}" >> "${GITHUB_OUTPUT}"
+          echo "config_sha256=$(sha256sum pushed-image-config.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+      - name: Generate image SBOM by immutable digest
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          registry-username: ${{ github.repository_owner }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: green-print-0.3.0.spdx.json
+          upload-artifact: true
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: green-print-0.3.0.spdx.json
+          push-to-registry: true
+      - name: Verify signature and digest-bound attestations
+        id: verify
+        shell: bash
+        env:
+          PRODUCED_DIGEST: ${{ steps.build.outputs.digest }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          digest_ref="${IMAGE}@${PRODUCED_DIGEST}"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main"
+          issuer="https://token.actions.githubusercontent.com"
+          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${digest_ref}" > cosign-verification.json
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://slsa.dev/provenance/v1" --cert-identity "${identity}" --source-digest "${EXPECTED_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > provenance-verification.json
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${EXPECTED_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > sbom-attestation-verification.json
+          test "$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" | awk '$1 == "Digest:" {print $2; exit}')" = "${PRODUCED_DIGEST}"
+          echo "cosign_sha256=$(sha256sum cosign-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "provenance_sha256=$(sha256sum provenance-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_attestation_sha256=$(sha256sum sbom-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_sha256=$(sha256sum green-print-0.3.0.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+      - name: Emit digest-bound non-secret release receipt
+        shell: bash
+        run: |
+          printf '%s\n' \
+            "image=${IMAGE}" \
+            "version=${VERSION}" \
+            "source_commit=${{ inputs.expected_source_commit }}" \
+            "digest=${{ steps.build.outputs.digest }}" \
+            "tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}" \
+            "architecture=arm64" \
+            "image_config_sha256=${{ steps.pushed.outputs.config_sha256 }}" \
+            "cosign_identity=https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main" \
+            "cosign_issuer=https://token.actions.githubusercontent.com" \
+            "cosign_verification_sha256=${{ steps.verify.outputs.cosign_sha256 }}" \
+            "provenance_verification_sha256=${{ steps.verify.outputs.provenance_sha256 }}" \
+            "sbom_attestation_verification_sha256=${{ steps.verify.outputs.sbom_attestation_sha256 }}" \
+            "sbom_sha256=${{ steps.verify.outputs.sbom_sha256 }}" | tee green-print-image-receipt.txt
+      - name: Preserve non-secret verified release packet
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: green-print-0.3.0-verified-release-packet
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            green-print-image-receipt.txt
+            pushed-image-config.json
+            cosign-verification.json
+            provenance-verification.json
+            sbom-attestation-verification.json
+            green-print-0.3.0.spdx.json
