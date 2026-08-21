@@ -973,3 +973,38 @@ Current Stage 4 surface:
 - `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md` binds effects to the
   canonical deployed worker and preserves terminal-created output only as
   synthetic or recovery evidence.
+
+## Bounded Documents Green print pilot (source candidate)
+
+- `modules/documents/weekly_weight_sheet.py` produces one immutable weekly
+  weighing-sheet PDF revision and binds its digest and registered identities
+  into the existing Oom Sakkie protected-action claim shape.
+- `modules/documents/green_print_adapter.py` validates authorized envelopes,
+  allowlisted retrieval and trusted CUPS observer evidence without actuation.
+- `modules/documents/green_adapter_runtime.py` provides fenced leases,
+  pre-submission attempts, reconciliation-before-retry, ambiguity Hold,
+  48-hour retry, protected Continue/Cancel and temporary-PDF deletion. Its
+  SQLite ledger is recovery state, never canonical job truth.
+- `supabase/migrations/202608200002_create_green_print_jobs.sql` is an unapplied
+  private canonical job/append-only event schema proposal. It grants no print,
+  migration, deployment or configuration authority.
+- `repository.yaml` and `green_print_bridge/` form the smallest private
+  Home Assistant app repository artifact: aarch64-only protected container,
+  local CUPS, fixed options/registered queue, read-only private-CA injection,
+  `/data` crash ledger and health, tmpfs spool, cold backup, restart worker,
+  AppArmor and no exposed ports, host network, Docker socket or hardware maps.
+- `green_print_bridge/app/service.py` uses fixed atomic claim and protected-command
+  endpoints. Lease token, version, digest and authorization receipt fence every
+  reconcile/transition; stable event identities make replay safe. SQLite is
+  recovery evidence only.
+- Canonical HTTPS connects to a commissioned validated IP while TLS verifies the
+  configured hostname. IPPS uses a private IP literal with matching certificate
+  identity. Exact CUPS receipts bind queue/provider evidence. Restore, corrupt
+  ledger and disk checks precede any new claim or provider action.
+- Bounded root initialization launches dedicated `cupsd` and `greenprint`
+  identities. The worker cannot administer queues or write CUPS configuration;
+  health separates process liveness from a durable business Hold.
+- `tests/test_green_print_home_assistant_app.py` uses synthetic non-farm fixtures
+  to cover packaging, security, digest and fixed-policy binding, replay,
+  two-ledger canonical claiming, rebinding, identities/denials, Continue/Cancel,
+  restore/corruption/disk failure, queue/provider binding and Hold liveness.

@@ -1,0 +1,32 @@
+#include <tunables/global>
+
+profile amadeus-green-print-bridge flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/ssl_certs>
+  network inet stream,
+  network inet6 stream,
+  /usr/bin/python3 ix,
+  /usr/bin/su-exec ix,
+  /usr/bin/lp ix,
+  /usr/bin/lpstat ix,
+  /usr/bin/cancel ix,
+  /usr/sbin/cupsd ix,
+  /init-green.sh rix,
+  /run.sh rix,
+  /opt/green/** r,
+  /etc/cups/** r,
+  /etc/ssl/certs/** r,
+  /config/private-ca.crt r,
+  /data/** rwk,
+  /run/cups/** rwk,
+  /tmp/green-spool/** rwk,
+  /var/spool/cups/** rwk,
+  /var/log/cups/** rwk,
+  /proc/** r,
+  /sys/devices/system/cpu/** r,
+  deny /home/** rwklx,
+  deny /etc/cups/** wklx,
+  deny /tmp/** x,
+  deny /usr/sbin/lpadmin x,
+}
