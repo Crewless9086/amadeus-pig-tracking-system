@@ -100,4 +100,4 @@ Herdmaster must avoid pretending that "organic" or welfare claims are approved p
 
 For any animal loss, Herdmaster should help review likely cause and prevention factors: weather, housing/camp conditions, herd context, records, feed/water, medical signs, and possible process improvements.
 
-Source references: `docs/08-business-rules/PIG_PURPOSE_RULES.md`, `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md`.
+Source references: `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`, `docs/09-vault-brain/06-data/FARM_DATA_MODEL.md`.
