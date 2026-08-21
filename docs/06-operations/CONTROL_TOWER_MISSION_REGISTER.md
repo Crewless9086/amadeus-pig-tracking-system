@@ -3466,3 +3466,22 @@ starting with Oom Sakkie because it is closest to a deployed owner-visible resul
 Fresh GitHub API refresh was attempted twice but unavailable; exact remote check
 claims are limited to the completed handovers and previously observed evidence,
 not promoted to a newer observation.
+### Oom Sakkie PR #1142 visual approval with semantic defects - 2026-08-21
+
+Charl approved the style, formatting and compact tile design of the exact PR #1142
+local preview. Merge/deployment is not yet approved because the preview exposed
+three owner-outcome defects. Weekly weighing is routine Monday work and must not
+remain daily owner attention outside its governed due window. Molly's litter first
+treatment is genuine ready physical farm work and must surface in the primary
+attention projection when canonically due rather than remain only under Watch.
+Every card's details link must resolve to the exact animal, litter, treatment,
+weighing batch or other described work identity; generic `/pigs` routing is not an
+acceptable completion path where a focused route exists.
+
+Classification remains the SAME Oom Sakkie shared owner-attention mission and PR
+#1142, `DEFECTIVE / WORKING`; target owner outcome unchanged, achieved outcome
+`NONE`, usable now `NO`. Style acceptance is preserved and must not be needlessly
+redesigned. First missing gate returns to bounded source repair and preview:
+schedule-aware weighing eligibility, treatment-due physical-work projection,
+identity-bound contextual routes and proportional regression/browser tests. No
+database, farm, Telegram or production effect is authorized.
