@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import io
 import json
 import os
 import tempfile
@@ -42,7 +43,7 @@ class CharlieRunnerTaskLauncherTests(unittest.TestCase):
         with patch.object(
             launcher, "_append_phase",
             side_effect=lambda phase, **kw: phases.append((phase, kw)) or True,
-        ), patch.object(launcher, "_activation_id", return_value="b" * 32), patch.dict(
+        ), patch.object(launcher, "_activation_binding", return_value=("b" * 32, "1" * 64)), patch.dict(
             "sys.modules", {"dotenv": None}
         ):
             result = launcher.main()
@@ -52,6 +53,23 @@ class CharlieRunnerTaskLauncherTests(unittest.TestCase):
         ])
         self.assertEqual(phases[-1][0], "launcher_failed")
         self.assertEqual(phases[-1][1]["error_type"], "ModuleNotFoundError")
+
+    def test_invalid_activation_never_loads_environment_or_watchdog(self):
+        phases = []
+        with patch.object(launcher, "_activation_binding", return_value=("Unknown", "")), \
+                patch.object(launcher, "_append_phase", side_effect=lambda phase, **kw: phases.append(phase) or True), \
+                patch("runpy.run_path") as run_path:
+            self.assertEqual(launcher.main(), 1)
+        run_path.assert_not_called()
+        self.assertEqual(phases, ["launcher_entered", "activation_packet_unavailable_or_invalid"])
+
+    def test_live_stderr_is_sanitized_before_forwarding(self):
+        prior = io.StringIO()
+        with patch.dict(os.environ, {"API_TOKEN": "top-secret-token"}):
+            stream = launcher._BoundedStderr(prior)
+            stream.write("Bearer abc.def top-secret-token")
+        self.assertNotIn("abc.def", prior.getvalue())
+        self.assertNotIn("top-secret-token", prior.getvalue())
 
     def test_action_identity_does_not_record_environment_values(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -108,12 +126,16 @@ class CharlieRunnerTaskLauncherTests(unittest.TestCase):
             root = Path(tmp)
             key = b"q" * 32
             (root / "activation-authority.key").write_bytes(key)
+            packet = {"activation_id": "c" * 32, "status": "provider_pending"}
+            packet["packet_hmac_sha256"] = hmac.new(
+                key, launcher._canonical(packet), hashlib.sha256).hexdigest()
+            (root / "activation-packet.json").write_text(json.dumps(packet), encoding="utf-8")
             evidence_dir = root / "activation-ledger" / "startup-evidence" / ("c" * 32)
             evidence_dir.mkdir(parents=True)
             valid = {
                 "version": launcher.VERSION,
                 "activation_id": "c" * 32,
-                "activation_packet_hmac_sha256": "2" * 64,
+                "activation_packet_hmac_sha256": packet["packet_hmac_sha256"],
                 "phase": "environment_loaded",
             }
             valid["record_hmac_sha256"] = hmac.new(
@@ -121,12 +143,17 @@ class CharlieRunnerTaskLauncherTests(unittest.TestCase):
             ).hexdigest()
             tampered = {**valid, "phase": "watchdog_entry_exited"}
             other = {**valid, "activation_id": "d" * 32}
-            for index, item in enumerate((valid, tampered, other)):
+            wrong_packet = {**valid, "activation_packet_hmac_sha256": "2" * 64}
+            wrong_packet["record_hmac_sha256"] = hmac.new(
+                key, launcher._canonical({k: v for k, v in wrong_packet.items()
+                                          if k != "record_hmac_sha256"}), hashlib.sha256
+            ).hexdigest()
+            for index, item in enumerate((valid, tampered, other, wrong_packet)):
                 (evidence_dir / f"{index}.json").write_text(json.dumps(item), encoding="utf-8")
             result = read_startup_evidence(root, "c" * 32)
         self.assertEqual(result["status"], "startup_evidence_authenticated")
         self.assertEqual([row["phase"] for row in result["records"]], ["environment_loaded"])
-        self.assertEqual(result["invalid_or_unbound_records_ignored"], 2)
+        self.assertEqual(result["invalid_or_unbound_records_ignored"], 3)
         self.assertRegex(result["evidence_sha256"], r"^[0-9a-f]{64}$")
 
 

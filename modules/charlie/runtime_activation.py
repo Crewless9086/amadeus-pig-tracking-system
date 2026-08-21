@@ -2383,9 +2383,24 @@ def read_startup_evidence(state_root, activation_id, *, limit=32):
     evidence_dir = state_root / "activation-ledger" / "startup-evidence" / activation_id
     try:
         key = _read_key(state_root / "activation-authority.key")
-        paths = sorted(evidence_dir.glob("*.json"))
+        paths = sorted(path for _, path in zip(range(257), evidence_dir.glob("*.json")))
     except (OSError, ActivationError):
         return {"status": "startup_evidence_unavailable", "records": []}
+    if len(paths) > 256:
+        return {"status": "startup_evidence_limit_exceeded", "records": []}
+    packet_candidates = [state_root / "activation-packet.json"]
+    ledger = state_root / "activation-ledger"
+    packet_candidates.extend(sorted(ledger.glob(f"{activation_id}-*activation-packet.json"))[-8:])
+    expected_packet_hmacs = set()
+    for packet_path in packet_candidates:
+        try:
+            packet = _read_json(packet_path, "activation_packet_invalid")
+            packet_hmac = str(packet.get("packet_hmac_sha256") or "")
+            if (packet.get("activation_id") == activation_id
+                    and hmac.compare_digest(packet_hmac, _sign_packet(packet, key))):
+                expected_packet_hmacs.add(packet_hmac)
+        except ActivationError:
+            continue
     records = []
     invalid_count = 0
     for path in paths:
@@ -2397,10 +2412,8 @@ def read_startup_evidence(state_root, activation_id, *, limit=32):
         signature = str(record.get("record_hmac_sha256") or "")
         if (record.get("version") != "charlie_core_startup_evidence_v1"
                 or record.get("activation_id") != activation_id
-                or not re.fullmatch(
-                    r"[0-9a-f]{64}",
-                    str(record.get("activation_packet_hmac_sha256") or ""),
-                )
+                or str(record.get("activation_packet_hmac_sha256") or "")
+                    not in expected_packet_hmacs
                 or not hmac.compare_digest(
                     signature, _sign_record(record, key, "record_hmac_sha256")
                 )):

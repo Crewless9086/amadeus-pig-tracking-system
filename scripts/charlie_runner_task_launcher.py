@@ -39,7 +39,7 @@ class _BoundedStderr(io.TextIOBase):
         self.tail = (self.tail + text)[-self.limit:]
         if self.prior is not None:
             try:
-                self.prior.write(text)
+                self.prior.write(_sanitize_text(text))
             except (OSError, ValueError):
                 pass
         return len(text)
@@ -69,7 +69,7 @@ def _sanitize_text(value):
     return text[-MAX_STDERR_CHARS:]
 
 
-def _activation_id():
+def _activation_binding():
     try:
         packet = json.loads(PACKET_PATH.read_text(encoding="utf-8"))
         key = KEY_PATH.read_bytes()
@@ -103,11 +103,15 @@ def _activation_id():
                 and not sealed
                 and hmac.compare_digest(signature, expected)):
             if not hmac.compare_digest(authority_signature, expected_authority):
-                return "Unknown"
-            return value
-        return "Unknown"
+                return "Unknown", ""
+            return value, signature
+        return "Unknown", ""
     except (OSError, ValueError, TypeError, OverflowError):
-        return "Unknown"
+        return "Unknown", ""
+
+
+def _activation_id():
+    return _activation_binding()[0]
 
 
 def _activation_packet_hmac(activation_id):
@@ -166,6 +170,8 @@ def _append_phase(phase, *, activation_id="Unknown", exit_code=None,
                 key, _canonical(record), hashlib.sha256
             ).hexdigest()
             encoded = _canonical(record) + b"\n"
+        if len(encoded) > MAX_RECORD_BYTES:
+            return False
         epoch = activation_id if re.fullmatch(r"[0-9a-f]{32}", activation_id) else "unbound"
         evidence_dir = EVIDENCE_ROOT / epoch
         evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -182,8 +188,7 @@ def _append_phase(phase, *, activation_id="Unknown", exit_code=None,
 def main():
     stderr = _BoundedStderr(sys.stderr)
     sys.stderr = stderr
-    activation_id = _activation_id()
-    packet_hmac = _activation_packet_hmac(activation_id)
+    activation_id, packet_hmac = _activation_binding()
     evidence_binding = {
         "activation_id": activation_id,
         "activation_packet_hmac_sha256": packet_hmac,
@@ -195,6 +200,8 @@ def main():
             else "activation_packet_unavailable_or_invalid",
             **evidence_binding,
         )
+        if activation_id == "Unknown" or not packet_hmac:
+            return 1
         from dotenv import load_dotenv
         load_dotenv(REPO_ROOT.parent.parent / ".env", override=True)
         _append_phase("environment_loaded", **evidence_binding)
