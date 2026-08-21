@@ -49,6 +49,9 @@ let auctionCycleId = "";
 let auctionListAvailability = "Unavailable";
 let auctionSelection = new Set();
 let auctionEvidenceByPigId = new Map();
+const allocationQuery = new URLSearchParams(window.location.search);
+const purposeReviewMode = allocationQuery.get("mode") === "purpose-review";
+const purposeReviewLitterId = allocationQuery.get("litter_id") || "";
 
 const ALLOCATION_PURPOSE_OPTIONS = [
   ["Grow_Out", "Grow out / meat pipeline"],
@@ -249,6 +252,8 @@ function filteredRows() {
   const search = searchFilter.value.trim().toLowerCase();
 
   return allocationRows.filter((row) => {
+    if (purposeReviewMode && !["", "unknown", "unallocated", "not allocated", "not_allocated"].includes(String(row.purpose || "").trim().toLowerCase())) return false;
+    if (purposeReviewLitterId && row.litter_id !== purposeReviewLitterId) return false;
     if (bucket === "Auction Candidates" && !auctionCandidateIds.has(row.pig_id)) return false;
     if (bucket === "Auction List" && !auctionListIds.has(row.pig_id)) return false;
     if (bucket && !bucket.startsWith("Auction ") && row.readiness_bucket !== bucket) return false;
@@ -702,7 +707,15 @@ async function loadAllocationReadiness() {
     }
     allocationRows = data.pigs || [];
     allocationSummary = data.summary || {};
-    subtitle.textContent = `Planning view generated ${data.generated_date || "today"}. Purpose changes require preview and confirmation.`;
+    if (purposeReviewMode) {
+      document.title = "Purpose Review · Pig Allocation";
+      document.querySelector("h1").textContent = "Pig Allocation · Purpose Review";
+      allocationTableHeading.textContent = "Purpose decisions due";
+      subtitle.textContent = `Herdmaster recommendations from the same allocation evidence, generated ${data.generated_date || "today"}. Purpose changes require the protected correction-batch rail.`;
+      auctionPanel?.classList.add("hidden");
+    } else {
+      subtitle.textContent = `Planning view generated ${data.generated_date || "today"}. Purpose changes require preview and confirmation.`;
+    }
     populateFilters(allocationRows);
     renderSummary(allocationSummary);
     renderRules(data.business_rules || {});

@@ -57,6 +57,17 @@
   exact audit readback. These
   source references grant no
   staging, activation, process, mission-pickup or release authority.
+  The scheduled action enters through
+  `scripts/charlie_runner_task_launcher.py`, which publishes bounded,
+  HMAC-authenticated immutable per-epoch phase records, exact launcher/action
+  identity, sanitized stderr tail and exit evidence before importing dotenv or
+  the watchdog. Activation
+  verification accepts only correctly signed records bound to its fresh
+  activation identity; invalid, tampered and other-epoch records are ignored.
+  Promotion and staging bind the launcher action exactly. Focused source-only
+  coverage is in `tests/test_charlie_runner_task_launcher.py` and
+  `tests/test_charlie_runtime_staging.py`; this evidence rail grants no task,
+  activation, runtime, mission, provider or release authority.
 
 - Source contract: `modules/charlie/shadow_control_tower.py`.
 - Focused zero-authority tests: `tests/test_shadow_control_tower.py`.
@@ -836,9 +847,9 @@ Current built read-only readiness surface to expand:
 
 - routes: `/pig-allocation`, `/api/pig-weights/pig-allocation-readiness`, `/api/pig-weights/purpose-review`, `/api/pig-weights/purpose-review/apply`, `/api/pig-weights/purpose-review/recheck`;
 - Vault doctrine: `docs/09-vault-brain/02-agents/farm/HERDMASTER.md`, `docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md`, `docs/09-vault-brain/06-data/FARM_DATA_MODEL.md`, `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`, `docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md`, `docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md`;
-- code: `modules/pig_weights/pig_weights_service.py`;
+- code: `modules/pig_weights/pig_weights_service.py`, `modules/oom_sakkie/manager_case_sources.py`, `modules/oom_sakkie/owner_attention_projection.py`;
 - UI: `templates/pig-allocation.html`, `static/js/pigAllocation.js`;
-- tests: `tests/test_pig_allocation_readiness_service.py`;
+- tests: `tests/test_pig_allocation_readiness_service.py`, `tests/test_purpose_review_eligibility.py`, `tests/test_oom_sakkie_owner_attention_projection.py`;
 - migrations: none for the first read-only alert build;
 - legacy references: `docs/03-google-sheets/sheets/PIG_MASTER.md`, `docs/03-google-sheets/sheets/PIG_OVERVIEW.md`, `docs/03-google-sheets/sheets/WEIGHT_LOG.md`;
 - rule: Herdmaster Pig Allocation alert missions must inspect this section and the alert rules doc before advising or building. Alerts are advisory until owner-approved backend rails create any write, lifecycle, purpose, sales, slaughter, reservation, or customer-facing action.
@@ -973,3 +984,38 @@ Current Stage 4 surface:
 - `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md` binds effects to the
   canonical deployed worker and preserves terminal-created output only as
   synthetic or recovery evidence.
+
+## Bounded Documents Green print pilot (source candidate)
+
+- `modules/documents/weekly_weight_sheet.py` produces one immutable weekly
+  weighing-sheet PDF revision and binds its digest and registered identities
+  into the existing Oom Sakkie protected-action claim shape.
+- `modules/documents/green_print_adapter.py` validates authorized envelopes,
+  allowlisted retrieval and trusted CUPS observer evidence without actuation.
+- `modules/documents/green_adapter_runtime.py` provides fenced leases,
+  pre-submission attempts, reconciliation-before-retry, ambiguity Hold,
+  48-hour retry, protected Continue/Cancel and temporary-PDF deletion. Its
+  SQLite ledger is recovery state, never canonical job truth.
+- `supabase/migrations/202608200002_create_green_print_jobs.sql` is an unapplied
+  private canonical job/append-only event schema proposal. It grants no print,
+  migration, deployment or configuration authority.
+- `repository.yaml` and `green_print_bridge/` form the smallest private
+  Home Assistant app repository artifact: aarch64-only protected container,
+  local CUPS, fixed options/registered queue, read-only private-CA injection,
+  `/data` crash ledger and health, tmpfs spool, cold backup, restart worker,
+  AppArmor and no exposed ports, host network, Docker socket or hardware maps.
+- `green_print_bridge/app/service.py` uses fixed atomic claim and protected-command
+  endpoints. Lease token, version, digest and authorization receipt fence every
+  reconcile/transition; stable event identities make replay safe. SQLite is
+  recovery evidence only.
+- Canonical HTTPS connects to a commissioned validated IP while TLS verifies the
+  configured hostname. IPPS uses a private IP literal with matching certificate
+  identity. Exact CUPS receipts bind queue/provider evidence. Restore, corrupt
+  ledger and disk checks precede any new claim or provider action.
+- Bounded root initialization launches dedicated `cupsd` and `greenprint`
+  identities. The worker cannot administer queues or write CUPS configuration;
+  health separates process liveness from a durable business Hold.
+- `tests/test_green_print_home_assistant_app.py` uses synthetic non-farm fixtures
+  to cover packaging, security, digest and fixed-policy binding, replay,
+  two-ledger canonical claiming, rebinding, identities/denials, Continue/Cancel,
+  restore/corruption/disk failure, queue/provider binding and Hold liveness.

@@ -23,6 +23,31 @@ authorized channel consumes the same ordered identities and lifecycle. A
 compact channel may render fewer items, but must expose the total hidden count
 and a governed route to the complete projection.
 
+One names-first presentation identity contract is part of this projection. A
+source-supported human name leads; otherwise a supported familiar farm or
+business meaning leads. If neither exists, `Name unavailable` is explicit and
+never inferred. Stable tags, IDs and references remain secondary and only
+disambiguate collisions. Application, rolling Brief and Telegram consume the
+same projected title. Empty, duplicate, resolved, superseded and unchanged
+material results create no new owner-visible message. The projection exposes a
+material digest plus baseline/after message and owner-work counts for the
+existing rolling lifecycle; it creates no lifecycle or persistence of its own.
+
+The supported categories are a small presentation catalogue over this one
+projection, not separate workflows. Internal success is not an attention item;
+current welfare, shutdown uncertainty and genuine protected exceptions remain
+visible until authoritative resolution.
+
+Healthy equipment readiness that requires no owner action is not Owner
+Attention. It stays silent here and may be consumed later by an Equipment
+Health surface only from this same shared projection contract. A failed or
+stale readiness observation remains one names-first, specialist-owned
+exception with automatic reassessment. Mixer and injector are separate device
+identities; neither inherits the other's readiness, commissioning or authority.
+`Commissioned`, `Autonomous authority enabled`, `Active` and `Completed` may be
+projected only from their explicit physical, runtime, canonical and provider
+evidence respectively. Controller readiness or OFF state cannot imply them.
+
 `status_reconciliation`, `physical_action_due` (including genuine weighing),
 and `informational_watch` are distinct task classes. A missing or conflicting
 animal status remains specialist reconciliation until HERDMASTER proves a
@@ -94,8 +119,9 @@ not add, remove, rank or reclassify owner-attention work.
 
 The owner-attention page and API require the strict authenticated owner-read
 guard even when compatibility owner access is otherwise disabled. The API
-returns only the current presentation packet; resolved lifecycle history and
-raw provenance remain internal. Projection failure must be shown as unavailable
+returns only the bounded presentation packet; compact recent lifecycle history
+and raw provenance remain behind authenticated collapsed details rather than
+primary labels. Projection failure must be shown as unavailable
 in the homepage, Brief and Telegram rather than inferred as an empty queue.
 Completing a welfare intake observation does not close its welfare case; only an
 explicit authoritative recovery, death or resolution transition may do that.
@@ -131,6 +157,46 @@ Escalation alone remains status reconciliation; only explicit specialist
 evidence that a physical weighing is due may create `physical_action_due`.
 Silence, elapsed time or a collector outage cannot close or hide an active
 welfare case.
+
+The shared projection classifies current manager work into exactly five owner
+meanings: `Needs you` for one exact owner question, protected decision or urgent
+physical exception; `Farm work ready` for a physical task proved ready;
+`Oom Sakkie is checking` for delegated, waiting-reassessment and other
+agent-owned reconciliation; `Watch` for useful non-work context; and `Recently
+completed` for compact resolved, superseded, stale or completed history. Only
+the first two contribute to the primary owner-attention count. Specialist
+urgency remains available as operational evidence but cannot create owner
+urgency by itself. Names, status, responsible party and exact action lead;
+technical chronology, raw tags and provenance remain behind collapsed detail.
+Homepage, full view, Brief, Telegram and later voice consume these same groups
+and counts without channel-specific reclassification.
+
+Owner eligibility fails closed. A protected item counts only when the current
+specialist packet explicitly proves one exact owner question; physical work
+counts only when the specialist explicitly proves readiness with no unresolved
+blocking fact. `delegated` and `waiting_reassessment` remain agent-owned even
+when their task wording mentions a decision or physical work. An urgent
+physical exception reaches `Needs you` only with an explicit irreducible-owner
+exception signal. Recently completed presentation is bounded to manager cases
+updated in the preceding seven days; older immutable history stays canonical
+and outside the ordinary owner projection.
+
+Routine weekly weighing is `Farm work ready` only during the farm-local Monday
+calendar window. Before or after Monday it is Watch or silent; incomplete
+coverage and unresolved status remain `Oom Sakkie is checking`. A separate
+individual weighing may enter primary attention outside Monday only when its
+canonical specialist evidence explicitly proves that exceptional weighing is
+due now. Canonical litter first-treatment evidence follows the same fail-closed
+rule: due and ready treatment is physical farm work, while Unknown, partial,
+completed or durably skipped treatment is not primary work. No product, dose or
+completion is inferred.
+
+Every item carries one validated focused target. Canonical litter identity
+routes to `/litter/<litter_id>`, animal welfare identity to `/pig/<pig_id>`, and
+routine weighing to `/bulk-weights`; specialist items use their existing
+focused surface. Identifiers are allowlisted before interpolation. Missing or
+unsafe identity falls back to the safest existing collection surface and never
+becomes a path fragment.
 
 ## Actionable daily-manager continuation
 

@@ -26,6 +26,12 @@ def test_unverified_irrigation_containment_remains_recoverable_active_truth():
     assert _terminal_closes_active({"action":"record_claim_recovery",
         "shutdown_verified":True}) is True
     assert _terminal_closes_active({"action":"record_completed"}) is True
+    assert _terminal_closes_active({"action":"contain_auxiliary_device",
+        "shutdown_verified":False},auxiliary=True) is False
+    assert _terminal_closes_active({"action":"contain_auxiliary_device",
+        "shutdown_verified":True},auxiliary=True) is True
+    assert _terminal_closes_active({
+        "action":"record_auxiliary_control_pulse_stopped"},auxiliary=True) is True
 
 
 class FailedConnection:
@@ -248,13 +254,41 @@ def test_auxiliary_consumption_is_atomic_without_blocking_bc_claim(monkeypatch):
     migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
     with psycopg.connect(url) as connection:connection.execute(migration.read_text(encoding="utf-8"))
     suffix=uuid.uuid4().hex;key=f"ROOTLINE-AUX-CONSUME-{suffix}"
+    parent=f"ROOTLINE-PARENT-{suffix}";job=f"ROOTLINE-IRRIGATION-JOB-{suffix[:24].upper()}"
+    job_sha="a"*64;segment=f"ROOTLINE-JOB-SEGMENT-{suffix[:24].upper()}"
+    with psycopg.connect(url) as connection:
+        for action,event_id in (("claim_before_on",f"PARENT-CLAIM-{suffix}"),
+                                ("mark_active",f"PARENT-ACTIVE-{suffix}")):
+            body={"action":action,"execution_id":parent,"job_id":job,
+                "job_sha256":job_sha,"segment_identity":segment,"zone_id":"B12345",
+                "state":"Active" if action=="mark_active" else "claimed"}
+            connection.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+                values (%s,%s,'rootline_irrigation_execution',%s,%s::jsonb)""",
+                (event_id,parent,action,json.dumps({"rootline_execution":body})))
     def claim(index):
         return _claim_single_auxiliary({"execution_id":f"ROOTLINE-AUX-{suffix}-{index}",
-            "consumption_key":key,"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"})
+            "consumption_key":key,"auxiliary_device_id":"FERTILIZER-INJECTION-CH1",
+            "device_type":"fertilizer_injection_valve","job_id":job,"job_sha256":job_sha,
+            "segment_identity":segment,"zone_id":"B12345","zone_execution_id":parent})
     with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(claim,(1,2)))
     assert sum(item.get("created") is True for item in results)==1
     assert sorted(item.get("status") for item in results)==[
         "claimed","eligibility_already_consumed"]
+    winner=1 if results[0].get("created") else 2
+    auxiliary=f"ROOTLINE-AUX-{suffix}-{winner}"
+    with psycopg.connect(url) as connection:
+        for event_id,execution,action,body in (
+            (f"AUX-TERMINAL-{suffix}",auxiliary,"record_auxiliary_completed",
+             {"action":"record_auxiliary_completed","execution_id":auxiliary,
+              "shutdown_verified":True}),
+            (f"PARENT-TERMINAL-{suffix}",parent,"record_completed",
+             {"action":"record_completed","execution_id":parent,"job_id":job,
+              "shutdown_verified":True})):
+            connection.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+                values (%s,%s,'rootline_irrigation_execution',%s,%s::jsonb)""",
+                (event_id,execution,action,json.dumps({"rootline_execution":body})))
 
 
 @pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),

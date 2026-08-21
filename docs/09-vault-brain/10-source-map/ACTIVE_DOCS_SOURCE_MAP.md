@@ -152,6 +152,8 @@ replace the applicable mandatory agent pack.
   validation for every mandatory pack.
 - `modules/charlie/source_map.py`
 - `modules/charlie/mission_store.py`
+- `modules/charlie/mission_outcome_gate.py` - structured, versioned terminal
+  handover validation and separate technical/business lifecycle projection.
 - `modules/charlie/vault_store.py`
 - `modules/charlie/execution_bridge.py`
 - `modules/charlie/improvement_analyst.py`

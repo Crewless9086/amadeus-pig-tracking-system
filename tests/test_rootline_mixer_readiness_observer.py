@@ -30,6 +30,13 @@ def test_ready_readback_is_bounded_stable_and_replay_silent():
         readback=provider, execution_store=lambda action, payload: None)[0]
     assert first["urgency"] == "watch"
     assert first["unknowns"] == []
+    assert first["attention_visibility"] == "equipment_health_only"
+    assert first["presentation_identity"]["human_name"] == "Fertilizer mixer"
+    assert first["equipment_identity"] == "FERTILIZER-MIXER-CH2"
+    assert first["equipment_lifecycle"] == "ready_for_commissioning"
+    assert first["equipment_evidence"]["provider_readiness_proven"] is True
+    assert "physical_commissioning_proven" not in first["equipment_evidence"]
+    assert "Automatic mixing is not proven enabled" in first["summary"]
     assert first["evidence_refs"][:-1] == later["evidence_refs"][:-1]
     assert "100204d497" not in first["summary"]
     assert "token" not in repr(first).lower()
@@ -46,6 +53,8 @@ def test_active_execution_or_unsafe_channel_fails_closed():
     assert row["urgency"] == "urgent"
     assert set(row["unknowns"]) == {"current_off", "native_fail_stop_enabled",
         "native_fail_stop_seconds", "no_conflicting_active_execution"}
+    assert row["attention_visibility"] == "owner_attention_exception"
+    assert row["equipment_lifecycle"] == "held"
     assert "EXEC-1" not in repr(row)
 
 

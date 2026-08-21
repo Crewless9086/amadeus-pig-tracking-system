@@ -1511,6 +1511,8 @@ def get_purpose_review_queue(litter_id: str = "", today=None):
             continue
         if litter_id and row.get("litter_id") != litter_id:
             continue
+        if row.get("purpose_review_state") != "decision_due":
+            continue
         if not litter_id and not _purpose_needs_review(row.get("purpose", "")):
             continue
         review_rows.append(_purpose_review_row(row))
@@ -4814,6 +4816,20 @@ def _growth_profile(row, latest_weight, today, settings=None):
     }
 
 
+def _purpose_review_eligibility(growth, purpose):
+    """One deterministic post-weaning eligibility path for every projection."""
+    if not _purpose_needs_review(purpose):
+        return {"state": "resolved", "eligible": False}
+    days_since_wean = growth.get("days_since_wean")
+    if not isinstance(days_since_wean, (int, float)) or days_since_wean < POST_WEAN_PURPOSE_REVIEW_DAYS:
+        return {"state": "quiet", "eligible": False}
+    wean_date = growth.get("wean_date")
+    latest_weight_date = growth.get("latest_weight_date")
+    if not wean_date or not latest_weight_date or latest_weight_date <= wean_date:
+        return {"state": "weight_due", "eligible": True}
+    return {"state": "decision_due", "eligible": True}
+
+
 def _allocation_source_row(overview_row, master_row):
     if not master_row:
         return overview_row
@@ -5020,6 +5036,7 @@ def get_pig_allocation_readiness(
         bucket, reason = _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings)
         outlet_action = _recommended_outlet_action(bucket, growth, timing, litter_quality)
         suggested_purpose = _suggested_purpose_signal(bucket, outlet_action, growth, timing, litter_quality)
+        purpose_review = _purpose_review_eligibility(growth, row.get("Purpose", ""))
         buckets[bucket] = buckets.get(bucket, 0) + 1
 
         current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
@@ -5079,6 +5096,9 @@ def get_pig_allocation_readiness(
             "suggested_purpose": suggested_purpose["suggested_purpose"],
             "suggested_purpose_reason": suggested_purpose["suggested_purpose_reason"],
             "suggested_purpose_confidence": suggested_purpose["suggested_purpose_confidence"],
+            "purpose_review_state": purpose_review["state"],
+            "purpose_review_eligible": purpose_review["eligible"],
+            "purpose_review_due_after_days": POST_WEAN_PURPOSE_REVIEW_DAYS,
             "available_for_sale": sales_meta.get("available_for_sale", ""),
             "withdrawal_clear": sales_meta.get("withdrawal_clear", to_clean_string(row.get("Withdrawal_Clear", ""))),
             "current_withdrawal_end_date": format_date_for_json(row.get("Current_Withdrawal_End_Date", "")),

@@ -29,11 +29,12 @@ function removePriority(key) { dashboardState.priorities.delete(key); renderPrio
 function renderAttention(data) {
   const items = Array.isArray(data?.top_items) ? data.top_items : [];
   const total = Number(data?.total_count || 0); const hidden = Number(data?.hidden_count || 0);
+  const checking = Number(data?.group_counts?.oom_sakkie_checking || 0);
   setText("status_attention", total ? `${total} item${total === 1 ? "" : "s"}` : "Clear");
-  setText("attention_state", total ? "Shared specialist work" : "No open item found");
+  setText("attention_state", total ? "Needs you or farm work ready" : (checking ? `Oom Sakkie is checking ${checking}` : "No owner action found"));
   const list = byId("attention_list");
-  if (list) list.innerHTML = items.length ? items.map(item => `<a role="listitem" class="attention-item" data-work-id="${escapeHtml(item.work_id)}" href="${escapeHtml(item.detail_target)}"><strong><span aria-hidden="true">${escapeHtml(item.semantic_emoji)}</span> ${escapeHtml(item.title)}</strong><small>${escapeHtml(item.specialist_owner)} · ${escapeHtml(item.task_class.replace(/_/g," "))} · ${escapeHtml(item.freshness)}</small><em>${escapeHtml(item.exact_owner_action)}</em></a>`).join("") : `<div class="attention-placeholder" role="listitem">No open owner-attention work is supported by current evidence.</div>`;
-  const viewAll = byId("attention_view_all"); if (viewAll) { viewAll.hidden = !hidden; viewAll.textContent = hidden ? `View all · ${hidden} more` : "View all"; }
+  if (list) list.innerHTML = items.length ? items.map(item => `<a role="listitem" class="attention-item" data-work-id="${escapeHtml(item.work_id)}" href="${escapeHtml(item.detail_target)}"><strong><span aria-hidden="true">${escapeHtml(item.semantic_emoji)}</span> ${escapeHtml(item.title)}</strong><small>${escapeHtml(label(item.attention_group))} · ${escapeHtml(item.owner_urgency === "none" ? "No owner urgency" : label(item.owner_urgency))} · ${escapeHtml(item.assigned_to)}</small><em>${escapeHtml(item.exact_owner_action)}</em></a>`).join("") : `<div class="attention-placeholder" role="listitem">No owner action is supported by current evidence.${checking ? " Oom Sakkie is checking the remaining specialist work." : ""}</div>`;
+  const viewAll = byId("attention_view_all"); if (viewAll) { const context = Math.max(0, Number(data?.open_context_count || 0)); viewAll.hidden = !context; viewAll.textContent = context ? `Full view · ${context} current` : "Full view"; }
 }
 async function loadAttention() {
   try { renderAttention(await fetchJson("/api/oom-sakkie/owner-attention", 45000)); }
