@@ -4038,3 +4038,36 @@ manufacture a genuine request or claim physical/provider output. It must close
 automatically. DOCUMENTS remains `ACTIVE - DO NOT INTERRUPT`, `CURRENT_BLOCKER`, WIP
 slot 2. Other mission holds and the final deferred Chromecast addendum are unchanged;
 no duplicate mission, branch, authority rail, watcher or status lane was created.
+
+### Green correction reported closed but freshly active; owner setup in progress - 2026-08-21
+
+Charl reported the DOCUMENTS terminal closed and separately reported that he is
+still using his personal ChatGPT session to prepare the printer on Home Assistant
+Green. Fresh attributable evidence contradicts terminal closure: PowerShell PID
+`36916`, Node PID `26928` and Codex PID `38980` remain live; the preserved worktree
+contains six attributable modified files with 189 insertions and 26 deletions; and
+the mandatory handover
+`C:\tmp\VISIBLE_DOCUMENTS_GREEN_SECOND_REVIEW_CORRECTION_HANDOVER_20260821.md` does
+not yet exist. The branch remains at prior pushed head `a4b61e873892c1f419cd5052082c681f07050268`.
+
+Classification remains `ACTIVE - DO NOT INTERRUPT / WORKING / INVALID_HANDOVER_FOR_CLOSE`.
+The live diff is progress evidence only, not completed correction, review approval,
+deployment or owner outcome. Control Tower did not close, resume or duplicate the
+lane; the existing terminal owns completion, tests, commit/push, full handover and
+automatic close.
+
+Charl's Home Assistant Green/printer work is recorded as `OWNER-SIDE COMMISSIONING
+PREPARATION IN PROGRESS`. It is relevant to the later physical acceptance journey,
+but does not prove the Green app is installed, identities or trust are commissioned,
+CUPS reached the printer, a canonical job existed, paper printed, cleanup occurred
+or the capability is usable. No credentials, system information or `.env` contents
+are requested or recorded in the mission register. Secrets must remain in the
+commissioned device's protected secret/configuration mechanism and must not be
+copied into chat, Git or a general repository `.env`.
+
+Target owner outcome and truth remain unchanged: one genuine natural request must
+produce the correct physical page with canonical/provider/physical confirmation,
+safe cleanup/final state, follow-up and a later terminal-independent cycle. Owner
+outcome achieved is `NONE`; usable now is `NO`. The terminal's automatic wake is its
+complete handover and clean pushed immutable head; the later external wake is Charl
+finishing safe device preparation without treating it as acceptance.
