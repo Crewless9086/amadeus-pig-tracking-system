@@ -4434,3 +4434,40 @@ merge, deploy, apply migrations, access production data, install Green, register
 credentials or mappings, contact CUPS/printer, create a print job or manufacture
 operational evidence. The next protected decision remains deferred until that
 compatible migration/application candidate and independent review packet exist.
+
+### Riversdale Auction / Anton farm-manager addendum intake - 2026-08-21
+
+Charl identified the existing monthly Riversdale auction operating loop as a
+time-sensitive family outcome for Anton. Control Tower accepts this as an
+`ADDENDUM / CURRENT_DEFECT` within the existing Riversdale Auction and
+`OMQ-20260816-ANTON-FARM-MANAGER-CHANNEL` lineages, not a new auction mission.
+
+Target owner outcome: the deployed HERDMASTER/Oom Sakkie manager loop opens one
+monthly Riversdale auction case, asks Anton in concise Afrikaans to confirm the
+attendance/date, continuously reconciles the canonical eligible/projected/excluded
+cohort, presents one final protected package, adds the exact approved pigs once to
+the existing Auction List and owns later changes without Charl monitoring pages or
+terminals. Owner outcome achieved is `NONE`; usable now is `NO`.
+
+Fresh intake evidence reports authoritative/deployed main `e027c403`, a disabled
+`CHARLIE Always-On Executive` task, no September auction-confirmation cycle and zero
+auction-reminder outbox records. The expected 14-day reminder for the calculated
+2 September 2026 auction was missed on 19 August; the 7-day window is 26 August.
+Historical August cycle/list evidence must not be reused as September proof.
+
+The first missing gate is a collision-checked repair that moves the existing
+first-Wednesday/14-day/7-day trigger into the deployed Oom Sakkie/HERDMASTER manager
+cycle, binds delivery and three-option callback to Anton's existing authenticated
+`farm_manager` principal, updates one canonical case rather than creating duplicate
+reminders, and preserves existing auction-cycle, outbox, recommendation and
+append-only Auction List rails. Do not create another scheduler, bot, queue,
+database, reminder ledger, candidate list or page; do not enable the broad CHARLIE
+watchdog as a shortcut.
+
+Priority is `NEXT_RELEASED_LANE / TIME_SENSITIVE` after an active bounded lane
+returns its complete handover. Safe source/test/review work requires no owner
+decision. Public/customer messaging, authority expansion, production writes and
+final Auction List approval remain protected. Business completion requires a
+genuine scheduled Anton delivery, canonical confirmation, evidence-backed cohort,
+later reassessment, final protected approval, exactly-once Auction List readback and
+a later terminal-independent month with measured owner-work reduction.
