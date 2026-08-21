@@ -125,6 +125,23 @@ class RuntimeStagingTests(unittest.TestCase):
                  "arguments": f'"{self.runtime / "scripts" / "charlie_runner_task_launcher.py"}"',
                  "working_directory": str(self.runtime)}]
 
+    def _historical_task(self):
+        canonical = self.state.parent
+        watchdog = self.runtime / "scripts" / "charlie_runner_watchdog.py"
+        env_file = canonical / ".env"
+        return [{"task_name": "CHARLIE CORE Runner Watchdog", "task_path": "\\",
+                 "state": "Disabled", "action_count": 1,
+                 "execute": str(canonical / "venv" / "Scripts" / "pythonw.exe"),
+                 "arguments": f'-c "load_dotenv(r\'{env_file}\');runpy.run_path(r\'{watchdog}\')"',
+                 "working_directory": str(self.runtime)}]
+
+    def _historical_fixture(self):
+        holder = {"rows": self._historical_task()}
+        reader = lambda: [dict(holder["rows"][0])]
+        def writer(rows, **_kwargs):
+            holder["rows"] = [dict(rows[0])]
+        return holder, reader, writer
+
     @staticmethod
     def _safe_git(_root, _runner):
         return {"extensions": "none", "post_checkout_hook": "absent"}
@@ -161,6 +178,66 @@ class RuntimeStagingTests(unittest.TestCase):
         self.assertEqual(plan["watchdog_action"], "none")
         self.assertEqual(before, (self.git.heads, (self.state / "runtime-manifest.json").read_bytes()))
         self.assertEqual(plan["rollback"]["runtime"]["head"], RUNTIME)
+
+    def test_disabled_historical_action_migrates_to_launcher_during_staging(self):
+        holder, reader, writer = self._historical_fixture()
+        plan = self._plan(task_reader=reader, expected_task_sha256=hashlib.sha256(json.dumps(
+            reader(), sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest())
+        self.assertEqual(plan["rollback"]["task_action_mode"], "historical_inline_disabled")
+        result = stage_runtime(plan, task_reader=reader, task_writer=writer, runner=self.git,
+                               git_safety_checker=self._safe_git)
+        self.assertEqual(holder["rows"][0]["state"], "Disabled")
+        self.assertEqual(holder["rows"][0]["arguments"],
+                         f'"{self.runtime / "scripts" / "charlie_runner_task_launcher.py"}"')
+        self.assertEqual(result["watchdog_action"], "migrated_disabled_launcher")
+        self.assertEqual(result["scheduled_task_state"], "Disabled")
+        self.assertFalse(result["core_started"])
+
+    def test_ready_historical_action_is_rejected_without_effect(self):
+        task = self._historical_task()
+        task[0]["state"] = "Ready"
+        with self.assertRaisesRegex(RuntimeStagingError, "scheduled_task_ownership_ambiguous"):
+            self._plan(task_reader=lambda: task, expected_task_sha256=hashlib.sha256(json.dumps(
+                task, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest())
+        self.assertEqual(self.git.heads[str(self.runtime.resolve())], RUNTIME)
+
+    def test_historical_action_is_restored_when_checkout_fails(self):
+        holder, reader, writer = self._historical_fixture()
+        original = reader()
+        plan = self._plan(task_reader=reader, expected_task_sha256=hashlib.sha256(json.dumps(
+            original, sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest())
+        self.git.fail_execution_switch = True
+        with self.assertRaisesRegex(RuntimeStagingError, "git_staging_failed"):
+            stage_runtime(plan, task_reader=reader, task_writer=writer, runner=self.git,
+                          git_safety_checker=self._safe_git)
+        self.assertEqual(holder["rows"], original)
+
+    def test_recovery_accepts_interrupted_launcher_and_restores_historical_action(self):
+        holder, reader, writer = self._historical_fixture()
+        original = reader()
+        plan = self._plan(task_reader=reader, expected_task_sha256=hashlib.sha256(json.dumps(
+            original, sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest())
+        self.git.fail_execution_switch = True
+        self.git.fail_runtime_restore = True
+        with self.assertRaisesRegex(RuntimeStagingError, "git_staging_failed"):
+            stage_runtime(plan, task_reader=reader, task_writer=writer, runner=self.git,
+                          git_safety_checker=self._safe_git)
+        # Simulate an interruption that left the authorized launcher tuple in place.
+        holder["rows"] = [dict(plan["rollback"]["task_launcher_ownership"][0])]
+        self.git.fail_execution_switch = False
+        self.git.fail_runtime_restore = False
+        state = read_staging_state(self.state)
+        recovered = recover_runtime_staging(
+            state_root=self.state, lane_id=state["lane"]["lane_id"],
+            rollback_sha256=state["rollback_sha256"],
+            failure_result_sha256=state["failure_result_sha256"], task_reader=reader,
+            task_writer=writer, runner=self.git, git_safety_checker=self._safe_git)
+        self.assertEqual(recovered["status"], "runtime_staging_recovered")
+        self.assertEqual(holder["rows"], original)
 
     def test_plan_rejects_bad_receipt_digest(self):
         with self.assertRaisesRegex(RuntimeStagingError, "sealed_receipt_digest_mismatch"):
