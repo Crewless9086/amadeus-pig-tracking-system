@@ -4777,3 +4777,45 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
 - Protected/external wake: session availability and genuine runtime evidence. Mixer
   and injector commissioning, authority activation and physical operation remain
   separate protected missions.
+
+## 2026-08-21 — CORE #1143 web rollout with worker dormancy verification
+
+- Mission/lineage: existing CORE startup/worker evidence PR #1143, preserving the
+  #1144 mission-outcome truth gate and separate #1126 governance lineage.
+- Target owner outcome: CORE independently receives, executes and follows through a
+  genuine authorized development mission after terminals close, then repeats with
+  canonical result/follow-up and reduced owner relay work.
+- Owner outcome achieved: `NONE`.
+- Usable now: `NO`; the web revision is live, but the CORE worker remains deliberately
+  unstaged, stopped and disabled with no new heartbeat or genuine mission.
+- Enabling-stage progress: exact approved head
+  `183964f1439186381c9c946bd416a2926a46b337` merged as
+  `7329e79b734ef29068157abc1b9662659d61da29`. Render deploy
+  `dep-da4a0im7bikc73dk3bi0` reached terminal `live` at that exact commit.
+  Production `/health` returned HTTP 200 `ok`; `/health/revision` returned HTTP 200,
+  `provider=render`, `identity_complete=true` and exact revision.
+- Worker separation proof: local `core-runtime-current` and
+  `core-execution-current` both remain at historical revision
+  `3961411236fca3329abaac2d34cfb863167c1c73`; no #1143 runtime copy/stage occurred.
+  `supervisor.stop` remains present at the pre-rollout timestamp
+  `2026-08-20T19:22:01+02:00` with SHA-256
+  `8887C0C06D040B60FEF580C0135761019FE7E416D594538CF86FCF18D1E594B1`.
+- Scheduled-task proof: `CHARLIE CORE Runner Watchdog` remains `Disabled`,
+  `Enabled=False`, last run `2026-08-20T19:21:45+02:00`, result `1`, and retains
+  its prior direct watchdog action rather than the new reviewed launcher action.
+  No scheduled-task mutation occurred.
+- Process/evidence proof: no process command line matched the CORE task launcher,
+  watchdog or runtime/execution worktrees. Latest activation-ledger evidence remains
+  dated `2026-08-20T19:22:04+02:00`; `watchdog.json`, `runner.json` and
+  `supervisor.json` retain pre-rollout timestamps. No fresh worker identity,
+  heartbeat, mission result or production write exists.
+- Safety/effects: no staging, stop removal, task mutation, watchdog activation,
+  mission execution, database write, message, provider control or hardware action.
+  Exact revision and health passed with no regression; rollback was not triggered.
+- Classification: `DEPLOYED_WEB / WORKER_DORMANT / PROTECTED_BOUNDARY`; Business
+  completion is `NO`.
+- First missing real-life gate: separate authority for stop-preserving exact-current
+  runtime validation/staging with a fresh provider/action/rollback tuple. Activation
+  and genuine mission execution remain later separate decisions.
+- Next automatic action: prepare the immutable stop-preserving validation/staging
+  packet; do not remove the stop marker or enable/start the task.
