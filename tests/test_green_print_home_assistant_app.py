@@ -144,7 +144,7 @@ def test_apparmor_denies_admin_and_broad_writes():
 
 def test_apparmor_covers_inherited_s6_entrypoint_without_broad_shell_exec():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
-    for required in ("/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/run/s6/** rwix,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/usr/sbin/update-ca-certificates ix,","/usr/local/share/ca-certificates/amadeus-private-ca.crt rw,"):
+    for required in ("/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/run/ r,","/run/s6/ rw,","/run/s6/** rwix,","/run/service/ rw,","/run/service/** rwix,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/usr/sbin/update-ca-certificates ix,","/usr/local/share/ca-certificates/amadeus-private-ca.crt rw,"):
         assert required in policy
     assert "/usr/bin/su-exec" not in policy
     assert "/bin/** ix" not in policy and "/usr/bin/** ix" not in policy
