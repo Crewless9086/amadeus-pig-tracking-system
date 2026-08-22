@@ -32,6 +32,12 @@ versions no longer consume it.
 
 This guide is for Charl's later, explicitly authorized on-site commissioning. It does not authorize a print, configuration change, credential change, deployment, public exposure, or farm-data write. Stop whenever an observation differs; record it as Unknown and return it to the technical maintainer. Do not improvise.
 
+For the current 0.3.1 dormant state and the exact zero-actuation facts required
+before this guide may be used, first complete
+`GREEN_PRINT_031_NON_ACTUATING_COMMISSIONING_PREFLIGHT_20260822.md`. That packet
+does not authorize starting or configuring the app, accessing the printer,
+creating a queue/job or printing.
+
 ## Before the appointment
 
 1. Confirm the Documents backend version containing the reviewed Green adapter contract is merged and deployed. If not, stop.
