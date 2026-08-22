@@ -5118,15 +5118,18 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   not emitted. Classify this artifact `INVALID / CONTAINED / NEVER_INSTALL`: do not
   attest, install, use, overwrite, delete or reuse its version/tag. No Home Assistant,
   credential, CUPS, printer, job or physical-page effect occurred.
-- Green repair progress: PR #1158 exact head
-  `ebefdbcff952a45ce319f01b0f6a822686c6ce2d` on main `b75153f...` is independently
-  approved for source merge only with all hosted checks green and publication skipped.
+- Green repair progress: independently approved PR #1158 exact head
+  `ebefdbcff952a45ce319f01b0f6a822686c6ce2d` merged as exact main
+  `02816350d8eebecf93a6353ae90bc4f0e78787f9`. Render deploy
+  `dep-da4il8eq1p3s73auburg` reached `live`; `/health` and `/health/revision`
+  returned healthy exact revision identity, and all three merge-commit regression
+  workflows passed. The Green publication workflow did not run.
   It creates unique 0.3.1 publication rails that require exactly one raw OCI
   `linux/arm64` descriptor plus matching config/source/version before signing, explicit
-  arm64 SBOM generation, attestations and final digest-bound receipt. First gate: one
-  exact protected merge decision; publication, dormant update, commissioning and Start
-  remain separate. Installed 0.2.0 remains owner-observed `Stopped`, Start on boot OFF,
-  Watchdog OFF and Auto update OFF.
+  arm64 SBOM generation, attestations and final digest-bound receipt. First gate is now
+  one separately protected exact 0.3.1 publication decision; dormant update,
+  commissioning and Start remain later separate boundaries. Installed 0.2.0 remains
+  owner-observed `Stopped`, Start on boot OFF, Watchdog OFF and Auto update OFF.
 - CORE target owner outcome: stopped CORE eventually receives and completes a genuine
   authorised mission independently, with canonical result, safe follow-up and later
   terminal-independent continuity. Owner outcome: `NONE`; usable now: `NO`. PR #1157
