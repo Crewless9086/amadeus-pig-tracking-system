@@ -10,7 +10,7 @@ SPEC=importlib.util.spec_from_file_location("green_app",APP/"app"/"service.py");
 NOW=datetime(2026,8,21,8,tzinfo=timezone.utc); PDF=b"%PDF-1.4\nsynthetic\n%%EOF"
 def config(tmp_path):
     cert=tmp_path/"private-ca.crt"; cert.write_text("synthetic",encoding="utf-8")
-    return {"canonical_api_origin":"https://documents.invalid","canonical_endpoint_ip":"10.23.0.5","canonical_bearer_token":"synthetic-token","farm_scope_id":"farm-amadeus","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","printer_uri":"ipps://10.23.0.9/ipp/print","ca_certificate_path":str(cert),"poll_seconds":30,"spool_path":str(tmp_path),"data_path":str(tmp_path)}
+    return {"canonical_transport_profile":"private_pinned","canonical_api_origin":"https://documents.invalid","canonical_endpoint_ip":"10.23.0.5","canonical_bearer_token":"synthetic-token","farm_scope_id":"farm-amadeus","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","printer_transport_profile":"private_ipps","printer_uri":"ipps://10.23.0.9/ipp/print","printer_endpoint_ip":"10.23.0.9","ca_certificate_path":str(cert),"poll_seconds":30,"spool_path":str(tmp_path),"data_path":str(tmp_path)}
 def envelope(**changes):
     value={"job_id":"JOB-SYNTHETIC-1","farm_scope_id":"farm-amadeus","document_id":"WWS-SYNTHETIC","document_version":"WWS-SYNTHETIC.r1.abcdef123456","document_revision":1,"document_type":S.PILOT_DOCUMENT,"generator_id":S.PILOT_GENERATOR,"pdf_sha256":sha256(PDF).hexdigest(),"retrieval_url":"https://documents.invalid/api/documents/WWS-SYNTHETIC/versions/WWS-SYNTHETIC.r1.abcdef123456/pdf","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","authorization_receipt_id":"AUTH-SYNTHETIC-1","authorization_expires_at":(NOW+timedelta(hours=1)).isoformat(),"options":dict(S.FIXED_OPTIONS)}
     value.update(changes); return value
@@ -24,7 +24,7 @@ def test_package_is_bounded_and_privilege_split():
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.1"
+    assert cfg["version"]=="0.3.2"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -48,7 +48,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.1-verified-release-packet" in workflow
+    assert "green-print-0.3.2-verified-release-packet" in workflow
 
 def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     docs=(APP/"DOCS.md").read_text(encoding="utf-8")
@@ -60,11 +60,11 @@ def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     assert "sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3" in docs
     assert "sha256:4b738c69245a6b4721a7f4b58135acf3d2308f355b7c8c4008c4149763e11b32" in docs
 
-def test_031_publish_verifies_descriptor_and_config_before_signing_or_attesting():
+def test_032_publish_verifies_descriptor_and_config_before_signing_or_attesting():
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.1"
+    assert parsed["env"]["VERSION"]=="0.3.2"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -102,12 +102,61 @@ def test_contract_and_authorization_fail_closed(tmp_path):
     for change in ({"cups_queue_id":"other"},{"options":{**S.FIXED_OPTIONS,"copies":2}},{"authorization_expires_at":NOW.isoformat()},{"retrieval_url":envelope()["retrieval_url"]+"?x=1"}):
         with pytest.raises(S.Hold): S.validate(envelope(**change),cfg,NOW)
 
-def test_config_pins_canonical_and_requires_printer_ip_literal(tmp_path,monkeypatch):
+def test_config_preserves_private_canonical_pin_and_ip_san_printer(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"
     monkeypatch.setattr(S.socket,"getaddrinfo",lambda *_a,**_k:[(None,None,None,None,("10.23.0.5",0))]); path.write_text(json.dumps(cfg),encoding="utf-8")
     assert S.load_config(str(path))["canonical_endpoint_ip"]=="10.23.0.5"
     path.write_text(json.dumps({**cfg,"printer_uri":"ipps://printer.invalid/ipp/print"}),encoding="utf-8")
-    with pytest.raises(S.Hold,match="commissioned_ip_literal_required"): S.load_config(str(path))
+    monkeypatch.setattr(S.socket,"getaddrinfo",lambda host,*_a,**_k:[(None,None,None,None,(("10.23.0.5" if host=="documents.invalid" else "10.23.0.9"),0))])
+    assert S.load_config(str(path))["printer_endpoint_ip"]=="10.23.0.9"
+
+def test_public_pki_profile_allows_only_exact_render_origin_without_pin(tmp_path,monkeypatch):
+    cfg={**config(tmp_path),"canonical_transport_profile":"public_pki_exact_origin","canonical_api_origin":S.APPROVED_PUBLIC_CANONICAL_ORIGIN,"canonical_endpoint_ip":""}
+    path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
+    assert S.load_config(str(path))["canonical_transport_profile"]=="public_pki_exact_origin"
+    for origin in ("https://example.com","https://amadeus-pig-tracking-system.onrender.com/extra","http://amadeus-pig-tracking-system.onrender.com"):
+        path.write_text(json.dumps({**cfg,"canonical_api_origin":origin}),encoding="utf-8")
+        with pytest.raises(S.Hold): S.load_config(str(path))
+    path.write_text(json.dumps({**cfg,"canonical_endpoint_ip":"10.23.0.5"}),encoding="utf-8")
+    with pytest.raises(S.Hold,match="public_canonical_origin_not_approved"): S.load_config(str(path))
+
+def test_printer_hostname_dns_is_single_private_bound_address(tmp_path,monkeypatch):
+    cfg={**config(tmp_path),"printer_uri":"ipps://printer.internal/ipp/print"}; path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
+    monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"])
+    for answers in (["10.23.0.9"],["10.23.0.9","10.23.0.10"],["8.8.8.8"]):
+        monkeypatch.setattr(S.socket,"getaddrinfo",lambda host,*_a,_answers=answers,**_k:[(None,None,None,None,(x,0)) for x in (["10.23.0.5"] if host=="documents.invalid" else _answers)])
+        if answers==["10.23.0.9"]: assert S.load_config(str(path))["printer_endpoint_ip"]=="10.23.0.9"
+        else:
+            with pytest.raises(S.Hold): S.load_config(str(path))
+
+def test_printer_dns_drift_holds_before_any_canonical_or_cups_effect(tmp_path,monkeypatch):
+    cfg={**config(tmp_path),"printer_uri":"ipps://printer.internal/ipp/print"}
+    monkeypatch.setattr(S.socket,"getaddrinfo",lambda *_a,**_k:[(None,None,None,None,("10.23.0.10",0))])
+    canonical=Canonical(); cups=Cups()
+    with pytest.raises(S.Hold,match="printer_dns_binding_ambiguous_or_drifted"): S.cycle(S.Ledger(str(tmp_path/"drift.db")),canonical,cups,cfg,"worker")
+    assert canonical.claimed is None and cups.submissions==0
+
+def test_public_client_uses_system_pki_and_never_pinned_connection(tmp_path,monkeypatch):
+    cfg={**config(tmp_path),"canonical_transport_profile":"public_pki_exact_origin","canonical_api_origin":S.APPROVED_PUBLIC_CANONICAL_ORIGIN,"canonical_endpoint_ip":""}
+    monkeypatch.setattr(S.ssl,"create_default_context",lambda **kwargs:("context",kwargs)); client=S.CanonicalClient(cfg)
+    assert client.context==("context",{})
+    conn=client.connection(20); assert type(conn) is S.http.client.HTTPSConnection and conn.host=="amadeus-pig-tracking-system.onrender.com"
+
+def test_public_client_rejects_redirect_and_binds_auth_farm_green_and_host(tmp_path):
+    cfg={**config(tmp_path),"canonical_transport_profile":"public_pki_exact_origin","canonical_api_origin":S.APPROVED_PUBLIC_CANONICAL_ORIGIN,"canonical_endpoint_ip":""}
+    class Response:
+        status=302
+        def read(self,_limit): return b""
+    class Connection:
+        def __init__(self): self.sent=None; self.closed=False
+        def request(self,*args,**kwargs): self.sent=(args,kwargs)
+        def getresponse(self): return Response()
+        def close(self): self.closed=True
+    client=object.__new__(S.CanonicalClient); client.config=cfg; client.worker_id="green-worker-bound"; connection=Connection(); client.connection=lambda _timeout:connection
+    with pytest.raises(S.Hold,match="canonical_redirect_forbidden"): client.request("POST",S.CLAIM_PATH,{"worker_id":"green-worker-bound"})
+    headers=connection.sent[1]["headers"]
+    assert headers["Authorization"]=="Bearer synthetic-token" and headers["X-Amadeus-Farm-Scope-Id"]=="farm-amadeus"
+    assert headers["X-Amadeus-Green-Id"]=="green-synthetic" and headers["Host"]=="amadeus-pig-tracking-system.onrender.com" and connection.closed
 
 def test_dns_rebinding_cannot_change_transport_target(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
