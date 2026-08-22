@@ -312,7 +312,7 @@ def _catalog_manifest(connection) -> dict:
         return [list(row) for row in connection.execute(sql, params).fetchall()]
 
     manifest = {
-        "version": "render_migration_catalog_manifest_v1",
+        "version": "render_migration_catalog_manifest_v2",
         "scope": {
             "relations": relations,
             "functions": functions,
@@ -335,7 +335,8 @@ def _catalog_manifest(connection) -> dict:
         "relations": rows(
             """select n.nspname,c.relname,c.relkind,
                       pg_catalog.pg_get_userbyid(c.relowner),c.relpersistence,
-                      c.relrowsecurity,c.relforcerowsecurity,c.relreplident
+                      c.relrowsecurity,c.relforcerowsecurity,c.relreplident,
+                      c.relhasrules
                  from pg_catalog.pg_class c
                  join pg_catalog.pg_namespace n on n.oid=c.relnamespace
                 where (n.nspname||'.'||c.relname)=any(%s)
@@ -418,6 +419,21 @@ def _catalog_manifest(connection) -> dict:
                  join pg_catalog.pg_proc p on p.oid=t.tgfoid
                  join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
                 where (n.nspname||'.'||c.relname)=any(%s) and not t.tgisinternal
+                order by 1,2,3""",
+            (relations,),
+        ),
+        "rules": rows(
+            """select n.nspname,c.relname,r.rulename,r.ev_enabled,
+                      r.ev_type,r.is_instead,
+                      pg_catalog.regexp_replace(
+                        pg_catalog.pg_get_ruledef(r.oid,false),
+                        '[[:space:]]+',' ','g'
+                      )
+                 from pg_catalog.pg_rewrite r
+                 join pg_catalog.pg_class c on c.oid=r.ev_class
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                where (n.nspname||'.'||c.relname)=any(%s)
+                  and r.rulename<>'_RETURN'
                 order by 1,2,3""",
             (relations,),
         ),
