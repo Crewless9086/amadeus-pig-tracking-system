@@ -71,7 +71,7 @@ def evaluate_reply_window(
             urgent_hours=urgent_hours, now=now,
             latest_inbound=latest_inbound,
         )
-    if provider not in {"genuine_whatsapp", "genuine_webwidget"}:
+    if provider not in {"genuine_whatsapp", "genuine_webwidget", "genuine_meta"}:
         return _result(
             identity, "unavailable", "unavailable",
             reason="whatsapp_provider_identity_unavailable",
@@ -303,10 +303,14 @@ def _provider_class(value: Any) -> str:
         "webwidget", "website",
     }:
         return "genuine_webwidget"
+    if value in {
+        "channel::facebookpage", "chatwoot_facebook", "genuine_meta",
+        "facebook", "messenger",
+    }:
+        return "genuine_meta"
     if value in {"chatwoot", "api", "webhook"}:
         return "transport_only"
     if value in {
-        "channel::facebookpage", "chatwoot_facebook", "facebook", "messenger",
         "channel::instagram", "chatwoot_instagram", "instagram",
         "channel::email", "chatwoot_email", "email",
     }:
