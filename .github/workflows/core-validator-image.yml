@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: core-validator-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
 env:
   IMAGE: ghcr.io/crewless9086/amadeus-core-validator
 
@@ -98,6 +102,10 @@ jobs:
           BUILD_MANIFEST_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
+          if docker buildx imagetools inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing tag $IMAGE:$TAG after build" >&2
+            exit 1
+          fi
           docker buildx imagetools create --tag "$IMAGE:$TAG" "$IMAGE@$BUILD_MANIFEST_DIGEST"
           RESOLVED_DIGEST="$(docker buildx imagetools inspect "$IMAGE:$TAG" | awk '$1 == "Digest:" {print $2; exit}')"
           test -n "$RESOLVED_DIGEST"
@@ -149,15 +157,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          cosign verify "$IMAGE@$DIGEST" --certificate-identity-regexp '^https://github.com/Crewless9086/amadeus-pig-tracking-system/.github/workflows/core-validator-image.yml@refs/heads/main$' --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/core-validator-image.yml"
+          IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/core-validator-image.yml@refs/heads/main"
+          cosign verify "$IMAGE@$DIGEST" --certificate-identity "$IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com > cosign-verification.json
+          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" --predicate-type "https://slsa.dev/provenance/v1" --cert-identity "$IDENTITY" --source-digest "$EXPECTED_SOURCE_COMMIT" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > provenance-verification.json
+          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "$IDENTITY" --source-digest "$EXPECTED_SOURCE_COMMIT" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > sbom-attestation-verification.json
           FINAL_DIGEST="$(docker buildx imagetools inspect "$IMAGE:$TAG" | awk '$1 == "Digest:" {print $2; exit}')"
           test "$FINAL_DIGEST" = "$DIGEST"
-          jq -n --arg image "$IMAGE" --arg tag "$TAG" --arg digest "$DIGEST" --arg source_commit "$EXPECTED_SOURCE_COMMIT" --arg workflow "$GITHUB_WORKFLOW_REF" --arg run_id "$GITHUB_RUN_ID" --arg platform linux/amd64 '{image:$image,tag:$tag,digest:$digest,source_commit:$source_commit,platform:$platform,cosign_verified:true,slsa_provenance_verified:true,spdx_sbom_verified:true,sbom_attestation_verified:true,workflow:$workflow,run_id:$run_id}' > core-validator-release-receipt.json
+          COSIGN_SHA256="$(sha256sum cosign-verification.json | awk '{print $1}')"
+          PROVENANCE_SHA256="$(sha256sum provenance-verification.json | awk '{print $1}')"
+          SBOM_ATTESTATION_SHA256="$(sha256sum sbom-attestation-verification.json | awk '{print $1}')"
+          SBOM_SHA256="$(sha256sum core-validator.spdx.json | awk '{print $1}')"
+          jq -n --arg image "$IMAGE" --arg tag "$TAG" --arg digest "$DIGEST" --arg source_commit "$EXPECTED_SOURCE_COMMIT" --arg workflow "$GITHUB_WORKFLOW_REF" --arg run_id "$GITHUB_RUN_ID" --arg platform linux/amd64 --arg cosign_verification_sha256 "$COSIGN_SHA256" --arg provenance_verification_sha256 "$PROVENANCE_SHA256" --arg sbom_attestation_verification_sha256 "$SBOM_ATTESTATION_SHA256" --arg sbom_sha256 "$SBOM_SHA256" '{image:$image,tag:$tag,digest:$digest,source_commit:$source_commit,platform:$platform,cosign_verified:true,slsa_provenance_verified:true,spdx_sbom_verified:true,sbom_attestation_verified:true,cosign_verification_sha256:$cosign_verification_sha256,provenance_verification_sha256:$provenance_verification_sha256,sbom_attestation_verification_sha256:$sbom_attestation_verification_sha256,sbom_sha256:$sbom_sha256,workflow:$workflow,run_id:$run_id}' > core-validator-release-receipt.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: core-validator-release-${{ env.EXPECTED_SOURCE_COMMIT }}
           path: |
             core-validator-release-receipt.json
             core-validator.spdx.json
+            cosign-verification.json
+            provenance-verification.json
+            sbom-attestation-verification.json
           if-no-files-found: error
