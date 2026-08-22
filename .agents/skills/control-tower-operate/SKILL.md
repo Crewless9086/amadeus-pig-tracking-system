@@ -22,6 +22,25 @@ Before acting, read the complete tracked `docs/09-vault-brain/00-governance/AGEN
 9. Update the tracked durable mission register after material transitions. Preserve failed-review findings and superseded lineages instead of hiding them.
 10. Before handover, sweep every terminal/agent/PR/worktree/runtime lane and classify it as continue, review hold, release hold, blocked, superseded, or terminal.
 
+## Workspace autonomy and artifact routing
+
+Keep routine development writes inside the approved repository workspace. Before any file write, classify it and route it as follows:
+
+1. **Canonical durable documentation:** use its existing governed repository path and update rules. This includes doctrine, the durable mission register, formal canonical handovers, standards, and Control Tower receipts. Commit it only when the mission authorizes that durable change.
+2. **Mission-working evidence:** use `control-tower-artifacts/<mission-or-pr>/`, with stable subdirectories such as `handovers/`, `acceptance/`, and `screenshots/`. Reuse a more specific existing authoritative workspace path when one is already governed. This tree is intentionally untracked.
+3. **Disposable runtime/test output:** use `.codex-runtime/missions/<mission-or-pr>/`. Configure test, browser, render, and comparison tools to use this workspace-local path where supported. This tree is intentionally untracked.
+
+Do not use `%TEMP%`, AppData, Desktop, Documents, `C:\\tmp`, or dynamically invented external directories for routine artifacts. Do not repurpose system `TEMP`, `HOME`, or similar environment variables. If a tool unavoidably requires external temporary storage, first try a workspace-local option; otherwise request one narrowly scoped reusable permission with the exact reason. Never request unrestricted filesystem access merely to suppress prompts.
+
+Every child dispatch must provide:
+
+- repository working directory;
+- exact mission artifact directory;
+- exact disposable runtime directory;
+- instruction not to write elsewhere.
+
+Operate autonomously within those workspace paths and the bounded mission. External writes, secrets, protected production actions, customer communication, payments, hardware operation, destructive changes, and ungoverned business-record mutations retain their normal authority boundaries.
+
 ## Completion boundary
 
 Do not declare completion until the relevant operational-acceptance skill proves the exact deployed revision, genuine journey, canonical/provider/physical effects as applicable, replay or duplicate safety, and a later terminal-independent cycle. If those are missing, report the exact remaining acceptance gap and continue.

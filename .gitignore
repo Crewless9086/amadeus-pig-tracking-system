@@ -22,3 +22,8 @@ test-results/
 .mypy_cache/
 .ruff_cache/
 instance/*.sqlite3
+
+# Control Tower workspace-local working evidence and disposable runtime output.
+# Durable doctrine, registers, receipts and formal handovers use governed paths.
+/control-tower-artifacts/
+/.codex-runtime/

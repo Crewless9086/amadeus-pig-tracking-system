@@ -11,6 +11,8 @@ Use after implementation or release review. This is an evidence workflow, not a 
 
 Read the complete mission standard, mission record, selected active doctrine, implementation handover, independent review, and release approval. Derive each explicit acceptance requirement and the authoritative evidence source that can prove it.
 
+Use the mission's assigned `control-tower-artifacts/<mission-or-pr>/acceptance/` for working evidence and `.codex-runtime/missions/<mission-or-pr>/` for disposable browser/test output. Canonical receipts and formal durable handovers remain at their governed repository paths. Do not invent external output directories.
+
 Choose only the tools relevant to the journey:
 
 - Git/GitHub for exact reviewed and merged revisions and CI.
