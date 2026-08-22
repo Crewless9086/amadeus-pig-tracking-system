@@ -1445,3 +1445,32 @@ after push. The automatic next action is fresh independent exact-head review of
 PR #1150. Only later separately authorized migration/deployment/commissioning,
 a genuine natural request, exact canonical/provider evidence, one correct page,
 cleanup/follow-up and a later terminal-independent cycle can close the mission.
+
+## 2026-08-22 — Green 0.3.1 dormant release and commissioning preflight
+
+- Mission/lineage: existing DOCUMENTS `DMQ-20260816-01`; no new app, queue,
+  registry, scheduler, credential or printer path.
+- Target owner outcome: one genuine natural weekly-sheet request produces exactly
+  one correct physical page through the commissioned Green worker with canonical,
+  CUPS and physical proof, safe cleanup, automatic follow-up and a later
+  terminal-independent cycle.
+- Owner outcome achieved: `NONE`. Usable now: `NO`.
+- Enabling-stage progress: authoritative main
+  `02816350d8eebecf93a6353ae90bc4f0e78787f9` contains reviewed 0.3.1 source;
+  valid immutable digest is
+  `sha256:b660fffbc7985f7b5d8f2550f2dbbf779966e5167d51e063051fb1890a10bdd5`.
+  Owner observes 0.3.1 installed, Stopped, Start on boot/Watchdog/Auto update OFF
+  and never auto-started.
+- Historical containment: invalid partial 0.3.0 remains quarantined and must never
+  be installed, used, further attested, overwritten, deleted or reused.
+- Classification: `DORMANT_INSTALLED / UNCOMMISSIONED / AUTHORITY_DISABLED`;
+  Business completion is `NO`.
+- First missing gate: observation-only Supervisor resolved-image/digest and
+  containment readback, followed by technical preparation of private canonical
+  HTTPS/TLS, zero-submission printer IPPS/certificate proof, canonical identities,
+  least-privilege credential and fixed queue.
+- Next automatic action: use
+  `GREEN_PRINT_031_NON_ACTUATING_COMMISSIONING_PREFLIGHT_20260822.md`; after safe
+  facts are reviewed, return one separate zero-job commissioning decision. App
+  start/configuration, secrets, queue creation, printer jobs and printing remain
+  unauthorized.
