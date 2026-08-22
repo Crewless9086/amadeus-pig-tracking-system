@@ -95,7 +95,8 @@ def load_canonical_farrowing_evidence(*, connect_factory=None):
             cursor.execute("select pig_id,tag_number,pig_name as name,status,on_farm,sex,animal_type from public.current_canonical_pigs")
             animals = _rows(cursor)
             cursor.execute("""select mating_id,sow_pig_id,boar_pig_id,mating_date,outcome,
-                expected_farrowing_window_start,expected_farrowing_window_end,
+                (expected_farrowing_date - interval '10 days')::date as expected_farrowing_window_start,
+                (expected_farrowing_date + interval '10 days')::date as expected_farrowing_window_end,
                 related_litter_id as linked_litter_id
                 from public.mating_events order by mating_date,mating_id""")
             matings = _rows(cursor)
