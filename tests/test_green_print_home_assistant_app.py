@@ -144,10 +144,13 @@ def test_apparmor_denies_admin_and_broad_writes():
 
 def test_apparmor_covers_inherited_s6_entrypoint_without_broad_shell_exec():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
-    for required in ("/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/usr/sbin/update-ca-certificates ix,","/usr/local/share/ca-certificates/amadeus-private-ca.crt rw,"):
+    for required in ("/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,"):
         assert required in policy
     assert "/usr/bin/su-exec" not in policy
     assert "/bin/** ix" not in policy and "/usr/bin/** ix" not in policy
+    assert "update-ca-certificates" not in policy
+    assert "/usr/local/share/ca-certificates" not in policy
+    assert "/etc/ssl/certs/** rw" not in policy
 
 def test_home_assistant_public_profile_default_is_explicit_blank():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8"))
