@@ -64,6 +64,8 @@ def _reset_disposable_database(*, unexpected_litter_reason=False):
         end $$""")
         db.execute("drop schema if exists app_private cascade")
         db.execute("drop table if exists public.pig_welfare_cases cascade")
+        db.execute("drop table if exists public.pig_welfare_case_events cascade")
+        db.execute("drop table if exists public.pig_welfare_case_fact_links cascade")
         db.execute("drop table if exists public.sales_transactions cascade")
         db.execute("drop table if exists public.litter_supersessions cascade")
         db.execute("drop table if exists public.litter_correction_authorizations cascade")
@@ -700,7 +702,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                     run(DATABASE_URL, ENV)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
-    def test_disposable_postgres_l_legacy_receipt_anchor_requires_exact_authority(self):
+    def test_disposable_postgres_l_legacy_receipt_cannot_be_self_certified(self):
         import psycopg
 
         _reset_disposable_database()
@@ -722,16 +724,71 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             )
             db.commit()
         with self.assertRaisesRegex(
-            RuntimeError, "legacy_migration_receipt_anchor_authority_required"
+            RuntimeError, "legacy_migration_receipt_identity_unverifiable"
         ):
             run(DATABASE_URL, ENV)
-        authorized = run(
-            DATABASE_URL,
-            {**ENV, "RENDER_MIGRATION_ALLOW_LEGACY_RECEIPT_ANCHOR": "true"},
-        )
-        self.assertTrue(
-            authorized["migrations"][0]["receipt_identity"]["identity_anchored_now"]
-        )
+        with self.assertRaisesRegex(RuntimeError, "legacy_migration_receipt_identity_unverifiable"):
+            run(DATABASE_URL, {**ENV, "RENDER_MIGRATION_ALLOW_LEGACY_RECEIPT_ANCHOR": "true"})
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_malformed_historical_object_never_receives_applied_receipt(self):
+        import psycopg
+        _reset_disposable_database()
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute("create table app_private.beacon_protected_publication_consumers(marker text)")
+            db.commit()
+        with self.assertRaisesRegex(RuntimeError, "migration_failed_and_rolled_back:.*receipt=none"):
+            run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL) as db:
+            exists = db.execute("select to_regclass('app_private.production_migration_receipts')").fetchone()[0]
+            self.assertIsNone(exists)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_receipt_hash_is_timezone_invariant(self):
+        import psycopg
+        _reset_disposable_database()
+        run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL, autocommit=True) as db:
+            db.execute("alter database render_migration_rail_test set timezone='Africa/Johannesburg'")
+        replay = run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL, autocommit=True) as db:
+            db.execute("alter database render_migration_rail_test set timezone='UTC'")
+        self.assertTrue(all(row["outcome"] == "already_applied" for row in replay["migrations"]))
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_anchor_catalog_and_insert_paths_fail_closed(self):
+        import psycopg
+        for attack in ("fk", "acl", "insert_trigger"):
+            with self.subTest(attack=attack):
+                _reset_disposable_database(); run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    if attack == "fk":
+                        name = db.execute("select conname from pg_constraint where conrelid='app_private.production_migration_receipt_identity_anchors'::regclass and contype='f'").fetchone()[0]
+                        db.execute(f'alter table app_private.production_migration_receipt_identity_anchors drop constraint "{name}"')
+                    elif attack == "acl":
+                        db.execute("grant select,insert on app_private.production_migration_receipt_identity_anchors to anon")
+                    else:
+                        db.execute("create function app_private.rewrite_anchor() returns trigger language plpgsql as $$begin new.identity_sha256:=repeat('0',64); return new; end$$; create trigger aaa_rewrite_anchor before insert on app_private.production_migration_receipt_identity_anchors for each row execute function app_private.rewrite_anchor()")
+                    db.commit()
+                with self.assertRaisesRegex(RuntimeError, "migration_receipt_(anchor_fk|catalog_acl|guard_trigger_inventory)"):
+                    run(DATABASE_URL, ENV)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_protected_claim_column_owner_and_set_role_paths_fail_closed(self):
+        import psycopg
+        for attack in ("column", "owner", "set_role"):
+            with self.subTest(attack=attack):
+                _reset_disposable_database(); run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    if attack == "column":
+                        db.execute("grant select(callback_token) on app_private.oom_protected_action_claims to anon")
+                    elif attack == "owner":
+                        db.execute("do $$begin create role claim_attacker login; exception when duplicate_object then null; end$$; alter table app_private.oom_protected_action_claims owner to claim_attacker")
+                    else:
+                        db.execute("do $$begin create role claim_group; exception when duplicate_object then null; end$$; do $$begin create role claim_login login noinherit; exception when duplicate_object then null; end$$; grant claim_group to claim_login; grant select on app_private.oom_protected_action_claims to claim_group")
+                    db.commit()
+                with self.assertRaisesRegex(RuntimeError, "migration_readback_protected_claim_(acl|owner)_mismatch"):
+                    run(DATABASE_URL, ENV)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_disposable_postgres_c_runner_failure_rolls_back_partial_schema(self):
