@@ -65,7 +65,7 @@ profile amadeus-green-print-bridge flags=(attach_disconnected,mediate_deleted) {
   /etc/cups/ssl/site.crt rw,
   /etc/hosts rw,
   /etc/ssl/certs/** r,
-  /config/private-ca.crt r,
+  /homeassistant/private-ca.crt r,
   /data/ rwk,
   /data/** rwk,
   /run/cups/ rwk,

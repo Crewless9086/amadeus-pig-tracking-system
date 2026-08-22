@@ -79,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--work-root",
         type=Path,
-        default=Path(".codex-runtime/missions/GREEN-0.3.5"),
+        default=Path(".codex-runtime/missions/GREEN-0.3.6"),
     )
     args = parser.parse_args()
     suffix = uuid.uuid4().hex[:10]
@@ -92,11 +92,15 @@ def main() -> int:
         prefix="green-startup-probe-", dir=args.work_root.resolve(),
     ) as raw:
         root = Path(raw)
-        config_dir = root / "config"
+        addon_config_dir = root / "addon-config"
+        ha_config_dir = root / "homeassistant-config"
         data_dir = root / "data"
-        config_dir.mkdir()
+        addon_config_dir.mkdir()
+        ha_config_dir.mkdir()
         data_dir.mkdir()
-        cert = config_dir / "private-ca.crt"
+        cert = ha_config_dir / "private-ca.crt"
+        forbidden_ha_file = ha_config_dir / "secrets.yaml"
+        forbidden_ha_file.write_text("must-not-be-readable\n", encoding="ascii")
         key = root / "private-ca.key"
         run(
             "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
@@ -143,22 +147,39 @@ def main() -> int:
         # Reproduce the Supervisor boundary: Supervisor populates root-owned
         # options on a writable /data mount. Never pre-own the mount or its
         # contents for the image's runtime user.
-        run("sudo", "chown", "root:root", str(data_dir), str(options_path), str(config_dir), str(cert))
-        run("sudo", "chmod", "0755", str(data_dir), str(config_dir))
+        run("sudo", "chown", "root:root", str(data_dir), str(options_path), str(addon_config_dir), str(ha_config_dir), str(cert), str(forbidden_ha_file))
+        run("sudo", "chmod", "0755", str(data_dir), str(addon_config_dir), str(ha_config_dir))
         run("sudo", "chmod", "0600", str(options_path))
         run("sudo", "chmod", "0644", str(cert))
 
         try:
             run("sudo", "apparmor_parser", "-r", str(args.profile.resolve()))
 
+            if any(addon_config_dir.iterdir()):
+                raise RuntimeError("Supervisor-shaped addon_config must remain empty")
+            scope_denial_baseline = len(apparmor_denials())
+            denied_ha_read = run(
+                "docker", "run", "--rm", "--platform", "linux/arm64",
+                "--security-opt", "apparmor=amadeus-green-print-bridge",
+                "--entrypoint", "/bin/busybox",
+                "--mount", f"type=bind,src={addon_config_dir},dst=/config,readonly",
+                "--mount", f"type=bind,src={ha_config_dir},dst=/homeassistant,readonly",
+                args.image, "cat", "/homeassistant/secrets.yaml", check=False,
+            )
+            if denied_ha_read.returncode == 0 or "must-not-be-readable" in (denied_ha_read.stdout + denied_ha_read.stderr):
+                raise RuntimeError("AppArmor exposed non-certificate Home Assistant configuration")
+            scope_denials = apparmor_denials()[scope_denial_baseline:]
+            if not any('name="/homeassistant/secrets.yaml"' in line for line in scope_denials):
+                raise RuntimeError("AppArmor did not prove denial of non-certificate Home Assistant configuration")
+
             def negative_case(name: str, expected: str, *, options_mode: str = "valid", cert_mode: str = "valid", data_readonly: bool = False, shadow: tuple[str, str] | None = None) -> None:
-                case_root=root/f"negative-{name}"; case_config=case_root/"config"; case_data=case_root/"data"
-                case_config.mkdir(parents=True); case_data.mkdir()
+                case_root=root/f"negative-{name}"; case_addon_config=case_root/"addon-config"; case_ha_config=case_root/"homeassistant-config"; case_data=case_root/"data"
+                case_addon_config.mkdir(parents=True); case_ha_config.mkdir(); case_data.mkdir()
                 if options_mode != "missing":
                     material=json.dumps(options) if options_mode == "valid" else ("" if options_mode == "empty" else "{}")
                     (case_data/"options.json").write_text(material,encoding="utf-8")
                 if cert_mode != "missing":
-                    (case_config/"private-ca.crt").write_bytes(cert.read_bytes() if cert_mode == "valid" else b"")
+                    (case_ha_config/"private-ca.crt").write_bytes(cert.read_bytes() if cert_mode == "valid" else b"")
                 if name == "ownership_conflict": (case_data/"green-runtime").write_text("not-a-directory",encoding="ascii")
                 source=None
                 if shadow:
@@ -171,11 +192,11 @@ def main() -> int:
                         source.write_text("#!/bin/sh\nexit 1\n",encoding="ascii"); source.chmod(0o755)
                     else:
                         source.write_text("this is not valid shell syntax (\n",encoding="ascii"); source.chmod(0o644)
-                run("sudo","chown","-R","root:root",str(case_root)); run("sudo","chmod","0755",str(case_root),str(case_config),str(case_data))
+                run("sudo","chown","-R","root:root",str(case_root)); run("sudo","chmod","0755",str(case_root),str(case_addon_config),str(case_ha_config),str(case_data))
                 if (case_data/"options.json").exists(): run("sudo","chmod","0600",str(case_data/"options.json"))
-                if (case_config/"private-ca.crt").exists(): run("sudo","chmod","0644",str(case_config/"private-ca.crt"))
+                if (case_ha_config/"private-ca.crt").exists(): run("sudo","chmod","0644",str(case_ha_config/"private-ca.crt"))
                 case_container=f"{container}-{name}"
-                command=["docker","run","-d","--name",case_container,"--platform","linux/arm64","--network",network,"--add-host",f"canonical.test:{gateway}","--security-opt","apparmor=amadeus-green-print-bridge","--mount",f"type=bind,src={case_config},dst=/config,readonly","--mount",f"type=bind,src={case_data},dst=/data" + (",readonly" if data_readonly else "")]
+                command=["docker","run","-d","--name",case_container,"--platform","linux/arm64","--network",network,"--add-host",f"canonical.test:{gateway}","--security-opt","apparmor=amadeus-green-print-bridge","--mount",f"type=bind,src={case_addon_config},dst=/config,readonly","--mount",f"type=bind,src={case_ha_config},dst=/homeassistant,readonly","--mount",f"type=bind,src={case_data},dst=/data" + (",readonly" if data_readonly else "")]
                 if shadow:
                     command.extend(["--mount",f"type=bind,src={source},dst={shadow[1]},readonly"])
                 command.append(args.image); run(*command)
@@ -189,7 +210,7 @@ def main() -> int:
                     logs=run("docker","logs",case_container,check=False); combined=logs.stdout+logs.stderr
                     markers=[line for line in combined.splitlines() if "green_startup_failed" in line]
                     if markers != [expected]: raise RuntimeError(f"negative diagnostic mismatch {name}: {markers}")
-                    forbidden=("synthetic-startup-probe-token",options.get("printer_uri"),"BEGIN CERTIFICATE","/data/options.json","/config/private-ca.crt")
+                    forbidden=("synthetic-startup-probe-token",options.get("printer_uri"),"BEGIN CERTIFICATE","/data/options.json","/homeassistant/private-ca.crt")
                     if any(value and value in combined for value in forbidden): raise RuntimeError(f"negative diagnostic leaked bounded material: {name}")
                     if run("docker","inspect","-f","{{.State.ExitCode}}",case_container).stdout.strip()=="0": raise RuntimeError(f"negative case exited zero: {name}")
                 finally: run("docker","rm","-f",case_container,check=False)
@@ -215,10 +236,18 @@ def main() -> int:
                 "--platform", "linux/arm64", "--network", network,
                 "--add-host", f"canonical.test:{gateway}",
                 "--security-opt", "apparmor=amadeus-green-print-bridge",
-                "--mount", f"type=bind,src={config_dir},dst=/config,readonly",
+                "--mount", f"type=bind,src={addon_config_dir},dst=/config,readonly",
+                "--mount", f"type=bind,src={ha_config_dir},dst=/homeassistant,readonly",
                 "--mount", f"type=bind,src={data_dir},dst=/data",
                 args.image,
             )
+            mount_contract = run(
+                "docker", "exec", container, "/bin/sh", "-c",
+                "test ! -e /config/private-ca.crt && test -s /homeassistant/private-ca.crt",
+                check=False,
+            )
+            if mount_contract.returncode != 0:
+                raise RuntimeError("Supervisor add-on/Home Assistant config mount separation failed\n" + failure_diagnostics(container))
             deadline = time.monotonic() + 45
             health: dict[str, object] | None = None
             while time.monotonic() < deadline:

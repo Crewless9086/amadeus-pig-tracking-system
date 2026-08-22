@@ -45,13 +45,17 @@ def test_package_is_bounded_and_privilege_split():
     assert "fail_startup cups_readiness cups_or_queue_not_ready" in init
 
 def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
-    queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
+    cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
     policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8"); cupsd=(APP/"rootfs/etc/cups/cupsd.conf").read_text(encoding="utf-8")
     assert 'path.open("a"' in queue and 'hosts.write(f"{pin} {hostname}\\n")' in queue
     assert "printer_tls_preflight(uri.hostname,str(pin)" in queue and 'uri.scheme=="ipps"' in queue
     assert "install_binding(Path(hosts_path),uri.hostname,pin)" in queue
     assert queue.index("printer_tls_preflight(uri.hostname,str(pin)") < queue.index("install_binding(Path(hosts_path),uri.hostname,pin)")
-    assert "/config/private-ca.crt /etc/cups/ssl/site.crt" in init
+    assert "/homeassistant/private-ca.crt /etc/cups/ssl/site.crt" in init
+    assert cfg["map"]==[{"type":"addon_config","read_only":True},{"type":"homeassistant_config","read_only":True}]
+    apparmor=(APP/"apparmor.txt").read_text(encoding="utf-8")
+    assert "/homeassistant/private-ca.crt r," in apparmor
+    assert "/homeassistant/**" not in apparmor and "/homeassistant/ r" not in apparmor and "/config/private-ca.crt" not in apparmor
     assert "mkdir -p" in docker and "/etc/cups/ssl" in docker and "install -d -o root -g root -m 0755 /etc/cups/ssl" not in init
     for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption IfRequested","TrustOnFirstUse No","ValidateCerts Yes"):
         assert required in policy
@@ -90,8 +94,12 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     for case in ("missing_options","empty_options","readonly_data","ownership_conflict","missing_cert","empty_cert","invalid_options","broken_interpreter","init_exec","run_exec","cups_start","service_exec"):
         assert f'negative_case("{case}"' in probe
     assert "if markers != [expected]" in probe
-    for forbidden in ("synthetic-startup-probe-token",'options.get("printer_uri")',"BEGIN CERTIFICATE","/data/options.json","/config/private-ca.crt"):
+    for forbidden in ("synthetic-startup-probe-token",'options.get("printer_uri")',"BEGIN CERTIFICATE","/data/options.json","/homeassistant/private-ca.crt"):
         assert forbidden in probe
+    assert 'any(addon_config_dir.iterdir())' in probe
+    assert "test ! -e /config/private-ca.crt && test -s /homeassistant/private-ca.crt" in probe
+    assert 'AppArmor exposed non-certificate Home Assistant configuration' in probe
+    assert 'name="/homeassistant/secrets.yaml"' in probe
 
 def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
     calls=[]
@@ -134,7 +142,7 @@ def test_queue_startup_needs_no_ambient_printer_dns_and_verifies_fixed_binding(t
         return [(None,None,None,None,("10.23.0.9",0))]
     monkeypatch.setattr(Q.socket,"getaddrinfo",resolve)
     Q.main(str(options),str(queue),str(hosts))
-    assert calls==[("amadeuskantoor","10.23.0.9",8631,"/config/private-ca.crt","127.0.0.1 localhost\n")]
+    assert calls==[("amadeuskantoor","10.23.0.9",8631,"/homeassistant/private-ca.crt","127.0.0.1 localhost\n")]
     assert hosts.read_text(encoding="ascii").count("10.23.0.9 amadeuskantoor")==1
     assert "DeviceURI ipps://AmadeusKantoor:8631/ipp/print" in queue.read_text(encoding="utf-8")
 
@@ -179,7 +187,7 @@ def test_queue_wrong_literal_pin_fails_without_tls_or_queue(tmp_path,monkeypatch
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.5"
+    assert cfg["version"]=="0.3.6"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -203,7 +211,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.5-verified-release-packet" in workflow
+    assert "green-print-0.3.6-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
@@ -225,11 +233,11 @@ def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     assert "sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3" in docs
     assert "sha256:4b738c69245a6b4721a7f4b58135acf3d2308f355b7c8c4008c4149763e11b32" in docs
 
-def test_035_publish_verifies_descriptor_and_config_before_signing_or_attesting():
+def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting():
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.5"
+    assert parsed["env"]["VERSION"]=="0.3.6"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
