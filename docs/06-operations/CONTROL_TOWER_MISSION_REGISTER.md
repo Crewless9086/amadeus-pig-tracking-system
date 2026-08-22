@@ -5136,6 +5136,32 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   First gate is now a separately protected dormant Home Assistant update decision;
   commissioning and Start remain later separate boundaries. Installed 0.2.0 remains
   owner-observed `Stopped`, Start on boot OFF, Watchdog OFF and Auto update OFF.
+
+## 2026-08-22 — Green 0.3.1 dormant update owner-observed complete
+
+- Mission/lineage: existing DOCUMENTS `DMQ-20260816-01`; no new app, queue,
+  scheduler, registry, CUPS or printer path.
+- Owner-observed Home Assistant evidence: `Amadeus Green Print Bridge` current
+  version `0.3.1`; status `Stopped`; Start on boot OFF; Watchdog OFF; Auto update
+  OFF; app started automatically `NO`; deviation `NONE`.
+- Displayed installed digest: `NOT EXPOSED`. The installed version is therefore not
+  converted into immutable installed-image proof. Approved registry digest remains
+  `sha256:b660fffbc7985f7b5d8f2550f2dbbf779966e5167d51e063051fb1890a10bdd5`;
+  exact Supervisor resolution must still be proven by an authorised non-starting
+  readback before commissioning.
+- Target owner outcome: a genuine natural weekly-sheet request produces exactly one
+  correct physical A4 monochrome one-sided page, with canonical/CUPS/physical proof,
+  safe cleanup, automatic follow-up and a later terminal-independent cycle.
+- Owner outcome achieved: `NONE`. Usable now: `NO`. Classification:
+  `DORMANT_UPDATE_COMPLETE / UNCOMMISSIONED / AUTHORITY_DISABLED`; Business
+  completion is `NO`.
+- No options, credentials, farm/Green/printer/queue identities, certificate, private
+  CA, endpoint, IPPS URI or CUPS configuration were entered; no job, printer access,
+  page or hardware effect occurred.
+- First missing real-life gate: non-starting installed-digest readback plus exact
+  private canonical route, protected identity/credential, private-CA/IPPS and fixed
+  CUPS queue commissioning packet. Starting the app and physical acceptance remain
+  separately protected decisions.
 - CORE target owner outcome: stopped CORE eventually receives and completes a genuine
   authorised mission independently, with canonical result, safe follow-up and later
   terminal-independent continuity. Owner outcome: `NONE`; usable now: `NO`. PR #1157
