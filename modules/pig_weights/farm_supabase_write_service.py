@@ -466,7 +466,7 @@ def create_governed_farrowing_litter(preview, *, actor_id, connect_factory=None)
                 raise ValueError("current_active_on_farm_sow_required")
             boar_tag = ""
             if mating_id:
-                cursor.execute("""select sow_pig_id,boar_pig_id,linked_litter_id
+                cursor.execute("""select sow_pig_id,boar_pig_id,related_litter_id
                                    from public.mating_events where mating_id=%s for update""", (mating_id,))
                 mating = cursor.fetchone()
                 if (not mating or str(mating[0]) != sow_id or str(mating[1] or "") != str(father_id or "")
@@ -495,9 +495,9 @@ def create_governed_farrowing_litter(preview, *, actor_id, connect_factory=None)
                      "Born alive; later death recorded at litter intake." if dead else "",
                      farrowing_date if dead else None, "Died after live birth" if dead else None, now, now))
             if mating_id:
-                cursor.execute("""update public.mating_events set linked_litter_id=%s,
-                    actual_farrowing_date=%s,mating_status='Farrowed',outcome='Farrowed',updated_at=%s
-                    where mating_id=%s and linked_litter_id is null""",
+                cursor.execute("""update public.mating_events set related_litter_id=%s,
+                    farrowing_date=%s,outcome='Farrowed',updated_at=%s
+                    where mating_id=%s and related_litter_id is null""",
                     (litter_id, farrowing_date, now, mating_id))
                 if int(cursor.rowcount or 0) != 1:
                     raise ValueError("mating_linkage_concurrent_change")
