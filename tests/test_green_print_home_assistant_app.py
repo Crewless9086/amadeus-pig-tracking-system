@@ -149,9 +149,37 @@ def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
     names=[step.get("name") for step in steps]
     verify=steps[names.index("Verify signature and digest-bound attestations")]
     assert verify["env"]["GH_TOKEN"]=="${{ github.token }}"
-    assert workflow.count("GH_TOKEN: ${{ github.token }}")==1
+    assert workflow.count("GH_TOKEN: ${{ github.token }}")==2
     assert "gh attestation verify" in verify["run"] and "|| true" not in verify["run"]
     assert names.index("Verify signature and digest-bound attestations") < names.index("Emit digest-bound non-secret release receipt") < names.index("Preserve non-secret verified release packet")
+
+def test_033_recovery_is_verification_only_exact_bound_and_replay_safe():
+    workflow=(ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8")
+    parsed=yaml.safe_load(workflow)
+    inputs=parsed.get("on",parsed[True])["workflow_dispatch"]["inputs"]
+    assert inputs["recover_existing"]["type"]=="boolean" and inputs["recover_existing"]["default"] is False
+    assert inputs["expected_digest"]["required"] is False
+    recovery=parsed["jobs"]["recover"]
+    assert recovery["if"]=="github.event_name == 'workflow_dispatch' && inputs.recover_existing"
+    assert recovery["permissions"]=={"contents":"read","packages":"read","attestations":"read"}
+    steps=recovery["steps"]; names=[step.get("name") for step in steps]
+    binding=steps[names.index("Bind recovery to exact source, digest, main and package version")]["run"]
+    assert '^sha256:[0-9a-f]{64}$' in binding and '^[0-9a-f]{40}$' in binding
+    assert 'test "${PUBLISH_REQUESTED}" = "false"' in binding
+    assert 'git merge-base --is-ancestor "${EXPECTED_SOURCE_COMMIT}" "${GITHUB_SHA}"' in binding
+    existing=steps[names.index("Verify existing tag, index, arm64 config and immutable bindings")]["run"]
+    assert 'test "${tag_digest}" = "${EXPECTED_DIGEST}"' in existing
+    assert '(.manifests | length) == 1' in existing and '.platform.architecture == "arm64"' in existing
+    assert 'org.opencontainers.image.revision' in existing and 'org.opencontainers.image.version' in existing
+    verifier=steps[names.index("Verify existing signature and digest-bound attestations")]
+    assert verifier["env"]["GH_TOKEN"]=="${{ github.token }}"
+    assert "cosign verify" in verifier["run"] and verifier["run"].count("gh attestation verify")==2
+    assert "--source-digest \"${EXPECTED_SOURCE_COMMIT}\"" in verifier["run"]
+    assert "|| true" not in verifier["run"]
+    assert names.index("Verify existing signature and digest-bound attestations") < names.index("Emit recovered digest-bound non-secret release receipt") < names.index("Preserve recovered non-secret verified release packet")
+    forbidden=("docker/build-push-action","cosign sign","actions/attest-build-provenance","actions/attest-sbom","imagetools create","push: true")
+    recovery_text=json.dumps(recovery)
+    assert not any(token in recovery_text for token in forbidden)
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
