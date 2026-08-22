@@ -16,6 +16,8 @@ profile amadeus-green-print-bridge flags=(attach_disconnected,mediate_deleted) {
   /run.sh rix,
   /opt/green/** r,
   /etc/cups/** r,
+  /etc/cups/ssl/site.crt rw,
+  /etc/hosts rw,
   /etc/ssl/certs/** r,
   /config/private-ca.crt r,
   /data/** rwk,
@@ -26,7 +28,6 @@ profile amadeus-green-print-bridge flags=(attach_disconnected,mediate_deleted) {
   /proc/** r,
   /sys/devices/system/cpu/** r,
   deny /home/** rwklx,
-  deny /etc/cups/** wklx,
   deny /tmp/** x,
   deny /usr/sbin/lpadmin x,
 }

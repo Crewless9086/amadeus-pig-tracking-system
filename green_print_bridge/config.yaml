@@ -1,7 +1,7 @@
 name: Amadeus Green Print Bridge
-version: "0.3.1"
+version: "0.3.2"
 slug: amadeus_green_print_bridge
-description: Private fail-closed weekly weighing-sheet adapter with local CUPS
+description: Fail-closed outbound weekly weighing-sheet adapter with private IPPS
 url: https://github.com/Crewless9086/amadeus-pig-tracking-system
 image: ghcr.io/crewless9086/amadeus-green-print-bridge
 stage: experimental
@@ -15,6 +15,7 @@ backup: cold
 backup_exclude:
   - "spool/**"
 options:
+  canonical_transport_profile: private_pinned
   canonical_api_origin: null
   canonical_endpoint_ip: null
   canonical_bearer_token: null
@@ -24,8 +25,11 @@ options:
   cups_queue_id: null
   registry_version: null
   printer_uri: null
+  printer_transport_profile: private_ipps
+  printer_endpoint_ip: null
   poll_seconds: 30
 schema:
+  canonical_transport_profile: list(private_pinned|public_pki_exact_origin)
   canonical_api_origin: url
   canonical_endpoint_ip: str
   canonical_bearer_token: password
@@ -35,6 +39,8 @@ schema:
   cups_queue_id: str
   registry_version: str
   printer_uri: str
+  printer_transport_profile: list(private_ipps)
+  printer_endpoint_ip: str
   poll_seconds: int(5,3600)
 map:
   - type: addon_config

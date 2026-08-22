@@ -13,6 +13,8 @@ from urllib.parse import quote, unquote, urlparse
 PILOT_DOCUMENT="farm.weekly_weight_sheet.v1"; PILOT_GENERATOR="web.print_sheets.v1"
 CLAIM_PATH="/api/documents/print-jobs/claims"; COMMAND_PATH="/api/documents/print-jobs/commands/claim"
 CANONICAL_INTAKE_PATH=CLAIM_PATH; CA_CERTIFICATE_PATH="/config/private-ca.crt"
+PRIVATE_PINNED="private_pinned"; PUBLIC_PKI_EXACT_ORIGIN="public_pki_exact_origin"
+APPROVED_PUBLIC_CANONICAL_ORIGIN="https://amadeus-pig-tracking-system.onrender.com"
 FIXED_OPTIONS={"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}
 ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"); DIGEST=re.compile(r"^[0-9a-f]{64}$")
 TERMINAL={"provider_completed","physically_confirmed","cancelled","ambiguous"}; MIN_FREE_BYTES=64*1024*1024
@@ -86,6 +88,19 @@ def private_addresses(hostname):
     if not values or any(not (x.is_private or x.is_link_local) for x in values): raise Hold("public_endpoint_forbidden")
     return tuple(sorted(map(str,values)))
 
+def printer_tls_preflight(hostname,pinned_ip,port,ca_certificate_path):
+    """Require a trusted SAN identity while connecting only to the commissioned IP."""
+    context=ssl.create_default_context(cafile=ca_certificate_path)
+    context.check_hostname=True
+    context.hostname_checks_common_name=False
+    raw=socket.create_connection((pinned_ip,port),10)
+    try:
+        tls=context.wrap_socket(raw,server_hostname=hostname)
+        tls.close()
+    except Exception:
+        raw.close()
+        raise
+
 class PinnedHTTPSConnection(http.client.HTTPSConnection):
     """Connect to commissioned IP while verifying the configured TLS name."""
     def __init__(self,hostname,pinned_ip,port,context,timeout): super().__init__(hostname,port=port,context=context,timeout=timeout); self.pinned_ip=pinned_ip
@@ -93,16 +108,25 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
         raw=socket.create_connection((self.pinned_ip,self.port),self.timeout); self.sock=self._context.wrap_socket(raw,server_hostname=self.host)
 
 class CanonicalClient:
-    def __init__(self,c): self.config=c; self.context=ssl.create_default_context(cafile=c["ca_certificate_path"]); self.worker_id=None
+    def __init__(self,c):
+        self.config=c
+        self.context=ssl.create_default_context(cafile=c["ca_certificate_path"]) if c["canonical_transport_profile"]==PRIVATE_PINNED else ssl.create_default_context()
+        self.worker_id=None
+    def connection(self,timeout):
+        parsed=urlparse(self.config["canonical_api_origin"])
+        if self.config["canonical_transport_profile"]==PRIVATE_PINNED:
+            return PinnedHTTPSConnection(parsed.hostname,self.config["canonical_endpoint_ip"],parsed.port or 443,self.context,timeout)
+        return http.client.HTTPSConnection(parsed.hostname,port=parsed.port or 443,context=self.context,timeout=timeout)
     def request(self,method,path,body=None):
         parsed=urlparse(self.config["canonical_api_origin"])
         if not path.startswith("/") or "?" in path or "#" in path: raise Hold("canonical_path_invalid")
         payload=canonical_json(body).encode() if body is not None else None; headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"X-Amadeus-Farm-Scope-Id":self.config["farm_scope_id"],"X-Amadeus-Green-Id":self.config["green_id"],"Accept":"application/json","Host":parsed.netloc}
         if self.worker_id: headers["X-Amadeus-Worker-Id"]=self.worker_id
         if payload is not None: headers["Content-Type"]="application/json"
-        conn=PinnedHTTPSConnection(parsed.hostname,self.config["canonical_endpoint_ip"],parsed.port or 443,self.context,20)
+        conn=self.connection(20)
         try:
             conn.request(method,path,body=payload,headers=headers); response=conn.getresponse()
+            if 300<=response.status<400: raise Hold("canonical_redirect_forbidden")
             if not 200<=response.status<300: raise Hold("canonical_http_"+str(response.status))
             data=response.read(1024*1024)
         finally: conn.close()
@@ -135,7 +159,8 @@ class CanonicalClient:
     def pdf(self,url):
         parsed=urlparse(url); origin=urlparse(self.config["canonical_api_origin"])
         if (parsed.scheme,parsed.hostname,parsed.port)!=("https",origin.hostname,origin.port): raise Hold("pdf_origin_mismatch")
-        conn=PinnedHTTPSConnection(parsed.hostname,self.config["canonical_endpoint_ip"],parsed.port or 443,self.context,30)
+        if parsed.query or parsed.fragment: raise Hold("pdf_url_invalid")
+        conn=self.connection(30)
         try:
             headers={"Authorization":"Bearer "+self.config["canonical_bearer_token"],"X-Amadeus-Farm-Scope-Id":self.config["farm_scope_id"],"X-Amadeus-Green-Id":self.config["green_id"],"Host":parsed.netloc}
             if self.worker_id: headers["X-Amadeus-Worker-Id"]=self.worker_id
@@ -173,6 +198,12 @@ class Cups:
 def cups_job_ids(output): return {line.split()[0] for line in output.splitlines() if line.split()}
 def ensure_space(path,required=MIN_FREE_BYTES):
     if shutil.disk_usage(path).free<required: raise Hold("disk_space_fail_safe")
+def verify_printer_binding(config):
+    hostname=urlparse(config["printer_uri"]).hostname
+    try: literal=ipaddress.ip_address(hostname)
+    except ValueError: literal=None
+    answers=(str(literal),) if literal else private_addresses(hostname)
+    if len(answers)!=1 or answers[0]!=config["printer_endpoint_ip"]: raise Hold("printer_dns_binding_ambiguous_or_drifted")
 
 def process_command(command,ledger,client,cups,config,now):
     if not command: return None
@@ -222,7 +253,7 @@ def ensure_live_lease(local,job,client,ledger,worker_id,now):
 
 def cycle(ledger,client,cups,config,worker_id):
     spool=config.get("spool_path","/tmp/green-spool")
-    now=utcnow(); ensure_space(config.get("data_path","/data")); ensure_space(spool)
+    now=utcnow(); verify_printer_binding(config); ensure_space(config.get("data_path","/data")); ensure_space(spool)
     result=process_command(client.command(worker_id),ledger,client,cups,config,now)
     if result: return result
     for local in ledger.recoverable():
@@ -254,16 +285,28 @@ def cycle(ledger,client,cups,config,worker_id):
     finally: path.unlink(missing_ok=True)
 
 def load_config(path="/data/options.json"):
-    value=json.loads(Path(path).read_text(encoding="utf-8")); required=("canonical_api_origin","canonical_endpoint_ip","canonical_bearer_token","farm_scope_id","green_id","printer_id","cups_queue_id","registry_version","printer_uri","poll_seconds")
+    value=json.loads(Path(path).read_text(encoding="utf-8")); required=("canonical_transport_profile","canonical_api_origin","canonical_bearer_token","farm_scope_id","green_id","printer_id","cups_queue_id","registry_version","printer_transport_profile","printer_uri","printer_endpoint_ip","poll_seconds")
     if any(value.get(k) in (None,"") for k in required): raise Hold("runtime_option_missing")
     origin,printer=urlparse(value["canonical_api_origin"]),urlparse(value["printer_uri"])
     if origin.scheme!="https" or origin.username or origin.password or origin.query or origin.fragment: raise Hold("canonical_origin_invalid")
-    try: endpoint=ipaddress.ip_address(value["canonical_endpoint_ip"]); printer_ip=ipaddress.ip_address(printer.hostname)
-    except ValueError as exc: raise Hold("commissioned_ip_literal_required") from exc
-    if not endpoint.is_private or not printer_ip.is_private or printer.scheme!="ipps" or printer.username or printer.password or printer.query or printer.fragment: raise Hold("private_commissioned_endpoint_required")
-    if value["canonical_endpoint_ip"] not in private_addresses(origin.hostname): raise Hold("canonical_pin_not_in_resolution_set")
+    profile=value["canonical_transport_profile"]
+    if profile==PRIVATE_PINNED:
+        try: endpoint=ipaddress.ip_address(value.get("canonical_endpoint_ip",""))
+        except ValueError as exc: raise Hold("commissioned_ip_literal_required") from exc
+        if not endpoint.is_private or value["canonical_endpoint_ip"] not in private_addresses(origin.hostname): raise Hold("canonical_pin_not_in_resolution_set")
+    elif profile==PUBLIC_PKI_EXACT_ORIGIN:
+        if value["canonical_api_origin"]!=APPROVED_PUBLIC_CANONICAL_ORIGIN or value.get("canonical_endpoint_ip") not in (None,""): raise Hold("public_canonical_origin_not_approved")
+    else: raise Hold("canonical_transport_profile_invalid")
+    if value["printer_transport_profile"]!="private_ipps" or printer.scheme!="ipps" or printer.username or printer.password or printer.query or printer.fragment: raise Hold("private_ipps_profile_required")
+    try: printer_pin=ipaddress.ip_address(value["printer_endpoint_ip"])
+    except ValueError as exc: raise Hold("printer_endpoint_pin_invalid") from exc
+    if not printer_pin.is_private: raise Hold("private_printer_endpoint_required")
+    try: printer_literal=ipaddress.ip_address(printer.hostname)
+    except ValueError: printer_literal=None
+    answers=(str(printer_literal),) if printer_literal else private_addresses(printer.hostname)
+    if len(answers)!=1 or answers[0]!=str(printer_pin): raise Hold("printer_dns_binding_ambiguous_or_drifted")
     value["ca_certificate_path"]=CA_CERTIFICATE_PATH; value["canonical_intake_path"]=CLAIM_PATH
-    if not Path(value["ca_certificate_path"]).is_file(): raise Hold("private_ca_missing")
+    if not Path(value["ca_certificate_path"]).is_file(): raise Hold("private_printer_ca_missing")
     if not all(ID.fullmatch(str(value[k])) for k in ("farm_scope_id","green_id","printer_id","cups_queue_id","registry_version")): raise Hold("invalid_registered_option")
     return value
 
