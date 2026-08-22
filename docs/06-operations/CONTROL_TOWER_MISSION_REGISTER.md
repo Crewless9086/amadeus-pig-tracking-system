@@ -2053,3 +2053,58 @@ PR #1175 is reconciled onto that exact current main. The child incident and its
 non-secret scope remain durably recorded; the recovery correction is now active
 development procedure. No deployment, provider, database, farm, customer or
 physical effect follows from that merge, and no mission priority changed.
+
+### 2026-08-22 Green 0.3.3 contained-start superseding current state
+
+This entry supersedes only the earlier Home Assistant current-state snapshot;
+it preserves the publication and preflight history above. The exact immutable
+Green 0.3.3 package was installed on the authenticated Home Assistant Green.
+Pre-start canonical readback proved zero eligible work, claims, events and jobs.
+One bounded zero-job start was attempted. The service returned to stopped before
+commissioning completed; it was not retried. Start on boot, Watchdog and Auto
+update remain OFF. No known document submission, CUPS/canonical job or physical
+print effect occurred. These are contained technical events, not an owner
+outcome, and they do not prove Green operational acceptance.
+
+High-confidence diagnosis is preserved workspace-locally at
+`control-tower-artifacts/GREEN-0.3.3/diagnosis/GREEN_033_STARTUP_FAILURE_DIAGNOSIS_20260822.md`.
+The 0.3.3 initializer appears to require ambient DNS resolution of the
+certificate hostname before it establishes the already commissioned pinned-IP
+hostname binding; the hosted arm64/AppArmor probe pre-seeded that resolution and
+therefore did not exercise the production shape. This is a source/evidence
+diagnosis, not canonical proof of the exact runtime failure. Lower-probability
+fail-fast initializer causes remain bounded Unknowns until the replacement
+package proves the Home Assistant journey.
+
+Green 0.3.3 remains contained and must not be restarted. A 0.3.4 repair on the
+same Green lineage is active: preserve the registered endpoint, certificate,
+credential and fixed queue; verify TLS/SAN against the pinned private IP before
+installing the local binding; add sanitized stage/reason evidence and a
+production-shaped no-preseeded-DNS arm64/AppArmor regression. Publication,
+installation and another zero-job commissioning attempt remain later governed
+stages. The technical repair is the current blocker, so owner action is none.
+
+#### Superseding terminal sweep, handover and Check Receipt
+
+| Lane | Current state | Next controlled transition |
+|---|---|---|
+| Green | `ACTIVE - 0.3.4 SAME-LINEAGE REPAIR`; 0.3.3 installed but stopped and contained; zero known job/document/print effect | Implement, independently review and pass exact-current production-shaped gates before any new immutable publication decision. |
+| Oom Sakkie / PR #1167 | `ACTIVE - REPAIR/REVIEW`; open exact head `01d3890d33f1341bcce5f9551ded858de4fd1833`; no production database effect | Complete exact-head hosted gates and fresh narrowed independent defensive review under the merged recovery rule. |
+| Control Tower / PR #1175 | `ACTIVE - GOVERNANCE RECEIPT`; append-only current-state reconciliation | Pass exact-head gates and independent review; do not merge from this lane. |
+| BEACON / SAM | `ACCEPTANCE PENDING`; source repair merged, but no genuine public post or customer inbound outcome is proved here | Deploy exact reviewed revision and prove genuine post-to-SAM provider/customer acceptance through its existing lane. |
+| HERDMASTER / remaining queued lanes | `PRESERVED / NOT REPRIORITIZED`; no new collision or owner outcome established by this entry | Continue only under their recorded priority when a strategic slot releases or they unblock an existing outcome. |
+
+Terminal sweep result: no duplicate Green system, credential, registry, queue,
+certificate or mission was created. The stopped 0.3.3 package is contained; the
+0.3.4 change is the only active Green repair lineage. No terminal may call the
+installation or failed start commissioning, activation or owner acceptance.
+
+Control Tower Check Receipt: authoritative main
+`8c517580bb03fd2036cfe359c403ebb55c43d5cf`; Green diagnostic evidence read in
+full; GitHub open-PR and worktree collisions swept; prior authority and history
+preserved; new facts appended without reprioritization; external/Home Assistant
+access not performed by this register update; exact-current local and hosted
+gates required before handover. Decision: `CONTINUE AUTOMATICALLY / NO OWNER
+OUTCOME YET`.
+
+OWNER ACTION: NONE
