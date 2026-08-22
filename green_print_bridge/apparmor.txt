@@ -10,9 +10,11 @@ profile amadeus-green-print-bridge flags=(attach_disconnected,mediate_deleted) {
   capability setuid,
   capability dac_override,
   capability fowner,
+  capability fsetid,
   capability net_bind_service,
   network inet stream,
   network inet6 stream,
+  / r,
   # The pinned Home Assistant base image owns PID 1 through S6. Keep this
   # startup surface explicit so the custom profile cannot block the inherited
   # OCI entrypoint before the bounded Green initializer is reached.
@@ -52,6 +54,7 @@ profile amadeus-green-print-bridge flags=(attach_disconnected,mediate_deleted) {
   /init-green.sh rix,
   /run.sh rix,
   /healthcheck.py r,
+  /opt/green/ r,
   /opt/green/** r,
   /etc/cups/** r,
   /etc/cups/ssl/site.crt rw,

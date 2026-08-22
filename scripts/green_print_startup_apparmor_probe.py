@@ -7,6 +7,7 @@ import argparse
 from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import ssl
 import subprocess
@@ -167,6 +168,12 @@ def main() -> int:
                     server.server_close()
             run("sudo", "apparmor_parser", "-R", str(args.profile.resolve()), check=False)
             run("docker", "network", "rm", network, check=False)
+            # The initializer deliberately re-owns the mounted app data. Give
+            # the synthetic temporary tree back to the runner for cleanup.
+            run(
+                "sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(root),
+                check=False,
+            )
     return 0
 
 
