@@ -100,6 +100,16 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     assert "test ! -e /config/private-ca.crt && test -s /homeassistant/private-ca.crt" in probe
     assert 'AppArmor exposed non-certificate Home Assistant configuration' in probe
     assert 'name="/homeassistant/secrets.yaml"' in probe
+    assert "fail_initializer()" in init
+    assert "2>/run/cups/queue-initializer-error" in init
+    assert "identity_or_connection_failed" in init
+    assert "wc -l < /run/cups/queue-initializer-error" in init
+    assert "2>/dev/null)\" || fail_startup queue_initializer" not in init
+    assert 'negative_case("wrong_root"' in probe
+    assert 'negative_case("wrong_san"' in probe
+    assert 'negative_case("silent_initializer"' in probe
+    assert 'negative_case("unrecognized_initializer"' in probe
+    assert "negative case reached canonical provider" in probe
 
 def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
     calls=[]

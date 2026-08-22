@@ -109,6 +109,24 @@ def main() -> int:
             "-addext", "basicConstraints=critical,CA:TRUE",
             "-keyout", str(key), "-out", str(cert),
         )
+        wrong_root_cert = root / "wrong-root.crt"
+        wrong_root_key = root / "wrong-root.key"
+        run(
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-days", "1", "-subj", "/CN=green-wrong-root",
+            "-addext", "subjectAltName=DNS:AmadeusKantoor",
+            "-addext", "basicConstraints=critical,CA:TRUE",
+            "-keyout", str(wrong_root_key), "-out", str(wrong_root_cert),
+        )
+        wrong_san_cert = root / "wrong-san.crt"
+        wrong_san_key = root / "wrong-san.key"
+        run(
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-days", "1", "-subj", "/CN=green-wrong-san",
+            "-addext", "subjectAltName=DNS:not-the-printer.test",
+            "-addext", "basicConstraints=critical,CA:TRUE",
+            "-keyout", str(wrong_san_key), "-out", str(wrong_san_cert),
+        )
         run("docker", "network", "create", "--internal", network)
         gateway = run(
             "docker", "network", "inspect", "-f",
@@ -116,7 +134,8 @@ def main() -> int:
         ).stdout.strip()
         canonical = tls_server(cert, key)
         printer = tls_server(cert, key)
-        servers.extend((canonical, printer))
+        wrong_san_printer = tls_server(wrong_san_cert, wrong_san_key)
+        servers.extend((canonical, printer, wrong_san_printer))
         options = {
             "canonical_transport_profile": "private_pinned",
             "canonical_api_origin": f"https://canonical.test:{canonical.server_port}",
@@ -172,20 +191,28 @@ def main() -> int:
             if not any('name="/homeassistant/secrets.yaml"' in line for line in scope_denials):
                 raise RuntimeError("AppArmor did not prove denial of non-certificate Home Assistant configuration")
 
-            def negative_case(name: str, expected: str, *, options_mode: str = "valid", cert_mode: str = "valid", data_readonly: bool = False, shadow: tuple[str, str] | None = None) -> None:
+            def negative_case(name: str, expected: str, *, options_mode: str = "valid", cert_mode: str = "valid", printer_port: int | None = None, data_readonly: bool = False, shadow: tuple[str, str] | None = None) -> None:
                 case_root=root/f"negative-{name}"; case_addon_config=case_root/"addon-config"; case_ha_config=case_root/"homeassistant-config"; case_data=case_root/"data"
                 case_addon_config.mkdir(parents=True); case_ha_config.mkdir(); case_data.mkdir()
                 if options_mode != "missing":
-                    material=json.dumps(options) if options_mode == "valid" else ("" if options_mode == "empty" else "{}")
+                    case_options={**options,"printer_uri":f"ipps://AmadeusKantoor:{printer_port or printer.server_port}/ipp/print"}
+                    material=json.dumps(case_options) if options_mode == "valid" else ("" if options_mode == "empty" else "{}")
                     (case_data/"options.json").write_text(material,encoding="utf-8")
                 if cert_mode != "missing":
-                    (case_ha_config/"private-ca.crt").write_bytes(cert.read_bytes() if cert_mode == "valid" else b"")
+                    cert_source={"valid":cert,"wrong_root":wrong_root_cert,
+                        "wrong_san":wrong_san_cert}.get(cert_mode)
+                    (case_ha_config/"private-ca.crt").write_bytes(
+                        cert_source.read_bytes() if cert_source else b"")
                 if name == "ownership_conflict": (case_data/"green-runtime").write_text("not-a-directory",encoding="ascii")
                 source=None
                 if shadow:
                     source=case_root/shadow[0]
                     if shadow[0].endswith("-empty"):
                         source.write_bytes(b""); source.chmod(0o644)
+                    elif shadow[0].endswith("-silent-python"):
+                        source.write_text("raise SystemExit(1)\n",encoding="ascii"); source.chmod(0o644)
+                    elif shadow[0].endswith("-unrecognized-python"):
+                        source.write_text("import sys\nprint('not-an-allowed-marker',file=sys.stderr)\nraise SystemExit(1)\n",encoding="ascii"); source.chmod(0o644)
                     elif shadow[0].endswith("-python"):
                         source.write_text("this is not valid python\n",encoding="ascii"); source.chmod(0o644)
                     elif shadow[0].endswith("-exit"):
@@ -199,6 +226,7 @@ def main() -> int:
                 command=["docker","run","-d","--name",case_container,"--platform","linux/arm64","--network",network,"--add-host",f"canonical.test:{gateway}","--security-opt","apparmor=amadeus-green-print-bridge","--mount",f"type=bind,src={case_addon_config},dst=/config,readonly","--mount",f"type=bind,src={case_ha_config},dst=/homeassistant,readonly","--mount",f"type=bind,src={case_data},dst=/data" + (",readonly" if data_readonly else "")]
                 if shadow:
                     command.extend(["--mount",f"type=bind,src={source},dst={shadow[1]},readonly"])
+                seen_before=list(EmptyCanonicalHandler.seen)
                 command.append(args.image); run(*command)
                 try:
                     deadline=time.monotonic()+20
@@ -213,6 +241,8 @@ def main() -> int:
                     forbidden=("synthetic-startup-probe-token",options.get("printer_uri"),"BEGIN CERTIFICATE","/data/options.json","/homeassistant/private-ca.crt")
                     if any(value and value in combined for value in forbidden): raise RuntimeError(f"negative diagnostic leaked bounded material: {name}")
                     if run("docker","inspect","-f","{{.State.ExitCode}}",case_container).stdout.strip()=="0": raise RuntimeError(f"negative case exited zero: {name}")
+                    if EmptyCanonicalHandler.seen != seen_before:
+                        raise RuntimeError(f"negative case reached canonical provider: {name}")
                 finally: run("docker","rm","-f",case_container,check=False)
 
             negative_case("missing_options","green_startup_failed stage=mount_validation reason=options_missing_or_empty",options_mode="missing")
@@ -221,7 +251,11 @@ def main() -> int:
             negative_case("ownership_conflict","green_startup_failed stage=runtime_directory reason=data_runtime_prepare_failed")
             negative_case("missing_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="missing")
             negative_case("empty_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="empty")
-            negative_case("invalid_options","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",options_mode="invalid")
+            negative_case("invalid_options","green_startup_failed stage=configuration reason=queue_invalid",options_mode="invalid")
+            negative_case("wrong_root","green_startup_failed stage=printer_tls reason=identity_or_connection_failed",cert_mode="wrong_root")
+            negative_case("wrong_san","green_startup_failed stage=printer_tls reason=identity_or_connection_failed",cert_mode="wrong_san",printer_port=wrong_san_printer.server_port)
+            negative_case("silent_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-silent-python","/opt/green/init_queue.py"))
+            negative_case("unrecognized_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-unrecognized-python","/opt/green/init_queue.py"))
             negative_case("broken_interpreter","green_startup_failed stage=queue_initializer reason=initializer_interpreter_missing",shadow=("python-empty","/usr/bin/python3.12"))
             negative_case("init_exec","green_startup_failed stage=bootstrap_exec reason=init_script_failed",shadow=("init-shell","/init-green.sh"))
             negative_case("run_exec","green_startup_failed stage=s6_exec reason=run_script_failed",shadow=("run-shell","/run.sh"))
