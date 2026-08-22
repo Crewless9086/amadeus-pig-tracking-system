@@ -1,5 +1,10 @@
 # Control Tower Feedback And Continuation — ROOTLINE Borehole 1
 
+> **Historical source-stage evidence only.** The main revision, PR head, CI and
+> lifecycle facts below were observed on 20 August 2026 and must not be treated
+> as current. Use the latest exact-head Control Tower handover and GitHub PR
+> readback for current release truth.
+
 Observation: 2026-08-20 22:45 SAST. Status: source stage complete; immutable merge/deploy/configuration/commissioning boundary.
 
 ## Governance preflight

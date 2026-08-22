@@ -51,6 +51,8 @@ def test_borehole_completion_requires_bound_canonical_provider_physical_final_of
     complete=_borehole_completion()
     assert _verified_borehole_completion(complete) is True
     assert _terminal_closes_active(complete,borehole=True) is True
+    assert _terminal_closes_active({"action":"contain_borehole",
+        "execution_id":"BOREHOLE-1","shutdown_verified":True},borehole=True) is False
     for field in ("canonical_completion_evidence","provider_final_off_evidence",
                   "physical_completion_evidence"):
         incomplete={**complete,field:{}}
@@ -410,6 +412,33 @@ def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatc
         claims=list(pool.map(lambda _:_claim_borehole_material_load(body),(1,2)))
     assert sum(row.get("created") is True for row in claims)==1
     assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
+    # A terminal record from another claim family, or asserted containment,
+    # cannot release a borehole claim merely because it reuses execution_id.
+    for index,(action,payload) in enumerate((
+        ("record_completed",{"shutdown_verified":True}),
+        ("record_auxiliary_completed",{"shutdown_verified":True}),
+        ("contain_zone",{"shutdown_verified":True}),
+        ("contain_borehole",{"shutdown_verified":True}),
+        ("contain_borehole",{**_borehole_completion(execution),
+            "action":"contain_borehole"}),
+    )):
+        insert(f"BH-CROSS-FAMILY-{index}-{suffix}",execution,action,
+            {"action":action,"execution_id":execution,**payload})
+        assert rootline_irrigation_execution_store(
+            "load_active_borehole",None)["execution_id"]==execution
+        assert _claim_borehole_material_load(body)["status"]=="material_load_active"
+    irrigation_execution=f"ROOTLINE-IRRIGATION-{suffix}"
+    irrigation_eligibility=f"IRRIGATION-ELIGIBILITY-{suffix}"
+    irrigation_digest="e"*64
+    irrigation_body={"execution_id":irrigation_execution,
+        "eligibility_id":irrigation_eligibility,
+        "eligibility_sha256":irrigation_digest,
+        "consumption_key":f"irrigation:{suffix}","operating_date":"2026-08-22",
+        "zone_id":"B12345","job_id":f"IRRIGATION-JOB-{suffix}",
+        "segment_number":1}
+    insert(f"IRRIGATION-ELIGIBILITY-{suffix}",irrigation_execution,
+        "record_eligibility",{"action":"record_eligibility",**irrigation_body})
+    assert _claim_irrigation_output(irrigation_body)["status"]=="controller_active"
     for attempt in (1,2):
         rootline_irrigation_execution_store("record_borehole_off_outcome",{
             "execution_id":execution,"attempt":attempt,"accepted":True})

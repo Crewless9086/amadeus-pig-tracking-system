@@ -228,8 +228,11 @@ def _load(action, payload):
 def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
     action = str(item.get("action") or "") if isinstance(item, dict) else ""
     if borehole:
-        return (_verified_borehole_completion(item) or
-            (action == "contain_borehole" and item.get("shutdown_verified") is True))
+        # Containment records the unresolved safety incident; it cannot prove
+        # that the physical pump and water flow stopped.  Only the strict,
+        # execution-bound three-domain completion contract releases a borehole
+        # claim.
+        return _verified_borehole_completion(item)
     if auxiliary:
         return (action in {"record_auxiliary_completed",
                 "record_auxiliary_control_pulse_stopped"}
@@ -351,8 +354,13 @@ def _claim_irrigation_output(body):
                     where terminal.event_source=%s
                       and terminal.review_json->'rootline_execution'->>'execution_id'=
                           claim.review_json->'rootline_execution'->>'execution_id'
-                      and (terminal.review_json->'rootline_execution'->>'action'='record_completed'
-                        or (terminal.review_json->'rootline_execution'->>'action'='record_borehole_completed'
+                      and ((claim.review_json->'rootline_execution'->>'action'='claim_before_on'
+                        and (terminal.review_json->'rootline_execution'->>'action'='record_completed'
+                          or (terminal.review_json->'rootline_execution'->>'action'
+                                in ('contain_zone','record_ambiguous_shutdown','record_claim_recovery')
+                              and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true')))
+                        or (claim.review_json->'rootline_execution'->>'action'='claim_borehole_before_on'
+                          and terminal.review_json->'rootline_execution'->>'action'='record_borehole_completed'
                           and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true'
                           and length(btrim(coalesce(terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0
                           and terminal.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
@@ -373,10 +381,7 @@ def _claim_irrigation_output(body):
                           and btrim(terminal.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
                             btrim(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL})
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true'
-                          and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true')
-                        or (terminal.review_json->'rootline_execution'->>'action'
-                              in ('contain_zone','contain_borehole','record_ambiguous_shutdown','record_claim_recovery')
-                            and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true')))
+                          and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true')))
                 limit 1""", (EVENT_SOURCE, EVENT_SOURCE))
             if cursor.fetchone():
                 return {"success": True, "created": False, "status": "controller_active"}
@@ -604,12 +609,17 @@ def _claim_borehole_material_load(body):
               select 1 from public.sam_live_stock_conversation_review_events t
               where t.event_source=%s and t.review_json->'rootline_execution'->>'execution_id'=
                 c.review_json->'rootline_execution'->>'execution_id' and
-                (t.review_json->'rootline_execution'->>'action' in
-                  ('record_completed','record_auxiliary_completed',
-                   'record_auxiliary_control_pulse_stopped') or
-                 (t.review_json->'rootline_execution'->>'action'='contain_auxiliary_device' and
-                  t.review_json->'rootline_execution'->>'shutdown_verified'='true') or
-                 (t.review_json->'rootline_execution'->>'action'='record_borehole_completed' and
+                ((c.review_json->'rootline_execution'->>'action'='claim_before_on' and
+                  (t.review_json->'rootline_execution'->>'action'='record_completed' or
+                   (t.review_json->'rootline_execution'->>'action'='contain_zone' and
+                    t.review_json->'rootline_execution'->>'shutdown_verified'='true'))) or
+                 (c.review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on' and
+                  (t.review_json->'rootline_execution'->>'action' in
+                    ('record_auxiliary_completed','record_auxiliary_control_pulse_stopped') or
+                   (t.review_json->'rootline_execution'->>'action'='contain_auxiliary_device' and
+                    t.review_json->'rootline_execution'->>'shutdown_verified'='true'))) or
+                 (c.review_json->'rootline_execution'->>'action'='claim_borehole_before_on' and
+                  t.review_json->'rootline_execution'->>'action'='record_borehole_completed' and
                   t.review_json->'rootline_execution'->>'shutdown_verified'='true' and
                   length(btrim(coalesce(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
                   t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
@@ -630,10 +640,7 @@ def _claim_borehole_material_load(body):
                   btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
                     btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
                   t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
-                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true') or
-                 (t.review_json->'rootline_execution'->>'action' in
-                   ('contain_zone','contain_borehole') and
-                  t.review_json->'rootline_execution'->>'shutdown_verified'='true'))) limit 1""",
+                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true'))) limit 1""",
           (EVENT_SOURCE,EVENT_SOURCE))
         if cursor.fetchone():
             return {"success":True,"created":False,"status":"material_load_active"}
