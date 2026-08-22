@@ -4,7 +4,7 @@
 
 - Adds an explicit `public_pki_exact_origin` canonical transport for the exact approved Render HTTPS origin. It uses the system public trust store and hostname verification, follows no redirects, accepts no endpoint IP pin, and cannot change origin, port, or base path.
 - Retains the existing `private_pinned` canonical transport with private DNS-set validation, commissioned IP binding, and the private CA.
-- Adds an explicit `private_ipps` printer transport. IP-literal SAN identities remain supported; hostname SAN identities require a single complete private DNS answer exactly matching the commissioned endpoint pin. Public, ambiguous, or drifted resolution fails closed.
+- Adds an explicit `private_ipps` printer transport. IP-literal SAN identities remain supported; hostname SAN identities require a single complete private DNS answer exactly matching the commissioned endpoint pin, then bind that hostname to the pin inside the container. CUPS requires encryption, validates the certificate name against its protected site CA, and disables arbitrary roots, expired certificates, and trust-on-first-use.
 - Keeps the app outbound-only with no published listener and retains bearer, farm, Green, printer, queue, and registry bindings.
 
 ## 0.3.1

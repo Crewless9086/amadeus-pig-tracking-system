@@ -88,6 +88,19 @@ def private_addresses(hostname):
     if not values or any(not (x.is_private or x.is_link_local) for x in values): raise Hold("public_endpoint_forbidden")
     return tuple(sorted(map(str,values)))
 
+def printer_tls_preflight(hostname,pinned_ip,port,ca_certificate_path):
+    """Require a trusted SAN identity while connecting only to the commissioned IP."""
+    context=ssl.create_default_context(cafile=ca_certificate_path)
+    context.check_hostname=True
+    context.hostname_checks_common_name=False
+    raw=socket.create_connection((pinned_ip,port),10)
+    try:
+        tls=context.wrap_socket(raw,server_hostname=hostname)
+        tls.close()
+    except Exception:
+        raw.close()
+        raise
+
 class PinnedHTTPSConnection(http.client.HTTPSConnection):
     """Connect to commissioned IP while verifying the configured TLS name."""
     def __init__(self,hostname,pinned_ip,port,context,timeout): super().__init__(hostname,port=port,context=context,timeout=timeout); self.pinned_ip=pinned_ip
@@ -293,7 +306,7 @@ def load_config(path="/data/options.json"):
     answers=(str(printer_literal),) if printer_literal else private_addresses(printer.hostname)
     if len(answers)!=1 or answers[0]!=str(printer_pin): raise Hold("printer_dns_binding_ambiguous_or_drifted")
     value["ca_certificate_path"]=CA_CERTIFICATE_PATH; value["canonical_intake_path"]=CLAIM_PATH
-    if profile==PRIVATE_PINNED and not Path(value["ca_certificate_path"]).is_file(): raise Hold("private_ca_missing")
+    if not Path(value["ca_certificate_path"]).is_file(): raise Hold("private_printer_ca_missing")
     if not all(ID.fullmatch(str(value[k])) for k in ("farm_scope_id","green_id","printer_id","cups_queue_id","registry_version")): raise Hold("invalid_registered_option")
     return value
 

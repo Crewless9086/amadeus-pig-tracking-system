@@ -22,6 +22,43 @@ def test_package_is_bounded_and_privilege_split():
     assert "lpadmin" not in init and "exec su-exec greenprint" in init
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
 
+def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
+    queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8")
+    policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8")
+    assert 'Path("/etc/hosts").open("a"' in queue and 'hosts.write(f"{pin} {uri.hostname}\\n")' in queue
+    assert "answers!={pin}" in queue and 'uri.scheme!="ipps"' in queue
+    assert "/config/private-ca.crt /etc/cups/ssl/site.crt" in init
+    for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption Required","TrustOnFirstUse No","ValidateCerts Yes"):
+        assert required in policy
+
+def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
+    calls=[]
+    class Raw:
+        def close(self): calls.append("raw_closed")
+    class TLS:
+        def close(self): calls.append("tls_closed")
+    class Context:
+        check_hostname=False; hostname_checks_common_name=True
+        def wrap_socket(self,raw,server_hostname): calls.append((raw,server_hostname)); return TLS()
+    context=Context()
+    monkeypatch.setattr(S.ssl,"create_default_context",lambda cafile:(calls.append(("ca",cafile)) or context))
+    monkeypatch.setattr(S.socket,"create_connection",lambda target,timeout:(calls.append((target,timeout)) or Raw()))
+    S.printer_tls_preflight("printer.internal","10.23.0.9",631,"private-ca.crt")
+    assert context.check_hostname is True and context.hostname_checks_common_name is False
+    assert (("10.23.0.9",631),10) in calls and ("ca","private-ca.crt") in calls
+    assert any(isinstance(x,tuple) and len(x)==2 and x[1]=="printer.internal" for x in calls) and "tls_closed" in calls
+
+def test_printer_tls_preflight_fails_closed_on_untrusted_or_wrong_san(monkeypatch):
+    class Raw:
+        def __init__(self): self.closed=False
+        def close(self): self.closed=True
+    class Context:
+        check_hostname=False; hostname_checks_common_name=True
+        def wrap_socket(self,_raw,server_hostname): raise S.ssl.SSLCertVerificationError("SAN mismatch")
+    raw=Raw(); monkeypatch.setattr(S.ssl,"create_default_context",lambda cafile:Context()); monkeypatch.setattr(S.socket,"create_connection",lambda *_a,**_k:raw)
+    with pytest.raises(S.ssl.SSLCertVerificationError): S.printer_tls_preflight("printer.internal","10.23.0.9",631,"private-ca.crt")
+    assert raw.closed
+
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
     assert cfg["version"]=="0.3.2"
@@ -112,6 +149,7 @@ def test_config_preserves_private_canonical_pin_and_ip_san_printer(tmp_path,monk
 
 def test_public_pki_profile_allows_only_exact_render_origin_without_pin(tmp_path,monkeypatch):
     cfg={**config(tmp_path),"canonical_transport_profile":"public_pki_exact_origin","canonical_api_origin":S.APPROVED_PUBLIC_CANONICAL_ORIGIN,"canonical_endpoint_ip":""}
+    monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"])
     path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
     assert S.load_config(str(path))["canonical_transport_profile"]=="public_pki_exact_origin"
     for origin in ("https://example.com","https://amadeus-pig-tracking-system.onrender.com/extra","http://amadeus-pig-tracking-system.onrender.com"):
