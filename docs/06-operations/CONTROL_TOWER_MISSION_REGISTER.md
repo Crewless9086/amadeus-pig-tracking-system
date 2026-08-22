@@ -4,6 +4,50 @@ Status: Active owner-facing dispatch authority
 
 ## 2026-08-20 - Four-day operational reality reset
 
+### CORE PR #1157 exact-current merge and stopped deployment - 2026-08-22
+
+Mission `CMQ-20260813-05` continued on its existing lineage. PR #1157 was
+reconciled without conflict onto authoritative Green recovery main
+`02816350d8eebecf93a6353ae90bc4f0e78787f9` as exact head
+`fe14a3e64ad958594d566f95d1e2402ddf84044d`. The diff remained exactly seven
+CORE validation/staging files; all six intervening Green publication/app files
+were byte-identical to main. Focused CORE tests passed 53 tests plus 24
+subtests, the proportional CORE set passed 157 tests, Brain Guard returned zero
+findings, hosted PR CI passed 3/3, and a separate exact-head reviewer approved
+the source. Review evidence is preserved at
+`C:\tmp\VISIBLE_CORE_PR1157_FE14_CURRENT_MAIN_INDEPENDENT_REVIEW_HANDOVER_20260822.md`
+with SHA-256
+`1C84EC0016A9CF7A35995620CBB5E2B13602F511814D957C1DB4591E8ACD95AB`.
+
+Charl granted LEVEL 4 authority for only that exact PR head and its unavoidable
+normal hosted rollout. Control Tower reverified the immutable head, current
+base, CLEAN/mergeable state, green checks and disjoint collision result, then
+merged PR #1157 as authoritative main
+`28bcd0953c5e75a72dcd2665e49bf1806dc06eb3`. Render deploy
+`dep-da4jv1tckfvc73ckf2og` was created for that exact commit. Exact loaded
+revision and final deployment health remain pending until the provider reports
+the deploy live and `/health/revision` agrees.
+
+Fresh local readback before merge proved runtime and execution trees remained
+unchanged at `3961411236fca3329abaac2d34cfb863167c1c73`,
+`.charlie_runner/supervisor.stop` was present, `CHARLIE CORE Runner Watchdog`
+was Disabled, no matching CORE supervisor/runner process existed, runner status
+was `runner_stale_or_stopped`, supervisor status was `supervisor_stopped`, the
+heartbeat was stale and no mission identity was active. No validation receipt
+was created or consumed; no runtime was staged/copied; no task, stop marker or
+watchdog was mutated; CORE was not started; and no mission or production write
+occurred.
+
+Target owner outcome remains deployed CORE independently receiving, executing
+and following through an authorized development mission after terminals close.
+Owner outcome achieved is `NONE`; usable now is `NO`; classification remains
+`WORKING / BUILT_BUT_UNPROVEN / AUTHORITY_DISABLED`. The first current gate is
+exact hosted revision/health verification. Later receipt, stopped staging,
+activation, genuine mission, canonical/provider result, automatic follow-up,
+later terminal-independent cycle and measured owner-relay reduction remain
+separately governed and unproven. Charl has no action while deployment
+verification is pending.
+
 ### Protected ROOTLINE release and CORE staging approvals
 
 Charl subsequently authorized the exact-current releases of Oom Sakkie PR #1127
