@@ -59,6 +59,26 @@ def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     assert "ServerRoot /run/cups" in cupsd and "ServerRoot /etc/cups" not in cupsd
     assert "DeviceURI {uri.geturl()}" in queue and "printer_transport_profile" in queue
 
+def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
+    init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8")
+    expected=(
+        ("mount_validation","data_mount_invalid"),("mount_validation","ca_missing_or_empty"),
+        ("runtime_directory","data_runtime_prepare_failed"),("runtime_directory","spool_prepare_failed"),
+        ("options_population","runtime_options_install_failed"),("cups_directories","cups_runtime_prepare_failed"),
+        ("cups_directories","cups_spool_prepare_failed"),("ca_install","ca_install_failed"),
+        ("queue_initializer","queue_initializer_failed"),("queue_ownership","queue_owner_failed"),
+        ("queue_ownership","queue_mode_failed"),("cups_start","cups_process_start_failed"),
+        ("cups_readiness","cups_stopped_during_startup"),("cups_readiness","cups_or_queue_not_ready"),
+        ("service_exec","service_exec_failed"),
+    )
+    for stage,reason in expected:
+        stage_at=init.index(f"stage={stage}")
+        reason_at=init.index(f"reason={reason}")
+        assert stage_at < reason_at
+    diagnostic='echo "green_startup_failed stage=${stage} reason=${reason}" >&2'
+    assert init.count(diagnostic)==1
+    assert all(token not in diagnostic for token in ("options.json","private-ca.crt","canonical_bearer_token","printer_uri"))
+
 def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
     calls=[]
     class Raw:
