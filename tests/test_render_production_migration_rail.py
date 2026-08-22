@@ -928,6 +928,63 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(after_counts, before_counts)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_governed_view_return_rule_drift_rejects_without_mutation(self):
+        import psycopg
+
+        _reset_disposable_database()
+        run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL) as db:
+            original_catalog = _catalog_snapshot(db)
+            original_definition = db.execute(
+                "select pg_catalog.pg_get_viewdef("
+                "'public.pig_welfare_case_current'::regclass,false)"
+            ).fetchone()[0].rstrip().rstrip(";")
+            db.execute(
+                "create or replace view public.pig_welfare_case_current as "
+                f"select * from ({original_definition}) governed_view where false"
+            )
+            db.commit()
+            attacked_catalog = _catalog_snapshot(db)
+            self.assertNotEqual(attacked_catalog, original_catalog)
+            before_oids = db.execute(
+                """select t.tgname,t.oid from pg_catalog.pg_trigger t
+                     join pg_catalog.pg_class c on c.oid=t.tgrelid
+                     join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                    where n.nspname='app_private'
+                      and t.tgname like 'trg_guard_production_migration_%'
+                    order by 1"""
+            ).fetchall()
+            before_counts = db.execute(
+                """select
+                   (select count(*) from app_private.production_migration_receipts),
+                   (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                   (select count(*) from app_private.production_migration_baselines),
+                   (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+            ).fetchone()
+        with self.assertRaisesRegex(RuntimeError, "migration_catalog_drift"):
+            run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL) as db:
+            after_catalog = _catalog_snapshot(db)
+            after_oids = db.execute(
+                """select t.tgname,t.oid from pg_catalog.pg_trigger t
+                     join pg_catalog.pg_class c on c.oid=t.tgrelid
+                     join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                    where n.nspname='app_private'
+                      and t.tgname like 'trg_guard_production_migration_%'
+                    order by 1"""
+            ).fetchall()
+            after_counts = db.execute(
+                """select
+                   (select count(*) from app_private.production_migration_receipts),
+                   (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                   (select count(*) from app_private.production_migration_baselines),
+                   (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+            ).fetchone()
+        self.assertEqual(after_catalog, attacked_catalog)
+        self.assertEqual(after_oids, before_oids)
+        self.assertEqual(after_counts, before_counts)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_explicit_one_time_historical_baseline_is_digest_bound_and_immutable(self):
         import psycopg
 
