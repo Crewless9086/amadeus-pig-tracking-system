@@ -107,6 +107,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
     probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
+    assert '"pid,user,group,comm,args"' in probe
     for proof in ("docker\", \"top","cups_scheduler_identity","cups_worker_identity","green_runtime_identity","tcp_631_listener","tls_key_files","test ! -e /etc/printcap","test ! -e /etc/cups/ssl/*.key","unexpected AppArmor denials"):
         assert proof in probe
 
