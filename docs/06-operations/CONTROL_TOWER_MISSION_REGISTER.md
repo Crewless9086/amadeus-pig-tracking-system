@@ -1445,3 +1445,86 @@ after push. The automatic next action is fresh independent exact-head review of
 PR #1150. Only later separately authorized migration/deployment/commissioning,
 a genuine natural request, exact canonical/provider evidence, one correct page,
 cleanup/follow-up and a later terminal-independent cycle can close the mission.
+
+## 2026-08-22 Control Tower current-main intake and dispatch reconciliation
+
+### HERDMASTER-NATURAL-HEALTH-LOSS-1 / OOM-INTAKE-SLICE-1 defect
+
+GENERAL's Pig 161 Brain Guard finding is consolidated into the existing natural
+health/loss mission as `CURRENT_BLOCKER`; it is not a new mortality, welfare,
+language, Telegram, queue, router, confirmation or database mission. Pig 161 is
+sealed historical/provider evidence and must not be replayed or mutated.
+
+The retained owner outcome is one natural death report, one concise preview in
+the authenticated recipient's configured language, one protected confirmation,
+atomic supported mortality plus attributable welfare-case effects, canonical
+readback-controlled completion and only genuinely unresolved follow-up. Charl's
+canonical notification language is English with English buttons. Anton's is
+Afrikaans with Afrikaans buttons. Inbound language does not silently change the
+stored output preference, and one message must never mix languages.
+
+The reusable defects are: the current mortality preview exposes audit/technical
+language; the inspected confirmed writer does not prove same-boundary creation,
+append and death closure of the attributable welfare episode or reconciliation
+of obsolete living-animal checks; and completion wording is not proven to follow
+canonical readback. Unrelated welfare cases and distinct disposal, biosecurity
+or mortality work remain open. No diagnosis, treatment, cause/time invention or
+new authority is included.
+
+Current-main terminal dispatch is directly proven. The isolated terminal session
+`01a02903-1cd6-7f41-a7dd-34086a81351c` is active in
+`.worktrees/herdmaster-health-loss-welfare-language-20260822`, branch
+`fix/herdmaster-health-loss-welfare-language-20260822`, exact clean base
+`a6b3112fe3a3008af763685e5b1ca31ab814963f`. Its first contained stop exposed a
+stale Control Tower line-count instruction; Control Tower corrected it without
+scope restart. The terminal acknowledged and resumed against the authoritative
+1,127-line Standard blob `3002b94713e286c4eb2019419c438cc378c337fa`,
+Protocol `8fbd0b9c9160164e31a17a2cbfa51ab88792a909`, Template
+`1233aee625e45821a685614a33b1eb101c666ffd` and Programme
+`fb44d7f86c47e605c283ed33c28ba2c4267d6edb`.
+
+Lifecycle is `WORKING / SOURCE_AND_TEST_IMPLEMENTATION_ACTIVE`; this is **NO
+BUSINESS OUTCOME**. No Pig 161 replay, provider message, production write,
+schema/profile mutation, merge or deployment is authorized. Automatic
+continuation is source audit, reusable repair, tests, Brain Guard, specialist
+and security review, clean PR and complete handover. Later gates remain
+independent review, serialized release, exact loaded revision, a fresh genuine
+mortality event through the deployed Oom Sakkie/HERDMASTER actor, canonical and
+provider readback, safe replay, automatic follow-up and a later
+terminal-independent cycle. Owner action is none until one exact protected
+release/profile/schema boundary is proven or the fully deployed actor is ready
+to receive a genuinely new natural event.
+
+### GREEN 0.3.2 reviewed source continuation
+
+The existing Green commissioning outcome remains active under the owner's prior
+bounded commissioning direction. PR #1164 exact head
+`da0f67cf0eb53616582f37c054038b6f71b5fdd0` is a reviewed source candidate:
+67 focused/wider tests passed and different-agent independent review passed
+after repairs for DNS rebinding/TOCTOU, private certificate/SAN trust and
+negative-test gaps. Hosted CI was queued at the observation time.
+
+The candidate binds exact approved Render public-PKI HTTPS without redirects or
+public IP pin, preserves the private-pinned profile, uses strict token/farm/Green
+headers and fixed paths, and confines IPPS to a single private pin with SAN-only
+TLS preflight, private CA policy, hostname-to-pin binding before CUPS and exact
+AppArmor writes. No publish, install, configuration, identity, queue, document,
+job, print or physical effect occurred. Lifecycle is `REVIEW_HOLD /
+EXACT_HEAD_CI_PENDING`; **NO BUSINESS OUTCOME**. Green remains stopped with boot,
+watchdog and auto-update off. Automatic promotion is exact-head CI pass followed
+by Control Tower serialized release review; commissioning, a genuine physical
+page, cleanup/follow-up and a later terminal-independent cycle remain separate
+protected acceptance gates. Owner action is none now.
+
+### Strategic WIP and dispatch truth
+
+Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
+activity: the existing Green transport/commissioning track and the consolidated
+Oom Sakkie/HERDMASTER mortality-welfare-language repair. No third implementation
+track is dispatched by this assessment. SAM PR #1163 and other eligible source
+work are preserved without interruption; old health/loss, intake, mortality and
+welfare worktrees remain historical/collision evidence only. The existing CORE
+runner artifacts are stale and `supervisor.stop` is present, so no CORE pickup,
+background work or release-lane ownership is claimed. The serialized production
+release lane is free of a proven active mutation owner but is not acquired by
+either source terminal.
