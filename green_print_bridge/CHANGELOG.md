@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- Quarantine the invalid partial 0.3.0 artifact without overwriting it.
+- Export the unique replacement with an explicit `linux/arm64` platform.
+- Verify raw OCI index descriptor and image config architecture before signing.
+- Generate the SPDX SBOM with an explicit arm64 Syft scan.
+
 ## 0.3.0
 
 - Prepare a uniquely versioned, signed prebuilt aarch64 GHCR image with exact source

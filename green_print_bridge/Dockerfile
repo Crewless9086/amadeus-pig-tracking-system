@@ -1,7 +1,7 @@
 FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a
 
 ARG BUILD_ARCH=aarch64
-ARG BUILD_VERSION=0.3.0
+ARG BUILD_VERSION=0.3.1
 ARG SOURCE_COMMIT
 RUN test -n "${SOURCE_COMMIT}" \
     && test "${#SOURCE_COMMIT}" -eq 40 \
