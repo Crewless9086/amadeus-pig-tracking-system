@@ -7,7 +7,7 @@ Status: `GENERATED / NON_DOCTRINE`
 - UI role label: `Marketing Lead`
 - Canonical role: marketing, media, campaign, and demand-generation department.
 - Canonical doctrine: `docs/09-vault-brain/02-agents/marketing/BEACON.md`
-- Canonical doctrine SHA-256: `05f35d5a2a70b1e9edeeed3a7f79c0e0a8274db47ba09a2ed8db42ebbae93474`
+- Canonical doctrine SHA-256: `2b6e69aad99a1d77991b8a7ee7d302f2ad551930e83b4807646ef2c2c57c1065`
 - Asset metadata: `static/assets/agents/beacon/agent.json`
 - Asset metadata SHA-256: `0c225c94b115e88e67886d52e6a1e01adaec03b3c6476246b941269fe2261fd4`
 - Central asset registry: `static/assets/agents/agent_registry.json`

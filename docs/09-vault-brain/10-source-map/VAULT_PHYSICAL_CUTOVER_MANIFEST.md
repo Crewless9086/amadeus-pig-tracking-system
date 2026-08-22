@@ -5,7 +5,7 @@ Status: Batch 29 deployed Brain Guard acceptance complete; Vault cutover locked.
 Version: `vault_physical_cutover_manifest_v26`
 Baseline: `5d27e4afe2c546963196ed93753cf88aad92ba2b`
 Generated from HEAD: `5d27e4afe2c546963196ed93753cf88aad92ba2b`
-Tracked Markdown/MDX files covered: **539**
+Tracked Markdown/MDX files covered: **558**
 Validation: **PASS**
 
 This manifest records completed Batches 5 through 29 and the bounded transitional
@@ -24,7 +24,8 @@ keeps `physical_change_authorized: false`.
 | `KEEP_POINTER` | 18 |
 | `KEEP_TECHNICAL` | 33 |
 | `KEEP_TRANSITIONAL` | 72 |
-| `KEEP_VAULT` | 196 |
+| `KEEP_VAULT` | 198 |
+| `OWNER_REVIEW_REQUIRED` | 17 |
 
 ## Remaining execution schedule
 
@@ -80,6 +81,23 @@ entry whose physical disposition needs later work or owner review.
 
 | Source | Disposition | Planned batch | Destination / replacement | Exact refs | Blockers |
 | --- | --- | ---: | --- | ---: | --- |
+| `.agents/skills/amadeus-implement/SKILL.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `.agents/skills/amadeus-operational-acceptance/SKILL.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `.agents/skills/control-tower-operate/SKILL.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `VISIBLE_OOM_LITTER_PR1161_8FAC_REPAIR_HANDOVER_20260822.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `VISIBLE_OOM_LITTER_PR1161_IMPLEMENTER_HANDOVER_20260822.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `VISIBLE_OOM_LITTER_PR1161_REVIEW_BLOCKER_REPAIR_HANDOVER_20260822.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `VISIBLE_SAM_PR1163_CANONICAL_ATTRIBUTION_REPAIR_HANDOVER_20260822.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `VISIBLE_SAM_PR1163_PRODUCTION_SHAPE_REPAIR_HANDOVER_20260822.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `docs/06-operations/GREEN_PRINT_031_NON_ACTUATING_COMMISSIONING_PREFLIGHT_20260822.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md` | 0 | owner_classification_required |
+| `docs/06-operations/GREEN_PRINT_031_REGISTER_ADDENDUM_20260822.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md` | 0 | owner_classification_required |
+| `docs/06-operations/GREEN_PRINT_BRIDGE_PHYSICAL_COMMISSIONING_GUIDE.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md` | 1 | owner_classification_required |
+| `docs/06-operations/ROOTLINE_BOREHOLE_1_COMMISSIONING_GUIDE_20260820.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md` | 0 | owner_classification_required |
+| `docs/06-operations/ROOTLINE_BOREHOLE_READINESS_HANDOVER_20260820.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md` | 0 | owner_classification_required |
+| `docs/06-operations/ROOTLINE_FERTILIZER_MIXER_DEPLOYMENT_PROOF_HANDOVER_20260820.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md` | 0 | owner_classification_required |
+| `green_print_bridge/CHANGELOG.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
+| `green_print_bridge/DOCS.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 1 | owner_classification_required |
+| `green_print_bridge/README.md` | `OWNER_REVIEW_REQUIRED` | - | `docs/09-vault-brain/README.md` | 0 | owner_classification_required |
 
 ## Validation findings
 

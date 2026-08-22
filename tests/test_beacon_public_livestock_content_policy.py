@@ -1,8 +1,12 @@
 import unittest
+from pathlib import Path
 
 from modules.beacon.public_livestock_content_policy import (
     RISK_STATUS,
     assess_public_livestock_content,
+    assess_public_livestock_enquiry_capture,
+    public_livestock_policy_binding,
+    public_livestock_policy_binding_matches,
 )
 
 
@@ -73,6 +77,70 @@ class BeaconPublicLivestockContentPolicyTests(unittest.TestCase):
         self.assertFalse(result["allowed"])
         self.assertEqual(result["status"], RISK_STATUS)
         self.assertTrue(result["private_sam_livestock_sales_unchanged"])
+
+    def test_declined_card_3714_copy_is_rejected_by_common_evaluator(self):
+        text = ("Looking for live pigs? Amadeus Farm handles enquiries for piglets, "
+            "weaners, growers and finishers. Message us with the type, number needed, "
+            "intended use and your area. SAM will check current farm records before "
+            "discussing any option; no stock, price, availability, delivery or "
+            "reservation is promised.")
+        result = assess_public_livestock_content(text,
+            objective="qualified_livestock_enquiries",
+            campaign_lane="live_stock_enquiry_capture")
+        self.assertFalse(result["allowed"])
+        self.assertTrue(result["livestock_context"])
+        for reason in (
+            "public_livestock_objective_not_allowlisted",
+            "implied_livestock_acquisition_meaning",
+            "livestock_acquisition_detail_solicitation",
+            "ambiguous_or_commercial_livestock_contact_cta",
+        ):
+            self.assertIn(reason, result["reasons"])
+        self.assertRegex(result["evaluation_digest"], r"^[0-9a-f]{64}$")
+        self.assertRegex(result["policy_authority"]["source_digest"], r"^[0-9a-f]{64}$")
+
+    def test_plural_semantic_and_afrikaans_acquisition_variants_fail(self):
+        variants = (
+            "Looking for live pigs? Message us with how many piglets you need.",
+            "Weaners for your growing herd. Inbox the farm with quantity and area.",
+            "Op soek na lewende varke? Stuur die aantal, soort en wanneer jy dit nodig het.",
+            "Varkies vir jou plaas. Kontak ons met hoeveelheid en geslag.",
+        )
+        for text in variants:
+            result = self.assess(text, campaign_lane="live_stock_enquiry_capture")
+            self.assertFalse(result["allowed"], text)
+            self.assertTrue(result["livestock_context"], text)
+
+    def test_disclaimer_cannot_revive_retired_enquiry_capture(self):
+        result = assess_public_livestock_enquiry_capture(
+            "Looking for live pigs? Message us with quantity. No stock, price, "
+            "availability, delivery or reservation is promised.",
+            campaign_lane="live_stock_enquiry_capture")
+        self.assertFalse(result["allowed"])
+        self.assertIn("public_livestock_enquiry_capture_exception_retired",
+            result["reasons"])
+
+    def test_missing_stale_or_mismatched_authority_binding_fails_closed(self):
+        assessment = self.assess("Molly and her piglets enjoy a quiet farm morning.")
+        bound = public_livestock_policy_binding(assessment)
+        self.assertTrue(public_livestock_policy_binding_matches(bound, assessment))
+        self.assertFalse(public_livestock_policy_binding_matches({}, assessment))
+        stale = dict(bound)
+        stale["policy_authority"] = dict(bound["policy_authority"],
+            source_digest="0" * 64)
+        self.assertFalse(public_livestock_policy_binding_matches(stale, assessment))
+
+    def test_active_doctrine_retires_enquiry_capture_exception(self):
+        root = Path(__file__).resolve().parents[1]
+        for relative in (
+            "docs/09-vault-brain/08-business-rules/MARKETING_RULES.md",
+            "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+            "docs/09-vault-brain/02-agents/marketing/BEACON.md",
+            "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
+        ):
+            text = (root / relative).read_text(encoding="utf-8")
+            self.assertIn("retired", text.casefold(), relative)
+            self.assertNotIn("lane may state the stable", text.casefold(), relative)
 
 
 if __name__ == "__main__":

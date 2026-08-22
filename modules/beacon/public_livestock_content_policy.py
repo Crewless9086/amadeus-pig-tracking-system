@@ -1,11 +1,27 @@
 """Fail-closed public-content policy for live-animal media and copy."""
 
+import hashlib
+import json
 import re
 import unicodedata
 
 
-POLICY_VERSION = "beacon_public_livestock_awareness_only_v1"
-ENQUIRY_POLICY_VERSION = "beacon_public_livestock_enquiry_capture_v1"
+POLICY_VERSION = "beacon_public_livestock_awareness_only_v2"
+ENQUIRY_POLICY_VERSION = POLICY_VERSION
+POLICY_ID = "beacon_public_livestock_awareness_only"
+EXTERNAL_POLICY_AUTHORITY = {
+    "record_version": "meta_public_livestock_surface_authority_2026-08-22_v1",
+    "reviewed_on": "2026-08-22",
+    "surface": "facebook_organic_page_post",
+    "jurisdiction": "ZA",
+    "entity_eligibility": "awareness_only_no_commerce_exception_relied_upon",
+    "decision": "amadeus_stricter_awareness_only_fail_closed",
+    "sources": [
+        "https://www.facebook.com/help/130910837313345",
+        "https://www.facebook.com/terms",
+        "https://www.oversightboard.com/decision/bun-63gbjx9k/",
+    ],
+}
 RISK_STATUS = "owner_review_required_meta_livestock_commerce_risk"
 SAFE_OBJECTIVES = (
     "farm_awareness",
@@ -22,10 +38,13 @@ PUBLIC_LIVESTOCK_LANES = {
     "live_stock_awareness",
     "live_stock_sales",
     "live_pig_sales",
+    "live_stock_enquiry_capture",
 }
 LIVESTOCK_SIGNALS = (
-    "animal", "livestock", "live stock", "pig", "piglet", "weaner", "sow",
-    "boar", "litter", "vark", "varkie", "speenvark", "zeug", "beer",
+    "animal", "animals", "livestock", "live stock", "pig", "pigs", "piglet",
+    "piglets", "weaner", "weaners", "sow", "sows", "boar", "boars", "litter",
+    "litters", "vark", "varke", "varkie", "varkies", "speenvark", "speenvarke",
+    "zeug", "zeugen", "beer", "bere",
 )
 SAFE_EDUCATION_SIGNALS = (
     "follow the farm journey",
@@ -53,7 +72,7 @@ DIRECT_COMMERCE_PATTERNS = (
 )
 IMPLIED_COMMERCE_PATTERNS = (
     r"\bplanning\s+(?:livestock|pigs?|piglets?|your herd)\b",
-    r"\b(?:looking|searching)\s+for\s+(?:livestock|pigs?|piglets?)\b",
+    r"\b(?:looking|searching)\s+for\s+(?:live\s+)?(?:livestock|pigs?|piglets?|weaners?)\b",
     r"\bready\s+for\s+(?:a\s+)?new\s+home\b",
     r"\b(?:secure|choose|claim)\s+(?:one|yours|your animals?)\b",
     r"\b(?:make|take)\s+(?:one|them|this one)\s+(?:yours|home)\b",
@@ -138,36 +157,14 @@ def assess_public_livestock_content(
 
 
 def assess_public_livestock_enquiry_capture(text, *, campaign_lane="", media=None):
-    """Allow a bounded enquiry invitation without implying a current offer."""
-    normalized = _normalize(text)
-    lane = _normalize(campaign_lane).replace(" ", "_")
-    reasons = []
-    if lane != "live_stock_enquiry_capture":
-        reasons.append("public_livestock_enquiry_lane_invalid")
-    forbidden = (
-        r"\b(?:for sale|in stock|currently available|available now|ready now|we have)\b",
-        r"\b(?:te koop|in voorraad|nou beskikbaar|ons het)\b",
-        r"(?:r|zar)\s*\d",
-    )
-    if any(re.search(pattern, normalized, re.I) for pattern in forbidden):
-        reasons.append("unsupported_stock_or_fulfilment_claim")
-    required = ("amadeus farm", "handles enquiries", "message us", "sam",
-        "no stock", "price", "availability", "delivery", "reservation is promised")
-    if any(value not in normalized for value in required):
-        reasons.append("enquiry_capture_boundary_incomplete")
-    if media:
-        reasons.append("enquiry_capture_text_only_required")
-    if not normalized:
-        reasons.append("public_livestock_copy_missing")
-    return {
-        "allowed": not reasons,
-        "status": "public_livestock_enquiry_capture_policy_passed" if not reasons else RISK_STATUS,
-        "withhold_draft": bool(reasons), "livestock_context": True,
-        "objective": "qualified_livestock_enquiries", "reasons": sorted(set(reasons)),
-        "policy_version": ENQUIRY_POLICY_VERSION,
-        "performance_optimization_for_commerce_allowed": False,
-        "private_sam_livestock_sales_unchanged": True,
-    }
+    """Compatibility entry point; it may add restrictions but never bypass common policy."""
+    result = assess_public_livestock_content(
+        text, objective="qualified_livestock_enquiries",
+        campaign_lane=campaign_lane or "live_stock_enquiry_capture", media=media)
+    result["reasons"] = sorted(set(result["reasons"] + [
+        "public_livestock_enquiry_capture_exception_retired"]))
+    result.update({"allowed": False, "withhold_draft": True, "status": RISK_STATUS})
+    return result
 
 
 def enforce_public_livestock_drafts(
@@ -198,6 +195,8 @@ def enforce_public_livestock_drafts(
 def public_livestock_policy_contract():
     return {
         "policy_version": POLICY_VERSION,
+        "policy_id": POLICY_ID,
+        "policy_authority": policy_authority_binding(),
         "rule": (
             "Public live-animal content is awareness, education, husbandry, "
             "welfare, responsible-farming, community, or farm-story content "
@@ -211,7 +210,7 @@ def public_livestock_policy_contract():
 
 
 def _result(allowed, reasons, livestock_context, objective):
-    return {
+    result = {
         "allowed": bool(allowed),
         "status": "public_livestock_awareness_policy_passed"
         if allowed else RISK_STATUS,
@@ -220,9 +219,38 @@ def _result(allowed, reasons, livestock_context, objective):
         "objective": objective,
         "reasons": sorted(set(reasons)),
         "policy_version": POLICY_VERSION,
+        "policy_id": POLICY_ID,
         "performance_optimization_for_commerce_allowed": False,
         "private_sam_livestock_sales_unchanged": True,
     }
+    result["policy_authority"] = policy_authority_binding()
+    result["evaluation_digest"] = _digest({
+        "allowed": result["allowed"], "reasons": result["reasons"],
+        "livestock_context": result["livestock_context"],
+        "objective": result["objective"], "policy_version": POLICY_VERSION,
+        "policy_authority": result["policy_authority"],
+    })
+    return result
+
+
+def policy_authority_binding():
+    authority = dict(EXTERNAL_POLICY_AUTHORITY)
+    authority["source_digest"] = _digest(EXTERNAL_POLICY_AUTHORITY)
+    return authority
+
+
+def public_livestock_policy_binding(assessment):
+    return {key: assessment.get(key) for key in (
+        "policy_id", "policy_version", "evaluation_digest", "policy_authority")}
+
+
+def public_livestock_policy_binding_matches(bound, assessment):
+    return isinstance(bound, dict) and bound == public_livestock_policy_binding(assessment)
+
+
+def _digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True,
+        separators=(",", ":"), ensure_ascii=True).encode("utf-8")).hexdigest()
 
 
 def _media_text(media):

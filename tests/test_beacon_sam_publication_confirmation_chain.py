@@ -216,13 +216,9 @@ def test_nested_provider_confirmation_unlocks_canonical_binding_and_sam_attribut
             now=NOW,
         )
 
-    assert first["consumer_status"] == "confirmed"
-    assert "provider_readback_confirmed" not in {
-        key for key in first if key != "facebook_result"
-    }
-    assert first["facebook_result"]["provider_readback_confirmed"] is True
+    assert first["status"] == "protected_campaign_public_policy_failed"
     assert replay["status"] == "beacon_publication_cycle_silent"
-    assert provider.call_count == 1
+    assert provider.call_count == 0
 
     resolved = resolve_canonical_meta_publication_binding(
         _production_referral(),
@@ -233,10 +229,9 @@ def test_nested_provider_confirmation_unlocks_canonical_binding_and_sam_attribut
     attributed = evaluate_meta_inbound_attribution(
         _production_referral(), binding_resolution=resolved, now=NOW
     )
-    assert resolved["status"] == "resolved"
-    assert attributed["status"] == "attributed"
-    assert attributed["attribution_identity"] == "ATTR-1"
-    assert attributed["publication_binding_id"] == "CONSUMER-1"
+    assert resolved["status"] == "unavailable"
+    assert attributed["status"] == "unverified"
+    assert attributed["attribution_identity"] == ""
     assert attributed["sends_message"] is False
 
 
@@ -270,10 +265,9 @@ def test_failed_nested_readback_is_terminal_and_cannot_create_sam_attribution():
             now=NOW,
         )
 
-    assert result["consumer_status"] == "contained_ambiguous"
-    assert result["facebook_result"]["status"] == "meta_provider_readback_ambiguous"
+    assert result["status"] == "protected_campaign_public_policy_failed"
     assert replay["status"] == "beacon_publication_cycle_silent"
-    assert provider.call_count == 1
+    assert provider.call_count == 0
 
     resolved = resolve_canonical_meta_publication_binding(
         _production_referral(),

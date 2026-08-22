@@ -20,7 +20,6 @@ from modules.beacon.facebook_media_transport import (
 from modules.beacon.public_livestock_content_policy import (
     RISK_STATUS,
     assess_public_livestock_content,
-    assess_public_livestock_enquiry_capture,
     public_livestock_policy_contract,
 )
 from modules.beacon.organic_publication_binding import (
@@ -1306,15 +1305,10 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
     if campaign_lane == "meat_launch" and not meat_launch_authorized:
         return controlled_mode_denial("publish_meat_campaign")
     if campaign_lane in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
-        assessment = (assess_public_livestock_enquiry_capture(
+        assessment = assess_public_livestock_content(
             payload.get("exact_text") or payload.get("message"),
-            campaign_lane=campaign_lane,
+            objective=raw_objective or "farm_awareness", campaign_lane=campaign_lane,
             media=payload.get("selected_assets") or payload.get("selected_asset"))
-            if campaign_lane == "live_stock_enquiry_capture" else assess_public_livestock_content(
-                payload.get("exact_text") or payload.get("message"),
-                objective=raw_objective or "farm_awareness",
-                campaign_lane=campaign_lane,
-                media=payload.get("selected_assets") or payload.get("selected_asset")))
         if not assessment["allowed"]:
             return {
                 "success": False,
@@ -1416,13 +1410,9 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
                 **_facebook_execution_authority(False),
             }, 409
 
-        final_assessment = (assess_public_livestock_enquiry_capture(
-            params.get("exact_text"), campaign_lane=params.get("campaign_lane"),
+        final_assessment = assess_public_livestock_content(params.get("exact_text"),
+            objective=params.get("objective"), campaign_lane=params.get("campaign_lane"),
             media=params.get("selected_assets") or params.get("selected_asset"))
-            if params.get("campaign_lane") == "live_stock_enquiry_capture" else
-            assess_public_livestock_content(params.get("exact_text"),
-                objective=params.get("objective"), campaign_lane=params.get("campaign_lane"),
-                media=params.get("selected_assets") or params.get("selected_asset")))
         if not final_assessment["allowed"]:
             return {
                 "success": False,
@@ -2955,12 +2945,9 @@ def _post_to_facebook_page_binary_images(
         }, 503
 
     if params.get("campaign_lane") in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
-        final_policy = (assess_public_livestock_enquiry_capture(
-            params.get("exact_text"), campaign_lane=params.get("campaign_lane"), media=assets)
-            if params.get("campaign_lane") == "live_stock_enquiry_capture" else
-            assess_public_livestock_content(params.get("exact_text"),
-                objective=params.get("objective") or "farm_awareness",
-                campaign_lane=params.get("campaign_lane"), media=assets))
+        final_policy = assess_public_livestock_content(params.get("exact_text"),
+            objective=params.get("objective") or "farm_awareness",
+            campaign_lane=params.get("campaign_lane"), media=assets)
         if not final_policy["allowed"]:
             return {
                 "success": False,

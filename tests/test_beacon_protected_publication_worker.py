@@ -9,14 +9,21 @@ from modules.beacon.protected_publication_worker import (
 )
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.sales.beacon_campaign import _readback_facebook_page_post
+from modules.beacon.public_livestock_content_policy import (
+    assess_public_livestock_content, public_livestock_policy_binding,
+)
 
 NOW = datetime(2026, 8, 19, 8, tzinfo=timezone.utc)
 
 
 def approval(caption="Molly is settling into the morning routine while her piglets stay close."):
+    assessment = assess_public_livestock_content(caption,
+        objective="farm_awareness", campaign_lane="live_stock_awareness")
     preview = {"contract_version":"beacon_campaign_owner_card_v1","packet_id":"PACKET-1",
         "target_page_id":"PAGE-1",
         "packet_generation":"G1","exact_post_copy":caption,
+        "campaign_lane":"live_stock_awareness","campaign_objective":"farm_awareness",
+        "public_content_policy":public_livestock_policy_binding(assessment),
         "selected_media":[{"asset_id":"ASSET-1","content_sha256":"a"*64,
           "storage_readback_proof_id":"READBACK-1","library_accept_event_id":"ACCEPT-1",
           "public_use_event_id":"PUBLIC-1","public_use_authority":"approved",
@@ -127,7 +134,7 @@ def test_text_only_requires_exact_class_and_target_page_binding():
     assert validate_claimed_approval(item, now=NOW)=="protected_campaign_target_page_required"
 
 
-def test_supported_enquiry_post_preserves_exact_lane_sam_identity_and_zero_spend():
+def test_legacy_enquiry_post_is_contained_before_executor():
     caption = ("Looking for live pigs? Amadeus Farm handles enquiries for piglets, weaners, "
         "growers and finishers. Message us with the type, number needed, intended use and your area. "
         "SAM will check current farm records before discussing any option; no stock, price, "
@@ -144,11 +151,8 @@ def test_supported_enquiry_post_preserves_exact_lane_sam_identity_and_zero_spend
     calls=[]
     result=run_protected_publication_cycle(store=Store(item), executor=lambda payload,**kwargs: (
         calls.append(payload) or confirmed_outcome("PAGE-1_8"),200), now=NOW)
-    assert result["consumer_status"] == "confirmed" and len(calls) == 1
-    assert calls[0]["campaign_lane"] == "live_stock_enquiry_capture"
-    assert calls[0]["objective"] == "qualified_livestock_enquiries"
-    assert calls[0]["attribution_identity"] == "ATTR-1"
-    assert calls[0]["selected_assets"] == [] and calls[0]["zero_spend"] is True
+    assert result["status"] == "protected_campaign_public_policy_failed"
+    assert calls == []
 
 
 def test_concurrent_workers_atomically_publish_once():

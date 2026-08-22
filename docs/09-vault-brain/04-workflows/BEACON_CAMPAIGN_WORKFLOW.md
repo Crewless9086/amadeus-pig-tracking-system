@@ -57,18 +57,16 @@ Beacon attribution is a deterministic, read-only projection over canonical appen
 
 Qualification comes from explicit SAM lead status, orders require a resolvable `linked_order_id`, and revenue comes only from explicit completed sales-transaction `net_total` values kept separate by currency. Fulfilment uses the latest deterministic lead-linked event. Lost-reason aggregation accepts controlled reason codes only. The projection cannot post, send, call Meta/Chatwoot/n8n, optimize campaigns, spend, create orders, reserve or change stock, or write farm lifecycle data. Persistent attribution ingestion remains blocked until a separately approved append-only data migration exists.
 
-## Stock-Neutral Livestock Enquiry Capture
+## Public Livestock Awareness Boundary
 
-When current canonical stock cannot support an availability claim, Beacon may
-still prepare the smallest demand-oriented organic post from the configured SAM
-business-offering read model if it identifies Amadeus Farm's existing
-`live_sales` enquiry stream without fallback or conflict. The post invites the
-four SAM qualification facts only and promises no stock, price, availability,
-delivery, reservation or outcome. The immutable packet binds the offering
-source/version, exact text, text-only mode, Page identity, audience, zero spend
-and duration, SAM attribution/boundary, expiry and provider ambiguity plan.
-Approval authorizes one exactly-once organic attempt; it authorizes no boost,
-spend, retry, customer commitment or farm write.
+The former stock-neutral `live_stock_enquiry_capture` exception is retired.
+Public live-animal content may prepare awareness, education, husbandry, welfare,
+responsible-farming or farm-story copy only. It may not target prospective buyers,
+solicit type/quantity/use/area, or invite transaction contact. A disclaimer cannot
+neutralize those meanings. Independently initiated inbound continues to route to
+SAM under the existing private sales authority. Every card and execution envelope
+must bind the exact common evaluator result and current policy-authority digest;
+missing, stale, mismatched or surface-inapplicable authority produces no card or post.
 ## Owner-Rule Campaign Calendar
 
 1. Beacon may propose a reusable campaign rule version containing an explicit campaign lane, channel allowlist, IANA timezone window, and demand unit.
