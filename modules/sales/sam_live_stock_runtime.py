@@ -319,6 +319,9 @@ def handle_sam_live_stock_chatwoot_inbound(
         general_context,
         source,
     )
+    general_context["campaign_or_post_context"] = (
+        front_door_packet.get("campaign_or_post_context") or {}
+    )
     front_door_specialist = front_door_packet.get(
         "next_specialist_recommendation"
     )
@@ -1835,6 +1838,16 @@ def build_sam_front_door_adapter_packet(inbound, context_packet, environ=None):
         if isinstance(context_packet.get("prior_sales_context"), dict)
         else {}
     )
+    meta_attribution = (
+        inbound.get("meta_attribution")
+        if isinstance(inbound.get("meta_attribution"), dict)
+        else {}
+    )
+    attributed_meta = (
+        meta_attribution
+        if meta_attribution.get("status") == "attributed"
+        else {}
+    )
     knowledge_result = load_sam_farm_knowledge(environ or {})
     try:
         with open(knowledge_result.get("path") or "", encoding="utf-8") as source:
@@ -1868,7 +1881,12 @@ def build_sam_front_door_adapter_packet(inbound, context_packet, environ=None):
             "source": reference.get("source") or "none",
             "version": "v1",
             **scope,
-            "post_id": reference.get("source_id") or "",
+            "campaign_id": attributed_meta.get("campaign_id") or "",
+            "post_id": attributed_meta.get("post_id") or reference.get("source_id") or "",
+            "target_page_id": attributed_meta.get("target_page_id") or "",
+            "attribution_status": meta_attribution.get("status") or "",
+            "attribution_reason": meta_attribution.get("reason") or "",
+            "sam_boundary": attributed_meta.get("sam_boundary") or "",
             "title": reference.get("headline") or reference.get("subject") or "",
             "post_text": reference.get("body") or "",
             "product_focus": reference.get("subject") or "",
@@ -1885,6 +1903,7 @@ def build_sam_front_door_adapter_packet(inbound, context_packet, environ=None):
                 else ""
             ),
         },
+        "meta_attribution": meta_attribution,
     }
     return interpret_customer_front_door(evidence, knowledge)
 

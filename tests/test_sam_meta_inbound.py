@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 
-from modules.sales.sam_live_stock_runtime import parse_chatwoot_inbound
+from modules.sales.sam_live_stock_runtime import (
+    build_sam_front_door_adapter_packet,
+    parse_chatwoot_inbound,
+)
 from modules.sales.sam_meta_inbound import evaluate_meta_inbound_attribution
 from modules.sales.sam_owner_reply_window import evaluate_reply_window
 
@@ -77,3 +80,44 @@ def test_duplicate_and_concurrent_evaluation_is_deterministic_and_side_effect_fr
     assert first["sends_message"] is False
     assert first["creates_order"] is False
     assert first["customer_response_authority_granted"] is False
+
+
+def _front_door_packet(inbound):
+    return build_sam_front_door_adapter_packet(
+        inbound,
+        {
+            "chatwoot_authority_messages": [{
+                "id": inbound["message_id"],
+                "message_type": 0,
+                "content": inbound["content"],
+                "created_at": inbound["last_inbound_at"],
+            }],
+            "prior_sales_context": {},
+            "recovered_reference": {},
+        },
+        {},
+    )
+
+
+def test_attributed_meta_provenance_reaches_customer_front_door_context():
+    packet = _front_door_packet(parse_chatwoot_inbound(payload()))
+    campaign = packet["campaign_or_post_context"]
+    assert campaign["campaign_id"] == "BEACON-CAMPAIGN-ABC"
+    assert campaign["post_id"] == "PAGE-1_POST-7"
+    assert campaign["target_page_id"] == "PAGE-1"
+    assert campaign["attribution_status"] == "attributed"
+    assert campaign["sam_boundary"] == "No quote, reservation, order or payment."
+
+
+def test_rejected_meta_attribution_cannot_become_campaign_context():
+    row = payload(content_attributes={"referral": {
+        "source_id": "PAGE-1_POST-7",
+        "target_page_id": "",
+        "attribution_identity": "BEACON-CAMPAIGN-ABC",
+    }})
+    packet = _front_door_packet(parse_chatwoot_inbound(row))
+    campaign = packet["campaign_or_post_context"]
+    assert campaign["campaign_id"] == ""
+    assert campaign["post_id"] == ""
+    assert campaign["target_page_id"] == ""
+    assert campaign["attribution_status"] == "unverified"
