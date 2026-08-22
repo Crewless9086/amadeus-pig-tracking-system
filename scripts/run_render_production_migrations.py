@@ -55,7 +55,7 @@ ALLOWLIST = (
     AllowedMigration(
         migration_id="202608220002_allow_herdmaster_farrowing_protected_claims",
         filename="202608220002_allow_herdmaster_farrowing_protected_claims.sql",
-        sha256="1cfffdb4d01b7d6d0d2b35ede77eb478071151ceb5cda28b4c230ed3be2c3ee6",
+        sha256="762825c57d9b6fd95a0e7197fb0cfb965f31988eabb059abc47fafbd6152ca62",
     ),
 )
 
@@ -63,6 +63,9 @@ ALLOWLIST = (
 EXPECTED_LITTER_SUPERSESSION_REASONS = (
     "duplicate_creation_same_farrowing",
     "fact_correction",
+)
+PREDECESSOR_LITTER_SUPERSESSION_REASONS = (
+    "duplicate_creation_same_farrowing",
 )
 EXPECTED_PROTECTED_ACTION_KINDS = (
     "beacon_campaign_review",
@@ -80,6 +83,20 @@ EXPECTED_PROTECTED_ACTION_KINDS = (
     "rootline_irrigation_segment",
     "sam_sale_payment",
 )
+PREDECESSOR_PROTECTED_ACTION_KINDS = tuple(
+    value
+    for value in EXPECTED_PROTECTED_ACTION_KINDS
+    if value != "herdmaster_record_farrowing_litter"
+)
+EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
+    "202608220001_extend_litter_supersession_for_fact_corrections": (
+        "Reuse append-only litter supersession rail for protected factual corrections"
+    ),
+    "202608220002_allow_herdmaster_farrowing_protected_claims": (
+        "Admit exact-preview HERDMASTER farrowing claims through the canonical "
+        "protected action spine."
+    ),
+}
 
 
 BOOTSTRAP_SQL = """
@@ -145,7 +162,43 @@ def _load_sql(item: AllowedMigration) -> str:
     return sql
 
 
-def _constraint_readback(connection, schema: str, table: str, name: str) -> tuple[str, tuple[str, ...]]:
+def _parse_text_membership_check(definition: str, column: str) -> tuple[str, ...]:
+    """Accept only PostgreSQL's positive equality/ANY rendering for a text check."""
+
+    compact = re.sub(r"\s+", "", definition)
+    escaped_column = re.escape(column)
+    single = re.fullmatch(
+        rf"CHECK\(\({escaped_column}='([a-z0-9_]+)'::text\)\)",
+        compact,
+    )
+    if single:
+        return (single.group(1),)
+    array = re.fullmatch(
+        rf"CHECK\(\({escaped_column}=ANY\(ARRAY\[(.+)\]\)\)\)",
+        compact,
+    )
+    if not array:
+        raise RuntimeError(f"migration_readback_constraint_structure_mismatch:{definition}")
+    values = []
+    for member in array.group(1).split(","):
+        parsed = re.fullmatch(r"'([a-z0-9_]+)'::text", member)
+        if not parsed:
+            raise RuntimeError(
+                f"migration_readback_constraint_structure_mismatch:{definition}"
+            )
+        values.append(parsed.group(1))
+    if len(values) != len(set(values)):
+        raise RuntimeError(f"migration_readback_constraint_duplicate_value:{definition}")
+    return tuple(sorted(values))
+
+
+def _constraint_readback(
+    connection,
+    schema: str,
+    table: str,
+    name: str,
+    column: str | None = None,
+) -> tuple[str, tuple[str, ...]]:
     row = connection.execute(
         """select pg_catalog.pg_get_constraintdef(c.oid)
              from pg_catalog.pg_constraint c
@@ -157,16 +210,146 @@ def _constraint_readback(connection, schema: str, table: str, name: str) -> tupl
     if not row or not row[0]:
         raise RuntimeError(f"migration_readback_constraint_missing:{schema}.{table}:{name}")
     definition = row[0]
-    values = tuple(sorted(set(re.findall(r"'([^']+)'", definition))))
+    expected_column = column or {
+        "litter_supersessions_reason_check": "reason",
+        "oom_protected_action_claims_action_kind_check": "action_kind",
+    }.get(name)
+    if not expected_column:
+        raise RuntimeError(f"migration_readback_constraint_column_unknown:{name}")
+    values = _parse_text_membership_check(definition, expected_column)
     return definition, values
 
 
-def _migration_log_readback(connection, migration_id: str) -> bool:
+def _migration_log_description(connection, migration_id: str) -> str | None:
     row = connection.execute(
-        "select exists(select 1 from app_private.migration_log where migration_id=%s)",
+        "select description from app_private.migration_log where migration_id=%s",
         (migration_id,),
     ).fetchone()
-    return bool(row and row[0])
+    return str(row[0]) if row else None
+
+
+def _verify_migration_log(connection, migration_id: str, *, required: bool) -> str | None:
+    description = _migration_log_description(connection, migration_id)
+    expected = EXPECTED_MIGRATION_LOG_DESCRIPTIONS[migration_id]
+    if required and description != expected:
+        raise RuntimeError(
+            f"migration_readback_log_mismatch:{migration_id}:{description!r}"
+        )
+    if not required and description is not None:
+        raise RuntimeError(
+            f"migration_precondition_unexpected_log:{migration_id}:{description!r}"
+        )
+    return description
+
+
+def _migration_function_body(filename: str) -> str:
+    path = (REPO_ROOT / "supabase" / "migrations" / filename).resolve()
+    expected_parent = (REPO_ROOT / "supabase" / "migrations").resolve()
+    if path.parent != expected_parent or path.name != filename:
+        raise RuntimeError("migration_function_source_path_invalid")
+    sql = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    matches = re.findall(
+        r"create\s+or\s+replace\s+function\s+public\.validate_litter_supersession\(\)"
+        r"\s*returns\s+trigger\s+language\s+plpgsql\s+as\s+\$\$(.*?)\$\$;",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if len(matches) != 1:
+        raise RuntimeError(f"migration_function_source_mismatch:{filename}")
+    return matches[0].strip()
+
+
+def _function_readback(connection, expected_filename: str) -> tuple[str, str]:
+    rows = connection.execute(
+        """select p.prosrc,pg_catalog.pg_get_functiondef(p.oid),l.lanname,
+                  pg_catalog.format_type(p.prorettype,null),p.prosecdef,
+                  p.proleakproof,p.provolatile,p.proparallel,p.proconfig
+             from pg_catalog.pg_proc p
+             join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+             join pg_catalog.pg_language l on l.oid=p.prolang
+            where n.nspname='public' and p.proname='validate_litter_supersession'
+              and pg_catalog.pg_get_function_identity_arguments(p.oid)=''"""
+    ).fetchall()
+    if len(rows) != 1:
+        raise RuntimeError("migration_readback_validate_litter_supersession_missing_or_ambiguous")
+    body, definition, language, return_type, security_definer, leakproof, volatility, parallel, config = rows[0]
+    normalized_body = str(body).replace("\r\n", "\n").replace("\r", "\n").strip()
+    expected_body = _migration_function_body(expected_filename)
+    if normalized_body != expected_body or (
+        language,
+        return_type,
+        security_definer,
+        leakproof,
+        volatility,
+        parallel,
+        config,
+    ) != ("plpgsql", "trigger", False, False, "v", "u", None):
+        raise RuntimeError("migration_readback_validate_litter_supersession_mismatch")
+    normalized_definition = str(definition).replace("\r\n", "\n").replace("\r", "\n")
+    return normalized_body, normalized_definition
+
+
+def _mating_id_nullable(connection) -> bool:
+    row = connection.execute(
+        """select not a.attnotnull
+             from pg_catalog.pg_attribute a
+            where a.attrelid='public.litter_supersessions'::regclass
+              and a.attname='mating_id' and a.attnum > 0 and not a.attisdropped"""
+    ).fetchone()
+    if not row:
+        raise RuntimeError("migration_precondition_mating_id_missing")
+    return bool(row[0])
+
+
+def _verify_migration_precondition(
+    connection,
+    item: AllowedMigration,
+    *,
+    already_applied: bool,
+) -> str:
+    if item.migration_id == "202608220001_extend_litter_supersession_for_fact_corrections":
+        _, reasons = _constraint_readback(
+            connection,
+            "public",
+            "litter_supersessions",
+            "litter_supersessions_reason_check",
+        )
+        nullable = _mating_id_nullable(connection)
+        if reasons == PREDECESSOR_LITTER_SUPERSESSION_REASONS:
+            if already_applied or nullable:
+                raise RuntimeError("migration_precondition_litter_predecessor_mismatch")
+            _function_readback(
+                connection, "202607300001_create_litter_supersession_rail.sql"
+            )
+            _verify_migration_log(connection, item.migration_id, required=False)
+            return "predecessor"
+        if reasons == EXPECTED_LITTER_SUPERSESSION_REASONS:
+            if not nullable:
+                raise RuntimeError("migration_precondition_litter_target_mismatch")
+            _function_readback(
+                connection,
+                "202608220001_extend_litter_supersession_for_fact_corrections.sql",
+            )
+            _verify_migration_log(connection, item.migration_id, required=True)
+            return "target"
+        raise RuntimeError(f"migration_precondition_litter_constraint_mismatch:{reasons}")
+    if item.migration_id == "202608220002_allow_herdmaster_farrowing_protected_claims":
+        _, action_kinds = _constraint_readback(
+            connection,
+            "app_private",
+            "oom_protected_action_claims",
+            "oom_protected_action_claims_action_kind_check",
+        )
+        if action_kinds == PREDECESSOR_PROTECTED_ACTION_KINDS:
+            if already_applied:
+                raise RuntimeError("migration_precondition_action_predecessor_mismatch")
+            _verify_migration_log(connection, item.migration_id, required=False)
+            return "predecessor"
+        if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS:
+            _verify_migration_log(connection, item.migration_id, required=True)
+            return "target"
+        raise RuntimeError(f"migration_precondition_action_constraint_mismatch:{action_kinds}")
+    return "not_applicable"
 
 
 def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
@@ -179,31 +362,25 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
         )
         if reasons != EXPECTED_LITTER_SUPERSESSION_REASONS:
             raise RuntimeError(f"migration_readback_reason_constraint_mismatch:{reasons}")
-        row = connection.execute(
-            """select pg_catalog.pg_get_functiondef(p.oid)
-                 from pg_catalog.pg_proc p
-                 join pg_catalog.pg_namespace n on n.oid=p.pronamespace
-                where n.nspname='public' and p.proname='validate_litter_supersession'
-                  and pg_catalog.pg_get_function_identity_arguments(p.oid)=''"""
-        ).fetchone()
-        if not row or not row[0]:
-            raise RuntimeError("migration_readback_validate_litter_supersession_missing")
-        function_definition = row[0].replace("\r\n", "\n").replace("\r", "\n")
-        required_fragments = (
-            "cross-sow or cross-farrowing supersession denied",
-            "duplicate supersession father mismatch",
-            "durable owner confirmation does not match operation",
-            "retained litter mating linkage mismatch",
-            "exact litter child allowlists required",
+        if not _mating_id_nullable(connection):
+            raise RuntimeError("migration_readback_mating_id_not_nullable")
+        function_body, function_definition = _function_readback(
+            connection,
+            "202608220001_extend_litter_supersession_for_fact_corrections.sql",
         )
-        if any(fragment not in function_definition for fragment in required_fragments):
-            raise RuntimeError("migration_readback_validate_litter_supersession_mismatch")
-        if not _migration_log_readback(connection, item.migration_id):
-            raise RuntimeError(f"migration_readback_log_missing:{item.migration_id}")
+        log_description = _verify_migration_log(
+            connection, item.migration_id, required=True
+        )
         return {
             "migration_log_present": True,
+            "migration_log_description_sha256": hashlib.sha256(
+                log_description.encode("utf-8")
+            ).hexdigest(),
             "reason_constraint_sha256": hashlib.sha256(constraint.encode("utf-8")).hexdigest(),
             "reason_values": list(reasons),
+            "validate_litter_supersession_body_sha256": hashlib.sha256(
+                function_body.encode("utf-8")
+            ).hexdigest(),
             "validate_litter_supersession_sha256": hashlib.sha256(
                 function_definition.encode("utf-8")
             ).hexdigest(),
@@ -217,10 +394,14 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
         )
         if action_kinds != EXPECTED_PROTECTED_ACTION_KINDS:
             raise RuntimeError(f"migration_readback_action_constraint_mismatch:{action_kinds}")
-        if not _migration_log_readback(connection, item.migration_id):
-            raise RuntimeError(f"migration_readback_log_missing:{item.migration_id}")
+        log_description = _verify_migration_log(
+            connection, item.migration_id, required=True
+        )
         return {
             "migration_log_present": True,
+            "migration_log_description_sha256": hashlib.sha256(
+                log_description.encode("utf-8")
+            ).hexdigest(),
             "action_kind_constraint_sha256": hashlib.sha256(
                 constraint.encode("utf-8")
             ).hexdigest(),
@@ -251,6 +432,9 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                 if prior:
                     if prior[1] != item.sha256:
                         raise RuntimeError(f"applied_migration_checksum_conflict:{item.migration_id}")
+                    _verify_migration_precondition(
+                        connection, item, already_applied=True
+                    )
                     readback = _verify_migration_readback(connection, item)
                     report["migrations"].append({
                         "migration_id": item.migration_id, "sha256": item.sha256,
@@ -262,6 +446,9 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
 
                 receipt_id = str(uuid.uuid4())
                 try:
+                    _verify_migration_precondition(
+                        connection, item, already_applied=False
+                    )
                     connection.execute(sql)
                     readback = _verify_migration_readback(connection, item)
                     connection.execute(
