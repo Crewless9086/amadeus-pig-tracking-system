@@ -26,11 +26,12 @@ def test_package_is_bounded_and_privilege_split():
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
     assert "chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf" in docker
-    for directive in ("User cupsd","Group cupsd","CreateSelfSignedCerts no","Printcap /run/cups/printcap"):
+    for directive in ("User cupsd","Group cupsd","CreateSelfSignedCerts no","Printcap /run/cups/printcap","ErrorLog stderr"):
         assert directive in docker
-    assert "sed -i -E '/^[[:space:]]*(User|Group|CreateSelfSignedCerts|Printcap)[[:space:]]+/d'" in docker
-    assert docker.count("grep -Ec '^[[:space:]]*") == 4
+    assert "sed -i -E '/^[[:space:]]*(User|Group|CreateSelfSignedCerts|Printcap|ErrorLog)[[:space:]]+/d'" in docker
+    assert docker.count("grep -Ec '^[[:space:]]*") == 5 and "/usr/sbin/cupsd -t" in docker
     assert "/var/cache/cups" in docker
+    assert "CUPS scheduler or fixed destination did not become ready" in init
 
 def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
@@ -158,7 +159,7 @@ def test_apparmor_denies_admin_and_broad_writes():
 
 def test_apparmor_covers_inherited_s6_entrypoint_without_broad_shell_exec():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
-    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py r,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,","/var/cache/cups/ rwk,","/usr/share/cups/ r,","/etc/cups/ rw,","/etc/cups/ppd/ rw,","/etc/cups/ssl/ rw,","/etc/cups/cupsd.conf rw,","/etc/cups/cups-files.conf rw,","deny /etc/printcap rwklx,","deny /etc/cups/ssl/*.key rwklx,"):
+    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py rix,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,","/var/cache/cups/ rwk,","/usr/share/cups/ r,","/etc/cups/ rw,","/etc/cups/ppd/ rw,","/etc/cups/ssl/ rw,","/etc/cups/cupsd.conf rw,","/etc/cups/cups-files.conf rw,","deny /etc/printcap rwklx,","deny /etc/cups/ssl/*.key rwklx,"):
         assert required in policy
     assert "/usr/bin/su-exec" not in policy
     assert "/bin/** ix" not in policy and "/usr/bin/** ix" not in policy
@@ -445,6 +446,7 @@ def test_corrupt_and_partial_ledger_fail_closed(tmp_path):
 def test_health_treats_business_hold_as_live():
     text=(APP/"rootfs/healthcheck.py").read_text(encoding="utf-8")
     assert 'value.get("liveness") == "alive"' in text and '"held"' not in text
+    assert '["/usr/bin/lpstat", "-r"]' in text and 'scheduler.stdout.strip() == "scheduler is running"' in text
 
 def test_no_plain_claimable_get_or_runtime_lpadmin():
     source=(APP/"app/service.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8")

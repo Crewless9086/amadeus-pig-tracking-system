@@ -201,6 +201,7 @@ def main() -> int:
                 " && grep -Fx 'Group cupsd' /etc/cups/cups-files.conf"
                 " && grep -Fx 'CreateSelfSignedCerts no' /etc/cups/cups-files.conf"
                 " && grep -Fx 'Printcap /run/cups/printcap' /etc/cups/cups-files.conf"
+                " && grep -Fx 'ErrorLog stderr' /etc/cups/cups-files.conf"
                 " && test \"$(grep -Ec '^[[:space:]]*User[[:space:]]+' /etc/cups/cups-files.conf)\" -eq 1"
                 " && test \"$(grep -Ec '^[[:space:]]*Group[[:space:]]+' /etc/cups/cups-files.conf)\" -eq 1"
                 " && cups_pid=$(/bin/busybox pidof cupsd)"
@@ -228,6 +229,19 @@ def main() -> int:
             required_paths = {"/api/documents/print-jobs/commands/claim", "/api/documents/print-jobs/claims"}
             if not required_paths.issubset(set(EmptyCanonicalHandler.seen)):
                 raise RuntimeError(f"canonical zero-job cycle incomplete: {EmptyCanonicalHandler.seen}")
+            health_deadline = time.monotonic() + 70
+            docker_health = ""
+            while time.monotonic() < health_deadline:
+                docker_health = run(
+                    "docker", "inspect", "-f", "{{.State.Health.Status}}", container,
+                ).stdout.strip()
+                if docker_health == "healthy":
+                    break
+                if docker_health == "unhealthy":
+                    raise RuntimeError("container became unhealthy\n" + failure_diagnostics(container))
+                time.sleep(1)
+            if docker_health != "healthy":
+                raise RuntimeError("container health did not become healthy\n" + failure_diagnostics(container))
             denied = apparmor_denials()
             if denied:
                 raise RuntimeError(
@@ -239,6 +253,7 @@ def main() -> int:
             print(json.dumps({
                 "apparmor": "enforced",
                 "business_state": "event_waiting",
+                "container_health": "healthy",
                 "container_running": True,
                 "cups_scheduler_identity": "root-bootstrap",
                 "cups_worker_identity": "cupsd:cupsd",
