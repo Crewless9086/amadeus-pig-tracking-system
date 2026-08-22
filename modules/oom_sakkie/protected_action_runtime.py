@@ -169,6 +169,19 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
                 "telegram_edits":0,"publishes":False,"spends_money":False,
                 "customer_sends":False,"writes_farm_data":False},200
         return {"handled":True,**result},200
+    if claimed["action_kind"]=="riversdale_auction_list_add":
+        from modules.oom_sakkie.riversdale_auction_manager import execute_owner_cohort_claim
+        result,result_status=execute_owner_cohort_claim(claimed,actor_id=owner)
+        if result.get("success") is True:
+            completed=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            if completed.get("replayed"):
+                return {"handled":True,**(completed.get("result") or result),"answer":"",
+                    "suppress_owner_delivery":True,"writes_farm_data":False},200
+            return {"handled":True,**result,"specialist":"HERDMASTER",
+                "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
+                "owner_visible_completion_policy":"verified_edit_or_new_message"},result_status
+        contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result,"suppress_owner_delivery":True},result_status
     if claimed["action_kind"]=="beacon_private_album_finish":
         preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
         if (preview.get("contract_version")!="beacon_private_album_finish_v1"

@@ -23,6 +23,10 @@ from modules.oom_sakkie.family_rootline_callback import (
     CALLBACK_PREFIX as FAMILY_CALLBACK_PREFIX, bind_family_rootline_preview_card,
     prepare_family_rootline_preview, handle_family_rootline_callback,
 )
+from modules.oom_sakkie.riversdale_auction_manager import (
+    CALLBACK_PREFIX as AUCTION_CALLBACK_PREFIX, handle_anton_callback,
+    handle_anton_date_reply,
+)
 from modules.oom_sakkie.family_specialist_adapters import (
     family_replay_store, herdmaster_family_observation, load_family_question,
     load_family_summary, retain_family_question_reply, rootline_family_handoff,
@@ -261,6 +265,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     family_principal = resolve_family_principal(parsed, source)
     if family_principal.role is FamilyRole.UNKNOWN_SENDER:
         return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    if str(parsed.get("callback_data") or "").startswith(AUCTION_CALLBACK_PREFIX):
+        callback_result, callback_status = handle_anton_callback(parsed, family_principal,
+            callback_data=parsed["callback_data"])
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
+            if not callback_result.get("answer") else
+            deliver_family_result(parsed, callback_result, specialist="HERDMASTER"))
+        acknowledgement = _acknowledge_family_callback(parsed["callback_query_id"], source)
+        body, _ = _gateway_result(callback_result.get("success") is True,
+            str(callback_result.get("status") or "auction_callback_contained"),
+            policy, callback_status)
+        body.update({"message": callback_result, "delivery": delivery,
+            "callback_acknowledgement": acknowledgement,
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": callback_result.get("writes_farm_data") is True,
+            "hardware_commands": 0})
+        return body, callback_status if acknowledgement.get("success") else 202
     if str(parsed.get("callback_data") or "").startswith(FAMILY_CALLBACK_PREFIX):
         if family_principal.role is not FamilyRole.FARM_MANAGER:
             callback_result, callback_status = ({"success": False,
@@ -283,6 +303,17 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "writes": False, "hardware_commands": int(callback_result.get("hardware_commands") or 0)})
         return body, callback_status if acknowledgement.get("success") else 202
     if family_principal.role is not FamilyRole.OWNER:
+        date_result, date_status = handle_anton_date_reply(parsed, family_principal)
+        if date_result.get("handled"):
+            delivery = (deliver_family_result(parsed, date_result, specialist="HERDMASTER")
+                        if date_result.get("answer") else
+                        {"success": True, "telegram_sends": 0, "telegram_edits": 0})
+            body, _ = _gateway_result(date_result.get("success") is True,
+                str(date_result.get("status") or "auction_date_reply_contained"), policy, date_status)
+            body.update({"message": date_result, "delivery": delivery,
+                "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+                "writes": date_result.get("writes_farm_data") is True, "hardware_commands": 0})
+            return body, date_status if delivery.get("success") else 202
         family_result, family_status = handle_family_runtime_message(parsed, family_principal,
             summary_loader=load_family_summary,
             observation_adapter=herdmaster_family_observation,
