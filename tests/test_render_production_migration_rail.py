@@ -7,11 +7,13 @@ from unittest.mock import patch
 
 from scripts.run_render_production_migrations import (
     ALLOWLIST,
+    BASELINE_ELIGIBLE_IDS,
     EXPECTED_MIGRATION_LOG_DESCRIPTIONS,
     EXPECTED_LITTER_SUPERSESSION_REASONS,
     EXPECTED_PROTECTED_ACTION_KINDS,
     AllowedMigration,
     _constraint_readback,
+    _catalog_snapshot,
     _function_readback,
     _migration_function_body,
     _metadata,
@@ -225,15 +227,10 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                     "'202608220001_extend_litter_supersession_for_fact_corrections'"
                 ).fetchone()
             )
-            self.assertEqual(
+            self.assertIsNone(
                 db.execute(
-                    """select outcome,error_class
-                         from app_private.production_migration_receipts
-                        where migration_id=
-                          '202608220001_extend_litter_supersession_for_fact_corrections'
-                        order by applied_at desc"""
-                ).fetchall(),
-                [("failed", "RuntimeError")],
+                    "select to_regclass('app_private.production_migration_receipts')"
+                ).fetchone()[0]
             )
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
@@ -403,6 +400,8 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
     def test_disposable_postgres_d_runner_rejects_weakened_constraint_with_same_literals(self):
         import psycopg
 
+        _reset_disposable_database()
+        run(DATABASE_URL, ENV)
         members = ",".join(f"'{value}'" for value in EXPECTED_PROTECTED_ACTION_KINDS)
         with psycopg.connect(DATABASE_URL) as db:
             db.execute(
@@ -413,9 +412,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                 f"check (true or action_kind in ({members}))"
             )
             db.commit()
-        with self.assertRaisesRegex(
-            RuntimeError, "migration_readback_constraint_structure_mismatch"
-        ):
+        with self.assertRaisesRegex(RuntimeError, "migration_catalog_drift"):
             run(DATABASE_URL, ENV)
         with psycopg.connect(DATABASE_URL) as db:
             definition = db.execute(
@@ -438,6 +435,8 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
     def test_disposable_postgres_e_runner_rejects_phrase_comment_stub_function(self):
         import psycopg
 
+        _reset_disposable_database()
+        run(DATABASE_URL, ENV)
         comments = " ".join(
             (
                 "cross-sow or cross-farrowing supersession denied",
@@ -454,9 +453,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                 f"/* {comments} */ return null; end;$stub$;"
             )
             db.commit()
-        with self.assertRaisesRegex(
-            RuntimeError, "migration_readback_validate_litter_supersession_mismatch"
-        ):
+        with self.assertRaisesRegex(RuntimeError, "migration_catalog_drift"):
             run(DATABASE_URL, ENV)
         with psycopg.connect(DATABASE_URL) as db:
             self.assertIn(
@@ -480,6 +477,8 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
 
         for migration_id in EXPECTED_MIGRATION_LOG_DESCRIPTIONS:
             with self.subTest(migration_id=migration_id):
+                _reset_disposable_database()
+                run(DATABASE_URL, ENV)
                 with psycopg.connect(DATABASE_URL) as db:
                     db.execute(
                         "update app_private.migration_log "
@@ -542,8 +541,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                         )
                     db.commit()
                 with self.assertRaisesRegex(
-                    RuntimeError,
-                    "migration_readback_litter_validator_trigger_",
+                    RuntimeError, "migration_catalog_drift",
                 ):
                     run(DATABASE_URL, ENV)
 
@@ -659,8 +657,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                         )
                     db.commit()
                 with self.assertRaisesRegex(
-                    RuntimeError,
-                    "migration_readback_protected_claim_acl_mismatch",
+                    RuntimeError, "migration_catalog_drift",
                 ):
                     run(DATABASE_URL, ENV)
 
@@ -696,7 +693,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                 expected = (
                     "migration_receipt_guard_mismatch"
                     if attack == "guard_owner"
-                    else "migration_readback_litter_"
+                    else "migration_catalog_drift"
                 )
                 with self.assertRaisesRegex(RuntimeError, expected):
                     run(DATABASE_URL, ENV)
@@ -787,13 +784,211 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                     else:
                         db.execute("do $$begin create role claim_group; exception when duplicate_object then null; end$$; do $$begin create role claim_login login noinherit; exception when duplicate_object then null; end$$; grant claim_group to claim_login; grant select on app_private.oom_protected_action_claims to claim_group")
                     db.commit()
-                with self.assertRaisesRegex(RuntimeError, "migration_readback_protected_claim_(acl|owner)_mismatch"):
+                with self.assertRaisesRegex(RuntimeError, "migration_catalog_drift"):
                     run(DATABASE_URL, ENV)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_catalog_manifest_rejects_all_final_review_attacks_without_mutation(self):
+        import psycopg
+
+        attacks = {
+            "historical_beacon_extra_column": (
+                "alter table app_private.beacon_protected_publication_consumers "
+                "add column attacker_marker text",
+                "migration_catalog_drift",
+            ),
+            "historical_sales_guard_removed": (
+                "drop trigger trg_guard_charitable_sales_evidence "
+                "on public.sales_transactions",
+                "migration_catalog_drift",
+            ),
+            "historical_welfare_guard_removed": (
+                "drop trigger trg_pig_welfare_case_events_no_update_delete "
+                "on public.pig_welfare_case_events",
+                "migration_catalog_drift",
+            ),
+            "litter_table_and_validator_attacker_owned": (
+                "do $$begin create role litter_attacker login; "
+                "exception when duplicate_object then null; end$$; "
+                "alter table public.litter_supersessions owner to litter_attacker; "
+                "alter function public.validate_litter_supersession() "
+                "owner to litter_attacker",
+                "migration_catalog_drift",
+            ),
+            "receipt_applied_unique_index_removed": (
+                "drop index app_private.uq_production_migration_applied",
+                "migration_receipt_catalog_index_inventory_mismatch",
+            ),
+            "app_private_schema_attacker_owned": (
+                "do $$begin create role schema_attacker login; "
+                "exception when duplicate_object then null; end$$; "
+                "alter schema app_private owner to schema_attacker",
+                "migration_private_schema_owner_mismatch",
+            ),
+        }
+        for attack, (sql, expected) in attacks.items():
+            with self.subTest(attack=attack):
+                _reset_disposable_database()
+                run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    db.execute(sql)
+                    db.commit()
+                    before_oids = db.execute(
+                        """select t.tgname,t.oid from pg_catalog.pg_trigger t
+                             join pg_catalog.pg_class c on c.oid=t.tgrelid
+                             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                            where n.nspname='app_private'
+                              and t.tgname like 'trg_guard_production_migration_%'
+                            order by 1"""
+                    ).fetchall()
+                    before_counts = db.execute(
+                        """select
+                           (select count(*) from app_private.production_migration_receipts),
+                           (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                           (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+                    ).fetchone()
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    after_oids = db.execute(
+                        """select t.tgname,t.oid from pg_catalog.pg_trigger t
+                             join pg_catalog.pg_class c on c.oid=t.tgrelid
+                             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                            where n.nspname='app_private'
+                              and t.tgname like 'trg_guard_production_migration_%'
+                            order by 1"""
+                    ).fetchall()
+                    after_counts = db.execute(
+                        """select
+                           (select count(*) from app_private.production_migration_receipts),
+                           (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                           (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+                    ).fetchone()
+                self.assertEqual(after_oids, before_oids)
+                self.assertEqual(after_counts, before_counts)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_late_rejection_leaves_guard_oids_and_ledger_exactly_unchanged(self):
+        import psycopg
+
+        _reset_disposable_database()
+        run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute(
+                "alter table app_private.oom_protected_action_claims drop constraint "
+                "oom_protected_action_claims_action_kind_check; "
+                "alter table app_private.oom_protected_action_claims add constraint "
+                "oom_protected_action_claims_action_kind_check "
+                "check(action_kind in ('mortality'))"
+            )
+            db.commit()
+            before_oids = db.execute(
+                """select t.tgname,t.oid from pg_catalog.pg_trigger t
+                     join pg_catalog.pg_class c on c.oid=t.tgrelid
+                     join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                    where n.nspname='app_private'
+                      and t.tgname like 'trg_guard_production_migration_%'
+                    order by 1"""
+            ).fetchall()
+            before_counts = db.execute(
+                """select
+                   (select count(*) from app_private.production_migration_receipts),
+                   (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                   (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+            ).fetchone()
+        with self.assertRaisesRegex(RuntimeError, "migration_catalog_drift"):
+            run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL) as db:
+            after_oids = db.execute(
+                """select t.tgname,t.oid from pg_catalog.pg_trigger t
+                     join pg_catalog.pg_class c on c.oid=t.tgrelid
+                     join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                    where n.nspname='app_private'
+                      and t.tgname like 'trg_guard_production_migration_%'
+                    order by 1"""
+            ).fetchall()
+            after_counts = db.execute(
+                """select
+                   (select count(*) from app_private.production_migration_receipts),
+                   (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                   (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+            ).fetchone()
+        self.assertEqual(after_oids, before_oids)
+        self.assertEqual(after_counts, before_counts)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_explicit_one_time_historical_baseline_is_digest_bound_and_immutable(self):
+        import psycopg
+
+        _reset_disposable_database()
+        with psycopg.connect(DATABASE_URL) as db:
+            for item in ALLOWLIST[:3]:
+                db.execute(
+                    (Path("supabase/migrations") / item.filename).read_text(
+                        encoding="utf-8"
+                    )
+                )
+            db.commit()
+            _, baseline_digest = _catalog_snapshot(db)
+        baseline_env = {
+            **ENV,
+            "RENDER_MIGRATION_BASELINE_IDS": ",".join(BASELINE_ELIGIBLE_IDS),
+            "RENDER_MIGRATION_BASELINE_CATALOG_SHA256": baseline_digest,
+            "RENDER_MIGRATION_BASELINE_AUTHORIZATION_ID": (
+                "7b942817-55d4-451f-b4f8-2431223d1e52"
+            ),
+        }
+        applied = run(DATABASE_URL, baseline_env)
+        self.assertEqual(
+            [item["outcome"] for item in applied["migrations"]],
+            ["baseline_verified"] * 3 + ["applied"] * 2,
+        )
+        replay = run(DATABASE_URL, ENV)
+        self.assertEqual(
+            [item["outcome"] for item in replay["migrations"]],
+            ["baseline_verified"] * 3 + ["already_applied"] * 2,
+        )
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertEqual(
+                db.execute(
+                    """select
+                       (select count(*) from app_private.production_migration_baselines),
+                       (select count(*) from app_private.production_migration_receipts),
+                       (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+                ).fetchone(),
+                (1, 2, 1),
+            )
+            with self.assertRaisesRegex(psycopg.errors.RaiseException, "append-only"):
+                db.execute(
+                    "update app_private.production_migration_baselines "
+                    "set source_catalog_sha256=repeat('0',64)"
+                )
+            db.rollback()
+        with self.assertRaisesRegex(RuntimeError, "migration_baseline_already_initialized"):
+            run(DATABASE_URL, baseline_env)
+
+        _reset_disposable_database()
+        with psycopg.connect(DATABASE_URL) as db:
+            _, actual_digest = _catalog_snapshot(db)
+        wrong_env = {
+            **baseline_env,
+            "RENDER_MIGRATION_BASELINE_CATALOG_SHA256": "0" * 64,
+        }
+        with self.assertRaisesRegex(RuntimeError, "migration_baseline_catalog_mismatch"):
+            run(DATABASE_URL, wrong_env)
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertNotEqual(actual_digest, "0" * 64)
+            self.assertIsNone(
+                db.execute(
+                    "select to_regclass('app_private.production_migration_receipts')"
+                ).fetchone()[0]
+            )
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_disposable_postgres_c_runner_failure_rolls_back_partial_schema(self):
         import psycopg
 
+        _reset_disposable_database()
         item = AllowedMigration(
             migration_id="209901010001_test_runner_rollback",
             filename="209901010001_test_runner_rollback.sql",
@@ -815,12 +1010,8 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                     "select to_regclass('public.render_migration_rollback_probe')"
                 ).fetchone()[0]
             )
-            self.assertEqual(
+            self.assertIsNone(
                 db.execute(
-                    """select outcome,error_class
-                         from app_private.production_migration_receipts
-                        where migration_id='209901010001_test_runner_rollback'
-                        order by applied_at desc limit 1"""
-                ).fetchone(),
-                ("failed", "RaiseException"),
+                    "select to_regclass('app_private.production_migration_receipts')"
+                ).fetchone()[0]
             )
