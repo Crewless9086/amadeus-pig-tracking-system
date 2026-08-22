@@ -36,7 +36,7 @@ def plan_runtime_staging(
     *, source_ref, runtime_root, execution_root, state_root, receipt_path,
     receipt_sha256, expected_runtime_head, expected_execution_head,
     expected_manifest_commit, task_reader=None, runner=subprocess.run,
-    expected_task_sha256=None, git_safety_checker=None,
+    expected_task_sha256=None, git_safety_checker=None, now=None,
 ):
     source_ref = str(source_ref or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{40}", source_ref):
@@ -82,7 +82,9 @@ def plan_runtime_staging(
         raise RuntimeStagingError("sealed_receipt_digest_mismatch")
     receipt = _read_json(receipt_path, "isolated_validation_receipt_invalid")
     receipt_key_path = state_root / "validation-receipt.key"
-    receipt_identity = _validate_receipt(receipt, source_ref, _read_receipt_key(receipt_key_path))
+    receipt_identity = _validate_receipt(
+        receipt, source_ref, _read_receipt_key(receipt_key_path), now=_sample_clock(now)
+    )
     _validate_receipt_history(state_root, receipt_path, receipt_identity, receipt_digest)
     _validate_expected_rollback(
         runtime, execution, manifest, expected_runtime_head,
@@ -198,7 +200,7 @@ def _record_hmac(record, key, signature_field):
 
 
 def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess.run,
-                  git_safety_checker=None):
+                  git_safety_checker=None, now=None):
     if not isinstance(plan, dict) or plan.get("status") != "runtime_staging_plan_ready":
         raise RuntimeStagingError("validated_staging_plan_required")
     supplied_digest = plan.get("plan_sha256")
@@ -237,7 +239,7 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
             raise RuntimeStagingError("validation_receipt_authority_changed")
         receipt_identity = _validate_receipt(
             _read_json(plan["receipt_path"], "isolated_validation_receipt_invalid"),
-            source_ref, _read_receipt_key(receipt_key_path),
+            source_ref, _read_receipt_key(receipt_key_path), now=_sample_clock(now),
         )
         _validate_receipt_history(
             state_root, Path(plan["receipt_path"]), receipt_identity, plan["receipt_sha256"]
@@ -260,6 +262,23 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
             raise RuntimeStagingError("worktree_identity_changed_before_staging")
         if _sha256(state_root / "runtime-manifest.json") != plan["rollback"]["manifest_sha256"]:
             raise RuntimeStagingError("runtime_manifest_changed_before_staging")
+        # Complete every potentially slow task/Git/worktree/manifest/history check
+        # before the final clock sample. A receipt valid at lane entry must not be
+        # consumed after it expires while those checks run.
+        _validate_receipt_history(
+            state_root, Path(plan["receipt_path"]), receipt_identity, plan["receipt_sha256"]
+        )
+        sealed_receipt = _read_sealed_json(
+            plan["receipt_path"], plan["receipt_sha256"],
+            "isolated_validation_receipt_invalid",
+        )
+        sealed_receipt_key = _read_receipt_key(receipt_key_path)
+        final_receipt_identity = _validate_receipt(
+            sealed_receipt, source_ref, sealed_receipt_key, now=_sample_clock(now),
+        )
+        if final_receipt_identity != receipt_identity:
+            raise RuntimeStagingError("validation_receipt_identity_changed")
+        receipt_identity = final_receipt_identity
         consumption_path = (
             state_root / "validation-consumptions" / f"{receipt_identity['validation_id']}.json"
         )
@@ -511,11 +530,15 @@ def recover_runtime_staging(
     return result
 
 
-def _validate_receipt(receipt, source_ref, receipt_key):
+def _validate_receipt(receipt, source_ref, receipt_key, *, now=None):
     try:
-        return validate_validation_receipt(receipt, source_ref, receipt_key)
+        return validate_validation_receipt(receipt, source_ref, receipt_key, now=now)
     except ValidationReceiptError as exc:
         raise RuntimeStagingError(str(exc)) from exc
+
+
+def _sample_clock(value):
+    return value() if callable(value) else value
 
 
 def _validate_receipt_history(state_root, receipt_path, identity, receipt_sha256):
@@ -780,6 +803,21 @@ def _read_json(path, status):
     try:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError) as exc:
+        raise RuntimeStagingError(status) from exc
+    if not isinstance(value, dict):
+        raise RuntimeStagingError(status)
+    return value
+
+
+def _read_sealed_json(path, expected_sha256, status):
+    try:
+        payload = Path(path).read_bytes()
+        if hashlib.sha256(payload).hexdigest() != expected_sha256:
+            raise RuntimeStagingError("sealed_receipt_changed")
+        value = json.loads(payload.decode("utf-8"))
+    except RuntimeStagingError:
+        raise
+    except (OSError, UnicodeDecodeError, ValueError, TypeError) as exc:
         raise RuntimeStagingError(status) from exc
     if not isinstance(value, dict):
         raise RuntimeStagingError(status)

@@ -28,6 +28,18 @@ EXECUTION = "7cb7ddae" + "0" * 32
 MANIFEST = "d84ab1a4" + "0" * 32
 
 
+def _provider_config_sha():
+    value = {
+        "provider": "docker_engine", "network": "none", "rootfs_read_only": True,
+        "source_read_only": True, "cap_drop": ["ALL"], "no_new_privileges": True,
+        "user": "65532:65532", "pid_mode": "private", "pids_limit": 256,
+        "image_manifest_sha256": "2" * 64, "image_config_sha256": "3" * 64,
+    }
+    return hashlib.sha256(json.dumps(
+        value, sort_keys=True, separators=(",", ":")
+    ).encode()).hexdigest()
+
+
 class FakeGit:
     def __init__(self, runtime, execution):
         self.heads = {str(runtime): RUNTIME, str(execution): EXECUTION}
@@ -107,8 +119,15 @@ class RuntimeStagingTests(unittest.TestCase):
                           "host_processes_visible": False, "outside_boundary_targets": 0,
                           "network_enabled": False, "source_read_only": True,
                           "capabilities_dropped": True, "unprivileged": True,
-                          "image_sha256": "3" * 64},
-        }, self.receipt_key, validation_id="4" * 32, issued_at="2026-08-20T10:00:00Z")
+                          "image_manifest_sha256": "2" * 64,
+                          "image_config_sha256": "3" * 64, "provider": "docker_engine",
+                          "provider_actor": "control_tower_isolated_validator_v2",
+                          "provider_execution_ids": ["5" * 64, "7" * 64],
+                          "provider_execution_id": hashlib.sha256(json.dumps(
+                              ["5" * 64, "7" * 64], separators=(",", ":")
+                          ).encode()).hexdigest(),
+                          "provider_config_sha256": _provider_config_sha()},
+        }, self.receipt_key, validation_id="4" * 32)
         recorded = record_validation_receipt(receipt, self.state)
         self.receipt = Path(recorded["path"])
 
@@ -283,8 +302,15 @@ class RuntimeStagingTests(unittest.TestCase):
                           "host_processes_visible": False, "outside_boundary_targets": 0,
                           "network_enabled": False, "source_read_only": True,
                           "capabilities_dropped": True, "unprivileged": True,
-                          "image_sha256": "3" * 64},
-        }, self.receipt_key, validation_id="4" * 32, issued_at="2026-08-20T10:00:00Z")
+                          "image_manifest_sha256": "2" * 64,
+                          "image_config_sha256": "3" * 64, "provider": "docker_engine",
+                          "provider_actor": "control_tower_isolated_validator_v2",
+                          "provider_execution_ids": ["5" * 64, "7" * 64],
+                          "provider_execution_id": hashlib.sha256(json.dumps(
+                              ["5" * 64, "7" * 64], separators=(",", ":")
+                          ).encode()).hexdigest(),
+                          "provider_config_sha256": _provider_config_sha()},
+        }, self.receipt_key, validation_id="4" * 32)
         self.receipt.write_text(json.dumps(rejected), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeStagingError, "isolated_validation_receipt_rejected"):
             self._plan()
@@ -296,6 +322,116 @@ class RuntimeStagingTests(unittest.TestCase):
         self.git.dirty.clear()
         with self.assertRaisesRegex(RuntimeStagingError, "current_state_contradicts_expected_rollback"):
             self._plan(expected_runtime_head="1" * 40)
+
+    def test_receipt_expiring_after_plan_is_rejected_before_consumption(self):
+        issued = "2026-08-21T10:00:00Z"
+        receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+        evidence = {"source_commit": receipt["source_commit"], "suites": receipt["suites"],
+                    "isolation": receipt["isolation"]}
+        refreshed = sign_validation_receipt(
+            evidence, self.receipt_key, validation_id="7" * 32,
+            issued_at=issued, expires_at="2026-08-21T10:30:00Z",
+        )
+        recorded = record_validation_receipt(refreshed, self.state)
+        self.receipt = Path(recorded["path"])
+        plan = self._plan(now="2026-08-21T10:29:59Z")
+        with self.assertRaisesRegex(RuntimeStagingError, "receipt_expired"):
+            stage_runtime(plan, task_reader=self._task, runner=self.git,
+                          git_safety_checker=self._safe_git,
+                          now="2026-08-21T10:30:00Z")
+        self.assertFalse((self.state / "validation-consumptions" / ("7" * 32 + ".json")).exists())
+        self.assertTrue((self.state / "supervisor.stop").exists())
+
+    def test_receipt_expiring_during_slow_preconsumption_checks_is_rejected(self):
+        issued = "2026-08-21T10:00:00Z"
+        receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+        evidence = {"source_commit": receipt["source_commit"], "suites": receipt["suites"],
+                    "isolation": receipt["isolation"]}
+        refreshed = sign_validation_receipt(
+            evidence, self.receipt_key, validation_id="8" * 32,
+            issued_at=issued, expires_at="2026-08-21T10:30:00Z",
+        )
+        recorded = record_validation_receipt(refreshed, self.state)
+        self.receipt = Path(recorded["path"])
+        plan = self._plan(now="2026-08-21T10:29:58Z")
+        observations = iter(("2026-08-21T10:29:59Z", "2026-08-21T10:30:00Z"))
+        with self.assertRaisesRegex(RuntimeStagingError, "receipt_expired"):
+            stage_runtime(plan, task_reader=self._task, runner=self.git,
+                          git_safety_checker=self._safe_git,
+                          now=lambda: next(observations))
+        self.assertFalse((self.state / "validation-consumptions" / ("8" * 32 + ".json")).exists())
+        self.assertTrue((self.state / "supervisor.stop").exists())
+
+    def test_receipt_expiring_during_history_scan_is_rejected_before_consumption(self):
+        issued = "2026-08-21T10:00:00Z"
+        receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+        evidence = {"source_commit": receipt["source_commit"], "suites": receipt["suites"],
+                    "isolation": receipt["isolation"]}
+        refreshed = sign_validation_receipt(
+            evidence, self.receipt_key, validation_id="9" * 32,
+            issued_at=issued, expires_at="2026-08-21T10:30:00Z",
+        )
+        recorded = record_validation_receipt(refreshed, self.state)
+        self.receipt = Path(recorded["path"])
+        plan = self._plan(now="2026-08-21T10:29:58Z")
+        clock = {"value": "2026-08-21T10:29:59Z"}
+        original_history = __import__(
+            "modules.charlie.runtime_staging", fromlist=["_validate_receipt_history"]
+        )._validate_receipt_history
+        history_calls = {"count": 0}
+
+        def slow_history(*args):
+            original_history(*args)
+            history_calls["count"] += 1
+            if history_calls["count"] == 2:
+                clock["value"] = "2026-08-21T10:30:00Z"
+
+        runtime_before = dict(self.git.heads)
+        with mock.patch(
+                "modules.charlie.runtime_staging._validate_receipt_history",
+                side_effect=slow_history):
+            with self.assertRaisesRegex(RuntimeStagingError, "receipt_expired"):
+                stage_runtime(plan, task_reader=self._task, runner=self.git,
+                              git_safety_checker=self._safe_git,
+                              now=lambda: clock["value"])
+        self.assertEqual(history_calls["count"], 2)
+        self.assertFalse((self.state / "validation-consumptions" / ("9" * 32 + ".json")).exists())
+        self.assertFalse((self.state / "release-staging.lock").exists())
+        self.assertEqual(self.git.heads, runtime_before)
+        self.assertTrue((self.state / "supervisor.stop").exists())
+
+    def test_receipt_swap_after_final_history_is_rejected_before_consumption(self):
+        plan = self._plan()
+        original_history = __import__(
+            "modules.charlie.runtime_staging", fromlist=["_validate_receipt_history"]
+        )._validate_receipt_history
+        history_calls = {"count": 0}
+        original = json.loads(self.receipt.read_text(encoding="utf-8"))
+        replacement = sign_validation_receipt(
+            {"source_commit": original["source_commit"], "suites": original["suites"],
+             "isolation": original["isolation"]},
+            self.receipt_key, validation_id="a" * 32,
+        )
+
+        def swapping_history(*args):
+            original_history(*args)
+            history_calls["count"] += 1
+            if history_calls["count"] == 2:
+                self.receipt.write_text(json.dumps(replacement), encoding="utf-8")
+
+        runtime_before = dict(self.git.heads)
+        with mock.patch(
+                "modules.charlie.runtime_staging._validate_receipt_history",
+                side_effect=swapping_history):
+            with self.assertRaisesRegex(RuntimeStagingError, "sealed_receipt_changed"):
+                stage_runtime(plan, task_reader=self._task, runner=self.git,
+                              git_safety_checker=self._safe_git)
+        self.assertEqual(history_calls["count"], 2)
+        self.assertFalse((self.state / "validation-consumptions" / ("4" * 32 + ".json")).exists())
+        self.assertFalse((self.state / "validation-consumptions" / ("a" * 32 + ".json")).exists())
+        self.assertFalse((self.state / "release-staging.lock").exists())
+        self.assertEqual(self.git.heads, runtime_before)
+        self.assertTrue((self.state / "supervisor.stop").exists())
 
     def test_plan_rejects_ambiguous_or_running_task(self):
         with self.assertRaisesRegex(RuntimeStagingError, "scheduled_task_ownership_ambiguous"):
