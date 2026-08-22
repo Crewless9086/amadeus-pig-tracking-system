@@ -30,22 +30,19 @@ fields for farm, Green, printer, queue, registry version, canonical origin,
 pinned private endpoint, IPPS URI, CA fingerprint and credential reference.
 Values must come from governed provider/registry evidence; never invent them.
 
-## Observation-only Supervisor resolved-image proof
+## Supervisor resolved-image proof deferred to technical preflight
 
-With the app stopped, an authorised observer may open Home Assistant **Settings
-> Apps > Amadeus Green Print Bridge > Info/System** and record only non-secret
-metadata privately:
+Charl already supplied the available facts: version 0.3.1, Stopped, Start on
+boot/Watchdog/Auto update OFF, never auto-started and aarch64. The Supervisor
+digest and additional containment metadata were `NOT EXPOSED` and remain Unknown.
+Do not ask Charl to repeat the page or recover technical metadata.
 
-1. displayed version 0.3.1;
-2. state Stopped;
-3. Start on boot, Watchdog and Auto update OFF;
-4. architecture aarch64/linux-arm64;
-5. Supervisor-resolved image reference and immutable digest, if exposed;
-6. Protection/AppArmor, published ports, host networking and mappings.
-
-The digest must equal the valid digest above. `NOT EXPOSED` is Unknown, not a
-pass. Do not use Terminal/SSH, inspect secrets, start the app or toggle anything.
-A mismatch or automatic start is a stop condition.
+In a later separately authorised technical read-only zero-job window, the
+maintainer must obtain the Supervisor-resolved digest and containment metadata
+through the governed technical interface while the app remains stopped and no
+configuration changes. The digest must equal the valid digest above. Mismatch,
+unexpected start, privilege/port/mapping deviation or unavailable governed proof
+is a stop condition.
 
 ## Private canonical route and TLS preflight
 
@@ -99,10 +96,10 @@ Do not delete `/data`, alter firmware, weaken TLS or improvise another queue.
 
 ## Smallest owner actions and completion truth
 
-Owner action now: one observation-only readback of the six Supervisor fields,
-with private values withheld and unavailable fields `NOT EXPOSED`; change nothing.
-After technical preparation: one exact zero-job commissioning approval. Later:
-one separate physical acceptance approval and genuine natural request.
+Owner action now: `NONE`. Control Tower and the technical maintainer own all safe
+preparation without repeat owner observations. After technical preparation, one
+exact zero-job commissioning approval may be required. Physical acceptance remains
+a later separate protected decision and genuine natural request.
 
 Target owner outcome: one genuine natural request produces exactly one correct
 physical weekly weighing sheet with canonical/CUPS/physical agreement, safe
