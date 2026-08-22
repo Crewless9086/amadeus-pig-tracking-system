@@ -22,6 +22,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCK_KEY = 8_260_820_000_1
 HEX_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,40 @@ HISTORICAL_CREATED_RELATIONS = {
     ),
 }
 
+# Only this reviewed historical prefix may be admitted by the separate one-time
+# baseline ceremony.  Later semantic migrations must always execute normally.
+BASELINE_ELIGIBLE_IDS = tuple(item.migration_id for item in ALLOWLIST[:3])
+
+# The drift gate deliberately inventories complete catalog state for the bounded
+# objects governed by this closed rail.  Adding a migration means adding only its
+# object identities here; columns, constraints, indexes, defaults, functions,
+# triggers, RLS and ACLs are discovered generically rather than hand-coded.
+CATALOG_RELATIONS = (
+    "app_private.migration_log",
+    "app_private.oom_protected_action_claims",
+    "app_private.beacon_protected_publication_consumers",
+    "app_private.production_migration_receipts",
+    "app_private.production_migration_receipt_identity_anchors",
+    "app_private.production_migration_baselines",
+    "app_private.production_migration_catalog_checkpoints",
+    "public.sales_transactions",
+    "public.pig_welfare_cases",
+    "public.pig_welfare_case_events",
+    "public.pig_welfare_case_fact_links",
+    "public.pig_welfare_case_current",
+    "public.litter_supersessions",
+)
+CATALOG_FUNCTIONS = (
+    "app_private.guard_charitable_sales_evidence",
+    "app_private.guard_production_migration_receipts",
+    "public.pig_welfare_case_validate_insert",
+    "public.pig_welfare_case_event_validate_insert",
+    "public.pig_welfare_case_fact_link_validate_insert",
+    "public.pig_welfare_case_validate_death_closure",
+    "public.pig_welfare_case_block_mutation",
+    "public.validate_litter_supersession",
+)
+
 
 BOOTSTRAP_SQL = """
 create schema if not exists app_private;
@@ -135,6 +170,32 @@ create table if not exists app_private.production_migration_receipt_identity_anc
     identity_sha256 text not null check (identity_sha256 ~ '^[0-9a-f]{64}$'),
     anchored_at timestamptz not null default clock_timestamp()
 );
+create table if not exists app_private.production_migration_baselines (
+    baseline_id uuid primary key,
+    migration_ids_json jsonb not null check (jsonb_typeof(migration_ids_json) = 'array'),
+    migration_checksums_json jsonb not null check (jsonb_typeof(migration_checksums_json) = 'object'),
+    source_catalog_sha256 text not null check (source_catalog_sha256 ~ '^[0-9a-f]{64}$'),
+    source_catalog_json jsonb not null check (jsonb_typeof(source_catalog_json) = 'object'),
+    source_commit text not null check (source_commit ~ '^[0-9a-f]{40}$'),
+    render_service_id text not null,
+    render_instance_id text not null,
+    authorized_at timestamptz not null default clock_timestamp()
+);
+create unique index if not exists uq_production_migration_baseline_prefix
+    on app_private.production_migration_baselines(migration_ids_json);
+create table if not exists app_private.production_migration_catalog_checkpoints (
+    checkpoint_id uuid primary key,
+    allowlist_json jsonb not null check (jsonb_typeof(allowlist_json) = 'array'),
+    allowlist_sha256 text not null check (allowlist_sha256 ~ '^[0-9a-f]{64}$'),
+    catalog_sha256 text not null check (catalog_sha256 ~ '^[0-9a-f]{64}$'),
+    catalog_json jsonb not null check (jsonb_typeof(catalog_json) = 'object'),
+    source_commit text not null check (source_commit ~ '^[0-9a-f]{40}$'),
+    render_service_id text not null,
+    render_instance_id text not null,
+    created_at timestamptz not null default clock_timestamp()
+);
+create unique index if not exists uq_production_migration_catalog_allowlist
+    on app_private.production_migration_catalog_checkpoints(allowlist_sha256);
 create or replace function app_private.guard_production_migration_receipts()
 returns trigger language plpgsql as $$
 begin
@@ -150,6 +211,16 @@ drop trigger if exists trg_guard_production_migration_receipt_identity_anchors
     on app_private.production_migration_receipt_identity_anchors;
 create trigger trg_guard_production_migration_receipt_identity_anchors
 before update or delete on app_private.production_migration_receipt_identity_anchors
+for each row execute function app_private.guard_production_migration_receipts();
+drop trigger if exists trg_guard_production_migration_baselines
+    on app_private.production_migration_baselines;
+create trigger trg_guard_production_migration_baselines
+before update or delete on app_private.production_migration_baselines
+for each row execute function app_private.guard_production_migration_receipts();
+drop trigger if exists trg_guard_production_migration_catalog_checkpoints
+    on app_private.production_migration_catalog_checkpoints;
+create trigger trg_guard_production_migration_catalog_checkpoints
+before update or delete on app_private.production_migration_catalog_checkpoints
 for each row execute function app_private.guard_production_migration_receipts();
 """
 
@@ -181,6 +252,220 @@ def _load_sql(item: AllowedMigration) -> str:
     if hashlib.sha256(sql.encode("utf-8")).hexdigest() != item.sha256:
         raise RuntimeError(f"allowlisted_migration_checksum_mismatch:{item.migration_id}")
     return sql
+
+
+def _allowlist_payload(items=ALLOWLIST) -> list[dict[str, str]]:
+    return [
+        {
+            "migration_id": item.migration_id,
+            "filename": item.filename,
+            "sha256": item.sha256,
+        }
+        for item in items
+    ]
+
+
+def _json_sha256(value) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _verify_private_schema(connection, *, required: bool) -> dict | None:
+    row = connection.execute(
+        """select pg_catalog.pg_get_userbyid(n.nspowner),current_user,n.oid
+             from pg_catalog.pg_namespace n where n.nspname='app_private'"""
+    ).fetchone()
+    if not row:
+        if required:
+            raise RuntimeError("migration_private_schema_missing")
+        return None
+    if row[0] != row[1]:
+        raise RuntimeError("migration_private_schema_owner_mismatch")
+    acl = connection.execute(
+        """select coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable
+             from pg_catalog.pg_namespace n
+             cross join lateral pg_catalog.aclexplode(
+               coalesce(n.nspacl,pg_catalog.acldefault('n',n.nspowner))
+             ) x
+             left join pg_catalog.pg_roles r on r.oid=x.grantee
+            where n.nspname='app_private' and x.grantee<>n.nspowner
+            order by 1,2,3"""
+    ).fetchall()
+    if acl:
+        raise RuntimeError(f"migration_private_schema_acl_mismatch:{acl}")
+    return {"owner": row[0], "unauthorized_privilege_count": 0}
+
+
+def _catalog_manifest(connection) -> dict:
+    """Return deterministic catalog state for this rail's bounded object set."""
+
+    relations = list(CATALOG_RELATIONS)
+    functions = list(CATALOG_FUNCTIONS)
+
+    def rows(sql: str, params=()):
+        return [list(row) for row in connection.execute(sql, params).fetchall()]
+
+    manifest = {
+        "version": "render_migration_catalog_manifest_v1",
+        "scope": {
+            "relations": relations,
+            "functions": functions,
+            "schemas": ["app_private"],
+        },
+        "schemas": rows(
+            """select n.nspname,pg_catalog.pg_get_userbyid(n.nspowner)
+                 from pg_catalog.pg_namespace n
+                where n.nspname='app_private' order by 1"""
+        ),
+        "schema_acl": rows(
+            """select n.nspname,coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable
+                 from pg_catalog.pg_namespace n
+                 cross join lateral pg_catalog.aclexplode(
+                   coalesce(n.nspacl,pg_catalog.acldefault('n',n.nspowner))
+                 ) x
+                 left join pg_catalog.pg_roles r on r.oid=x.grantee
+                where n.nspname='app_private' order by 1,2,3,4"""
+        ),
+        "relations": rows(
+            """select n.nspname,c.relname,c.relkind,
+                      pg_catalog.pg_get_userbyid(c.relowner),c.relpersistence,
+                      c.relrowsecurity,c.relforcerowsecurity,c.relreplident
+                 from pg_catalog.pg_class c
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                where (n.nspname||'.'||c.relname)=any(%s)
+                order by 1,2""",
+            (relations,),
+        ),
+        "relation_acl": rows(
+            """select n.nspname,c.relname,coalesce(r.rolname,'PUBLIC'),
+                      x.privilege_type,x.is_grantable
+                 from pg_catalog.pg_class c
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                 cross join lateral pg_catalog.aclexplode(
+                   coalesce(c.relacl,pg_catalog.acldefault('r',c.relowner))
+                 ) x
+                 left join pg_catalog.pg_roles r on r.oid=x.grantee
+                where (n.nspname||'.'||c.relname)=any(%s)
+                order by 1,2,3,4,5""",
+            (relations,),
+        ),
+        "columns": rows(
+            """select n.nspname,c.relname,a.attnum,a.attname,
+                      pg_catalog.format_type(a.atttypid,a.atttypmod),a.attnotnull,
+                      a.attidentity,a.attgenerated,
+                      coalesce(pg_catalog.pg_get_expr(d.adbin,d.adrelid),'')
+                 from pg_catalog.pg_class c
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                 join pg_catalog.pg_attribute a on a.attrelid=c.oid
+                    and a.attnum>0 and not a.attisdropped
+                 left join pg_catalog.pg_attrdef d
+                    on d.adrelid=c.oid and d.adnum=a.attnum
+                where (n.nspname||'.'||c.relname)=any(%s)
+                order by 1,2,3""",
+            (relations,),
+        ),
+        "column_acl": rows(
+            """select n.nspname,c.relname,a.attname,
+                      coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable
+                 from pg_catalog.pg_class c
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                 join pg_catalog.pg_attribute a on a.attrelid=c.oid
+                    and a.attnum>0 and not a.attisdropped
+                 cross join lateral pg_catalog.aclexplode(a.attacl) x
+                 left join pg_catalog.pg_roles r on r.oid=x.grantee
+                where (n.nspname||'.'||c.relname)=any(%s)
+                order by 1,2,3,4,5,6""",
+            (relations,),
+        ),
+        "constraints": rows(
+            """select n.nspname,c.relname,k.conname,k.contype,k.condeferrable,
+                      k.condeferred,k.convalidated,
+                      pg_catalog.pg_get_constraintdef(k.oid,false)
+                 from pg_catalog.pg_constraint k
+                 join pg_catalog.pg_class c on c.oid=k.conrelid
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                where (n.nspname||'.'||c.relname)=any(%s)
+                order by 1,2,3""",
+            (relations,),
+        ),
+        "indexes": rows(
+            """select n.nspname,c.relname,i.relname,x.indisunique,x.indisprimary,
+                      x.indisvalid,x.indisready,
+                      pg_catalog.pg_get_indexdef(i.oid)
+                 from pg_catalog.pg_index x
+                 join pg_catalog.pg_class c on c.oid=x.indrelid
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                 join pg_catalog.pg_class i on i.oid=x.indexrelid
+                where (n.nspname||'.'||c.relname)=any(%s)
+                order by 1,2,3""",
+            (relations,),
+        ),
+        "triggers": rows(
+            """select n.nspname,c.relname,t.tgname,t.tgenabled,t.tgtype,
+                      pg_catalog.pg_get_triggerdef(t.oid,false),
+                      fn.nspname||'.'||p.proname,
+                      pg_catalog.pg_get_function_identity_arguments(p.oid),
+                      pg_catalog.pg_get_userbyid(p.proowner)
+                 from pg_catalog.pg_trigger t
+                 join pg_catalog.pg_class c on c.oid=t.tgrelid
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                 join pg_catalog.pg_proc p on p.oid=t.tgfoid
+                 join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
+                where (n.nspname||'.'||c.relname)=any(%s) and not t.tgisinternal
+                order by 1,2,3""",
+            (relations,),
+        ),
+        "functions": rows(
+            """select n.nspname,p.proname,
+                      pg_catalog.pg_get_function_identity_arguments(p.oid),
+                      pg_catalog.pg_get_userbyid(p.proowner),l.lanname,
+                      pg_catalog.format_type(p.prorettype,null),p.prosecdef,
+                      p.proleakproof,p.provolatile,p.proparallel,
+                      coalesce(array_to_string(p.proconfig,E'\\n'),''),
+                      pg_catalog.pg_get_functiondef(p.oid)
+                 from pg_catalog.pg_proc p
+                 join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+                 join pg_catalog.pg_language l on l.oid=p.prolang
+                where (n.nspname||'.'||p.proname)=any(%s)
+                order by 1,2,3""",
+            (functions,),
+        ),
+        "function_acl": rows(
+            """select n.nspname,p.proname,
+                      pg_catalog.pg_get_function_identity_arguments(p.oid),
+                      coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable
+                 from pg_catalog.pg_proc p
+                 join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+                 cross join lateral pg_catalog.aclexplode(
+                   coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))
+                 ) x
+                 left join pg_catalog.pg_roles r on r.oid=x.grantee
+                where (n.nspname||'.'||p.proname)=any(%s)
+                order by 1,2,3,4,5,6""",
+            (functions,),
+        ),
+        "policies": rows(
+            """select schemaname,tablename,policyname,permissive,
+                      coalesce(array_to_string(roles,','),''),cmd,
+                      coalesce(qual,''),coalesce(with_check,'')
+                 from pg_catalog.pg_policies
+                where (schemaname||'.'||tablename)=any(%s)
+                order by 1,2,3""",
+            (relations,),
+        ),
+    }
+    return manifest
+
+
+def _catalog_snapshot(connection) -> tuple[dict, str]:
+    manifest = _catalog_manifest(connection)
+    return manifest, _json_sha256(manifest)
 
 
 def _parse_text_membership_check(definition: str, column: str) -> tuple[str, ...]:
@@ -326,7 +611,9 @@ def _verify_litter_validator_trigger(connection) -> dict:
     rows = connection.execute(
         """select t.tgenabled,t.tgtype,fn.nspname,p.proname,
                   pg_catalog.pg_get_function_identity_arguments(p.oid),
-                  pg_catalog.pg_get_triggerdef(t.oid,false),p.proowner,c.relowner
+                  pg_catalog.pg_get_triggerdef(t.oid,false),
+                  pg_catalog.pg_get_userbyid(p.proowner),
+                  pg_catalog.pg_get_userbyid(c.relowner),current_user
              from pg_catalog.pg_trigger t
              join pg_catalog.pg_class c on c.oid=t.tgrelid
              join pg_catalog.pg_namespace tn on tn.oid=c.relnamespace
@@ -339,14 +626,15 @@ def _verify_litter_validator_trigger(connection) -> dict:
     if len(rows) != 1:
         raise RuntimeError("migration_readback_litter_validator_trigger_missing_or_ambiguous")
     (enabled, trigger_type, function_schema, function_name, function_args,
-     definition, function_owner, table_owner) = rows[0]
+     definition, function_owner, table_owner, current_role) = rows[0]
     if (
         enabled != "O"
         or trigger_type != 7  # ROW | BEFORE | INSERT
         or function_schema != "public"
         or function_name != "validate_litter_supersession"
         or function_args != ""
-        or function_owner != table_owner
+        or function_owner != current_role
+        or table_owner != current_role
     ):
         raise RuntimeError("migration_readback_litter_validator_trigger_mismatch")
     normalized = re.sub(r"\s+", " ", str(definition)).strip()
@@ -439,6 +727,7 @@ def _verify_protected_claim_acl(connection) -> dict:
 
 
 def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
+    _verify_private_schema(connection, required=True)
     catalog = connection.execute(
         """select c.relname,pg_catalog.pg_get_userbyid(c.relowner),current_user,
                   array_agg(a.attname||':'||pg_catalog.format_type(a.atttypid,a.atttypmod)
@@ -446,7 +735,8 @@ def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
              from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
              join pg_catalog.pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped
             where n.nspname='app_private' and c.relname in
-             ('production_migration_receipts','production_migration_receipt_identity_anchors')
+             ('production_migration_receipts','production_migration_receipt_identity_anchors',
+              'production_migration_baselines','production_migration_catalog_checkpoints')
             group by c.relname,c.relowner"""
     ).fetchall()
     expected_columns = {
@@ -457,11 +747,75 @@ def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
             "error_class:text:false","applied_at:timestamp with time zone:true"],
         "production_migration_receipt_identity_anchors": [
             "receipt_id:uuid:true","identity_sha256:text:true","anchored_at:timestamp with time zone:true"],
+        "production_migration_baselines": [
+            "baseline_id:uuid:true","migration_ids_json:jsonb:true",
+            "migration_checksums_json:jsonb:true","source_catalog_sha256:text:true",
+            "source_catalog_json:jsonb:true","source_commit:text:true",
+            "render_service_id:text:true","render_instance_id:text:true",
+            "authorized_at:timestamp with time zone:true"],
+        "production_migration_catalog_checkpoints": [
+            "checkpoint_id:uuid:true","allowlist_json:jsonb:true",
+            "allowlist_sha256:text:true","catalog_sha256:text:true",
+            "catalog_json:jsonb:true","source_commit:text:true",
+            "render_service_id:text:true","render_instance_id:text:true",
+            "created_at:timestamp with time zone:true"],
     }
     found = {row[0]: row for row in catalog}
     required = set(expected_columns) if require_anchor else {"production_migration_receipts"}
     if set(found) != required or any(found[n][1] != found[n][2] or found[n][3] != expected_columns[n] for n in required):
         raise RuntimeError("migration_receipt_catalog_shape_or_owner_mismatch")
+    if require_anchor:
+        index_rows = connection.execute(
+            """select i.relname,x.indisunique,x.indisprimary,
+                      pg_catalog.pg_get_indexdef(i.oid)
+                 from pg_catalog.pg_index x
+                 join pg_catalog.pg_class t on t.oid=x.indrelid
+                 join pg_catalog.pg_namespace n on n.oid=t.relnamespace
+                 join pg_catalog.pg_class i on i.oid=x.indexrelid
+                where n.nspname='app_private' and t.relname in
+                 ('production_migration_receipts',
+                  'production_migration_receipt_identity_anchors',
+                  'production_migration_baselines',
+                  'production_migration_catalog_checkpoints')"""
+        ).fetchall()
+        indexes = {row[0]: row for row in index_rows}
+        required_indexes = {
+            "production_migration_receipts_pkey": (True, True, "(receipt_id)"),
+            "uq_production_migration_applied": (
+                True,
+                False,
+                "(migration_id) WHERE (outcome = 'applied'::text)",
+            ),
+            "production_migration_receipt_identity_anchors_pkey": (
+                True,
+                True,
+                "(receipt_id)",
+            ),
+            "production_migration_baselines_pkey": (True, True, "(baseline_id)"),
+            "uq_production_migration_baseline_prefix": (
+                True,
+                False,
+                "(migration_ids_json)",
+            ),
+            "production_migration_catalog_checkpoints_pkey": (
+                True,
+                True,
+                "(checkpoint_id)",
+            ),
+            "uq_production_migration_catalog_allowlist": (
+                True,
+                False,
+                "(allowlist_sha256)",
+            ),
+        }
+        if set(indexes) != set(required_indexes):
+            raise RuntimeError(
+                f"migration_receipt_catalog_index_inventory_mismatch:{sorted(indexes)}"
+            )
+        for name, (unique, primary, definition_suffix) in required_indexes.items():
+            row = indexes[name]
+            if row[1] is not unique or row[2] is not primary or definition_suffix not in row[3]:
+                raise RuntimeError(f"migration_receipt_catalog_index_mismatch:{name}")
     if require_anchor:
         fk = connection.execute(
             """select count(*) from pg_catalog.pg_constraint c
@@ -478,7 +832,8 @@ def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
              cross join lateral pg_catalog.aclexplode(coalesce(c.relacl,pg_catalog.acldefault('r',c.relowner))) x
              left join pg_catalog.pg_roles r on r.oid=x.grantee
             where n.nspname='app_private' and c.relname in
-             ('production_migration_receipts','production_migration_receipt_identity_anchors')
+             ('production_migration_receipts','production_migration_receipt_identity_anchors',
+              'production_migration_baselines','production_migration_catalog_checkpoints')
               and x.grantee<>c.relowner
             union all
            select c.relname,coalesce(r.rolname,'PUBLIC'),'COLUMN:'||a.attname||':'||x.privilege_type
@@ -487,7 +842,8 @@ def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
              cross join lateral pg_catalog.aclexplode(a.attacl) x
              left join pg_catalog.pg_roles r on r.oid=x.grantee
             where n.nspname='app_private' and c.relname in
-             ('production_migration_receipts','production_migration_receipt_identity_anchors')
+             ('production_migration_receipts','production_migration_receipt_identity_anchors',
+              'production_migration_baselines','production_migration_catalog_checkpoints')
               and x.grantee<>c.relowner"""
     ).fetchall()
     if acl_drift:
@@ -507,7 +863,11 @@ def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
               and ((c.relname='production_migration_receipts'
                     and t.tgname='trg_guard_production_migration_receipts')
                 or (c.relname='production_migration_receipt_identity_anchors'
-                    and t.tgname='trg_guard_production_migration_receipt_identity_anchors'))
+                    and t.tgname='trg_guard_production_migration_receipt_identity_anchors')
+                or (c.relname='production_migration_baselines'
+                    and t.tgname='trg_guard_production_migration_baselines')
+                or (c.relname='production_migration_catalog_checkpoints'
+                    and t.tgname='trg_guard_production_migration_catalog_checkpoints'))
               and not t.tgisinternal"""
     ).fetchall()
     expected_triggers = {
@@ -517,12 +877,19 @@ def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
         expected_triggers["production_migration_receipt_identity_anchors"] = (
             "trg_guard_production_migration_receipt_identity_anchors"
         )
+        expected_triggers["production_migration_baselines"] = (
+            "trg_guard_production_migration_baselines"
+        )
+        expected_triggers["production_migration_catalog_checkpoints"] = (
+            "trg_guard_production_migration_catalog_checkpoints"
+        )
     inventory = connection.execute(
         """select c.relname,t.tgname from pg_catalog.pg_trigger t
              join pg_catalog.pg_class c on c.oid=t.tgrelid
              join pg_catalog.pg_namespace n on n.oid=c.relnamespace
             where n.nspname='app_private' and c.relname in
-             ('production_migration_receipts','production_migration_receipt_identity_anchors')
+             ('production_migration_receipts','production_migration_receipt_identity_anchors',
+              'production_migration_baselines','production_migration_catalog_checkpoints')
               and not t.tgisinternal order by 1,2"""
     ).fetchall()
     expected_inventory = sorted(expected_triggers.items())
@@ -658,6 +1025,218 @@ def _verify_receipt_row(
         "identity_sha256": identity_sha256,
         "identity_anchored_now": anchored_now,
         "identity_anchor_missing": anchor is None and not create_anchor,
+    }
+
+
+def _requested_baseline(connection, environ: dict[str, str]) -> dict | None:
+    raw_ids = environ.get("RENDER_MIGRATION_BASELINE_IDS", "").strip()
+    raw_digest = environ.get("RENDER_MIGRATION_BASELINE_CATALOG_SHA256", "").strip().lower()
+    raw_id = environ.get("RENDER_MIGRATION_BASELINE_AUTHORIZATION_ID", "").strip()
+    supplied = (bool(raw_ids), bool(raw_digest), bool(raw_id))
+    if not any(supplied):
+        return None
+    if not all(supplied):
+        raise RuntimeError("migration_baseline_authorization_incomplete")
+    ids = tuple(value.strip() for value in raw_ids.split(",") if value.strip())
+    if not ids or ids != BASELINE_ELIGIBLE_IDS[: len(ids)]:
+        raise RuntimeError(f"migration_baseline_prefix_not_eligible:{ids}")
+    if not HEX_SHA256.fullmatch(raw_digest):
+        raise RuntimeError("migration_baseline_catalog_sha256_invalid")
+    try:
+        baseline_id = str(uuid.UUID(raw_id))
+    except ValueError as exc:
+        raise RuntimeError("migration_baseline_authorization_id_invalid") from exc
+    manifest, digest = _catalog_snapshot(connection)
+    if digest != raw_digest:
+        raise RuntimeError(
+            f"migration_baseline_catalog_mismatch:expected={raw_digest}:actual={digest}"
+        )
+    checksums = {
+        item.migration_id: item.sha256 for item in ALLOWLIST if item.migration_id in ids
+    }
+    return {
+        "baseline_id": baseline_id,
+        "migration_ids": list(ids),
+        "migration_checksums": checksums,
+        "source_catalog_sha256": digest,
+        "source_catalog": manifest,
+    }
+
+
+def _insert_baseline(
+    connection,
+    baseline: dict,
+    *,
+    commit: str,
+    service_id: str,
+    instance_id: str,
+) -> None:
+    connection.execute(
+        """insert into app_private.production_migration_baselines
+           (baseline_id,migration_ids_json,migration_checksums_json,
+            source_catalog_sha256,source_catalog_json,source_commit,
+            render_service_id,render_instance_id)
+           values(%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (
+            baseline["baseline_id"],
+            json.dumps(baseline["migration_ids"], separators=(",", ":")),
+            json.dumps(baseline["migration_checksums"], sort_keys=True, separators=(",", ":")),
+            baseline["source_catalog_sha256"],
+            json.dumps(baseline["source_catalog"], sort_keys=True, separators=(",", ":")),
+            commit,
+            service_id,
+            instance_id,
+        ),
+    )
+    row = connection.execute(
+        """select baseline_id::text,migration_ids_json,migration_checksums_json,
+                  source_catalog_sha256,source_catalog_json
+             from app_private.production_migration_baselines
+            where baseline_id=%s""",
+        (baseline["baseline_id"],),
+    ).fetchone()
+    expected = (
+        baseline["baseline_id"],
+        baseline["migration_ids"],
+        baseline["migration_checksums"],
+        baseline["source_catalog_sha256"],
+        baseline["source_catalog"],
+    )
+    if row != expected:
+        raise RuntimeError("migration_baseline_insert_readback_mismatch")
+
+
+def _load_baseline(connection) -> dict | None:
+    rows = connection.execute(
+        """select baseline_id::text,migration_ids_json,migration_checksums_json,
+                  source_catalog_sha256,source_catalog_json,source_commit,
+                  render_service_id,render_instance_id
+             from app_private.production_migration_baselines"""
+    ).fetchall()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise RuntimeError("migration_baseline_missing_or_ambiguous")
+    row = rows[0]
+    ids = tuple(row[1])
+    if not ids or ids != BASELINE_ELIGIBLE_IDS[: len(ids)]:
+        raise RuntimeError(f"migration_baseline_stored_prefix_invalid:{ids}")
+    expected_checksums = {
+        item.migration_id: item.sha256 for item in ALLOWLIST if item.migration_id in ids
+    }
+    if row[2] != expected_checksums:
+        raise RuntimeError("migration_baseline_stored_checksum_mismatch")
+    if row[3] != _json_sha256(row[4]):
+        raise RuntimeError("migration_baseline_stored_catalog_digest_mismatch")
+    if (
+        not HEX_COMMIT.fullmatch(str(row[5] or ""))
+        or not str(row[6] or "").startswith(("srv-", "crn-"))
+        or not str(row[7] or "").strip()
+    ):
+        raise RuntimeError("migration_baseline_stored_identity_mismatch")
+    return {
+        "baseline_id": row[0],
+        "migration_ids": ids,
+        "migration_checksums": row[2],
+        "source_catalog_sha256": row[3],
+    }
+
+
+def _verify_catalog_checkpoint(connection) -> dict:
+    rows = connection.execute(
+        """select checkpoint_id::text,allowlist_json,allowlist_sha256,
+                  catalog_sha256,catalog_json,source_commit,
+                  render_service_id,render_instance_id
+             from app_private.production_migration_catalog_checkpoints
+            order by jsonb_array_length(allowlist_json) desc,created_at desc"""
+    ).fetchall()
+    if not rows:
+        raise RuntimeError("migration_catalog_checkpoint_required")
+    current_payload = _allowlist_payload()
+    validated = []
+    for row in rows:
+        payload = row[1]
+        if (
+            not isinstance(payload, list)
+            or not payload
+            or payload != current_payload[: len(payload)]
+            or row[2] != _json_sha256(payload)
+            or row[3] != _json_sha256(row[4])
+            or not HEX_COMMIT.fullmatch(str(row[5] or ""))
+            or not str(row[6] or "").startswith(("srv-", "crn-"))
+            or not str(row[7] or "").strip()
+        ):
+            raise RuntimeError("migration_catalog_checkpoint_identity_mismatch")
+        validated.append(row)
+    latest = validated[0]
+    manifest, digest = _catalog_snapshot(connection)
+    if digest != latest[3] or manifest != latest[4]:
+        raise RuntimeError(
+            f"migration_catalog_drift:checkpoint={latest[3]}:current={digest}"
+        )
+    return {
+        "checkpoint_id": latest[0],
+        "allowlist": latest[1],
+        "allowlist_sha256": latest[2],
+        "catalog_sha256": latest[3],
+    }
+
+
+def _ensure_catalog_checkpoint(
+    connection,
+    *,
+    commit: str,
+    service_id: str,
+    instance_id: str,
+) -> dict:
+    payload = _allowlist_payload()
+    allowlist_sha256 = _json_sha256(payload)
+    manifest, catalog_sha256 = _catalog_snapshot(connection)
+    existing = connection.execute(
+        """select checkpoint_id::text,catalog_sha256,catalog_json
+             from app_private.production_migration_catalog_checkpoints
+            where allowlist_sha256=%s""",
+        (allowlist_sha256,),
+    ).fetchall()
+    if existing:
+        if len(existing) != 1 or existing[0][1] != catalog_sha256 or existing[0][2] != manifest:
+            raise RuntimeError("migration_catalog_checkpoint_conflict")
+        return {
+            "checkpoint_id": existing[0][0],
+            "allowlist_sha256": allowlist_sha256,
+            "catalog_sha256": catalog_sha256,
+            "created_now": False,
+        }
+    checkpoint_id = str(uuid.uuid4())
+    connection.execute(
+        """insert into app_private.production_migration_catalog_checkpoints
+           (checkpoint_id,allowlist_json,allowlist_sha256,catalog_sha256,
+            catalog_json,source_commit,render_service_id,render_instance_id)
+           values(%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (
+            checkpoint_id,
+            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            allowlist_sha256,
+            catalog_sha256,
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+            commit,
+            service_id,
+            instance_id,
+        ),
+    )
+    stored = connection.execute(
+        """select allowlist_json,allowlist_sha256,catalog_sha256,catalog_json
+             from app_private.production_migration_catalog_checkpoints
+            where checkpoint_id=%s""",
+        (checkpoint_id,),
+    ).fetchone()
+    if stored != (payload, allowlist_sha256, catalog_sha256, manifest):
+        raise RuntimeError("migration_catalog_checkpoint_insert_readback_mismatch")
+    return {
+        "checkpoint_id": checkpoint_id,
+        "allowlist_sha256": allowlist_sha256,
+        "catalog_sha256": catalog_sha256,
+        "created_now": True,
     }
 
 
@@ -815,123 +1394,180 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
     commit, service_id, instance_id = _metadata(runtime_env)
     sql_by_id = [(item, _load_sql(item)) for item in ALLOWLIST]
     report = {"source_commit": commit, "service_id": service_id, "migrations": []}
+    active_item: AllowedMigration | None = None
+    applying_new_item = False
 
-    with psycopg.connect(database_url, connect_timeout=10) as connection:
+    # Session advisory locking is deliberately outside the one mutation
+    # transaction. Every bootstrap, migration, receipt, anchor, baseline and
+    # checkpoint mutation commits together or rolls back together.
+    with psycopg.connect(database_url, connect_timeout=10, autocommit=True) as connection:
         connection.execute("select pg_advisory_lock(%s)", (LOCK_KEY,))
         try:
-            receipt_table_exists = connection.execute(
-                "select to_regclass('app_private.production_migration_receipts') is not null"
-            ).fetchone()[0]
-            if receipt_table_exists:
-                anchor_table_exists = connection.execute(
-                    "select to_regclass('app_private.production_migration_receipt_identity_anchors') "
-                    "is not null"
-                ).fetchone()[0]
-                _verify_receipt_guard(connection, require_anchor=anchor_table_exists)
-            connection.execute(BOOTSTRAP_SQL)
-            receipt_guard = _verify_receipt_guard(connection)
-            for ordinal, (item, sql) in enumerate(sql_by_id, 1):
-                prior_exists = connection.execute(
-                    """select exists(select 1
-                         from app_private.production_migration_receipts
-                        where migration_id=%s and outcome='applied')""",
-                    (item.migration_id,),
-                ).fetchone()[0]
-                if prior_exists:
-                    prior = _verify_receipt_row(
-                        connection,
-                        item,
-                        ordinal,
-                        service_id=service_id,
-                        outcome="applied",
-                        create_anchor=False,
-                    )
-                    _verify_migration_precondition(
-                        connection, item, already_applied=True
-                    )
-                    readback = _verify_migration_readback(connection, item)
-                    if prior.get("identity_anchor_missing"):
-                        raise RuntimeError(
-                            f"legacy_migration_receipt_identity_unverifiable:"
-                            f"{item.migration_id}"
-                        )
-                    connection.commit()
-                    report["migrations"].append({
-                        "migration_id": item.migration_id, "sha256": item.sha256,
-                        "outcome": "already_applied", "receipt_id": prior["receipt_id"],
-                        "applied_source_commit": prior["source_commit"],
-                        "applied_at": prior["applied_at"].isoformat(),
-                        "receipt_identity": {**prior, "applied_at": prior["applied_at"].isoformat()},
-                        "receipt_guard": receipt_guard,
-                        "readback": readback,
-                    })
-                    continue
-
-                receipt_id = str(uuid.uuid4())
-                try:
-                    _verify_migration_precondition(
-                        connection, item, already_applied=False
-                    )
-                    connection.execute(sql)
-                    readback = _verify_migration_readback(connection, item)
-                    connection.execute(
-                        """insert into app_private.production_migration_receipts
-                           (receipt_id,migration_id,migration_filename,migration_sha256,
-                            ordinal,outcome,source_commit,render_service_id,render_instance_id)
-                           values(%s,%s,%s,%s,%s,'applied',%s,%s,%s)""",
-                        (receipt_id, item.migration_id, item.filename, item.sha256,
-                         ordinal, commit, service_id, instance_id),
-                    )
-                    receipt = _verify_receipt_row(
-                        connection,
-                        item,
-                        ordinal,
-                        service_id=service_id,
-                        outcome="applied",
-                        receipt_id=receipt_id,
-                    )
-                    connection.commit()
-                except Exception as exc:
-                    connection.rollback()
-                    if not connection.execute(
+            try:
+                with connection.transaction():
+                    receipt_table_exists = connection.execute(
                         "select pg_catalog.to_regclass('app_private.production_migration_receipts') is not null"
-                    ).fetchone()[0]:
-                        raise RuntimeError(
-                            f"migration_failed_and_rolled_back:{item.migration_id}:receipt=none"
-                        ) from exc
-                    failure_id = str(uuid.uuid4())
-                    connection.execute(
-                        """insert into app_private.production_migration_receipts
-                           (receipt_id,migration_id,migration_filename,migration_sha256,
-                            ordinal,outcome,source_commit,render_service_id,render_instance_id,error_class)
-                           values(%s,%s,%s,%s,%s,'failed',%s,%s,%s,%s)""",
-                        (failure_id, item.migration_id, item.filename, item.sha256,
-                         ordinal, commit, service_id, instance_id, type(exc).__name__),
-                    )
-                    _verify_receipt_row(
+                    ).fetchone()[0]
+                    if receipt_table_exists:
+                        if any(
+                            runtime_env.get(name, "").strip()
+                            for name in (
+                                "RENDER_MIGRATION_BASELINE_IDS",
+                                "RENDER_MIGRATION_BASELINE_CATALOG_SHA256",
+                                "RENDER_MIGRATION_BASELINE_AUTHORIZATION_ID",
+                            )
+                        ):
+                            raise RuntimeError("migration_baseline_already_initialized")
+                        receipt_guard = _verify_receipt_guard(connection)
+                        report["prior_catalog_checkpoint"] = _verify_catalog_checkpoint(
+                            connection
+                        )
+                    else:
+                        _verify_private_schema(connection, required=False)
+                        requested_baseline = _requested_baseline(connection, runtime_env)
+                        connection.execute(BOOTSTRAP_SQL)
+                        receipt_guard = _verify_receipt_guard(connection)
+                        if requested_baseline:
+                            _insert_baseline(
+                                connection,
+                                requested_baseline,
+                                commit=commit,
+                                service_id=service_id,
+                                instance_id=instance_id,
+                            )
+
+                    baseline = _load_baseline(connection)
+                    baseline_ids = set(baseline["migration_ids"] if baseline else ())
+                    for ordinal, (item, sql) in enumerate(sql_by_id, 1):
+                        active_item = item
+                        applying_new_item = False
+                        if item.migration_id in baseline_ids:
+                            applied_exists = connection.execute(
+                                """select exists(select 1
+                                     from app_private.production_migration_receipts
+                                    where migration_id=%s and outcome='applied')""",
+                                (item.migration_id,),
+                            ).fetchone()[0]
+                            if applied_exists:
+                                raise RuntimeError(
+                                    f"migration_baseline_receipt_overlap:{item.migration_id}"
+                                )
+                            report["migrations"].append(
+                                {
+                                    "migration_id": item.migration_id,
+                                    "sha256": item.sha256,
+                                    "outcome": "baseline_verified",
+                                    "baseline_id": baseline["baseline_id"],
+                                    "baseline_catalog_sha256": baseline[
+                                        "source_catalog_sha256"
+                                    ],
+                                    "receipt_guard": receipt_guard,
+                                }
+                            )
+                            continue
+
+                        prior_exists = connection.execute(
+                            """select exists(select 1
+                                 from app_private.production_migration_receipts
+                                where migration_id=%s and outcome='applied')""",
+                            (item.migration_id,),
+                        ).fetchone()[0]
+                        if prior_exists:
+                            prior = _verify_receipt_row(
+                                connection,
+                                item,
+                                ordinal,
+                                service_id=service_id,
+                                outcome="applied",
+                                create_anchor=False,
+                            )
+                            _verify_migration_precondition(
+                                connection, item, already_applied=True
+                            )
+                            readback = _verify_migration_readback(connection, item)
+                            if prior.get("identity_anchor_missing"):
+                                raise RuntimeError(
+                                    f"legacy_migration_receipt_identity_unverifiable:"
+                                    f"{item.migration_id}"
+                                )
+                            report["migrations"].append(
+                                {
+                                    "migration_id": item.migration_id,
+                                    "sha256": item.sha256,
+                                    "outcome": "already_applied",
+                                    "receipt_id": prior["receipt_id"],
+                                    "applied_source_commit": prior["source_commit"],
+                                    "applied_at": prior["applied_at"].isoformat(),
+                                    "receipt_identity": {
+                                        **prior,
+                                        "applied_at": prior["applied_at"].isoformat(),
+                                    },
+                                    "receipt_guard": receipt_guard,
+                                    "readback": readback,
+                                }
+                            )
+                            continue
+
+                        applying_new_item = True
+                        _verify_migration_precondition(
+                            connection, item, already_applied=False
+                        )
+                        connection.execute(sql)
+                        readback = _verify_migration_readback(connection, item)
+                        receipt_id = str(uuid.uuid4())
+                        connection.execute(
+                            """insert into app_private.production_migration_receipts
+                               (receipt_id,migration_id,migration_filename,migration_sha256,
+                                ordinal,outcome,source_commit,render_service_id,render_instance_id)
+                               values(%s,%s,%s,%s,%s,'applied',%s,%s,%s)""",
+                            (
+                                receipt_id,
+                                item.migration_id,
+                                item.filename,
+                                item.sha256,
+                                ordinal,
+                                commit,
+                                service_id,
+                                instance_id,
+                            ),
+                        )
+                        receipt = _verify_receipt_row(
+                            connection,
+                            item,
+                            ordinal,
+                            service_id=service_id,
+                            outcome="applied",
+                            receipt_id=receipt_id,
+                        )
+                        report["migrations"].append(
+                            {
+                                "migration_id": item.migration_id,
+                                "sha256": item.sha256,
+                                "outcome": "applied",
+                                "receipt_id": receipt_id,
+                                "receipt_identity": {
+                                    **receipt,
+                                    "applied_at": receipt["applied_at"].isoformat(),
+                                },
+                                "receipt_guard": receipt_guard,
+                                "readback": readback,
+                            }
+                        )
+
+                    report["catalog_checkpoint"] = _ensure_catalog_checkpoint(
                         connection,
-                        item,
-                        ordinal,
+                        commit=commit,
                         service_id=service_id,
-                        outcome="failed",
-                        receipt_id=failure_id,
+                        instance_id=instance_id,
                     )
-                    connection.commit()
+            except Exception as exc:
+                if active_item is not None and applying_new_item:
                     raise RuntimeError(
-                        f"migration_failed_and_rolled_back:{item.migration_id}:receipt={failure_id}"
+                        f"migration_failed_and_rolled_back:{active_item.migration_id}:receipt=none"
                     ) from exc
-                report["migrations"].append({
-                    "migration_id": item.migration_id, "sha256": item.sha256,
-                    "outcome": "applied", "receipt_id": receipt_id,
-                    "receipt_identity": {**receipt, "applied_at": receipt["applied_at"].isoformat()},
-                    "receipt_guard": receipt_guard,
-                    "readback": readback,
-                })
+                raise
         finally:
-            if connection.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
-                connection.rollback()
             connection.execute("select pg_advisory_unlock(%s)", (LOCK_KEY,))
-            connection.commit()
     return report
 
 
