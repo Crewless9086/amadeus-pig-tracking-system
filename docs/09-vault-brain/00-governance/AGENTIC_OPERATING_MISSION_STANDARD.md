@@ -411,6 +411,16 @@ The Required Final Handoff still applies, but when the correct classification is
 
 A prompt written by the Control Tower is not automatically delivered to a visible specialist terminal. A durable release, queue row, notification artifact, or `automatic resumption` record is likewise not proof that a worker received, acknowledged, or started the mission.
 
+For owner-relayed visible terminals, however, an owner-facing `SEND NOW` banner
+plus the complete prompt is an instruction to Charl to deliver it immediately.
+From that response onward, Control Tower must conservatively treat the prompt as
+`delivered_assumed_active` until either Charl explicitly says it was not sent,
+or fresh feedback from that exact terminal proves completion, release, rejection
+or a different state. It must not display another prompt for that terminal in
+the meantime. A missing process-name match, invisible terminal process or
+negative local process scan cannot downgrade this state to idle. If delivery is
+not intended, no sendable prompt text may be displayed.
+
 The Control Tower must keep these states separate:
 
 1. `prompt_prepared` - text exists but has not been delivered;
@@ -548,6 +558,7 @@ Do not change governance merely to appear busy. One isolated wording preference 
 
 | Improvement | Status | Why it matters | Verification |
 |---|---|---|---|
+| Treat every displayed `SEND NOW` prompt as owner-relayed and `delivered_assumed_active` until explicit contrary evidence; never infer terminal idleness from a negative process scan | Adopted | Prevents duplicate dispatch, interruption of active work and repeated transfer of coordination back to Charl | After every displayed prompt, later reconciliation says `DO NOT SEND` until Charl says it was not sent or exact terminal feedback proves release |
 | Perform Control Tower-owned governance and dispatch work directly; never invent a Control Tower terminal or ask Charl to relay work back to the Control Tower | Adopted | Prevents circular delegation, fictional terminal ownership and repeated avoidable owner coordination | Every future handoff names a real verified specialist terminal, says SEND NOTHING, or records that Control Tower performed its own bounded governance work |
 | Maintain one forward mission pipeline from every specialist's complete documented scope and promote the next eligible mission without waiting for Charl | Adopted | Keeps terminals building toward genuinely useful complete agents while preserving deployed-agent ownership and reducing manual dispatch work | Every handover names the next mission, later outcomes and promotion trigger; later terminal releases produce an automatic non-colliding dispatch or evidenced no-safe-work result |
 | Check the active mission and last instruction before generating a continuation prompt; use CONTINUE, ADDENDUM, NEW MISSION, PARALLEL MISSION, or WAIT | Adopted | Prevents duplicated prompts, restarts, and confusion while terminals are already working | Verify on subsequent feedback that already-running work receives “send nothing” rather than a repeated prompt |
