@@ -1,6 +1,6 @@
 # Amadeus Green Print Bridge
 
-Version 0.3.2 uses the Home Assistant supported prebuilt image reference
+Version 0.3.3 uses the Home Assistant supported prebuilt image reference
 `ghcr.io/crewless9086/amadeus-green-print-bridge`. Its tag may be published only
 once through the guarded manual workflow. GHCR does not provide a registry-level
 immutability guarantee for this private tag: the workflow refuses reuse, verifies
@@ -17,7 +17,7 @@ This private app hosts a local CUPS daemon and the bounded Documents adapter on 
 
 ## Security and configuration
 
-Publish no inbound ports or tunnels. Choose exactly one canonical transport profile. `private_pinned` preserves the private-network design: install the private CA at fixed `/config/private-ca.crt` and commission `canonical_endpoint_ip` from the complete private DNS answer set; HTTPS connects only to that address while TLS verifies the configured hostname. `public_pki_exact_origin` accepts only `https://amadeus-pig-tracking-system.onrender.com`, uses the system public trust store with hostname verification, follows no redirects, and forbids an endpoint pin, alternate port, path, credentials, query, or fragment. Canonical claim, command, transition, and PDF paths remain source-fixed; every request retains bearer, farm, and Green identity bindings.
+Publish no inbound ports or tunnels. Choose exactly one canonical transport profile. `private_pinned` preserves the private-network design: install the private CA at fixed `/config/private-ca.crt` and commission a non-empty `canonical_endpoint_ip` from the complete private DNS answer set; HTTPS connects only to that address while TLS verifies the configured hostname. For `public_pki_exact_origin`, leave `canonical_endpoint_ip` blank. Home Assistant saves that explicit blank and the worker normalizes it to no runtime pin. This public profile accepts only `https://amadeus-pig-tracking-system.onrender.com`, uses the system public trust store with hostname verification, follows no redirects, and forbids a non-empty endpoint pin, alternate port, path, credentials, query, or fragment. Canonical claim, command, transition, and PDF paths remain source-fixed; every request retains bearer, farm, and Green identity bindings.
 
 The printer transport is always `private_ipps`; plain IPP and disabled TLS are unsupported. The protected private CA is installed as CUPS' site CA, while `AllowAnyRoot`, expired certificates, and trust-on-first-use are disabled and certificate-name validation plus encryption are required. Set `printer_endpoint_ip` to the commissioned private address. An IP-literal `printer_uri` requires that same address and a certificate with the IP SAN. A hostname `printer_uri` requires a certificate with that hostname SAN and complete DNS resolution to exactly one private address equal to `printer_endpoint_ip`; public, empty, ambiguous, or drifted answers hold before CUPS starts. The validated hostname is then bound to the commissioned address inside the isolated app container, so later DNS drift cannot retarget CUPS while the hostname remains the TLS identity. Enter values only in the Home Assistant app options UI.
 
@@ -29,7 +29,7 @@ Supervisor starts the app automatically and restarts it after failure. `/data/gr
 
 On restart, persisted attempts renew a live lease or recover an expired nonterminal lease before CUPS observation or intake, preserving attempt and provider identity. Corrupt/partial local state fails closed. Missing provider identity becomes canonically ambiguous. Free-space thresholds run before claim/download. Protected fresh Continue retains the job and moves canonically to the sole retry state. Cancel requests cancellation only for the exact known queue job, performs bounded exact readback, and closes only on confirmed absence; pending, completed, unavailable or contradictory evidence becomes canonical ambiguous/Hold and remains in recovery. Local recovery is deleted only after durable canonical closure acknowledgement. Provider completion is not physical completion. Health separates liveness from business Hold.
 
-The root entrypoint only prepares owned directories, validates/writes the commissioned queue file and launches processes. CUPS runs as `cupsd`; the Documents worker runs as `greenprint`. The long-lived worker cannot administer queues or write CUPS configuration.
+The inherited Home Assistant S6 `/init` remains PID 1 and is explicitly allowed by the custom AppArmor profile. Its bounded command invokes shell-only Green entry scripts, which prepare owned directories, validate/write the commissioned queue file and launch processes through Alpine's packaged `/sbin/su-exec`. CUPS runs as `cupsd`; the Documents worker runs as `greenprint`. The long-lived worker cannot administer queues or write CUPS configuration.
 
 The partial 0.3.0 publication is permanently quarantined. Index digest
 `sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3`
@@ -40,7 +40,7 @@ It must never be installed, attested further, overwritten, deleted, or reused.
 
 ## Install and commissioning
 
-1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.2 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
+1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.3 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
 2. Add the private repository in the Home Assistant app store and install or update only when Supervisor resolves the exact approved digest. Do not start until the canonical endpoint, least-privilege token, registry identities, printer URI and private CA are commissioned.
 3. Validate options and start the app. Confirm health is `event_waiting`, the local queue exists, logs contain no option values, and no job is eligible.
 4. Follow `docs/06-operations/GREEN_PRINT_BRIDGE_PHYSICAL_COMMISSIONING_GUIDE.md`. The development terminal must never manufacture the genuine request or operate the printer.

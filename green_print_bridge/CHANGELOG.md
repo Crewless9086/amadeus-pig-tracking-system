@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.3
+
+- Repairs Home Assistant startup under the custom AppArmor profile by allowing
+  the pinned base image's inherited S6 entrypoint and bounded runtime paths.
+- Uses Alpine's actual `/sbin/su-exec` location and shell-only entry scripts,
+  removing the invalid `/usr/bin/su-exec` and unnecessary Bashio interpreter
+  assumptions.
+- Makes the public-PKI canonical endpoint pin blank by default and normalizes
+  that blank to no runtime pin, while `private_pinned` still requires and
+  verifies an exact private address.
+
 ## 0.3.2
 
 - Adds an explicit `public_pki_exact_origin` canonical transport for the exact approved Render HTTPS origin. It uses the system public trust store and hostname verification, follows no redirects, accepts no endpoint IP pin, and cannot change origin, port, or base path.

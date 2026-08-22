@@ -296,6 +296,9 @@ def load_config(path="/data/options.json"):
         if not endpoint.is_private or value["canonical_endpoint_ip"] not in private_addresses(origin.hostname): raise Hold("canonical_pin_not_in_resolution_set")
     elif profile==PUBLIC_PKI_EXACT_ORIGIN:
         if value["canonical_api_origin"]!=APPROVED_PUBLIC_CANONICAL_ORIGIN or value.get("canonical_endpoint_ip") not in (None,""): raise Hold("public_canonical_origin_not_approved")
+        # Home Assistant renders a blank string for this profile. Normalize it
+        # away so the runtime contract contains no endpoint pin at all.
+        value["canonical_endpoint_ip"]=None
     else: raise Hold("canonical_transport_profile_invalid")
     if value["printer_transport_profile"]!="private_ipps" or printer.scheme!="ipps" or printer.username or printer.password or printer.query or printer.fragment: raise Hold("private_ipps_profile_required")
     try: printer_pin=ipaddress.ip_address(value["printer_endpoint_ip"])
