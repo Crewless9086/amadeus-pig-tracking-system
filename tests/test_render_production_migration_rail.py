@@ -1055,6 +1055,88 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(after_counts, before_counts)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_cross_boundary_fk_delete_and_update_triggers_reject_without_mutation(self):
+        import psycopg
+        from psycopg import sql
+
+        for event_name, trigger_type in (("delete", 9), ("update", 17)):
+            with self.subTest(event=event_name):
+                _reset_disposable_database()
+                run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    original_catalog = _catalog_snapshot(db)
+                    trigger = db.execute(
+                        """select n.nspname,c.relname,t.tgname,k.conname
+                             from pg_catalog.pg_trigger t
+                             join pg_catalog.pg_class c on c.oid=t.tgrelid
+                             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                             join pg_catalog.pg_constraint k on k.oid=t.tgconstraint
+                             join pg_catalog.pg_class src on src.oid=k.conrelid
+                             join pg_catalog.pg_namespace sn on sn.oid=src.relnamespace
+                             join pg_catalog.pg_class tgt on tgt.oid=k.confrelid
+                             join pg_catalog.pg_namespace tn on tn.oid=tgt.relnamespace
+                            where t.tgisinternal and k.contype='f' and t.tgtype=%s
+                              and ((sn.nspname||'.'||src.relname)=any(%s)
+                                or (tn.nspname||'.'||tgt.relname)=any(%s))
+                              and not ((n.nspname||'.'||c.relname)=any(%s))
+                            order by 1,2,3 limit 1""",
+                        (
+                            trigger_type,
+                            list(CATALOG_RELATIONS),
+                            list(CATALOG_RELATIONS),
+                            list(CATALOG_RELATIONS),
+                        ),
+                    ).fetchone()
+                    self.assertIsNotNone(trigger)
+                    db.execute(
+                        sql.SQL("alter table {}.{} disable trigger {}").format(
+                            sql.Identifier(trigger[0]),
+                            sql.Identifier(trigger[1]),
+                            sql.Identifier(trigger[2]),
+                        )
+                    )
+                    db.commit()
+                    attacked_catalog = _catalog_snapshot(db)
+                    self.assertNotEqual(attacked_catalog, original_catalog)
+                    before_oids = db.execute(
+                        """select t.tgname,t.oid from pg_catalog.pg_trigger t
+                             join pg_catalog.pg_class c on c.oid=t.tgrelid
+                             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                            where n.nspname='app_private'
+                              and t.tgname like 'trg_guard_production_migration_%'
+                            order by 1"""
+                    ).fetchall()
+                    before_counts = db.execute(
+                        """select
+                           (select count(*) from app_private.production_migration_receipts),
+                           (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                           (select count(*) from app_private.production_migration_baselines),
+                           (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+                    ).fetchone()
+                with self.assertRaisesRegex(RuntimeError, "migration_catalog_drift"):
+                    run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    after_catalog = _catalog_snapshot(db)
+                    after_oids = db.execute(
+                        """select t.tgname,t.oid from pg_catalog.pg_trigger t
+                             join pg_catalog.pg_class c on c.oid=t.tgrelid
+                             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                            where n.nspname='app_private'
+                              and t.tgname like 'trg_guard_production_migration_%'
+                            order by 1"""
+                    ).fetchall()
+                    after_counts = db.execute(
+                        """select
+                           (select count(*) from app_private.production_migration_receipts),
+                           (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                           (select count(*) from app_private.production_migration_baselines),
+                           (select count(*) from app_private.production_migration_catalog_checkpoints)"""
+                    ).fetchone()
+                self.assertEqual(after_catalog, attacked_catalog)
+                self.assertEqual(after_oids, before_oids)
+                self.assertEqual(after_counts, before_counts)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_explicit_one_time_historical_baseline_is_digest_bound_and_immutable(self):
         import psycopg
 
