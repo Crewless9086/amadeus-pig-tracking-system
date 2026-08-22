@@ -312,7 +312,7 @@ def _catalog_manifest(connection) -> dict:
         return [list(row) for row in connection.execute(sql, params).fetchall()]
 
     manifest = {
-        "version": "render_migration_catalog_manifest_v3",
+        "version": "render_migration_catalog_manifest_v4",
         "scope": {
             "relations": relations,
             "functions": functions,
@@ -396,6 +396,24 @@ def _catalog_manifest(connection) -> dict:
                 order by 1,2,3""",
             (relations,),
         ),
+        "foreign_keys": rows(
+            """select kn.nspname,k.conname,
+                      sn.nspname,src.relname,tn.nspname,tgt.relname,
+                      k.condeferrable,k.condeferred,k.convalidated,
+                      k.confmatchtype,k.confupdtype,k.confdeltype,
+                      pg_catalog.pg_get_constraintdef(k.oid,false)
+                 from pg_catalog.pg_constraint k
+                 join pg_catalog.pg_class src on src.oid=k.conrelid
+                 join pg_catalog.pg_namespace sn on sn.oid=src.relnamespace
+                 join pg_catalog.pg_class tgt on tgt.oid=k.confrelid
+                 join pg_catalog.pg_namespace tn on tn.oid=tgt.relnamespace
+                 join pg_catalog.pg_namespace kn on kn.oid=k.connamespace
+                where k.contype='f'
+                  and ((sn.nspname||'.'||src.relname)=any(%s)
+                    or (tn.nspname||'.'||tgt.relname)=any(%s))
+                order by 1,2,3,4,5,6""",
+            (relations, relations),
+        ),
         "indexes": rows(
             """select n.nspname,c.relname,i.relname,x.indisunique,x.indisprimary,
                       x.indisvalid,x.indisready,
@@ -420,6 +438,32 @@ def _catalog_manifest(connection) -> dict:
                  join pg_catalog.pg_proc p on p.oid=t.tgfoid
                  join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
                 where (n.nspname||'.'||c.relname)=any(%s) and not t.tgisinternal
+                order by 1,2,3""",
+            (relations,),
+        ),
+        "internal_triggers": rows(
+            """select n.nspname,c.relname,t.tgname,t.tgenabled,t.tgtype,
+                      pg_catalog.pg_get_triggerdef(t.oid,false),
+                      coalesce(kn.nspname,''),coalesce(k.conname,''),
+                      coalesce(k.contype,' '),coalesce(k.condeferrable,false),
+                      coalesce(k.condeferred,false),coalesce(k.convalidated,false),
+                      coalesce(sn.nspname,''),coalesce(src.relname,''),
+                      coalesce(tn.nspname,''),coalesce(tgt.relname,''),
+                      fn.nspname,p.proname,
+                      pg_catalog.pg_get_function_identity_arguments(p.oid),
+                      pg_catalog.pg_get_userbyid(p.proowner)
+                 from pg_catalog.pg_trigger t
+                 join pg_catalog.pg_class c on c.oid=t.tgrelid
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                 join pg_catalog.pg_proc p on p.oid=t.tgfoid
+                 join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
+                 left join pg_catalog.pg_constraint k on k.oid=t.tgconstraint
+                 left join pg_catalog.pg_namespace kn on kn.oid=k.connamespace
+                 left join pg_catalog.pg_class src on src.oid=k.conrelid
+                 left join pg_catalog.pg_namespace sn on sn.oid=src.relnamespace
+                 left join pg_catalog.pg_class tgt on tgt.oid=k.confrelid
+                 left join pg_catalog.pg_namespace tn on tn.oid=tgt.relnamespace
+                where (n.nspname||'.'||c.relname)=any(%s) and t.tgisinternal
                 order by 1,2,3""",
             (relations,),
         ),
