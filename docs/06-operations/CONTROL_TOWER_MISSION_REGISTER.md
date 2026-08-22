@@ -1562,6 +1562,27 @@ of exactly one least-privilege credential and the matching canonical identities,
 then installation and zero-job commissioning against the already published
 immutable digest.
 
+The next owner-approved identity-registration/install window completed further
+read-only preflight and then stopped before any write. Home Assistant identifies
+the intended device as the HP OfficeJet Pro 8120 series. Direct private-LAN TLS
+readback proved its self-signed certificate is current through 2030 and carries
+the printer hostname as its sole SAN; local DNS resolves that hostname uniquely
+to the same private address reported by Home Assistant. The 0.3.2 IPPS hostname-
+pin contract is therefore coherent. However, its required trust anchor is not
+present at the fixed Home Assistant path `/config/private-ca.crt`, and no existing
+protected file-management channel is available: the installed-app inventory has
+no file-management/terminal app and the established Home Assistant SSH ports are
+closed. Installing another management app was outside the authorized boundary,
+and weakening or bypassing TLS is prohibited. Control Tower therefore created no
+credential or registry row, performed no Render/Supabase/Home Assistant write,
+did not install 0.3.2, did not save options and did not start Green. Lifecycle is
+`IMMUTABLE_PACKAGE_PUBLISHED / PRINTER_IDENTITY_VERIFIED /
+TRUST_ANCHOR_PLACEMENT_BLOCKED / COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**.
+The next bounded prerequisite is a protected method to place only the verified
+printer certificate at the fixed trust path, after which the already-approved
+identity, installation and zero-job commissioning sequence can be reauthorized
+and completed.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
