@@ -1688,6 +1688,66 @@ Tower dispatched a source-only 0.3.3 startup/AppArmor and public-profile schema
 repair on the existing Green lineage. Publication, update and the next zero-job
 start remain later serialized stages; Green must not be started again on 0.3.2.
 
+Subsequent Control Tower work retained that containment and advanced three
+existing lanes without misclassifying technical state as owner completion.
+SAM PR #1163 was repaired after two independent production-wiring failures,
+then passed a different-agent exact-head review at
+`c86c481383aecbae9a532a50e810e6fbf1b5b465`. Control Tower merged it as
+`7806613ab666a92d769db3bb129ef6ae8871e30e`; Render reported that revision live,
+and the later skills-only main revisions also contain it. Customer auto-send
+remains OFF. No genuine five-customer provider cycle or later unattended cycle
+has occurred, so SAM remains `SOURCE_DEPLOYED / OPERATIONAL_ACCEPTANCE_PENDING`;
+**NO BUSINESS OUTCOME**. Obsolete patch-equivalent PR #1148 was closed to prevent
+an independent duplicate merge. The separately owned BEACON nested provider-
+readback defect remains logged without reprioritization.
+
+HERDMASTER database-release PR #1167 repeatedly passed hosted CI while fresh
+disposable-PostgreSQL review found fail-open schema, function, receipt, trigger,
+ownership and privilege drift that the rail did not prove. Exact head
+`465b2e3bad71232d36e2e2016a3aa69aba9aca01` closes earlier families but failed
+another independent review: malformed historical schema could still receive an
+applied receipt; receipt-anchor ownership/ACL/FK/trigger and protected-column/
+role privileges were incomplete; legacy anchoring could certify corrupt
+identity; a rejected run could retain bootstrap-trigger replacement; and
+receipt hashing depended on session time zone. The head remains unmerged and
+no production migration or farm event occurred. The same PR lineage is back in
+bounded implementation with workspace-local artifacts. Lifecycle remains
+`DATABASE_RELEASE_REPAIR / INDEPENDENT_REVIEW_FAIL / IMPLEMENTATION_ACTIVE`;
+**NO BUSINESS OUTCOME**.
+
+Green PR #1169 introduced a real arm64 custom-AppArmor startup gate rather than
+relying on manifest inspection. That gate has progressively proved and repaired
+the original `/init` denial, Alpine `su-exec` path, S6 runtime permissions,
+public-profile blank-pin normalization, CRLF/umask packaging, initializer import,
+least-privilege trust-store rules and workspace-local probe cleanup. It now
+reaches a running healthy container and `event_waiting`, but exact hosted proof
+shows CUPS is not yet running because the attempted fully unprivileged scheduler
+bootstrap cannot perform CUPS' required startup ownership checks. The lane is
+reconciling the minimal root-bootstrap/drop-privilege model without granting
+broad `/etc/cups` mutation. Every publish job has remained skipped; Home
+Assistant still has 0.3.2 stopped with automatic controls OFF, registry inactive,
+and zero canonical jobs/events/physical prints. Lifecycle remains
+`GREEN_0.3.3_SOURCE_REPAIR / REAL_ARM64_GATE_FAIL / COMMISSIONING_PENDING`;
+**NO BUSINESS OUTCOME**.
+
+Owner identified repeated permission popups and missing reusable Codex operating
+procedures as avoidable supervision work. Control Tower implemented and
+independently forward-tested three repository-scoped development-control skills:
+`control-tower-operate`, `amadeus-implement` and
+`amadeus-operational-acceptance`. PR #1170 merged as
+`ce286fb7fc299bb7e044a24030bf0709060e2208`; fresh-session discovery, all three
+official validators and realistic behavior tests passed. PR #1171 then added a
+two-boundary autonomy contract and merged as
+`5a91fd445eced361e715d141790116503eb15803`: canonical durable documents remain
+at governed paths, mission-working evidence routes to ignored
+`control-tower-artifacts/<mission-or-pr>/`, and disposable output routes to
+ignored `.codex-runtime/missions/<mission-or-pr>/`. Multi-child forward-testing
+proved workers received exact paths, wrote nowhere external and retained all
+protected-action boundaries. This is a delivered owner-requested development-
+control outcome that reduces routine approval interruptions; it is not an
+Amadeus runtime capability and does not satisfy the still-open Green,
+HERDMASTER or SAM operational outcomes.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
