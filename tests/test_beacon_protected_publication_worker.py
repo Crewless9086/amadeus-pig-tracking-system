@@ -8,8 +8,14 @@ from modules.beacon.protected_publication_worker import (
     validate_claimed_approval,
 )
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
-from modules.oom_sakkie.beacon_request_runtime import build_live_stock_awareness_proposal
-from modules.sales.beacon_campaign import _readback_facebook_page_post
+from modules.oom_sakkie.beacon_request_runtime import (
+    build_live_stock_awareness_proposal, build_protected_campaign_package,
+    prepare_campaign_owner_card,
+)
+from modules.sales.beacon_campaign import (
+    _facebook_post_execution_id, _readback_facebook_page_post,
+    execute_beacon_facebook_page_post,
+)
 from modules.beacon.public_livestock_content_policy import (
     assess_public_livestock_content, public_livestock_policy_binding,
 )
@@ -69,6 +75,68 @@ class Store:
         item,self.item=self.item,None
         return item
     def finish(self, consumer, status, outcome, now): self.finished.append((status,outcome)); return True
+
+
+def test_untouched_real_builder_owner_card_worker_reaches_final_executor():
+    caption = "A quiet farm-life update from Amadeus Farm."
+    proposal = build_live_stock_awareness_proposal(
+        {"success": True, "cards": []},
+        {"success": True, "owner_review_packet": {
+            "packet_id": "REAL-CHAIN", "draft_copy": caption,
+            "audience": "Farm followers", "public_livestock_policy": {
+                "policy_version": "beacon_public_livestock_awareness_only_v2"}}},
+        {"success": True, "items": []}, target_page_id="PAGE-1")
+    package = build_protected_campaign_package(proposal, now=NOW)
+    created = []
+    prepare_campaign_owner_card(
+        package, owner_user_id="OWNER", private_chat_id="CHAT",
+        provider_message_id="MSG", packet_generation="GEN-1",
+        target_page_id="PAGE-1",
+        claim_creator=lambda **kwargs: (
+            created.append(kwargs) or {"callback_token": "TOKEN-REAL"}),
+    )
+    preview = created[0]["preview_payload"]
+    claim = {
+        "consumer_id": "CONSUMER-REAL", "callback_token": "TOKEN-REAL",
+        "action_kind": "beacon_campaign_review", "claim_status": "completed",
+        "evidence_generation": preview["campaign_digest"],
+        "preview_payload": preview,
+        "approval_result": {"status": "beacon_campaign_review_approved"},
+    }
+    final_payloads, provider_calls = [], []
+
+    def authority(_payload, params, _database_url):
+        identity = {**params, "publication_binding_id": "BINDING-REAL",
+            "owner_decision_event_id": "TOKEN-REAL",
+            "authorization_generation_id": preview["campaign_digest"]}
+        return ({"success": True,
+            "binding": {"binding_id": "BINDING-REAL",
+                "owner_decision_event_id": "TOKEN-REAL"},
+            "authorization": {"authorization_generation_id": preview["campaign_digest"],
+                "expected_attempt_identity": _facebook_post_execution_id(identity)}}, 200)
+
+    def executor(payload, **kwargs):
+        final_payloads.append(payload)
+        return execute_beacon_facebook_page_post(
+            payload, database_url=kwargs.get("database_url"),
+            protected_campaign_authority_reader=authority,
+            execution_recorder=lambda *_args, **_kwargs: (
+                {"success": True, "created_count": 1}, 201),
+            poster=lambda params, _policy: (
+                provider_calls.append(params) or
+                ({"success": False, "status": "synthetic_provider_stop"}, 400)),
+            environ={"BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                "BEACON_FACEBOOK_PAGE_ID": "PAGE-1",
+                "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token"},
+            now_provider=lambda: NOW,
+        )
+
+    run_protected_publication_cycle(store=Store(claim), executor=executor, now=NOW)
+    assert len(final_payloads) == 1
+    assert len(provider_calls) == 1
+    assert final_payloads[0]["exact_text"] == preview["exact_post_copy"] == caption
+    assert final_payloads[0]["public_content_policy"] == preview["public_content_policy"]
+    assert final_payloads[0]["target_page_id"] == preview["target_page_id"] == "PAGE-1"
 
 
 def confirmed_outcome(post_id="42_7"):

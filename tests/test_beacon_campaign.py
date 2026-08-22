@@ -7,10 +7,21 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.specialist_owner_decisions import BEACON_CAPTION_UTF8_HEX
 from modules.oom_sakkie.beacon_request_runtime import build_live_stock_awareness_proposal
+from modules.beacon.public_livestock_content_policy import (
+    assess_public_livestock_content,
+    public_livestock_policy_binding,
+)
 from modules.beacon.publication_execution_identity import (
     ASSET_ID, PROPOSAL_ID, PUBLISH_NOW_AUTHORITY_ID, PUBLISH_NOW_EXECUTION_ID,
     SUCCESSOR_EXECUTION_ID,
 )
+
+
+def awareness_policy(text, page="page", media=None):
+    assessment = assess_public_livestock_content(
+        text, objective="farm_awareness",
+        campaign_lane="live_stock_awareness", media=media)
+    return public_livestock_policy_binding(assessment, target_page_id=page)
 
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
@@ -66,6 +77,7 @@ def test_final_executor_rejects_missing_or_drifted_real_builder_policy_binding()
         lambda payload: payload.pop("public_content_policy"),
         top("policy_version", "stale-version"), top("evaluation_digest", "0"*64),
         authority("target_page_id", "OTHER-PAGE"),
+        authority("surface", "OTHER-SURFACE"),
         authority("entity_id", "OTHER-ENTITY"), authority("jurisdiction", "OTHER"),
         authority("valid_through", "2026-08-21"), authority("source_digest", "0"*64),
         lambda payload: payload["public_content_policy"]["policy_authority"][
@@ -81,6 +93,37 @@ def test_final_executor_rejects_missing_or_drifted_real_builder_policy_binding()
         assert status == 409
         assert result["status"] == "owner_review_required_meta_livestock_commerce_risk"
         assert provider_calls == []
+
+
+def test_legacy_awareness_calls_fail_closed_without_policy_page_or_token():
+    caption = "A quiet farm-life update from Amadeus Farm."
+    valid = {
+        "campaign_lane": "live_stock_awareness", "objective": "farm_awareness",
+        "publish_packet_id": "LEGACY-AWARENESS", "channel": "facebook_organic",
+        "exact_text": caption, "target_page_id": "PAGE-1",
+        "public_content_policy": awareness_policy(caption, page="PAGE-1"),
+        "owner_confirmation": "POST EXACT BEACON PACKET",
+    }
+    cases = (
+        {key: value for key, value in valid.items() if key != "public_content_policy"},
+        {key: value for key, value in valid.items() if key != "target_page_id"},
+        {**valid, "target_page_id": ""},
+        {**valid, "target_page_id": "OTHER-PAGE"},
+    )
+    for payload in cases:
+        provider_calls, recorder_calls = [], []
+        result, status = execute_beacon_facebook_page_post(
+            payload, poster=lambda *_: provider_calls.append(True),
+            execution_recorder=lambda *_args, **_kwargs: recorder_calls.append(True),
+            environ={
+                "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                "BEACON_FACEBOOK_PAGE_ID": "PAGE-1",
+                "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            })
+        assert status == 409
+        assert result["status"] == "owner_review_required_meta_livestock_commerce_risk"
+        assert provider_calls == []
+        assert recorder_calls == []
 
 
 class BeaconLiveStockSalesCampaignTests(unittest.TestCase):
@@ -740,6 +783,9 @@ class BeaconCampaignTests(unittest.TestCase):
             "asset_ids": ["PHOTO-1", "VIDEO-1"],
             "selected_assets": assets,
             "owner_confirmation": "POST EXACT BEACON PACKET",
+            "target_page_id": "page",
+            "public_content_policy": awareness_policy(
+                "A day with the piglets on the farm.", media=assets),
         }, poster=lambda *_: called.append(True), environ={
             "BEACON_FACEBOOK_POSTING_ENABLED": "1",
             "BEACON_FACEBOOK_PAGE_ID": "page",
@@ -1040,10 +1086,12 @@ class BeaconCampaignTests(unittest.TestCase):
             self.assertFalse(result["boosts_post"])
             self.assertFalse(result["spends_money"])
 
+    @patch("modules.sales.beacon_campaign.public_livestock_policy_binding_matches",
+           return_value=True)
     @patch("modules.sales.beacon_campaign.require_organic_publication_binding")
     @patch("modules.sales.beacon_campaign.assess_public_livestock_content")
     def test_final_policy_failure_prevents_attempt_claim_and_meta(
-        self, assess, binding
+        self, assess, binding, _policy_matches
     ):
         assess.side_effect = (
             {"allowed": True, "status": "allowed"},
@@ -1083,6 +1131,8 @@ class BeaconCampaignTests(unittest.TestCase):
             "channel": "Facebook Page",
             "exact_text": "A careful morning with the piglets.",
             "owner_confirmation": "POST EXACT BEACON PACKET",
+            "target_page_id": "page",
+            "public_content_policy": {"present": True},
         }, poster=lambda *_: calls.append("meta"),
            execution_recorder=lambda *_args, **_kwargs: calls.append("claim"),
            environ={
@@ -1140,6 +1190,10 @@ class BeaconCampaignTests(unittest.TestCase):
                     "returned_mime": "image/jpeg",
                 }, 200),
                 stage_recorder=lambda _stage: True,
+                public_policy_guard=lambda: (
+                    order.append(("policy", "live_stock_awareness", "farm_awareness"))
+                    or True
+                ),
                 photo_uploader=lambda *_args: (
                     order.append(("meta",)) or
                     ({"success": True, "id": "MEDIA-1"}, 200)
@@ -1155,7 +1209,9 @@ class BeaconCampaignTests(unittest.TestCase):
             order,
             [
                 ("policy", "live_stock_awareness", "farm_awareness"),
+                ("policy", "live_stock_awareness", "farm_awareness"),
                 ("meta",),
+                ("policy", "live_stock_awareness", "farm_awareness"),
             ],
         )
 
@@ -1267,6 +1323,10 @@ class BeaconCampaignTests(unittest.TestCase):
             "exact_text": "Follow the farm journey for responsible piglet care.",
             "selected_assets": assets,
             "owner_confirmation": "POST EXACT BEACON PACKET",
+            "target_page_id": "page",
+            "public_content_policy": awareness_policy(
+                "Follow the farm journey for responsible piglet care.",
+                media=assets),
         }, media_projector=lambda identities, _database_url: ({
             "success": True, "assets": [
                 {**item, "projection_authority": "server_database_private_binary_v1"}
@@ -1318,6 +1378,9 @@ class BeaconCampaignTests(unittest.TestCase):
             "channel": "Facebook",
             "exact_text": "Follow the farm journey for responsible piglet care.",
             "owner_confirmation": "POST EXACT BEACON PACKET",
+            "target_page_id": "page",
+            "public_content_policy": awareness_policy(
+                "Follow the farm journey for responsible piglet care."),
         }, poster=lambda *_: calls.append("meta"),
            execution_recorder=lambda *_args, **_kwargs: calls.append("claim"),
            environ={

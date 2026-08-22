@@ -19,6 +19,11 @@ EXTERNAL_POLICY_AUTHORITY = {
     "entity_id": "AMADEUS-FARM-ZA",
     "entity_eligibility": "awareness_only_no_commerce_exception_relied_upon",
     "decision": "amadeus_stricter_awareness_only_fail_closed",
+    # External policy prose is intentionally not copied into this repository as
+    # competing doctrine.  Until a governed byte-for-byte snapshot receipt is
+    # available, correspondence between these declared digests and the cited
+    # external content remains explicitly unaccepted rather than inferred.
+    "source_content_correspondence": "unaccepted_no_tracked_external_snapshot",
     "sources": [
         {"source_id": "meta-marketplace-animals", "version": "reviewed-2026-08-22",
          "url": "https://www.facebook.com/help/130910837313345",
