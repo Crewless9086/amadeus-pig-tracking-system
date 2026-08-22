@@ -79,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--work-root",
         type=Path,
-        default=Path(".codex-runtime/missions/PR-1169"),
+        default=Path(".codex-runtime/missions/GREEN-0.3.4"),
     )
     args = parser.parse_args()
     suffix = uuid.uuid4().hex[:10]
@@ -101,7 +101,7 @@ def main() -> int:
         run(
             "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
             "-days", "1", "-subj", "/CN=green-startup-probe",
-            "-addext", "subjectAltName=DNS:canonical.test,DNS:printer.test",
+            "-addext", "subjectAltName=DNS:canonical.test,DNS:AmadeusKantoor",
             "-addext", "basicConstraints=critical,CA:TRUE",
             "-keyout", str(key), "-out", str(cert),
         )
@@ -124,7 +124,7 @@ def main() -> int:
             "cups_queue_id": "weekly-a4",
             "registry_version": "registry-startup-probe-v1",
             "printer_transport_profile": "private_ipps",
-            "printer_uri": f"ipps://printer.test:{printer.server_port}/ipp/print",
+            "printer_uri": f"ipps://AmadeusKantoor:{printer.server_port}/ipp/print",
             "printer_endpoint_ip": gateway,
             "poll_seconds": 5,
         }
@@ -148,7 +148,6 @@ def main() -> int:
                 "docker", "run", "-d", "--name", container,
                 "--platform", "linux/arm64", "--network", network,
                 "--add-host", f"canonical.test:{gateway}",
-                "--add-host", f"printer.test:{gateway}",
                 "--security-opt", "apparmor=amadeus-green-print-bridge",
                 "--mount", f"type=bind,src={config_dir},dst=/config,readonly",
                 "--mount", f"type=bind,src={data_dir},dst=/data",
@@ -195,6 +194,11 @@ def main() -> int:
                     f"queue was not empty: rc={queue.returncode} stdout={queue.stdout!r} stderr={queue.stderr!r}\n"
                     + failure_diagnostics(container)
                 )
+            binding = run("docker", "exec", container, "/bin/cat", "/etc/hosts", check=False)
+            bound_rows = [line.split() for line in binding.stdout.splitlines()]
+            matching = [row for row in bound_rows if len(row) >= 2 and "amadeuskantoor" in {value.casefold() for value in row[1:]}]
+            if binding.returncode != 0 or matching != [[gateway, "amadeuskantoor"]]:
+                raise RuntimeError("fixed printer binding missing or mismatched\n" + failure_diagnostics(container))
             cups_contract = run(
                 "docker", "exec", container, "/bin/sh", "-c",
                 "grep -Fx 'User cupsd' /etc/cups/cups-files.conf"
@@ -284,6 +288,8 @@ def main() -> int:
                 "local_transport": "unix_socket",
                 "printcap": "/run/cups/printcap",
                 "queue_jobs": 0,
+                "printer_dns_preseeded": False,
+                "printer_fixed_binding_verified": True,
                 "tcp_631_listener": False,
                 "tls_key_files": 0,
             }, sort_keys=True))
