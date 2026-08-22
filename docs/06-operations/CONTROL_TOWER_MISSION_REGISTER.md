@@ -1657,6 +1657,37 @@ coverage, tests, independent review and later serialized production readback.
 The mission remains `DEPLOYED_CODE / DATABASE_AUTHORITY_BLOCKED /
 GENUINE_EVENT_PROHIBITED`; **NO BUSINESS OUTCOME**.
 
+The Chrome password-manager obstruction required a manual local paste attempt.
+Home Assistant rejected that attempt because the popup had also discarded every
+non-secret field. Its validation error echoed the attempted credential, so
+Control Tower immediately rotated and invalidated it in Render and cleared the
+local clipboard. A second credential appeared in Home Assistant's YAML validation
+error while diagnosing the public-profile endpoint contract; Control Tower also
+rotated and invalidated that value before proceeding. Neither exposed credential
+can authenticate now. The third credential was transmitted only through the
+authenticated local YAML options editor, saved with the complete matching
+identity set, and read back without disclosure. The temporary transfer file was
+then deleted and transient controller memory cleared; the current credential
+remains only in the protected Render and Home Assistant stores.
+
+The saved configuration exposed a source contract defect: Home Assistant's 0.3.2
+schema treats `canonical_endpoint_ip` as required even though
+`public_pki_exact_origin` correctly forbids an endpoint pin. An explicit empty
+string satisfies both current layers and was saved; source still needs to make
+that profile-specific contract unambiguous and regression-tested. Immediately
+before start, canonical readback proved one matching inactive registry row and
+zero print jobs/events. The bounded zero-job start then failed before worker or
+CUPS activity with exact log `/bin/sh: can't open '/init': Permission denied`.
+Home Assistant returned the app to stopped state with Start available, Stop
+absent and all three automatic controls OFF. Post-failure canonical readback
+again proved zero jobs and events; because failure precedes queue initialization,
+no CUPS job or physical print effect occurred. The registry remains inactive and
+uncommissioned. Lifecycle is `GREEN_0.3.2_CONFIGURED / STARTUP_PACKAGING_BLOCKED /
+ZERO_EFFECT_CONTAINED / COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**. Control
+Tower dispatched a source-only 0.3.3 startup/AppArmor and public-profile schema
+repair on the existing Green lineage. Publication, update and the next zero-job
+start remain later serialized stages; Green must not be started again on 0.3.2.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
