@@ -1544,6 +1544,24 @@ document, print, database, farm or provider effect was performed. Green remains
 stopped and unavailable to the owner until a separately authorized installation
 and commissioning boundary is completed and physically accepted.
 
+The subsequent bounded 0.3.2 installation/zero-job commissioning window was
+stopped before installation on a required precondition mismatch. Authenticated
+Home Assistant readback showed installed version `0.3.1`, `Stopped`, with Start
+on boot, Watchdog and Auto update OFF, while every required commissioning field
+remained empty: canonical origin/endpoint, bearer credential, farm/Green/
+printer/fixed-queue identities, registry version and printer URI. This matches
+the earlier 0.3.1 containment record; the values described as "previously
+approved" had been authorized for creation but were never actually created or
+bound. Because this window expressly prohibited any new credential or identity
+and required stop-on-mismatch, Control Tower did not click Update, install
+0.3.2, save configuration or start Green. Zero documents, jobs and physical
+prints were preserved. Lifecycle remains `IMMUTABLE_PACKAGE_PUBLISHED /
+INSTALLATION_BLOCKED_BY_MISSING_BINDINGS / COMMISSIONING_PENDING`; **NO BUSINESS
+OUTCOME**. The next owner boundary must authorize creation and protected storage
+of exactly one least-privilege credential and the matching canonical identities,
+then installation and zero-job commissioning against the already published
+immutable digest.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
