@@ -115,7 +115,6 @@ def build_supported_livestock_enquiry_proposal(opportunities, knowledge_result, 
         "source_content_sha256": str(knowledge_result["source_content_sha256"]),
         "offering_key": "live_sales", "offering_label": str(offering.get("label") or ""),
         "offering_summary": str(offering.get("summary") or ""),
-        "observed_at": str(observed_at or opportunities.get("generated_at") or ""),
         "sale_availability_inferred": False,
         "claim_boundary": "Supported enquiry service only; no stock, price, availability, delivery, reservation or outcome claim."}
     packet = {"contract_version":"beacon_livestock_enquiry_capture_proposal_v1",
