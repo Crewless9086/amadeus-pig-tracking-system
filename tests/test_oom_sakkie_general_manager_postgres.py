@@ -61,6 +61,36 @@ def test_exact_replay_is_one_case_and_delivery_is_not_duplicated():
         assert db.execute("select count(*) from app_private.oom_manager_cases where dedupe_key='rootline:current-plan'").fetchone()[0] == 1
 
 
+@pytest.mark.parametrize("material_kind", ["target-page", "enquiry-policy"])
+def test_beacon_material_binding_change_creates_exactly_one_successor(material_kind):
+    """Builder-bound Page/policy digest changes advance one manager generation."""
+    now = datetime.now(timezone.utc) + timedelta(minutes=10)
+    dedupe = f"beacon:material-binding:{material_kind}"
+
+    def value(marker):
+        return {"dedupe_key": dedupe, "specialist": "BEACON", "urgency": "due",
+            "evidence_refs": [f"beacon_result:{marker * 64}",
+                              f"packet:BEACON-{material_kind}-{marker}"],
+            "unknowns": ["current_sale_opportunity_proposal_or_exact_media_request"],
+            "summary": "Current protected BEACON proposal requires owner review.",
+            "next_action": "Deliver only the exact current protected card.",
+            "next_reassessment_at": now.isoformat()}
+
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    with connect() as db, db.cursor() as cur:
+        first = normalize_candidate(value("a"), now=now)
+        successor = normalize_candidate(value("b"), now=now)
+        assert store._reconcile(cur, first, now) == "created"
+        assert store._reconcile(cur, first, now) == "replayed"
+        assert store._reconcile(cur, successor, now) == "changed"
+        assert store._reconcile(cur, successor, now) == "replayed"
+    with connect() as db:
+        generation, digest = db.execute("""select generation,evidence_digest
+            from app_private.oom_manager_cases where dedupe_key=%s""", (dedupe,)).fetchone()
+    assert generation == 2
+    assert digest == successor["evidence_digest"]
+
+
 def test_changed_evidence_advances_generation_and_append_only_events_reject_mutation():
     now = datetime.now(timezone.utc) + timedelta(minutes=1)
     result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(

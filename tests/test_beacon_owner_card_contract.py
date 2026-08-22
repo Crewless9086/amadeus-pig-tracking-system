@@ -62,6 +62,20 @@ def test_owner_card_is_compact_nonduplicative_and_has_real_callbacks():
     assert "no automatic retry" in value["answer"]
 
 
+def test_owner_card_rejects_page_configuration_drift_from_scheduled_packet():
+    value = packet()
+    value["target_page_id"] = "PAGE-ONE"
+    value["protected_campaign_package"]["target_page_id"] = "PAGE-ONE"
+    try:
+        prepare_campaign_owner_card(value, owner_user_id="42", private_chat_id="42",
+            provider_message_id="scheduled:case:G11", packet_generation="G11",
+            target_page_id="PAGE-TWO", claim_creator=fake_claim)
+    except ValueError as exc:
+        assert str(exc) == "beacon_campaign_target_page_changed"
+    else:
+        raise AssertionError("page drift must require a successor generation")
+
+
 def test_litter_card_shows_exact_photos_with_only_protected_decision_controls():
     value_packet = packet()
     value_packet["litter_media_selection"] = select_litter_story_media(
