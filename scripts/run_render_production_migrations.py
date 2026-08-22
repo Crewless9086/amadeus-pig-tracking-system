@@ -119,6 +119,11 @@ create table if not exists app_private.production_migration_receipts (
 create unique index if not exists uq_production_migration_applied
     on app_private.production_migration_receipts(migration_id)
     where outcome = 'applied';
+create table if not exists app_private.production_migration_receipt_identity_anchors (
+    receipt_id uuid primary key references app_private.production_migration_receipts(receipt_id),
+    identity_sha256 text not null check (identity_sha256 ~ '^[0-9a-f]{64}$'),
+    anchored_at timestamptz not null default clock_timestamp()
+);
 create or replace function app_private.guard_production_migration_receipts()
 returns trigger language plpgsql as $$
 begin
@@ -129,6 +134,11 @@ drop trigger if exists trg_guard_production_migration_receipts
     on app_private.production_migration_receipts;
 create trigger trg_guard_production_migration_receipts
 before update or delete on app_private.production_migration_receipts
+for each row execute function app_private.guard_production_migration_receipts();
+drop trigger if exists trg_guard_production_migration_receipt_identity_anchors
+    on app_private.production_migration_receipt_identity_anchors;
+create trigger trg_guard_production_migration_receipt_identity_anchors
+before update or delete on app_private.production_migration_receipt_identity_anchors
 for each row execute function app_private.guard_production_migration_receipts();
 """
 
@@ -305,7 +315,7 @@ def _verify_litter_validator_trigger(connection) -> dict:
     rows = connection.execute(
         """select t.tgenabled,t.tgtype,fn.nspname,p.proname,
                   pg_catalog.pg_get_function_identity_arguments(p.oid),
-                  pg_catalog.pg_get_triggerdef(t.oid,false)
+                  pg_catalog.pg_get_triggerdef(t.oid,false),p.proowner,c.relowner
              from pg_catalog.pg_trigger t
              join pg_catalog.pg_class c on c.oid=t.tgrelid
              join pg_catalog.pg_namespace tn on tn.oid=c.relnamespace
@@ -317,13 +327,15 @@ def _verify_litter_validator_trigger(connection) -> dict:
     ).fetchall()
     if len(rows) != 1:
         raise RuntimeError("migration_readback_litter_validator_trigger_missing_or_ambiguous")
-    enabled, trigger_type, function_schema, function_name, function_args, definition = rows[0]
+    (enabled, trigger_type, function_schema, function_name, function_args,
+     definition, function_owner, table_owner) = rows[0]
     if (
         enabled != "O"
         or trigger_type != 7  # ROW | BEFORE | INSERT
         or function_schema != "public"
         or function_name != "validate_litter_supersession"
         or function_args != ""
+        or function_owner != table_owner
     ):
         raise RuntimeError("migration_readback_litter_validator_trigger_mismatch")
     normalized = re.sub(r"\s+", " ", str(definition)).strip()
@@ -334,9 +346,24 @@ def _verify_litter_validator_trigger(connection) -> dict:
     )
     if normalized != expected:
         raise RuntimeError("migration_readback_litter_validator_trigger_definition_mismatch")
+    before_insert_triggers = connection.execute(
+        """select t.tgname
+             from pg_catalog.pg_trigger t
+             join pg_catalog.pg_class c on c.oid=t.tgrelid
+             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+            where n.nspname='public' and c.relname='litter_supersessions'
+              and not t.tgisinternal and (t.tgtype & 2)=2 and (t.tgtype & 4)=4
+            order by t.tgname"""
+    ).fetchall()
+    if before_insert_triggers != [("validate_litter_supersession_insert",)]:
+        raise RuntimeError(
+            f"migration_readback_litter_before_insert_trigger_inventory_mismatch:"
+            f"{before_insert_triggers}"
+        )
     return {
         "enabled": enabled,
         "trigger_type": trigger_type,
+        "function_owner_matches_table_owner": True,
         "definition_sha256": hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
     }
 
@@ -363,7 +390,8 @@ def _verify_protected_claim_acl(connection) -> dict:
                select r.rolname,p.privilege_type
                  from target t
                  join pg_catalog.pg_roles r
-                   on r.rolname in ('anon','authenticated')
+                   on (r.rolcanlogin or r.rolname in ('anon','authenticated'))
+                  and not r.rolsuper and r.oid <> t.relowner
                  cross join privilege_names p
                 where pg_catalog.has_table_privilege(r.oid,t.oid,p.privilege_type)
              )
@@ -374,11 +402,12 @@ def _verify_protected_claim_acl(connection) -> dict:
     return {"unauthorized_privilege_count": 0}
 
 
-def _verify_receipt_guard(connection) -> dict:
+def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
     rows = connection.execute(
-        """select t.tgenabled,t.tgtype,fn.nspname,p.proname,
+        """select c.relname,t.tgname,t.tgenabled,t.tgtype,fn.nspname,p.proname,
                   pg_catalog.pg_get_function_identity_arguments(p.oid),
-                  p.prosrc,l.lanname,p.prosecdef,p.proleakproof,p.provolatile,p.proparallel,p.proconfig
+                  p.prosrc,l.lanname,p.prosecdef,p.proleakproof,p.provolatile,p.proparallel,p.proconfig,
+                  p.proowner,c.relowner
              from pg_catalog.pg_trigger t
              join pg_catalog.pg_class c on c.oid=t.tgrelid
              join pg_catalog.pg_namespace tn on tn.oid=c.relnamespace
@@ -386,29 +415,47 @@ def _verify_receipt_guard(connection) -> dict:
              join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
              join pg_catalog.pg_language l on l.oid=p.prolang
             where tn.nspname='app_private'
-              and c.relname='production_migration_receipts'
-              and t.tgname='trg_guard_production_migration_receipts'
+              and ((c.relname='production_migration_receipts'
+                    and t.tgname='trg_guard_production_migration_receipts')
+                or (c.relname='production_migration_receipt_identity_anchors'
+                    and t.tgname='trg_guard_production_migration_receipt_identity_anchors'))
               and not t.tgisinternal"""
     ).fetchall()
-    if len(rows) != 1:
+    expected_triggers = {
+        "production_migration_receipts": "trg_guard_production_migration_receipts",
+    }
+    if require_anchor:
+        expected_triggers["production_migration_receipt_identity_anchors"] = (
+            "trg_guard_production_migration_receipt_identity_anchors"
+        )
+    rows = [row for row in rows if row[0] in expected_triggers]
+    if len(rows) != len(expected_triggers):
         raise RuntimeError("migration_receipt_guard_missing_or_ambiguous")
-    (enabled, trigger_type, function_schema, function_name, function_args, body,
-     language, security_definer, leakproof, volatility, parallel, config) = rows[0]
-    normalized_body = re.sub(r"\s+", " ", str(body)).strip()
-    if (
-        enabled != "O"
-        or trigger_type != 27  # ROW | BEFORE | UPDATE | DELETE
-        or function_schema != "app_private"
-        or function_name != "guard_production_migration_receipts"
-        or function_args != ""
-        or normalized_body != "begin raise exception 'production migration receipts are append-only'; end;"
-        or (language, security_definer, leakproof, volatility, parallel, config)
-        != ("plpgsql", False, False, "v", "u", None)
-    ):
-        raise RuntimeError("migration_receipt_guard_mismatch")
+    normalized_body = ""
+    for row in rows:
+        (table_name, trigger_name, enabled, trigger_type, function_schema,
+         function_name, function_args, body, language, security_definer,
+         leakproof, volatility, parallel, config, function_owner, table_owner) = row
+        normalized_body = re.sub(r"\s+", " ", str(body)).strip()
+        if (
+            expected_triggers.get(table_name) != trigger_name
+            or enabled != "O"
+            or trigger_type != 27  # ROW | BEFORE | UPDATE | DELETE
+            or function_schema != "app_private"
+            or function_name != "guard_production_migration_receipts"
+            or function_args != ""
+            or normalized_body
+            != "begin raise exception 'production migration receipts are append-only'; end;"
+            or (language, security_definer, leakproof, volatility, parallel, config)
+            != ("plpgsql", False, False, "v", "u", None)
+            or function_owner != table_owner
+        ):
+            raise RuntimeError("migration_receipt_guard_mismatch")
     return {
-        "enabled": enabled,
-        "trigger_type": trigger_type,
+        "enabled": "O",
+        "trigger_type": 27,
+        "guarded_tables": sorted(expected_triggers),
+        "function_owner_matches_table_owner": True,
         "body_sha256": hashlib.sha256(normalized_body.encode("utf-8")).hexdigest(),
     }
 
@@ -421,6 +468,7 @@ def _verify_receipt_row(
     service_id: str,
     outcome: str,
     receipt_id: str | None = None,
+    create_anchor: bool = True,
 ) -> dict:
     rows = connection.execute(
         """select receipt_id::text,migration_id,migration_filename,migration_sha256,
@@ -453,6 +501,46 @@ def _verify_receipt_row(
         or row[10] is None
     ):
         raise RuntimeError(f"migration_receipt_identity_mismatch:{item.migration_id}:{outcome}")
+    identity_payload = {
+        "receipt_id": row[0],
+        "migration_id": row[1],
+        "migration_filename": row[2],
+        "migration_sha256": row[3],
+        "ordinal": row[4],
+        "outcome": row[5],
+        "source_commit": row[6],
+        "render_service_id": row[7],
+        "render_instance_id": row[8],
+        "error_class": row[9],
+        "applied_at": row[10].isoformat(),
+    }
+    identity_sha256 = hashlib.sha256(
+        json.dumps(
+            identity_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    anchor = connection.execute(
+        """select identity_sha256
+             from app_private.production_migration_receipt_identity_anchors
+            where receipt_id=%s""",
+        (row[0],),
+    ).fetchone()
+    anchored_now = False
+    if anchor is None:
+        if create_anchor:
+            connection.execute(
+                """insert into app_private.production_migration_receipt_identity_anchors
+                   (receipt_id,identity_sha256) values(%s,%s)""",
+                (row[0], identity_sha256),
+            )
+            anchored_now = True
+    elif anchor[0] != identity_sha256:
+        raise RuntimeError(
+            f"migration_receipt_identity_anchor_mismatch:{item.migration_id}:{outcome}"
+        )
     return {
         "receipt_id": row[0],
         "migration_filename": row[2],
@@ -461,7 +549,21 @@ def _verify_receipt_row(
         "render_service_id": row[7],
         "render_instance_id": row[8],
         "applied_at": row[10],
+        "identity_sha256": identity_sha256,
+        "identity_anchored_now": anchored_now,
+        "identity_anchor_missing": anchor is None and not create_anchor,
     }
+
+
+def _anchor_verified_receipt_identity(connection, receipt: dict) -> dict:
+    if receipt.get("identity_anchor_missing"):
+        connection.execute(
+            """insert into app_private.production_migration_receipt_identity_anchors
+               (receipt_id,identity_sha256) values(%s,%s)""",
+            (receipt["receipt_id"], receipt["identity_sha256"]),
+        )
+        receipt = {**receipt, "identity_anchored_now": True, "identity_anchor_missing": False}
+    return receipt
 
 
 def _verify_migration_precondition(
@@ -582,7 +684,8 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
 def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
     import psycopg
 
-    commit, service_id, instance_id = _metadata(environ or dict(os.environ))
+    runtime_env = environ or dict(os.environ)
+    commit, service_id, instance_id = _metadata(runtime_env)
     sql_by_id = [(item, _load_sql(item)) for item in ALLOWLIST]
     report = {"source_commit": commit, "service_id": service_id, "migrations": []}
 
@@ -593,7 +696,11 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                 "select to_regclass('app_private.production_migration_receipts') is not null"
             ).fetchone()[0]
             if receipt_table_exists:
-                _verify_receipt_guard(connection)
+                anchor_table_exists = connection.execute(
+                    "select to_regclass('app_private.production_migration_receipt_identity_anchors') "
+                    "is not null"
+                ).fetchone()[0]
+                _verify_receipt_guard(connection, require_anchor=anchor_table_exists)
             connection.execute(BOOTSTRAP_SQL)
             connection.commit()
             receipt_guard = _verify_receipt_guard(connection)
@@ -611,11 +718,23 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                         ordinal,
                         service_id=service_id,
                         outcome="applied",
+                        create_anchor=False,
                     )
                     _verify_migration_precondition(
                         connection, item, already_applied=True
                     )
                     readback = _verify_migration_readback(connection, item)
+                    if (
+                        prior.get("identity_anchor_missing")
+                        and runtime_env.get("RENDER_MIGRATION_ALLOW_LEGACY_RECEIPT_ANCHOR")
+                        != "true"
+                    ):
+                        raise RuntimeError(
+                            f"legacy_migration_receipt_anchor_authority_required:"
+                            f"{item.migration_id}"
+                        )
+                    prior = _anchor_verified_receipt_identity(connection, prior)
+                    connection.commit()
                     report["migrations"].append({
                         "migration_id": item.migration_id, "sha256": item.sha256,
                         "outcome": "already_applied", "receipt_id": prior["receipt_id"],
