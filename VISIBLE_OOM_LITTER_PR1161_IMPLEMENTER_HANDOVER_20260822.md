@@ -36,7 +36,7 @@
 
 ## Governance preflight
 
-- Worktree, branch and HEAD: `C:/tmp/oom-litter-acceptance-repair-20260822`; `fix/oom-litter-acceptance-repair-20260822`; `a58a83a8d4d63aa04efe76572ba99f681b4f4a7e`.
+- Worktree and branch: `C:/tmp/oom-litter-acceptance-repair-20260822`; `fix/oom-litter-acceptance-repair-20260822`. Latest source repair revision: `63a07f3302c6a804eb87033827e8b5047a2b76d9`; the PR head may also include this handover-only publication commit.
 - Upstream and ahead/behind current authoritative main: upstream same named origin branch; `0 behind / 1 ahead` of `origin/main` at `646386e3a1d34f128b6cc318c9166ad5678cbf0c` when committed.
 - Mission Standard tracked blob, filesystem SHA-256, physical lines and read completely: blob `3002b94713e286c4eb2019419c438cc378c337fa`; SHA-256 `44E34C69145B83D2CD5B6A5322A6C2C124789FA647E19F19B3E39A7293A5202B`; 1,127 physical lines; yes.
 - Control Tower Protocol tracked blob, filesystem SHA-256, physical lines and read completely: blob `8fbd0b9c9160164e31a17a2cbfa51ab88792a909`; SHA-256 `D4EB4B54A660CE39DFC92CB0FA253B0F2E3D7314462984702602D0F4B66A7E0A`; 319 physical lines; yes.
@@ -67,7 +67,7 @@
 - Worktree, branch and current action: above; PR #1161 exact-head review preparation.
 - Last terminal-invoked production/test cycle: no production cycle; 237 local focused tests only.
 - What stops when this terminal closes: source editing and local tests only; no deployed loop depends on it.
-- Fresh progress evidence since last feedback: commit `a58a83a8`; PR #1161; 237 passed.
+- Fresh progress evidence since last feedback: source commits through `63a07f33`; PR #1161; 237 passed. The final source repair corrected the litter runtime and atomic writer to use canonical `mating_events.related_litter_id`, `farrowing_date`, and `outcome` columns.
 - Why any open process is active work rather than an idle shell: no long-running process is claimed.
 
 ## Deployed agent operational reality
@@ -167,7 +167,7 @@ Usable now: NO
 Preserved failed evidence: Telegram 07:20/07:21; historical message facts 8/7/1 are superseded and non-replayable
 Current corrected owner facts: Linda PIG-2026-5AA8; 2026-08-22; total 9; born alive 8; mummified 1; reconciled stillborn 0; died-after-live 0; father/mating Unknown
 Canonical readback: Linda active/on-farm; LIT-2026-MNB9 historical Jan-30 litter; Aug-22 litter absent; mating rows absent; exact observation timestamp Unknown in implementer lane; repeat immediately before any write
-Enabling progress: PR #1161 head a58a83a8d4d63aa04efe76572ba99f681b4f4a7e; 237 focused tests passed; CI/review pending
+Enabling progress: PR #1161 source through 63a07f3302c6a804eb87033827e8b5047a2b76d9; 237 focused tests passed; exact-PR-head CI/review pending
 First missing real-life gate: independent review/CI then merge/deploy and loaded-revision verification
 Next automatic action: review exact head, reconcile current main, prepare protected merge/deploy; after deploy perform fresh zero-write duplicate/mating check and let deployed Oom Sakkie present corrected preview
 Owner action now: NONE
@@ -185,7 +185,7 @@ This terminal cannot inspect other visible terminal processes and does not inven
 ```text
 Mission lifecycle state: REVIEW_HOLD
 Owner-visible outcome: natural report recorded exactly once with verified follow-up
-Technical stage reached: PR #1161; a58a83a8; 237 focused tests passed; CI/review pending
+Technical stage reached: PR #1161; source through 63a07f33; 237 focused tests passed; exact-PR-head CI/review pending
 Deployed-agent state: repair not deployed
 Web/API runtime: historical exact main only; not a worker proof
 Autonomous trigger: authenticated Telegram exists; repaired trigger unavailable until deployment
