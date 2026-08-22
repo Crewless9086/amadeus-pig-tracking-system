@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import uuid
+from datetime import timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -95,6 +96,16 @@ EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
     "202608220002_allow_herdmaster_farrowing_protected_claims": (
         "Admit exact-preview HERDMASTER farrowing claims through the canonical "
         "protected action spine."
+    ),
+}
+
+HISTORICAL_CREATED_RELATIONS = {
+    "202608190002_create_beacon_protected_publication_consumer": (
+        "app_private.beacon_protected_publication_consumers",
+    ),
+    "202608200002_create_pig_welfare_case_lifecycle": (
+        "public.pig_welfare_cases", "public.pig_welfare_case_events",
+        "public.pig_welfare_case_fact_links", "public.pig_welfare_case_current",
     ),
 }
 
@@ -369,8 +380,15 @@ def _verify_litter_validator_trigger(connection) -> dict:
 
 
 def _verify_protected_claim_acl(connection) -> dict:
+    owner = connection.execute(
+        """select pg_catalog.pg_get_userbyid(c.relowner),current_user
+             from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+            where n.nspname='app_private' and c.relname='oom_protected_action_claims'"""
+    ).fetchone()
+    if not owner or owner[0] != owner[1]:
+        raise RuntimeError("migration_readback_protected_claim_owner_mismatch")
     rows = connection.execute(
-        """with target as (
+        """with recursive target as (
                select c.oid,c.relacl,c.relowner
                  from pg_catalog.pg_class c
                  join pg_catalog.pg_namespace n on n.oid=c.relnamespace
@@ -379,6 +397,19 @@ def _verify_protected_claim_acl(connection) -> dict:
              ), privilege_names(privilege_type) as (
                values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),
                       ('TRUNCATE'),('REFERENCES'),('TRIGGER')
+             ), memberships(member,roleid) as (
+               select m.member,m.roleid from pg_catalog.pg_auth_members m
+               union
+               select x.member,m.roleid from memberships x
+               join pg_catalog.pg_auth_members m on m.member=x.roleid
+             ), candidate_roles as (
+               select r.oid,r.rolname from pg_catalog.pg_roles r
+                where (r.rolcanlogin or r.rolname in ('anon','authenticated')) and not r.rolsuper
+               union
+               select g.oid,g.rolname from pg_catalog.pg_roles login
+               join memberships m on m.member=login.oid
+               join pg_catalog.pg_roles g on g.oid=m.roleid
+                where (login.rolcanlogin or login.rolname in ('anon','authenticated')) and not login.rolsuper
              ), forbidden as (
                select 'PUBLIC'::text as role_name,x.privilege_type
                  from target t
@@ -389,11 +420,16 @@ def _verify_protected_claim_acl(connection) -> dict:
                union all
                select r.rolname,p.privilege_type
                  from target t
-                 join pg_catalog.pg_roles r
-                   on (r.rolcanlogin or r.rolname in ('anon','authenticated'))
-                  and not r.rolsuper and r.oid <> t.relowner
+                 join candidate_roles r on r.oid <> t.relowner
                  cross join privilege_names p
                 where pg_catalog.has_table_privilege(r.oid,t.oid,p.privilege_type)
+               union all
+               select r.rolname,'COLUMN:'||a.attname||':'||p.privilege_type
+                 from target t join pg_catalog.pg_attribute a on a.attrelid=t.oid
+                 join candidate_roles r on r.oid <> t.relowner
+                 cross join (values ('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) p(privilege_type)
+                where a.attnum>0 and not a.attisdropped
+                  and pg_catalog.has_column_privilege(r.oid,t.oid,a.attnum,p.privilege_type)
              )
              select role_name,privilege_type from forbidden order by 1,2"""
     ).fetchall()
@@ -403,6 +439,59 @@ def _verify_protected_claim_acl(connection) -> dict:
 
 
 def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
+    catalog = connection.execute(
+        """select c.relname,pg_catalog.pg_get_userbyid(c.relowner),current_user,
+                  array_agg(a.attname||':'||pg_catalog.format_type(a.atttypid,a.atttypmod)
+                            ||':'||a.attnotnull order by a.attnum)
+             from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+             join pg_catalog.pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped
+            where n.nspname='app_private' and c.relname in
+             ('production_migration_receipts','production_migration_receipt_identity_anchors')
+            group by c.relname,c.relowner"""
+    ).fetchall()
+    expected_columns = {
+        "production_migration_receipts": [
+            "receipt_id:uuid:true","migration_id:text:true","migration_filename:text:true",
+            "migration_sha256:text:true","ordinal:integer:true","outcome:text:true",
+            "source_commit:text:true","render_service_id:text:true","render_instance_id:text:true",
+            "error_class:text:false","applied_at:timestamp with time zone:true"],
+        "production_migration_receipt_identity_anchors": [
+            "receipt_id:uuid:true","identity_sha256:text:true","anchored_at:timestamp with time zone:true"],
+    }
+    found = {row[0]: row for row in catalog}
+    required = set(expected_columns) if require_anchor else {"production_migration_receipts"}
+    if set(found) != required or any(found[n][1] != found[n][2] or found[n][3] != expected_columns[n] for n in required):
+        raise RuntimeError("migration_receipt_catalog_shape_or_owner_mismatch")
+    if require_anchor:
+        fk = connection.execute(
+            """select count(*) from pg_catalog.pg_constraint c
+               join pg_catalog.pg_class t on t.oid=c.conrelid join pg_catalog.pg_namespace n on n.oid=t.relnamespace
+              where n.nspname='app_private' and t.relname='production_migration_receipt_identity_anchors'
+                and c.contype='f' and pg_catalog.pg_get_constraintdef(c.oid)=
+                'FOREIGN KEY (receipt_id) REFERENCES app_private.production_migration_receipts(receipt_id)'"""
+        ).fetchone()[0]
+        if fk != 1:
+            raise RuntimeError("migration_receipt_anchor_fk_mismatch")
+    acl_drift = connection.execute(
+        """select c.relname,coalesce(r.rolname,'PUBLIC'),x.privilege_type
+             from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+             cross join lateral pg_catalog.aclexplode(coalesce(c.relacl,pg_catalog.acldefault('r',c.relowner))) x
+             left join pg_catalog.pg_roles r on r.oid=x.grantee
+            where n.nspname='app_private' and c.relname in
+             ('production_migration_receipts','production_migration_receipt_identity_anchors')
+              and x.grantee<>c.relowner
+            union all
+           select c.relname,coalesce(r.rolname,'PUBLIC'),'COLUMN:'||a.attname||':'||x.privilege_type
+             from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+             join pg_catalog.pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped
+             cross join lateral pg_catalog.aclexplode(a.attacl) x
+             left join pg_catalog.pg_roles r on r.oid=x.grantee
+            where n.nspname='app_private' and c.relname in
+             ('production_migration_receipts','production_migration_receipt_identity_anchors')
+              and x.grantee<>c.relowner"""
+    ).fetchall()
+    if acl_drift:
+        raise RuntimeError(f"migration_receipt_catalog_acl_mismatch:{acl_drift}")
     rows = connection.execute(
         """select c.relname,t.tgname,t.tgenabled,t.tgtype,fn.nspname,p.proname,
                   pg_catalog.pg_get_function_identity_arguments(p.oid),
@@ -428,6 +517,17 @@ def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
         expected_triggers["production_migration_receipt_identity_anchors"] = (
             "trg_guard_production_migration_receipt_identity_anchors"
         )
+    inventory = connection.execute(
+        """select c.relname,t.tgname from pg_catalog.pg_trigger t
+             join pg_catalog.pg_class c on c.oid=t.tgrelid
+             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+            where n.nspname='app_private' and c.relname in
+             ('production_migration_receipts','production_migration_receipt_identity_anchors')
+              and not t.tgisinternal order by 1,2"""
+    ).fetchall()
+    expected_inventory = sorted(expected_triggers.items())
+    if inventory != expected_inventory:
+        raise RuntimeError(f"migration_receipt_guard_trigger_inventory_mismatch:{inventory}")
     rows = [row for row in rows if row[0] in expected_triggers]
     if len(rows) != len(expected_triggers):
         raise RuntimeError("migration_receipt_guard_missing_or_ambiguous")
@@ -512,7 +612,7 @@ def _verify_receipt_row(
         "render_service_id": row[7],
         "render_instance_id": row[8],
         "error_class": row[9],
-        "applied_at": row[10].isoformat(),
+        "applied_at": row[10].astimezone(timezone.utc).isoformat(timespec="microseconds"),
     }
     identity_sha256 = hashlib.sha256(
         json.dumps(
@@ -537,6 +637,12 @@ def _verify_receipt_row(
                 (row[0], identity_sha256),
             )
             anchored_now = True
+            stored = connection.execute(
+                "select identity_sha256 from app_private.production_migration_receipt_identity_anchors where receipt_id=%s",
+                (row[0],),
+            ).fetchone()
+            if stored != (identity_sha256,):
+                raise RuntimeError("migration_receipt_identity_anchor_insert_mismatch")
     elif anchor[0] != identity_sha256:
         raise RuntimeError(
             f"migration_receipt_identity_anchor_mismatch:{item.migration_id}:{outcome}"
@@ -572,6 +678,13 @@ def _verify_migration_precondition(
     *,
     already_applied: bool,
 ) -> str:
+    historical_relations = HISTORICAL_CREATED_RELATIONS.get(item.migration_id, ())
+    if historical_relations and not already_applied:
+        existing = [name for name in historical_relations if connection.execute(
+            "select pg_catalog.to_regclass(%s) is not null", (name,)
+        ).fetchone()[0]]
+        if existing:
+            raise RuntimeError(f"migration_precondition_historical_object_exists:{existing}")
     if item.migration_id == "202608220001_extend_litter_supersession_for_fact_corrections":
         _verify_litter_validator_trigger(connection)
         _, reasons = _constraint_readback(
@@ -616,7 +729,15 @@ def _verify_migration_precondition(
             _verify_migration_log(connection, item.migration_id, required=True)
             return "target"
         raise RuntimeError(f"migration_precondition_action_constraint_mismatch:{action_kinds}")
-    return "not_applicable"
+    if item.migration_id == "202608200001_add_sales_financial_disposition" and not already_applied:
+        columns = connection.execute(
+            """select column_name from information_schema.columns where table_schema='public'
+               and table_name='sales_transactions' and column_name in
+               ('financial_disposition','receivable_total','financial_disposition_evidence_json','financial_disposition_evidence_sha256')"""
+        ).fetchall()
+        if columns:
+            raise RuntimeError("migration_precondition_historical_financial_columns_exist")
+    return "historical_absent" if not already_applied else "historical_receipted"
 
 
 def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
@@ -678,7 +799,13 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
             "action_kinds": list(action_kinds),
             "protected_claim_acl": acl,
         }
-    return {}
+    description = _migration_log_description(connection, item.migration_id)
+    if not description:
+        raise RuntimeError(f"migration_readback_historical_log_missing:{item.migration_id}")
+    for relation in HISTORICAL_CREATED_RELATIONS.get(item.migration_id, ()):
+        if not connection.execute("select pg_catalog.to_regclass(%s) is not null", (relation,)).fetchone()[0]:
+            raise RuntimeError(f"migration_readback_historical_relation_missing:{relation}")
+    return {"migration_log_present": True, "migration_log_description_sha256": hashlib.sha256(description.encode()).hexdigest()}
 
 
 def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
@@ -702,7 +829,6 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                 ).fetchone()[0]
                 _verify_receipt_guard(connection, require_anchor=anchor_table_exists)
             connection.execute(BOOTSTRAP_SQL)
-            connection.commit()
             receipt_guard = _verify_receipt_guard(connection)
             for ordinal, (item, sql) in enumerate(sql_by_id, 1):
                 prior_exists = connection.execute(
@@ -724,16 +850,11 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                         connection, item, already_applied=True
                     )
                     readback = _verify_migration_readback(connection, item)
-                    if (
-                        prior.get("identity_anchor_missing")
-                        and runtime_env.get("RENDER_MIGRATION_ALLOW_LEGACY_RECEIPT_ANCHOR")
-                        != "true"
-                    ):
+                    if prior.get("identity_anchor_missing"):
                         raise RuntimeError(
-                            f"legacy_migration_receipt_anchor_authority_required:"
+                            f"legacy_migration_receipt_identity_unverifiable:"
                             f"{item.migration_id}"
                         )
-                    prior = _anchor_verified_receipt_identity(connection, prior)
                     connection.commit()
                     report["migrations"].append({
                         "migration_id": item.migration_id, "sha256": item.sha256,
@@ -772,6 +893,12 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                     connection.commit()
                 except Exception as exc:
                     connection.rollback()
+                    if not connection.execute(
+                        "select pg_catalog.to_regclass('app_private.production_migration_receipts') is not null"
+                    ).fetchone()[0]:
+                        raise RuntimeError(
+                            f"migration_failed_and_rolled_back:{item.migration_id}:receipt=none"
+                        ) from exc
                     failure_id = str(uuid.uuid4())
                     connection.execute(
                         """insert into app_private.production_migration_receipts
@@ -801,6 +928,8 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                     "readback": readback,
                 })
         finally:
+            if connection.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
+                connection.rollback()
             connection.execute("select pg_advisory_unlock(%s)", (LOCK_KEY,))
             connection.commit()
     return report
