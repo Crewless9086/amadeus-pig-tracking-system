@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
     build_litter_awareness_story_proposal, build_protected_campaign_package,
-    build_sale_ready_demand_proposal,
+    build_sale_ready_demand_proposal, build_live_stock_awareness_proposal,
     build_litter_media_choice, prepare_campaign_owner_card, select_litter_story_media,
 )
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
@@ -36,9 +36,14 @@ def fake_claim(**kwargs):
     return {"callback_token": "opaque-token", "preview_digest": "d" * 64, **kwargs}
 
 
+def owner_card(value):
+    return prepare_campaign_owner_card(value, owner_user_id="42", private_chat_id="42",
+        provider_message_id="scheduled:case:G11", packet_generation="G11",
+        target_page_id="PAGE-1", claim_creator=fake_claim)
+
+
 def test_owner_card_is_compact_nonduplicative_and_has_real_callbacks():
-    value = prepare_campaign_owner_card(packet(), owner_user_id="42", private_chat_id="42",
-        provider_message_id="scheduled:case:G11", packet_generation="G11", claim_creator=fake_claim)
+    value = owner_card(packet())
     copy = value["campaign_review_preview"]["exact_post_copy"]
     assert len(value["answer"]) < 1800
     assert value["answer"].count(copy) == 1
@@ -51,6 +56,10 @@ def test_owner_card_is_compact_nonduplicative_and_has_real_callbacks():
     preview = value["campaign_review_preview"]
     assert preview["packet_id"] and preview["packet_generation"]
     assert preview["campaign_digest"] and preview["stop_conditions"] and preview["rollback"]
+    assert preview["target_page_id"] == "PAGE-1"
+    assert "Facebook Page ID:</b> PAGE-1" in value["answer"]
+    assert "ZAR 0.00 total" in value["answer"] and "0 days; no boost" in value["answer"]
+    assert "no automatic retry" in value["answer"]
 
 
 def test_litter_card_shows_exact_photos_with_only_protected_decision_controls():
@@ -58,8 +67,7 @@ def test_litter_card_shows_exact_photos_with_only_protected_decision_controls():
     value_packet["litter_media_selection"] = select_litter_story_media(
         {"success": True, "items": [media_item()]}, litter_id="LITTER-7",
         pig_ids=["PIG-1", "PIG-2"], event_id="EVENT-7")
-    value = prepare_campaign_owner_card(value_packet, owner_user_id="42", private_chat_id="42",
-        provider_message_id="scheduled:case:G11", packet_generation="G11", claim_creator=fake_claim)
+    value = owner_card(value_packet)
     assert "Pictures:" in value["answer"]
     assert "ASSET-1" in value["answer"] and "2026-08-16" in value["answer"]
     labels = [b["text"] for row in value["reply_markup"]["inline_keyboard"] for b in row]
@@ -75,8 +83,7 @@ def test_litter_story_queries_library_and_wires_media_into_real_packet():
     protected = build_protected_campaign_package(value,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
     assert [item["asset_id"] for item in protected["protected_campaign_package"]["selected_approved_media"]] == ["ASSET-1"]
-    card = prepare_campaign_owner_card(protected, owner_user_id="42", private_chat_id="42",
-        provider_message_id="scheduled:case:G11", packet_generation="G11", claim_creator=fake_claim)
+    card = owner_card(protected)
     assert "<b>Story:</b> Molly and her piglets" in card["answer"]
     assert "Pictures:" in card["answer"]
 
@@ -92,6 +99,23 @@ def test_litter_story_without_eligible_media_delivers_one_precise_request():
         assert str(exc) == "beacon_campaign_exact_litter_media_required"
     else:
         raise AssertionError("missing exact media must not create a protected card")
+
+
+def test_explicit_generic_awareness_can_use_bound_text_only_publication():
+    candidate={"success":True,"owner_review_packet":{
+        "packet_id":"CONTENT-1","draft_copy":"A quiet farm-life update from Amadeus Farm.",
+        "audience":"People interested in responsible local farm life",
+        "public_livestock_policy":{"policy_version":"beacon_public_livestock_awareness_only_v1"}}}
+    proposal=build_live_stock_awareness_proposal(
+        {"success":True,"cards":[]}, candidate, {"success":True,"items":[]})
+    protected=build_protected_campaign_package(proposal,
+        now=datetime(2026,8,17,12,tzinfo=timezone.utc))
+    campaign=protected["protected_campaign_package"]
+    assert campaign["selected_approved_media"] == {"mode":"text_only"}
+    assert campaign["budget_cap"]["total"] == "0.00"
+    assert campaign["sam_response_contract"]["inbound_only"] is True
+    card=owner_card(protected)
+    assert card["campaign_review_preview"]["target_page_id"] == "PAGE-1"
 
 
 def test_litter_story_copy_and_stock_digest_bind_exact_litter_context():
@@ -232,9 +256,7 @@ def test_completed_callback_replay_is_silent(claim, _authority):
 @patch("modules.oom_sakkie.protected_action_runtime.complete_claim")
 @patch("modules.oom_sakkie.protected_action_runtime.claim_callback")
 def test_concurrent_recovered_approval_loser_is_silent(claim, complete, _authority):
-    preview = prepare_campaign_owner_card(packet(), owner_user_id="42", private_chat_id="42",
-        provider_message_id="scheduled:case:G11", packet_generation="G11",
-        claim_creator=fake_claim)["campaign_review_preview"]
+    preview = owner_card(packet())["campaign_review_preview"]
     claim.return_value = ({"success": True, "status": "protected_callback_recovered",
         "callback_token": "opaque-token", "action_kind": "beacon_campaign_review",
         "mission_id": "M", "preview_digest": "d" * 64,

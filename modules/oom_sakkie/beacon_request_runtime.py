@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -12,12 +13,15 @@ from typing import Any, Callable, Mapping
 from modules.beacon.marketing_proposal import prepare_marketing_proposal
 from modules.beacon.media_intake import list_media_intakes
 from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
-from modules.beacon.public_livestock_content_policy import assess_public_livestock_content
+from modules.beacon.public_livestock_content_policy import (
+    assess_public_livestock_content, assess_public_livestock_enquiry_capture,
+)
 from modules.beacon.content_operations import (
     build_beacon_content_candidate,
     gather_beacon_content_evidence,
 )
 from modules.pig_weights.farm_supabase_read_service import list_litter_overview
+from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 from modules.oom_sakkie.beacon_media_review_runtime import present_private_media_review
 from modules.oom_sakkie.protected_action_claims import (
@@ -35,8 +39,9 @@ CAMPAIGN_REVIEW_ACTION = "beacon_campaign_review"
 def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_opportunity_cards,
         media_loader=list_media_intakes, content_evidence_loader=gather_beacon_content_evidence,
         content_candidate_builder=build_beacon_content_candidate,
-        litter_loader=list_litter_overview, now=None):
-    """Compose one governed litter-awareness result from current evidence."""
+        litter_loader=list_litter_overview, business_evidence_loader=load_sam_farm_knowledge,
+        now=None):
+    """Compose one governed, stock-neutral livestock enquiry result."""
     opportunities = opportunity_loader()
     media_result = media_loader()
     media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
@@ -44,22 +49,95 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
     # Keep the legacy awareness dependencies injectable for caller compatibility,
     # but a scheduled revenue case must use the sale-ready demand contract.  An
     # awareness/follow packet is never silently upgraded into a messages campaign.
-    packet = build_litter_awareness_story_proposal(
-        opportunities, litter_loader(), media_payload, observed_at=evidence_time)
-    if packet.get("status") == "ready_for_owner_review" and packet.get("litter_media_selection"):
+    packet = build_supported_livestock_enquiry_proposal(
+        opportunities, business_evidence_loader(), observed_at=evidence_time)
+    if packet.get("status") == "ready_for_owner_review":
         packet = build_protected_campaign_package(packet, now=evidence_time)
     return {
         "success": True,
-        "status": ("beacon_litter_awareness_story_ready" if
+        "status": ("beacon_livestock_enquiry_capture_ready" if
             packet.get("protected_campaign_package") else
-            "beacon_litter_awareness_media_exception"),
+            "beacon_livestock_offering_evidence_exception"),
         "answer": render_beacon_packet(packet, language="en"),
         "proposal": packet,
         "result_digest": _digest(packet),
         "follow_up_owner": "BEACON",
-        "next_trigger": "material canonical stock or media evidence change",
+        "next_trigger": "material canonical offering, policy or owner-decision change",
         **ZERO,
     }
+
+
+def build_supported_livestock_enquiry_proposal(opportunities, knowledge_result, *, observed_at=None):
+    """Read the shared SAM menu and invite enquiries without claiming stock."""
+    if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
+        raise ValueError("canonical_opportunity_evidence_required")
+    required_source_keys = {"version", "status", "public_profile", "product_menu"}
+    if (not isinstance(knowledge_result, Mapping) or knowledge_result.get("status") != "ok"
+            or knowledge_result.get("configured") is not True
+            or not required_source_keys.issubset(set(knowledge_result.get("source_top_level_keys") or []))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(knowledge_result.get("source_content_sha256") or ""))):
+        return _supported_offering_exception("The configured SAM farm-knowledge source is unavailable or fallback-only.")
+    source = knowledge_result.get("source_evidence") if isinstance(
+        knowledge_result.get("source_evidence"), Mapping) else {}
+    profile = source.get("public_profile") if isinstance(source.get("public_profile"), Mapping) else {}
+    menu = source.get("product_menu") if isinstance(source.get("product_menu"), list) else []
+    offering = next((item for item in menu if isinstance(item, Mapping)
+        and item.get("key") == "live_sales"), None)
+    version = str(source.get("version") or "").strip()
+    source_status = str(source.get("status") or "").strip()
+    summary = str((offering or {}).get("summary") or "").strip()
+    required_categories = {"piglets", "weaners", "growers", "finishers"}
+    if (not str(knowledge_result.get("path") or "").strip()
+            or not version or version.casefold().startswith("fallback")
+            or not source_status or source_status.casefold().startswith("fallback")
+            or profile.get("farm_name") != "Amadeus Farm"
+            or not str((offering or {}).get("label") or "").strip()
+            or not required_categories.issubset(set(summary.casefold().replace(",", "").split()))):
+        return _supported_offering_exception("The canonical SAM menu does not identify Amadeus Farm live pig enquiries.")
+    caption = ("Looking for live pigs? Amadeus Farm handles enquiries for piglets, weaners, "
+        "growers and finishers. Message us with the type, number needed, intended use and your area. "
+        "SAM will check current farm records before discussing any option; no stock, price, "
+        "availability, delivery or reservation is promised.")
+    policy = assess_public_livestock_enquiry_capture(
+        caption, campaign_lane="live_stock_enquiry_capture")
+    if not policy["allowed"]:
+        raise ValueError("livestock_enquiry_capture_policy_failed")
+    evidence = {"source": "sam_farm_knowledge", "version": version,
+        "source_path": str(knowledge_result.get("path") or ""),
+        "source_content_sha256": str(knowledge_result["source_content_sha256"]),
+        "offering_key": "live_sales", "offering_label": str(offering.get("label") or ""),
+        "offering_summary": str(offering.get("summary") or ""),
+        "observed_at": str(observed_at or opportunities.get("generated_at") or ""),
+        "sale_availability_inferred": False,
+        "claim_boundary": "Supported enquiry service only; no stock, price, availability, delivery, reservation or outcome claim."}
+    packet = {"contract_version":"beacon_livestock_enquiry_capture_proposal_v1",
+        "packet_type":"livestock_enquiry_capture_proposal", "status":"ready_for_owner_review",
+        "campaign_objective":"qualified_livestock_enquiries",
+        "campaign_lane":"live_stock_enquiry_capture",
+        "objective":"Invite genuine live pig enquiries for SAM qualification",
+        "audience":"Prospective livestock buyers in the Riversdale and Albertinia service area",
+        "intended_channel":"Amadeus Farm Facebook Page organic", "draft_caption":caption,
+        "call_to_action":"Message Amadeus Farm with the type, number needed, intended use and your area.",
+        "media":{"status":"text_only", "reason":"Text-only avoids implying current animals or stock."},
+        "business_offering_evidence":evidence,
+        "sam_response_contract":{"lane":"live_stock_sales", "supported_response_class":"clarification",
+            "qualification_fields":["animal_type","quantity","intended_use","customer_area"],
+            "campaign_attribution_required":True, "inbound_only":True,
+            "authority_boundary":"SAM may qualify a genuine inbound only; no quote, price, reservation, allocation, delivery promise, order, payment or stock commitment."},
+        "decision_options":["approve","correct","decline"], "authority":dict(ZERO)}
+    packet["packet_id"] = "BEACON-ENQUIRY-" + _digest(
+        {"copy":caption,"evidence":evidence,"sam":packet["sam_response_contract"]})[:24].upper()
+    return packet
+
+
+def _supported_offering_exception(reason):
+    packet={"contract_version":"beacon_supported_offering_exception_v1",
+        "packet_type":"supported_offering_evidence_request", "status":"evidence_blocked",
+        "precise_exception":reason,
+        "required_evidence":"A configured, non-fallback SAM farm-knowledge record identifying Amadeus Farm's live_sales offering.",
+        "authority":dict(ZERO)}
+    packet["packet_id"]="BEACON-OFFERING-EXCEPTION-"+_digest(packet)[:24].upper()
+    return packet
 
 
 def _stable_opportunity_time(opportunities, *, fallback=None):
@@ -104,6 +182,10 @@ def build_protected_campaign_package(packet, *, now=None):
             raise ValueError("beacon_campaign_public_media_authority_incomplete")
     litter_media = packet.get("litter_media_selection") if isinstance(
         packet.get("litter_media_selection"), list) else []
+    text_only = (packet.get("packet_type") in {
+        "live_stock_awareness_proposal", "livestock_enquiry_capture_proposal"}
+        and media.get("status") == "text_only")
+    enquiry_capture = packet.get("packet_type") == "livestock_enquiry_capture_proposal"
     if litter_media:
         story = ((packet.get("sale_stock_evidence") or {}).get("story_context")
             if isinstance(packet.get("sale_stock_evidence"), Mapping) else None)
@@ -137,43 +219,73 @@ def build_protected_campaign_package(packet, *, now=None):
     exact_copy = str(packet.get("draft_caption") or packet.get("recommended_copy") or "").strip()
     if not exact_copy:
         raise ValueError("beacon_campaign_exact_copy_required")
-    objective = str(packet.get("campaign_objective") or "").strip()
+    objective = str(packet.get("campaign_objective") or
+        ("farm_awareness" if text_only else "")).strip()
     cta = str(packet.get("call_to_action") or "").strip()
     stock = packet.get("sale_stock_evidence") if isinstance(
         packet.get("sale_stock_evidence"), Mapping) else {}
     sam = packet.get("sam_response_contract") if isinstance(
         packet.get("sam_response_contract"), Mapping) else {}
-    if objective != "farm_awareness" or packet.get("campaign_lane") != "live_stock_awareness":
+    campaign_lane = packet.get("campaign_lane") or (
+        "live_stock_awareness" if text_only else "")
+    valid_objective = ((objective == "qualified_livestock_enquiries"
+        and campaign_lane == "live_stock_enquiry_capture") if enquiry_capture else
+        (objective == "farm_awareness" and campaign_lane == "live_stock_awareness"))
+    if not valid_objective:
         raise ValueError("beacon_campaign_awareness_objective_required")
-    if cta:
+    if not enquiry_capture and cta:
         raise ValueError("beacon_campaign_awareness_cta_prohibited")
-    if not litter_media:
+    if enquiry_capture and (not cta or not assess_public_livestock_enquiry_capture(
+            exact_copy, campaign_lane=campaign_lane)["allowed"]):
+        raise ValueError("beacon_campaign_enquiry_capture_policy_required")
+    if not litter_media and not text_only:
         raise ValueError("beacon_campaign_exact_litter_media_required")
-    story = stock.get("story_context") if isinstance(stock.get("story_context"), Mapping) else {}
-    sow_name = str(story.get("sow_name") or "").strip()
-    if not sow_name or str(story.get("litter_id") or "") in exact_copy:
-        raise ValueError("beacon_campaign_public_sow_identity_required")
-    if sow_name not in exact_copy:
-        raise ValueError("beacon_campaign_public_sow_name_missing")
-    if (stock.get("source") != "beacon_opportunity_scanner"
-            or not stock.get("fresh")
-            or not stock.get("card_id") or not stock.get("observed_at")):
-        raise ValueError("beacon_campaign_canonical_sale_stock_required")
-    if (sam.get("lane") != "live_stock_sales"
-            or not sam.get("campaign_attribution_required")
-            or sam.get("inbound_only") is not True):
-        raise ValueError("beacon_campaign_sam_response_contract_required")
+    if text_only:
+        capacity_source = (packet.get("business_offering_evidence") if enquiry_capture
+            else packet.get("capacity_context"))
+        capacity = capacity_source if isinstance(capacity_source, Mapping) else {}
+        if capacity.get("sale_availability_inferred") is not False:
+            raise ValueError("beacon_campaign_text_only_non_availability_required")
+        stock = {"source": ("sam_farm_knowledge" if enquiry_capture else "beacon_opportunity_scanner"),
+            **dict(capacity), "claim_boundary": str(capacity.get("claim_boundary") or
+                "Awareness only; no stock, availability, price or fulfilment claim.")}
+        if enquiry_capture:
+            if (sam.get("lane") != "live_stock_sales"
+                    or sam.get("campaign_attribution_required") is not True
+                    or sam.get("inbound_only") is not True):
+                raise ValueError("beacon_campaign_sam_response_contract_required")
+        else:
+            if not str(packet.get("sam_routing") or "").strip():
+                raise ValueError("beacon_campaign_sam_response_contract_required")
+            sam = {"lane": "live_stock_sales", "campaign_attribution_required": True,
+                "inbound_only": True, "authority_boundary": str(packet["sam_routing"])}
+    else:
+        story = stock.get("story_context") if isinstance(stock.get("story_context"), Mapping) else {}
+        sow_name = str(story.get("sow_name") or "").strip()
+        if not sow_name or str(story.get("litter_id") or "") in exact_copy:
+            raise ValueError("beacon_campaign_public_sow_identity_required")
+        if sow_name not in exact_copy:
+            raise ValueError("beacon_campaign_public_sow_name_missing")
+        if (stock.get("source") != "beacon_opportunity_scanner"
+                or not stock.get("fresh") or not stock.get("card_id") or not stock.get("observed_at")):
+            raise ValueError("beacon_campaign_canonical_sale_stock_required")
+        if (sam.get("lane") != "live_stock_sales"
+                or not sam.get("campaign_attribution_required")
+                or sam.get("inbound_only") is not True):
+            raise ValueError("beacon_campaign_sam_response_contract_required")
     envelope = {
         "contract_version": "beacon_protected_facebook_campaign_package_v1",
         "delivery_due_policy": "same_cycle_on_new_or_changed_evidence",
         "source_packet_id": packet["packet_id"], "exact_post_copy": exact_copy,
         "selected_approved_media": exact_media,
-        "media_evidence_exception": str(packet.get("precise_media_request") or ""),
+        "media_evidence_exception": ("Explicit text-only publication; no media is selected or implied."
+            if text_only else str(packet.get("precise_media_request") or "")),
         "audience": str(packet.get("audience") or "Local people interested in responsible livestock and farm life"),
         "location": "Riversdale and Albertinia, Western Cape, South Africa",
         "publication_time": publication.isoformat(), "publication_timezone": "Africa/Johannesburg",
         "approval_expires_at": publication.isoformat(),
         "boost_objective": "none",
+        "campaign_lane": campaign_lane,
         "campaign_objective": objective,
         "call_to_action": cta,
         "sale_stock_evidence": dict(stock),
@@ -632,7 +744,8 @@ def select_litter_story_media(payload, *, litter_id, pig_ids, event_id):
 
 
 def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
-        provider_message_id, packet_generation, claim_creator=create_claim):
+        provider_message_id, packet_generation, target_page_id=None,
+        claim_creator=create_claim):
     """Create the compact Telegram card and its exact single-use decision claim."""
     campaign = packet.get("protected_campaign_package") if isinstance(packet, Mapping) else None
     if not isinstance(campaign, Mapping):
@@ -644,7 +757,10 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
         "contract_version": "beacon_campaign_owner_card_v1",
         "packet_id": str(packet.get("packet_id") or ""),
         "packet_generation": str(packet_generation or ""),
+        "target_page_id": str(target_page_id or os.getenv("BEACON_FACEBOOK_PAGE_ID") or "").strip(),
         "exact_post_copy": str(campaign.get("exact_post_copy") or ""),
+        "campaign_lane": str(campaign.get("campaign_lane") or ""),
+        "campaign_objective": str(campaign.get("campaign_objective") or ""),
         "selected_media": media,
         "media_evidence_exception": str(campaign.get("media_evidence_exception") or ""),
         "audience": str(campaign.get("audience") or ""),
@@ -663,6 +779,8 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
     }
     if not preview["packet_generation"]:
         raise ValueError("beacon_campaign_packet_generation_required")
+    if not preview["target_page_id"]:
+        raise ValueError("beacon_campaign_target_page_required")
     preview["campaign_digest"] = canonical_preview_digest(CAMPAIGN_REVIEW_ACTION, preview)
     claim = claim_creator(action_kind=CAMPAIGN_REVIEW_ACTION,
         owner_user_id=str(owner_user_id), private_chat_id=str(private_chat_id),
@@ -682,11 +800,18 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
             if isinstance(media, Mapping) and media.get("asset_id") else "Text only")
     answer = "\n".join([
         "<b>BEACON — Facebook story</b>",
-        f"<b>Story:</b> {html.escape(str(packet.get('story_subject') or packet.get('objective') or 'Farm life'))}",
+        (f"<b>Business objective:</b> {html.escape(str(packet.get('objective') or 'Qualified livestock enquiries'))}"
+            if preview["campaign_lane"] == "live_stock_enquiry_capture" else
+            f"<b>Story:</b> {html.escape(str(packet.get('story_subject') or packet.get('objective') or 'Farm life'))}"),
         f"<b>Post:</b> {html.escape(preview['exact_post_copy'])}",
         f"<b>Pictures:</b> {html.escape(media_summary)}",
+        f"<b>Facebook Page ID:</b> {html.escape(preview['target_page_id'])} (bound from BEACON_FACEBOOK_PAGE_ID and re-read before Meta)",
         f"<b>Publish by:</b> {html.escape(preview['publication_time'])}",
-        "<b>Boundary:</b> Organic awareness only. No sales claim, call to action, spend or customer send.",
+        f"<b>Spend/duration:</b> ZAR {html.escape(str(budget.get('total') or '0.00'))} total; ZAR {html.escape(str(budget.get('daily') or '0.00'))} daily; {html.escape(str(duration.get('days') if duration.get('days') is not None else 0))} days; no boost.",
+        ("<b>Boundary:</b> Organic enquiry capture only. SAM qualification follows genuine inbound; no stock, price, availability, delivery, reservation, outcome or spend promise."
+            if preview["campaign_lane"] == "live_stock_enquiry_capture" else
+            "<b>Boundary:</b> Organic awareness only. No sales claim, call to action, spend or customer send."),
+        "<b>Meta proof:</b> Success requires exact provider readback of the created post ID, bound Page and exact copy. Missing, mismatched or ambiguous readback is terminally contained with no automatic retry.",
     ])
     rows = [[
         {"text": "Approve", "callback_data": f"{CALLBACK_PREFIX}{token}:confirm"},
@@ -826,6 +951,20 @@ def render_beacon_packet(packet, *, language="en"):
             "<b>Smallest governed decision:</b> " + html.escape(
                 str(packet.get("precise_media_request") or "")),
             "No card was created and nothing can be published."]
+    elif packet.get("packet_type") == "livestock_enquiry_capture_proposal":
+        evidence = packet.get("business_offering_evidence") or {}
+        sam = packet.get("sam_response_contract") or {}
+        campaign = packet.get("protected_campaign_package") or {}
+        lines = ["<b>BEACON — LIVESTOCK ENQUIRY POST</b>", "",
+            f"<b>Business objective:</b> {html.escape(str(packet.get('objective') or ''))}",
+            f"<b>Audience:</b> {html.escape(str(packet.get('audience') or ''))}",
+            f"<b>Supported offering:</b> {html.escape(str(evidence.get('offering_label') or ''))} — enquiries only; availability is not inferred.",
+            f"<b>Exact copy:</b>\n{html.escape(str(packet.get('draft_caption') or ''))}",
+            "<b>Media:</b> Text only.",
+            f"<b>SAM handoff:</b> campaign {html.escape(str(campaign.get('attribution_identity') or ''))}; qualify {html.escape(', '.join(sam.get('qualification_fields') or []))}.",
+            f"<b>Boundary:</b> {html.escape(str(sam.get('authority_boundary') or ''))}",
+            "<b>Distribution:</b> Organic Facebook only; no boost, spend or duration.",
+            "<b>Choose:</b> Approve / Correct / Decline. Approval authorizes one protected attempt only."]
     elif packet.get("packet_type") == "sale_ready_demand_proposal":
         media = packet.get("media") or {}
         stock = packet.get("sale_stock_evidence") or {}

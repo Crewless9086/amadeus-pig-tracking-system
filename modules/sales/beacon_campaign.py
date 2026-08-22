@@ -20,6 +20,7 @@ from modules.beacon.facebook_media_transport import (
 from modules.beacon.public_livestock_content_policy import (
     RISK_STATUS,
     assess_public_livestock_content,
+    assess_public_livestock_enquiry_capture,
     public_livestock_policy_contract,
 )
 from modules.beacon.organic_publication_binding import (
@@ -38,7 +39,8 @@ from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 BEACON_CAMPAIGN_MODE = "beacon_meat_launch_campaign_draft_only"
 BEACON_LIVE_STOCK_AWARENESS_MODE = "beacon_live_stock_awareness_campaign_draft_only"
-CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness", "live_stock_sales"}
+CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness", "live_stock_sales",
+    "live_stock_enquiry_capture"}
 LIVE_STOCK_DIRECT_SALES_TERMS = (
     "buy",
     "sale",
@@ -171,6 +173,8 @@ def normalize_campaign_lane(value):
         return "live_stock_awareness"
     if lane in {"live_sales", "livestock_sales", "live_pig_sales"}:
         return "live_stock_sales"
+    if lane in {"livestock_enquiry", "live_stock_enquiries", "live_stock_interest_capture"}:
+        return "live_stock_enquiry_capture"
     return lane
 
 
@@ -1286,13 +1290,14 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
     authorization_generation_id = _clean_text(
         payload.get("authorization_generation_id")
     )
-    if authorization_generation_id or campaign_lane == "live_stock_awareness":
-        if (
-            not isinstance(raw_campaign_lane, str)
-            or raw_campaign_lane != "live_stock_awareness"
-            or not isinstance(raw_objective, str)
-            or raw_objective != "farm_awareness"
-        ):
+    if authorization_generation_id or campaign_lane in {"live_stock_awareness", "live_stock_enquiry_capture"}:
+        valid_dimensions = {
+            ("live_stock_awareness", "farm_awareness"),
+            ("live_stock_enquiry_capture", "qualified_livestock_enquiries"),
+        }
+        if (not isinstance(raw_campaign_lane, str)
+                or not isinstance(raw_objective, str)
+                or (raw_campaign_lane, raw_objective) not in valid_dimensions):
             return {
                 "success": False,
                 "status": "organic_publication_objective_binding_mismatch",
@@ -1300,13 +1305,16 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             }, 409
     if campaign_lane == "meat_launch" and not meat_launch_authorized:
         return controlled_mode_denial("publish_meat_campaign")
-    if campaign_lane in {"live_stock_awareness", "live_stock_sales"}:
-        assessment = assess_public_livestock_content(
+    if campaign_lane in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
+        assessment = (assess_public_livestock_enquiry_capture(
             payload.get("exact_text") or payload.get("message"),
-            objective=raw_objective or "farm_awareness",
             campaign_lane=campaign_lane,
-            media=payload.get("selected_assets") or payload.get("selected_asset"),
-        )
+            media=payload.get("selected_assets") or payload.get("selected_asset"))
+            if campaign_lane == "live_stock_enquiry_capture" else assess_public_livestock_content(
+                payload.get("exact_text") or payload.get("message"),
+                objective=raw_objective or "farm_awareness",
+                campaign_lane=campaign_lane,
+                media=payload.get("selected_assets") or payload.get("selected_asset")))
         if not assessment["allowed"]:
             return {
                 "success": False,
@@ -1361,7 +1369,7 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             **_facebook_execution_authority(False),
         }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
     protected_token = ""
-    if campaign_lane == "live_stock_awareness":
+    if campaign_lane in {"live_stock_awareness", "live_stock_enquiry_capture"}:
         source = environ if environ is not None else os.environ
         protected_token = _clean_text(payload.get("protected_campaign_claim_token"))
         if protected_token:
@@ -1408,12 +1416,13 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
                 **_facebook_execution_authority(False),
             }, 409
 
-        final_assessment = assess_public_livestock_content(
-            params.get("exact_text"),
-            objective=params.get("objective"),
-            campaign_lane=params.get("campaign_lane"),
-            media=params.get("selected_assets") or params.get("selected_asset"),
-        )
+        final_assessment = (assess_public_livestock_enquiry_capture(
+            params.get("exact_text"), campaign_lane=params.get("campaign_lane"),
+            media=params.get("selected_assets") or params.get("selected_asset"))
+            if params.get("campaign_lane") == "live_stock_enquiry_capture" else
+            assess_public_livestock_content(params.get("exact_text"),
+                objective=params.get("objective"), campaign_lane=params.get("campaign_lane"),
+                media=params.get("selected_assets") or params.get("selected_asset")))
         if not final_assessment["allowed"]:
             return {
                 "success": False,
@@ -1582,22 +1591,35 @@ def _require_protected_campaign_authority(payload, params, database_url=None):
         return {"success": False, "status": "protected_campaign_authority_not_actionable"}, 409
     preview = row[1] if isinstance(row[1], dict) else {}
     decision = row[2] if isinstance(row[2], dict) else {}
+    configured_page_id = _clean_text(os.getenv(FACEBOOK_PAGE_ID_ENV))
     media_keys = ("asset_id", "content_sha256", "library_accept_event_id", "public_use_event_id")
-    media = [{key:item.get(key) for key in media_keys} for item in preview.get("selected_media") or []]
+    selected_media = preview.get("selected_media")
+    media = [] if selected_media == {"mode": "text_only"} else [
+        {key:item.get(key) for key in media_keys}
+        for item in selected_media or [] if isinstance(item, dict)]
     requested = [{key:item.get(key) for key in media_keys} for item in params.get("selected_assets") or []]
     if (row[0] != digest or preview.get("campaign_digest") != digest
             or decision.get("status") != "beacon_campaign_review_approved"
             or preview.get("packet_id") != params.get("publish_packet_id")
             or preview.get("exact_post_copy") != params.get("exact_text")
+            or (preview.get("campaign_lane") or "live_stock_awareness") != params.get("campaign_lane")
+            or (preview.get("campaign_objective") or "farm_awareness") != params.get("objective")
+            or not configured_page_id
+            or preview.get("target_page_id") != configured_page_id
+            or _clean_text(payload.get("target_page_id")) != configured_page_id
             or media != requested):
         return {"success": False, "status": "protected_campaign_authority_binding_mismatch"}, 409
-    current_projection, current_status = resolve_server_publication_assets(
-        [item.get("asset_id") for item in params.get("selected_assets") or []], database_url)
-    if current_status != 200 or current_projection.get("success") is not True:
-        return {"success": False, "status": "protected_campaign_media_authority_revoked"}, 409
-    current = [{key:item.get(key) for key in media_keys} for item in current_projection["assets"]]
-    if current != media:
-        return {"success": False, "status": "protected_campaign_media_authority_changed"}, 409
+    if selected_media == {"mode": "text_only"}:
+        if params.get("selected_assets") or params.get("asset_id"):
+            return {"success": False, "status": "protected_campaign_text_only_media_conflict"}, 409
+    else:
+        current_projection, current_status = resolve_server_publication_assets(
+            [item.get("asset_id") for item in params.get("selected_assets") or []], database_url)
+        if current_status != 200 or current_projection.get("success") is not True:
+            return {"success": False, "status": "protected_campaign_media_authority_revoked"}, 409
+        current = [{key:item.get(key) for key in media_keys} for item in current_projection["assets"]]
+        if current != media:
+            return {"success": False, "status": "protected_campaign_media_authority_changed"}, 409
     binding_id = "BEACON-PROTECTED-BINDING-" + hashlib.sha256(token.encode()).hexdigest()[:24].upper()
     return {"success": True, "status": "protected_campaign_authority_verified",
         "binding": {"binding_id": binding_id, "owner_decision_event_id": token},
@@ -2424,7 +2446,7 @@ def _performance_params(payload):
 def _recommend_boost(payload, spend_amount, messages, qualified, evidence=None):
     evidence = evidence or _performance_metric_evidence(payload)
     campaign_lane = normalize_campaign_lane(payload.get("campaign_lane"))
-    if campaign_lane in {"live_stock_awareness", "live_stock_sales"}:
+    if campaign_lane in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
         return {
             "recommended_action": "do_not_boost",
             "recommendation_reason": (
@@ -2932,13 +2954,13 @@ def _post_to_facebook_page_binary_images(
             "automatic_retry_allowed": False,
         }, 503
 
-    if params.get("campaign_lane") in {"live_stock_awareness", "live_stock_sales"}:
-        final_policy = assess_public_livestock_content(
-            params.get("exact_text"),
-            objective=params.get("objective") or "farm_awareness",
-            campaign_lane=params.get("campaign_lane"),
-            media=assets,
-        )
+    if params.get("campaign_lane") in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
+        final_policy = (assess_public_livestock_enquiry_capture(
+            params.get("exact_text"), campaign_lane=params.get("campaign_lane"), media=assets)
+            if params.get("campaign_lane") == "live_stock_enquiry_capture" else
+            assess_public_livestock_content(params.get("exact_text"),
+                objective=params.get("objective") or "farm_awareness",
+                campaign_lane=params.get("campaign_lane"), media=assets))
         if not final_policy["allowed"]:
             return {
                 "success": False,

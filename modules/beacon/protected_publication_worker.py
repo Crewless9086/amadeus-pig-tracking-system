@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 
-from modules.beacon.public_livestock_content_policy import assess_public_livestock_content
+from modules.beacon.public_livestock_content_policy import (
+    assess_public_livestock_content, assess_public_livestock_enquiry_capture,
+)
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.sales.beacon_campaign import (
     FACEBOOK_POST_CONFIRMATION_PHRASE, execute_beacon_facebook_page_post,
@@ -29,15 +31,23 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
         store.finish(claimed["consumer_id"], "contained", {"status": error}, current)
         return _result(error, success=False)
     preview = claimed["preview_payload"]
-    media = [_execution_asset(item) for item in preview["selected_media"]]
+    selected_media = preview["selected_media"]
+    text_only = selected_media == {"mode": "text_only"}
+    media = [] if text_only else [_execution_asset(item) for item in selected_media]
     payload = {
         "publish_packet_id": preview["packet_id"],
-        "channel": "facebook_organic", "campaign_lane": "live_stock_awareness",
-        "objective": "farm_awareness", "exact_text": preview["exact_post_copy"],
-        "selected_assets": media, "selected_asset": media[0],
-        "asset_id": media[0]["asset_id"], "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "channel": "facebook_organic",
+        "campaign_lane": preview.get("campaign_lane") or "live_stock_awareness",
+        "objective": preview.get("campaign_objective") or "farm_awareness",
+        "exact_text": preview["exact_post_copy"],
+        "selected_assets": media, "selected_asset": media[0] if media else {},
+        "asset_id": media[0]["asset_id"] if media else "",
+        "target_page_id": preview["target_page_id"],
+        "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
         "zero_spend": True, "protected_campaign_claim_token": claimed["callback_token"],
         "protected_campaign_digest": preview["campaign_digest"],
+        "attribution_identity": preview["attribution_identity"],
+        "sam_boundary": preview["sam_boundary"],
         "recorded_by": "beacon_protected_publication_worker",
     }
     execute = executor or execute_beacon_facebook_page_post
@@ -49,8 +59,22 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
                             "automatic_retry_allowed": False}, 503)
     outcome_status = str(outcome.get("status") or "")
     provider = outcome.get("facebook_result") if isinstance(outcome.get("facebook_result"), dict) else {}
-    provider_confirmed = (outcome.get("success") is True
-        and outcome.get("provider_readback_confirmed") is True)
+    provider_readback = (provider.get("provider_readback")
+        if isinstance(provider.get("provider_readback"), dict) else {})
+    provider_post_id = str(provider_readback.get("id") or "").strip()
+    outcome_post_id = str(outcome.get("facebook_post_id") or "").strip()
+    # The canonical executor returns provider proof inside facebook_result, and
+    # the attribution resolver binds that same nested proof.  Do not confirm a
+    # consumer from a legacy top-level flag or from a contradictory/missing
+    # provider identity: either would create a status that canonical SAM
+    # attribution cannot independently resolve.
+    provider_confirmed = (
+        outcome.get("success") is True
+        and provider.get("provider_readback_confirmed") is True
+        and provider_readback.get("success") is True
+        and bool(outcome_post_id)
+        and provider_post_id == outcome_post_id
+    )
     if outcome.get("success") is True and not provider_confirmed:
         outcome = {**outcome, "success": False,
             "status": "meta_provider_readback_unproven_ambiguous", "outcome": "ambiguous",
@@ -89,33 +113,56 @@ def validate_claimed_approval(claim, *, now=None):
         return "protected_campaign_expiry_invalid"
     if expires <= (now or datetime.now(timezone.utc)):
         return "protected_campaign_approval_expired"
+    if not str(preview.get("target_page_id") or "").strip():
+        return "protected_campaign_target_page_required"
+    if (preview.get("budget_cap") != {"currency": "ZAR", "total": "0.00", "daily": "0.00"}
+            or preview.get("duration") != {"days": 0}):
+        return "protected_campaign_zero_spend_boundary_invalid"
+    if (not str(preview.get("attribution_identity") or "").strip()
+            or not str(preview.get("sam_boundary") or "").strip()):
+        return "protected_campaign_sam_identity_required"
     media = preview.get("selected_media")
-    if not isinstance(media, list) or not media:
-        return "protected_campaign_exact_media_required"
-    for item in media:
-        if not isinstance(item, dict) or item.get("public_use_authority") != "approved":
-            return "protected_campaign_media_authority_revoked"
-        if not all(str(item.get(key) or "").strip() for key in (
-                "asset_id", "content_sha256", "storage_readback_proof_id",
-                "library_accept_event_id", "public_use_event_id", "litter_id", "event_id")):
-            return "protected_campaign_media_evidence_incomplete"
+    text_only = media == {"mode": "text_only"}
+    if not text_only:
+        if not isinstance(media, list) or not media:
+            return "protected_campaign_exact_media_required"
+        for item in media:
+            if not isinstance(item, dict) or item.get("public_use_authority") != "approved":
+                return "protected_campaign_media_authority_revoked"
+            if not all(str(item.get(key) or "").strip() for key in (
+                    "asset_id", "content_sha256", "storage_readback_proof_id",
+                    "library_accept_event_id", "public_use_event_id", "litter_id", "event_id")):
+                return "protected_campaign_media_evidence_incomplete"
     story = preview.get("story_context") if isinstance(preview.get("story_context"), dict) else {}
     sow_name = str(story.get("sow_name") or "").strip()
     litter_id = str(story.get("litter_id") or "").strip()
     caption = str(preview.get("exact_post_copy") or "")
-    if not sow_name or sow_name not in caption or (litter_id and litter_id.casefold() in caption.casefold()):
-        return "protected_campaign_public_sow_identity_failed"
-    if any(str(item.get("litter_id") or "") != litter_id or
-           str(item.get("event_id") or "") != str(story.get("event_id") or "") for item in media):
-        return "protected_campaign_litter_media_binding_failed"
-    if __import__("re").search(
+    if not text_only:
+        if not sow_name or sow_name not in caption or (litter_id and litter_id.casefold() in caption.casefold()):
+            return "protected_campaign_public_sow_identity_failed"
+        if any(str(item.get("litter_id") or "") != litter_id or
+               str(item.get("event_id") or "") != str(story.get("event_id") or "") for item in media):
+            return "protected_campaign_litter_media_binding_failed"
+    elif (preview.get("media_evidence_exception") !=
+            "Explicit text-only publication; no media is selected or implied."):
+        return "protected_campaign_text_only_boundary_invalid"
+    lane = preview.get("campaign_lane") or "live_stock_awareness"
+    objective = preview.get("campaign_objective") or "farm_awareness"
+    if (lane, objective) not in {("live_stock_awareness", "farm_awareness"),
+            ("live_stock_enquiry_capture", "qualified_livestock_enquiries")}:
+        return "protected_campaign_objective_binding_invalid"
+    enquiry_capture = (lane == "live_stock_enquiry_capture"
+        and preview.get("campaign_objective") == "qualified_livestock_enquiries")
+    if not enquiry_capture and __import__("re").search(
             r"\b(follow\s+(?:along|us)|volg\s+(?:saam|ons)|contact|kontak|message|boodskap|dm|"
             r"come\s+(?:see|visit)|visit|share|read\s+more|learn\s+more|see\s+more|check\s+out|click|tap|watch|subscribe|"
             r"kom\s+(?:kyk|besoek|loer)|gaan\s+kyk|besoek|deel|lees\s+meer|vind\s+meer\s+uit|klik|druk|kyk|teken\s+in)\b",
             caption, __import__("re").I):
         return "protected_campaign_story_only_cta_failed"
-    policy = assess_public_livestock_content(preview.get("exact_post_copy"),
-        objective="farm_awareness", campaign_lane="live_stock_awareness", media=media)
+    policy = (assess_public_livestock_enquiry_capture(preview.get("exact_post_copy"),
+        campaign_lane="live_stock_enquiry_capture", media=[] if text_only else media) if enquiry_capture else
+        assess_public_livestock_content(preview.get("exact_post_copy"),
+            objective="farm_awareness", campaign_lane="live_stock_awareness", media=media))
     if not policy.get("allowed"):
         return "protected_campaign_public_policy_failed"
     return ""

@@ -11,6 +11,16 @@ internal observation. A litter story uses the sow's canonical human name and
 never exposes the internal litter identity. Organic inbound is routed to SAM
 only after the person independently contacts the farm.
 
+A distinct `live_stock_enquiry_capture` lane may state the stable, supported
+business purpose that Amadeus Farm handles live-pig enquiries and may invite a
+person to message the farm with animal type, quantity, intended use and area.
+It must be text-only unless separately governed current media exists; it must
+name SAM's qualification handoff and explicitly say that no stock, price,
+availability, delivery or reservation is promised. It may not name current
+animals, imply an offer or fulfilment outcome, optimize commercial livestock
+copy from engagement, boost or spend. The exact owner-approved organic packet
+and provider readback remain mandatory.
+
 Objectives, brand rules, channel allowlists, KPI definitions, attribution windows, thresholds, and targets must show whether they are proposed or owner-approved. Approval may not be inferred from a default.
 
 Demand ceilings require fresh fulfilment provenance and subtract commitments, operational reserve, and safety buffer from verified availability. Unknown channels, unresolved public-media permission, and missing, stale, invalid, incompatible, or zero-capacity evidence fail closed.

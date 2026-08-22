@@ -5,6 +5,7 @@ from unittest.mock import patch
 from modules.oom_sakkie.beacon_request_runtime import (
     build_current_beacon_proposal, build_litter_awareness_story_proposal,
     build_live_stock_awareness_proposal,
+    build_supported_livestock_enquiry_proposal,
     build_protected_campaign_package, build_sale_ready_demand_proposal,
     build_scheduled_sale_ready_stock_result, handle_beacon_request,
     render_beacon_packet)
@@ -109,7 +110,7 @@ def test_missing_media_is_precise_and_afrikaans_rendered():
     assert "Aanbevole kanaal/kopie:" in answer and "Meet later:" in answer
 
 
-def test_scheduled_result_binds_material_stock_and_media_evidence():
+def test_scheduled_enquiry_result_is_stable_across_unclaimed_stock_and_media_changes():
     fixed = {"content_evidence_loader": lambda **kwargs: kwargs,
         "content_candidate_builder": lambda evidence, **kwargs: awareness_candidate(),
         "litter_loader": litter_evidence,
@@ -124,14 +125,14 @@ def test_scheduled_result_binds_material_stock_and_media_evidence():
         opportunity_loader=lambda: opportunity(),
         media_loader=lambda: public_awareness_media(trusted=False), **fixed)
     assert first["proposal"]["packet_id"]
-    assert first["result_digest"] != changed_stock["result_digest"]
-    assert first["result_digest"] != changed_media["result_digest"]
+    assert first["result_digest"] == changed_stock["result_digest"]
+    assert first["result_digest"] == changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
     package = first["proposal"]["protected_campaign_package"]
-    assert first["proposal"]["packet_type"] == "litter_awareness_story"
-    assert package["call_to_action"] == ""
-    assert "Molly" in package["exact_post_copy"] and "LITTER-7" not in package["exact_post_copy"]
-    assert package["sale_stock_evidence"]["card_id"] == "BEACON-CURRENT"
+    assert first["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
+    assert "Message Amadeus Farm" in package["call_to_action"]
+    assert "no stock, price, availability, delivery or reservation is promised" in package["exact_post_copy"]
+    assert package["sale_stock_evidence"]["sale_availability_inferred"] is False
     assert package["sam_response_contract"]["lane"] == "live_stock_sales"
     assert package["sam_response_contract"]["inbound_only"] is True
     assert package["sam_response_contract"]["campaign_attribution_id"] == package["attribution_identity"]
@@ -143,10 +144,10 @@ def test_scheduled_result_binds_material_stock_and_media_evidence():
     assert package["authority"]["publication_authorized"] is False
     assert package["authority"]["boost_authorized"] is False
     assert package["attribution_identity"].startswith("BEACON-CAMPAIGN-")
-    assert "FACEBOOK STORY" in first["answer"]
+    assert "LIVESTOCK ENQUIRY" in first["answer"]
 
 
-def test_scheduled_missing_media_request_keeps_publication_separate():
+def test_scheduled_enquiry_capture_is_explicitly_text_only():
     result = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(),
         media_loader=lambda: media(accepted=False),
@@ -154,11 +155,30 @@ def test_scheduled_missing_media_request_keeps_publication_separate():
         content_evidence_loader=lambda **kwargs: kwargs,
         content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
         now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
-    assert result["proposal"]["packet_type"] == "litter_awareness_story"
+    assert result["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
     assert result["proposal"]["authority"]["publishes"] is False
-    assert "protected_campaign_package" not in result["proposal"]
-    assert "ONE MEDIA EXCEPTION" in result["answer"]
-    assert "Please send one current portrait photo" in result["proposal"]["precise_media_request"]
+    assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
+
+
+def test_supported_offering_read_rejects_fallback_or_partial_config_evidence():
+    for result in (
+        {"status":"fallback_default_file_missing", "configured":False, "knowledge":{}},
+        {"status":"ok", "configured":True, "source_top_level_keys":["version"],
+         "source_content_sha256":"a"*64,
+         "knowledge":{"public_profile":{"farm_name":"Amadeus Farm"},
+             "product_menu":[{"key":"live_sales","label":"Live pig sales"}]}},
+        {"status":"ok", "configured":True,
+         "path":"partial.json", "source_top_level_keys":["version","status","public_profile","product_menu"],
+         "source_content_sha256":"b"*64,
+         "source_evidence":{"version":"fallback","status":"fallback_default",
+             "public_profile":{},"product_menu":[{"key":"live_sales"}]},
+         "knowledge":{"public_profile":{"farm_name":"Amadeus Farm"},
+             "product_menu":[{"key":"live_sales","label":"Live pig sales",
+                 "summary":"Piglets, weaners, growers and finishers"}]}},
+    ):
+        packet=build_supported_livestock_enquiry_proposal(opportunity(), result)
+        assert packet["packet_type"] == "supported_offering_evidence_request"
+        assert packet["status"] == "evidence_blocked"
 
 
 def test_messages_objective_rejects_generic_awareness_follow_copy():
@@ -194,14 +214,14 @@ def test_messages_objective_rejects_generic_message_cta_without_qualification_co
         raise AssertionError("generic message CTA must not pass")
 
 
-def test_missing_sale_stock_returns_precise_non_publishable_exception():
+def test_missing_sale_stock_does_not_block_supported_enquiry_service_copy():
     result = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(False),
         media_loader=lambda: public_awareness_media(),
         litter_loader=litter_evidence,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
-    assert result["status"] == "beacon_litter_awareness_story_ready"
-    assert result["proposal"]["packet_type"] == "litter_awareness_story"
+    assert result["status"] == "beacon_livestock_enquiry_capture_ready"
+    assert result["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
     assert result["publishes"] is False and result["spends_money"] is False
 
 
