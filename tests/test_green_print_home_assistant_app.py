@@ -25,16 +25,19 @@ def test_package_is_bounded_and_privilege_split():
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
     assert "chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf" in docker
+    assert "Printcap /run/cups/printcap" in docker and "/var/cache/cups" in docker
 
 def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8")
+    policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8"); cupsd=(APP/"rootfs/etc/cups/cupsd.conf").read_text(encoding="utf-8")
     assert 'Path("/etc/hosts").open("a"' in queue and 'hosts.write(f"{pin} {uri.hostname}\\n")' in queue
     assert "answers!={pin}" in queue and 'uri.scheme!="ipps"' in queue
     assert "/config/private-ca.crt /etc/cups/ssl/site.crt" in init
     assert "mkdir -p" in docker and "/etc/cups/ssl" in docker and "install -d -o root -g root -m 0755 /etc/cups/ssl" not in init
     for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption Required","TrustOnFirstUse No","ValidateCerts Yes"):
         assert required in policy
+    assert "ServerName /run/cups/cups.sock" in policy
+    assert "Listen /run/cups/cups.sock" in cupsd and "Listen localhost:631" not in cupsd
 
 def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
     calls=[]
@@ -146,7 +149,7 @@ def test_apparmor_denies_admin_and_broad_writes():
 
 def test_apparmor_covers_inherited_s6_entrypoint_without_broad_shell_exec():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
-    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py r,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,"):
+    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py r,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,","/var/cache/cups/ rwk,","/usr/share/cups/ r,","deny /etc/printcap rwklx,","deny /etc/cups/ssl/*.key rwklx,"):
         assert required in policy
     assert "/usr/bin/su-exec" not in policy
     assert "/bin/** ix" not in policy and "/usr/bin/** ix" not in policy

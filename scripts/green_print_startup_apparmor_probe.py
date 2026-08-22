@@ -174,7 +174,11 @@ def main() -> int:
                 "docker", "exec", container, "/usr/bin/lpstat", "-v", "weekly-a4",
                 check=False,
             )
-            if scheduler.returncode != 0 or destination.returncode != 0:
+            if (
+                scheduler.returncode != 0
+                or scheduler.stdout.strip() != "scheduler is running"
+                or destination.returncode != 0
+            ):
                 raise RuntimeError(
                     "CUPS scheduler or destination unavailable\n"
                     f"scheduler: rc={scheduler.returncode} stdout={scheduler.stdout!r} stderr={scheduler.stderr!r}\n"

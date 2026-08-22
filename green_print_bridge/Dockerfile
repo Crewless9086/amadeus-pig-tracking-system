@@ -19,10 +19,11 @@ RUN apk add --no-cache cups cups-client cups-filters ca-certificates python3 su-
     && addgroup -S greenprint && adduser -S -D -H -s /sbin/nologin -G greenprint greenprint \
     && addgroup -S cupsd && adduser -S -D -H -s /sbin/nologin -G cupsd cupsd \
     && chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf \
-    && mkdir -p /opt/green /data /run/cups /tmp/green-spool /var/spool/cups /var/log/cups /etc/cups/ssl \
+    && sed -i 's|^#Printcap /etc/printcap|Printcap /run/cups/printcap|' /etc/cups/cups-files.conf \
+    && mkdir -p /opt/green /data /run/cups /tmp/green-spool /var/spool/cups /var/log/cups /var/cache/cups /etc/cups/ssl \
     && chmod 0755 /etc/cups/ssl \
     && chown greenprint:greenprint /data /tmp/green-spool \
-    && chown cupsd:cupsd /run/cups /var/spool/cups /var/log/cups \
+    && chown cupsd:cupsd /run/cups /var/spool/cups /var/log/cups /var/cache/cups \
     && chmod 0700 /data /tmp/green-spool /var/spool/cups
 
 COPY rootfs /
