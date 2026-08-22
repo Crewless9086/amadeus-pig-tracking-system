@@ -205,9 +205,6 @@ def main() -> int:
                 " && grep -Fx 'ServerRoot /run/cups' /etc/cups/cups-files.conf"
                 " && test \"$(grep -Ec '^[[:space:]]*User[[:space:]]+' /etc/cups/cups-files.conf)\" -eq 1"
                 " && test \"$(grep -Ec '^[[:space:]]*Group[[:space:]]+' /etc/cups/cups-files.conf)\" -eq 1"
-                " && cups_pid=$(/bin/busybox pidof cupsd)"
-                " && test -n \"${cups_pid}\""
-                " && grep -Eq '^Uid:[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]+0$' /proc/${cups_pid}/status"
                 " && test -S /run/cups/cups.sock"
                 " && test -f /run/cups/printers.conf"
                 " && test ! -e /etc/printcap"
@@ -220,6 +217,29 @@ def main() -> int:
                     "CUPS privilege or local-only contract mismatch\n"
                     f"rc={cups_contract.returncode} stdout={cups_contract.stdout!r} "
                     f"stderr={cups_contract.stderr!r}\n"
+                    + failure_diagnostics(container)
+                )
+            process_readback = run(
+                "docker", "top", container, "-eo", "user,group,comm,args",
+                check=False,
+            )
+            process_rows = [line.split(None, 3) for line in process_readback.stdout.splitlines()[1:]]
+            root_cupsd = any(
+                len(row) == 4 and row[:3] == ["root", "root", "cupsd"]
+                for row in process_rows
+            )
+            green_service = any(
+                len(row) == 4
+                and row[0] == "greenprint"
+                and row[1] == "greenprint"
+                and "/opt/green/service.py" in row[3]
+                for row in process_rows
+            )
+            if process_readback.returncode != 0 or not root_cupsd or not green_service:
+                raise RuntimeError(
+                    "runtime process identity mismatch\n"
+                    f"rc={process_readback.returncode} stdout={process_readback.stdout!r} "
+                    f"stderr={process_readback.stderr!r}\n"
                     + failure_diagnostics(container)
                 )
             tcp_listener = run(
@@ -260,6 +280,7 @@ def main() -> int:
                 "container_running": True,
                 "cups_scheduler_identity": "root-bootstrap",
                 "cups_worker_identity": "cupsd:cupsd",
+                "green_runtime_identity": "greenprint:greenprint",
                 "local_transport": "unix_socket",
                 "printcap": "/run/cups/printcap",
                 "queue_jobs": 0,
