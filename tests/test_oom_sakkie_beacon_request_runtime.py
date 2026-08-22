@@ -71,7 +71,7 @@ def awareness_candidate(media_status="media_gap"):
         "draft_copy": ("A small moment from life at Amadeus Farm. Patient daily care matters.\n\n"
             "Follow the farm journey for more honest moments from behind the scenes."),
         "media": media_value, "public_livestock_policy": {
-            "policy_version": "beacon_public_livestock_awareness_only_v1"}}}
+            "policy_version": "beacon_public_livestock_awareness_only_v2"}}}
 
 
 def memory_store():
@@ -128,23 +128,9 @@ def test_scheduled_enquiry_result_is_stable_across_unclaimed_stock_and_media_cha
     assert first["result_digest"] == changed_stock["result_digest"]
     assert first["result_digest"] == changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
-    package = first["proposal"]["protected_campaign_package"]
-    assert first["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
-    assert "Message Amadeus Farm" in package["call_to_action"]
-    assert "no stock, price, availability, delivery or reservation is promised" in package["exact_post_copy"]
-    assert package["sale_stock_evidence"]["sale_availability_inferred"] is False
-    assert package["sam_response_contract"]["lane"] == "live_stock_sales"
-    assert package["sam_response_contract"]["inbound_only"] is True
-    assert package["sam_response_contract"]["campaign_attribution_id"] == package["attribution_identity"]
-    assert package["delivery_due_policy"] == "same_cycle_on_new_or_changed_evidence"
-    assert package["publication_time"] == "2026-08-18T18:00:00+02:00"
-    assert package["approval_expires_at"] == package["publication_time"]
-    assert package["budget_cap"] == {"currency": "ZAR", "total": "0.00", "daily": "0.00"}
-    assert package["duration"] == {"days": 0}
-    assert package["authority"]["publication_authorized"] is False
-    assert package["authority"]["boost_authorized"] is False
-    assert package["attribution_identity"].startswith("BEACON-CAMPAIGN-")
-    assert "LIVESTOCK ENQUIRY" in first["answer"]
+    assert first["proposal"]["packet_type"] == "supported_offering_evidence_request"
+    assert first["proposal"]["status"] == "evidence_blocked"
+    assert "protected_campaign_package" not in first["proposal"]
 
 
 def test_scheduled_enquiry_capture_is_explicitly_text_only():
@@ -155,9 +141,9 @@ def test_scheduled_enquiry_capture_is_explicitly_text_only():
         content_evidence_loader=lambda **kwargs: kwargs,
         content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
         now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
-    assert result["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
+    assert result["proposal"]["packet_type"] == "supported_offering_evidence_request"
     assert result["proposal"]["authority"]["publishes"] is False
-    assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
+    assert "protected_campaign_package" not in result["proposal"]
 
 
 def test_supported_offering_read_rejects_fallback_or_partial_config_evidence():
@@ -220,8 +206,8 @@ def test_missing_sale_stock_does_not_block_supported_enquiry_service_copy():
         media_loader=lambda: public_awareness_media(),
         litter_loader=litter_evidence,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
-    assert result["status"] == "beacon_livestock_enquiry_capture_ready"
-    assert result["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
+    assert result["status"] == "beacon_livestock_offering_evidence_exception"
+    assert result["proposal"]["packet_type"] == "supported_offering_evidence_request"
     assert result["publishes"] is False and result["spends_money"] is False
 
 
@@ -299,8 +285,7 @@ def test_unchanged_evidence_is_stable_across_scheduler_day_rollover():
         now=datetime(2026, 8, 19, 12, tzinfo=timezone.utc))
     assert first["proposal"]["packet_id"] == later["proposal"]["packet_id"]
     assert first["result_digest"] == later["result_digest"]
-    assert first["proposal"]["protected_campaign_package"]["publication_time"] == \
-        "2026-08-18T18:00:00+02:00"
+    assert "protected_campaign_package" not in first["proposal"]
 
 
 def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time():
@@ -337,11 +322,9 @@ def test_stock_neutral_packet_ignores_production_allocation_observation_churn():
         now=datetime(2026, 8, 22, 18, 11, 17, tzinfo=timezone.utc),
         target_page_id="PAGE-ONE")
 
-    assert "observed_at" not in first["proposal"]["business_offering_evidence"]
     assert first["proposal"]["packet_id"] == refreshed["proposal"]["packet_id"]
     assert first["result_digest"] == refreshed["result_digest"]
-    assert first["proposal"]["protected_campaign_package"] == \
-        refreshed["proposal"]["protected_campaign_package"]
+    assert "protected_campaign_package" not in first["proposal"]
 
 
 def test_scheduled_generation_binds_configured_facebook_page_identity():
@@ -355,39 +338,27 @@ def test_scheduled_generation_binds_configured_facebook_page_identity():
     with patch.dict("os.environ", {"BEACON_FACEBOOK_PAGE_ID": "PAGE-TWO"}):
         successor = build_scheduled_sale_ready_stock_result(**fixed)
 
-    assert first["proposal"]["target_page_id"] == "PAGE-ONE"
-    assert first["proposal"]["protected_campaign_package"]["target_page_id"] == "PAGE-ONE"
     assert first["result_digest"] == replay["result_digest"]
     assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
-    assert first["result_digest"] != successor["result_digest"]
-    assert first["proposal"]["packet_id"] != successor["proposal"]["packet_id"]
+    assert first["result_digest"] == successor["result_digest"]
+    assert "target_page_id" not in first["proposal"]
 
 
-def test_scheduled_generation_binds_explicit_enquiry_policy_version():
+def test_scheduled_generation_cannot_restore_retired_enquiry_policy_by_patch():
     fixed = {"opportunity_loader": opportunity,
         "media_loader": public_awareness_media,
         "litter_loader": litter_evidence,
         "now": datetime(2026, 8, 17, 12, tzinfo=timezone.utc),
         "target_page_id": "PAGE-ONE"}
-    with patch("modules.oom_sakkie.beacon_request_runtime."
-            "assess_public_livestock_enquiry_capture",
-            return_value={"allowed": True, "policy_version": "policy-v1", "reasons": []}):
-        first = build_scheduled_sale_ready_stock_result(**fixed)
-        replay = build_scheduled_sale_ready_stock_result(**fixed)
-    with patch("modules.oom_sakkie.beacon_request_runtime."
-            "assess_public_livestock_enquiry_capture",
-            return_value={"allowed": True, "policy_version": "policy-v2", "reasons": []}):
-        successor = build_scheduled_sale_ready_stock_result(**fixed)
+    first = build_scheduled_sale_ready_stock_result(**fixed)
+    replay = build_scheduled_sale_ready_stock_result(**fixed)
+    successor = build_scheduled_sale_ready_stock_result(**fixed)
 
-    assert first["proposal"]["public_content_policy"] == {
-        "policy_id": "beacon_public_livestock_enquiry_capture",
-        "policy_version": "policy-v1"}
-    assert first["proposal"]["protected_campaign_package"]["public_content_policy"] == \
-        first["proposal"]["public_content_policy"]
+    assert first["proposal"]["status"] == "evidence_blocked"
+    assert "protected_campaign_package" not in first["proposal"]
     assert first["result_digest"] == replay["result_digest"]
     assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
-    assert first["result_digest"] != successor["result_digest"]
-    assert first["proposal"]["packet_id"] != successor["proposal"]["packet_id"]
+    assert first["result_digest"] == successor["result_digest"]
 
 
 def test_content_packet_identity_does_not_treat_observation_time_as_new_campaign():

@@ -1346,12 +1346,12 @@ class BeaconCampaignTests(unittest.TestCase):
                 ({"success":True,"status":"meta_readback_confirmed","id":post_id},200)),
             environ={"BEACON_FACEBOOK_POSTING_ENABLED":"1",
                 "BEACON_FACEBOOK_PAGE_ID":"PAGE-1","BEACON_FACEBOOK_PAGE_ACCESS_TOKEN":"token"})
-        self.assertEqual((status,result["status"]),(200,"facebook_page_post_sent"))
-        self.assertTrue(result["facebook_result"]["provider_readback_confirmed"])
-        self.assertEqual(len(post.call_args_list),1)
-        self.assertEqual(readbacks,[("PAGE-1_9",caption)])
-        self.assertEqual([row["execution_status"] for row in recorded],
-            ["record_only_before_send","facebook_page_post_sent"])
+        self.assertEqual(status,409)
+        self.assertEqual(result["status"],
+            "owner_review_required_meta_livestock_commerce_risk")
+        post.assert_not_called()
+        self.assertEqual(readbacks,[])
+        self.assertEqual(recorded,[])
 
     def test_facebook_post_execution_retry_is_blocked_before_meta(self):
         calls = []

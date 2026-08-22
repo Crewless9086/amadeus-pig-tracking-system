@@ -119,7 +119,7 @@ def test_explicit_generic_awareness_can_use_bound_text_only_publication():
     candidate={"success":True,"owner_review_packet":{
         "packet_id":"CONTENT-1","draft_copy":"A quiet farm-life update from Amadeus Farm.",
         "audience":"People interested in responsible local farm life",
-        "public_livestock_policy":{"policy_version":"beacon_public_livestock_awareness_only_v1"}}}
+        "public_livestock_policy":{"policy_version":"beacon_public_livestock_awareness_only_v2"}}}
     proposal=build_live_stock_awareness_proposal(
         {"success":True,"cards":[]}, candidate, {"success":True,"items":[]})
     protected=build_protected_campaign_package(proposal,
