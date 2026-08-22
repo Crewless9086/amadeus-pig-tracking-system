@@ -36,6 +36,7 @@ class SemanticInterpretation:
     observation: str = ""
     observation_facts: tuple[Mapping[str, Any], ...] = ()
     breeding_actions: tuple[Mapping[str, Any], ...] = ()
+    farrowing_litter: Mapping[str, Any] | None = None
     confirmation_facts: Mapping[str, bool] | None = None
     commissioning_facts: Mapping[str, bool] | None = None
     protected_preview_required: bool = False
@@ -99,6 +100,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             return None
         facts = _observation_facts(value.get("observation_facts"))
         breeding_actions = _breeding_actions(value.get("breeding_actions"))
+        farrowing_litter = _farrowing_litter(value.get("farrowing_litter"))
         confirmation_facts = _confirmation_facts(value.get("confirmation_facts"))
         commissioning_facts = _commissioning_facts(value.get("commissioning_facts"))
         return SemanticInterpretation(domain=domain,
@@ -108,6 +110,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             observation=str(value.get("observation") or "").strip()[:500],
             observation_facts=facts,
             breeding_actions=breeding_actions,
+            farrowing_litter=farrowing_litter,
             confirmation_facts=confirmation_facts,
             commissioning_facts=commissioning_facts,
             protected_preview_required=value.get("protected_preview_required") is True,
@@ -202,7 +205,7 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,observation_facts,breeding_actions,confirmation_facts,commissioning_facts,"
+        "observation,observation_facts,breeding_actions,farrowing_litter,confirmation_facts,commissioning_facts,"
         "protected_preview_required,recording_prohibited,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
         " For an owner report of actual boar placements, removals, a body-condition recovery hold or clearance, or a sow appearing close to farrowing, "
@@ -211,6 +214,11 @@ def _payload(parsed, context, source):
         "planned_days, planned_removal_on, actual_removed_on, exposure_identity, placement_pen_ref, body_condition_score, observed_at, "
         "prior_mating_known, father_known, and factual_note. Never infer a service, "
         "conception, pregnancy, father, mating date, animal identity, or omitted group member."
+        " For a natural request to record a real farrowing/litter, use herd_management with stable intent record_farrowing_litter and return farrowing_litter. "
+        "Allowed farrowing_litter keys are sow_ref,farrowing_date,total_born,born_alive,stillborn,mummified,died_after_live_birth,mating_ref,father_ref,correction_of_litter_id,correction_reason. "
+        "Use correction_of_litter_id and correction_reason only when the owner explicitly corrects an existing litter; preserve both exactly. "
+        "Separate dates and outcome counts from animal identity. Preserve omitted mating_ref and father_ref as null; never invent them. "
+        "Use integer counts only when explicitly supplied and keep born_alive distinct from alive_now: died_after_live_birth is a subset of born_alive, not another birth outcome."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
         "subject storage_tanks or reservoir and either state LOW/OK/FULL or an exact fraction numerator/denominator. "
         "Resolve phrases such as both tanks or their Afrikaans equivalents from the message and bounded active question; "
@@ -317,6 +325,39 @@ def _breeding_actions(value):
             return ()
         result.append(item)
     return tuple(result)
+
+
+def _farrowing_litter(value):
+    if value in (None, {}):
+        return None
+    if not isinstance(value, Mapping):
+        return None
+    allowed = {"sow_ref", "farrowing_date", "total_born", "born_alive",
+               "stillborn", "mummified", "died_after_live_birth",
+               "mating_ref", "father_ref", "correction_of_litter_id", "correction_reason"}
+    if set(value) - allowed:
+        return None
+    sow_ref = str(value.get("sow_ref") or "").strip()[:80]
+    if not sow_ref:
+        return None
+    result = {"sow_ref": sow_ref}
+    for key in ("farrowing_date", "mating_ref", "father_ref"):
+        raw = value.get(key)
+        result[key] = str(raw).strip()[:80] if raw not in (None, "") else None
+    raw = value.get("correction_of_litter_id")
+    result["correction_of_litter_id"] = str(raw).strip()[:80] if raw not in (None, "") else None
+    raw = value.get("correction_reason")
+    result["correction_reason"] = str(raw).strip()[:500] if raw not in (None, "") else None
+    for key in ("total_born", "born_alive", "stillborn", "mummified",
+                "died_after_live_birth"):
+        raw = value.get(key)
+        if raw is None:
+            result[key] = None
+        elif type(raw) is int and 0 <= raw <= 40:
+            result[key] = raw
+        else:
+            return None
+    return result
 
 
 def _confirmation_facts(value):

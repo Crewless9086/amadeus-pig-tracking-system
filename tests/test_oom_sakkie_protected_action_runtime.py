@@ -407,3 +407,35 @@ def test_natural_confirmation_cannot_resolve_before_provider_card_binding():
     monkey_result=runtime.resolve_natural_confirmation(owner_user_id="5721652188",
       private_chat_id="5721652188",connect_factory=ResolveDb)
     assert monkey_result is None
+
+
+def test_farrowing_claim_uses_dedicated_executor_and_completes_once(monkeypatch):
+    claim = {"success": True, "status": "protected_callback_claimed",
+        "callback_token": "LITTER-CLAIM", "action_kind": "herdmaster_record_farrowing_litter",
+        "mission_id": "OOM-HERD-LITTER-1", "preview_payload": {"operation_id": "HERD-LITTER-1"}}
+    monkeypatch.setattr(runtime, "claim_callback", lambda *args, **kwargs: (claim, 200))
+    from modules.oom_sakkie import herdmaster_farrowing_runtime as litter_runtime
+    monkeypatch.setattr(litter_runtime, "execute_claimed_farrowing_litter",
+        lambda *args, **kwargs: ({"success": True, "status": "farrowing_litter_recorded",
+            "litter_id": "LIT-OOM-1", "writes_farm_data": True}, 201))
+    monkeypatch.setattr(runtime, "complete_claim", lambda *args, **kwargs: {
+        "completed": True, "result": args[1]})
+    result, status = runtime.handle_protected_action_input(
+        {**parsed(""), "callback_data": "oompa:LITTER-CLAIM:confirm"}, authority())
+    assert status == 201
+    assert result["status"] == "farrowing_litter_recorded"
+    assert result["litter_id"] == "LIT-OOM-1"
+
+
+def test_completed_farrowing_result_is_returned_for_provider_delivery_recovery(monkeypatch):
+    completed = {"success": True, "status": "protected_callback_completed_delivery_retry",
+        "action_kind": "herdmaster_record_farrowing_litter", "mission_id": "OOM-LITTER-1",
+        "result": {"success": True, "status": "farrowing_litter_recorded",
+            "litter_id": "LIT-1", "answer": "Litter recorded and read back."}}
+    monkeypatch.setattr(runtime, "claim_callback", lambda *args, **kwargs: (completed, 200))
+    result, status = runtime.handle_protected_action_input(
+        {**parsed(""), "callback_data": "oompa:LITTER-CLAIM:confirm"}, authority())
+    assert status == 200
+    assert result["delivery_recovery_required"] is True
+    assert result["answer"] == "Litter recorded and read back."
+    assert result["writes_farm_data"] is False
