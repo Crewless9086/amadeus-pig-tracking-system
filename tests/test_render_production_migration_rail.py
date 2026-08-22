@@ -825,6 +825,12 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                 "alter schema app_private owner to schema_attacker",
                 "migration_private_schema_owner_mismatch",
             ),
+            "protected_claim_insert_suppression_rule": (
+                "create rule attacker_suppress_claim_insert as "
+                "on insert to app_private.oom_protected_action_claims "
+                "do instead nothing",
+                "migration_catalog_drift",
+            ),
         }
         for attack, (sql, expected) in attacks.items():
             with self.subTest(attack=attack):
@@ -845,8 +851,10 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                         """select
                            (select count(*) from app_private.production_migration_receipts),
                            (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                           (select count(*) from app_private.production_migration_baselines),
                            (select count(*) from app_private.production_migration_catalog_checkpoints)"""
                     ).fetchone()
+                    before_catalog = _catalog_snapshot(db)
                 with self.assertRaisesRegex(RuntimeError, expected):
                     run(DATABASE_URL, ENV)
                 with psycopg.connect(DATABASE_URL) as db:
@@ -862,10 +870,13 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                         """select
                            (select count(*) from app_private.production_migration_receipts),
                            (select count(*) from app_private.production_migration_receipt_identity_anchors),
+                           (select count(*) from app_private.production_migration_baselines),
                            (select count(*) from app_private.production_migration_catalog_checkpoints)"""
                     ).fetchone()
+                    after_catalog = _catalog_snapshot(db)
                 self.assertEqual(after_oids, before_oids)
                 self.assertEqual(after_counts, before_counts)
+                self.assertEqual(after_catalog, before_catalog)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_late_rejection_leaves_guard_oids_and_ledger_exactly_unchanged(self):
