@@ -301,6 +301,169 @@ def _mating_id_nullable(connection) -> bool:
     return bool(row[0])
 
 
+def _verify_litter_validator_trigger(connection) -> dict:
+    rows = connection.execute(
+        """select t.tgenabled,t.tgtype,fn.nspname,p.proname,
+                  pg_catalog.pg_get_function_identity_arguments(p.oid),
+                  pg_catalog.pg_get_triggerdef(t.oid,false)
+             from pg_catalog.pg_trigger t
+             join pg_catalog.pg_class c on c.oid=t.tgrelid
+             join pg_catalog.pg_namespace tn on tn.oid=c.relnamespace
+             join pg_catalog.pg_proc p on p.oid=t.tgfoid
+             join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
+            where tn.nspname='public' and c.relname='litter_supersessions'
+              and t.tgname='validate_litter_supersession_insert'
+              and not t.tgisinternal"""
+    ).fetchall()
+    if len(rows) != 1:
+        raise RuntimeError("migration_readback_litter_validator_trigger_missing_or_ambiguous")
+    enabled, trigger_type, function_schema, function_name, function_args, definition = rows[0]
+    if (
+        enabled != "O"
+        or trigger_type != 7  # ROW | BEFORE | INSERT
+        or function_schema != "public"
+        or function_name != "validate_litter_supersession"
+        or function_args != ""
+    ):
+        raise RuntimeError("migration_readback_litter_validator_trigger_mismatch")
+    normalized = re.sub(r"\s+", " ", str(definition)).strip()
+    expected = (
+        "CREATE TRIGGER validate_litter_supersession_insert BEFORE INSERT ON "
+        "public.litter_supersessions FOR EACH ROW EXECUTE FUNCTION "
+        "validate_litter_supersession()"
+    )
+    if normalized != expected:
+        raise RuntimeError("migration_readback_litter_validator_trigger_definition_mismatch")
+    return {
+        "enabled": enabled,
+        "trigger_type": trigger_type,
+        "definition_sha256": hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
+    }
+
+
+def _verify_protected_claim_acl(connection) -> dict:
+    rows = connection.execute(
+        """with target as (
+               select c.oid,c.relacl,c.relowner
+                 from pg_catalog.pg_class c
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                where n.nspname='app_private'
+                  and c.relname='oom_protected_action_claims'
+             ), privilege_names(privilege_type) as (
+               values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),
+                      ('TRUNCATE'),('REFERENCES'),('TRIGGER')
+             ), forbidden as (
+               select 'PUBLIC'::text as role_name,x.privilege_type
+                 from target t
+                 cross join lateral pg_catalog.aclexplode(
+                   coalesce(t.relacl,pg_catalog.acldefault('r',t.relowner))
+                 ) x
+                where x.grantee=0
+               union all
+               select r.rolname,p.privilege_type
+                 from target t
+                 join pg_catalog.pg_roles r
+                   on r.rolname in ('anon','authenticated')
+                 cross join privilege_names p
+                where pg_catalog.has_table_privilege(r.oid,t.oid,p.privilege_type)
+             )
+             select role_name,privilege_type from forbidden order by 1,2"""
+    ).fetchall()
+    if rows:
+        raise RuntimeError(f"migration_readback_protected_claim_acl_mismatch:{rows}")
+    return {"unauthorized_privilege_count": 0}
+
+
+def _verify_receipt_guard(connection) -> dict:
+    rows = connection.execute(
+        """select t.tgenabled,t.tgtype,fn.nspname,p.proname,
+                  pg_catalog.pg_get_function_identity_arguments(p.oid),
+                  p.prosrc,l.lanname,p.prosecdef,p.proleakproof,p.provolatile,p.proparallel,p.proconfig
+             from pg_catalog.pg_trigger t
+             join pg_catalog.pg_class c on c.oid=t.tgrelid
+             join pg_catalog.pg_namespace tn on tn.oid=c.relnamespace
+             join pg_catalog.pg_proc p on p.oid=t.tgfoid
+             join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
+             join pg_catalog.pg_language l on l.oid=p.prolang
+            where tn.nspname='app_private'
+              and c.relname='production_migration_receipts'
+              and t.tgname='trg_guard_production_migration_receipts'
+              and not t.tgisinternal"""
+    ).fetchall()
+    if len(rows) != 1:
+        raise RuntimeError("migration_receipt_guard_missing_or_ambiguous")
+    (enabled, trigger_type, function_schema, function_name, function_args, body,
+     language, security_definer, leakproof, volatility, parallel, config) = rows[0]
+    normalized_body = re.sub(r"\s+", " ", str(body)).strip()
+    if (
+        enabled != "O"
+        or trigger_type != 27  # ROW | BEFORE | UPDATE | DELETE
+        or function_schema != "app_private"
+        or function_name != "guard_production_migration_receipts"
+        or function_args != ""
+        or normalized_body != "begin raise exception 'production migration receipts are append-only'; end;"
+        or (language, security_definer, leakproof, volatility, parallel, config)
+        != ("plpgsql", False, False, "v", "u", None)
+    ):
+        raise RuntimeError("migration_receipt_guard_mismatch")
+    return {
+        "enabled": enabled,
+        "trigger_type": trigger_type,
+        "body_sha256": hashlib.sha256(normalized_body.encode("utf-8")).hexdigest(),
+    }
+
+
+def _verify_receipt_row(
+    connection,
+    item: AllowedMigration,
+    ordinal: int,
+    *,
+    service_id: str,
+    outcome: str,
+    receipt_id: str | None = None,
+) -> dict:
+    rows = connection.execute(
+        """select receipt_id::text,migration_id,migration_filename,migration_sha256,
+                  ordinal,outcome,source_commit,render_service_id,render_instance_id,
+                  error_class,applied_at
+             from app_private.production_migration_receipts
+            where migration_id=%s and outcome=%s""",
+        (item.migration_id, outcome),
+    ).fetchall()
+    if receipt_id is not None:
+        rows = [row for row in rows if row[0] == receipt_id]
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"migration_receipt_missing_or_ambiguous:{item.migration_id}:{outcome}"
+        )
+    row = rows[0]
+    if row[3] != item.sha256:
+        raise RuntimeError(f"applied_migration_checksum_conflict:{item.migration_id}")
+    expected_error = None if outcome == "applied" else row[9]
+    if (
+        row[1] != item.migration_id
+        or row[2] != item.filename
+        or row[4] != ordinal
+        or row[5] != outcome
+        or not HEX_COMMIT.fullmatch(str(row[6] or ""))
+        or row[7] != service_id
+        or not str(row[8] or "").strip()
+        or (outcome == "applied" and row[9] is not None)
+        or (outcome == "failed" and not str(expected_error or "").strip())
+        or row[10] is None
+    ):
+        raise RuntimeError(f"migration_receipt_identity_mismatch:{item.migration_id}:{outcome}")
+    return {
+        "receipt_id": row[0],
+        "migration_filename": row[2],
+        "ordinal": row[4],
+        "source_commit": row[6],
+        "render_service_id": row[7],
+        "render_instance_id": row[8],
+        "applied_at": row[10],
+    }
+
+
 def _verify_migration_precondition(
     connection,
     item: AllowedMigration,
@@ -308,6 +471,7 @@ def _verify_migration_precondition(
     already_applied: bool,
 ) -> str:
     if item.migration_id == "202608220001_extend_litter_supersession_for_fact_corrections":
+        _verify_litter_validator_trigger(connection)
         _, reasons = _constraint_readback(
             connection,
             "public",
@@ -334,6 +498,7 @@ def _verify_migration_precondition(
             return "target"
         raise RuntimeError(f"migration_precondition_litter_constraint_mismatch:{reasons}")
     if item.migration_id == "202608220002_allow_herdmaster_farrowing_protected_claims":
+        _verify_protected_claim_acl(connection)
         _, action_kinds = _constraint_readback(
             connection,
             "app_private",
@@ -354,6 +519,7 @@ def _verify_migration_precondition(
 
 def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
     if item.migration_id == "202608220001_extend_litter_supersession_for_fact_corrections":
+        trigger = _verify_litter_validator_trigger(connection)
         constraint, reasons = _constraint_readback(
             connection,
             "public",
@@ -384,8 +550,10 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
             "validate_litter_supersession_sha256": hashlib.sha256(
                 function_definition.encode("utf-8")
             ).hexdigest(),
+            "validator_trigger": trigger,
         }
     if item.migration_id == "202608220002_allow_herdmaster_farrowing_protected_claims":
+        acl = _verify_protected_claim_acl(connection)
         constraint, action_kinds = _constraint_readback(
             connection,
             "app_private",
@@ -406,6 +574,7 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
                 constraint.encode("utf-8")
             ).hexdigest(),
             "action_kinds": list(action_kinds),
+            "protected_claim_acl": acl,
         }
     return {}
 
@@ -420,26 +589,40 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
     with psycopg.connect(database_url, connect_timeout=10) as connection:
         connection.execute("select pg_advisory_lock(%s)", (LOCK_KEY,))
         try:
+            receipt_table_exists = connection.execute(
+                "select to_regclass('app_private.production_migration_receipts') is not null"
+            ).fetchone()[0]
+            if receipt_table_exists:
+                _verify_receipt_guard(connection)
             connection.execute(BOOTSTRAP_SQL)
             connection.commit()
+            receipt_guard = _verify_receipt_guard(connection)
             for ordinal, (item, sql) in enumerate(sql_by_id, 1):
-                prior = connection.execute(
-                    """select receipt_id::text,migration_sha256,source_commit,applied_at
-                       from app_private.production_migration_receipts
-                       where migration_id=%s and outcome='applied'""",
+                prior_exists = connection.execute(
+                    """select exists(select 1
+                         from app_private.production_migration_receipts
+                        where migration_id=%s and outcome='applied')""",
                     (item.migration_id,),
-                ).fetchone()
-                if prior:
-                    if prior[1] != item.sha256:
-                        raise RuntimeError(f"applied_migration_checksum_conflict:{item.migration_id}")
+                ).fetchone()[0]
+                if prior_exists:
+                    prior = _verify_receipt_row(
+                        connection,
+                        item,
+                        ordinal,
+                        service_id=service_id,
+                        outcome="applied",
+                    )
                     _verify_migration_precondition(
                         connection, item, already_applied=True
                     )
                     readback = _verify_migration_readback(connection, item)
                     report["migrations"].append({
                         "migration_id": item.migration_id, "sha256": item.sha256,
-                        "outcome": "already_applied", "receipt_id": prior[0],
-                        "applied_source_commit": prior[2], "applied_at": prior[3].isoformat(),
+                        "outcome": "already_applied", "receipt_id": prior["receipt_id"],
+                        "applied_source_commit": prior["source_commit"],
+                        "applied_at": prior["applied_at"].isoformat(),
+                        "receipt_identity": {**prior, "applied_at": prior["applied_at"].isoformat()},
+                        "receipt_guard": receipt_guard,
                         "readback": readback,
                     })
                     continue
@@ -459,6 +642,14 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                         (receipt_id, item.migration_id, item.filename, item.sha256,
                          ordinal, commit, service_id, instance_id),
                     )
+                    receipt = _verify_receipt_row(
+                        connection,
+                        item,
+                        ordinal,
+                        service_id=service_id,
+                        outcome="applied",
+                        receipt_id=receipt_id,
+                    )
                     connection.commit()
                 except Exception as exc:
                     connection.rollback()
@@ -471,6 +662,14 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                         (failure_id, item.migration_id, item.filename, item.sha256,
                          ordinal, commit, service_id, instance_id, type(exc).__name__),
                     )
+                    _verify_receipt_row(
+                        connection,
+                        item,
+                        ordinal,
+                        service_id=service_id,
+                        outcome="failed",
+                        receipt_id=failure_id,
+                    )
                     connection.commit()
                     raise RuntimeError(
                         f"migration_failed_and_rolled_back:{item.migration_id}:receipt={failure_id}"
@@ -478,6 +677,8 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                 report["migrations"].append({
                     "migration_id": item.migration_id, "sha256": item.sha256,
                     "outcome": "applied", "receipt_id": receipt_id,
+                    "receipt_identity": {**receipt, "applied_at": receipt["applied_at"].isoformat()},
+                    "receipt_guard": receipt_guard,
                     "readback": readback,
                 })
         finally:
