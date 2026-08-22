@@ -312,7 +312,7 @@ def _catalog_manifest(connection) -> dict:
         return [list(row) for row in connection.execute(sql, params).fetchall()]
 
     manifest = {
-        "version": "render_migration_catalog_manifest_v4",
+        "version": "render_migration_catalog_manifest_v5",
         "scope": {
             "relations": relations,
             "functions": functions,
@@ -442,7 +442,18 @@ def _catalog_manifest(connection) -> dict:
             (relations,),
         ),
         "internal_triggers": rows(
-            """select n.nspname,c.relname,t.tgname,t.tgenabled,t.tgtype,
+            """with selected_foreign_keys as (
+                 select k.oid
+                   from pg_catalog.pg_constraint k
+                   join pg_catalog.pg_class src on src.oid=k.conrelid
+                   join pg_catalog.pg_namespace sn on sn.oid=src.relnamespace
+                   join pg_catalog.pg_class tgt on tgt.oid=k.confrelid
+                   join pg_catalog.pg_namespace tn on tn.oid=tgt.relnamespace
+                  where k.contype='f'
+                    and ((sn.nspname||'.'||src.relname)=any(%s)
+                      or (tn.nspname||'.'||tgt.relname)=any(%s))
+               )
+               select n.nspname,c.relname,t.tgname,t.tgenabled,t.tgtype,
                       pg_catalog.pg_get_triggerdef(t.oid,false),
                       coalesce(kn.nspname,''),coalesce(k.conname,''),
                       coalesce(k.contype,' '),coalesce(k.condeferrable,false),
@@ -463,9 +474,11 @@ def _catalog_manifest(connection) -> dict:
                  left join pg_catalog.pg_namespace sn on sn.oid=src.relnamespace
                  left join pg_catalog.pg_class tgt on tgt.oid=k.confrelid
                  left join pg_catalog.pg_namespace tn on tn.oid=tgt.relnamespace
-                where (n.nspname||'.'||c.relname)=any(%s) and t.tgisinternal
+                where t.tgisinternal
+                  and ((n.nspname||'.'||c.relname)=any(%s)
+                    or t.tgconstraint in (select oid from selected_foreign_keys))
                 order by 1,2,3""",
-            (relations,),
+            (relations, relations, relations),
         ),
         "rules": rows(
             """select n.nspname,c.relname,r.rulename,r.ev_enabled,
