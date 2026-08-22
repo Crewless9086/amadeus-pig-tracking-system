@@ -284,7 +284,7 @@ def cycle(ledger,client,cups,config,worker_id):
         raise
     finally: path.unlink(missing_ok=True)
 
-def load_config(path="/data/options.json"):
+def load_config(path="/data/green-runtime/options.json"):
     value=json.loads(Path(path).read_text(encoding="utf-8")); required=("canonical_transport_profile","canonical_api_origin","canonical_bearer_token","farm_scope_id","green_id","printer_id","cups_queue_id","registry_version","printer_transport_profile","printer_uri","printer_endpoint_ip","poll_seconds")
     if any(value.get(k) in (None,"") for k in required): raise Hold("runtime_option_missing")
     origin,printer=urlparse(value["canonical_api_origin"]),urlparse(value["printer_uri"])
@@ -315,9 +315,9 @@ def load_config(path="/data/options.json"):
 
 def write_health(status,worker_id,result,next_poll):
     value={"contract_version":"green_print_health_v2","liveness":"alive","business_state":status,"worker_id":worker_id,"heartbeat_at":iso(utcnow()),"last_result":result,"next_poll_at":iso(next_poll),"authority_mode":"fixed_weekly_sheet_only","terminal_participated":False}
-    target=Path("/data/health.json"); temporary=target.with_suffix(".tmp"); temporary.write_text(canonical_json(value),encoding="utf-8"); os.replace(temporary,target)
+    target=Path("/data/green-runtime/health.json"); temporary=target.with_suffix(".tmp"); temporary.write_text(canonical_json(value),encoding="utf-8"); os.replace(temporary,target)
 def main():
-    os.umask(0o077); config=load_config(); worker_id="green-worker-"+uuid.uuid4().hex; ledger=Ledger("/data/green-print-ledger.sqlite3"); client=CanonicalClient(config); cups=Cups(config["cups_queue_id"],config["printer_uri"])
+    os.umask(0o077); config=load_config(); worker_id="green-worker-"+uuid.uuid4().hex; ledger=Ledger("/data/green-runtime/green-print-ledger.sqlite3"); client=CanonicalClient(config); cups=Cups(config["cups_queue_id"],config["printer_uri"])
     while True:
         next_poll=utcnow()+timedelta(seconds=int(config["poll_seconds"]))
         try: result=cycle(ledger,client,cups,config,worker_id); write_health(result,worker_id,result,next_poll)
