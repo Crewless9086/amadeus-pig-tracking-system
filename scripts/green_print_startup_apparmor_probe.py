@@ -79,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--work-root",
         type=Path,
-        default=Path(".codex-runtime/missions/PR-1169"),
+        default=Path(".codex-runtime/missions/GREEN-0.3.4"),
     )
     args = parser.parse_args()
     suffix = uuid.uuid4().hex[:10]
