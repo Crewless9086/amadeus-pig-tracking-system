@@ -19,7 +19,8 @@ RUN apk add --no-cache cups cups-client cups-filters ca-certificates python3 su-
     && addgroup -S greenprint && adduser -S -D -H -s /sbin/nologin -G greenprint greenprint \
     && addgroup -S cupsd && adduser -S -D -H -s /sbin/nologin -G cupsd cupsd \
     && chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf \
-    && sed -i 's|^#Printcap /etc/printcap|Printcap /run/cups/printcap|' /etc/cups/cups-files.conf \
+    && sed -i -E '/^[[:space:]]*(User|Group|CreateSelfSignedCerts|Printcap)[[:space:]]+/d' /etc/cups/cups-files.conf \
+    && printf '\nUser cupsd\nGroup cupsd\nCreateSelfSignedCerts no\nPrintcap /run/cups/printcap\n' >> /etc/cups/cups-files.conf \
     && mkdir -p /opt/green /data /run/cups /tmp/green-spool /var/spool/cups /var/log/cups /var/cache/cups /etc/cups/ssl \
     && chmod 0755 /etc/cups/ssl \
     && chown greenprint:greenprint /data /tmp/green-spool \
@@ -30,6 +31,14 @@ COPY rootfs /
 COPY app /opt/green/
 RUN chmod 0755 /run.sh /init-green.sh /healthcheck.py \
     && chmod 0644 /etc/cups/cupsd.conf \
+    && grep -Fqx 'User cupsd' /etc/cups/cups-files.conf \
+    && grep -Fqx 'Group cupsd' /etc/cups/cups-files.conf \
+    && grep -Fqx 'CreateSelfSignedCerts no' /etc/cups/cups-files.conf \
+    && grep -Fqx 'Printcap /run/cups/printcap' /etc/cups/cups-files.conf \
+    && test "$(grep -Ec '^[[:space:]]*User[[:space:]]+' /etc/cups/cups-files.conf)" -eq 1 \
+    && test "$(grep -Ec '^[[:space:]]*Group[[:space:]]+' /etc/cups/cups-files.conf)" -eq 1 \
+    && test "$(grep -Ec '^[[:space:]]*CreateSelfSignedCerts[[:space:]]+' /etc/cups/cups-files.conf)" -eq 1 \
+    && test "$(grep -Ec '^[[:space:]]*Printcap[[:space:]]+' /etc/cups/cups-files.conf)" -eq 1 \
     && rm -f /etc/cups/printers.conf \
     && ln -s /run/cups/printers.conf /etc/cups/printers.conf
 

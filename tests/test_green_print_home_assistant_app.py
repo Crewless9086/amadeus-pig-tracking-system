@@ -18,14 +18,19 @@ def envelope(**changes):
 def test_package_is_bounded_and_privilege_split():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); run=(APP/"rootfs/run.sh").read_text(encoding="utf-8")
     assert cfg["arch"]==["aarch64"] and cfg["privileged"]==[] and cfg["host_network"] is False
-    assert "adduser -S -D -H" in docker and "/sbin/su-exec greenprint:greenprint" in init and "/sbin/su-exec cupsd:cupsd" in init
+    assert "adduser -S -D -H" in docker and "/sbin/su-exec greenprint:greenprint" in init
+    assert "/usr/sbin/cupsd -f &" in init and "/sbin/su-exec cupsd" not in init
     assert "lpadmin" not in init and "exec /sbin/su-exec greenprint" in init
     assert "PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py" in init
     assert init.startswith("#!/bin/sh\nset -eu\numask 0077\n") and run.startswith("#!/bin/sh\nset -eu\numask 0077\n")
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
     assert "chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf" in docker
-    assert "Printcap /run/cups/printcap" in docker and "/var/cache/cups" in docker
+    for directive in ("User cupsd","Group cupsd","CreateSelfSignedCerts no","Printcap /run/cups/printcap"):
+        assert directive in docker
+    assert "sed -i -E '/^[[:space:]]*(User|Group|CreateSelfSignedCerts|Printcap)[[:space:]]+/d'" in docker
+    assert docker.count("grep -Ec '^[[:space:]]*") == 4
+    assert "/var/cache/cups" in docker
 
 def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
@@ -97,6 +102,9 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
+    probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
+    for proof in ("cups_scheduler_identity","cups_worker_identity","tcp_631_listener","tls_key_files","test ! -e /etc/printcap","test ! -e /etc/cups/ssl/*.key","unexpected AppArmor denials"):
+        assert proof in probe
 
 def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     docs=(APP/"DOCS.md").read_text(encoding="utf-8")
@@ -146,10 +154,11 @@ def test_apparmor_denies_admin_and_broad_writes():
     assert "/tmp/green-spool/** rwk" in policy and "/data/** rwk" in policy
     assert "/etc/cups/ssl/site.crt rw," in policy and "/etc/hosts rw," in policy
     assert "/etc/cups/** w" not in policy
+    assert "deny /etc/printcap rwklx," in policy and "deny /etc/cups/ssl/*.key rwklx," in policy
 
 def test_apparmor_covers_inherited_s6_entrypoint_without_broad_shell_exec():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
-    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py r,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,","/var/cache/cups/ rwk,","/usr/share/cups/ r,","deny /etc/printcap rwklx,","deny /etc/cups/ssl/*.key rwklx,"):
+    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py r,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,","/var/cache/cups/ rwk,","/usr/share/cups/ r,","/etc/cups/ rw,","/etc/cups/ppd/ rw,","/etc/cups/ssl/ rw,","/etc/cups/cupsd.conf rw,","/etc/cups/cups-files.conf rw,","deny /etc/printcap rwklx,","deny /etc/cups/ssl/*.key rwklx,"):
         assert required in policy
     assert "/usr/bin/su-exec" not in policy
     assert "/bin/** ix" not in policy and "/usr/bin/** ix" not in policy

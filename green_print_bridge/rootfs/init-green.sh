@@ -12,5 +12,5 @@ install -o root -g root -m 0644 /config/private-ca.crt /etc/cups/ssl/site.crt
 PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py /data/options.json /run/cups/printers.conf
 chown cupsd:cupsd /run/cups/printers.conf
 chmod 0600 /run/cups/printers.conf
-/sbin/su-exec cupsd:cupsd /usr/sbin/cupsd -f &
+/usr/sbin/cupsd -f &
 exec /sbin/su-exec greenprint:greenprint /usr/bin/python3 /opt/green/service.py

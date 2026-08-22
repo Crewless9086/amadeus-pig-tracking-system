@@ -26,12 +26,7 @@ def failure_diagnostics(container: str) -> str:
     state = run(
         "docker", "inspect", "-f", "{{json .State}}", container, check=False,
     )
-    kernel = run("sudo", "dmesg", "--ctime", check=False)
-    denied = [
-        line for line in kernel.stdout.splitlines()
-        if "apparmor=\"DENIED\"" in line
-        and "amadeus-green-print-bridge" in line
-    ][-80:]
+    denied = apparmor_denials()[-80:]
     return "\n".join(
         (
             "docker-state: " + state.stdout.strip(),
@@ -40,6 +35,15 @@ def failure_diagnostics(container: str) -> str:
             "apparmor-denials:\n" + "\n".join(denied),
         )
     )
+
+
+def apparmor_denials() -> list[str]:
+    kernel = run("sudo", "dmesg", "--ctime", check=False)
+    return [
+        line for line in kernel.stdout.splitlines()
+        if "apparmor=\"DENIED\"" in line
+        and "amadeus-green-print-bridge" in line
+    ]
 
 
 class EmptyCanonicalHandler(BaseHTTPRequestHandler):
@@ -191,10 +195,59 @@ def main() -> int:
                     f"queue was not empty: rc={queue.returncode} stdout={queue.stdout!r} stderr={queue.stderr!r}\n"
                     + failure_diagnostics(container)
                 )
+            cups_contract = run(
+                "docker", "exec", container, "/bin/sh", "-c",
+                "grep -Fx 'User cupsd' /etc/cups/cups-files.conf"
+                " && grep -Fx 'Group cupsd' /etc/cups/cups-files.conf"
+                " && grep -Fx 'CreateSelfSignedCerts no' /etc/cups/cups-files.conf"
+                " && grep -Fx 'Printcap /run/cups/printcap' /etc/cups/cups-files.conf"
+                " && test \"$(grep -Ec '^[[:space:]]*User[[:space:]]+' /etc/cups/cups-files.conf)\" -eq 1"
+                " && test \"$(grep -Ec '^[[:space:]]*Group[[:space:]]+' /etc/cups/cups-files.conf)\" -eq 1"
+                " && cups_pid=$(/bin/busybox pidof cupsd)"
+                " && test -n \"${cups_pid}\""
+                " && grep -Eq '^Uid:[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]+0$' /proc/${cups_pid}/status"
+                " && test -S /run/cups/cups.sock"
+                " && test ! -e /etc/printcap"
+                " && test ! -e /etc/cups/ssl/*.key",
+                check=False,
+            )
+            if cups_contract.returncode != 0:
+                raise RuntimeError(
+                    "CUPS privilege or local-only contract mismatch\n"
+                    f"rc={cups_contract.returncode} stdout={cups_contract.stdout!r} "
+                    f"stderr={cups_contract.stderr!r}\n"
+                    + failure_diagnostics(container)
+                )
+            tcp_listener = run(
+                "docker", "exec", container, "/bin/sh", "-c",
+                "! grep -qi ':0277 ' /proc/net/tcp /proc/net/tcp6",
+                check=False,
+            )
+            if tcp_listener.returncode != 0:
+                raise RuntimeError("unexpected CUPS TCP listener\n" + failure_diagnostics(container))
             required_paths = {"/api/documents/print-jobs/commands/claim", "/api/documents/print-jobs/claims"}
             if not required_paths.issubset(set(EmptyCanonicalHandler.seen)):
                 raise RuntimeError(f"canonical zero-job cycle incomplete: {EmptyCanonicalHandler.seen}")
-            print(json.dumps({"apparmor": "enforced", "business_state": "event_waiting", "container_running": True, "queue_jobs": 0}, sort_keys=True))
+            denied = apparmor_denials()
+            if denied:
+                raise RuntimeError(
+                    "unexpected AppArmor denials after successful startup\n"
+                    + "\n".join(denied[-80:])
+                    + "\n"
+                    + failure_diagnostics(container)
+                )
+            print(json.dumps({
+                "apparmor": "enforced",
+                "business_state": "event_waiting",
+                "container_running": True,
+                "cups_scheduler_identity": "root-bootstrap",
+                "cups_worker_identity": "cupsd:cupsd",
+                "local_transport": "unix_socket",
+                "printcap": "/run/cups/printcap",
+                "queue_jobs": 0,
+                "tcp_631_listener": False,
+                "tls_key_files": 0,
+            }, sort_keys=True))
         finally:
             run("docker", "rm", "-f", container, check=False)
             for server in servers:
