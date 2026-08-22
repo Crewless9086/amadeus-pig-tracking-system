@@ -10,25 +10,24 @@ def evaluate_meta_inbound_attribution(payload, *, expected_binding=None,
                                       binding_resolution=None, now=None,
                                       max_age_days=30):
     payload = payload if isinstance(payload, Mapping) else {}
-    conversation = _mapping(payload.get("conversation"))
     content = _mapping(payload.get("content_attributes"))
     referral = _mapping(content.get("referral"))
-    rows = (content, referral, _mapping(conversation.get("custom_attributes")),
-            _mapping(conversation.get("additional_attributes")), payload)
-    attribution_id = _first(rows, "attribution_identity")
-    target_page_id = _first(rows, "target_page_id", "page_id", "recipient_id")
-    post_id = _first(rows, "post_id", "source_post_id", "source_id")
-    publication_value = _first(rows, "publication_time", "published_at")
+    # Chatwoot's production Meta referral contract supplies source_id.  It is a
+    # bounded lookup candidate, never evidence for campaign/page/chronology or
+    # operating authority.  Every attributed value below comes from the
+    # canonical resolver result.
+    post_id = str(referral.get("source_id") or "").strip()[:500]
     inbound_value = payload.get("created_at") or payload.get("timestamp")
-    published = _instant(publication_value)
     observed = _instant(inbound_value)
     current = _aware(now or datetime.now(timezone.utc))
-    expected = _mapping(expected_binding)
     resolution = _mapping(binding_resolution)
+    # Do not accept a parallel caller-supplied binding.  The canonical
+    # resolver result is the sole authority for attributed context.
+    expected = _mapping(resolution.get("binding"))
     expected_publication = _instant(expected.get("publication_time"))
     status, reason = "attributed", "exact_beacon_meta_identity_bound"
-    if not attribution_id:
-        status, reason = "absent", "attribution_identity_absent"
+    if not post_id:
+        status, reason = "absent", "source_post_identity_absent"
     elif resolution.get("success") is not True or resolution.get("status") != "resolved":
         status = "rejected" if resolution.get("status") == "rejected" else "unverified"
         reason = str(resolution.get("reason") or "canonical_publication_binding_unavailable")[:160]
@@ -36,34 +35,22 @@ def evaluate_meta_inbound_attribution(payload, *, expected_binding=None,
             "attribution_identity", "post_id", "target_page_id",
             "publication_time", "publish_packet_id", "publication_binding_id")):
         status, reason = "unverified", "canonical_publication_binding_incomplete"
-    elif not target_page_id:
-        status, reason = "unverified", "target_page_identity_absent"
-    elif target_page_id != str(expected.get("target_page_id") or "").strip():
-        status, reason = "rejected", "target_page_identity_mismatch"
-    elif attribution_id != str(expected.get("attribution_identity") or "").strip():
-        status, reason = "rejected", "attribution_identity_mismatch"
-    elif not post_id:
-        status, reason = "unverified", "source_post_identity_absent"
     elif post_id != str(expected.get("post_id") or "").strip():
         status, reason = "rejected", "source_post_identity_mismatch"
-    elif not publication_value:
-        status, reason = "unverified", "publication_time_absent"
-    elif not published:
-        status, reason = "rejected", "publication_time_invalid"
     elif not expected_publication:
         status, reason = "unverified", "canonical_publication_time_invalid"
-    elif published != expected_publication:
-        status, reason = "rejected", "publication_time_mismatch"
     elif not inbound_value:
         status, reason = "unverified", "inbound_time_absent"
     elif not observed:
         status, reason = "rejected", "inbound_time_invalid"
-    elif published > current or current - published > timedelta(days=max_age_days):
-        status, reason = "stale", "publication_outside_attribution_window"
+    elif expected_publication > current:
+        status, reason = "rejected", "canonical_publication_time_in_future"
     elif observed > current:
         status, reason = "rejected", "inbound_time_in_future"
-    elif observed < published:
+    elif observed < expected_publication:
         status, reason = "rejected", "inbound_precedes_publication"
+    elif observed - expected_publication > timedelta(days=max_age_days):
+        status, reason = "stale", "inbound_outside_attribution_window"
     trusted = status == "attributed"
     return {
         "contract_version": CONTRACT_VERSION, "status": status, "reason": reason,
@@ -88,15 +75,6 @@ def evaluate_meta_inbound_attribution(payload, *, expected_binding=None,
 
 def _mapping(value):
     return value if isinstance(value, Mapping) else {}
-
-
-def _first(rows, *keys):
-    for row in rows:
-        for key in keys:
-            value = str(row.get(key) or "").strip()
-            if value:
-                return value[:500]
-    return ""
 
 
 def _instant(value):

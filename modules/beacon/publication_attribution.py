@@ -170,17 +170,12 @@ limit 2
 
 
 def _candidate_post_id(payload):
-    conversation = _mapping(payload.get("conversation"))
     content = _mapping(payload.get("content_attributes"))
     referral = _mapping(content.get("referral"))
-    rows = (
-        referral,
-        content,
-        _mapping(conversation.get("custom_attributes")),
-        _mapping(conversation.get("additional_attributes")),
-        payload,
-    )
-    return _first(rows, "post_id", "source_post_id", "source_id")
+    # This is the only post lookup candidate in the production Chatwoot Meta
+    # referral shape.  Top-level source_id is a message/provider identity and
+    # must never be confused with a BEACON publication.
+    return _text(referral.get("source_id"), 500)
 
 
 def _post_page_id(post_id):
@@ -190,15 +185,6 @@ def _post_page_id(post_id):
 
 def _mapping(value):
     return value if isinstance(value, Mapping) else {}
-
-
-def _first(rows, *keys):
-    for row in rows:
-        for key in keys:
-            value = _text(row.get(key), 500)
-            if value:
-                return value
-    return ""
 
 
 def _instant(value):

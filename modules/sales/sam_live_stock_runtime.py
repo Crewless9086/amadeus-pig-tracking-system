@@ -1920,6 +1920,7 @@ def build_sam_front_door_adapter_packet(inbound, context_packet, environ=None):
             "target_page_id": attributed_meta.get("target_page_id") or "",
             "attribution_status": meta_attribution.get("status") or "",
             "attribution_reason": meta_attribution.get("reason") or "",
+            "binding_source": attributed_meta.get("binding_source") or "",
             "sam_boundary": attributed_meta.get("sam_boundary") or "",
             "title": trusted_reference.get("headline") or trusted_reference.get("subject") or "",
             "post_text": attributed_meta.get("post_text") or trusted_reference.get("body") or "",

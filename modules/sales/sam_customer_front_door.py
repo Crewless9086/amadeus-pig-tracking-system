@@ -290,6 +290,7 @@ def _campaign_context(evidence: Mapping[str, Any]) -> dict[str, Any]:
         "target_page_id": _clean(raw.get("target_page_id"), 120),
         "attribution_status": _clean(raw.get("attribution_status"), 80),
         "attribution_reason": _clean(raw.get("attribution_reason"), 160),
+        "binding_source": _clean(raw.get("binding_source"), 80),
         "sam_boundary": _clean(raw.get("sam_boundary"), 500),
         "post_text": _clean(raw.get("post_text"), 1200),
         "product_focus": _clean(raw.get("product_focus"), 300),
