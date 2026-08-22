@@ -16,21 +16,37 @@ def envelope(**changes):
     value.update(changes); return value
 
 def test_package_is_bounded_and_privilege_split():
-    cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8")
+    cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); run=(APP/"rootfs/run.sh").read_text(encoding="utf-8")
     assert cfg["arch"]==["aarch64"] and cfg["privileged"]==[] and cfg["host_network"] is False
-    assert "adduser -S -D -H" in docker and "su-exec greenprint:greenprint" in init and "su-exec cupsd:cupsd" in init
-    assert "lpadmin" not in init and "exec su-exec greenprint" in init
+    assert "adduser -S -D -H" in docker and "/sbin/su-exec greenprint:greenprint" in init
+    assert "/usr/sbin/cupsd -f -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf &" in init and "/sbin/su-exec cupsd" not in init
+    assert "lpadmin" not in init and "exec /sbin/su-exec greenprint" in init
+    assert "PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py" in init
+    assert init.startswith("#!/bin/sh\nset -eu\numask 0077\n") and run.startswith("#!/bin/sh\nset -eu\numask 0077\n")
+    assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
+    assert "chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf" in docker
+    for directive in ("User cupsd","Group cupsd","CreateSelfSignedCerts no","Printcap /run/cups/printcap","ErrorLog stderr","ServerRoot /run/cups"):
+        assert directive in docker
+    assert "sed -i -E '/^[[:space:]]*(User|Group|CreateSelfSignedCerts|Printcap|ErrorLog|ServerRoot)[[:space:]]+/d'" in docker
+    assert docker.count("grep -Ec '^[[:space:]]*") == 6 and "/usr/sbin/cupsd -t -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf" in docker
+    assert "ln -s /run/cups/printers.conf /etc/cups/printers.conf" not in docker
+    assert "/var/cache/cups" in docker
+    assert "CUPS scheduler or fixed destination did not become ready" in init
 
 def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8")
+    policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8"); cupsd=(APP/"rootfs/etc/cups/cupsd.conf").read_text(encoding="utf-8")
     assert 'Path("/etc/hosts").open("a"' in queue and 'hosts.write(f"{pin} {uri.hostname}\\n")' in queue
     assert "answers!={pin}" in queue and 'uri.scheme!="ipps"' in queue
     assert "/config/private-ca.crt /etc/cups/ssl/site.crt" in init
     assert "mkdir -p" in docker and "/etc/cups/ssl" in docker and "install -d -o root -g root -m 0755 /etc/cups/ssl" not in init
-    for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption Required","TrustOnFirstUse No","ValidateCerts Yes"):
+    for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption IfRequested","TrustOnFirstUse No","ValidateCerts Yes"):
         assert required in policy
+    assert "ServerName /run/cups/cups.sock" in policy
+    assert "Listen /run/cups/cups.sock" in cupsd and "Listen localhost:631" not in cupsd
+    assert "ServerRoot /run/cups" in cupsd and "ServerRoot /etc/cups" not in cupsd
+    assert "DeviceURI {uri.geturl()}" in queue and "printer_transport_profile" in queue
 
 def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
     calls=[]
@@ -62,7 +78,7 @@ def test_printer_tls_preflight_fails_closed_on_untrusted_or_wrong_san(monkeypatc
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.2"
+    assert cfg["version"]=="0.3.3"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -86,7 +102,14 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.2-verified-release-packet" in workflow
+    assert "green-print-0.3.3-verified-release-packet" in workflow
+    assert "load: true" in workflow
+    assert "Run real arm64 zero-job startup under package AppArmor" in workflow
+    assert "green_print_startup_apparmor_probe.py" in workflow
+    probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
+    assert '"pid,uid,gid,comm,args"' in probe
+    for proof in ("docker\", \"top","cups_scheduler_identity","cups_worker_identity","green_runtime_identity","tcp_631_listener","tls_key_files","test ! -e /etc/printcap","test ! -e /etc/cups/ssl/*.key","unexpected AppArmor denials"):
+        assert proof in probe
 
 def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     docs=(APP/"DOCS.md").read_text(encoding="utf-8")
@@ -98,11 +121,11 @@ def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     assert "sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3" in docs
     assert "sha256:4b738c69245a6b4721a7f4b58135acf3d2308f355b7c8c4008c4149763e11b32" in docs
 
-def test_032_publish_verifies_descriptor_and_config_before_signing_or_attesting():
+def test_033_publish_verifies_descriptor_and_config_before_signing_or_attesting():
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.2"
+    assert parsed["env"]["VERSION"]=="0.3.3"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -136,6 +159,22 @@ def test_apparmor_denies_admin_and_broad_writes():
     assert "/tmp/green-spool/** rwk" in policy and "/data/** rwk" in policy
     assert "/etc/cups/ssl/site.crt rw," in policy and "/etc/hosts rw," in policy
     assert "/etc/cups/** w" not in policy
+    assert "deny /etc/printcap rwklx," in policy and "deny /etc/cups/ssl/*.key rwklx," in policy
+
+def test_apparmor_covers_inherited_s6_entrypoint_without_broad_shell_exec():
+    policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
+    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py rix,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,","/var/cache/cups/ rwk,","/usr/share/cups/ r,","/etc/cups/ rw,","/etc/cups/ppd/ rw,","/etc/cups/ssl/ rw,","/etc/cups/cupsd.conf rw,","/etc/cups/cups-files.conf rw,","deny /etc/printcap rwklx,","deny /etc/cups/ssl/*.key rwklx,"):
+        assert required in policy
+    assert "/usr/bin/su-exec" not in policy
+    assert "/bin/** ix" not in policy and "/usr/bin/** ix" not in policy
+    assert "update-ca-certificates" not in policy
+    assert "/usr/local/share/ca-certificates" not in policy
+    assert "/etc/ssl/certs/** rw" not in policy
+
+def test_home_assistant_public_profile_default_is_explicit_blank():
+    cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8"))
+    assert cfg["options"]["canonical_endpoint_ip"]==""
+    assert cfg["schema"]["canonical_endpoint_ip"]=="str"
 
 def test_contract_and_authorization_fail_closed(tmp_path):
     cfg=config(tmp_path); S.validate(envelope(),cfg,NOW)
@@ -154,12 +193,24 @@ def test_public_pki_profile_allows_only_exact_render_origin_without_pin(tmp_path
     cfg={**config(tmp_path),"canonical_transport_profile":"public_pki_exact_origin","canonical_api_origin":S.APPROVED_PUBLIC_CANONICAL_ORIGIN,"canonical_endpoint_ip":""}
     monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"])
     path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
-    assert S.load_config(str(path))["canonical_transport_profile"]=="public_pki_exact_origin"
+    loaded=S.load_config(str(path))
+    assert loaded["canonical_transport_profile"]=="public_pki_exact_origin" and loaded["canonical_endpoint_ip"] is None
+    without_pin={key:value for key,value in cfg.items() if key!="canonical_endpoint_ip"}
+    path.write_text(json.dumps(without_pin),encoding="utf-8")
+    assert S.load_config(str(path))["canonical_endpoint_ip"] is None
     for origin in ("https://example.com","https://amadeus-pig-tracking-system.onrender.com/extra","http://amadeus-pig-tracking-system.onrender.com"):
         path.write_text(json.dumps({**cfg,"canonical_api_origin":origin}),encoding="utf-8")
         with pytest.raises(S.Hold): S.load_config(str(path))
     path.write_text(json.dumps({**cfg,"canonical_endpoint_ip":"10.23.0.5"}),encoding="utf-8")
     with pytest.raises(S.Hold,match="public_canonical_origin_not_approved"): S.load_config(str(path))
+
+def test_private_profile_still_requires_nonempty_exact_pin(tmp_path,monkeypatch):
+    cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"
+    for value in ("",None):
+        candidate={**cfg,"canonical_endpoint_ip":value}
+        if value is None: candidate.pop("canonical_endpoint_ip")
+        path.write_text(json.dumps(candidate),encoding="utf-8")
+        with pytest.raises(S.Hold,match="commissioned_ip_literal_required"): S.load_config(str(path))
 
 def test_printer_hostname_dns_is_single_private_bound_address(tmp_path,monkeypatch):
     cfg={**config(tmp_path),"printer_uri":"ipps://printer.internal/ipp/print"}; path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
@@ -399,6 +450,7 @@ def test_corrupt_and_partial_ledger_fail_closed(tmp_path):
 def test_health_treats_business_hold_as_live():
     text=(APP/"rootfs/healthcheck.py").read_text(encoding="utf-8")
     assert 'value.get("liveness") == "alive"' in text and '"held"' not in text
+    assert '["/usr/bin/lpstat", "-r"]' in text and 'scheduler.stdout.strip() == "scheduler is running"' in text
 
 def test_no_plain_claimable_get_or_runtime_lpadmin():
     source=(APP/"app/service.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8")

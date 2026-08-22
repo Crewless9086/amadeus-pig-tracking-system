@@ -36,3 +36,4 @@ Option media A4
 Option sides one-sided
 </Printer>
 """,encoding="utf-8")
+print(queue)

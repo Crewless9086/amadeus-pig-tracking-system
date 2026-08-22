@@ -1,5 +1,5 @@
-#!/usr/bin/with-contenv bashio
-set -euo pipefail
-umask 077
+#!/bin/sh
+set -eu
+umask 0077
 
 exec /init-green.sh
