@@ -1,6 +1,6 @@
 # Amadeus Green Print Bridge
 
-Version 0.3.4 uses the Home Assistant supported prebuilt image reference
+Version 0.3.5 uses the Home Assistant supported prebuilt image reference
 `ghcr.io/crewless9086/amadeus-green-print-bridge`. Its tag may be published only
 once through the guarded manual workflow. GHCR does not provide a registry-level
 immutability guarantee for this private tag: the workflow refuses reuse, verifies
@@ -25,7 +25,7 @@ The configured queue and printer URI are commissioning registry values, never re
 
 ## Runtime, recovery and health
 
-Supervisor starts the app automatically and restarts it after failure. `/data/green-print-ledger.sqlite3` is crash-recovery state only; Supabase/Documents remains canonical. PDFs exist only under the tmpfs spool and are deleted after each attempt. `/data/health.json` reports worker identity, heartbeat, last/next poll and the last bounded result without secrets or document content. A cold backup stops the app before copying `/data`; temporary spool is excluded.
+Supervisor starts the app automatically and restarts it after failure. The root-owned Supervisor options remain at `/data/options.json`; bootstrap copies them to a mode-0600 Green-owned file under `/data/green-runtime` without changing ownership of the mount root. `/data/green-runtime/green-print-ledger.sqlite3` is crash-recovery state only; Supabase/Documents remains canonical. PDFs exist only under the tmpfs spool and are deleted after each attempt. `/data/green-runtime/health.json` reports worker identity, heartbeat, last/next poll and the last bounded result without secrets or document content. A cold backup stops the app before copying `/data`; temporary spool is excluded.
 
 On restart, persisted attempts renew a live lease or recover an expired nonterminal lease before CUPS observation or intake, preserving attempt and provider identity. Corrupt/partial local state fails closed. Missing provider identity becomes canonically ambiguous. Free-space thresholds run before claim/download. Protected fresh Continue retains the job and moves canonically to the sole retry state. Cancel requests cancellation only for the exact known queue job, performs bounded exact readback, and closes only on confirmed absence; pending, completed, unavailable or contradictory evidence becomes canonical ambiguous/Hold and remains in recovery. Local recovery is deleted only after durable canonical closure acknowledgement. Provider completion is not physical completion. Health separates liveness from business Hold.
 
@@ -40,7 +40,7 @@ It must never be installed, attested further, overwritten, deleted, or reused.
 
 ## Install and commissioning
 
-1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.4 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
+1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.5 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
 2. Add the private repository in the Home Assistant app store and install or update only when Supervisor resolves the exact approved digest. Do not start until the canonical endpoint, least-privilege token, registry identities, printer URI and private CA are commissioned.
 3. Validate options and start the app. Confirm health is `event_waiting`, the local queue exists, logs contain no option values, and no job is eligible.
 4. Follow `docs/06-operations/GREEN_PRINT_BRIDGE_PHYSICAL_COMMISSIONING_GUIDE.md`. The development terminal must never manufacture the genuine request or operate the printer.

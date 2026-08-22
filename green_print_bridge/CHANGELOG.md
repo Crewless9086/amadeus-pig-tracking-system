@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.5
+
+- Preserves Supervisor ownership of the `/data` mount and creates one bounded
+  Green-owned runtime subdirectory instead of changing the mount root.
+- Copies the Supervisor-populated root-readable options into a mode-0600
+  Green-owned runtime file before privilege drop.
+- Adds fixed non-secret stage/reason failure evidence from S6 command entry
+  through mount validation, bootstrap, queue readiness and service exec.
+
 ## 0.3.4
 
 - Connects the initial printer TLS check directly to the commissioned private

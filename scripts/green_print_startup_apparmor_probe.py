@@ -79,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--work-root",
         type=Path,
-        default=Path(".codex-runtime/missions/GREEN-0.3.4"),
+        default=Path(".codex-runtime/missions/GREEN-0.3.5"),
     )
     args = parser.parse_args()
     suffix = uuid.uuid4().hex[:10]
@@ -128,7 +128,8 @@ def main() -> int:
             "printer_endpoint_ip": gateway,
             "poll_seconds": 5,
         }
-        (data_dir / "options.json").write_text(json.dumps(options), encoding="utf-8")
+        options_path = data_dir / "options.json"
+        options_path.write_text(json.dumps(options), encoding="utf-8")
         green_uid = run(
             "docker", "run", "--rm", "--platform", "linux/arm64",
             "--entrypoint", "/usr/bin/id", args.image, "-u", "greenprint",
@@ -139,11 +140,76 @@ def main() -> int:
         ).stdout.strip()
         if not green_uid.isdigit() or not green_gid.isdigit():
             raise RuntimeError("image runtime identity invalid")
-        data_dir.chmod(0o700)
-        run("sudo", "chown", "-R", f"{green_uid}:{green_gid}", str(data_dir))
+        # Reproduce the Supervisor boundary: Supervisor populates root-owned
+        # options on a writable /data mount. Never pre-own the mount or its
+        # contents for the image's runtime user.
+        run("sudo", "chown", "root:root", str(data_dir), str(options_path), str(config_dir), str(cert))
+        run("sudo", "chmod", "0755", str(data_dir), str(config_dir))
+        run("sudo", "chmod", "0600", str(options_path))
+        run("sudo", "chmod", "0644", str(cert))
 
         try:
             run("sudo", "apparmor_parser", "-r", str(args.profile.resolve()))
+
+            def negative_case(name: str, expected: str, *, options_mode: str = "valid", cert_mode: str = "valid", data_readonly: bool = False, shadow: tuple[str, str] | None = None) -> None:
+                case_root=root/f"negative-{name}"; case_config=case_root/"config"; case_data=case_root/"data"
+                case_config.mkdir(parents=True); case_data.mkdir()
+                if options_mode != "missing":
+                    material=json.dumps(options) if options_mode == "valid" else ("" if options_mode == "empty" else "{}")
+                    (case_data/"options.json").write_text(material,encoding="utf-8")
+                if cert_mode != "missing":
+                    (case_config/"private-ca.crt").write_bytes(cert.read_bytes() if cert_mode == "valid" else b"")
+                if name == "ownership_conflict": (case_data/"green-runtime").write_text("not-a-directory",encoding="ascii")
+                source=None
+                if shadow:
+                    source=case_root/shadow[0]
+                    if shadow[0].endswith("-empty"):
+                        source.write_bytes(b""); source.chmod(0o644)
+                    elif shadow[0].endswith("-python"):
+                        source.write_text("this is not valid python\n",encoding="ascii"); source.chmod(0o644)
+                    elif shadow[0].endswith("-exit"):
+                        source.write_text("#!/bin/sh\nexit 1\n",encoding="ascii"); source.chmod(0o755)
+                    else:
+                        source.write_text("this is not valid shell syntax (\n",encoding="ascii"); source.chmod(0o644)
+                run("sudo","chown","-R","root:root",str(case_root)); run("sudo","chmod","0755",str(case_root),str(case_config),str(case_data))
+                if (case_data/"options.json").exists(): run("sudo","chmod","0600",str(case_data/"options.json"))
+                if (case_config/"private-ca.crt").exists(): run("sudo","chmod","0644",str(case_config/"private-ca.crt"))
+                case_container=f"{container}-{name}"
+                command=["docker","run","-d","--name",case_container,"--platform","linux/arm64","--network",network,"--add-host",f"canonical.test:{gateway}","--security-opt","apparmor=amadeus-green-print-bridge","--mount",f"type=bind,src={case_config},dst=/config,readonly","--mount",f"type=bind,src={case_data},dst=/data" + (",readonly" if data_readonly else "")]
+                if shadow:
+                    command.extend(["--mount",f"type=bind,src={source},dst={shadow[1]},readonly"])
+                command.append(args.image); run(*command)
+                try:
+                    deadline=time.monotonic()+20
+                    while time.monotonic()<deadline:
+                        state=run("docker","inspect","-f","{{.State.Running}}",case_container).stdout.strip()
+                        if state!="true": break
+                        time.sleep(.5)
+                    if state=="true": raise RuntimeError(f"negative case remained running: {name}")
+                    logs=run("docker","logs",case_container,check=False); combined=logs.stdout+logs.stderr
+                    markers=[line for line in combined.splitlines() if "green_startup_failed" in line]
+                    if markers != [expected]: raise RuntimeError(f"negative diagnostic mismatch {name}: {markers}")
+                    forbidden=("synthetic-startup-probe-token",options.get("printer_uri"),"BEGIN CERTIFICATE","/data/options.json","/config/private-ca.crt")
+                    if any(value and value in combined for value in forbidden): raise RuntimeError(f"negative diagnostic leaked bounded material: {name}")
+                    if run("docker","inspect","-f","{{.State.ExitCode}}",case_container).stdout.strip()=="0": raise RuntimeError(f"negative case exited zero: {name}")
+                finally: run("docker","rm","-f",case_container,check=False)
+
+            negative_case("missing_options","green_startup_failed stage=mount_validation reason=options_missing_or_empty",options_mode="missing")
+            negative_case("empty_options","green_startup_failed stage=mount_validation reason=options_missing_or_empty",options_mode="empty")
+            negative_case("readonly_data","green_startup_failed stage=runtime_directory reason=data_runtime_prepare_failed",data_readonly=True)
+            negative_case("ownership_conflict","green_startup_failed stage=runtime_directory reason=data_runtime_prepare_failed")
+            negative_case("missing_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="missing")
+            negative_case("empty_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="empty")
+            negative_case("invalid_options","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",options_mode="invalid")
+            negative_case("broken_interpreter","green_startup_failed stage=queue_initializer reason=initializer_interpreter_missing",shadow=("python-empty","/usr/bin/python3.12"))
+            negative_case("init_exec","green_startup_failed stage=bootstrap_exec reason=init_script_failed",shadow=("init-shell","/init-green.sh"))
+            negative_case("run_exec","green_startup_failed stage=s6_exec reason=run_script_failed",shadow=("run-shell","/run.sh"))
+            negative_case("cups_start","green_startup_failed stage=cups_readiness reason=cups_stopped_during_startup",shadow=("cups-fail","/usr/sbin/cupsd"))
+            negative_case("service_exec","green_startup_failed stage=service_exec reason=service_process_failed",shadow=("service-exit","/sbin/su-exec"))
+            # A deliberately shadowed executable can itself produce an expected
+            # denial. Only denials created by the following healthy journey are
+            # evidence against the production profile.
+            positive_denial_baseline = len(apparmor_denials())
             run(
                 "docker", "run", "-d", "--name", container,
                 "--platform", "linux/arm64", "--network", network,
@@ -157,7 +223,7 @@ def main() -> int:
             health: dict[str, object] | None = None
             while time.monotonic() < deadline:
                 health_readback = run(
-                    "docker", "exec", container, "/bin/sh", "-c", "cat /data/health.json",
+                    "docker", "exec", container, "/bin/sh", "-c", "cat /data/green-runtime/health.json",
                     check=False,
                 )
                 if health_readback.returncode == 0:
@@ -172,6 +238,16 @@ def main() -> int:
                 raise RuntimeError("event_waiting health not reached\n" + failure_diagnostics(container))
             if health.get("terminal_participated") is not False or health.get("authority_mode") != "fixed_weekly_sheet_only":
                 raise RuntimeError(f"unexpected health contract: {health}")
+            data_contract = run(
+                "docker", "exec", container, "/bin/sh", "-c",
+                "test \"$(/bin/busybox stat -c %u:%g /data)\" = '0:0'"
+                f" && test \"$(/bin/busybox stat -c %u:%g /data/options.json)\" = '0:0'"
+                f" && test \"$(/bin/busybox stat -c %u:%g /data/green-runtime)\" = '{green_uid}:{green_gid}'"
+                f" && test \"$(/bin/busybox stat -c %a /data/green-runtime/options.json)\" = '600'",
+                check=False,
+            )
+            if data_contract.returncode != 0:
+                raise RuntimeError("Supervisor-shaped data ownership contract mismatch\n" + failure_diagnostics(container))
             scheduler = run("docker", "exec", container, "/usr/bin/lpstat", "-r", check=False)
             destination = run(
                 "docker", "exec", container, "/usr/bin/lpstat", "-v", "weekly-a4",
@@ -269,7 +345,7 @@ def main() -> int:
                 time.sleep(1)
             if docker_health != "healthy":
                 raise RuntimeError("container health did not become healthy\n" + failure_diagnostics(container))
-            denied = apparmor_denials()
+            denied = apparmor_denials()[positive_denial_baseline:]
             if denied:
                 raise RuntimeError(
                     "unexpected AppArmor denials after successful startup\n"
@@ -290,6 +366,8 @@ def main() -> int:
                 "queue_jobs": 0,
                 "printer_dns_preseeded": False,
                 "printer_fixed_binding_verified": True,
+                "supervisor_data_prechown": False,
+                "supervisor_options_root_owned": True,
                 "tcp_631_listener": False,
                 "tls_key_files": 0,
             }, sort_keys=True))

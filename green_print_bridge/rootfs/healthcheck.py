@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 try:
-    value = json.loads(Path("/data/health.json").read_text(encoding="utf-8"))
+    value = json.loads(Path("/data/green-runtime/health.json").read_text(encoding="utf-8"))
     heartbeat = datetime.fromisoformat(value["heartbeat_at"].replace("Z", "+00:00"))
     age = (datetime.now(timezone.utc) - heartbeat).total_seconds()
     # A durable business Hold is live. Restarts must not erase or churn it.

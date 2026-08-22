@@ -1,7 +1,7 @@
 FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a
 
 ARG BUILD_ARCH=aarch64
-ARG BUILD_VERSION=0.3.4
+ARG BUILD_VERSION=0.3.5
 ARG SOURCE_COMMIT
 RUN test -n "${SOURCE_COMMIT}" \
     && test "${#SOURCE_COMMIT}" -eq 40 \
@@ -49,4 +49,4 @@ RUN chmod 0755 /run.sh /init-green.sh /healthcheck.py \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD ["/healthcheck.py"]
-CMD ["/run.sh"]
+CMD ["/bin/sh", "-c", "mkdir -p /run/cups 2>/dev/null || { echo 'green_startup_failed stage=s6_exec reason=failure_boundary_unavailable' >&2; exit 78; }; rm -f /run/cups/green-startup-failure 2>/dev/null || true; test -f /run.sh && test -r /run.sh || { echo 'green_startup_failed stage=s6_exec reason=run_script_unreadable' >&2; exit 78; }; /bin/sh /run.sh 2>/dev/null; status=$?; test \"${status}\" -eq 0 && exit 0; if test \"${status}\" -eq 78 && test -s /run/cups/green-startup-failure; then marker=\"$(/bin/busybox head -n 1 /run/cups/green-startup-failure)\"; if printf '%s\\n' \"${marker}\" | /bin/busybox grep -Eq '^green_startup_failed stage=[a-z_]+ reason=[a-z_]+$'; then printf '%s\\n' \"${marker}\" >&2; exit 78; fi; fi; echo 'green_startup_failed stage=s6_exec reason=run_script_failed' >&2; exit 78"]
