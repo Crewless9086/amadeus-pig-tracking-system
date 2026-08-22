@@ -5181,3 +5181,49 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   source packets, but whichever follows a main advance must be refreshed and reviewed
   against that new exact main before merge. No terminal may substitute a synthetic job,
   receipt or hardware action for genuine deployed-agent acceptance.
+
+## 2026-08-22 — HMQ-20260813-04 breeding-profile acceptance addendum
+
+- Mission/lineage: continue existing HERDMASTER `HMQ-20260813-04`; this is an
+  owner-facing acceptance gap, not a new mission, page, API, database, scheduler or
+  analytics engine.
+- Target owner outcome: opening a breeding sow or boar's ordinary `/pig/<pig_id>`
+  profile once shows a concise, truthful lifetime breeding record from HERDMASTER's
+  existing named-animal full-lifecycle packet: attributable matings and partners,
+  linked litters, born-alive/weaned survival with numerator and denominator,
+  offspring outcomes, current holds, evidence limitations and `Unknown` or
+  conflicting facts, with optional litter and full-analysis drill-down.
+- Owner outcome achieved: `NONE`. Usable now: `NO`. The deployed ordinary profile
+  still uses its shallow raw-mating projection, authenticated current Ms Piggy packet
+  and live profile rendering are unproven, and Charl still has to navigate and
+  reconcile multiple pages.
+- Enabling-stage truth: the read-only named-animal full-lifecycle route and separate
+  breeding-analytics detail surface exist. PR #984 remains open at exact head
+  `c665311d6dcc06d00c6b3120aa8f95f7f449c8f4`, but on current authoritative main
+  `02816350d8eebecf93a6353ae90bc4f0e78787f9` it is 7 commits ahead and 462 behind,
+  GitHub classifies it `CONFLICTING / DIRTY`, and merge reconciliation conflicts in
+  the composer plus two focused test files. Its historical green checks are retained
+  as evidence only, not current-main acceptance.
+- Preserved collision truth: `C:\tmp\ui-hmq-20260813-04-human-identity-preview-20260815`
+  is at `b936a1e8` with unique untracked preview evidence; the lifetime-merit worktree
+  at `a4ab63e8` also has untracked previews; the offspring-summary worktree at
+  `f18deade` is 336 commits behind with four modified analytics UI/test files and
+  untracked output. Preserve all three. Do not implement in or overwrite these
+  retained worktrees, and do not independently calculate breeding outcomes in
+  `pigDetail.js`.
+- First missing gate: after the current Green/CORE/ROOTLINE strategic WIP releases a
+  slot, serialize one current-main HMQ-04 reconciliation: preserve the useful unique
+  PR/worktree changes, resolve PR #984 against exact current main, obtain the exact
+  current Ms Piggy named-animal packet read-only, then extend the existing normal
+  profile to consume that same contract. No production/farm write or owner decision
+  is required for this intake.
+- Acceptance remaining: exact-current automated Brain Guard, data-integrity and
+  independent UI review; sow and boar role-adaptive rendering; linked litter
+  navigation; truthful empty/error/Unknown/conflict behavior; authenticated desktop
+  and mobile production readback at the exact deployed revision; Charl's one-time
+  visual acceptance; and a later genuine profile use showing the navigation and
+  reconciliation workload is removed.
+- Strategic WIP: `FROZEN - STRATEGIC WIP / EXPANSION-ACCEPTANCE-GAP`. Promotion
+  trigger is release of the selected Green/CORE/ROOTLINE implementation slot plus a
+  fresh collision sweep. Next automatic dispatch is the existing HMQ-04 lineage,
+  never a duplicate profile mission.
