@@ -1527,6 +1527,23 @@ manual dispatch to build, publish, sign and attest the immutable 0.3.2 arm64
 package from the exact main revision. No install, configuration, start, queue,
 job or print is implied by that later package publication.
 
+Owner authorization was subsequently received for that exact bounded package-
+publication boundary. Control Tower dispatched the reviewed workflow exactly
+once as GitHub Actions run `32568228754` from exact main
+`429a91ffd3dd4f38faadeb9fb0f19f202ea87537`; both the verification job and the
+publication job completed successfully. The immutable image is
+`ghcr.io/crewless9086/amadeus-green-print-bridge:0.3.2` at digest
+`sha256:92d034dd4a582b82f4ed09dd84434e47cf21f462f6e9a291d8a94a8227527369`.
+The preserved release packet proves one `linux/arm64` OCI manifest, matching
+source/version config labels, keyless Cosign verification, SPDX 2.3 SBOM,
+provenance attestation and SBOM attestation; packet hashes matched the emitted
+digest-bound receipt. Lifecycle advances to `IMMUTABLE_PACKAGE_PUBLISHED /
+INSTALLATION_NOT_AUTHORIZED / COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**.
+No installation, Home Assistant configuration, credential, start, CUPS/queue,
+document, print, database, farm or provider effect was performed. Green remains
+stopped and unavailable to the owner until a separately authorized installation
+and commissioning boundary is completed and physically accepted.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
