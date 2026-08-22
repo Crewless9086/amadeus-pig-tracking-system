@@ -5126,8 +5126,14 @@ SHA-256 `D806A6C050EE09F3F279B1AD628A05B300784CAAE1A8577C8FD455540F022C0C`.
   workflows passed. The Green publication workflow did not run.
   It creates unique 0.3.1 publication rails that require exactly one raw OCI
   `linux/arm64` descriptor plus matching config/source/version before signing, explicit
-  arm64 SBOM generation, attestations and final digest-bound receipt. First gate is now
-  one separately protected exact 0.3.1 publication decision; dormant update,
+  arm64 SBOM generation, attestations and final digest-bound receipt. Authorized run
+  `32553075007` completed successfully and published exact 0.3.1 index digest
+  `sha256:b660fffbc7985f7b5d8f2550f2dbbf779966e5167d51e063051fb1890a10bdd5`,
+  containing exactly one `linux/arm64` manifest. Registry readback, image config,
+  source/version labels, Cosign identity, SLSA provenance, SPDX SBOM attestation and
+  the downloaded release receipt all agree with main `02816350...`; receipt SHA-256
+  is `EA09AE95D8765896972A196044A59DA2FCC966F98C6D6C259397CC3D978510E6`.
+  First gate is now a separately protected dormant Home Assistant update decision;
   commissioning and Start remain later separate boundaries. Installed 0.2.0 remains
   owner-observed `Stopped`, Start on boot OFF, Watchdog OFF and Auto update OFF.
 - CORE target owner outcome: stopped CORE eventually receives and completes a genuine
