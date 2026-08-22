@@ -1445,3 +1445,188 @@ after push. The automatic next action is fresh independent exact-head review of
 PR #1150. Only later separately authorized migration/deployment/commissioning,
 a genuine natural request, exact canonical/provider evidence, one correct page,
 cleanup/follow-up and a later terminal-independent cycle can close the mission.
+
+## 2026-08-22 Control Tower current-main intake and dispatch reconciliation
+
+### HERDMASTER-NATURAL-HEALTH-LOSS-1 / OOM-INTAKE-SLICE-1 defect
+
+GENERAL's Pig 161 Brain Guard finding is consolidated into the existing natural
+health/loss mission as `CURRENT_BLOCKER`; it is not a new mortality, welfare,
+language, Telegram, queue, router, confirmation or database mission. Pig 161 is
+sealed historical/provider evidence and must not be replayed or mutated.
+
+The retained owner outcome is one natural death report, one concise preview in
+the authenticated recipient's configured language, one protected confirmation,
+atomic supported mortality plus attributable welfare-case effects, canonical
+readback-controlled completion and only genuinely unresolved follow-up. Charl's
+canonical notification language is English with English buttons. Anton's is
+Afrikaans with Afrikaans buttons. Inbound language does not silently change the
+stored output preference, and one message must never mix languages.
+
+The reusable defects are: the current mortality preview exposes audit/technical
+language; the inspected confirmed writer does not prove same-boundary creation,
+append and death closure of the attributable welfare episode or reconciliation
+of obsolete living-animal checks; and completion wording is not proven to follow
+canonical readback. Unrelated welfare cases and distinct disposal, biosecurity
+or mortality work remain open. No diagnosis, treatment, cause/time invention or
+new authority is included.
+
+Current-main terminal dispatch is directly proven. The isolated terminal session
+`01a02903-1cd6-7f41-a7dd-34086a81351c` is active in
+`.worktrees/herdmaster-health-loss-welfare-language-20260822`, branch
+`fix/herdmaster-health-loss-welfare-language-20260822`, exact clean base
+`a6b3112fe3a3008af763685e5b1ca31ab814963f`. Its first contained stop exposed a
+stale Control Tower line-count instruction; Control Tower corrected it without
+scope restart. The terminal acknowledged and resumed against the authoritative
+1,127-line Standard blob `3002b94713e286c4eb2019419c438cc378c337fa`,
+Protocol `8fbd0b9c9160164e31a17a2cbfa51ab88792a909`, Template
+`1233aee625e45821a685614a33b1eb101c666ffd` and Programme
+`fb44d7f86c47e605c283ed33c28ba2c4267d6edb`.
+
+Lifecycle is `WORKING / SOURCE_AND_TEST_IMPLEMENTATION_ACTIVE`; this is **NO
+BUSINESS OUTCOME**. No Pig 161 replay, provider message, production write,
+schema/profile mutation, merge or deployment is authorized. Automatic
+continuation is source audit, reusable repair, tests, Brain Guard, specialist
+and security review, clean PR and complete handover. Later gates remain
+independent review, serialized release, exact loaded revision, a fresh genuine
+mortality event through the deployed Oom Sakkie/HERDMASTER actor, canonical and
+provider readback, safe replay, automatic follow-up and a later
+terminal-independent cycle. Owner action is none until one exact protected
+release/profile/schema boundary is proven or the fully deployed actor is ready
+to receive a genuinely new natural event.
+
+### GREEN 0.3.2 reviewed source continuation
+
+The existing Green commissioning outcome remains active under the owner's prior
+bounded commissioning direction. PR #1164 exact head
+`da0f67cf0eb53616582f37c054038b6f71b5fdd0` is a reviewed source candidate:
+67 focused/wider tests passed and different-agent independent review passed
+after repairs for DNS rebinding/TOCTOU, private certificate/SAN trust and
+negative-test gaps. Hosted CI was queued at the observation time.
+
+The candidate binds exact approved Render public-PKI HTTPS without redirects or
+public IP pin, preserves the private-pinned profile, uses strict token/farm/Green
+headers and fixed paths, and confines IPPS to a single private pin with SAN-only
+TLS preflight, private CA policy, hostname-to-pin binding before CUPS and exact
+AppArmor writes. No publish, install, configuration, identity, queue, document,
+job, print or physical effect occurred. Lifecycle is `REVIEW_HOLD /
+EXACT_HEAD_CI_PENDING`; **NO BUSINESS OUTCOME**. Green remains stopped with boot,
+watchdog and auto-update off. Automatic promotion is exact-head CI pass followed
+by Control Tower serialized release review; commissioning, a genuine physical
+page, cleanup/follow-up and a later terminal-independent cycle remain separate
+protected acceptance gates. Owner action is none now.
+
+All five exact-head checks subsequently passed. Control Tower verified that the
+publication job is not triggered by merge or push: it requires a separate manual
+workflow dispatch with `publish=true`, exact expected source commit and a main-
+branch identity check. PR #1164 was therefore merged normally at exact reviewed
+head as main commit `429a91ffd3dd4f38faadeb9fb0f19f202ea87537` without package
+publication. Green advances only to `INTEGRATED_SOURCE / PACKAGE_UNPUBLISHED /
+RELEASE_HOLD`; **NO BUSINESS OUTCOME**. The next protected boundary is one exact
+manual dispatch to build, publish, sign and attest the immutable 0.3.2 arm64
+package from the exact main revision. No install, configuration, start, queue,
+job or print is implied by that later package publication.
+
+Owner authorization was subsequently received for that exact bounded package-
+publication boundary. Control Tower dispatched the reviewed workflow exactly
+once as GitHub Actions run `32568228754` from exact main
+`429a91ffd3dd4f38faadeb9fb0f19f202ea87537`; both the verification job and the
+publication job completed successfully. The immutable image is
+`ghcr.io/crewless9086/amadeus-green-print-bridge:0.3.2` at digest
+`sha256:92d034dd4a582b82f4ed09dd84434e47cf21f462f6e9a291d8a94a8227527369`.
+The preserved release packet proves one `linux/arm64` OCI manifest, matching
+source/version config labels, keyless Cosign verification, SPDX 2.3 SBOM,
+provenance attestation and SBOM attestation; packet hashes matched the emitted
+digest-bound receipt. Lifecycle advances to `IMMUTABLE_PACKAGE_PUBLISHED /
+INSTALLATION_NOT_AUTHORIZED / COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**.
+No installation, Home Assistant configuration, credential, start, CUPS/queue,
+document, print, database, farm or provider effect was performed. Green remains
+stopped and unavailable to the owner until a separately authorized installation
+and commissioning boundary is completed and physically accepted.
+
+The subsequent bounded 0.3.2 installation/zero-job commissioning window was
+stopped before installation on a required precondition mismatch. Authenticated
+Home Assistant readback showed installed version `0.3.1`, `Stopped`, with Start
+on boot, Watchdog and Auto update OFF, while every required commissioning field
+remained empty: canonical origin/endpoint, bearer credential, farm/Green/
+printer/fixed-queue identities, registry version and printer URI. This matches
+the earlier 0.3.1 containment record; the values described as "previously
+approved" had been authorized for creation but were never actually created or
+bound. Because this window expressly prohibited any new credential or identity
+and required stop-on-mismatch, Control Tower did not click Update, install
+0.3.2, save configuration or start Green. Zero documents, jobs and physical
+prints were preserved. Lifecycle remains `IMMUTABLE_PACKAGE_PUBLISHED /
+INSTALLATION_BLOCKED_BY_MISSING_BINDINGS / COMMISSIONING_PENDING`; **NO BUSINESS
+OUTCOME**. The next owner boundary must authorize creation and protected storage
+of exactly one least-privilege credential and the matching canonical identities,
+then installation and zero-job commissioning against the already published
+immutable digest.
+
+The next owner-approved identity-registration/install window completed further
+read-only preflight and then stopped before any write. Home Assistant identifies
+the intended device as the HP OfficeJet Pro 8120 series. Direct private-LAN TLS
+readback proved its self-signed certificate is current through 2030 and carries
+the printer hostname as its sole SAN; local DNS resolves that hostname uniquely
+to the same private address reported by Home Assistant. The 0.3.2 IPPS hostname-
+pin contract is therefore coherent. However, its required trust anchor is not
+present at the fixed Home Assistant path `/config/private-ca.crt`, and no existing
+protected file-management channel is available: the installed-app inventory has
+no file-management/terminal app and the established Home Assistant SSH ports are
+closed. Installing another management app was outside the authorized boundary,
+and weakening or bypassing TLS is prohibited. Control Tower therefore created no
+credential or registry row, performed no Render/Supabase/Home Assistant write,
+did not install 0.3.2, did not save options and did not start Green. Lifecycle is
+`IMMUTABLE_PACKAGE_PUBLISHED / PRINTER_IDENTITY_VERIFIED /
+TRUST_ANCHOR_PLACEMENT_BLOCKED / COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**.
+The next bounded prerequisite is a protected method to place only the verified
+printer certificate at the fixed trust path, after which the already-approved
+identity, installation and zero-job commissioning sequence can be reauthorized
+and completed.
+
+Owner subsequently authorized installation of the official File editor and
+confirmed immediate transmission of the verified public printer certificate to
+the local authenticated Home Assistant instance. File editor 6.1.0 was installed
+with Start on boot, Watchdog, Auto update and sidebar access OFF. The Chrome file-
+chooser path remained unavailable even after its required extension permission
+was enabled, so no upload occurred. A native File editor fallback created the
+authorized `/config/private-ca.crt` name, but the editor retained modal focus:
+the certificate text was interpreted as a filename and rejected with filename-
+too-long before content save. This left only a zero-byte `private-ca.crt`; no
+certificate content was written. Per stop-on-mismatch authority, Control Tower
+did not retry, overwrite or delete it, and stopped File editor. Green remained
+0.3.1 stopped and unchanged; zero queue, document, job and print effects
+occurred. Lifecycle is `TRUST_FILE_EMPTY / FILE_EDITOR_STOPPED /
+COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**. A fresh exact overwrite boundary
+is required to replace only the empty file with the already verified public
+certificate and prove readback before any Green identity or installation work.
+
+Owner then authorized that exact bounded overwrite boundary. Control Tower
+started only the installed official File editor, opened the existing zero-byte
+`/config/private-ca.crt`, entered the already verified public HP certificate and
+saved once. A fresh page reload independently read back the exact PEM bytes. The
+readback certificate matched SHA-1 fingerprint
+`D9A77D87534CF02CF992564E5863371870A4DCF6`, SAN `DNS:AmadeusKantoor`, the
+self-signed HP subject/issuer identity and validity from 15 December 2025 through
+14 December 2030. File editor was then stopped; the resulting control surface
+showed Start available, Stop absent, and all four automatic controls unchecked:
+Start on boot, Watchdog, Auto update and sidebar access. No Green installation,
+start, credential, registry, queue, document, print, database, farm or provider
+action occurred. Lifecycle advances to `TRUST_ANCHOR_PLACED_AND_VERIFIED /
+FILE_EDITOR_STOPPED / GREEN_COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**.
+The trust prerequisite is now cleared, but Green remains unavailable to the
+owner until its separately governed identity registration, immutable 0.3.2
+installation and zero-job commissioning are completed and later physically
+accepted.
+
+### Strategic WIP and dispatch truth
+
+Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
+activity: the existing Green transport/commissioning track and the consolidated
+Oom Sakkie/HERDMASTER mortality-welfare-language repair. No third implementation
+track is dispatched by this assessment. SAM PR #1163 and other eligible source
+work are preserved without interruption; old health/loss, intake, mortality and
+welfare worktrees remain historical/collision evidence only. The existing CORE
+runner artifacts are stale and `supervisor.stop` is present, so no CORE pickup,
+background work or release-lane ownership is claimed. The serialized production
+release lane is free of a proven active mutation owner but is not acquired by
+either source terminal.
