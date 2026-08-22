@@ -39,6 +39,7 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
         "channel": "facebook_organic",
         "campaign_lane": preview.get("campaign_lane") or "live_stock_awareness",
         "objective": preview.get("campaign_objective") or "farm_awareness",
+        "public_content_policy": dict(preview.get("public_content_policy") or {}),
         "exact_text": preview["exact_post_copy"],
         "selected_assets": media, "selected_asset": media[0] if media else {},
         "asset_id": media[0]["asset_id"] if media else "",
@@ -162,7 +163,8 @@ def validate_claimed_approval(claim, *, now=None):
     policy = assess_public_livestock_content(preview.get("exact_post_copy"),
         objective=objective, campaign_lane=lane, media=[] if text_only else media)
     if (not policy.get("allowed") or not public_livestock_policy_binding_matches(
-            preview.get("public_content_policy"), policy)):
+            preview.get("public_content_policy"), policy,
+            target_page_id=preview.get("target_page_id"), now=now)):
         return "protected_campaign_public_policy_failed"
     return ""
 

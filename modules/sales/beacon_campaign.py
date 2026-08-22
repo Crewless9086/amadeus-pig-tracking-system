@@ -20,6 +20,7 @@ from modules.beacon.facebook_media_transport import (
 from modules.beacon.public_livestock_content_policy import (
     RISK_STATUS,
     assess_public_livestock_content,
+    public_livestock_policy_binding_matches,
     public_livestock_policy_contract,
 )
 from modules.beacon.organic_publication_binding import (
@@ -1309,7 +1310,14 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             payload.get("exact_text") or payload.get("message"),
             objective=raw_objective or "farm_awareness", campaign_lane=campaign_lane,
             media=payload.get("selected_assets") or payload.get("selected_asset"))
-        if not assessment["allowed"]:
+        policy_binding_required = bool(payload.get("protected_campaign_claim_token")
+            or payload.get("public_content_policy"))
+        if (not assessment["allowed"] or (policy_binding_required
+                and not public_livestock_policy_binding_matches(
+                payload.get("public_content_policy"), assessment,
+                target_page_id=payload.get("target_page_id") or _clean_text(
+                    (environ if environ is not None else os.environ).get(FACEBOOK_PAGE_ID_ENV)),
+                now=current_time()))):
             return {
                 "success": False,
                 "status": RISK_STATUS,
@@ -1413,7 +1421,12 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
         final_assessment = assess_public_livestock_content(params.get("exact_text"),
             objective=params.get("objective"), campaign_lane=params.get("campaign_lane"),
             media=params.get("selected_assets") or params.get("selected_asset"))
-        if not final_assessment["allowed"]:
+        if (not final_assessment["allowed"] or (params.get("protected_campaign_claim_token")
+                and not public_livestock_policy_binding_matches(
+                params.get("public_content_policy"), final_assessment,
+                target_page_id=params.get("target_page_id") or _clean_text(
+                    (environ if environ is not None else os.environ).get(FACEBOOK_PAGE_ID_ENV)),
+                now=current_time()))):
             return {
                 "success": False,
                 "status": RISK_STATUS,
@@ -2745,6 +2758,11 @@ def _facebook_post_params(payload, policy):
         "timing_end": _clean_text(payload.get("timing_end"))[:80],
         "campaign_lane": payload.get("campaign_lane", ""),
         "objective": payload.get("objective", ""),
+        "target_page_id": _clean_text(payload.get("target_page_id"))[:160],
+        "public_content_policy": deepcopy(payload.get("public_content_policy"))
+            if isinstance(payload.get("public_content_policy"), dict) else {},
+        "protected_campaign_claim_token": _clean_text(
+            payload.get("protected_campaign_claim_token"))[:240],
         "execution_status": "not_attempted",
         "facebook_post_id": "",
         "facebook_response_json": "{}",
@@ -2948,7 +2966,10 @@ def _post_to_facebook_page_binary_images(
         final_policy = assess_public_livestock_content(params.get("exact_text"),
             objective=params.get("objective") or "farm_awareness",
             campaign_lane=params.get("campaign_lane"), media=assets)
-        if not final_policy["allowed"]:
+        if (not final_policy["allowed"] or (params.get("protected_campaign_claim_token")
+                and not public_livestock_policy_binding_matches(
+                params.get("public_content_policy"), final_policy,
+                target_page_id=params.get("target_page_id"), now=current_time()))):
             return {
                 "success": False,
                 "status": RISK_STATUS,
