@@ -41,6 +41,27 @@ Every child dispatch must provide:
 
 Operate autonomously within those workspace paths and the bounded mission. External writes, secrets, protected production actions, customer communication, payments, hardware operation, destructive changes, and ungoverned business-record mutations retain their normal authority boundaries.
 
+## Defensive-review safety and automatic recovery
+
+Frame legitimate security-sensitive work as bounded defensive development inside the owner-authorized Amadeus repository or an explicitly named Amadeus account. Keep ordinary implementation, defensive source review, deployment verification, and provider inspection as separate tasks when combining them would add unnecessary dual-use scope.
+
+For defensive child work:
+
+- name the exact repository, files, PR, or disposable test service in scope;
+- name safe permitted actions such as reading source, inspecting non-secret logs, editing in-scope code, and running repository tests;
+- prohibit secret retrieval or disclosure, authentication bypass, sandbox circumvention, unrestricted scanning, unrelated-system access, and unapproved external or production mutation;
+- inspect credential presence, scope, configuration, and provider-origin evidence without requesting secret values;
+- keep prompts lean: state each boundary once and omit unrelated credentials, providers, browsers, databases, and deployment systems.
+
+If a child response is withheld by a safety safeguard:
+
+1. Classify only that attempt as `SAFETY_BLOCKED`; do not classify the mission as complete or blocked.
+2. Preserve the business objective, priority, evidence, authorization, and safety boundaries.
+3. Record the timestamp, child identity, exact preceding prompt, named scope, and defensive authorization in workspace-local mission evidence. Never record secrets.
+4. Do not resend the same prompt or wait indefinitely. Remove unrelated sensitive concepts and dispatch a fresh, narrowly bounded defensive task against named Amadeus files or a disposable repository test environment.
+5. Continue all independent lanes automatically.
+6. Escalate to the owner only if repeated safeguards prevent the legitimate bounded task after fresh narrowing and no safe alternative remains. Do not direct the owner to seek expanded cybersecurity access for ordinary Amadeus development.
+
 ## Completion boundary
 
 Do not declare completion until the relevant operational-acceptance skill proves the exact deployed revision, genuine journey, canonical/provider/physical effects as applicable, replay or duplicate safety, and a later terminal-independent cycle. If those are missing, report the exact remaining acceptance gap and continue.
