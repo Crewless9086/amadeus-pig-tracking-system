@@ -20,6 +20,7 @@ def test_package_is_bounded_and_privilege_split():
     assert cfg["arch"]==["aarch64"] and cfg["privileged"]==[] and cfg["host_network"] is False
     assert "adduser -S -D -H" in docker and "/sbin/su-exec greenprint:greenprint" in init and "/sbin/su-exec cupsd:cupsd" in init
     assert "lpadmin" not in init and "exec /sbin/su-exec greenprint" in init
+    assert "PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py" in init
     assert init.startswith("#!/bin/sh\nset -eu\numask 0077\n") and run.startswith("#!/bin/sh\nset -eu\numask 0077\n")
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")

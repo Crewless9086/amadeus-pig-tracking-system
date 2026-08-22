@@ -9,7 +9,7 @@ install -d -o cupsd -g cupsd -m 0750 /run/cups /var/log/cups
 install -d -o cupsd -g cupsd -m 0700 /var/spool/cups
 test -s /config/private-ca.crt
 install -o root -g root -m 0644 /config/private-ca.crt /etc/cups/ssl/site.crt
-/usr/bin/python3 /opt/green/init_queue.py /data/options.json /run/cups/printers.conf
+PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py /data/options.json /run/cups/printers.conf
 chown cupsd:cupsd /run/cups/printers.conf
 chmod 0600 /run/cups/printers.conf
 /sbin/su-exec cupsd:cupsd /usr/sbin/cupsd -f &

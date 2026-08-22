@@ -72,22 +72,26 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", required=True)
     parser.add_argument("--profile", required=True, type=Path)
+    parser.add_argument(
+        "--work-root",
+        type=Path,
+        default=Path(".codex-runtime/missions/PR-1169"),
+    )
     args = parser.parse_args()
     suffix = uuid.uuid4().hex[:10]
     network = f"green-startup-probe-{suffix}"
     container = f"green-startup-probe-{suffix}"
     servers: list[ThreadingHTTPServer] = []
 
-    with tempfile.TemporaryDirectory(prefix="green-startup-probe-") as raw:
+    args.work_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="green-startup-probe-", dir=args.work_root.resolve(),
+    ) as raw:
         root = Path(raw)
         config_dir = root / "config"
         data_dir = root / "data"
         config_dir.mkdir()
         data_dir.mkdir()
-        # The real Home Assistant data mount is writable by the app runtime.
-        # Mirror that contract for the synthetic bind mount without assuming
-        # the host runner UID matches the image's fixed greenprint UID.
-        data_dir.chmod(0o777)
         cert = config_dir / "private-ca.crt"
         key = root / "private-ca.key"
         run(
@@ -121,6 +125,18 @@ def main() -> int:
             "poll_seconds": 5,
         }
         (data_dir / "options.json").write_text(json.dumps(options), encoding="utf-8")
+        green_uid = run(
+            "docker", "run", "--rm", "--platform", "linux/arm64",
+            "--entrypoint", "/usr/bin/id", args.image, "-u", "greenprint",
+        ).stdout.strip()
+        green_gid = run(
+            "docker", "run", "--rm", "--platform", "linux/arm64",
+            "--entrypoint", "/usr/bin/id", args.image, "-g", "greenprint",
+        ).stdout.strip()
+        if not green_uid.isdigit() or not green_gid.isdigit():
+            raise RuntimeError("image runtime identity invalid")
+        data_dir.chmod(0o700)
+        run("sudo", "chown", "-R", f"{green_uid}:{green_gid}", str(data_dir))
 
         try:
             run("sudo", "apparmor_parser", "-r", str(args.profile.resolve()))
