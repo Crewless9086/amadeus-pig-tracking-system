@@ -24,6 +24,42 @@ from modules.telemetry.rootline_water_energy_plan import (
 )
 
 
+def prepare_rootline_borehole_cycle(*, need, provider, interlocks, energy,
+        requested_seconds, connect_factory, authority, now=None,
+        store=rootline_irrigation_execution_store, environ=None):
+    """Persist inert Borehole 1 eligibility on the existing ROOTLINE rail."""
+    source = environ if environ is not None else os.environ
+    if str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() != "true":
+        return {**_safe("borehole_authority_disabled"), "eligible": False}
+    from modules.telemetry.rootline_borehole_commissioning import (
+        build_borehole_runtime_eligibility, load_registered_borehole_baseline,
+    )
+    try:
+        baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
+    except Exception:
+        baseline = None
+    if not baseline:
+        return {**_safe("canonical_borehole_commissioning_unproven"), "eligible": False}
+    artifact = build_borehole_runtime_eligibility(need=need, baseline=baseline,
+        authority=authority, provider=provider, interlocks=interlocks, energy=energy,
+        requested_seconds=requested_seconds, now=now)
+    if artifact.get("eligible") is not True:
+        return {**_safe("borehole_execution_gates_hold"),
+            "execution_eligibility": artifact, "eligible": False}
+    try:
+        recorded = store("record_borehole_eligibility", artifact)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
+    if not isinstance(recorded, dict) or recorded.get("success") is not True:
+        return {**_safe("borehole_eligibility_persistence_unproven"),
+            "success": False, "eligible": False}
+    # Commissioning/configuration release remains a separate immutable boundary.
+    # No claim and no provider adapter are reachable from this source stage.
+    return {**_safe("borehole_eligibility_persisted_claim_disabled"),
+        "execution_eligibility": artifact, "eligible": True,
+        "claim_created": False, "autonomous_on_enabled": False}
+
+
 def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url=None,
                                  store=rootline_irrigation_execution_store,
                                  token_store=None, transport=None,
