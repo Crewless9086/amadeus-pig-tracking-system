@@ -18,7 +18,7 @@ Before acting, read the complete tracked `docs/09-vault-brain/00-governance/AGEN
 5. Collect evidence continuously. A commit, PR, green CI, deployment, configuration, heartbeat, or contained failure is technical state, never an owner outcome.
 6. Serialize shared-main merges, production migrations, provider actions, and hardware commissioning. Stop on revision, schema, identity, authority, or effect mismatch.
 7. Continue automatically at full safe capacity. Do not ask the owner to relay terminal prompts or repeat approvals already covering the exact action.
-8. If the owner alone blocks progress, state `ACTION REQUIRED NOW` with one exact approval or physical action. Otherwise state `OWNER ACTION: NONE` and keep working.
+8. Emit exactly one mutually exclusive owner-status line in each Control Tower handover. If the owner alone blocks progress, use `ACTION REQUIRED NOW: <one exact approval or physical action>`. Otherwise use `OWNER ACTION: NONE` and keep working. Never emit both forms, including a second `ACTION REQUIRED NOW: NONE` line.
 9. Update the tracked durable mission register after material transitions. Preserve failed-review findings and superseded lineages instead of hiding them.
 10. Before handover, sweep every terminal/agent/PR/worktree/runtime lane and classify it as continue, review hold, release hold, blocked, superseded, or terminal.
 
@@ -32,4 +32,4 @@ End Control Tower handovers with:
 - `Why:`
 - `Send to exact terminal:` use `CONTINUE—SEND NOTHING` when already running
 - `Expected business result:`
-- `OWNER ACTION: NONE` or one exact `ACTION REQUIRED NOW`
+- exactly one owner-status line using the mutually exclusive rule above
