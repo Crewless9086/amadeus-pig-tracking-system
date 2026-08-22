@@ -30,11 +30,26 @@ def _semantic(domain, intent, **extra):
         "observation_facts": extra.get("observation_facts", []),
         "confirmation_facts": extra.get("confirmation_facts"),
         "breeding_actions": extra.get("breeding_actions", []),
+        "farrowing_litter": extra.get("farrowing_litter"),
         "protected_preview_required": extra.get("protected_preview_required", False),
         "recording_prohibited": extra.get("recording_prohibited", False),
         "requested_action": extra.get("requested_action", ""), "language": extra.get("language", "en"),
         "confidence": extra.get("confidence", .98), "needs_clarification": False,
         "clarification_question": ""}
+
+
+@pytest.mark.parametrize("language", ["en", "af", "mixed"])
+def test_farrowing_semantic_family_returns_typed_counts_not_numeric_animals(language):
+    value = _semantic("herd_management", "record_farrowing_litter", message_kind="command",
+        language=language, entity_refs=["Linda"], farrowing_litter={"sow_ref": "Linda",
+            "farrowing_date": "2026-08-22", "total_born": 9, "born_alive": 8,
+            "stillborn": None, "mummified": 1, "died_after_live_birth": None,
+            "mating_ref": None, "father_ref": None})
+    result = parse_semantic_response(_response(value))
+    assert result.intent == "record_farrowing_litter"
+    assert result.entity_refs == ("Linda",)
+    assert result.farrowing_litter["sow_ref"] == "Linda"
+    assert result.farrowing_litter["total_born"] == 9
 
 
 def test_semantic_front_door_is_llm_first_but_has_zero_authority():

@@ -309,6 +309,26 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         else:
             contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         return {"handled":True,**result},result_status
+    if claimed["action_kind"]=="herdmaster_record_farrowing_litter":
+        from modules.oom_sakkie.herdmaster_farrowing_runtime import execute_claimed_farrowing_litter
+        try:
+            result,result_status=execute_claimed_farrowing_litter(
+                claimed,parsed,connect_factory=connect_factory)
+        except Exception as exc:
+            return {"handled":True,"success":False,
+                "status":"farrowing_litter_recovery_pending",
+                "answer":"The protected confirmation was retained, but canonical completion is not yet proven. Do not confirm again.",
+                "writes_farm_data":False,"recovery_required":True,
+                "error_type":type(exc).__name__},503
+        if result.get("success") is True:
+            completion=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            result=completion.get("result") if isinstance(completion.get("result"),dict) else result
+            if completion.get("replayed") is True:
+                result={**result,"answer":"","suppress_owner_delivery":True,
+                    "writes_farm_data":False,"status":"farrowing_litter_replayed_noop"}
+        elif result_status < 500:
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result},result_status
     if claimed["action_kind"]=="sam_sale_payment":
         from modules.oom_sakkie.sam_payment_owner_runtime import execute_claimed_sale_payment
         result,result_status=execute_claimed_sale_payment(claimed,connect_factory=connect_factory)

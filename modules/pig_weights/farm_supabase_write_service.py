@@ -411,6 +411,102 @@ def create_litter_with_generated_piglets(litter_id, cleaned_data, mother_tag="",
     return {"litter_created": True, "pig_rows_created": created}
 
 
+def create_governed_farrowing_litter(preview, *, actor_id, connect_factory=None):
+    """Create one active litter from an exact protected preview, atomically.
+
+    The deterministic litter/pig identities make recovery read-only and replay
+    safe.  Only live-born piglets receive animal identities.  A compatible
+    mating, when present in the preview, is locked and marked Farrowed in the
+    same transaction. Missing or disputed mating evidence is left Unknown.
+    """
+    preview = dict(preview or {})
+    if preview.get("contract_version") != "herdmaster_farrowing_litter_preview_v1":
+        raise ValueError("farrowing_preview_contract_invalid")
+    operation_id = to_clean_string(preview.get("operation_id"))
+    sow_id = to_clean_string(preview.get("sow_pig_id"))
+    farrowing_date = _date_or_none(preview.get("farrowing_date"))
+    counts = dict(preview.get("counts") or {})
+    total, born_alive = _litter_int(counts.get("total_born")), _litter_int(counts.get("born_alive"))
+    stillborn, mummified = _litter_int(counts.get("stillborn")) or 0, _litter_int(counts.get("mummified")) or 0
+    later_deaths = _litter_int(counts.get("died_after_live_birth")) or 0
+    if (not operation_id or not sow_id or not farrowing_date or total is None or born_alive is None
+            or total != born_alive + stillborn + mummified or later_deaths > born_alive):
+        raise ValueError("farrowing_preview_facts_invalid")
+    digest = hashlib.sha256(operation_id.encode()).hexdigest().upper()
+    litter_id = "LIT-OOM-" + digest[:16]
+    pig_ids = ["PIG-OOM-" + hashlib.sha256(f"{operation_id}:{index}".encode()).hexdigest()[:16].upper()
+               for index in range(born_alive)]
+    mating_id = to_clean_string(preview.get("mating_id"))
+    father_id = to_clean_string(preview.get("father_pig_id")) or None
+    now = datetime.now()
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                           ("herdmaster-farrowing:" + sow_id + ":" + farrowing_date.isoformat(),))
+            cursor.execute("""select litter_id,total_born,born_alive,stillborn_count,mummified_count,
+                               boar_pig_id from public.litters
+                               where sow_pig_id=%s and farrowing_date=%s for update""",
+                           (sow_id, farrowing_date))
+            existing = cursor.fetchall()
+            if existing:
+                exact = next((row for row in existing if str(row[0]) == litter_id), None)
+                if exact and (int(exact[1]) == total and int(exact[2]) == born_alive
+                              and int(exact[3] or 0) == stillborn and int(exact[4] or 0) == mummified
+                              and (str(exact[5]) if exact[5] else None) == father_id):
+                    return {"success": True, "status": "farrowing_litter_replayed_noop",
+                            "litter_id": litter_id, "pig_ids": pig_ids, "rows_created": 0,
+                            "writes_farm_data": False, "replay": True}
+                raise ValueError("farrowing_litter_duplicate_or_idempotency_conflict")
+            cursor.execute("""select pig.status,pig.on_farm,pig.tag_number,state.current_pen_id
+                               from public.current_canonical_pigs pig
+                               left join public.current_canonical_pig_state state on state.pig_id=pig.pig_id
+                               where pig.pig_id=%s""", (sow_id,))
+            sow = cursor.fetchone()
+            if not sow or str(sow[0] or "").casefold() != "active" or sow[1] is not True:
+                raise ValueError("current_active_on_farm_sow_required")
+            boar_tag = ""
+            if mating_id:
+                cursor.execute("""select sow_pig_id,boar_pig_id,linked_litter_id
+                                   from public.mating_events where mating_id=%s for update""", (mating_id,))
+                mating = cursor.fetchone()
+                if (not mating or str(mating[0]) != sow_id or str(mating[1] or "") != str(father_id or "")
+                        or str(mating[2] or "")):
+                    raise ValueError("mating_linkage_changed_repreview_required")
+                cursor.execute("select tag_number from public.current_canonical_pigs where pig_id=%s", (father_id,))
+                boar = cursor.fetchone()
+                boar_tag = str((boar or [""])[0] or "")
+            cursor.execute("""insert into public.litters(
+                litter_id,farrowing_date,sow_pig_id,boar_pig_id,sow_tag_number,boar_tag_number,
+                total_born,born_alive,stillborn_count,mummified_count,litter_status,litter_notes,
+                created_at,updated_at) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'Active',%s,%s,%s)""",
+                (litter_id, farrowing_date, sow_id, father_id, str(sow[2] or ""), boar_tag,
+                 total, born_alive, stillborn, mummified,
+                 f"Recorded through Oom Sakkie protected farrowing action {operation_id}; actor {actor_id}", now, now))
+            for index, pig_id in enumerate(pig_ids):
+                dead = index < later_deaths
+                cursor.execute("""insert into public.pigs(
+                    pig_id,status,on_farm,animal_type,sex,date_of_birth,birth_month,birth_year,
+                    litter_id,litter_size_born,mother_pig_id,father_pig_id,initial_pen_id,purpose,
+                    notes,exit_date,exit_reason,source_sheet_row,created_at,updated_at)
+                    values(%s,%s,%s,'Piglet','',%s,%s,%s,%s,%s,%s,%s,%s,'Unknown',%s,%s,%s,null,%s,%s)""",
+                    (pig_id, "Dead" if dead else "Active", not dead, farrowing_date,
+                     farrowing_date.strftime("%m"), int(farrowing_date.strftime("%Y")), litter_id,
+                     total, sow_id, father_id, str(sow[3] or "") or None,
+                     "Born alive; later death recorded at litter intake." if dead else "",
+                     farrowing_date if dead else None, "Died after live birth" if dead else None, now, now))
+            if mating_id:
+                cursor.execute("""update public.mating_events set linked_litter_id=%s,
+                    actual_farrowing_date=%s,mating_status='Farrowed',outcome='Farrowed',updated_at=%s
+                    where mating_id=%s and linked_litter_id is null""",
+                    (litter_id, farrowing_date, now, mating_id))
+                if int(cursor.rowcount or 0) != 1:
+                    raise ValueError("mating_linkage_concurrent_change")
+    return {"success": True, "status": "farrowing_litter_recorded", "litter_id": litter_id,
+            "pig_ids": pig_ids, "rows_created": 1 + len(pig_ids), "writes_farm_data": True,
+            "replay": False, "litter_status": "Active", "mating_id": mating_id or None,
+            "father_pig_id": father_id, "follow_up_required": True}
+
+
 def get_weight_event(pig_id, weight_date, connect_factory=None):
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
