@@ -25,6 +25,13 @@ def test_package_is_bounded_and_privilege_split():
     assert "lpadmin" not in init and "exec /sbin/su-exec greenprint" in init
     assert "PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py" in init
     assert init.startswith("#!/bin/sh\nset -eu\numask 0077\n") and run.startswith("#!/bin/sh\nset -eu\numask 0077\n")
+    assert "install -d -o greenprint -g greenprint -m 0700 /data/green-runtime" in init
+    assert "install -d -o greenprint -g greenprint -m 0700 /data " not in init
+    assert "install -o greenprint -g greenprint -m 0600 /data/options.json /data/green-runtime/options.json" in init
+    assert "green_startup_failed stage=${stage} reason=${reason}" in init
+    assert "green_startup_failed stage=s6_exec reason=bootstrap_exec_failed" in run
+    for stage in ("mount_validation","runtime_directory","options_population","cups_directories","ca_install","queue_initializer","queue_ownership","cups_start","cups_readiness","service_exec"):
+        assert f"stage={stage}" in init
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
     assert "chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf" in docker
@@ -34,7 +41,7 @@ def test_package_is_bounded_and_privilege_split():
     assert docker.count("grep -Ec '^[[:space:]]*") == 6 and "/usr/sbin/cupsd -t -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf" in docker
     assert "ln -s /run/cups/printers.conf /etc/cups/printers.conf" not in docker
     assert "/var/cache/cups" in docker
-    assert "CUPS scheduler or fixed destination did not become ready" in init
+    assert "reason=cups_or_queue_not_ready" in init
 
 def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
@@ -138,7 +145,7 @@ def test_queue_wrong_literal_pin_fails_without_tls_or_queue(tmp_path,monkeypatch
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.4"
+    assert cfg["version"]=="0.3.5"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -162,7 +169,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.4-verified-release-packet" in workflow
+    assert "green-print-0.3.5-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
@@ -184,11 +191,11 @@ def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     assert "sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3" in docs
     assert "sha256:4b738c69245a6b4721a7f4b58135acf3d2308f355b7c8c4008c4149763e11b32" in docs
 
-def test_034_publish_verifies_descriptor_and_config_before_signing_or_attesting():
+def test_035_publish_verifies_descriptor_and_config_before_signing_or_attesting():
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.4"
+    assert parsed["env"]["VERSION"]=="0.3.5"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -216,7 +223,7 @@ def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
     assert "gh attestation verify" in verify["run"] and "|| true" not in verify["run"]
     assert names.index("Verify signature and digest-bound attestations") < names.index("Emit digest-bound non-secret release receipt") < names.index("Preserve non-secret verified release packet")
 
-def test_034_recovery_is_verification_only_exact_bound_and_replay_safe():
+def test_035_recovery_is_verification_only_exact_bound_and_replay_safe():
     workflow=(ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
     inputs=parsed.get("on",parsed[True])["workflow_dispatch"]["inputs"]

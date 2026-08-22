@@ -79,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--work-root",
         type=Path,
-        default=Path(".codex-runtime/missions/GREEN-0.3.4"),
+        default=Path(".codex-runtime/missions/GREEN-0.3.5"),
     )
     args = parser.parse_args()
     suffix = uuid.uuid4().hex[:10]
@@ -128,7 +128,8 @@ def main() -> int:
             "printer_endpoint_ip": gateway,
             "poll_seconds": 5,
         }
-        (data_dir / "options.json").write_text(json.dumps(options), encoding="utf-8")
+        options_path = data_dir / "options.json"
+        options_path.write_text(json.dumps(options), encoding="utf-8")
         green_uid = run(
             "docker", "run", "--rm", "--platform", "linux/arm64",
             "--entrypoint", "/usr/bin/id", args.image, "-u", "greenprint",
@@ -139,8 +140,13 @@ def main() -> int:
         ).stdout.strip()
         if not green_uid.isdigit() or not green_gid.isdigit():
             raise RuntimeError("image runtime identity invalid")
-        data_dir.chmod(0o700)
-        run("sudo", "chown", "-R", f"{green_uid}:{green_gid}", str(data_dir))
+        # Reproduce the Supervisor boundary: Supervisor populates root-owned
+        # options on a writable /data mount. Never pre-own the mount or its
+        # contents for the image's runtime user.
+        run("sudo", "chown", "root:root", str(data_dir), str(options_path), str(config_dir), str(cert))
+        run("sudo", "chmod", "0755", str(data_dir), str(config_dir))
+        run("sudo", "chmod", "0600", str(options_path))
+        run("sudo", "chmod", "0644", str(cert))
 
         try:
             run("sudo", "apparmor_parser", "-r", str(args.profile.resolve()))
@@ -157,7 +163,7 @@ def main() -> int:
             health: dict[str, object] | None = None
             while time.monotonic() < deadline:
                 health_readback = run(
-                    "docker", "exec", container, "/bin/sh", "-c", "cat /data/health.json",
+                    "docker", "exec", container, "/bin/sh", "-c", "cat /data/green-runtime/health.json",
                     check=False,
                 )
                 if health_readback.returncode == 0:
@@ -172,6 +178,16 @@ def main() -> int:
                 raise RuntimeError("event_waiting health not reached\n" + failure_diagnostics(container))
             if health.get("terminal_participated") is not False or health.get("authority_mode") != "fixed_weekly_sheet_only":
                 raise RuntimeError(f"unexpected health contract: {health}")
+            data_contract = run(
+                "docker", "exec", container, "/bin/sh", "-c",
+                "test \"$(/bin/busybox stat -c %u:%g /data)\" = '0:0'"
+                f" && test \"$(/bin/busybox stat -c %u:%g /data/options.json)\" = '0:0'"
+                f" && test \"$(/bin/busybox stat -c %u:%g /data/green-runtime)\" = '{green_uid}:{green_gid}'"
+                f" && test \"$(/bin/busybox stat -c %a /data/green-runtime/options.json)\" = '600'",
+                check=False,
+            )
+            if data_contract.returncode != 0:
+                raise RuntimeError("Supervisor-shaped data ownership contract mismatch\n" + failure_diagnostics(container))
             scheduler = run("docker", "exec", container, "/usr/bin/lpstat", "-r", check=False)
             destination = run(
                 "docker", "exec", container, "/usr/bin/lpstat", "-v", "weekly-a4",
@@ -290,6 +306,8 @@ def main() -> int:
                 "queue_jobs": 0,
                 "printer_dns_preseeded": False,
                 "printer_fixed_binding_verified": True,
+                "supervisor_data_prechown": False,
+                "supervisor_options_root_owned": True,
                 "tcp_631_listener": False,
                 "tls_key_files": 0,
             }, sort_keys=True))
