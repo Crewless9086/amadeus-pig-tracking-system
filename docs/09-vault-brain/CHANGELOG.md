@@ -1,5 +1,23 @@
 # Vault Brain Changelog
 
+## 2026-08-22 - Control Tower outcome-depth and owner-intake enforcement
+
+- Made the Agentic Operating Mission Standard the concise single-file Control
+  Tower invocation while retaining mandatory full execution of the tracked
+  assessment protocol and complete feedback handover template by reference.
+- Required new owner findings to be reconciled and durably logged as addenda or
+  new missions, then frozen unless explicitly reprioritized or needed to unblock
+  an existing owner outcome.
+- Required safe release, deployment, commissioning, activation, genuine
+  acceptance, follow-up and later terminal-independent-cycle work to outrank new
+  breadth, with continuous detection and dispatch of outcome-depth stalls.
+- Required every Control Tower response to state one exact owner action needed
+  now under `ACTION REQUIRED NOW` or explicitly state `NONE`, never repeat
+  attributable owner evidence without a proven freshness/conflict reason, and
+  resume the same mission automatically after the owner answers.
+- Preserved all protected boundaries; this governance change authorizes no
+  production, provider, credential, configuration, data or physical action.
+
 ## 2026-08-21 - Fertilizer readiness removed from owner work
 
 - Kept healthy observation-only fertilizer-mixer readiness silent in the shared

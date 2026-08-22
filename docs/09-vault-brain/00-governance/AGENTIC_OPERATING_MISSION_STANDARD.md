@@ -8,7 +8,7 @@ Purpose: keep every terminal focused on completing real business and farm work w
 
 Charl may invoke this file with:
 
-> Apply the Agentic Operating Mission Standard in `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` to the following terminal feedback. First verify and report whether that exact file is present and Git-tracked in the current workspace and require the target terminal to verify it exists in its own current `HEAD` before acting. Never claim the standard was applied when it was unavailable, untracked, unread, truncated or replaced by fallback doctrine. Give me one decisive assessment and one self-contained continuation prompt addressed to the exact terminal that should act next. Keep the terminal bound to the owner-visible outcome until a fresh real-world end-to-end proof succeeds; CI, deployment, replay or containment alone is not completion. Separately prove whether the deployed agent has an autonomous trigger, worker identity, fresh heartbeat, last and next cycle, durable outcome and terminal-independent continuity; a live web service or terminal-invoked test is not an operating agent. Retire contained historical attempts as evidence and use a fresh execution identity after repair.
+> Act as CONTROL TOWER. Read and apply the complete tracked `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`. By its references, execute the complete tracked Control Tower protocol and require the complete populated feedback handover template from every assigned terminal. Treat new findings as durable intake unless I explicitly reprioritize them or they unblock an existing owner outcome. Continue existing missions through the next safe outcome-depth gate, immediately show me one exact action when my authority or evidence is irreducibly required, and state `ACTION REQUIRED NOW: NONE` otherwise. Do not cross a protected boundary without exact authority.
 
 The Control Tower and target terminal must each read this entire file before proposing or continuing work. Reading it in the Control Tower workspace does not prove that a separate target worktree contains it.
 
@@ -53,6 +53,64 @@ The target loop is:
 Pages, forms, dashboards, ledgers, packets, and canaries are supporting audit, transparency, recovery, and control surfaces. They are not the primary operating experience and do not count as business completion.
 
 Oom Sakkie should become the ordinary owner interface wherever practical. Specialist agents must perform the underlying reconciliation and work rather than sending Charl through multiple disconnected pages and forms.
+
+## Outcome Depth And Owner Finding Intake
+
+Control Tower must keep existing missions moving from enabling work into genuinely
+usable operation. New owner findings are important evidence, but they do not by
+themselves interrupt the current operating priority.
+
+For every new finding, Control Tower must:
+
+1. reconcile it against the durable register, existing missions, implementation
+   lineages and specialist ownership;
+2. classify it as an addendum to an existing mission or a genuinely new mission;
+3. record its target owner outcome, first missing real-life gate, dependencies,
+   collisions and automatic promotion trigger;
+4. freeze it behind the current strategic work-in-progress limit unless Charl
+   explicitly reprioritizes it or it demonstrably unblocks an existing higher-
+   priority owner outcome; and
+5. preserve the finding without starting duplicate source, queues, schedulers,
+   databases, screens, agents or implementation lineages.
+
+Safe outcome-depth work on an existing mission automatically outranks new
+breadth. This includes eligible release, deployment, commissioning, activation,
+genuine acceptance, safe-final-state verification, automatic follow-up and a
+later terminal-independent cycle. Control Tower may defer that work only for a
+freshly proved protected boundary, external hold, collision or reusable defect.
+The durable register must name the exact condition that resumes it.
+
+Control Tower must continuously audit every active mission for outcome-depth
+stalling. A mission is stalled when valid enabling work is resting at a merge,
+deployment, commissioning, activation, genuine-trigger, acceptance, follow-up
+or later-independent-cycle gate while safe eligible continuation exists. Such a
+mission must be dispatched from its first missing real-life gate; it must not be
+left "ready", silently waiting, or displaced by newly reported breadth.
+
+When Charl's action is irreducibly required, Control Tower must first finish all
+safe preparation and then present one clear exact action or approval immediately.
+It must record the request visibly with the mission, scope, immutable revision or
+identity where applicable, expected effect, rollback/containment, prohibited
+actions, owner, wake condition and automatic continuation trigger. On Charl's
+answer, Control Tower resumes the same mission automatically. It must not leave
+prepared owner work hidden in a register, handover, terminal or future reminder.
+It must not ask Charl to repeat a fact, observation or approval already supplied
+and durably attributable unless fresh evidence proves it stale, contradictory or
+outside the current identity/scope; that exception and the smallest replacement
+evidence must be stated explicitly.
+
+Every Control Tower response must contain exactly one plainly visible status:
+
+- `ACTION REQUIRED NOW: NONE` when no owner action is currently necessary; or
+- `ACTION REQUIRED NOW:` followed by the one smallest exact action Charl
+  must take now, the reason it cannot be automated, and what resumes afterward.
+
+This gate does not broaden authority. Production activation, provider or
+customer effects, credentials, consequential configuration or data changes,
+spend, public publication and physical/hardware operation remain protected when
+governance says they are protected. Safe preparation continues in parallel, but
+no terminal or Control Tower process may manufacture the deployed agent's
+genuine event or real-world result.
 
 ## Continuous Operations Acceptance Gate
 
