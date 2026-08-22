@@ -5,6 +5,7 @@
 do $$
 declare
   constraint_oid oid;
+  current_constraint_definition text;
   current_action_kinds text[];
   predecessor_action_kinds constant text[] := array[
     'beacon_campaign_review',
@@ -49,6 +50,18 @@ begin
 
   if constraint_oid is null then
     raise exception 'canonical protected action-kind constraint is missing';
+  end if;
+
+  current_constraint_definition := regexp_replace(
+    pg_catalog.pg_get_constraintdef(constraint_oid),
+    '\s+',
+    '',
+    'g'
+  );
+  if current_constraint_definition !~
+    E'^CHECK\\(\\(action_kind=ANY\\(ARRAY\\[(''[a-z0-9_]+''::text)(,''[a-z0-9_]+''::text)*\\]\\)\\)\\)$' then
+    raise exception 'canonical protected action-kind constraint structure mismatch: %',
+      current_constraint_definition;
   end if;
 
   select array_agg(action_kind order by action_kind)

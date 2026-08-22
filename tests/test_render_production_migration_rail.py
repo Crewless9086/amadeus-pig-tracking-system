@@ -7,10 +7,13 @@ from unittest.mock import patch
 
 from scripts.run_render_production_migrations import (
     ALLOWLIST,
+    EXPECTED_MIGRATION_LOG_DESCRIPTIONS,
     EXPECTED_LITTER_SUPERSESSION_REASONS,
     EXPECTED_PROTECTED_ACTION_KINDS,
     AllowedMigration,
     _constraint_readback,
+    _function_readback,
+    _migration_function_body,
     _metadata,
     run,
 )
@@ -26,6 +29,91 @@ ENV = {
 
 
 DATABASE_URL = os.getenv("RENDER_MIGRATION_TEST_DATABASE_URL", "").strip()
+
+
+def _install_litter_function(db, filename):
+    body = _migration_function_body(filename)
+    db.execute(
+        "create or replace function public.validate_litter_supersession() "
+        "returns trigger language plpgsql as $function$"
+        + body
+        + "$function$;"
+    )
+
+
+def _reset_disposable_database(*, unexpected_litter_reason=False):
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as connection:
+        database_name = connection.info.dbname
+    if database_name != "render_migration_rail_test":
+        raise AssertionError("refusing fixture outside render_migration_rail_test")
+    reason_members = (
+        "'duplicate_creation_same_farrowing','unexpected_reason'"
+        if unexpected_litter_reason
+        else "'duplicate_creation_same_farrowing'"
+    )
+    with psycopg.connect(DATABASE_URL, autocommit=True) as db:
+        db.execute("""do $$ begin
+          if not exists (select 1 from pg_roles where rolname='anon') then
+            create role anon;
+          end if;
+          if not exists (select 1 from pg_roles where rolname='authenticated') then
+            create role authenticated;
+          end if;
+        end $$""")
+        db.execute("drop schema if exists app_private cascade")
+        db.execute("drop table if exists public.pig_welfare_cases cascade")
+        db.execute("drop table if exists public.sales_transactions cascade")
+        db.execute("drop table if exists public.litter_supersessions cascade")
+        db.execute("drop table if exists public.litter_correction_authorizations cascade")
+        db.execute("drop table if exists public.mating_events cascade")
+        db.execute("drop table if exists public.litters cascade")
+        db.execute("drop table if exists public.pigs cascade")
+        db.execute("drop function if exists public.validate_litter_supersession() cascade")
+        db.execute("create schema app_private")
+        db.execute("""create table app_private.migration_log(
+          migration_id text primary key,description text not null,
+          applied_at timestamptz not null default now())""")
+        db.execute("""create table app_private.oom_protected_action_claims(
+          callback_token text primary key,
+          action_kind text not null,
+          constraint oom_protected_action_claims_action_kind_check
+          check (action_kind in (
+            'mortality','grouped_weights','herdmaster_breeding_grouped',
+            'rootline_irrigation_segment','sam_sale_payment',
+            'beacon_private_album_finish','beacon_media_review',
+            'rootline_fertilizer_mixer_commissioning',
+            'rootline_fertilizer_mixer_presence_refresh',
+            'rootline_delegated_family','beacon_campaign_review',
+            'documents_green_print','documents_green_physical_acceptance'))
+        )""")
+        db.execute("""create table public.sales_transactions(
+          sale_id text primary key,sale_stream text,sale_status text,linked_order_id text,
+          gross_total numeric(12,2),deductions_total numeric(12,2),net_total numeric(12,2),
+          received_total numeric(12,2),payment_status text,
+          payment_received_evidence_json jsonb,payment_evidence_sha256 text)""")
+        db.execute("create table public.pigs(pig_id text primary key,litter_id text)")
+        db.execute("""create table public.litters(
+          litter_id text primary key,sow_pig_id text,boar_pig_id text,
+          farrowing_date date)""")
+        db.execute("""create table public.litter_correction_authorizations(
+          authorization_id text primary key,operation_id text,
+          preview_sha256 text,decision_status text)""")
+        db.execute("""create table public.mating_events(
+          mating_id text primary key,sow_pig_id text,related_litter_id text)""")
+        db.execute(f"""create table public.litter_supersessions(
+          operation_id text primary key,retained_litter_id text,
+          superseded_litter_id text,authorization_id text,mating_id text not null,
+          preview_sha256 text,reason text,
+          superseded_child_ids jsonb not null default '[]'::jsonb,
+          retained_child_ids jsonb not null default '[]'::jsonb,
+          constraint litter_supersessions_reason_check
+            check (reason in ({reason_members})))
+        """)
+        _install_litter_function(
+            db, "202607300001_create_litter_supersession_rail.sql"
+        )
 
 
 class RenderProductionMigrationRailTests(unittest.TestCase):
@@ -90,70 +178,62 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         )
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_disposable_postgres_a_unexpected_predecessor_stops_before_mutation(self):
+        import psycopg
+
+        _reset_disposable_database(unexpected_litter_reason=True)
+        with psycopg.connect(DATABASE_URL) as db:
+            before_constraint = _constraint_readback(
+                db,
+                "public",
+                "litter_supersessions",
+                "litter_supersessions_reason_check",
+            )[0]
+            before_function = db.execute(
+                "select prosrc from pg_proc where oid="
+                "'public.validate_litter_supersession()'::regprocedure"
+            ).fetchone()[0]
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "migration_failed_and_rolled_back:"
+            "202608220001_extend_litter_supersession_for_fact_corrections",
+        ):
+            run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL) as db:
+            after_constraint = _constraint_readback(
+                db,
+                "public",
+                "litter_supersessions",
+                "litter_supersessions_reason_check",
+            )[0]
+            after_function = db.execute(
+                "select prosrc from pg_proc where oid="
+                "'public.validate_litter_supersession()'::regprocedure"
+            ).fetchone()[0]
+            self.assertEqual(after_constraint, before_constraint)
+            self.assertEqual(after_function, before_function)
+            self.assertIsNone(
+                db.execute(
+                    "select 1 from app_private.migration_log where migration_id="
+                    "'202608220001_extend_litter_supersession_for_fact_corrections'"
+                ).fetchone()
+            )
+            self.assertEqual(
+                db.execute(
+                    """select outcome,error_class
+                         from app_private.production_migration_receipts
+                        where migration_id=
+                          '202608220001_extend_litter_supersession_for_fact_corrections'
+                        order by applied_at desc"""
+                ).fetchall(),
+                [("failed", "RuntimeError")],
+            )
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_disposable_postgres_apply_replay_and_immutable_receipt(self):
         import psycopg
 
-        with psycopg.connect(DATABASE_URL) as connection:
-            database_name = connection.info.dbname
-        self.assertEqual(database_name, "render_migration_rail_test",
-                         "refusing fixture outside render_migration_rail_test")
-        with psycopg.connect(DATABASE_URL, autocommit=True) as db:
-            db.execute("""do $$ begin
-              if not exists (select 1 from pg_roles where rolname='anon') then
-                create role anon;
-              end if;
-              if not exists (select 1 from pg_roles where rolname='authenticated') then
-                create role authenticated;
-              end if;
-            end $$""")
-            db.execute("drop schema if exists app_private cascade")
-            db.execute("drop table if exists public.pig_welfare_cases cascade")
-            db.execute("drop table if exists public.sales_transactions cascade")
-            db.execute("drop table if exists public.litter_supersessions cascade")
-            db.execute("drop table if exists public.litter_correction_authorizations cascade")
-            db.execute("drop table if exists public.mating_events cascade")
-            db.execute("drop table if exists public.litters cascade")
-            db.execute("drop table if exists public.pigs cascade")
-            db.execute("create schema app_private")
-            db.execute("""create table app_private.migration_log(
-              migration_id text primary key,description text not null,
-              applied_at timestamptz not null default now())""")
-            db.execute("""create table app_private.oom_protected_action_claims(
-              callback_token text primary key,
-              action_kind text not null,
-              constraint oom_protected_action_claims_action_kind_check
-              check (action_kind in (
-                'mortality','grouped_weights','herdmaster_breeding_grouped',
-                'rootline_irrigation_segment','sam_sale_payment',
-                'beacon_private_album_finish','beacon_media_review',
-                'rootline_fertilizer_mixer_commissioning',
-                'rootline_fertilizer_mixer_presence_refresh',
-                'rootline_delegated_family','beacon_campaign_review',
-                'documents_green_print','documents_green_physical_acceptance'))
-            )""")
-            db.execute("""create table public.sales_transactions(
-              sale_id text primary key,sale_stream text,sale_status text,linked_order_id text,
-              gross_total numeric(12,2),deductions_total numeric(12,2),net_total numeric(12,2),
-              received_total numeric(12,2),payment_status text,
-              payment_received_evidence_json jsonb,payment_evidence_sha256 text)""")
-            db.execute("create table public.pigs(pig_id text primary key,litter_id text)")
-            db.execute("""create table public.litters(
-              litter_id text primary key,sow_pig_id text,boar_pig_id text,
-              farrowing_date date)""")
-            db.execute("""create table public.litter_correction_authorizations(
-              authorization_id text primary key,operation_id text,
-              preview_sha256 text,decision_status text)""")
-            db.execute("""create table public.mating_events(
-              mating_id text primary key,sow_pig_id text,related_litter_id text)""")
-            db.execute("""create table public.litter_supersessions(
-              operation_id text primary key,retained_litter_id text,
-              superseded_litter_id text,authorization_id text,mating_id text not null,
-              preview_sha256 text,reason text,
-              superseded_child_ids jsonb not null default '[]'::jsonb,
-              retained_child_ids jsonb not null default '[]'::jsonb,
-              constraint litter_supersessions_reason_check
-                check (reason in ('duplicate_creation_same_farrowing')))
-            """)
+        _reset_disposable_database()
         first = run(DATABASE_URL, ENV)
         second = run(DATABASE_URL, ENV)
         self.assertEqual(first["migrations"][0]["outcome"], "applied")
@@ -241,7 +321,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             db.execute("savepoint mismatch_attempt")
             with self.assertRaisesRegex(
                 psycopg.errors.RaiseException,
-                "canonical protected action-kind constraint mismatch",
+                "canonical protected action-kind constraint structure mismatch",
             ):
                 db.execute(migration)
             db.execute("rollback to savepoint mismatch_attempt")
@@ -253,6 +333,147 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             ).fetchone()[0]
             self.assertEqual(after, before)
             db.rollback()
+        members = ",".join(f"'{value}'" for value in EXPECTED_PROTECTED_ACTION_KINDS)
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute(
+                "alter table app_private.oom_protected_action_claims "
+                "drop constraint oom_protected_action_claims_action_kind_check; "
+                "alter table app_private.oom_protected_action_claims "
+                "add constraint oom_protected_action_claims_action_kind_check "
+                f"check (true or action_kind in ({members}))"
+            )
+            before = db.execute(
+                """select pg_catalog.pg_get_constraintdef(c.oid)
+                     from pg_catalog.pg_constraint c
+                    where c.conrelid='app_private.oom_protected_action_claims'::regclass
+                      and c.conname='oom_protected_action_claims_action_kind_check'"""
+            ).fetchone()[0]
+            db.execute("savepoint weakened_attempt")
+            with self.assertRaisesRegex(
+                psycopg.errors.RaiseException,
+                "canonical protected action-kind constraint structure mismatch",
+            ):
+                db.execute(migration)
+            db.execute("rollback to savepoint weakened_attempt")
+            after = db.execute(
+                """select pg_catalog.pg_get_constraintdef(c.oid)
+                     from pg_catalog.pg_constraint c
+                    where c.conrelid='app_private.oom_protected_action_claims'::regclass
+                      and c.conname='oom_protected_action_claims_action_kind_check'"""
+            ).fetchone()[0]
+            self.assertEqual(after, before)
+            db.rollback()
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_disposable_postgres_d_runner_rejects_weakened_constraint_with_same_literals(self):
+        import psycopg
+
+        members = ",".join(f"'{value}'" for value in EXPECTED_PROTECTED_ACTION_KINDS)
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute(
+                "alter table app_private.oom_protected_action_claims "
+                "drop constraint oom_protected_action_claims_action_kind_check; "
+                "alter table app_private.oom_protected_action_claims "
+                "add constraint oom_protected_action_claims_action_kind_check "
+                f"check (true or action_kind in ({members}))"
+            )
+            db.commit()
+        with self.assertRaisesRegex(
+            RuntimeError, "migration_readback_constraint_structure_mismatch"
+        ):
+            run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL) as db:
+            definition = db.execute(
+                """select pg_catalog.pg_get_constraintdef(c.oid)
+                     from pg_catalog.pg_constraint c
+                    where c.conrelid='app_private.oom_protected_action_claims'::regclass
+                      and c.conname='oom_protected_action_claims_action_kind_check'"""
+            ).fetchone()[0]
+            self.assertIn("true", definition.lower())
+            db.execute(
+                "alter table app_private.oom_protected_action_claims "
+                "drop constraint oom_protected_action_claims_action_kind_check; "
+                "alter table app_private.oom_protected_action_claims "
+                "add constraint oom_protected_action_claims_action_kind_check "
+                f"check (action_kind in ({members}))"
+            )
+            db.commit()
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_disposable_postgres_e_runner_rejects_phrase_comment_stub_function(self):
+        import psycopg
+
+        comments = " ".join(
+            (
+                "cross-sow or cross-farrowing supersession denied",
+                "duplicate supersession father mismatch",
+                "durable owner confirmation does not match operation",
+                "retained litter mating linkage mismatch",
+                "exact litter child allowlists required",
+            )
+        )
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute(
+                "create or replace function public.validate_litter_supersession() "
+                "returns trigger language plpgsql as $stub$begin "
+                f"/* {comments} */ return null; end;$stub$;"
+            )
+            db.commit()
+        with self.assertRaisesRegex(
+            RuntimeError, "migration_readback_validate_litter_supersession_mismatch"
+        ):
+            run(DATABASE_URL, ENV)
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertIn(
+                "return null",
+                db.execute(
+                    "select prosrc from pg_proc where oid="
+                    "'public.validate_litter_supersession()'::regprocedure"
+                ).fetchone()[0].lower(),
+            )
+            _install_litter_function(
+                db, "202608220001_extend_litter_supersession_for_fact_corrections.sql"
+            )
+            db.commit()
+            _function_readback(
+                db, "202608220001_extend_litter_supersession_for_fact_corrections.sql"
+            )
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_disposable_postgres_f_runner_rejects_wrong_log_descriptions(self):
+        import psycopg
+
+        for migration_id in EXPECTED_MIGRATION_LOG_DESCRIPTIONS:
+            with self.subTest(migration_id=migration_id):
+                with psycopg.connect(DATABASE_URL) as db:
+                    db.execute(
+                        "update app_private.migration_log "
+                        "set description='wrong description' where migration_id=%s",
+                        (migration_id,),
+                    )
+                    db.commit()
+                with self.assertRaisesRegex(
+                    RuntimeError, "migration_readback_log_mismatch"
+                ):
+                    run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    self.assertEqual(
+                        db.execute(
+                            "select description from app_private.migration_log "
+                            "where migration_id=%s",
+                            (migration_id,),
+                        ).fetchone()[0],
+                        "wrong description",
+                    )
+                    db.execute(
+                        "update app_private.migration_log set description=%s "
+                        "where migration_id=%s",
+                        (
+                            EXPECTED_MIGRATION_LOG_DESCRIPTIONS[migration_id],
+                            migration_id,
+                        ),
+                    )
+                    db.commit()
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_disposable_postgres_c_runner_failure_rolls_back_partial_schema(self):
