@@ -1618,6 +1618,45 @@ owner until its separately governed identity registration, immutable 0.3.2
 installation and zero-job commissioning are completed and later physically
 accepted.
 
+Owner subsequently directed Control Tower to continue all safe in-scope work
+under standing authority without requesting a new approval at each reversible
+step. Control Tower created one new least-privilege Green worker token directly
+in the protected Render environment and one matching inactive canonical device
+registry row. The identity set binds farm, Green, printer, fixed queue, registry
+version and the exact production HTTPS origin; it is inactive pending health
+proof. Home Assistant then updated the stopped app from 0.3.1 to 0.3.2, with
+the UI confirming installed and latest version 0.3.2 and all automatic controls
+remaining OFF. Configuration entry is not complete: focusing the protected
+password field opened a Chrome password-manager/extension popup that blocks the
+approved browser-control channel. The form was not saved and Green was not
+started. Zero canonical jobs, CUPS jobs, documents or physical prints occurred.
+Lifecycle is `GREEN_0.3.2_INSTALLED / CANONICAL_IDENTITY_INACTIVE /
+CONFIGURATION_BLOCKED_BY_LOCAL_BROWSER_POPUP / COMMISSIONING_PENDING`;
+**NO BUSINESS OUTCOME**. The only owner action is the physical dismissal of that
+local Chrome popup; it is not a request for additional operating authority.
+
+Fresh independent review rejected SAM Livestock PR #1163 exact head
+`d578e8322097258be3b804b3857fb5cd1917ede5`: the production call path leaves
+authoritative Meta page and attribution expectations empty, so payload-supplied
+campaign identity and invalid or absent chronology can be promoted into retained
+attributed context. All tests and hosted CI passed but did not cover this wiring
+defect. Automatic customer sending remains OFF and no customer/provider effect
+occurred. Control Tower retained the existing SAM five-customer mission and
+dispatched a source-only repair terminal on the same PR lineage; **NO BUSINESS
+OUTCOME**.
+
+Fresh PR #1161 post-release audit proved Render healthy at loaded revision
+`429a91ffd3dd4f38faadeb9fb0f19f202ea87537`, descending from the reviewed merge,
+but found the genuine farrowing journey is not production-ready. No applied
+migration admits `herdmaster_record_farrowing_litter` into the protected-action
+constraint, and migration `202608220001` is absent from the closed production
+migration allowlist. A genuine report would fail before confirmation. Control
+Tower prohibited replay or owner testing and dispatched a bounded source-only
+database-release repair for a new append-only action-kind migration, allowlist
+coverage, tests, independent review and later serialized production readback.
+The mission remains `DEPLOYED_CODE / DATABASE_AUTHORITY_BLOCKED /
+GENUINE_EVENT_PROHIBITED`; **NO BUSINESS OUTCOME**.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
