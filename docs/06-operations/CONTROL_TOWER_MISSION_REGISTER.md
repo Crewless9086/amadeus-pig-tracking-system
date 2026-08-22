@@ -24,16 +24,21 @@ normal hosted rollout. Control Tower reverified the immutable head, current
 base, CLEAN/mergeable state, green checks and disjoint collision result, then
 merged PR #1157 as authoritative main
 `28bcd0953c5e75a72dcd2665e49bf1806dc06eb3`. Render deploy
-`dep-da4jv1tckfvc73ckf2og` was created for that exact commit. Exact loaded
-revision and final deployment health remain pending until the provider reports
-the deploy live and `/health/revision` agrees.
+`dep-da4jv1tckfvc73ckf2og` was created for that exact commit, reached `live`,
+and replaced the prior deploy normally. Public `/health` returned `status=ok`
+and `/health/revision` returned `provider=render`, `identity_complete=true`,
+`status=ok` and exact revision
+`28bcd0953c5e75a72dcd2665e49bf1806dc06eb3`. All three post-merge hosted CI
+lanes also passed on that exact merge commit.
 
 Fresh local readback before merge proved runtime and execution trees remained
 unchanged at `3961411236fca3329abaac2d34cfb863167c1c73`,
 `.charlie_runner/supervisor.stop` was present, `CHARLIE CORE Runner Watchdog`
 was Disabled, no matching CORE supervisor/runner process existed, runner status
 was `runner_stale_or_stopped`, supervisor status was `supervisor_stopped`, the
-heartbeat was stale and no mission identity was active. No validation receipt
+heartbeat was stale, no CORE Python/Node process was present and no mission
+identity was active. The same facts were freshly reverified after deployment.
+No validation receipt
 was created or consumed; no runtime was staged/copied; no task, stop marker or
 watchdog was mutated; CORE was not started; and no mission or production write
 occurred.
@@ -45,8 +50,8 @@ Owner outcome achieved is `NONE`; usable now is `NO`; classification remains
 exact hosted revision/health verification. Later receipt, stopped staging,
 activation, genuine mission, canonical/provider result, automatic follow-up,
 later terminal-independent cycle and measured owner-relay reduction remain
-separately governed and unproven. Charl has no action while deployment
-verification is pending.
+separately governed and unproven. The merge/deployment lane is released; Charl
+has no further action for this bounded merge.
 
 ### Protected ROOTLINE release and CORE staging approvals
 
