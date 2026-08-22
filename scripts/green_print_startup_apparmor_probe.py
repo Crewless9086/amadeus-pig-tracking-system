@@ -194,13 +194,10 @@ def main() -> int:
                     f"queue was not empty: rc={queue.returncode} stdout={queue.stdout!r} stderr={queue.stderr!r}\n"
                     + failure_diagnostics(container)
                 )
-            binding = run(
-                "docker", "exec", container, "/bin/sh", "-c",
-                f"test \"$(getent ahostsv4 AmadeusKantoor | awk '{{print $1}}' | sort -u)\" = '{gateway}'"
-                f" && grep -Fx '{gateway} amadeuskantoor' /etc/hosts",
-                check=False,
-            )
-            if binding.returncode != 0:
+            binding = run("docker", "exec", container, "/bin/cat", "/etc/hosts", check=False)
+            bound_rows = [line.split() for line in binding.stdout.splitlines()]
+            matching = [row for row in bound_rows if len(row) >= 2 and "amadeuskantoor" in {value.casefold() for value in row[1:]}]
+            if binding.returncode != 0 or matching != [[gateway, "amadeuskantoor"]]:
                 raise RuntimeError("fixed printer binding missing or mismatched\n" + failure_diagnostics(container))
             cups_contract = run(
                 "docker", "exec", container, "/bin/sh", "-c",
