@@ -1,12 +1,12 @@
 # Amadeus Green Print Bridge
 
-Version 0.3.0 uses the Home Assistant supported prebuilt image reference
+Version 0.3.1 uses the Home Assistant supported prebuilt image reference
 `ghcr.io/crewless9086/amadeus-green-print-bridge`. Its tag may be published only
 once through the guarded manual workflow. GHCR does not provide a registry-level
 immutability guarantee for this private tag: the workflow refuses reuse, verifies
 the tag-to-digest mapping twice, and every release and installation decision must
 bind the immutable digest. The verified release packet binds the exact source
-commit, arm64 digest and OCI labels, Cosign identity, SBOM digest, and GitHub build
+commit, linux/arm64 index descriptor and config, OCI labels, Cosign identity, SBOM digest, and GitHub build
 and SBOM attestations.
 The displayed app version or repository description alone is never provenance.
 Before starting, a technical maintainer must verify the Supervisor-resolved image
@@ -29,9 +29,16 @@ On restart, persisted attempts renew a live lease or recover an expired nontermi
 
 The root entrypoint only prepares owned directories, validates/writes the commissioned queue file and launches processes. CUPS runs as `cupsd`; the Documents worker runs as `greenprint`. The long-lived worker cannot administer queues or write CUPS configuration.
 
+The partial 0.3.0 publication is permanently quarantined. Index digest
+`sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3`
+labels runnable manifest
+`sha256:4b738c69245a6b4721a7f4b58135acf3d2308f355b7c8c4008c4149763e11b32`
+as `linux/amd64` while its image config and layers are arm64.
+It must never be installed, attested further, overwritten, deleted, or reused.
+
 ## Install and commissioning
 
-1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.0 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
+1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.1 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
 2. Add the private repository in the Home Assistant app store and install or update only when Supervisor resolves the exact approved digest. Do not start until the canonical endpoint, least-privilege token, registry identities, printer URI and private CA are commissioned.
 3. Validate options and start the app. Confirm health is `event_waiting`, the local queue exists, logs contain no option values, and no job is eligible.
 4. Follow `docs/06-operations/GREEN_PRINT_BRIDGE_PHYSICAL_COMMISSIONING_GUIDE.md`. The development terminal must never manufacture the genuine request or operate the printer.
