@@ -1970,3 +1970,55 @@ ACTION REQUIRED NOW: Approve the exact Home Assistant Green 0.3.3 update and one
 zero-job start/verify/stop cycle; Control Tower will revalidate the digest,
 saved identities, configuration and empty queues immediately before acting and
 will stop on any mismatch.
+
+### 2026-08-22 child `SAFETY_BLOCKED` incident and Control Tower recovery correction
+
+After PR #1167 exact head
+`ad343583569bd6e37eec68372904ef22bed57e95` passed its exact-current hosted
+gates, child `/root/oom_1167_review_ad34` was assigned the already authorized
+bounded defensive review. Exact wall-clock time is `Unknown`; the attributable
+date and sequence are 2026-08-22 SAST after those gates. The non-secret exact
+scope was: review only PR #1167's repository migration runner and the
+workspace-local disposable PostgreSQL service; verify governed-catalog
+completeness and fail-closed zero-mutation behavior under schema drift; perform
+no secret retrieval, external scanning, production access, provider action or
+unrelated-system access.
+
+The child response was withheld by a safety safeguard. Only that child attempt
+is classified `SAFETY_BLOCKED`. PR #1167's owner outcome, priority, current
+head, evidence, authority and independent-review requirement remain unchanged;
+the mission is not Business-complete, globally blocked, reprioritized or
+authorized for merge, deployment or production migration. No secret, credential,
+database connection, external target or exploit payload was recorded in this
+incident entry. No production, provider, customer, farm or external-system
+effect occurred.
+
+Control Tower corrected the reusable development procedure on the existing
+repository-scoped `control-tower-operate` skill lineage. PR #1176 exact head
+`943370acb019283ee0052a9a6460d7c1ca3e7eb2` adds a narrowly bounded
+`SAFETY_BLOCKED` recovery rule: preserve mission authority and safety boundaries,
+record only non-secret workspace-local evidence, do not resend the same prompt,
+remove unrelated sensitive concepts, and resume through a fresh named Amadeus
+repository/disposable-test task. It explicitly prohibits secret retrieval or
+disclosure, authentication bypass, sandbox circumvention, unrestricted scanning,
+unrelated-system access and unauthorized production or external mutation.
+
+Independent governance review at that exact head is `PASS`. It verified that
+the correction preserves mission scope and protected authority, narrows and
+resumes only owner-authorized defensive repository work, retains safeguards,
+and creates no Amadeus runtime agent, queue, scheduler, database, provider
+adapter, product workflow or authority plane. Skill Creator validation, Vault
+alignment, `git diff --check` and all three hosted exact-head gates passed;
+GitHub reports the PR clean. The complete non-secret review handover is preserved
+workspace-locally at
+`control-tower-artifacts/PR-1176/review-943370ac/PR1176_943370AC_INDEPENDENT_GOVERNANCE_REVIEW_20260822.md`.
+
+Lifecycle is `WORKING / CHILD_ATTEMPT_SAFETY_BLOCKED / RECOVERY_RULE_REVIEWED`;
+**NO BUSINESS OUTCOME**. PR #1176 remains open and unmerged. This correction
+does not consume a new strategic WIP slot and does not change the Green,
+HERDMASTER/Oom Sakkie, BEACON or SAM sequence recorded above. Automatic
+continuation is a fresh narrowed PR #1167 defensive review attempt under the
+same existing authority after Control Tower accepts the reviewed skill merge;
+independent lanes continue without interruption. Owner action for this incident
+is none; the separate Green action-time boundary recorded above remains the only
+current owner blocker.
