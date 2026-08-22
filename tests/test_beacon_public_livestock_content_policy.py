@@ -122,13 +122,16 @@ class BeaconPublicLivestockContentPolicyTests(unittest.TestCase):
 
     def test_missing_stale_or_mismatched_authority_binding_fails_closed(self):
         assessment = self.assess("Molly and her piglets enjoy a quiet farm morning.")
-        bound = public_livestock_policy_binding(assessment)
-        self.assertTrue(public_livestock_policy_binding_matches(bound, assessment))
-        self.assertFalse(public_livestock_policy_binding_matches({}, assessment))
+        bound = public_livestock_policy_binding(assessment, target_page_id="PAGE-1")
+        self.assertTrue(public_livestock_policy_binding_matches(bound, assessment,
+            target_page_id="PAGE-1"))
+        self.assertFalse(public_livestock_policy_binding_matches({}, assessment,
+            target_page_id="PAGE-1"))
         stale = dict(bound)
         stale["policy_authority"] = dict(bound["policy_authority"],
             source_digest="0" * 64)
-        self.assertFalse(public_livestock_policy_binding_matches(stale, assessment))
+        self.assertFalse(public_livestock_policy_binding_matches(stale, assessment,
+            target_page_id="PAGE-1"))
 
     def test_active_doctrine_retires_enquiry_capture_exception(self):
         root = Path(__file__).resolve().parents[1]

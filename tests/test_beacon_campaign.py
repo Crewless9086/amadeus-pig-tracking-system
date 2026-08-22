@@ -1,10 +1,12 @@
 import json
 import unittest
 import threading
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from modules.oom_sakkie.specialist_owner_decisions import BEACON_CAPTION_UTF8_HEX
+from modules.oom_sakkie.beacon_request_runtime import build_live_stock_awareness_proposal
 from modules.beacon.publication_execution_identity import (
     ASSET_ID, PROPOSAL_ID, PUBLISH_NOW_AUTHORITY_ID, PUBLISH_NOW_EXECUTION_ID,
     SUCCESSOR_EXECUTION_ID,
@@ -38,6 +40,47 @@ from modules.sales.beacon_campaign import (
     _facebook_post_params,
     _post_to_facebook_page_binary_images,
 )
+
+
+def test_final_executor_rejects_missing_or_drifted_real_builder_policy_binding():
+    caption = "A quiet farm-life update from Amadeus Farm."
+    proposal = build_live_stock_awareness_proposal(
+        {"success": True, "cards": []},
+        {"success": True, "owner_review_packet": {
+            "packet_id": "REAL-EXECUTOR-AWARENESS", "draft_copy": caption,
+            "audience": "Farm followers", "public_livestock_policy": {
+                "policy_version": "beacon_public_livestock_awareness_only_v2"}}},
+        {"success": True, "items": []}, target_page_id="PAGE-1")
+    base = {"campaign_lane": "live_stock_awareness", "objective": "farm_awareness",
+        "publish_packet_id": "REAL-EXECUTOR-PACKET", "channel": "facebook_organic",
+        "exact_text": caption, "target_page_id": "PAGE-1", "zero_spend": True,
+        "owner_confirmation": "POST EXACT BEACON PACKET",
+        "protected_campaign_claim_token": "TOKEN-1",
+        "public_content_policy": proposal["public_content_policy"]}
+    def top(key, value):
+        return lambda payload: payload["public_content_policy"].update({key: value})
+    def authority(key, value):
+        return lambda payload: payload["public_content_policy"][
+            "policy_authority"].update({key: value})
+    mutations = (
+        lambda payload: payload.pop("public_content_policy"),
+        top("policy_version", "stale-version"), top("evaluation_digest", "0"*64),
+        authority("target_page_id", "OTHER-PAGE"),
+        authority("entity_id", "OTHER-ENTITY"), authority("jurisdiction", "OTHER"),
+        authority("valid_through", "2026-08-21"), authority("source_digest", "0"*64),
+        lambda payload: payload["public_content_policy"]["policy_authority"][
+            "sources"][0].update(content_sha256="0"*64),
+    )
+    for mutate in mutations:
+        payload=deepcopy(base); mutate(payload); provider_calls=[]
+        result,status=execute_beacon_facebook_page_post(payload,
+            poster=lambda *args,**kwargs: provider_calls.append(1), environ={
+                "BEACON_FACEBOOK_POSTING_ENABLED":"1",
+                "BEACON_FACEBOOK_PAGE_ID":"PAGE-1",
+                "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN":"token"})
+        assert status == 409
+        assert result["status"] == "owner_review_required_meta_livestock_commerce_risk"
+        assert provider_calls == []
 
 
 class BeaconLiveStockSalesCampaignTests(unittest.TestCase):

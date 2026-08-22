@@ -8,6 +8,7 @@ from modules.beacon.protected_publication_worker import (
     validate_claimed_approval,
 )
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+from modules.oom_sakkie.beacon_request_runtime import build_live_stock_awareness_proposal
 from modules.sales.beacon_campaign import _readback_facebook_page_post
 from modules.beacon.public_livestock_content_policy import (
     assess_public_livestock_content, public_livestock_policy_binding,
@@ -16,14 +17,33 @@ from modules.beacon.public_livestock_content_policy import (
 NOW = datetime(2026, 8, 19, 8, tzinfo=timezone.utc)
 
 
+def real_awareness_binding(caption):
+    proposal = build_live_stock_awareness_proposal(
+        {"success": True, "cards": []},
+        {"success": True, "owner_review_packet": {
+            "packet_id": "REAL-AWARENESS", "draft_copy": caption,
+            "audience": "Farm followers",
+            "public_livestock_policy": {"policy_version":
+                "beacon_public_livestock_awareness_only_v2"}}},
+        {"success": True, "items": []}, target_page_id="PAGE-1")
+    return proposal["public_content_policy"]
+
+
 def approval(caption="Molly is settling into the morning routine while her piglets stay close."):
     assessment = assess_public_livestock_content(caption,
         objective="farm_awareness", campaign_lane="live_stock_awareness")
+    try:
+        binding = real_awareness_binding(caption)
+    except ValueError:
+        # Forbidden copy cannot originate a binding; retain a real safe-builder
+        # binding so the downstream drift guard is exercised fail closed.
+        binding = real_awareness_binding(
+            "A quiet farm-life update from Amadeus Farm.")
     preview = {"contract_version":"beacon_campaign_owner_card_v1","packet_id":"PACKET-1",
         "target_page_id":"PAGE-1",
         "packet_generation":"G1","exact_post_copy":caption,
         "campaign_lane":"live_stock_awareness","campaign_objective":"farm_awareness",
-        "public_content_policy":public_livestock_policy_binding(assessment),
+        "public_content_policy":binding,
         "selected_media":[{"asset_id":"ASSET-1","content_sha256":"a"*64,
           "storage_readback_proof_id":"READBACK-1","library_accept_event_id":"ACCEPT-1",
           "public_use_event_id":"PUBLIC-1","public_use_authority":"approved",
@@ -87,6 +107,36 @@ def test_altered_caption_or_media_is_contained():
         item=approval(); mutate(item); store=Store(item)
         result=run_protected_publication_cycle(store=store, executor=lambda *a,**k: (_ for _ in ()).throw(AssertionError()), now=NOW)
         assert result["status"] == "protected_campaign_binding_changed"
+
+
+def test_every_policy_authority_drift_is_contained_before_executor():
+    def replace(item, key, value):
+        item["preview_payload"]["public_content_policy"][key] = value
+    def authority(item, key, value):
+        item["preview_payload"]["public_content_policy"]["policy_authority"][key] = value
+    mutations = (
+        lambda item: replace(item, "policy_version", "stale-version"),
+        lambda item: replace(item, "evaluation_digest", "0"*64),
+        lambda item: authority(item, "target_page_id", "OTHER-PAGE"),
+        lambda item: authority(item, "entity_id", "OTHER-ENTITY"),
+        lambda item: authority(item, "jurisdiction", "OTHER"),
+        lambda item: authority(item, "valid_through", "2026-08-18"),
+        lambda item: authority(item, "source_digest", "0"*64),
+        lambda item: item["preview_payload"]["public_content_policy"][
+            "policy_authority"]["sources"][0].update(content_sha256="0"*64),
+    )
+    for mutate in mutations:
+        item=approval(); mutate(item)
+        preview=item["preview_payload"]
+        preview["campaign_digest"]=canonical_preview_digest(
+            "beacon_campaign_review", {k:v for k,v in preview.items()
+                if k!="campaign_digest"})
+        item["evidence_generation"]=preview["campaign_digest"]
+        calls=[]
+        result=run_protected_publication_cycle(store=Store(item),
+            executor=lambda *args,**kwargs: calls.append(1), now=NOW)
+        assert result["status"] == "protected_campaign_public_policy_failed"
+        assert calls == []
 
 
 def test_definite_failure_and_ambiguous_provider_are_terminal_and_replay_silent():

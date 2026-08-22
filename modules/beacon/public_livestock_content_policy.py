@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import unicodedata
+from datetime import date, datetime, timezone
 
 
 POLICY_VERSION = "beacon_public_livestock_awareness_only_v2"
@@ -12,14 +13,22 @@ POLICY_ID = "beacon_public_livestock_awareness_only"
 EXTERNAL_POLICY_AUTHORITY = {
     "record_version": "meta_public_livestock_surface_authority_2026-08-22_v1",
     "reviewed_on": "2026-08-22",
+    "valid_through": "2026-09-21",
     "surface": "facebook_organic_page_post",
     "jurisdiction": "ZA",
+    "entity_id": "AMADEUS-FARM-ZA",
     "entity_eligibility": "awareness_only_no_commerce_exception_relied_upon",
     "decision": "amadeus_stricter_awareness_only_fail_closed",
     "sources": [
-        "https://www.facebook.com/help/130910837313345",
-        "https://www.facebook.com/terms",
-        "https://www.oversightboard.com/decision/bun-63gbjx9k/",
+        {"source_id": "meta-marketplace-animals", "version": "reviewed-2026-08-22",
+         "url": "https://www.facebook.com/help/130910837313345",
+         "content_sha256": "68ab8be8f56ce970413074124094b6b5947bc3abf7e8aaffc865e79cb70d36d2"},
+        {"source_id": "meta-terms", "version": "effective-2025-01-01-reviewed-2026-08-22",
+         "url": "https://www.facebook.com/terms",
+         "content_sha256": "ec6e6d4ba5328769d88702dfca4581e0cb568146d2fbb913253aee8e003cbd86"},
+        {"source_id": "oversight-board-bun-63gbjx9k", "version": "decision-reviewed-2026-08-22",
+         "url": "https://www.oversightboard.com/decision/bun-63gbjx9k/",
+         "content_sha256": "38f23817e9cbd564bbc71f57d18c7d0ccf128e025610260295ec0f04c4fe86e4"},
     ],
 }
 RISK_STATUS = "owner_review_required_meta_livestock_commerce_risk"
@@ -233,19 +242,32 @@ def _result(allowed, reasons, livestock_context, objective):
     return result
 
 
-def policy_authority_binding():
+def policy_authority_binding(*, target_page_id="", now=None):
     authority = dict(EXTERNAL_POLICY_AUTHORITY)
+    authority["sources"] = [dict(item) for item in EXTERNAL_POLICY_AUTHORITY["sources"]]
+    authority["target_page_id"] = str(target_page_id or "").strip()
     authority["source_digest"] = _digest(EXTERNAL_POLICY_AUTHORITY)
     return authority
 
 
-def public_livestock_policy_binding(assessment):
-    return {key: assessment.get(key) for key in (
-        "policy_id", "policy_version", "evaluation_digest", "policy_authority")}
+def public_livestock_policy_binding(assessment, *, target_page_id="", now=None):
+    authority = policy_authority_binding(target_page_id=target_page_id, now=now)
+    return {"policy_id": assessment.get("policy_id"),
+        "policy_version": assessment.get("policy_version"),
+        "evaluation_digest": assessment.get("evaluation_digest"),
+        "policy_authority": authority}
 
 
-def public_livestock_policy_binding_matches(bound, assessment):
-    return isinstance(bound, dict) and bound == public_livestock_policy_binding(assessment)
+def public_livestock_policy_binding_matches(bound, assessment, *, target_page_id="", now=None):
+    if not isinstance(bound, dict) or not str(target_page_id or "").strip():
+        return False
+    when = now or datetime.now(timezone.utc)
+    today = when.date() if isinstance(when, datetime) else when
+    if not isinstance(today, date) or today > date.fromisoformat(
+            EXTERNAL_POLICY_AUTHORITY["valid_through"]):
+        return False
+    return bound == public_livestock_policy_binding(assessment,
+        target_page_id=target_page_id, now=when)
 
 
 def _digest(value):

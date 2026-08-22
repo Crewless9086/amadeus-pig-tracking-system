@@ -1,4 +1,5 @@
 import threading
+import os
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -13,6 +14,8 @@ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.telegram_gateway import (
     _delivery_disabled_internal_proof, handle_telegram_gateway_message)
 from modules.oom_sakkie.semantic_front_door import SemanticInterpretation
+
+os.environ.setdefault("BEACON_FACEBOOK_PAGE_ID", "PAGE-1")
 
 
 def opportunity(ready=True):
