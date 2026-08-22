@@ -44,6 +44,9 @@ from modules.sales.sam_live_stock_contextual_sales import (
 from modules.sales.sam_livestock_offer_loop import build_canonical_livestock_offer
 from modules.sales.sam_customer_front_door import interpret_customer_front_door
 from modules.sales.sam_meta_inbound import evaluate_meta_inbound_attribution
+from modules.beacon.publication_attribution import (
+    resolve_canonical_meta_publication_binding,
+)
 from modules.sales.sam_customer_context import load_canonical_customer_context
 from modules.sales.sam_live_stock_availability_observation import (
     resolve_authoritative_availability,
@@ -219,7 +222,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     preclaim_chronology_verifier=None,
 ):
     source = environ if environ is not None else os.environ
-    inbound = parse_chatwoot_inbound(payload)
+    inbound = parse_chatwoot_inbound(payload, environ=source)
     policy = sam_live_stock_webhook_policy(source)
     if not inbound["processable"]:
         return {
@@ -497,6 +500,9 @@ def handle_sam_live_stock_chatwoot_inbound(
         availability_loader=availability_loader,
         availability_evidence=availability_evidence,
         environ=source,
+    )
+    context_packet["campaign_or_post_context"] = (
+        front_door_packet.get("campaign_or_post_context") or {}
     )
     if canonical_customer_context.get("interest"):
         context_packet["prior_context"] = _merge_prior_context_packets(
@@ -1289,7 +1295,7 @@ def _send_failure_confirmed(exc):
     return message.startswith("chatwoot_http_") and any(code in message for code in ("400", "401", "403", "404", "409", "422"))
 
 
-def parse_chatwoot_inbound(payload):
+def parse_chatwoot_inbound(payload, *, environ=None, meta_publication_resolver=None):
     payload = payload if isinstance(payload, dict) else {}
     message_type = _normal_chatwoot_message_type(payload)
     event = _clean(payload.get("event"), 80).lower()
@@ -1319,7 +1325,20 @@ def parse_chatwoot_inbound(payload):
     custom_attributes = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
     content_attributes = payload.get("content_attributes") if isinstance(payload.get("content_attributes"), dict) else {}
     identity_evidence = _webhook_identity_evidence(payload, conversation, sender, contact)
-    meta_attribution = evaluate_meta_inbound_attribution(payload) if channel == "chatwoot_facebook" else {}
+    meta_attribution = {}
+    if channel == "chatwoot_facebook":
+        source = environ if environ is not None else os.environ
+        resolver = meta_publication_resolver or resolve_canonical_meta_publication_binding
+        binding_resolution = resolver(
+            payload,
+            database_url=source.get("DATABASE_URL"),
+            expected_page_id=source.get("BEACON_FACEBOOK_PAGE_ID"),
+        )
+        meta_attribution = evaluate_meta_inbound_attribution(
+            payload,
+            expected_binding=binding_resolution.get("binding") or {},
+            binding_resolution=binding_resolution,
+        )
     return {
         "processable": True,
         "status": "processable",
@@ -1848,6 +1867,17 @@ def build_sam_front_door_adapter_packet(inbound, context_packet, environ=None):
         if meta_attribution.get("status") == "attributed"
         else {}
     )
+    trusted_reference = (
+        {}
+        if (
+            inbound.get("channel") == "chatwoot_facebook"
+            and reference.get("source") in {
+                "current_message_referral",
+                "recent_chatwoot_referral",
+            }
+        )
+        else reference
+    )
     knowledge_result = load_sam_farm_knowledge(environ or {})
     try:
         with open(knowledge_result.get("path") or "", encoding="utf-8") as source:
@@ -1878,24 +1908,29 @@ def build_sam_front_door_adapter_packet(inbound, context_packet, environ=None):
             "facts": retained.get("interest") or {},
         },
         "campaign_or_post": {
-            "source": reference.get("source") or "none",
+            "source": (
+                "canonical_beacon_publication_binding"
+                if attributed_meta
+                else trusted_reference.get("source") or "none"
+            ),
             "version": "v1",
             **scope,
             "campaign_id": attributed_meta.get("campaign_id") or "",
-            "post_id": attributed_meta.get("post_id") or reference.get("source_id") or "",
+            "post_id": attributed_meta.get("post_id") or trusted_reference.get("source_id") or "",
             "target_page_id": attributed_meta.get("target_page_id") or "",
             "attribution_status": meta_attribution.get("status") or "",
             "attribution_reason": meta_attribution.get("reason") or "",
             "sam_boundary": attributed_meta.get("sam_boundary") or "",
-            "title": reference.get("headline") or reference.get("subject") or "",
-            "post_text": reference.get("body") or "",
-            "product_focus": reference.get("subject") or "",
+            "title": trusted_reference.get("headline") or trusted_reference.get("subject") or "",
+            "post_text": attributed_meta.get("post_text") or trusted_reference.get("body") or "",
+            "product_focus": trusted_reference.get("subject") or "",
             "specialist": (
                 "livestock"
                 if re.search(
                     r"\b(?:pig|piglet|piggy|weaner|grower|finisher)\w*\b",
                     " ".join(
-                        str(reference.get(key) or "")
+                        str((attributed_meta.get("post_text") if key == "body" else "")
+                            or trusted_reference.get(key) or "")
                         for key in ("headline", "subject", "body")
                     ),
                     re.I,
