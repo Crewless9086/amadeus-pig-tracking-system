@@ -1516,6 +1516,17 @@ by Control Tower serialized release review; commissioning, a genuine physical
 page, cleanup/follow-up and a later terminal-independent cycle remain separate
 protected acceptance gates. Owner action is none now.
 
+All five exact-head checks subsequently passed. Control Tower verified that the
+publication job is not triggered by merge or push: it requires a separate manual
+workflow dispatch with `publish=true`, exact expected source commit and a main-
+branch identity check. PR #1164 was therefore merged normally at exact reviewed
+head as main commit `429a91ffd3dd4f38faadeb9fb0f19f202ea87537` without package
+publication. Green advances only to `INTEGRATED_SOURCE / PACKAGE_UNPUBLISHED /
+RELEASE_HOLD`; **NO BUSINESS OUTCOME**. The next protected boundary is one exact
+manual dispatch to build, publish, sign and attest the immutable 0.3.2 arm64
+package from the exact main revision. No install, configuration, start, queue,
+job or print is implied by that later package publication.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
