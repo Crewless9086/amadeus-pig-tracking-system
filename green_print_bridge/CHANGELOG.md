@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.4
+
+- Connects the initial printer TLS check directly to the commissioned private
+  endpoint pin while retaining the configured hostname as the certificate SAN
+  identity, removing the circular dependency on ambient printer DNS.
+- Establishes and verifies the fixed local hostname binding only after trusted
+  TLS identity succeeds, and fails closed on conflicts or write/readback errors.
+- Emits bounded startup stage/reason diagnostics without configuration values,
+  credentials or certificate contents.
+
 ## 0.3.3
 
 - Repairs Home Assistant startup under the custom AppArmor profile by allowing
