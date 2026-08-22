@@ -416,14 +416,14 @@ def _beacon(now):
     packet = scheduled.get("proposal") if isinstance(scheduled.get("proposal"), dict) else {}
     if len(result_digest) != 64 or not packet.get("packet_id"):
         raise ValueError("beacon_scheduled_result_identity_unavailable")
-    with connect_bounded_read() as connection:
-        with connection.cursor() as cur:
-            cur.execute("""select review_event_id,created_at from public.sam_live_stock_conversation_review_events
-                where event_source='sam_live_stock_direct_inbound'
-                order by created_at desc,review_event_id desc limit 1""")
-            sam = cur.fetchone()
-    refs = [f"beacon_result:{result_digest}", f"packet:{packet['packet_id']}",
-            f"sam:{sam[0] if sam else 'none'}"]
+    # The scheduled proposal already binds every canonical input it consumes in
+    # result_digest and packet_id.  The newest SAM review-event identity is an
+    # audit/processing identity, not campaign evidence: the stock-neutral
+    # enquiry proposal neither reads nor projects that row.  Coupling it here
+    # made an unrelated SAM retry or review append look like new BEACON business
+    # evidence between collection and the mandatory immediate refresh, causing
+    # endless generation churn and suppressing every owner card.
+    refs = [f"beacon_result:{result_digest}", f"packet:{packet['packet_id']}"]
     return [_candidate("beacon:current-sale-opportunity", "BEACON", "due", refs,
         ["current_sale_opportunity_proposal_or_exact_media_request"],
         "BEACON has no current proposal or exact media request reconciled after the latest sales evidence.",

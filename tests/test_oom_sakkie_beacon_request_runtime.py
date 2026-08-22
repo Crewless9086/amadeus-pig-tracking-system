@@ -318,6 +318,52 @@ def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time()
     assert first["result_digest"] == second["result_digest"]
 
 
+def test_scheduled_generation_binds_configured_facebook_page_identity():
+    fixed = {"opportunity_loader": opportunity,
+        "media_loader": public_awareness_media,
+        "litter_loader": litter_evidence,
+        "now": datetime(2026, 8, 17, 12, tzinfo=timezone.utc)}
+    with patch.dict("os.environ", {"BEACON_FACEBOOK_PAGE_ID": "PAGE-ONE"}):
+        first = build_scheduled_sale_ready_stock_result(**fixed)
+        replay = build_scheduled_sale_ready_stock_result(**fixed)
+    with patch.dict("os.environ", {"BEACON_FACEBOOK_PAGE_ID": "PAGE-TWO"}):
+        successor = build_scheduled_sale_ready_stock_result(**fixed)
+
+    assert first["proposal"]["target_page_id"] == "PAGE-ONE"
+    assert first["proposal"]["protected_campaign_package"]["target_page_id"] == "PAGE-ONE"
+    assert first["result_digest"] == replay["result_digest"]
+    assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
+    assert first["result_digest"] != successor["result_digest"]
+    assert first["proposal"]["packet_id"] != successor["proposal"]["packet_id"]
+
+
+def test_scheduled_generation_binds_explicit_enquiry_policy_version():
+    fixed = {"opportunity_loader": opportunity,
+        "media_loader": public_awareness_media,
+        "litter_loader": litter_evidence,
+        "now": datetime(2026, 8, 17, 12, tzinfo=timezone.utc),
+        "target_page_id": "PAGE-ONE"}
+    with patch("modules.oom_sakkie.beacon_request_runtime."
+            "assess_public_livestock_enquiry_capture",
+            return_value={"allowed": True, "policy_version": "policy-v1", "reasons": []}):
+        first = build_scheduled_sale_ready_stock_result(**fixed)
+        replay = build_scheduled_sale_ready_stock_result(**fixed)
+    with patch("modules.oom_sakkie.beacon_request_runtime."
+            "assess_public_livestock_enquiry_capture",
+            return_value={"allowed": True, "policy_version": "policy-v2", "reasons": []}):
+        successor = build_scheduled_sale_ready_stock_result(**fixed)
+
+    assert first["proposal"]["public_content_policy"] == {
+        "policy_id": "beacon_public_livestock_enquiry_capture",
+        "policy_version": "policy-v1"}
+    assert first["proposal"]["protected_campaign_package"]["public_content_policy"] == \
+        first["proposal"]["public_content_policy"]
+    assert first["result_digest"] == replay["result_digest"]
+    assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
+    assert first["result_digest"] != successor["result_digest"]
+    assert first["proposal"]["packet_id"] != successor["proposal"]["packet_id"]
+
+
 def test_content_packet_identity_does_not_treat_observation_time_as_new_campaign():
     from modules.beacon.content_operations import build_beacon_content_candidate
     evidence = {"opportunities": {"availability": "usable", "records": []}}
