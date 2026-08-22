@@ -21,17 +21,18 @@ def test_package_is_bounded_and_privilege_split():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); run=(APP/"rootfs/run.sh").read_text(encoding="utf-8")
     assert cfg["arch"]==["aarch64"] and cfg["privileged"]==[] and cfg["host_network"] is False
     assert "adduser -S -D -H" in docker and "/sbin/su-exec greenprint:greenprint" in init
-    assert "/usr/sbin/cupsd -f -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf &" in init and "/sbin/su-exec cupsd" not in init
-    assert "lpadmin" not in init and "exec /sbin/su-exec greenprint" in init
+    assert "/usr/sbin/cupsd -f -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf 2>/dev/null &" in init and "/sbin/su-exec cupsd" not in init
+    assert "lpadmin" not in init and "/sbin/su-exec greenprint:greenprint /usr/bin/python3 /opt/green/service.py 2>/dev/null || fail_startup service_exec service_process_failed" in init
     assert "PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py" in init
     assert init.startswith("#!/bin/sh\nset -eu\numask 0077\n") and run.startswith("#!/bin/sh\nset -eu\numask 0077\n")
     assert "install -d -o greenprint -g greenprint -m 0700 /data/green-runtime" in init
     assert "install -d -o greenprint -g greenprint -m 0700 /data " not in init
     assert "install -o greenprint -g greenprint -m 0600 /data/options.json /data/green-runtime/options.json" in init
-    assert "green_startup_failed stage=${stage} reason=${reason}" in init
-    assert "green_startup_failed stage=s6_exec reason=bootstrap_exec_failed" in run
+    assert 'green_startup_failed stage=$1 reason=$2' in init
+    assert "green_startup_failed stage=bootstrap_exec reason=$1" in run and "fail_bootstrap init_script_unreadable" in run and "fail_bootstrap init_script_failed" in run
+    assert "green_startup_failed stage=s6_exec reason=run_script_unreadable" in docker
     for stage in ("mount_validation","runtime_directory","options_population","cups_directories","ca_install","queue_initializer","queue_ownership","cups_start","cups_readiness","service_exec"):
-        assert f"stage={stage}" in init
+        assert f"step {stage} " in init or f"fail_startup {stage} " in init
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
     assert "chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf" in docker
@@ -41,7 +42,7 @@ def test_package_is_bounded_and_privilege_split():
     assert docker.count("grep -Ec '^[[:space:]]*") == 6 and "/usr/sbin/cupsd -t -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf" in docker
     assert "ln -s /run/cups/printers.conf /etc/cups/printers.conf" not in docker
     assert "/var/cache/cups" in docker
-    assert "reason=cups_or_queue_not_ready" in init
+    assert "fail_startup cups_readiness cups_or_queue_not_ready" in init
 
 def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
@@ -61,23 +62,36 @@ def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
 
 def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8")
+    run=(APP/"rootfs/run.sh").read_text(encoding="utf-8")
+    docker=(APP/"Dockerfile").read_text(encoding="utf-8")
+    probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
     expected=(
-        ("mount_validation","data_mount_invalid"),("mount_validation","ca_missing_or_empty"),
+        ("mount_validation","data_mount_invalid"),("mount_validation","options_missing_or_empty"),
+        ("mount_validation","options_unreadable"),("mount_validation","ca_missing_or_empty"),
+        ("mount_validation","ca_unreadable"),
         ("runtime_directory","data_runtime_prepare_failed"),("runtime_directory","spool_prepare_failed"),
         ("options_population","runtime_options_install_failed"),("cups_directories","cups_runtime_prepare_failed"),
         ("cups_directories","cups_spool_prepare_failed"),("ca_install","ca_install_failed"),
-        ("queue_initializer","queue_initializer_failed"),("queue_ownership","queue_owner_failed"),
+        ("queue_initializer","initializer_interpreter_missing"),("queue_initializer","queue_initializer_failed"),
+        ("queue_ownership","queue_owner_failed"),
         ("queue_ownership","queue_mode_failed"),("cups_start","cups_process_start_failed"),
         ("cups_readiness","cups_stopped_during_startup"),("cups_readiness","cups_or_queue_not_ready"),
-        ("service_exec","service_exec_failed"),
+        ("service_exec","service_launcher_missing"),("service_exec","service_interpreter_missing"),
+        ("service_exec","service_script_unreadable"),("service_exec","service_process_failed"),
     )
     for stage,reason in expected:
-        stage_at=init.index(f"stage={stage}")
-        reason_at=init.index(f"reason={reason}")
-        assert stage_at < reason_at
-    diagnostic='echo "green_startup_failed stage=${stage} reason=${reason}" >&2'
+        assert f"{stage} {reason}" in init
+    diagnostic='marker="green_startup_failed stage=$1 reason=$2"'
     assert init.count(diagnostic)==1
     assert all(token not in diagnostic for token in ("options.json","private-ca.crt","canonical_bearer_token","printer_uri"))
+    assert "green_startup_failed stage=bootstrap_exec reason=$1" in run
+    assert "fail_bootstrap init_script_unreadable" in run and "fail_bootstrap init_script_failed" in run
+    assert "green_startup_failed stage=s6_exec reason=run_script_unreadable" in docker
+    for case in ("missing_options","empty_options","readonly_data","ownership_conflict","missing_cert","empty_cert","invalid_options","broken_interpreter","init_exec","run_exec","cups_start","service_exec"):
+        assert f'negative_case("{case}"' in probe
+    assert "if markers != [expected]" in probe
+    for forbidden in ("synthetic-startup-probe-token",'options.get("printer_uri")',"BEGIN CERTIFICATE","/data/options.json","/config/private-ca.crt"):
+        assert forbidden in probe
 
 def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
     calls=[]
