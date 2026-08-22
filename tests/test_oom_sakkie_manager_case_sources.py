@@ -94,6 +94,48 @@ def test_injected_collectors_are_narrowed_to_owner():
     assert calls == ["herdmaster"]
 
 
+def test_beacon_candidate_identity_uses_only_consumed_campaign_evidence(monkeypatch):
+    """New SAM audit rows must not manufacture a BEACON generation."""
+    from modules.oom_sakkie import manager_case_sources as sources
+
+    result = {"success": True, "result_digest": "a" * 64,
+              "proposal": {"packet_id": "BEACON-ENQUIRY-STABLE"}}
+    monkeypatch.setattr(
+        "modules.oom_sakkie.beacon_request_runtime.build_scheduled_sale_ready_stock_result",
+        lambda: result)
+    monkeypatch.setattr(sources, "connect_bounded_read", lambda: (_ for _ in ()).throw(
+        AssertionError("unconsumed SAM review identity must not be queried")))
+
+    first = sources._beacon(NOW)[0]
+    refreshed = sources._beacon(NOW + timedelta(seconds=1))[0]
+
+    assert first["evidence_refs"] == [
+        "beacon_result:" + "a" * 64, "packet:BEACON-ENQUIRY-STABLE"]
+    assert refreshed["evidence_refs"] == first["evidence_refs"]
+
+
+def test_beacon_material_proposal_change_changes_candidate_identity_once(monkeypatch):
+    """A genuine campaign input change remains a successor-generation trigger."""
+    from modules.oom_sakkie import manager_case_sources as sources
+
+    results = iter((
+        {"success": True, "result_digest": "a" * 64,
+         "proposal": {"packet_id": "BEACON-ENQUIRY-ONE"}},
+        {"success": True, "result_digest": "b" * 64,
+         "proposal": {"packet_id": "BEACON-ENQUIRY-TWO"}},
+    ))
+    monkeypatch.setattr(
+        "modules.oom_sakkie.beacon_request_runtime.build_scheduled_sale_ready_stock_result",
+        lambda: next(results))
+
+    first = sources._beacon(NOW)[0]
+    changed = sources._beacon(NOW + timedelta(seconds=1))[0]
+
+    assert first["dedupe_key"] == changed["dedupe_key"] == \
+        "beacon:current-sale-opportunity"
+    assert first["evidence_refs"] != changed["evidence_refs"]
+
+
 class _RootlineCursor:
     def __init__(self, rows):
         self.rows = iter(rows); self.commands = []
