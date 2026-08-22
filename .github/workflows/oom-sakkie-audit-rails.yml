@@ -40,7 +40,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt pytest
 
       - name: Prove allowlist, schema readback, replay and rollback
         run: python -m pytest tests/test_render_production_migration_rail.py -q
