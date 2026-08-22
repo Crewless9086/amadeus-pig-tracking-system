@@ -37,7 +37,7 @@
 ## Governance preflight
 
 - Worktree and branch: `C:/tmp/oom-litter-acceptance-repair-20260822`; `fix/oom-litter-acceptance-repair-20260822`. Latest source repair revision: `63a07f3302c6a804eb87033827e8b5047a2b76d9`; the PR head may also include this handover-only publication commit.
-- Upstream and ahead/behind current authoritative main: upstream same named origin branch; `0 behind / 1 ahead` of `origin/main` at `646386e3a1d34f128b6cc318c9166ad5678cbf0c` when committed.
+- Upstream and authoritative-main reconciliation: upstream same named origin branch; authoritative main `b11f5d4dd2775d5e298e09d9a23fa433cc05ed21` was merged non-destructively after exact-head CI passed. Its Green/governance bytes are retained unchanged alongside the Linda repair.
 - Mission Standard tracked blob, filesystem SHA-256, physical lines and read completely: blob `3002b94713e286c4eb2019419c438cc378c337fa`; SHA-256 `44E34C69145B83D2CD5B6A5322A6C2C124789FA647E19F19B3E39A7293A5202B`; 1,127 physical lines; yes.
 - Control Tower Protocol tracked blob, filesystem SHA-256, physical lines and read completely: blob `8fbd0b9c9160164e31a17a2cbfa51ab88792a909`; SHA-256 `D4EB4B54A660CE39DFC92CB0FA253B0F2E3D7314462984702602D0F4B66A7E0A`; 319 physical lines; yes.
 - Canonical Runtime Programme tracked blob, filesystem SHA-256, physical lines and read completely: blob `fb44d7f86c47e605c283ed33c28ba2c4267d6edb`; SHA-256 `721281EEACC33AE11877CE610FE7A76BA06DE6B75DB4573F64933073FD358309`; 278 physical lines; yes.
@@ -72,7 +72,7 @@
 
 ## Deployed agent operational reality
 
-- Exact deployed revision: `646386e3a1d34f128b6cc318c9166ad5678cbf0c` was current main at implementation start; PR source is not deployed.
+- Exact deployed revision: `646386e3a1d34f128b6cc318c9166ad5678cbf0c` was the supplied current-main/runtime evidence at implementation start; authoritative main has since advanced to `b11f5d4dd2775d5e298e09d9a23fa433cc05ed21`, but no fresh loaded-runtime proof is claimed here. PR source is not deployed.
 - Web/API runtime and health: earlier Control Tower evidence says healthy exact-main web; not re-proven by this terminal after PR creation.
 - Background worker identity: Oom Sakkie deployed Telegram runtime; exact worker identity/heartbeat `Unknown` in this source lane.
 - Autonomous trigger type and provider identity: authenticated Telegram intake exists; daily manager schedule is a separate acceptance branch.
