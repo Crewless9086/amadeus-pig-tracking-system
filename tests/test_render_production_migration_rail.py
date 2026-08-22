@@ -1,7 +1,12 @@
 import hashlib
+import json
 import os
 import re
 import unittest
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timezone
+from itertools import permutations
 from pathlib import Path
 from unittest.mock import patch
 
@@ -126,7 +131,158 @@ def _reset_disposable_database(*, unexpected_litter_reason=False):
         )
 
 
+def _install_exact_legacy_production_shape():
+    """Return external authorization for the observed pre-trust production rail."""
+    import psycopg
+    from scripts.run_render_production_migrations import _catalog_snapshot
+
+    _reset_disposable_database()
+    with psycopg.connect(DATABASE_URL) as db:
+        for role in ("documents_api_executor", "documents_green_worker_executor"):
+            db.execute(f"do $$ begin if not exists(select 1 from pg_roles where rolname='{role}') then create role {role} NOLOGIN NOINHERIT; end if; end $$")
+            db.execute(f"alter role {role} NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS")
+            db.execute(f"grant usage on schema app_private to {role}")
+        for item in ALLOWLIST[:4]:
+            sql = (Path("supabase/migrations") / item.filename).read_text(encoding="utf-8")
+            db.execute(sql)
+        db.execute("""create table app_private.production_migration_receipts (
+          receipt_id uuid primary key,migration_id text not null,migration_filename text not null,
+          migration_sha256 text not null check (migration_sha256 ~ '^[0-9a-f]{64}$'),
+          ordinal integer not null check (ordinal > 0),outcome text not null check (outcome in ('applied','failed')),
+          source_commit text not null check (source_commit ~ '^[0-9a-f]{40}$'),render_service_id text not null,
+          render_instance_id text not null,error_class text,applied_at timestamptz not null default clock_timestamp(),
+          check ((outcome='applied' and error_class is null) or (outcome='failed' and error_class is not null)))""")
+        db.execute("create unique index uq_production_migration_applied on app_private.production_migration_receipts(migration_id) where outcome='applied'")
+        db.execute("""create or replace function app_private.guard_production_migration_receipts()
+          returns trigger language plpgsql as $$ begin raise exception 'production migration receipts are append-only'; end; $$""")
+        db.execute("""create trigger trg_guard_production_migration_receipts before update or delete
+          on app_private.production_migration_receipts for each row execute function app_private.guard_production_migration_receipts()""")
+        observed = {
+          ALLOWLIST[0].migration_id: (1, "2026-08-20T15:48:29.989265Z"),
+          ALLOWLIST[1].migration_id: (1, "2026-08-20T08:36:04.175080Z"),
+          ALLOWLIST[2].migration_id: (2, "2026-08-20T09:39:28.794895Z"),
+        }
+        for item in ALLOWLIST[:3]:
+            ordinal, applied_at = observed[item.migration_id]
+            db.execute("""insert into app_private.production_migration_receipts
+              (receipt_id,migration_id,migration_filename,migration_sha256,ordinal,outcome,
+               source_commit,render_service_id,render_instance_id,applied_at)
+              values(%s,%s,%s,%s,%s,'applied',%s,%s,%s,%s)""",
+              (str(uuid.uuid4()),item.migration_id,item.filename,item.sha256,ordinal,
+               ENV["RENDER_GIT_COMMIT"],ENV["RENDER_SERVICE_ID"],"legacy-job",applied_at))
+        rows = db.execute("""select receipt_id::text,migration_id,migration_filename,migration_sha256,
+          ordinal,outcome,source_commit,render_service_id,render_instance_id,error_class,applied_at
+          from app_private.production_migration_receipts order by applied_at,receipt_id""").fetchall()
+        manifest, digest = _catalog_snapshot(db)
+        receipts = []
+        for index, row in enumerate(rows):
+            receipts.append({"legacy_batch_id": f"authorized-production-batch-{index + 1}", "identity": {
+              "receipt_id": row[0], "migration_id": row[1], "migration_filename": row[2],
+              "migration_sha256": row[3], "ordinal": row[4], "outcome": row[5],
+              "source_commit": row[6], "render_service_id": row[7], "render_instance_id": row[8],
+              "error_class": row[9], "applied_at": row[10].astimezone(timezone.utc).isoformat(timespec="microseconds")}})
+    return json.dumps({"authorization_id": str(uuid.uuid4()),
+      "expected_commit": ENV["RENDER_GIT_COMMIT"], "render_service_id": ENV["RENDER_SERVICE_ID"],
+      "source_catalog_sha256": digest, "receipts": receipts}, separators=(",", ":"))
+
+
 class RenderProductionMigrationRailTests(unittest.TestCase):
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_exact_legacy_production_shape_adopts_atomically_then_replays(self):
+        import psycopg
+
+        authorization = _install_exact_legacy_production_shape()
+        report = run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=authorization))
+        self.assertEqual(report["legacy_adoption"]["receipt_count"], 3)
+        self.assertEqual(report["migrations"][3]["outcome"], "baseline_verified")
+        self.assertEqual(report["migrations"][4]["outcome"], "applied")
+        replay = run(DATABASE_URL, ENV)
+        self.assertEqual(replay["migrations"][4]["outcome"], "already_applied")
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertEqual(dict(db.execute("select migration_id,ordinal from app_private.production_migration_receipts where migration_id=any(%s)", (list(item.migration_id for item in ALLOWLIST[:3]),)).fetchall()), {
+              ALLOWLIST[0].migration_id: 1, ALLOWLIST[1].migration_id: 1, ALLOWLIST[2].migration_id: 2})
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 4)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_baselines").fetchone()[0], 1)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_catalog_checkpoints").fetchone()[0], 1)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_legacy_role_power_drift_rejects_with_zero_trust_mutation(self):
+        import psycopg
+
+        authorization = _install_exact_legacy_production_shape()
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute("alter role documents_api_executor inherit")
+        with self.assertRaisesRegex(RuntimeError, "migration_private_schema_role_posture_mismatch"):
+            run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=authorization))
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_receipt_identity_anchors')").fetchone()[0])
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 3)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_legacy_catalog_drift_and_concurrent_adoption_fail_closed(self):
+        import psycopg
+
+        authorization = _install_exact_legacy_production_shape()
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute("alter table public.litter_supersessions add column unauthorized_drift text")
+        with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_catalog_mismatch"):
+            run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=authorization))
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_baselines')").fetchone()[0])
+
+        authorization = _install_exact_legacy_production_shape()
+        adopted_env = dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=authorization)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = []
+            for future in (pool.submit(run, DATABASE_URL, adopted_env), pool.submit(run, DATABASE_URL, adopted_env)):
+                try:
+                    outcomes.append(future.result())
+                except RuntimeError as exc:
+                    outcomes.append(str(exc))
+        self.assertEqual(sum(isinstance(value, dict) for value in outcomes), 1)
+        self.assertTrue(any("migration_legacy_adoption_already_initialized" in value for value in outcomes if isinstance(value, str)))
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 4)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_legacy_authorization_order_is_irrelevant_but_set_and_identities_are_exact(self):
+        import psycopg
+
+        for order in permutations(range(3)):
+            authorization = json.loads(_install_exact_legacy_production_shape())
+            authorization["receipts"] = [authorization["receipts"][index] for index in order]
+            report = run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=json.dumps(authorization)))
+            self.assertEqual(report["legacy_adoption"]["receipt_count"], 3)
+
+        def assert_zero_effect(mutator, expected_error):
+            authorization = json.loads(_install_exact_legacy_production_shape())
+            mutator(authorization["receipts"])
+            with self.assertRaisesRegex(RuntimeError, expected_error):
+                run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=json.dumps(authorization)))
+            with psycopg.connect(DATABASE_URL) as db:
+                self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_receipt_identity_anchors')").fetchone()[0])
+                self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_baselines')").fetchone()[0])
+                self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_catalog_checkpoints')").fetchone()[0])
+                self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 3)
+                self.assertEqual(db.execute("select count(*) from app_private.migration_log where migration_id=%s", (ALLOWLIST[4].migration_id,)).fetchone()[0], 0)
+
+        def swap_receipt_identities(rows):
+            first = rows[0]["identity"]["receipt_id"]
+            second = rows[1]["identity"]["receipt_id"]
+            rows[0]["identity"]["receipt_id"] = second
+            rows[1]["identity"]["receipt_id"] = first
+
+        attacks = {
+          "duplicate": lambda rows: rows.__setitem__(2, json.loads(json.dumps(rows[0]))),
+          "missing": lambda rows: rows.pop(),
+          "extra": lambda rows: rows.append({"legacy_batch_id": "extra", "identity": {"migration_id": "unexpected"}}),
+          "identity_swap": swap_receipt_identities,
+          "timestamp_drift": lambda rows: rows[0]["identity"].__setitem__("applied_at", "2026-08-20T15:48:29.989266+00:00"),
+        }
+        for name, mutator in attacks.items():
+            with self.subTest(attack=name):
+                assert_zero_effect(mutator, "migration_legacy_adoption_receipt_(set|identity|count)_mismatch")
+
     def test_allowlist_is_ordered_exact_and_checksum_bound(self):
         self.assertEqual([row.filename for row in ALLOWLIST], [
             "202608190002_create_beacon_protected_publication_consumer.sql",
@@ -584,7 +740,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                     "applied_migration_checksum_conflict"
                     if field == "checksum"
                     else "migration_receipt_identity_anchor_mismatch"
-                    if field in {"instance", "source_commit", "applied_at"}
+                    if field in {"ordinal", "instance", "source_commit", "applied_at"}
                     else "migration_receipt_identity_mismatch"
                 )
                 with self.assertRaisesRegex(RuntimeError, expected):

@@ -113,6 +113,12 @@ HISTORICAL_CREATED_RELATIONS = {
 # Only this reviewed historical prefix may be admitted by the separate one-time
 # baseline ceremony.  Later semantic migrations must always execute normally.
 BASELINE_ELIGIBLE_IDS = tuple(item.migration_id for item in ALLOWLIST[:3])
+LEGACY_ADOPTION_BASELINE_IDS = (ALLOWLIST[3].migration_id,)
+LEGACY_ADOPTION_RECEIPT_IDS = tuple(item.migration_id for item in ALLOWLIST[:3])
+AUTHORIZED_PRIVATE_SCHEMA_ACL = (
+    ("documents_api_executor", "USAGE", False),
+    ("documents_green_worker_executor", "USAGE", False),
+)
 
 # The drift gate deliberately inventories complete catalog state for the bounded
 # objects governed by this closed rail.  Adding a migration means adding only its
@@ -297,9 +303,23 @@ def _verify_private_schema(connection, *, required: bool) -> dict | None:
             where n.nspname='app_private' and x.grantee<>n.nspowner
             order by 1,2,3"""
     ).fetchall()
-    if acl:
+    normalized_acl = tuple(tuple(value for value in row) for row in acl)
+    if any(entry not in AUTHORIZED_PRIVATE_SCHEMA_ACL for entry in normalized_acl):
         raise RuntimeError(f"migration_private_schema_acl_mismatch:{acl}")
-    return {"owner": row[0], "unauthorized_privilege_count": 0}
+    authorized_roles = {entry[0] for entry in normalized_acl}
+    if authorized_roles:
+        posture = connection.execute(
+            """select rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,
+                      rolreplication,rolbypassrls
+                 from pg_catalog.pg_roles where rolname=any(%s) order by 1""",
+            (sorted(authorized_roles),),
+        ).fetchall()
+        expected = [(role, False, False, False, False, False, False, False)
+                    for role in sorted(authorized_roles)]
+        if posture != expected:
+            raise RuntimeError(f"migration_private_schema_role_posture_mismatch:{posture}")
+    return {"owner": row[0], "authorized_acl": [list(x) for x in normalized_acl],
+            "unauthorized_privilege_count": 0}
 
 
 def _catalog_manifest(connection) -> dict:
@@ -1017,7 +1037,7 @@ def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
 def _verify_receipt_row(
     connection,
     item: AllowedMigration,
-    ordinal: int,
+    ordinal: int | None,
     *,
     service_id: str,
     outcome: str,
@@ -1045,7 +1065,8 @@ def _verify_receipt_row(
     if (
         row[1] != item.migration_id
         or row[2] != item.filename
-        or row[4] != ordinal
+        or (ordinal is not None and row[4] != ordinal)
+        or not isinstance(row[4], int) or row[4] <= 0
         or row[5] != outcome
         or not HEX_COMMIT.fullmatch(str(row[6] or ""))
         or row[7] != service_id
@@ -1113,6 +1134,74 @@ def _verify_receipt_row(
         "identity_anchored_now": anchored_now,
         "identity_anchor_missing": anchor is None and not create_anchor,
     }
+
+
+def _requested_legacy_adoption(connection, environ, *, commit: str, service_id: str):
+    """Validate the externally authorized, catalog-bound pre-trust shape."""
+    raw = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_JSON", "").strip()
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+        authorization_id = str(uuid.UUID(value["authorization_id"]))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError("migration_legacy_adoption_authorization_invalid") from exc
+    if value.get("expected_commit") != commit or value.get("render_service_id") != service_id:
+        raise RuntimeError("migration_legacy_adoption_runtime_binding_mismatch")
+    manifest, digest = _catalog_snapshot(connection)
+    if value.get("source_catalog_sha256") != digest:
+        raise RuntimeError(f"migration_legacy_adoption_catalog_mismatch:expected={value.get('source_catalog_sha256')}:actual={digest}")
+    guard = connection.execute("""select t.tgenabled,t.tgtype,p.proname,n.nspname
+      from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid=t.tgrelid
+      join pg_catalog.pg_namespace cn on cn.oid=c.relnamespace
+      join pg_catalog.pg_proc p on p.oid=t.tgfoid join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+      where cn.nspname='app_private' and c.relname='production_migration_receipts'
+      and t.tgname='trg_guard_production_migration_receipts' and not t.tgisinternal""").fetchall()
+    if guard != [("O", 27, "guard_production_migration_receipts", "app_private")]:
+        raise RuntimeError("migration_legacy_adoption_receipt_guard_mismatch")
+    expected = value.get("receipts")
+    if not isinstance(expected, list):
+        raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+    authorized_by_id = {}
+    for authorized in expected:
+        if not isinstance(authorized, dict) or not isinstance(authorized.get("identity"), dict):
+            raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+        migration_id = authorized["identity"].get("migration_id")
+        if migration_id in authorized_by_id:
+            raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+        authorized_by_id[migration_id] = authorized
+    if set(authorized_by_id) != set(LEGACY_ADOPTION_RECEIPT_IDS):
+        raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+    rows = connection.execute("""select receipt_id::text,migration_id,migration_filename,migration_sha256,
+      ordinal,outcome,source_commit,render_service_id,render_instance_id,error_class,applied_at
+      from app_private.production_migration_receipts""").fetchall()
+    rows_by_id = {}
+    for row in rows:
+        if row[1] in rows_by_id:
+            raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+        rows_by_id[row[1]] = row
+    if set(rows_by_id) != set(LEGACY_ADOPTION_RECEIPT_IDS):
+        raise RuntimeError("migration_legacy_adoption_receipt_count_mismatch")
+    verified = []
+    for item in ALLOWLIST[:3]:
+        authorized = authorized_by_id[item.migration_id]
+        row = rows_by_id[item.migration_id]
+        actual = {"receipt_id": row[0], "migration_id": row[1], "migration_filename": row[2],
+          "migration_sha256": row[3], "ordinal": row[4], "outcome": row[5], "source_commit": row[6],
+          "render_service_id": row[7], "render_instance_id": row[8], "error_class": row[9],
+          "applied_at": row[10].astimezone(timezone.utc).isoformat(timespec="microseconds")}
+        if (not str(authorized.get("legacy_batch_id") or "").strip()
+                or authorized.get("identity") != actual
+                or (actual["migration_id"], actual["migration_filename"], actual["migration_sha256"], actual["outcome"])
+                   != (item.migration_id, item.filename, item.sha256, "applied")):
+            raise RuntimeError(f"migration_legacy_adoption_receipt_identity_mismatch:{item.migration_id}")
+        verified.append((item, actual["ordinal"], actual["receipt_id"]))
+    fourth = ALLOWLIST[3]
+    _verify_migration_precondition(connection, fourth, already_applied=True)
+    _verify_migration_readback(connection, fourth)
+    return {"baseline_id": authorization_id, "migration_ids": list(LEGACY_ADOPTION_BASELINE_IDS),
+      "migration_checksums": {fourth.migration_id: fourth.sha256}, "source_catalog_sha256": digest,
+      "source_catalog": manifest, "verified_receipts": verified}
 
 
 def _requested_baseline(connection, environ: dict[str, str]) -> dict | None:
@@ -1206,7 +1295,10 @@ def _load_baseline(connection) -> dict | None:
         raise RuntimeError("migration_baseline_missing_or_ambiguous")
     row = rows[0]
     ids = tuple(row[1])
-    if not ids or ids != BASELINE_ELIGIBLE_IDS[: len(ids)]:
+    if not ids or (
+        ids != BASELINE_ELIGIBLE_IDS[: len(ids)]
+        and ids != LEGACY_ADOPTION_BASELINE_IDS
+    ):
         raise RuntimeError(f"migration_baseline_stored_prefix_invalid:{ids}")
     expected_checksums = {
         item.migration_id: item.sha256 for item in ALLOWLIST if item.migration_id in ids
@@ -1505,10 +1597,46 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                             )
                         ):
                             raise RuntimeError("migration_baseline_already_initialized")
-                        receipt_guard = _verify_receipt_guard(connection)
-                        report["prior_catalog_checkpoint"] = _verify_catalog_checkpoint(
-                            connection
-                        )
+                        _verify_private_schema(connection, required=True)
+                        trust_table_flags = [
+                            connection.execute("select pg_catalog.to_regclass(%s) is not null", (name,)).fetchone()[0]
+                            for name in (
+                                "app_private.production_migration_receipt_identity_anchors",
+                                "app_private.production_migration_baselines",
+                                "app_private.production_migration_catalog_checkpoints",
+                            )]
+                        trust_tables_exist = all(trust_table_flags)
+                        if any(trust_table_flags) and not trust_tables_exist:
+                            raise RuntimeError("migration_trust_tables_partial_state")
+                        if trust_tables_exist:
+                            if runtime_env.get("RENDER_MIGRATION_LEGACY_ADOPTION_JSON", "").strip():
+                                raise RuntimeError("migration_legacy_adoption_already_initialized")
+                            receipt_guard = _verify_receipt_guard(connection)
+                            report["prior_catalog_checkpoint"] = _verify_catalog_checkpoint(connection)
+                        else:
+                            adoption = _requested_legacy_adoption(
+                                connection, runtime_env, commit=commit, service_id=service_id
+                            )
+                            if adoption is None:
+                                raise RuntimeError("migration_legacy_adoption_authorization_required")
+                            connection.execute(BOOTSTRAP_SQL)
+                            receipt_guard = _verify_receipt_guard(connection)
+                            for item, legacy_ordinal, receipt_id in adoption.pop("verified_receipts"):
+                                receipt = _verify_receipt_row(
+                                    connection, item, legacy_ordinal, service_id=service_id,
+                                    outcome="applied", receipt_id=receipt_id,
+                                )
+                                if not receipt["identity_anchored_now"]:
+                                    raise RuntimeError("migration_legacy_adoption_anchor_not_created")
+                            _insert_baseline(
+                                connection, adoption, commit=commit,
+                                service_id=service_id, instance_id=instance_id,
+                            )
+                            report["legacy_adoption"] = {
+                                "authorization_id": adoption["baseline_id"],
+                                "source_catalog_sha256": adoption["source_catalog_sha256"],
+                                "receipt_count": len(LEGACY_ADOPTION_RECEIPT_IDS),
+                            }
                     else:
                         _verify_private_schema(connection, required=False)
                         requested_baseline = _requested_baseline(connection, runtime_env)
@@ -1563,7 +1691,7 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                             prior = _verify_receipt_row(
                                 connection,
                                 item,
-                                ordinal,
+                                None,
                                 service_id=service_id,
                                 outcome="applied",
                                 create_anchor=False,
