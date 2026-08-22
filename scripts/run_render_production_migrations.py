@@ -312,7 +312,7 @@ def _catalog_manifest(connection) -> dict:
         return [list(row) for row in connection.execute(sql, params).fetchall()]
 
     manifest = {
-        "version": "render_migration_catalog_manifest_v2",
+        "version": "render_migration_catalog_manifest_v3",
         "scope": {
             "relations": relations,
             "functions": functions,
@@ -336,7 +336,8 @@ def _catalog_manifest(connection) -> dict:
             """select n.nspname,c.relname,c.relkind,
                       pg_catalog.pg_get_userbyid(c.relowner),c.relpersistence,
                       c.relrowsecurity,c.relforcerowsecurity,c.relreplident,
-                      c.relhasrules
+                      c.relhasrules,
+                      coalesce(array_to_string(c.reloptions,E'\n'),'')
                  from pg_catalog.pg_class c
                  join pg_catalog.pg_namespace n on n.oid=c.relnamespace
                 where (n.nspname||'.'||c.relname)=any(%s)
@@ -433,8 +434,21 @@ def _catalog_manifest(connection) -> dict:
                  join pg_catalog.pg_class c on c.oid=r.ev_class
                  join pg_catalog.pg_namespace n on n.oid=c.relnamespace
                 where (n.nspname||'.'||c.relname)=any(%s)
-                  and r.rulename<>'_RETURN'
                 order by 1,2,3""",
+            (relations,),
+        ),
+        "views": rows(
+            """select n.nspname,c.relname,c.relkind,
+                      pg_catalog.regexp_replace(
+                        pg_catalog.pg_get_viewdef(c.oid,false),
+                        '[[:space:]]+',' ','g'
+                      ),
+                      coalesce(array_to_string(c.reloptions,E'\n'),'')
+                 from pg_catalog.pg_class c
+                 join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+                where (n.nspname||'.'||c.relname)=any(%s)
+                  and c.relkind in ('v','m')
+                order by 1,2""",
             (relations,),
         ),
         "functions": rows(
