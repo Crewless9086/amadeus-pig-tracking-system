@@ -59,9 +59,22 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
                             "automatic_retry_allowed": False}, 503)
     outcome_status = str(outcome.get("status") or "")
     provider = outcome.get("facebook_result") if isinstance(outcome.get("facebook_result"), dict) else {}
-    provider_confirmed = (outcome.get("success") is True and (
-        outcome.get("provider_readback_confirmed") is True
-        or provider.get("provider_readback_confirmed") is True))
+    provider_readback = (provider.get("provider_readback")
+        if isinstance(provider.get("provider_readback"), dict) else {})
+    provider_post_id = str(provider_readback.get("id") or "").strip()
+    outcome_post_id = str(outcome.get("facebook_post_id") or "").strip()
+    # The canonical executor returns provider proof inside facebook_result, and
+    # the attribution resolver binds that same nested proof.  Do not confirm a
+    # consumer from a legacy top-level flag or from a contradictory/missing
+    # provider identity: either would create a status that canonical SAM
+    # attribution cannot independently resolve.
+    provider_confirmed = (
+        outcome.get("success") is True
+        and provider.get("provider_readback_confirmed") is True
+        and provider_readback.get("success") is True
+        and bool(outcome_post_id)
+        and provider_post_id == outcome_post_id
+    )
     if outcome.get("success") is True and not provider_confirmed:
         outcome = {**outcome, "success": False,
             "status": "meta_provider_readback_unproven_ambiguous", "outcome": "ambiguous",

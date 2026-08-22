@@ -44,6 +44,12 @@ class Store:
     def finish(self, consumer, status, outcome, now): self.finished.append((status,outcome)); return True
 
 
+def confirmed_outcome(post_id="42_7"):
+    return {"success":True,"status":"facebook_page_post_sent","facebook_post_id":post_id,
+        "facebook_result":{"success":True,"provider_readback_confirmed":True,
+            "provider_readback":{"success":True,"id":post_id}}}
+
+
 def test_english_afrikaans_and_mixed_story_copy_are_eligible():
     for text in ("Molly and her piglets are enjoying the cool morning.",
                  "Molly en haar varkies geniet die koel oggend.",
@@ -89,8 +95,7 @@ def test_success_publishes_once_and_concurrent_or_restarted_cycle_is_silent():
     store=Store(approval()); calls=[]
     def execute(payload, **kwargs):
         calls.append(payload)
-        return {"success":True,"status":"facebook_page_post_sent","facebook_post_id":"42_7",
-                "provider_readback_confirmed":True},200
+        return confirmed_outcome(),200
     first=run_protected_publication_cycle(store=store, executor=execute, now=NOW)
     second=run_protected_publication_cycle(store=store, executor=execute, now=NOW)
     assert first["consumer_status"] == "confirmed" and second["status"] == "beacon_publication_cycle_silent"
@@ -108,8 +113,7 @@ def test_text_only_publishes_once_without_media_or_spend_authority():
     item["evidence_generation"]=item["preview_payload"]["campaign_digest"]
     calls=[]
     result=run_protected_publication_cycle(store=Store(item), executor=lambda payload,**kwargs: (
-        calls.append(payload) or {"success":True,"status":"facebook_page_post_sent",
-        "facebook_post_id":"PAGE-1_7","provider_readback_confirmed":True},200), now=NOW)
+        calls.append(payload) or confirmed_outcome("PAGE-1_7"),200), now=NOW)
     assert result["consumer_status"]=="confirmed" and len(calls)==1
     assert calls[0]["selected_assets"] == [] and calls[0]["asset_id"] == ""
     assert calls[0]["zero_spend"] is True and calls[0]["target_page_id"] == "PAGE-1"
@@ -139,8 +143,7 @@ def test_supported_enquiry_post_preserves_exact_lane_sam_identity_and_zero_spend
     item["evidence_generation"]=item["preview_payload"]["campaign_digest"]
     calls=[]
     result=run_protected_publication_cycle(store=Store(item), executor=lambda payload,**kwargs: (
-        calls.append(payload) or {"success":True,"status":"facebook_page_post_sent",
-        "facebook_post_id":"PAGE-1_8","provider_readback_confirmed":True},200), now=NOW)
+        calls.append(payload) or confirmed_outcome("PAGE-1_8"),200), now=NOW)
     assert result["consumer_status"] == "confirmed" and len(calls) == 1
     assert calls[0]["campaign_lane"] == "live_stock_enquiry_capture"
     assert calls[0]["objective"] == "qualified_livestock_enquiries"
@@ -161,8 +164,7 @@ def test_concurrent_workers_atomically_publish_once():
     store=ConcurrentStore(approval()); calls=[]; results=[]; call_lock=Lock()
     def execute(payload, **kwargs):
         with call_lock: calls.append(payload)
-        return {"success":True,"status":"facebook_page_post_sent","facebook_post_id":"42_7",
-                "provider_readback_confirmed":True},200
+        return confirmed_outcome(),200
     workers=[Thread(target=lambda: results.append(run_protected_publication_cycle(
         store=store, executor=execute, now=NOW))) for _ in range(8)]
     for worker in workers: worker.start()
@@ -199,9 +201,27 @@ def test_success_without_provider_readback_is_contained_ambiguous():
 def test_real_executor_nested_readback_shape_is_confirmed():
     store=Store(approval())
     result=run_protected_publication_cycle(store=store, executor=lambda *a,**k: (
-        {"success":True,"status":"facebook_page_post_sent","facebook_post_id":"PAGE-1_7",
-         "facebook_result":{"success":True,"provider_readback_confirmed":True}},200), now=NOW)
+        confirmed_outcome("PAGE-1_7"),200), now=NOW)
     assert result["consumer_status"] == "confirmed"
+
+
+def test_legacy_or_contradictory_confirmation_cannot_bypass_nested_provider_identity():
+    outcomes = [
+        {"success":True,"status":"facebook_page_post_sent","facebook_post_id":"PAGE-1_7",
+         "provider_readback_confirmed":True},
+        {"success":True,"status":"facebook_page_post_sent","facebook_post_id":"PAGE-1_7",
+         "provider_readback_confirmed":True,"facebook_result":{"success":True,
+             "provider_readback_confirmed":False,"provider_readback":{"success":True,
+                 "id":"PAGE-1_7"}}},
+        {"success":True,"status":"facebook_page_post_sent","facebook_post_id":"PAGE-1_7",
+         "facebook_result":{"success":True,"provider_readback_confirmed":True,
+             "provider_readback":{"success":True,"id":"PAGE-1_OTHER"}}},
+    ]
+    for outcome in outcomes:
+        result=run_protected_publication_cycle(store=Store(approval()),
+            executor=lambda *a,_outcome=outcome,**k: (_outcome,200), now=NOW)
+        assert result["consumer_status"] == "contained_ambiguous"
+        assert result["status"] == "meta_provider_readback_unproven_ambiguous"
 
 
 def test_nonzero_budget_or_duration_is_rejected_before_executor():
