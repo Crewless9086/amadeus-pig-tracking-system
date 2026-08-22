@@ -1600,6 +1600,24 @@ COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**. A fresh exact overwrite boundar
 is required to replace only the empty file with the already verified public
 certificate and prove readback before any Green identity or installation work.
 
+Owner then authorized that exact bounded overwrite boundary. Control Tower
+started only the installed official File editor, opened the existing zero-byte
+`/config/private-ca.crt`, entered the already verified public HP certificate and
+saved once. A fresh page reload independently read back the exact PEM bytes. The
+readback certificate matched SHA-1 fingerprint
+`D9A77D87534CF02CF992564E5863371870A4DCF6`, SAN `DNS:AmadeusKantoor`, the
+self-signed HP subject/issuer identity and validity from 15 December 2025 through
+14 December 2030. File editor was then stopped; the resulting control surface
+showed Start available, Stop absent, and all four automatic controls unchecked:
+Start on boot, Watchdog, Auto update and sidebar access. No Green installation,
+start, credential, registry, queue, document, print, database, farm or provider
+action occurred. Lifecycle advances to `TRUST_ANCHOR_PLACED_AND_VERIFIED /
+FILE_EDITOR_STOPPED / GREEN_COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**.
+The trust prerequisite is now cleared, but Green remains unavailable to the
+owner until its separately governed identity registration, immutable 0.3.2
+installation and zero-job commissioning are completed and later physically
+accepted.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
