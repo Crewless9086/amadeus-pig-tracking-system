@@ -52,6 +52,17 @@ def test_farrowing_semantic_family_returns_typed_counts_not_numeric_animals(lang
     assert result.farrowing_litter["total_born"] == 9
 
 
+def test_farrowing_correction_contract_preserves_target_and_reason():
+    value = _semantic("herd_management", "record_farrowing_litter", message_kind="correction",
+        farrowing_litter={"sow_ref": "Linda", "farrowing_date": "2026-08-22",
+            "total_born": 9, "born_alive": 8, "stillborn": 0, "mummified": 1,
+            "died_after_live_birth": 0, "mating_ref": None, "father_ref": None,
+            "correction_of_litter_id": "LIT-OLD", "correction_reason": "Corrected birth counts"})
+    result = parse_semantic_response(_response(value))
+    assert result.farrowing_litter["correction_of_litter_id"] == "LIT-OLD"
+    assert result.farrowing_litter["correction_reason"] == "Corrected birth counts"
+
+
 @pytest.mark.parametrize("text,language", [
     ("Linda gave birth on 2026-08-22: born 9, 8 alive and 1 mummified. Log the litter.", "en"),
     ("Linda het 2026-08-22 gekraam: 9 gebore, 8 lewendig en 1 gemummifiseer. Teken die werpsel aan.", "af"),

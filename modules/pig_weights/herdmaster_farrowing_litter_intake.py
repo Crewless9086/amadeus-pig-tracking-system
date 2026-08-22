@@ -60,7 +60,8 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
                          existing_litter_ids=sorted(_text(row.get("litter_id")) for row in existing))
 
     mating = _mating_result(sow["pig_id"], farrowing_date,
-                            canonical.get("matings") or [], facts)
+                            canonical.get("matings") or [],
+                            canonical.get("animals") or [], facts)
     if mating["state"] == "multiple_candidates":
         return _hold("mating_clarification_required", sow=sow, counts=counts,
                      mating=mating,
@@ -75,6 +76,8 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
         "farrowing_date": farrowing_date.isoformat(),
         "counts": counts,
         "mating": mating,
+        "requested_mating_ref": _text(facts.get("mating_ref")) or None,
+        "requested_father_ref": _text(facts.get("father_ref")) or None,
         "correction_of_litter_id": correction_of or None,
         "correction_reason": correction_reason or None,
     }
@@ -137,8 +140,17 @@ def _counts(facts):
     return values
 
 
-def _mating_result(sow_id, farrowing_date, rows, facts):
+def _mating_result(sow_id, farrowing_date, rows, animals, facts):
     explicit_mating, explicit_father = _text(facts.get("mating_ref")), _text(facts.get("father_ref"))
+    resolved_father = None
+    if explicit_father:
+        father = _resolve_one(explicit_father, animals)
+        eligible = (father.get("state") == "resolved"
+                    and father.get("status", "").casefold() == "active"
+                    and father.get("on_farm") is True
+                    and father.get("sex", "").casefold() in {"male", "boar"})
+        if eligible:
+            resolved_father = father["pig_id"]
     candidates = []
     conflicts = []
     for raw in rows:
@@ -157,8 +169,8 @@ def _mating_result(sow_id, farrowing_date, rows, facts):
         if not compatible:
             continue
         boar = _text(row.get("boar_pig_id")) or None
-        if explicit_father and boar and explicit_father.casefold() not in {
-                boar.casefold(), _text(row.get("boar_tag_number")).casefold()}:
+        if explicit_father and (not resolved_father or not boar
+                                or resolved_father.casefold() != boar.casefold()):
             conflicts.append(mating_id)
             continue
         if explicit_mating and explicit_mating.casefold() != mating_id.casefold():

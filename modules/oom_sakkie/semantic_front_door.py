@@ -215,7 +215,8 @@ def _payload(parsed, context, source):
         "prior_mating_known, father_known, and factual_note. Never infer a service, "
         "conception, pregnancy, father, mating date, animal identity, or omitted group member."
         " For a natural request to record a real farrowing/litter, use herd_management with stable intent record_farrowing_litter and return farrowing_litter. "
-        "Allowed farrowing_litter keys are sow_ref,farrowing_date,total_born,born_alive,stillborn,mummified,died_after_live_birth,mating_ref,father_ref. "
+        "Allowed farrowing_litter keys are sow_ref,farrowing_date,total_born,born_alive,stillborn,mummified,died_after_live_birth,mating_ref,father_ref,correction_of_litter_id,correction_reason. "
+        "Use correction_of_litter_id and correction_reason only when the owner explicitly corrects an existing litter; preserve both exactly. "
         "Separate dates and outcome counts from animal identity. Preserve omitted mating_ref and father_ref as null; never invent them. "
         "Use integer counts only when explicitly supplied and keep born_alive distinct from alive_now: died_after_live_birth is a subset of born_alive, not another birth outcome."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
@@ -333,7 +334,7 @@ def _farrowing_litter(value):
         return None
     allowed = {"sow_ref", "farrowing_date", "total_born", "born_alive",
                "stillborn", "mummified", "died_after_live_birth",
-               "mating_ref", "father_ref"}
+               "mating_ref", "father_ref", "correction_of_litter_id", "correction_reason"}
     if set(value) - allowed:
         return None
     sow_ref = str(value.get("sow_ref") or "").strip()[:80]
@@ -343,6 +344,10 @@ def _farrowing_litter(value):
     for key in ("farrowing_date", "mating_ref", "father_ref"):
         raw = value.get(key)
         result[key] = str(raw).strip()[:80] if raw not in (None, "") else None
+    raw = value.get("correction_of_litter_id")
+    result["correction_of_litter_id"] = str(raw).strip()[:80] if raw not in (None, "") else None
+    raw = value.get("correction_reason")
+    result["correction_reason"] = str(raw).strip()[:500] if raw not in (None, "") else None
     for key in ("total_born", "born_alive", "stillborn", "mummified",
                 "died_after_live_birth"):
         raw = value.get(key)

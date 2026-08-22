@@ -68,7 +68,10 @@ def execute_claimed_farrowing_litter(claimed, parsed, *, connect_factory=None):
               "provider_message_id": str(preview.get("provider_message_id") or ""),
               "farrowing_litter": {"sow_ref": preview.get("sow_pig_id"),
                   "farrowing_date": preview.get("farrowing_date"), **dict(preview.get("counts") or {}),
-                  "mating_ref": preview.get("mating_id"), "father_ref": preview.get("father_pig_id")}}
+                  "mating_ref": preview.get("requested_mating_ref"),
+                  "father_ref": preview.get("requested_father_ref"),
+                  "correction_of_litter_id": preview.get("correction_of_litter_id"),
+                  "correction_reason": preview.get("correction_reason")}}
     refreshed = prepare_farrowing_litter_preview(report, fresh)
     if (refreshed.get("success") is not True
             or canonical_preview_digest(ACTION_KIND, refreshed.get("preview") or {}) != claimed.get("preview_digest")):
