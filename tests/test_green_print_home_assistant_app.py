@@ -133,6 +133,8 @@ def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
     assert "deny /usr/sbin/lpadmin x" in policy and "/etc/cups/** rwk" not in policy and "/tmp/** rwk" not in policy
     assert "/tmp/green-spool/** rwk" in policy and "/data/** rwk" in policy
+    assert "/etc/cups/ssl/site.crt rw," in policy and "/etc/hosts rw," in policy
+    assert "/etc/cups/** w" not in policy
 
 def test_contract_and_authorization_fail_closed(tmp_path):
     cfg=config(tmp_path); S.validate(envelope(),cfg,NOW)
