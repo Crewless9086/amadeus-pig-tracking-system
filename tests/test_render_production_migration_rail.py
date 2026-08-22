@@ -114,6 +114,11 @@ def _reset_disposable_database(*, unexpected_litter_reason=False):
         _install_litter_function(
             db, "202607300001_create_litter_supersession_rail.sql"
         )
+        db.execute(
+            "create trigger validate_litter_supersession_insert "
+            "before insert on public.litter_supersessions for each row "
+            "execute function public.validate_litter_supersession()"
+        )
 
 
 class RenderProductionMigrationRailTests(unittest.TestCase):
@@ -242,6 +247,15 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                          second["migrations"][0]["receipt_id"])
         self.assertTrue(all(row["outcome"] == "applied" for row in first["migrations"]))
         self.assertTrue(all(row["outcome"] == "already_applied" for row in second["migrations"]))
+        for ordinal, (applied, replayed, allowed) in enumerate(
+            zip(first["migrations"], second["migrations"], ALLOWLIST), 1
+        ):
+            self.assertEqual(applied["receipt_identity"], replayed["receipt_identity"])
+            self.assertEqual(applied["receipt_identity"]["migration_filename"], allowed.filename)
+            self.assertEqual(applied["receipt_identity"]["ordinal"], ordinal)
+            self.assertEqual(applied["receipt_identity"]["render_service_id"], ENV["RENDER_SERVICE_ID"])
+            self.assertTrue(applied["receipt_identity"]["render_instance_id"])
+            self.assertEqual(applied["receipt_guard"], replayed["receipt_guard"])
         self.assertEqual(
             first["migrations"][-2]["readback"]["reason_values"],
             list(EXPECTED_LITTER_SUPERSESSION_REASONS),
@@ -249,6 +263,20 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(
             first["migrations"][-1]["readback"]["action_kinds"],
             list(EXPECTED_PROTECTED_ACTION_KINDS),
+        )
+        self.assertEqual(
+            first["migrations"][-2]["readback"]["validator_trigger"]["enabled"],
+            "O",
+        )
+        self.assertEqual(
+            first["migrations"][-1]["readback"]["protected_claim_acl"],
+            {"unauthorized_privilege_count": 0},
+        )
+        self.assertTrue(
+            first["migrations"][-2]["readback"]["migration_log_description_sha256"]
+        )
+        self.assertTrue(
+            first["migrations"][-1]["readback"]["migration_log_description_sha256"]
         )
         self.assertEqual(
             second["migrations"][-2]["readback"],
@@ -474,6 +502,147 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                         ),
                     )
                     db.commit()
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_disposable_postgres_g_rejects_missing_disabled_or_wrong_validator_trigger(self):
+        import psycopg
+
+        attacks = ("missing", "disabled", "wrong_function")
+        for attack in attacks:
+            with self.subTest(attack=attack):
+                _reset_disposable_database()
+                run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    if attack == "missing":
+                        db.execute(
+                            "drop trigger validate_litter_supersession_insert "
+                            "on public.litter_supersessions"
+                        )
+                    elif attack == "disabled":
+                        db.execute(
+                            "alter table public.litter_supersessions disable trigger "
+                            "validate_litter_supersession_insert"
+                        )
+                    else:
+                        db.execute(
+                            "create or replace function public.wrong_litter_validator() "
+                            "returns trigger language plpgsql as $$begin return new; end$$; "
+                            "drop trigger validate_litter_supersession_insert "
+                            "on public.litter_supersessions; "
+                            "create trigger validate_litter_supersession_insert "
+                            "before insert on public.litter_supersessions for each row "
+                            "execute function public.wrong_litter_validator()"
+                        )
+                    db.commit()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "migration_readback_litter_validator_trigger_",
+                ):
+                    run(DATABASE_URL, ENV)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_disposable_postgres_h_rejects_each_applied_receipt_identity_drift(self):
+        import psycopg
+
+        attacks = {
+            "filename": "migration_filename='wrong.sql'",
+            "ordinal": "ordinal=999",
+            "service": "render_service_id='srv-wrong'",
+            "instance": "render_instance_id=''",
+            "checksum": "migration_sha256='" + ("0" * 64) + "'",
+        }
+        migration_id = "202608220002_allow_herdmaster_farrowing_protected_claims"
+        for field, assignment in attacks.items():
+            with self.subTest(field=field):
+                _reset_disposable_database()
+                run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    db.execute(
+                        "alter table app_private.production_migration_receipts "
+                        "disable trigger trg_guard_production_migration_receipts"
+                    )
+                    db.execute(
+                        "update app_private.production_migration_receipts set "
+                        + assignment
+                        + " where migration_id=%s and outcome='applied'",
+                        (migration_id,),
+                    )
+                    db.execute(
+                        "alter table app_private.production_migration_receipts "
+                        "enable trigger trg_guard_production_migration_receipts"
+                    )
+                    db.commit()
+                expected = (
+                    "applied_migration_checksum_conflict"
+                    if field == "checksum"
+                    else "migration_receipt_identity_mismatch"
+                )
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    run(DATABASE_URL, ENV)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_disposable_postgres_i_rejects_receipt_guard_drift_before_bootstrap(self):
+        import psycopg
+
+        for attack in ("missing", "disabled", "wrong_function"):
+            with self.subTest(attack=attack):
+                _reset_disposable_database()
+                run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    if attack == "missing":
+                        db.execute(
+                            "drop trigger trg_guard_production_migration_receipts "
+                            "on app_private.production_migration_receipts"
+                        )
+                    elif attack == "disabled":
+                        db.execute(
+                            "alter table app_private.production_migration_receipts "
+                            "disable trigger trg_guard_production_migration_receipts"
+                        )
+                    else:
+                        db.execute(
+                            "alter table app_private.production_migration_receipts "
+                            "disable trigger trg_guard_production_migration_receipts; "
+                            "create or replace function app_private.guard_production_migration_receipts() "
+                            "returns trigger language plpgsql as $$begin return old; end$$; "
+                            "alter table app_private.production_migration_receipts "
+                            "enable trigger trg_guard_production_migration_receipts"
+                        )
+                    db.commit()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "migration_receipt_guard_",
+                ):
+                    run(DATABASE_URL, ENV)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_disposable_postgres_j_rejects_protected_claim_acl_drift(self):
+        import psycopg
+
+        for role in ("public", "anon", "authenticated", "anon_inherited"):
+            with self.subTest(role=role):
+                _reset_disposable_database()
+                run(DATABASE_URL, ENV)
+                with psycopg.connect(DATABASE_URL) as db:
+                    if role == "anon_inherited":
+                        db.execute(
+                            "do $$ begin create role unauthorized_claim_reader; "
+                            "exception when duplicate_object then null; end $$; "
+                            "grant unauthorized_claim_reader to anon; "
+                            "grant select on app_private.oom_protected_action_claims "
+                            "to unauthorized_claim_reader"
+                        )
+                    else:
+                        db.execute(
+                            "grant select,insert,update,delete on "
+                            f"app_private.oom_protected_action_claims to {role}"
+                        )
+                    db.commit()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "migration_readback_protected_claim_acl_mismatch",
+                ):
+                    run(DATABASE_URL, ENV)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_disposable_postgres_c_runner_failure_rolls_back_partial_schema(self):
