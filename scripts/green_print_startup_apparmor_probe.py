@@ -169,9 +169,24 @@ def main() -> int:
                 raise RuntimeError("event_waiting health not reached\n" + failure_diagnostics(container))
             if health.get("terminal_participated") is not False or health.get("authority_mode") != "fixed_weekly_sheet_only":
                 raise RuntimeError(f"unexpected health contract: {health}")
+            scheduler = run("docker", "exec", container, "/usr/bin/lpstat", "-r", check=False)
+            destination = run(
+                "docker", "exec", container, "/usr/bin/lpstat", "-v", "weekly-a4",
+                check=False,
+            )
+            if scheduler.returncode != 0 or destination.returncode != 0:
+                raise RuntimeError(
+                    "CUPS scheduler or destination unavailable\n"
+                    f"scheduler: rc={scheduler.returncode} stdout={scheduler.stdout!r} stderr={scheduler.stderr!r}\n"
+                    f"destination: rc={destination.returncode} stdout={destination.stdout!r} stderr={destination.stderr!r}\n"
+                    + failure_diagnostics(container)
+                )
             queue = run("docker", "exec", container, "/usr/bin/lpstat", "-W", "all", "-o", "weekly-a4", check=False)
             if queue.returncode != 0 or queue.stdout.strip():
-                raise RuntimeError(f"queue was not empty: rc={queue.returncode} output={queue.stdout!r}")
+                raise RuntimeError(
+                    f"queue was not empty: rc={queue.returncode} stdout={queue.stdout!r} stderr={queue.stderr!r}\n"
+                    + failure_diagnostics(container)
+                )
             required_paths = {"/api/documents/print-jobs/commands/claim", "/api/documents/print-jobs/claims"}
             if not required_paths.issubset(set(EmptyCanonicalHandler.seen)):
                 raise RuntimeError(f"canonical zero-job cycle incomplete: {EmptyCanonicalHandler.seen}")
