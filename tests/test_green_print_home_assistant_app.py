@@ -19,17 +19,18 @@ def test_package_is_bounded_and_privilege_split():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); run=(APP/"rootfs/run.sh").read_text(encoding="utf-8")
     assert cfg["arch"]==["aarch64"] and cfg["privileged"]==[] and cfg["host_network"] is False
     assert "adduser -S -D -H" in docker and "/sbin/su-exec greenprint:greenprint" in init
-    assert "/usr/sbin/cupsd -f &" in init and "/sbin/su-exec cupsd" not in init
+    assert "/usr/sbin/cupsd -f -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf &" in init and "/sbin/su-exec cupsd" not in init
     assert "lpadmin" not in init and "exec /sbin/su-exec greenprint" in init
     assert "PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py" in init
     assert init.startswith("#!/bin/sh\nset -eu\numask 0077\n") and run.startswith("#!/bin/sh\nset -eu\numask 0077\n")
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
     assert "chown root:cupsd /etc/cups/cups-files.conf && chmod 0640 /etc/cups/cups-files.conf" in docker
-    for directive in ("User cupsd","Group cupsd","CreateSelfSignedCerts no","Printcap /run/cups/printcap","ErrorLog stderr"):
+    for directive in ("User cupsd","Group cupsd","CreateSelfSignedCerts no","Printcap /run/cups/printcap","ErrorLog stderr","ServerRoot /run/cups"):
         assert directive in docker
-    assert "sed -i -E '/^[[:space:]]*(User|Group|CreateSelfSignedCerts|Printcap|ErrorLog)[[:space:]]+/d'" in docker
-    assert docker.count("grep -Ec '^[[:space:]]*") == 5 and "/usr/sbin/cupsd -t" in docker
+    assert "sed -i -E '/^[[:space:]]*(User|Group|CreateSelfSignedCerts|Printcap|ErrorLog|ServerRoot)[[:space:]]+/d'" in docker
+    assert docker.count("grep -Ec '^[[:space:]]*") == 6 and "/usr/sbin/cupsd -t -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf" in docker
+    assert "ln -s /run/cups/printers.conf /etc/cups/printers.conf" not in docker
     assert "/var/cache/cups" in docker
     assert "CUPS scheduler or fixed destination did not become ready" in init
 
@@ -40,10 +41,12 @@ def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     assert "answers!={pin}" in queue and 'uri.scheme!="ipps"' in queue
     assert "/config/private-ca.crt /etc/cups/ssl/site.crt" in init
     assert "mkdir -p" in docker and "/etc/cups/ssl" in docker and "install -d -o root -g root -m 0755 /etc/cups/ssl" not in init
-    for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption Required","TrustOnFirstUse No","ValidateCerts Yes"):
+    for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption IfRequested","TrustOnFirstUse No","ValidateCerts Yes"):
         assert required in policy
     assert "ServerName /run/cups/cups.sock" in policy
     assert "Listen /run/cups/cups.sock" in cupsd and "Listen localhost:631" not in cupsd
+    assert "ServerRoot /run/cups" in cupsd and "ServerRoot /etc/cups" not in cupsd
+    assert "DeviceURI {uri.geturl()}" in queue and "printer_transport_profile" in queue
 
 def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
     calls=[]

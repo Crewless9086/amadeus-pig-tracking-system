@@ -12,7 +12,7 @@ install -o root -g root -m 0644 /config/private-ca.crt /etc/cups/ssl/site.crt
 queue="$(PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py /data/options.json /run/cups/printers.conf)"
 chown cupsd:cupsd /run/cups/printers.conf
 chmod 0600 /run/cups/printers.conf
-/usr/sbin/cupsd -f &
+/usr/sbin/cupsd -f -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf &
 cupsd_pid=$!
 cups_ready=false
 attempt=0

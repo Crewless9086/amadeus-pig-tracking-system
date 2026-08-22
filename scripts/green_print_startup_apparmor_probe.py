@@ -202,13 +202,16 @@ def main() -> int:
                 " && grep -Fx 'CreateSelfSignedCerts no' /etc/cups/cups-files.conf"
                 " && grep -Fx 'Printcap /run/cups/printcap' /etc/cups/cups-files.conf"
                 " && grep -Fx 'ErrorLog stderr' /etc/cups/cups-files.conf"
+                " && grep -Fx 'ServerRoot /run/cups' /etc/cups/cups-files.conf"
                 " && test \"$(grep -Ec '^[[:space:]]*User[[:space:]]+' /etc/cups/cups-files.conf)\" -eq 1"
                 " && test \"$(grep -Ec '^[[:space:]]*Group[[:space:]]+' /etc/cups/cups-files.conf)\" -eq 1"
                 " && cups_pid=$(/bin/busybox pidof cupsd)"
                 " && test -n \"${cups_pid}\""
                 " && grep -Eq '^Uid:[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]+0$' /proc/${cups_pid}/status"
                 " && test -S /run/cups/cups.sock"
+                " && test -f /run/cups/printers.conf"
                 " && test ! -e /etc/printcap"
+                " && test ! -e /etc/cups/printers.conf"
                 " && test ! -e /etc/cups/ssl/*.key",
                 check=False,
             )
