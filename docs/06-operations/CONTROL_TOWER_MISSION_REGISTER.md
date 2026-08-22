@@ -1760,3 +1760,351 @@ runner artifacts are stale and `supervisor.stop` is present, so no CORE pickup,
 background work or release-lane ownership is claimed. The serialized production
 release lane is free of a proven active mutation owner but is not acquired by
 either source terminal.
+
+## 2026-08-22 19:13 SAST - Green release, HERDMASTER database rail and BEACON generation reconciliation
+
+This append-only reconciliation uses authoritative current main
+`2722faee539c6789ee59778f914a80c141b897e5`. It records material transitions in
+the already selected Green, HERDMASTER/Oom Sakkie and BEACON/SAM missions. It
+does not create, reprioritize or broaden a mission, and it grants no deployment,
+database, provider, customer, farm, printer or hardware authority.
+
+### Green 0.3.3 immutable package and commissioning boundary
+
+Green startup/AppArmor repair PR #1169 passed its exact-head hosted gates and
+different-agent review, then merged as
+`704d94b39036d5999afb707ab26ee9d1338e647b`. The reviewed publication workflow
+built and published version 0.3.3 once from that exact source revision as
+`ghcr.io/crewless9086/amadeus-green-print-bridge@sha256:12005dcb883abd7e4dad893b82491fc2b661cf1a4daa9617d1e466cb0531a389`.
+The first post-publication verification stopped safely when Sigstore's TUF
+trusted-root service reset its connection. The immutable tag and digest were
+not rebuilt or replaced.
+
+Verify-only recovery PR #1173 merged as current main
+`2722faee539c6789ee59778f914a80c141b897e5`. Manual workflow-dispatch run
+`32586142132` then completed successfully with `publish=false`. Its recovery job
+bound current main to source revision `704d94b39036d5999afb707ab26ee9d1338e647b`,
+version 0.3.3 and the exact existing digest; read back the tag at the same
+digest; proved a single `linux/arm64` image; verified the keyless Cosign
+signature and digest-bound SLSA provenance and SPDX 2.3 SBOM attestations; and
+preserved six non-secret packet files as artifact `9479090859`, archive SHA-256
+`e01e8f7372125b3f20d50bf4bf3b1fd1688aceae9963ce2a6ba6e03436fe6d3e`.
+The receipt identities are Cosign verification
+`021ad1a1ed632db2ebad5f0d3d7ed025abb75a12a71d9b78e63e434147fb8b32`,
+provenance verification
+`403bce9fadf5e1b30210d448a5bf9127cf66aaa1293958a62146e57c498148ea`
+and SBOM-attestation verification
+`f24e0aa4a3d3c65cf51e0750a30e7de85161040febe998da8dcd1f5d2d5de38d`.
+
+This is verified immutable release evidence, not an owner outcome. Fresh Home
+Assistant evidence supplied to Control Tower still shows installed Green 0.3.2
+stopped, its saved exact configuration and identities preserved, version 0.3.3
+available, and zero canonical jobs, CUPS jobs, documents or physical prints.
+Start on boot, Watchdog and Auto update remain OFF. Lifecycle is
+`OWNER_HOLD / IMMUTABLE_0.3.3_VERIFIED / INSTALLATION_AND_ZERO_JOB_COMMISSIONING_PENDING`;
+**NO BUSINESS OUTCOME**. The one action-time boundary is approval to click the
+exact 0.3.3 update and, only after saved configuration and empty-queue readback,
+perform one start/health/heartbeat/zero-effect/stop cycle. Stop on any version,
+digest, identity, configuration, queue or effect mismatch. No document, print
+job or physical print is part of this commissioning window.
+
+Automatic continuation trigger: exact owner approval of that bounded update
+and zero-job cycle. Control Tower then owns the browser operation, verification,
+safe stop and register readback without another routine approval. A later
+genuine Oom Sakkie print request, exactly one physical page, follow-up and a
+terminal-independent later cycle remain distinct acceptance gates and are not
+claimed here.
+
+### HERDMASTER/Oom Sakkie PR #1167 database-release repair
+
+The existing farrowing database-authority lineage remains one
+`CURRENT_BLOCKER`; no parallel migration system or mission exists. Independent
+disposable-PostgreSQL reviews repeatedly rejected earlier CI-green heads for
+fail-open schema, receipt, ownership, ACL, privilege, trigger, rewrite-rule,
+time-zone and governed-view integrity gaps. Those failures remain preserved as
+evidence and are not overwritten by the latest technical pass.
+
+Exact current head `ad343583569bd6e37eec68372904ef22bed57e95` is clean and
+mergeable against current main, with all four hosted exact-head gates passing.
+Its bounded repair advances the deterministic catalog manifest to include the
+complete governed `pg_rewrite` inventory including `_RETURN`, normalized rule
+and view definitions, relation kind/options and `relhasrules`; the production-
+shaped same-column `WHERE false` governed-view replacement and prior
+`INSERT DO INSTEAD NOTHING` attack now reject before any receipt or migration
+mutation in disposable PostgreSQL. This exact head remains under a fresh
+different-agent independent review. Lifecycle is
+`REVIEW_HOLD / DATABASE_RELEASE_REPAIR_EXACT_HEAD_CI_GREEN / PRODUCTION_UNCHANGED`;
+**NO BUSINESS OUTCOME**. No merge, deployment, production database access,
+migration, protected claim, farrowing record or farm/provider effect occurred.
+
+Automatic continuation trigger: independent exact-head PASS. Control Tower may
+then serialize current-main reconciliation and the already governed release
+decision; production migration execution and canonical readback remain a
+separate protected release stage. Any review finding returns to the same PR
+lineage without owner intervention or another database rail.
+
+### BEACON PR #1174 generation stability and SAM dependency
+
+BEACON/SAM operational acceptance remains the existing revenue outcome: the
+deployed BEACON actor must produce one stable current owner decision, protected
+publication must occur exactly once only under its authority, and genuine
+attributed customer inbound must then reach deployed SAM. No terminal may
+manufacture the post, customer message or SAM acceptance.
+
+Production observation exposed manager-generation churn: unchanged scheduled
+collection and immediate refresh could replace the candidate and defer owner
+delivery. PR #1174 is the single bounded repair lineage. Independent review of
+head `643e9b4728229ccf3cc3f2f454336e3b47ded0a1` correctly failed release because
+the replacement generation identity omitted the non-secret target Facebook Page
+identity and explicit policy identity/version. That could leave an old claim
+unusable without producing the required successor after a genuine Page or
+policy change. No post, customer message, approval, spend or provider mutation
+occurred.
+
+The same lane repaired that finding at exact current head
+`962a61578a6b2191254b3ed8177caf45f4478a81`. GitHub currently reports PR #1174
+clean and all three hosted exact-head checks passing. The head is not merged or
+deployed and still requires different-agent exact-head rereview of unchanged
+refresh, unrelated SAM audit changes, Page/policy successor generation,
+stale-claim retirement, replay/concurrency and executor revalidation. Lifecycle
+is `REVIEW_HOLD / LATEST_REPAIR_CI_GREEN / INDEPENDENT_REREVIEW_PENDING`;
+**NO BUSINESS OUTCOME**.
+
+Automatic continuation trigger: independent exact-head PASS, followed by the
+serialized merge/deploy decision, exact loaded-revision proof and one deployed
+scheduled actor cycle. Only after a current provider-confirmed owner card exists
+may the already governed publication journey advance; SAM remains
+`DEPENDENCY_IDLE / GENUINE_ATTRIBUTED_INBOUND_PENDING`, with customer auto-send
+OFF and no five-customer or later unattended acceptance claimed.
+
+### Fresh collision, worktree and release sweep
+
+- PR #1167 modifies only the migration workflow, production migration runner,
+  farrowing action-kind migration and its database-rail tests. PR #1174 modifies
+  only BEACON request/manager source and BEACON/manager tests. Their source files
+  do not overlap each other or this register-only branch.
+- Green PRs #1169 and #1173 are merged. Their retained worktrees contain only
+  ignored test output; their unique commits are preserved in main and they do
+  not own the release lane.
+- The prior Control Tower register branch head `a60aa85063384aa1debbf197f8cc43d75ffbcfa0`
+  is clean, merged through PR #1172 and an ancestor of current main. This fresh
+  register branch is the only writer to this register in the current
+  reconciliation.
+- Numerous historical worktrees and old open PRs remain preserved as collision
+  or archive evidence. They are not fresh terminal activity and receive no new
+  priority or release authority from this sweep.
+- Process enumeration found Codex, Node, PowerShell and Python processes, but
+  process existence did not establish terminal mission activity. Active claims
+  below rely only on exact current PR/worktree activity and supplied current
+  terminal feedback.
+- No production release-lane mutation owner is active. Green waits at a bounded
+  owner action-time hardware/configuration boundary; PR #1167 and PR #1174 are
+  source-review holds and do not own production.
+
+### Mandatory all-terminal closure sweep
+
+| Visible terminal | Current classification | Fresh evidence, dependency and promotion trigger |
+|---|---|---|
+| CORE | `UNKNOWN - VERIFY` | Local runner/runtime worktrees and processes exist, but no fresh target-bound mission heartbeat or current execution proof was established. Do not infer pickup or autonomy; reassess on a fresh CORE handover or canonical worker heartbeat. |
+| OOM SAKKIE | `ACTIVE - DO NOT INTERRUPT` | Existing PR #1167 current-blocker lineage is at exact head `ad343583` under independent review. Continue the same mission; no duplicate prompt or migration rail. |
+| ROOTLINE | `DEPENDENCY IDLE` | No fresh non-colliding current terminal activity was proved. Strategic WIP remains occupied by Green, #1167 and #1174; reassess immediately when one current track releases or a proven ROOTLINE production incident unblocks an existing outcome. |
+| HERDMASTER | `ACTIVE - DO NOT INTERRUPT` | PR #1167 is the current farrowing database-release blocker and exact-head independent review gate. Its deployed farm outcome remains absent; resume automatically on review result. |
+| SAM | `DEPENDENCY IDLE` | Source is deployed with auto-send OFF; genuine acceptance depends on a deployed BEACON publication producing attributed customer inbound. Promote immediately after provider-confirmed BEACON publication and genuine inbound. |
+| BEACON | `ACTIVE - DO NOT INTERRUPT` | PR #1174 latest repair head `962a615` is clean and CI-green after the preserved Page/policy review FAIL; independent rereview is the next gate. |
+| CODEX UI | `NO SAFE WORK` | The current WIP slots and overlapping historical UI work remain preserved. No current owner-outcome blocker requires a new UI mission before the three selected tracks release. |
+| DOCUMENTS / Green | `DEPENDENCY IDLE` | Source/package release is verified and the terminal is released; commissioning waits only for the exact action-time owner approval recorded above. No development prompt is eligible. |
+
+### Control Tower Check Receipt and handover
+
+```text
+CONTROL TOWER CHECK RECEIPT
+Governance: PASS - CT HEAD/main 2722faee539c6789ee59778f914a80c141b897e5;
+  Standard blob 3002b94713e286c4eb2019419c438cc378c337fa,
+  SHA-256 44e34c69145b83d2cd5b6a5322a6c2c124789fa647e19f19b3e39a7293a5202b,
+  1127 lines; Protocol blob 8fbd0b9c9160164e31a17a2cbfa51ab88792a909,
+  SHA-256 d4eb4b54a660ce39dfc92cb0fa253b0f2e3d7314462984702602d0f4b66a7e0a,
+  319 lines; Programme blob fb44d7f86c47e605c283ed33c28ba2c4267d6edb,
+  SHA-256 721281eeacc33ae11877ce610fe7a76ba06de6b75db4573f64933073fd358309,
+  278 lines; Template blob 1233aee625e45821a685614a33b1eb101c666ffd,
+  SHA-256 6d81bdfd41770f30e7e2e9acea584e747e007fe3ab155d3427fb17599a26111f,
+  266 lines. All are tracked and read completely in this worktree.
+Feedback freshness: mixed - GitHub/CI/worktree evidence refreshed at 2026-08-22
+  19:13 SAST; Home Assistant state is the latest supplied authenticated Control
+  Tower readback and must be revalidated immediately before update.
+Terminal truth: #1167 and #1174 active review lineages; Green development
+  released; other processes are not activity proof.
+Runtime truth: Green stopped/uncommissioned; BEACON/SAM operational outcome
+  pending; HERDMASTER production database unchanged; no autonomy inferred.
+Mission: DMQ-20260816-01 Green - OWNER_HOLD - zero-job commissioning remains;
+  #1167 - REVIEW_HOLD - production-safe database release remains;
+  BMQ-20260813-05 - REVIEW_HOLD - stable card/publication/customer loop remains.
+Strategic WIP: Green CURRENT_BLOCKER; #1167 CURRENT_BLOCKER; #1174 OPERATING_SPINE.
+Owner workload delta: Green manual install/status/queue supervision -> one
+  action-time approval, then Control Tower update/verify/stop; full removal still unproven.
+Release lane: free - no current production mutation owner.
+Collision/worktrees: clear for this documentation PR; dirty/ignored and
+  historical worktrees preserved, not deleted or reused.
+Owner repetition: none; one fresh 0.3.3 action-time approval is the exact need.
+Register: updated in a clean exact-current documentation branch.
+All-terminal sweep: completed in the table above.
+Dispatch: WAIT FOR INPUT for Green commissioning; CONTINUE - SEND NOTHING for
+  active #1167 and #1174 review lineages.
+```
+
+Decision: `WAIT` for Green installation while source-review lanes continue.
+
+Why: the immutable Green package is now fully verified, but the installed device
+remains on stopped 0.3.2 and the owner-visible zero-job commissioning outcome has
+not occurred.
+
+Send to exact terminal: `CONTINUE - SEND NOTHING` for the already-running PR
+#1167 independent review and PR #1174 repair/rereview lineages. No development
+prompt should be relayed. On Green approval, Control Tower resumes the same
+commissioning mission directly; it must not ask Charl to operate the browser.
+
+Expected business result: Green installs the exact verified 0.3.3 package,
+proves healthy zero-job heartbeat and empty canonical/CUPS state, then returns
+stopped with every automatic control OFF and no document or physical print.
+
+ACTION REQUIRED NOW: Approve the exact Home Assistant Green 0.3.3 update and one
+zero-job start/verify/stop cycle; Control Tower will revalidate the digest,
+saved identities, configuration and empty queues immediately before acting and
+will stop on any mismatch.
+
+### 2026-08-22 child `SAFETY_BLOCKED` incident and Control Tower recovery correction
+
+After PR #1167 exact head
+`ad343583569bd6e37eec68372904ef22bed57e95` passed its exact-current hosted
+gates, child `/root/oom_1167_review_ad34` was assigned the already authorized
+bounded defensive review. Exact wall-clock time is `Unknown`; the attributable
+date and sequence are 2026-08-22 SAST after those gates. The non-secret exact
+scope was: review only PR #1167's repository migration runner and the
+workspace-local disposable PostgreSQL service; verify governed-catalog
+completeness and fail-closed zero-mutation behavior under schema drift; perform
+no secret retrieval, external scanning, production access, provider action or
+unrelated-system access.
+
+The child response was withheld by a safety safeguard. Only that child attempt
+is classified `SAFETY_BLOCKED`. PR #1167's owner outcome, priority, current
+head, evidence, authority and independent-review requirement remain unchanged;
+the mission is not Business-complete, globally blocked, reprioritized or
+authorized for merge, deployment or production migration. No secret, credential,
+database connection, external target or exploit payload was recorded in this
+incident entry. No production, provider, customer, farm or external-system
+effect occurred.
+
+Control Tower corrected the reusable development procedure on the existing
+repository-scoped `control-tower-operate` skill lineage. PR #1176 exact head
+`dcd026fbca83ba36dcfb7da3495e37ca04bb40da`, reconciled onto authoritative
+current main `7dbdf172c86e96aaec2bf78006cf4a79f50cab31`, adds the same narrowly bounded
+`SAFETY_BLOCKED` recovery rule: preserve mission authority and safety boundaries,
+record only non-secret workspace-local evidence, do not resend the same prompt,
+remove unrelated sensitive concepts, and resume through a fresh named Amadeus
+repository/disposable-test task. It explicitly prohibits secret retrieval or
+disclosure, authentication bypass, sandbox circumvention, unrestricted scanning,
+unrelated-system access and unauthorized production or external mutation.
+
+Independent governance rereview at that exact head is `PASS`. The only
+candidate change relative to current main remains the reviewed 21-line skill
+addition. It verified that
+the correction preserves mission scope and protected authority, narrows and
+resumes only owner-authorized defensive repository work, retains safeguards,
+and creates no Amadeus runtime agent, queue, scheduler, database, provider
+adapter, product workflow or authority plane. Skill Creator validation, Vault
+alignment, `git diff --check` and all three hosted exact-head gates passed;
+GitHub reports the PR clean. The complete non-secret review handover is preserved
+workspace-locally at
+`control-tower-artifacts/PR-1176/review-dcd026fb/PR1176_DCD026FB_INDEPENDENT_GOVERNANCE_REVIEW_20260822.md`.
+
+Lifecycle is `WORKING / CHILD_ATTEMPT_SAFETY_BLOCKED / RECOVERY_RULE_REVIEWED`;
+**NO BUSINESS OUTCOME**. PR #1176 was subsequently merged as authoritative main
+`8c517580bb03fd2036cfe359c403ebb55c43d5cf`; this is a governed development
+procedure correction, not an Amadeus owner outcome. This correction
+does not consume a new strategic WIP slot and does not change the Green,
+HERDMASTER/Oom Sakkie, BEACON or SAM sequence recorded above. Automatic
+continuation is a fresh narrowed PR #1167 defensive review attempt under the
+same existing authority under the now-merged reviewed recovery rule;
+independent lanes continue without interruption. Owner action for this incident
+is none; the separate Green action-time boundary recorded above remains the only
+current owner blocker.
+
+### 2026-08-22 post-snapshot authoritative-main reconciliation
+
+Authoritative `origin/main` advanced from `2722faee539c6789ee59778f914a80c141b897e5`
+to `7dbdf172c86e96aaec2bf78006cf4a79f50cab31` through the reviewed PR #1174
+BEACON generation-stability merge. This supersedes the earlier open-PR snapshot
+without rewriting its preserved review history. Repository repair is merged;
+exact loaded production revision, a genuine public BEACON post, and customer
+inbound to SAM remain `Unknown` here. Therefore this is technical progress and
+**NO OWNER OUTCOME**: no post, customer message, provider effect, farm effect or
+database effect was performed or proved by this reconciliation.
+
+PR #1175 is reconciled onto that exact current main. PR #1176 exact head
+`dcd026fbca83ba36dcfb7da3495e37ca04bb40da` contains the unchanged reviewed
+recovery rule plus the already reviewed PR #1174 main lineage. No mission was
+reprioritized, duplicated, completed or granted new authority. Green remains
+the current owner-action blocker; PR #1167 continues its existing repair/review
+lifecycle; BEACON still requires deployment and genuine post-to-SAM acceptance
+before any owner outcome claim.
+
+Authoritative main then advanced once more to
+`8c517580bb03fd2036cfe359c403ebb55c43d5cf` through the reviewed PR #1176 merge.
+PR #1175 is reconciled onto that exact current main. The child incident and its
+non-secret scope remain durably recorded; the recovery correction is now active
+development procedure. No deployment, provider, database, farm, customer or
+physical effect follows from that merge, and no mission priority changed.
+
+### 2026-08-22 Green 0.3.3 contained-start superseding current state
+
+This entry supersedes only the earlier Home Assistant current-state snapshot;
+it preserves the publication and preflight history above. The exact immutable
+Green 0.3.3 package was installed on the authenticated Home Assistant Green.
+Pre-start canonical readback proved zero eligible work, claims, events and jobs.
+One bounded zero-job start was attempted. The service returned to stopped before
+commissioning completed; it was not retried. Start on boot, Watchdog and Auto
+update remain OFF. No known document submission, CUPS/canonical job or physical
+print effect occurred. These are contained technical events, not an owner
+outcome, and they do not prove Green operational acceptance.
+
+High-confidence diagnosis is preserved workspace-locally at
+`control-tower-artifacts/GREEN-0.3.3/diagnosis/GREEN_033_STARTUP_FAILURE_DIAGNOSIS_20260822.md`.
+The 0.3.3 initializer appears to require ambient DNS resolution of the
+certificate hostname before it establishes the already commissioned pinned-IP
+hostname binding; the hosted arm64/AppArmor probe pre-seeded that resolution and
+therefore did not exercise the production shape. This is a source/evidence
+diagnosis, not canonical proof of the exact runtime failure. Lower-probability
+fail-fast initializer causes remain bounded Unknowns until the replacement
+package proves the Home Assistant journey.
+
+Green 0.3.3 remains contained and must not be restarted. A 0.3.4 repair on the
+same Green lineage is active: preserve the registered endpoint, certificate,
+credential and fixed queue; verify TLS/SAN against the pinned private IP before
+installing the local binding; add sanitized stage/reason evidence and a
+production-shaped no-preseeded-DNS arm64/AppArmor regression. Publication,
+installation and another zero-job commissioning attempt remain later governed
+stages. The technical repair is the current blocker, so owner action is none.
+
+#### Superseding terminal sweep, handover and Check Receipt
+
+| Lane | Current state | Next controlled transition |
+|---|---|---|
+| Green | `ACTIVE - 0.3.4 SAME-LINEAGE REPAIR`; 0.3.3 installed but stopped and contained; zero known job/document/print effect | Implement, independently review and pass exact-current production-shaped gates before any new immutable publication decision. |
+| Oom Sakkie / PR #1167 | `ACTIVE - REPAIR/REVIEW`; open exact head `01d3890d33f1341bcce5f9551ded858de4fd1833`; no production database effect | Complete exact-head hosted gates and fresh narrowed independent defensive review under the merged recovery rule. |
+| Control Tower / PR #1175 | `ACTIVE - GOVERNANCE RECEIPT`; append-only current-state reconciliation | Pass exact-head gates and independent review; do not merge from this lane. |
+| BEACON / SAM | `ACCEPTANCE PENDING`; source repair merged, but no genuine public post or customer inbound outcome is proved here | Deploy exact reviewed revision and prove genuine post-to-SAM provider/customer acceptance through its existing lane. |
+| HERDMASTER / remaining queued lanes | `PRESERVED / NOT REPRIORITIZED`; no new collision or owner outcome established by this entry | Continue only under their recorded priority when a strategic slot releases or they unblock an existing outcome. |
+
+Terminal sweep result: no duplicate Green system, credential, registry, queue,
+certificate or mission was created. The stopped 0.3.3 package is contained; the
+0.3.4 change is the only active Green repair lineage. No terminal may call the
+installation or failed start commissioning, activation or owner acceptance.
+
+Control Tower Check Receipt: authoritative main
+`8c517580bb03fd2036cfe359c403ebb55c43d5cf`; Green diagnostic evidence read in
+full; GitHub open-PR and worktree collisions swept; prior authority and history
+preserved; new facts appended without reprioritization; external/Home Assistant
+access not performed by this register update; exact-current local and hosted
+gates required before handover. Decision: `CONTINUE AUTOMATICALLY / NO OWNER
+OUTCOME YET`.
+
+OWNER ACTION: NONE
