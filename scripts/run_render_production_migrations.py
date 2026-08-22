@@ -1160,17 +1160,32 @@ def _requested_legacy_adoption(connection, environ, *, commit: str, service_id: 
     if guard != [("O", 27, "guard_production_migration_receipts", "app_private")]:
         raise RuntimeError("migration_legacy_adoption_receipt_guard_mismatch")
     expected = value.get("receipts")
-    if (not isinstance(expected, list)
-            or [x.get("identity", {}).get("migration_id") for x in expected]
-               != list(LEGACY_ADOPTION_RECEIPT_IDS)):
+    if not isinstance(expected, list):
+        raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+    authorized_by_id = {}
+    for authorized in expected:
+        if not isinstance(authorized, dict) or not isinstance(authorized.get("identity"), dict):
+            raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+        migration_id = authorized["identity"].get("migration_id")
+        if migration_id in authorized_by_id:
+            raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+        authorized_by_id[migration_id] = authorized
+    if set(authorized_by_id) != set(LEGACY_ADOPTION_RECEIPT_IDS):
         raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
     rows = connection.execute("""select receipt_id::text,migration_id,migration_filename,migration_sha256,
       ordinal,outcome,source_commit,render_service_id,render_instance_id,error_class,applied_at
-      from app_private.production_migration_receipts order by applied_at,receipt_id""").fetchall()
-    if len(rows) != len(expected):
+      from app_private.production_migration_receipts""").fetchall()
+    rows_by_id = {}
+    for row in rows:
+        if row[1] in rows_by_id:
+            raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
+        rows_by_id[row[1]] = row
+    if set(rows_by_id) != set(LEGACY_ADOPTION_RECEIPT_IDS):
         raise RuntimeError("migration_legacy_adoption_receipt_count_mismatch")
     verified = []
-    for item, authorized, row in zip(ALLOWLIST[:3], expected, rows):
+    for item in ALLOWLIST[:3]:
+        authorized = authorized_by_id[item.migration_id]
+        row = rows_by_id[item.migration_id]
         actual = {"receipt_id": row[0], "migration_id": row[1], "migration_filename": row[2],
           "migration_sha256": row[3], "ordinal": row[4], "outcome": row[5], "source_commit": row[6],
           "render_service_id": row[7], "render_instance_id": row[8], "error_class": row[9],
