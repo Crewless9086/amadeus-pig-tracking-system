@@ -4,7 +4,7 @@ Status: decision packet only. Owner outcome achieved: `NONE`. Usable now: `NO`.
 
 ## Bound release and dormant state
 
-- Deployed authoritative main: `02816350d8eebecf93a6353ae90bc4f0e78787f9`.
+- Deployed authoritative main: `646386e3a1d34f128b6cc318c9166ad5678cbf0c`.
 - Valid immutable 0.3.1 image digest:
   `sha256:b660fffbc7985f7b5d8f2550f2dbbf779966e5167d51e063051fb1890a10bdd5`.
 - Owner-observed Home Assistant state: app 0.3.1 installed, `Stopped`, Start on

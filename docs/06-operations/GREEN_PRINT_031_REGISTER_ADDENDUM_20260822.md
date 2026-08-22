@@ -10,7 +10,7 @@ register write.
   correct physical page with canonical/CUPS/physical proof, cleanup, follow-up
   and later independent continuity.
 - Owner outcome achieved: `NONE`. Usable now: `NO`.
-- Enabling evidence: main `02816350d8eebecf93a6353ae90bc4f0e78787f9`;
+- Enabling evidence: main `646386e3a1d34f128b6cc318c9166ad5678cbf0c`;
   valid 0.3.1 digest
   `sha256:b660fffbc7985f7b5d8f2550f2dbbf779966e5167d51e063051fb1890a10bdd5`;
   0.3.1 Stopped, boot/watchdog/auto-update OFF, never auto-started.
