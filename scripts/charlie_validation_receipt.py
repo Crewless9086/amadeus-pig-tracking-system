@@ -9,6 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from modules.charlie.isolated_validation_collector import collect_docker_validation_evidence
 from modules.charlie.validation_receipt import (
     ValidationReceiptError,
     record_validation_receipt,
@@ -18,13 +19,17 @@ from modules.charlie.validation_receipt import (
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--evidence", required=True)
+    parser.add_argument("--source-root", required=True)
+    parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--image", required=True)
     parser.add_argument("--signing-key", required=True)
     parser.add_argument("--state-root", required=True)
     parser.add_argument("--validation-id", required=True)
     args = parser.parse_args()
     try:
-        evidence = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
+        evidence = collect_docker_validation_evidence(
+            args.source_root, args.source_commit, args.image
+        )
         key = Path(args.signing_key).read_bytes()
         receipt = sign_validation_receipt(evidence, key, validation_id=args.validation_id)
         recorded = record_validation_receipt(receipt, args.state_root)
