@@ -34,6 +34,10 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
     sow = _resolve_one(facts.get("sow_ref"), canonical.get("animals") or [])
     if sow["state"] != "resolved":
         return _hold("sow_identity_required", sow=sow)
+    if (sow.get("status", "").casefold() != "active"
+            or sow.get("on_farm") is not True
+            or sow.get("sex", "").casefold() not in {"female", "sow"}):
+        return _hold("current_active_on_farm_sow_required", sow=sow)
     farrowing_date = _date(facts.get("farrowing_date"), "farrowing_date")
     counts = _counts(facts)
     if counts.get("error"):
@@ -42,9 +46,18 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
     existing = [dict(row) for row in canonical.get("litters") or []
                 if _text(row.get("sow_pig_id")) == sow["pig_id"]
                 and _date_or_none(row.get("farrowing_date")) == farrowing_date]
-    if existing:
+    correction_of = _text(facts.get("correction_of_litter_id"))
+    correction_reason = _text(facts.get("correction_reason"))
+    if existing and not correction_of:
         return _hold("canonical_litter_already_exists", sow=sow,
                      existing_litter_ids=sorted(_text(row.get("litter_id")) for row in existing))
+    if correction_of:
+        if not correction_reason:
+            return _hold("litter_correction_reason_required", sow=sow)
+        matching = [row for row in existing if _text(row.get("litter_id")) == correction_of]
+        if len(matching) != 1:
+            return _hold("litter_correction_target_invalid", sow=sow,
+                         existing_litter_ids=sorted(_text(row.get("litter_id")) for row in existing))
 
     mating = _mating_result(sow["pig_id"], farrowing_date,
                             canonical.get("matings") or [], facts)
@@ -62,6 +75,8 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
         "farrowing_date": farrowing_date.isoformat(),
         "counts": counts,
         "mating": mating,
+        "correction_of_litter_id": correction_of or None,
+        "correction_reason": correction_reason or None,
     }
     operation_id = "HERD-LITTER-" + hashlib.sha256(
         json.dumps(operation_material, sort_keys=True, separators=(",", ":")).encode()
@@ -130,6 +145,9 @@ def _mating_result(sow_id, farrowing_date, rows, facts):
         row = dict(raw)
         if _text(row.get("sow_pig_id")) != sow_id or _text(row.get("linked_litter_id")):
             continue
+        state = _text(row.get("outcome") or row.get("state") or row.get("status")).casefold()
+        if state and state not in {"mated", "served", "exposed", "pregnant", "confirmed_pregnant", "open"}:
+            continue
         mating_id = _text(row.get("mating_id"))
         mating_date = _date_or_none(row.get("mating_date"))
         start = _date_or_none(row.get("expected_farrowing_window_start"))
@@ -169,7 +187,9 @@ def _resolve_one(reference, animals):
                 "candidate_pig_ids": sorted(_text(row.get("pig_id")) for row in matches)}
     row = matches[0]
     return {"state": "resolved", "pig_id": _text(row.get("pig_id")),
-            "tag_number": _text(row.get("tag_number")), "name": _text(row.get("name"))}
+            "tag_number": _text(row.get("tag_number")), "name": _text(row.get("name")),
+            "status": _text(row.get("status")), "on_farm": row.get("on_farm"),
+            "sex": _text(row.get("sex") or row.get("animal_type"))}
 
 
 def _hold(status, **extra):

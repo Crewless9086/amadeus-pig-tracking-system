@@ -52,6 +52,34 @@ def test_farrowing_semantic_family_returns_typed_counts_not_numeric_animals(lang
     assert result.farrowing_litter["total_born"] == 9
 
 
+@pytest.mark.parametrize("text,language", [
+    ("Linda gave birth on 2026-08-22: born 9, 8 alive and 1 mummified. Log the litter.", "en"),
+    ("Linda het 2026-08-22 gekraam: 9 gebore, 8 lewendig en 1 gemummifiseer. Teken die werpsel aan.", "af"),
+    ("Linda farrowed 2026-08-22, 9 gebore, 8 alive, 1 gemummifiseer; log dit.", "mixed"),
+    ("Linda 2026-08-22; total 9; alive 8; mummified 1; log litter", "en"),
+])
+def test_actual_natural_farrowing_phrase_family_reaches_one_typed_contract(text, language):
+    captured = {}
+    semantic = _semantic("herd_management", "record_farrowing_litter",
+        message_kind="command", language=language, entity_refs=["Linda"],
+        farrowing_litter={"sow_ref": "Linda", "farrowing_date": "2026-08-22",
+            "total_born": 9, "born_alive": 8, "stillborn": None,
+            "mummified": 1, "died_after_live_birth": None,
+            "mating_ref": None, "father_ref": None})
+    def opener(request, timeout):
+        captured.update(json.loads(request.data.decode()))
+        return _HttpResponse(_response(semantic))
+    result = interpret_owner_message({"text": text, "provider_message_id": "NATURAL-LITTER"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+        context_loader=lambda parsed: {}, http_open=opener)
+    assert result.intent == "record_farrowing_litter"
+    assert result.farrowing_litter["total_born"] == 9
+    assert result.farrowing_litter["born_alive"] == 8
+    assert result.farrowing_litter["mummified"] == 1
+    assert text in captured["messages"][1]["content"]
+
+
 def test_semantic_front_door_is_llm_first_but_has_zero_authority():
     policy = semantic_front_door_policy({"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
         "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"})

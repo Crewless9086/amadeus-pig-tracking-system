@@ -14,7 +14,8 @@ def parsed(facts=None):
 
 def evidence(**updates):
     value = {"evidence_generation": "GEN", "animals": [
-        {"pig_id": "PIG-2026-5AA8", "tag_number": "Linda", "name": "Linda"}],
+        {"pig_id": "PIG-2026-5AA8", "tag_number": "Linda", "name": "Linda",
+         "status": "Active", "on_farm": True, "sex": "Female"}],
         "matings": [], "litters": []}
     value.update(updates)
     return value

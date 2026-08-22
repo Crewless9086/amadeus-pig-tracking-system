@@ -3,10 +3,10 @@ from modules.pig_weights.herdmaster_farrowing_litter_intake import prepare_farro
 
 def evidence(*, matings=(), litters=()):
     return {"evidence_generation": "GEN-1", "animals": [
-        {"pig_id": "PIG-2026-5AA8", "tag_number": "Linda", "name": "Linda"},
-        {"pig_id": "PIG-NUM-22", "tag_number": "22", "name": "22"},
-        {"pig_id": "PIG-NUM-9", "tag_number": "9", "name": "Nine"},
-        {"pig_id": "BOAR-1", "tag_number": "Tyson", "name": "Tyson"},
+        {"pig_id": "PIG-2026-5AA8", "tag_number": "Linda", "name": "Linda", "status": "Active", "on_farm": True, "sex": "Female"},
+        {"pig_id": "PIG-NUM-22", "tag_number": "22", "name": "22", "status": "Active", "on_farm": True, "sex": "Male"},
+        {"pig_id": "PIG-NUM-9", "tag_number": "9", "name": "Nine", "status": "Active", "on_farm": True, "sex": "Male"},
+        {"pig_id": "BOAR-1", "tag_number": "Tyson", "name": "Tyson", "status": "Active", "on_farm": True, "sex": "Male"},
     ], "matings": list(matings), "litters": list(litters)}
 
 
@@ -80,3 +80,32 @@ def test_semantically_selected_linda_ignores_dates_and_counts_as_animal_refs():
     result = prepare_farrowing_litter_preview(report(), evidence())
     assert result["sow"]["candidate_pig_ids"] if result["sow"]["state"] != "resolved" else True
     assert result["sow"]["pig_id"] == "PIG-2026-5AA8"
+
+
+def test_male_or_inactive_animal_cannot_be_used_as_sow():
+    for changes in ({"sex": "Male"}, {"status": "Dead", "on_farm": False}):
+        canonical = evidence()
+        canonical["animals"][0].update(changes)
+        result = prepare_farrowing_litter_preview(report(), canonical)
+        assert result["status"] == "current_active_on_farm_sow_required"
+
+
+def test_terminal_mating_state_is_not_attributed():
+    mating = {"mating_id": "MAT-FAILED", "sow_pig_id": "PIG-2026-5AA8",
+              "boar_pig_id": "BOAR-1", "mating_date": "2026-04-30",
+              "linked_litter_id": None, "outcome": "Failed"}
+    result = prepare_farrowing_litter_preview(report(), evidence(matings=[mating]))
+    assert result["success"] is True and result["mating"]["state"] == "unknown"
+
+
+def test_correction_requires_exact_existing_target_and_reason():
+    existing = {"litter_id": "LIT-OLD", "sow_pig_id": "PIG-2026-5AA8",
+                "farrowing_date": "2026-08-22"}
+    missing_reason = prepare_farrowing_litter_preview(
+        report(correction_of_litter_id="LIT-OLD"), evidence(litters=[existing]))
+    assert missing_reason["status"] == "litter_correction_reason_required"
+    corrected = prepare_farrowing_litter_preview(report(
+        correction_of_litter_id="LIT-OLD", correction_reason="Owner corrected count"),
+        evidence(litters=[existing]))
+    assert corrected["success"] is True
+    assert corrected["preview"]["correction_of_litter_id"] == "LIT-OLD"

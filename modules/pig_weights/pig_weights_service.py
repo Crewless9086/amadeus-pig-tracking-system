@@ -7215,43 +7215,46 @@ def save_new_litter(cleaned_data: dict):
         pig_lookup = _build_pig_lookup(supabase_parent_rows, columns)
         mother_row = pig_lookup.get(cleaned_data["mother_pig_id"])
         father_row = pig_lookup.get(cleaned_data["father_pig_id"]) if cleaned_data["father_pig_id"] else None
-        mother_tag = to_clean_string(mother_row.get(columns["tag_number"], "")) if mother_row else ""
-        father_tag = to_clean_string(father_row.get(columns["tag_number"], "")) if father_row else ""
-        litter_id = generate_litter_id()
-        piglet_count = _litter_generated_piglet_count(
-            cleaned_data["total_born"],
-            cleaned_data["born_alive"],
-            cleaned_data["stillborn_count"],
-        )
+        # Browser, Telegram and future voice converge here on the same
+        # transaction and sow/date lock. Channel adapters must not own a second
+        # litter writer or mating-link operation.
+        operation_seed = generate_litter_id()
+        total = int(cleaned_data["total_born"] or 0)
+        born_alive = int(cleaned_data["born_alive"] or 0)
+        stillborn = int(cleaned_data["stillborn_count"] or 0)
+        mummified = int(cleaned_data["mummified_count"] or 0)
+        preview = {
+            "contract_version": "herdmaster_farrowing_litter_preview_v1",
+            "operation_id": "HERD-LITTER-APP-" + operation_seed,
+            "sow_pig_id": cleaned_data["mother_pig_id"],
+            "father_pig_id": cleaned_data.get("father_pig_id") or None,
+            "mating_id": cleaned_data.get("mating_id") or None,
+            "farrowing_date": cleaned_data["farrowing_date"],
+            "counts": {"total_born": total, "born_alive": born_alive,
+                       "stillborn": stillborn, "mummified": mummified,
+                       "died_after_live_birth": 0},
+            "correction_of_litter_id": cleaned_data.get("correction_of_litter_id") or None,
+            "correction_reason": cleaned_data.get("correction_reason") or None,
+        }
         try:
-            result = farm_supabase_write_service.create_litter_with_generated_piglets(
-                litter_id,
-                cleaned_data,
-                mother_tag=mother_tag,
-                father_tag=father_tag,
-                pig_ids=[generate_pig_id() for _ in range(piglet_count)],
-            )
-
-            mating_id = str(cleaned_data.get("mating_id", "")).strip()
-            if mating_id:
-                link_litter_to_mating(
-                    mating_id=mating_id,
-                    litter_id=litter_id,
-                    actual_farrowing_date=cleaned_data["farrowing_date"]
-                )
+            result = farm_supabase_write_service.create_governed_farrowing_litter(
+                preview, actor_id="authenticated_application")
 
             return {
                 "success": True,
                 "message": "Litter created successfully.",
-                "litter_id": litter_id,
-                "pig_rows_created": result.get("pig_rows_created", 0),
+                "litter_id": result["litter_id"],
+                "pig_rows_created": len(result.get("pig_ids") or []),
+                "follow_up_case_id": result.get("follow_up_case_id"),
                 "source": {
                     "writes_to_supabase": True,
                     "writes_to_sheets": False,
                 },
             }
         except Exception:
-            pass
+            # Do not create a second channel-specific record after the
+            # canonical sow/date transaction fails.
+            raise
 
     pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
     columns = PIG_WEIGHTS_CONFIG["columns"]

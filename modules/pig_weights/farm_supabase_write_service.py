@@ -2,7 +2,7 @@ import hashlib
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from modules.pig_weights.pig_weights_utils import parse_sheet_date, to_clean_string, to_float
 from services.database_service import DATABASE_URL_ENV
@@ -438,17 +438,21 @@ def create_governed_farrowing_litter(preview, *, actor_id, connect_factory=None)
                for index in range(born_alive)]
     mating_id = to_clean_string(preview.get("mating_id"))
     father_id = to_clean_string(preview.get("father_pig_id")) or None
-    now = datetime.now()
+    correction_of = to_clean_string(preview.get("correction_of_litter_id")) or None
+    correction_reason = to_clean_string(preview.get("correction_reason")) or None
+    if correction_of and not correction_reason:
+        raise ValueError("litter_correction_reason_required")
+    now = datetime.now(timezone.utc)
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
                            ("herdmaster-farrowing:" + sow_id + ":" + farrowing_date.isoformat(),))
             cursor.execute("""select litter_id,total_born,born_alive,stillborn_count,mummified_count,
-                               boar_pig_id from public.litters
+                               boar_pig_id,litter_status,litter_notes from public.litters
                                where sow_pig_id=%s and farrowing_date=%s for update""",
                            (sow_id, farrowing_date))
             existing = cursor.fetchall()
-            if existing:
+            if existing and not correction_of:
                 exact = next((row for row in existing if str(row[0]) == litter_id), None)
                 if exact and (int(exact[1]) == total and int(exact[2]) == born_alive
                               and int(exact[3] or 0) == stillborn and int(exact[4] or 0) == mummified
@@ -457,20 +461,26 @@ def create_governed_farrowing_litter(preview, *, actor_id, connect_factory=None)
                             "litter_id": litter_id, "pig_ids": pig_ids, "rows_created": 0,
                             "writes_farm_data": False, "replay": True}
                 raise ValueError("farrowing_litter_duplicate_or_idempotency_conflict")
-            cursor.execute("""select pig.status,pig.on_farm,pig.tag_number,state.current_pen_id
+            if correction_of and len([row for row in existing if str(row[0]) == correction_of]) != 1:
+                raise ValueError("litter_correction_target_changed")
+            cursor.execute("""select pig.status,pig.on_farm,pig.tag_number,state.current_pen_id,
+                                      pig.sex,pig.animal_type
                                from public.current_canonical_pigs pig
                                left join public.current_canonical_pig_state state on state.pig_id=pig.pig_id
                                where pig.pig_id=%s""", (sow_id,))
             sow = cursor.fetchone()
-            if not sow or str(sow[0] or "").casefold() != "active" or sow[1] is not True:
+            sow_role = str(sow[4] or sow[5] or "").casefold() if sow else ""
+            if (not sow or str(sow[0] or "").casefold() != "active" or sow[1] is not True
+                    or sow_role not in {"female", "sow"}):
                 raise ValueError("current_active_on_farm_sow_required")
             boar_tag = ""
             if mating_id:
-                cursor.execute("""select sow_pig_id,boar_pig_id,related_litter_id
+                cursor.execute("""select sow_pig_id,boar_pig_id,related_litter_id,outcome
                                    from public.mating_events where mating_id=%s for update""", (mating_id,))
                 mating = cursor.fetchone()
                 if (not mating or str(mating[0]) != sow_id or str(mating[1] or "") != str(father_id or "")
-                        or str(mating[2] or "")):
+                        or str(mating[2] or "") or str(mating[3] or "").casefold() not in
+                        {"", "mated", "served", "exposed", "pregnant", "confirmed_pregnant", "open"}):
                     raise ValueError("mating_linkage_changed_repreview_required")
                 cursor.execute("select tag_number from public.current_canonical_pigs where pig_id=%s", (father_id,))
                 boar = cursor.fetchone()
@@ -481,7 +491,8 @@ def create_governed_farrowing_litter(preview, *, actor_id, connect_factory=None)
                 created_at,updated_at) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'Active',%s,%s,%s)""",
                 (litter_id, farrowing_date, sow_id, father_id, str(sow[2] or ""), boar_tag,
                  total, born_alive, stillborn, mummified,
-                 f"Recorded through Oom Sakkie protected farrowing action {operation_id}; actor {actor_id}", now, now))
+                 (f"Recorded through canonical farrowing action {operation_id}; actor {actor_id}"
+                  + (f"; supersedes {correction_of}: {correction_reason}" if correction_of else "")), now, now))
             for index, pig_id in enumerate(pig_ids):
                 dead = index < later_deaths
                 cursor.execute("""insert into public.pigs(
@@ -501,10 +512,69 @@ def create_governed_farrowing_litter(preview, *, actor_id, connect_factory=None)
                     (litter_id, farrowing_date, now, mating_id))
                 if int(cursor.rowcount or 0) != 1:
                     raise ValueError("mating_linkage_concurrent_change")
+            if correction_of:
+                preview_sha = hashlib.sha256(json.dumps(
+                    preview, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+                authorization_id = "LITTER-CORRECTION-AUTH-" + digest[:24]
+                cursor.execute("""insert into public.litter_correction_authorizations(
+                    authorization_id,operation_id,preview_sha256,owner_principal,
+                    decision_status,confirmed_at,created_at)
+                    values(%s,%s,%s,%s,'confirmed',%s,%s)""",
+                    (authorization_id,operation_id,preview_sha,actor_id,now,now))
+                cursor.execute("select pig_id from public.pigs where litter_id=%s order by pig_id",
+                               (correction_of,))
+                old_child_ids = [str(row[0]) for row in cursor.fetchall()]
+                new_child_ids = list(pig_ids)
+                reference_hash = hashlib.sha256(b"[]").hexdigest()
+                input_sha = hashlib.sha256(json.dumps({"old": old_child_ids, "new": new_child_ids,
+                    "reason": correction_reason},sort_keys=True,separators=(",", ":")).encode()).hexdigest()
+                cursor.execute("""insert into public.litter_supersessions(
+                    operation_id,retained_litter_id,superseded_litter_id,authorization_id,
+                    mating_id,preview_sha256,reason,superseded_child_ids,retained_child_ids,
+                    reference_allowlist_sha256,skipped_audit_rows_sha256,input_sha256,created_at)
+                    values(%s,%s,%s,%s,%s,%s,'fact_correction',%s::jsonb,%s::jsonb,%s,%s,%s,%s)""",
+                    (operation_id,litter_id,correction_of,authorization_id,mating_id or None,
+                     preview_sha,json.dumps(old_child_ids),json.dumps(new_child_ids),reference_hash,
+                     reference_hash,input_sha,now))
+                for old_pig_id in old_child_ids:
+                    cursor.execute("""insert into public.litter_cohort_dispositions(
+                        operation_id,pig_id,source_litter_id,disposition,created_at)
+                        values(%s,%s,%s,'superseded_duplicate_representation',%s)""",
+                        (operation_id,old_pig_id,correction_of,now))
+
+            # Reuse the durable Oom Sakkie manager-case runtime for attributable
+            # HERDMASTER tagging, weighing and weaning follow-up. This is part
+            # of the same transaction, so a recorded litter can never exist
+            # without durable next-action ownership.
+            case_id = "OOM-MANAGER-HERD-LITTER-" + digest[:24]
+            dedupe_key = "herdmaster-litter-follow-up:" + litter_id
+            evidence = [{"source": "canonical_litter", "litter_id": litter_id,
+                         "operation_id": operation_id, "farrowing_date": farrowing_date.isoformat()}]
+            evidence_digest = hashlib.sha256(json.dumps(
+                evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            next_at = now + timedelta(days=7)
+            cursor.execute("""insert into app_private.oom_manager_cases(
+                case_id,dedupe_key,specialist,urgency,status,evidence_digest,evidence_refs,unknowns,
+                summary,next_action,next_reassessment_at,generation,created_at,updated_at)
+                values(%s,%s,'HERDMASTER','planned','open',%s,%s::jsonb,'[]'::jsonb,%s,%s,%s,1,%s,%s)
+                on conflict(dedupe_key) do nothing""", (case_id,dedupe_key,evidence_digest,
+                json.dumps(evidence),f"Active litter {litter_id} requires lifecycle follow-up.",
+                "Reassess litter care, tagging, weighing and weaning from current canonical evidence.",
+                next_at,now,now))
+            event_material = {"case_id": case_id, "generation": 1, "event_type": "created",
+                              "litter_id": litter_id, "operation_id": operation_id}
+            event_id = "OOM-MANAGER-EVENT-" + hashlib.sha256(json.dumps(
+                event_material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32].upper()
+            cursor.execute("""insert into app_private.oom_manager_case_events(
+                event_id,case_id,generation,event_type,event_payload,occurred_at)
+                values(%s,%s,1,'created',%s::jsonb,%s) on conflict(event_id) do nothing""",
+                (event_id,case_id,json.dumps(event_material,sort_keys=True),now))
     return {"success": True, "status": "farrowing_litter_recorded", "litter_id": litter_id,
             "pig_ids": pig_ids, "rows_created": 1 + len(pig_ids), "writes_farm_data": True,
             "replay": False, "litter_status": "Active", "mating_id": mating_id or None,
-            "father_pig_id": father_id, "follow_up_required": True}
+            "father_pig_id": father_id, "follow_up_required": True,
+            "follow_up_case_id": case_id, "follow_up_next_at": next_at.isoformat(),
+            "correction_of_litter_id": correction_of}
 
 
 def get_weight_event(pig_id, weight_date, connect_factory=None):
