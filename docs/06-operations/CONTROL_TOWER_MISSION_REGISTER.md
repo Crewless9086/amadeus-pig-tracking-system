@@ -1583,6 +1583,23 @@ printer certificate at the fixed trust path, after which the already-approved
 identity, installation and zero-job commissioning sequence can be reauthorized
 and completed.
 
+Owner subsequently authorized installation of the official File editor and
+confirmed immediate transmission of the verified public printer certificate to
+the local authenticated Home Assistant instance. File editor 6.1.0 was installed
+with Start on boot, Watchdog, Auto update and sidebar access OFF. The Chrome file-
+chooser path remained unavailable even after its required extension permission
+was enabled, so no upload occurred. A native File editor fallback created the
+authorized `/config/private-ca.crt` name, but the editor retained modal focus:
+the certificate text was interpreted as a filename and rejected with filename-
+too-long before content save. This left only a zero-byte `private-ca.crt`; no
+certificate content was written. Per stop-on-mismatch authority, Control Tower
+did not retry, overwrite or delete it, and stopped File editor. Green remained
+0.3.1 stopped and unchanged; zero queue, document, job and print effects
+occurred. Lifecycle is `TRUST_FILE_EMPTY / FILE_EDITOR_STOPPED /
+COMMISSIONING_PENDING`; **NO BUSINESS OUTCOME**. A fresh exact overwrite boundary
+is required to replace only the empty file with the already verified public
+certificate and prove readback before any Green identity or installation work.
+
 ### Strategic WIP and dispatch truth
 
 Autonomy Recovery Mode remains in force. Two current-blocker tracks have fresh
