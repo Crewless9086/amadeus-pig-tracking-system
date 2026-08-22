@@ -24,7 +24,7 @@ def test_package_is_bounded_and_privilege_split():
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.0"
+    assert cfg["version"]=="0.3.1"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -39,14 +39,16 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert "actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a" in workflow
     assert "actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34" in workflow
     assert "pytest PyYAML" in workflow
-    assert "latest" not in workflow and "push: \"true\"" in workflow
+    assert "latest" not in workflow and "push: true" in workflow
     assert 'test "${GITHUB_REF}" = "refs/heads/main"' in workflow
-    assert workflow.count('test "${resolved_digest}" = "${PRODUCED_DIGEST}"') == 1
+    assert "platforms: linux/arm64" in workflow
+    assert "pushed-index.json" in workflow and 'architecture == "arm64"' in workflow
+    assert "--platform linux/arm64" in workflow
     assert 'cosign verify --certificate-identity "${identity}"' in workflow
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.0-verified-release-packet" in workflow
+    assert "green-print-0.3.1-verified-release-packet" in workflow
 
 def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     docs=(APP/"DOCS.md").read_text(encoding="utf-8")
@@ -54,6 +56,29 @@ def test_prebuilt_documentation_has_no_deleted_local_build_fallback():
     assert "local Supervisor build" not in docs
     assert "There is no current local Supervisor-build fallback" in docs
     assert "GHCR does not provide a registry-level" in docs
+    assert "0.3.0 publication is permanently quarantined" in docs
+    assert "sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3" in docs
+    assert "sha256:4b738c69245a6b4721a7f4b58135acf3d2308f355b7c8c4008c4149763e11b32" in docs
+
+def test_031_publish_verifies_descriptor_and_config_before_signing_or_attesting():
+    path=ROOT/".github/workflows/green-print-image.yml"
+    workflow=path.read_text(encoding="utf-8")
+    parsed=yaml.safe_load(workflow)
+    assert parsed["env"]["VERSION"]=="0.3.1"
+    steps=parsed["jobs"]["publish"]["steps"]
+    names=[step.get("name") for step in steps]
+    verify=names.index("Verify pushed index descriptor, config and OCI bindings")
+    assert verify < names.index("Keylessly sign verified arm64 index")
+    assert verify < names.index("Generate SPDX SBOM from exact linux arm64 digest")
+    assert verify < names.index("Attest build provenance")
+    raw=steps[verify]["run"]
+    assert '.mediaType == "application/vnd.oci.image.index.v1+json"' in raw
+    assert '(.manifests | length) == 1' in raw
+    assert '.platform.os == "linux" and .platform.architecture == "arm64"' in raw
+    assert '.architecture == "arm64" and .os == "linux"' in raw
+    assert "push-by-digest=true" in workflow and "name-canonical=true" in workflow
+    assert parsed["jobs"]["publish"]["outputs"]["digest"] == "${{ steps.pushed.outputs.resolved_digest }}"
+    assert "home-assistant/builder/actions/build-image" not in workflow
 
 def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
     path=ROOT/".github/workflows/green-print-image.yml"
