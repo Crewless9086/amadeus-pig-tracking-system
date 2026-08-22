@@ -27,9 +27,14 @@ def exact_migration():
             migration_id text primary key,description text not null)""")
         for role in ("anon", "authenticated"):
             db.execute("do $block$ begin execute 'create role %s'; exception when duplicate_object then null; end $block$" % role)
-    path = Path(__file__).parents[1] / "supabase" / "migrations" / "202608170002_create_oom_manager_case_runtime.sql"
     with connect() as db:
-        db.execute(path.read_text(encoding="utf-8"))
+        migrations = Path(__file__).parents[1] / "supabase" / "migrations"
+        db.execute((migrations / "202608170002_create_oom_manager_case_runtime.sql").read_text(encoding="utf-8"))
+        db.execute("""create table if not exists app_private.oom_protected_action_claims(
+            callback_token text primary key,action_kind text not null,
+            provider_message_id text,status text,result_payload jsonb,
+            completed_at timestamptz)""")
+        db.execute((migrations / "202608190002_create_beacon_protected_publication_consumer.sql").read_text(encoding="utf-8"))
 
 
 def candidate(ref="event:one", due=None, **changes):

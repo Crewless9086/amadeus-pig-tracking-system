@@ -318,6 +318,32 @@ def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time()
     assert first["result_digest"] == second["result_digest"]
 
 
+def test_stock_neutral_packet_ignores_production_allocation_observation_churn():
+    first_opportunity = opportunity()
+    refreshed_opportunity = opportunity()
+    first_opportunity["cards"][0]["provenance"]["observed_at"] = \
+        "2026-08-22T18:10:25.874264+00:00"
+    refreshed_opportunity["cards"][0]["provenance"]["observed_at"] = \
+        "2026-08-22T18:11:17.850251+00:00"
+
+    first = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: first_opportunity,
+        media_loader=public_awareness_media, litter_loader=litter_evidence,
+        now=datetime(2026, 8, 22, 18, 10, 25, tzinfo=timezone.utc),
+        target_page_id="PAGE-ONE")
+    refreshed = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: refreshed_opportunity,
+        media_loader=public_awareness_media, litter_loader=litter_evidence,
+        now=datetime(2026, 8, 22, 18, 11, 17, tzinfo=timezone.utc),
+        target_page_id="PAGE-ONE")
+
+    assert "observed_at" not in first["proposal"]["business_offering_evidence"]
+    assert first["proposal"]["packet_id"] == refreshed["proposal"]["packet_id"]
+    assert first["result_digest"] == refreshed["result_digest"]
+    assert first["proposal"]["protected_campaign_package"] == \
+        refreshed["proposal"]["protected_campaign_package"]
+
+
 def test_scheduled_generation_binds_configured_facebook_page_identity():
     fixed = {"opportunity_loader": opportunity,
         "media_loader": public_awareness_media,
