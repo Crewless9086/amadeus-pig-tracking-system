@@ -220,18 +220,18 @@ def main() -> int:
                     + failure_diagnostics(container)
                 )
             process_readback = run(
-                "docker", "top", container, "-eo", "pid,user,group,comm,args",
+                "docker", "top", container, "-eo", "pid,uid,gid,comm,args",
                 check=False,
             )
             process_rows = [line.split(None, 4) for line in process_readback.stdout.splitlines()[1:]]
             root_cupsd = any(
-                len(row) == 5 and row[1:4] == ["root", "root", "cupsd"]
+                len(row) == 5 and row[1:4] == ["0", "0", "cupsd"]
                 for row in process_rows
             )
             green_service = any(
                 len(row) == 5
-                and row[1] == "greenprint"
-                and row[2] == "greenprint"
+                and row[1] == green_uid
+                and row[2] == green_gid
                 and "/opt/green/service.py" in row[4]
                 for row in process_rows
             )
