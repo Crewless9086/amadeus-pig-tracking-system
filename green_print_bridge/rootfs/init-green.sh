@@ -7,7 +7,6 @@ umask 077
 install -d -o greenprint -g greenprint -m 0700 /data /tmp/green-spool
 install -d -o cupsd -g cupsd -m 0750 /run/cups /var/log/cups
 install -d -o cupsd -g cupsd -m 0700 /var/spool/cups
-install -d -o root -g root -m 0755 /etc/cups/ssl
 test -s /config/private-ca.crt
 install -o root -g root -m 0644 /config/private-ca.crt /etc/cups/ssl/site.crt
 /usr/bin/python3 /opt/green/init_queue.py /data/options.json /run/cups/printers.conf

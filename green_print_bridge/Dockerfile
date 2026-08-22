@@ -18,7 +18,8 @@ LABEL io.hass.type="app" \
 RUN apk add --no-cache cups cups-client cups-filters ca-certificates python3 su-exec \
     && addgroup -S greenprint && adduser -S -D -H -s /sbin/nologin -G greenprint greenprint \
     && addgroup -S cupsd && adduser -S -D -H -s /sbin/nologin -G cupsd cupsd \
-    && mkdir -p /opt/green /data /run/cups /tmp/green-spool /var/spool/cups /var/log/cups \
+    && mkdir -p /opt/green /data /run/cups /tmp/green-spool /var/spool/cups /var/log/cups /etc/cups/ssl \
+    && chmod 0755 /etc/cups/ssl \
     && chown greenprint:greenprint /data /tmp/green-spool \
     && chown cupsd:cupsd /run/cups /var/spool/cups /var/log/cups \
     && chmod 0700 /data /tmp/green-spool /var/spool/cups

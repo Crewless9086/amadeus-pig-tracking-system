@@ -23,11 +23,12 @@ def test_package_is_bounded_and_privilege_split():
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
 
 def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
-    queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8")
+    queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
     policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8")
     assert 'Path("/etc/hosts").open("a"' in queue and 'hosts.write(f"{pin} {uri.hostname}\\n")' in queue
     assert "answers!={pin}" in queue and 'uri.scheme!="ipps"' in queue
     assert "/config/private-ca.crt /etc/cups/ssl/site.crt" in init
+    assert "mkdir -p" in docker and "/etc/cups/ssl" in docker and "install -d -o root -g root -m 0755 /etc/cups/ssl" not in init
     for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption Required","TrustOnFirstUse No","ValidateCerts Yes"):
         assert required in policy
 
