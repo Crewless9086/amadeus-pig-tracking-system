@@ -20,6 +20,27 @@ def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, check=check, capture_output=True, text=True)
 
 
+def failure_diagnostics(container: str) -> str:
+    logs = run("docker", "logs", container, check=False)
+    state = run(
+        "docker", "inspect", "-f", "{{json .State}}", container, check=False,
+    )
+    kernel = run("sudo", "dmesg", "--ctime", check=False)
+    denied = [
+        line for line in kernel.stdout.splitlines()
+        if "apparmor=\"DENIED\"" in line
+        and "amadeus-green-print-bridge" in line
+    ][-80:]
+    return "\n".join(
+        (
+            "docker-state: " + state.stdout.strip(),
+            "container-stdout: " + logs.stdout.strip(),
+            "container-stderr: " + logs.stderr.strip(),
+            "apparmor-denials:\n" + "\n".join(denied),
+        )
+    )
+
+
 class EmptyCanonicalHandler(BaseHTTPRequestHandler):
     seen: list[str] = []
 
@@ -125,10 +146,10 @@ def main() -> int:
                         break
                 state = run("docker", "inspect", "-f", "{{.State.Running}}", container).stdout.strip()
                 if state != "true":
-                    raise RuntimeError("container stopped before event_waiting\n" + run("docker", "logs", container, check=False).stdout)
+                    raise RuntimeError("container stopped before event_waiting\n" + failure_diagnostics(container))
                 time.sleep(1)
             if not health or health.get("business_state") != "event_waiting":
-                raise RuntimeError("event_waiting health not reached\n" + run("docker", "logs", container, check=False).stdout)
+                raise RuntimeError("event_waiting health not reached\n" + failure_diagnostics(container))
             if health.get("terminal_participated") is not False or health.get("authority_mode") != "fixed_weekly_sheet_only":
                 raise RuntimeError(f"unexpected health contract: {health}")
             queue = run("docker", "exec", container, "/usr/bin/lpstat", "-W", "all", "-o", "weekly-a4", check=False)
