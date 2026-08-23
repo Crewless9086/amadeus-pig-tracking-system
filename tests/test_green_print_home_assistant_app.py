@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timedelta,timezone
 from hashlib import sha256
-import base64,importlib.util,json,sqlite3,sys
+import base64,importlib.util,json,sqlite3,subprocess,sys
 from pathlib import Path
 from types import SimpleNamespace
 import pytest,yaml
@@ -353,14 +353,16 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert '"${IMAGE}@${EXPECTED_MANIFEST_DIGEST}" --format' in existing
     assert 'tag-recheck.txt' in existing and 'org.opencontainers.image.revision' in existing
     signature=steps[names.index("Inspect existing signature and refuse foreign or ambiguous state")]["run"]
-    assert "cosign triangulate" in signature and "validate-cosign" in signature
-    assert '(.layers | length) == 2' in signature
+    assert "cosign download signature" in signature and "validate-cosign" in signature
+    assert "cosign triangulate" not in signature and "signature_ref" not in signature
     assert "recovered-cosign-original-verification.json" in signature
     assert "recovered-cosign-deviation-verification.json" in signature
     for flag in ("--certificate-github-workflow-sha","--certificate-github-workflow-name","--certificate-github-workflow-repository","--certificate-github-workflow-ref","--certificate-github-workflow-trigger"):
         assert flag in signature
     attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
     assert "green_print_attestation_inventory.py" in attestations
+    assert "canonical existing-attestations.json" in attestations
+    assert "attestation_inventory_pre_sha256" in attestations
     assert 'test "${foreign_count}" = "0"' in attestations
     assert 'test "${recovery_count}" = "1"' in attestations and 'test "${sbom_count}" = "1"' in attestations
     assert "validate-recovery-run" in attestations
@@ -376,7 +378,14 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert final_verify.count('--source-digest "${attestation_source_commit}"')==2
     assert final_verify.count("validate-verification-run")==2
     assert "validate-cosign" in final_verify
-    assert "cmp -s existing-signature-manifest.json final-signature-manifest.json" in final_verify
+    assert "cosign download signature" in final_verify
+    assert "cmp -s native-signature-inventory.json final-native-signature-inventory.json" in final_verify
+    assert "canonical final-attestations.json" in final_verify
+    assert "cmp -s canonical-existing-attestations.json canonical-final-attestations.json" in final_verify
+    assert "attestation_inventory_post_sha256" in final_verify
+    assert "final-green-print-0.3.6.spdx.json" not in final_verify
+    assert final_verify.count("green-print-0.3.6.spdx.json")==2
+    assert "cosign triangulate" not in final_verify and "signature_ref" not in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
 
@@ -388,6 +397,12 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     assert stale_registry_probe["sign_required"]=="true"
     assert not any(name.startswith("Keylessly sign") or name.startswith("Attest ") for name in names)
     serialized=json.dumps(recovery)
+    assert "cosign triangulate" not in serialized
+    assert "signature_ref" not in serialized
+    assert "native_signature_inventory_pre_sha256" in serialized
+    assert "native_signature_inventory_post_sha256" in serialized
+    assert "attestation_inventory_pre_sha256" in serialized
+    assert "attestation_inventory_post_sha256" in serialized
     for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
         assert forbidden not in serialized
     for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
@@ -438,6 +453,33 @@ def test_partial_recovery_attestation_inventory_accepts_only_one_exact_pair():
 def test_partial_recovery_attestation_inventory_exposes_duplicate_foreign_and_malformed(records,expected):
     actual=I.inventory({"attestations":records},"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,expected_source="c"*40,expected_manifest="sha256:"+"b"*64,expected_run_id="32622312938")
     assert actual[:3]==expected
+
+def test_complete_canonical_attestation_inventory_is_order_stable_and_detects_intervening_drift():
+    recovery=_attestation(I.RECOVERY,payload=_recovery_predicate())
+    sbom=_attestation(I.SBOM)
+    foreign=_attestation("https://foreign.invalid/predicate")
+    before=I.canonical_inventory({"attestations":[sbom,recovery]})
+    reordered=I.canonical_inventory({"attestations":[recovery,sbom]})
+    assert before==reordered
+    duplicate=I.canonical_inventory({"attestations":[recovery,sbom,recovery]})
+    foreign_drift=I.canonical_inventory({"attestations":[recovery,sbom,foreign]})
+    assert duplicate!=before
+    assert foreign_drift!=before
+    assert len(duplicate["attestations"])==3
+    assert len(foreign_drift["attestations"])==3
+
+def test_canonical_final_inspect_executes_with_the_generated_exact_sbom_path(tmp_path):
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64
+    document={"attestations":[_attestation(I.RECOVERY,payload=_recovery_predicate()),_attestation(I.SBOM,payload={"spdxVersion":"SPDX-2.3"})]}
+    fetched=tmp_path/"final-attestations.json"; fetched.write_text(json.dumps(document),encoding="utf-8")
+    canonical=tmp_path/"canonical-final-attestations.json"
+    helper=ROOT/"scripts"/"green_print_attestation_inventory.py"
+    canonical_result=subprocess.run([sys.executable,str(helper),"canonical",str(fetched)],capture_output=True,text=True,check=True)
+    canonical.write_text(canonical_result.stdout,encoding="utf-8")
+    generated_sbom=tmp_path/"green-print-0.3.6.spdx.json"
+    result=subprocess.run([sys.executable,str(helper),"inspect",str(canonical),image,digest,str(generated_sbom),"c"*40,"sha256:"+"b"*64,"32622312938"],capture_output=True,text=True,check=True)
+    assert result.stdout.splitlines()==["recovery_count=1","sbom_count=1","foreign_count=0"]
+    assert json.loads(generated_sbom.read_text(encoding="utf-8"))=={"spdxVersion":"SPDX-2.3"}
 
 def test_attestation_fetch_maps_only_exact_github_not_found_to_empty():
     def runner(*_args,**_kwargs):
