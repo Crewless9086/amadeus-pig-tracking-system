@@ -192,7 +192,7 @@ def _load(action, payload):
                     order by created_at desc limit 1""", (EVENT_SOURCE, str(payload or "")))
                 row = cursor.fetchone()
                 return row[0] if row and isinstance(row[0], dict) else json.loads(row[0]) if row else None
-            cursor.execute("""select review_json->'rootline_execution'
+            cursor.execute("""select created_at,review_json->'rootline_execution'
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
                   and review_json->'rootline_execution'->>'zone_id'=%s
@@ -200,19 +200,23 @@ def _load(action, payload):
                       in ('contain_zone','release_zone_containment')
                 order by created_at desc limit 1""", (EVENT_SOURCE, str(payload or "")))
             row = cursor.fetchone()
-            if not row or row[0].get("action") == "release_zone_containment":
+            if not row or row[1].get("action") == "release_zone_containment":
                 return {"contained": False}
-            evidence = row[0]
+            contained_at, evidence = row
             execution_id = str(evidence.get("execution_id") or "")
             cursor.execute("""select review_json->'rootline_execution'
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
                   and review_json->'rootline_execution'->>'execution_id'=%s
                   and review_json->'rootline_execution'->>'action'
-                      in ('record_on_outcome','record_ambiguous_shutdown')
-                order by created_at""", (EVENT_SOURCE, execution_id))
+                      in ('record_on_outcome','record_ambiguous_shutdown',
+                          'record_completed','record_claim_recovery')
+                  and created_at>%s
+                order by created_at""", (EVENT_SOURCE, execution_id, contained_at))
             for detail_row in cursor.fetchall():
                 detail = detail_row[0]
+                if _verified_terminal_containment_resolution(evidence, detail):
+                    return {"contained": False, "resolution_evidence": detail}
                 if detail.get("action") == "record_on_outcome":
                     evidence["transport_status"] = (detail.get("on_outcome") or {}).get("status")
                 elif detail.get("action") == "record_ambiguous_shutdown":
@@ -223,6 +227,21 @@ def _load(action, payload):
       if is_database_unavailable(exc):
         raise RootlineExecutionStoreUnavailable(action) from exc
       raise
+
+
+def _verified_terminal_containment_resolution(containment, terminal):
+    """Accept only later canonical OFF proof for the exact contained execution."""
+    if not isinstance(containment, dict) or not isinstance(terminal, dict):
+        return False
+    if (terminal.get("action") not in {"record_completed", "record_claim_recovery"}
+            or terminal.get("execution_id") != containment.get("execution_id")
+            or terminal.get("zone_id") != containment.get("zone_id")
+            or terminal.get("shutdown_verified") is not True):
+        return False
+    shutdown = terminal.get("shutdown_evidence")
+    return (isinstance(shutdown, dict)
+            and shutdown.get("authoritative") is True
+            and shutdown.get("state") == "OFF")
 
 
 def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
