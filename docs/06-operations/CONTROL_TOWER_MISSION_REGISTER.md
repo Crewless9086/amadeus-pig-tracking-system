@@ -2231,3 +2231,44 @@ Completion still requires exact-current implementation, regression families for
 both actors and both languages across governed specialist journeys, independent
 review, merge, exact deployed-revision proof and genuine provider acceptance
 without proxying or replaying Pig 126. **NO OWNER OUTCOME.** OWNER ACTION: NONE.
+
+## 2026-08-23 - Oom Sakkie daily-brief retirement and projection findings
+
+The following findings remain inside the existing Oom Sakkie, ROOTLINE and
+daily-manager mission lineage. They create no new mission and do not change
+priority.
+
+ROOTLINE's 2026-08-23 owner message exposed backend tokens and audit language,
+including `Completed`, `now_after_fresh_execution_revalidation`,
+`59.983333... canonical` and lifecycle boilerplate, while asking the owner to
+interpret too much implementation detail. This is an owner-projection defect,
+not a failure of the underlying recorded irrigation lifecycle. The target is a
+short human result: B and C completed safely and are off; state the next check
+time; ask at most one optional tank-level question using `LOW`, `OK` or `FULL`.
+Internal tokens, floating-point duration residue and lifecycle boilerplate must
+remain in audit evidence rather than the owner message.
+
+Prince (`PIG-2026-E057`) is being presented with a stale welfare question.
+Canonical lifecycle rows from 15 and 17 August remain `waiting_for_input`, but
+the attributable owner reply event
+`OOM-MANAGER-QUESTION-7FD2CD4F06621C770BEA6D68` on 20 August records that
+Prince is improving and eating. No active lifecycle closure event exists, so
+silence or the reply alone must not be represented as canonical closure.
+Source inspection shows `_load_answered_questions` filters answers by
+`daily_identity`; later daily briefs therefore ignore the attributable earlier
+answer and ask again. Repair the existing answer-to-lifecycle reconciliation
+and retirement path; do not manually mutate or silently close Prince's case.
+
+Tristan sale `SALE-A1EE5E3DBC3110D1` is canonical `sale_status=Completed` and
+`payment_status=Not_Applicable` because it is a charity disposition, last
+updated on 20 August. `build_sale_watch_result` retires only `Completed` sales
+whose payment is `Paid` or `Settled`, so the daily brief falsely resurrects a
+payment review that cannot apply. The existing sale-watch retirement rule must
+recognize attributable completed non-payment dispositions without weakening
+normal payment controls.
+
+These are three bounded daily-brief retirement/projection defects: concise
+ROOTLINE owner rendering, durable prior-answer reconciliation, and completed
+charity-sale retirement. No irrigation command, welfare closure, sale/payment
+change, provider action or canonical mutation is authorized or claimed here.
+**NO OWNER OUTCOME.** OWNER ACTION: NONE.
