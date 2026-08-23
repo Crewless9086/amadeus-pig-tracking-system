@@ -2136,3 +2136,25 @@ follow-on is to let BEACON select exact approved public-use media automatically;
 do not restore livestock solicitation, invent media authority, create a parallel
 publication workflow or claim a SAM lead before genuine attributable inbound.
 OWNER ACTION: NONE.
+
+Charl corrected two ROOTLINE statements: B Camp was already physically proven,
+and irrigation timing belongs to ROOTLINE's adaptive decision rather than a
+fixed daylight-only window. Current canonical/source reconciliation confirms
+both corrections. The immutable commissioned controller baseline records
+B/channel 1 as `ROOTLINE-COMMISSION-D248A120ECE1961DB81B6C2E`, and canonical
+irrigation history proves verified B completions with safe shutdown on 12, 15
+and 19 August 2026. The active business rule already says summer may favour
+evening/night execution and clock time is adaptive. The command-inert daily
+advisor alone retained stale `not_canary_proven` and daylight-gate wording.
+
+Current-blocker PR `#1198`, exact head `85e29385`, reconciles that advisory
+projection with the commissioned baseline and adaptive timing rule. Focused
+verification is `82 passed`; hosted exact-head gates are pending. This source
+repair performs no hardware action and does not expand authority. ROOTLINE's
+genuine current outcome remains the deployed C12345 execution
+`ROOTLINE-EXECUTION-2A699BC07BD93EF40914AA69`, started at 18:17 SAST for one
+bounded segment. Its native fail-stop becomes due at approximately 19:17 SAST;
+the deployed scheduler, not a terminal, must record authoritative OFF/shutdown
+and then create the next fresh typed decision. B must not be watered merely to
+repeat proof or satisfy a display expectation; it runs when current canonical
+need ranks it eligible inside standing authority. OWNER ACTION: NONE.
