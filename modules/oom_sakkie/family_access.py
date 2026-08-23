@@ -18,6 +18,8 @@ from typing import Any, Mapping
 
 FAMILY_BINDINGS_ENV = "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON"
 OWNER_USER_ID_ENV = "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID"
+OWNER_LANGUAGE_ENV = "OOM_SAKKIE_TELEGRAM_OWNER_LANGUAGE"
+SUPPORTED_OUTPUT_LANGUAGES = frozenset({"en", "af"})
 PROTECTED_CAPABILITIES = frozenset({
     "mortality_confirmation", "sales_decision", "reservation", "payment",
     "mating_execution", "treatment", "hardware_exception",
@@ -56,7 +58,7 @@ class FamilyPrincipal:
     authorized_by_user_id: str
     authorized_at: str
     binding_digest: str
-    language: str = "af"
+    language: str = "en"
 
     @property
     def authenticated(self) -> bool:
@@ -104,9 +106,11 @@ def resolve_family_principal(parsed: Mapping[str, Any], environ: Mapping[str, st
     if not user_id or user_id != chat_id or chat_type != "private":
         return _unknown(user_id, chat_id)
     if owner_id and user_id == owner_id:
+        language = _output_language(environ.get(OWNER_LANGUAGE_ENV), default="en")
         return FamilyPrincipal(user_id, chat_id, FamilyRole.OWNER, "charl",
             frozenset({"*"}), frozenset({"*"}), "configured-owner",
-            owner_id, "configured", _digest({"owner_user_id": owner_id}))
+            owner_id, "configured", _digest({"owner_user_id": owner_id,
+                "language": language}), language)
     if not family_access_policy(environ)["configuration_valid"]:
         return _unknown(user_id, chat_id)
     rows = _bindings(environ)
@@ -235,7 +239,7 @@ def _principal_from_record(record: Mapping[str, Any], owner_id: str, chat_id: st
     allowed_permissions = FARM_MANAGER_CAPABILITIES | {READ_ONLY_CAPABILITY}
     if not permissions <= allowed_permissions:
         return None
-    if language != "af":
+    if language not in SUPPORTED_OUTPUT_LANGUAGES:
         return None
     if role is FamilyRole.READ_ONLY_FAMILY_MEMBER and permissions - {READ_ONLY_CAPABILITY}:
         return None
@@ -294,3 +298,8 @@ def _digest(value: Mapping[str, Any]) -> str:
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()[:200]
+
+
+def _output_language(value: Any, *, default: str = "en") -> str:
+    language = _clean(value).lower()
+    return language if language in SUPPORTED_OUTPUT_LANGUAGES else default

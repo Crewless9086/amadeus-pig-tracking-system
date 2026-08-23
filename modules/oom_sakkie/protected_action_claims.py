@@ -11,8 +11,12 @@ def canonical_preview_digest(kind, payload):
     material={"kind":str(kind),"payload":payload}
     return hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest()
 
-def build_buttons(token, *, grouped=False):
-    token=str(token); values=[("Bevestig alles" if grouped else "Bevestig","confirm"),("Verander","change"),("Kanselleer","cancel")]
+def build_buttons(token, *, grouped=False, language="af"):
+    token=str(token)
+    if str(language).casefold().startswith("af"):
+        values=[("Bevestig alles" if grouped else "Bevestig","confirm"),("Verander","change"),("Kanselleer","cancel")]
+    else:
+        values=[("Confirm all" if grouped else "Confirm","confirm"),("Correct","change"),("Cancel","cancel")]
     rows=[[{"text":label,"callback_data":f"{CALLBACK_PREFIX}{token}:{action}"} for label,action in values]]
     if any(len(button["callback_data"].encode())>MAX_CALLBACK_BYTES for row in rows for button in row):
         raise ValueError("protected callback exceeds Telegram limit")

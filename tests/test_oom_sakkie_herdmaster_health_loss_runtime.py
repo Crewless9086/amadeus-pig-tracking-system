@@ -2,6 +2,8 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_health_loss_runtime import (
+    _health_loss_message,
+    _mortality_completion_message,
     _record_lifecycle_event,
     handle_authenticated_health_loss_message,
     load_canonical_health_loss_evidence,
@@ -18,6 +20,20 @@ def parsed(text, message_id="3169"):
         "provider_message_id": message_id,
         "provider_timestamp": "2026-08-02T07:07:57+00:00",
     }
+
+
+def test_all_runtime_status_fragments_follow_recipient_language_and_are_html_safe():
+    keys = ("active_context_unavailable", "stale_confirmation", "pending_ambiguous",
+            "identity_required", "provider_identity_required", "chronology_conflict",
+            "binding_mismatch", "observation_recorded", "recording_contained",
+            "completion_recovery", "cancelled", "claim_unavailable")
+    english = " ".join(_health_loss_message("en", key) for key in keys)
+    afrikaans = " ".join(_health_loss_message("af", key) for key in keys)
+    assert "Nothing" in english and "Niks" not in english
+    assert "Niks" in afrikaans and "Nothing" not in afrikaans
+    completion = _mortality_completion_message({"pig_name": "A<B & C",
+        "welfare_case_closed": True, "living_checks_reconciled": 1}, "en")
+    assert "A&lt;B &amp; C" in completion and "A<B" not in completion
 
 
 def evidence():
@@ -218,7 +234,7 @@ def test_pig_11_report_is_acknowledged_and_asks_only_current_welfare_question(lo
     assert status == 200
     assert result["status"] == "waiting_for_input"
     assert result["tool_used"] == "herdmaster_health_loss_preview"
-    assert "PIG 11 NEEDS CHECKING" in result["answer"]
+    assert "HERDMASTER - HEALTH PREVIEW" in result["answer"]
     assert "able to stand, breathe normally and drink water" in result["answer"]
     assert result["writes_farm_data"] is False
     assert recorded[0]["provider_message_id"] == "3169"
@@ -243,7 +259,7 @@ def test_follow_up_reuses_open_context_without_repeating_known_report(loader):
     assert status == 200
     assert result["status"] == "preview_ready"
     assert result["question_count"] == 0
-    assert "HERDMASTER PREVIEW READY" in result["answer"]
+    assert "HERDMASTER - HEALTH PREVIEW" in result["answer"]
     assert "not eating" in recorded[0]["combined_text"]
     assert "drinking water" in recorded[0]["combined_text"]
 
@@ -683,6 +699,6 @@ def test_mortality_write_success_with_lifecycle_store_failure_is_visible_and_rec
         message, issue_gateway_owner_authority("42", "42"), context_store=good_store)
     assert recovered_status == 200 and recovered["status"] == "completed"
     assert recovered["rows_created"] == 0
-    assert "Deceased" in recovered["answer"] and "no longer current/on farm" in recovered["answer"]
+    assert "DEATH RECORDED" in recovered["answer"] and "no longer available on farm" in recovered["answer"]
     assert recorded[0]["status"] == "completed"
     assert confirm.call_count == 2

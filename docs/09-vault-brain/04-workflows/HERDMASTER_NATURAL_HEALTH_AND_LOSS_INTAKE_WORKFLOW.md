@@ -12,6 +12,23 @@ understandable preview of every potentially affected canonical domain. Protected
 effects occur only after explicit confirmation through their existing governed
 services.
 
+## Farm-manager authority envelope
+
+Anton is the authenticated human farm manager. Within the farm and irrigation
+domains he may report, preview, and confirm his own governed operational
+actions, including mortality lifecycle confirmation. Authorization is based on
+the authenticated principal's bounded role/capability, not a blanket
+`is_owner` identity check. The preview and confirmation remain bound to the
+same actor; Anton cannot confirm Charl's claim and Charl cannot silently
+confirm Anton's claim. Audit evidence, canonical revalidation, atomic writes,
+idempotency, replay containment, and irrigation/device safety controls remain
+mandatory.
+
+This authority does not grant Anton access to CORE, CHARLIE, permission or role
+administration, credentials, payments, publication, customer commitments, or
+unrelated business authority. It creates no second manager, bot, parser,
+database, queue, or lifecycle.
+
 The owner must not need to know database tables, forms, specialist lanes, or
 record types.
 
@@ -135,6 +152,12 @@ message lifecycle contain authenticated intake/context wiring. Presence in
 source does not prove that a deployed route is enabled, correctly configured,
 or operationally successful.
 
+The existing authenticated family principal supplies the durable output
+language (`charl` defaults to English; a configured Afrikaans family principal
+such as `dad` remains Afrikaans). Inbound-language detection never writes this
+preference. The same selection is carried through the pure preview composer,
+protected buttons, correction/failure states and completion.
+
 ### Protected write authority
 
 `modules/pig_weights/herdmaster_health_loss_recording.py` contains narrowly
@@ -143,6 +166,15 @@ existing mortality handling. It is not a generic compound executor and grants
 no authority to create arbitrary litter, mating, medical, movement, disposal,
 availability, customer, or sales effects. Stage 1 neither invokes nor expands
 this writer.
+
+For a supported confirmed death, the writer uses one database transaction to
+record the canonical lifecycle effect, close the attributable living-welfare
+case with an append-only death event/link, complete now-invalid living-animal
+checks with append-only manager-case events, and retain distinct mortality,
+disposal and biosecurity work. Canonical readback must prove the pig, lifecycle,
+welfare closure and active-projection outcome before completion is composed;
+failure rolls the whole transaction back. Exact replay reuses the same
+operation and readback and creates no second effect.
 
 `202608200002_create_pig_welfare_case_lifecycle.sql` is the reviewed additive
 foundation for case identity, append-only case events and non-merging fact

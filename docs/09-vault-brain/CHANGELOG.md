@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-08-23 - Anton farm-manager mortality authority reconciled
+
+- Recorded the owner's bounded decision that Anton may perform and confirm his
+  own governed farm and irrigation management actions while CORE, CHARLIE,
+  permission administration, payments, publication and unrelated business
+  authority remain excluded.
+- Reconciled the shared HERDMASTER health/loss path to capability-based,
+  same-actor mortality confirmation, Afrikaans and English semantic intake and
+  recipient-language rendering. Confirmed mortality now coordinates canonical
+  lifecycle and attributable welfare closure atomically with replay-safe
+  readback while preserving distinct disposal, biosecurity and mortality work.
+- This is source/prepared evidence only. Pig 126, historical provider events,
+  production configuration and canonical data remain untouched pending a
+  separately authorized release and genuine post-deployment Anton journey.
+
 ## 2026-08-20 - BEACON stock-neutral livestock-enquiry capture
 
 - Added the distinct BEACON stock-neutral livestock-enquiry capture boundary.

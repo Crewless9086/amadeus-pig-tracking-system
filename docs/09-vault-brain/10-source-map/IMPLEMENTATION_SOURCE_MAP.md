@@ -297,6 +297,10 @@
 - First natural specialist adapter and exact-preview factual writer:
   `modules/oom_sakkie/herdmaster_health_loss_runtime.py` and
   `modules/pig_weights/herdmaster_health_loss_recording.py`.
+- Authenticated recipient language and localized protected controls:
+  `modules/oom_sakkie/family_access.py`, `telegram_gateway.py` and
+  `protected_action_claims.py`. The family principal is canonical; no
+  Telegram-specific preference store or second callback rail exists.
 - Canonical health/loss workflow and stage-one pure contracts:
   `docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md`,
   `modules/pig_weights/herdmaster_natural_health_loss_intake.py`, and
@@ -322,6 +326,11 @@
   Focused coverage is in
   `tests/test_pig_welfare_case_runtime.py`. No second manager, queue,
   observation store, UI or Telegram lifecycle is introduced.
+- Confirmed supported mortality coordinates canonical lifecycle, attributable
+  welfare closure and obsolete living-check reconciliation inside the existing
+  transaction in `herdmaster_health_loss_recording.py`; completion is governed
+  by canonical readback and distinct mortality/disposal/biosecurity work is
+  preserved.
 - Dispatch truth reducer:
   `modules/oom_sakkie/specialist_dispatch_ack.py`.
 - Existing durable evidence rail:

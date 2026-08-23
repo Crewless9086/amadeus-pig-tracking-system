@@ -9,6 +9,7 @@ medical authority.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import re
@@ -74,6 +75,7 @@ def handle_authenticated_health_loss_message(
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     provider_message_id = str(parsed.get("provider_message_id") or "").strip()
     provider_timestamp = str(parsed.get("provider_timestamp") or "").strip()
+    output_language = "af" if str(parsed.get("output_language") or "en").casefold().startswith("af") else "en"
     explicit_health = bool(HEALTH_PATTERN.search(text) or (
         semantic.get("domain") == "herd_health" and not semantic.get("needs_clarification")))
     confirmation_shaped = bool(CONFIRMATION_PATTERN.fullmatch(text))
@@ -97,8 +99,7 @@ def handle_authenticated_health_loss_message(
             context_store=context_store)
     except ActiveContextLoadError:
         return {"handled": True, "success": False, "status": "health_loss_active_context_unavailable",
-            "answer": ("⚠️ <b>HERDMASTER FOLLOW-UP CONTAINED</b>\n\n"
-                       "I could not safely read the active animal-case chronology. Your message was retained by the authenticated intake, but no new case or farm record was created."),
+            "answer": _health_loss_message(output_language, "active_context_unavailable"),
             "records_audit_trace": False, "writes_farm_data": False,
             "protected_actions_performed": False}, 503
     stale_confirmation = next((row for row in contexts
@@ -108,8 +109,7 @@ def handle_authenticated_health_loss_message(
     if stale_confirmation:
         return {"handled": True, "success": False,
             "status": "health_loss_stale_confirmation_invalidated",
-            "answer": ("⚠️ <b>OLD HERDMASTER PREVIEW EXPIRED</b>\n\n"
-                       "That confirmation belongs to an earlier corrected preview. Nothing was recorded. Use the confirmation identity shown on the current preview."),
+            "answer": _health_loss_message(output_language, "stale_confirmation"),
             "mission_id": str(stale_confirmation.get("mission_id") or ""),
             "card_mission_id": str(stale_confirmation.get("mission_id") or ""),
             "records_audit_trace": True, "writes_farm_data": False,
@@ -124,8 +124,7 @@ def handle_authenticated_health_loss_message(
                for row in ambiguity):
             return {"handled": True, "success": True,
                     "status": "health_loss_pending_context_ambiguous",
-                    "answer": ("<b>HERDMASTER - WHICH UPDATE?</b>\n\n"
-                               "More than one pending update could match that pig. Reply to the exact question card so I can bind it safely."),
+                    "answer": _health_loss_message(output_language, "pending_ambiguous"),
                     "question_count": 1, "writes_farm_data": False,
                     "protected_actions_performed": False}, 200
         ambiguity_id = "OOM-HERDMASTER-CONTEXT-" + hashlib.sha256(
@@ -150,8 +149,7 @@ def handle_authenticated_health_loss_message(
                     "status": "health_loss_context_persistence_failed",
                     "writes_farm_data": False, "protected_actions_performed": False}, 503
         return {"handled": True, "success": True, "status": "health_loss_context_disambiguation_required",
-            "answer": ("⚠️ <b>HERDMASTER FOLLOW-UP NEEDS ONE IDENTITY</b>\n\n"
-                       "More than one animal case is active. Name the pig or tag once so I can bind this update safely. Nothing was recorded."),
+            "answer": _health_loss_message(output_language, "identity_required"),
             "question_count": 1,
             "retained_owner_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
             "mission_id": ambiguity_id, "card_mission_id": ambiguity_id,
@@ -187,11 +185,11 @@ def handle_authenticated_health_loss_message(
         return {"handled": False, "status": "health_loss_entity_without_active_context"}, 200
 
     if not provider_message_id or not provider_timestamp:
-        return {"handled": True, "success": False, "status": "health_loss_provider_identity_required"}, 409
+        return {"handled": True, "success": False, "status": "health_loss_provider_identity_required",
+                "answer": _health_loss_message(output_language, "provider_identity_required")}, 409
     if active and not _chronology_allows(active, provider_message_id, provider_timestamp):
         return {"handled": True, "success": False, "status": "health_loss_follow_up_chronology_conflict",
-            "answer": ("⚠️ <b>HERDMASTER FOLLOW-UP CONTAINED</b>\n\n"
-                       "This update is older than the active animal case or conflicts with its chronology. Nothing was recorded."),
+            "answer": _health_loss_message(output_language, "chronology_conflict"),
             "mission_id": str(active.get("mission_id") or ""),
             "card_mission_id": str(active.get("mission_id") or ""),
             "records_audit_trace": False, "writes_farm_data": False,
@@ -256,7 +254,7 @@ def handle_authenticated_health_loss_message(
             if (str(parsed.get("protected_preview_sha256") or "")!=str(binding.get("preview_sha256") or "")
                     or dict(parsed.get("protected_preview_identity") or {})!=dict(active_identity)):
                 return {"handled":True,"success":False,"status":"health_loss_protected_preview_binding_mismatch",
-                  "answer":"The protected preview no longer matches the active mortality case. Nothing was recorded.",
+                  "answer":_health_loss_message(output_language, "binding_mismatch"),
                   "writes_farm_data":False,"protected_actions_performed":False},409
         recorded, recorded_status = confirm_health_loss_preview(
             active, text, actor_id=str(parsed.get("telegram_user_id") or ""),
@@ -264,16 +262,15 @@ def handle_authenticated_health_loss_message(
             connect_factory=connect_factory,
         )
         mission_id = str(active.get("mission_id") or "")
-        answer = ("✅ <b>HERDMASTER OBSERVATION RECORDED</b>\n\n"
-                  "The exact confirmed factual welfare observation was recorded once. "
-                  "No diagnosis or treatment was added. HERDMASTER will reassess from the refreshed evidence."
-                  if recorded.get("success") else
-                  "⚠️ <b>HERDMASTER RECORDING CONTAINED</b>\n\nNothing was written. The exact preview must be refreshed before confirmation.")
+        answer = _health_loss_message(output_language,
+            "observation_recorded" if recorded.get("success") else "recording_contained")
         if recorded.get("success") and str(recorded.get("status") or "").startswith("mortality_lifecycle_"):
             answer = ("✅ <b>PIG LIFECYCLE UPDATED</b>\n\n"
                       "The confirmed outcome was recorded once: the pig is Deceased and no longer current/on farm. "
                       "The current pen and availability projections will exclude the pig. Historical records remain preserved. "
-                      "Exact time of death, cause, diagnosis and treatment remain Unknown.")
+                       "Exact time of death, cause, diagnosis and treatment remain Unknown.")
+            answer = _mortality_completion_message(
+                recorded, str(active.get("output_language") or "en"))
         lifecycle = {**dict(active), "provider_message_id": provider_message_id,
             "provider_timestamp": provider_timestamp,
             "status": "completed" if recorded.get("success") else "contained",
@@ -283,9 +280,7 @@ def handle_authenticated_health_loss_message(
         if persisted.get("success") is not True:
             return {"handled": True, "success": False,
                 "status": "health_loss_completion_persistence_pending",
-                "answer": ("⚠️ <b>HERDMASTER COMPLETION NEEDS RECOVERY</b>\n\n"
-                           "The governed farm operation completed, but Oom Sakkie could not yet persist the visible completion state. "
-                           "Do not repeat the farm action; the exact confirmation can be recovered safely."),
+                "answer": _health_loss_message(output_language, "completion_recovery"),
                 "mission_id": mission_id, "card_mission_id": mission_id,
                 "records_audit_trace": False,
                 "writes_farm_data": bool(recorded.get("writes_farm_data")),
@@ -315,7 +310,7 @@ def handle_authenticated_health_loss_message(
                 list(active_for_message.get("invalidated_operation_ids") or [])
                 + [str(active_for_message.get("operation_id") or "")]
             )),
-            "owner_text": "⛔ <b>HERDMASTER PREVIEW CANCELLED</b>\n\nNothing was recorded.",
+            "owner_text": _health_loss_message(output_language, "cancelled"),
             "event_phase": "preview_declined"}
         stored = _record_lifecycle_event(lifecycle, context_store=context_store)
         if stored.get("success") is not True:
@@ -372,6 +367,7 @@ def handle_authenticated_health_loss_message(
         "provider_message_id": evidence_provider_message_id,
         "provider_timestamp": evidence_provider_timestamp,
         "provider_timezone": "Africa/Johannesburg",
+        "output_language": output_language,
         "text": combined_text,
     }
     preview = prepare_health_loss_owner_preview(envelope, evidence)
@@ -393,6 +389,7 @@ def handle_authenticated_health_loss_message(
         "operation_id": str((preview.get("confirmation_binding") or {}).get("operation_id") or ""),
         "evidence_generation": str(evidence.get("evidence_generation") or ""),
         "owner_text": owner_text,
+        "output_language": output_language,
         "preview": preview,
         "mission_id": mission_id,
         "owner_intent": owner_intent,
@@ -429,10 +426,11 @@ def handle_authenticated_health_loss_message(
                 "identity":(preview.get("evaluator") or {}).get("identity") or {}})
             protected={"preview_digest":claim["preview_digest"],"callback_token":claim["callback_token"],
                        "action_kind":str(claim.get("action_kind") or "mortality"),
-                       "reply_markup":build_buttons(claim["callback_token"],grouped=False)}
+                       "reply_markup":build_buttons(claim["callback_token"],grouped=False,
+                           language=output_language)}
         except Exception:
             return {"handled":True,"success":False,"status":"health_loss_protected_claim_unavailable",
-                    "answer":"The preview was retained, but its protected buttons could not be stored safely. Nothing was recorded.",
+                    "answer":_health_loss_message(output_language, "claim_unavailable"),
                     "writes_farm_data":False},503
     return {
         "handled": True,
@@ -468,6 +466,68 @@ def _classify_preview_owner_intent(text: str, active: Mapping[str, Any] | None) 
     if text.strip().endswith("?"):
         return "asks_question"
     return "adds_evidence"
+
+
+def _health_loss_message(language: str, key: str) -> str:
+    messages = {
+        "en": {
+            "active_context_unavailable": "<b>HERDMASTER FOLLOW-UP PAUSED</b>\n\nI could not safely read the active animal-case history. Nothing new was recorded.",
+            "stale_confirmation": "<b>OLD HERDMASTER PREVIEW EXPIRED</b>\n\nThat confirmation belongs to an earlier corrected preview. Nothing was recorded. Use the current preview.",
+            "pending_ambiguous": "<b>HERDMASTER - WHICH UPDATE?</b>\n\nMore than one pending update could match. Reply to the exact question card.",
+            "identity_required": "<b>HERDMASTER NEEDS ONE IDENTITY</b>\n\nName the pig or tag once so I can bind this update safely. Nothing was recorded.",
+            "provider_identity_required": "<b>HERDMASTER MESSAGE NOT ACCEPTED</b>\n\nThe authenticated message identity or timestamp is missing. Nothing was recorded.",
+            "chronology_conflict": "<b>HERDMASTER FOLLOW-UP PAUSED</b>\n\nThis update conflicts with the active case chronology. Nothing was recorded.",
+            "binding_mismatch": "<b>HERDMASTER PREVIEW CHANGED</b>\n\nThe protected preview no longer matches the active mortality case. Nothing was recorded.",
+            "observation_recorded": "<b>HERDMASTER OBSERVATION RECORDED</b>\n\nThe confirmed factual observation was recorded once. No diagnosis or treatment was added.",
+            "recording_contained": "<b>HERDMASTER RECORDING PAUSED</b>\n\nNothing was written. Refresh the exact preview before confirmation.",
+            "completion_recovery": "<b>HERDMASTER COMPLETION NEEDS RECOVERY</b>\n\nThe farm operation completed, but the visible completion could not be saved. Do not repeat the farm action.",
+            "cancelled": "<b>HERDMASTER PREVIEW CANCELLED</b>\n\nNothing was recorded.",
+            "claim_unavailable": "<b>HERDMASTER CONFIRMATION UNAVAILABLE</b>\n\nThe preview was retained, but its protected buttons could not be stored safely. Nothing was recorded.",
+        },
+        "af": {
+            "active_context_unavailable": "<b>HERDMASTER-OPVOLG OPGESKORT</b>\n\nEk kon nie die aktiewe diersaak se geskiedenis veilig lees nie. Niks nuuts is aangeteken nie.",
+            "stale_confirmation": "<b>OU HERDMASTER-VOORSKOU HET VERVAL</b>\n\nDaardie bevestiging behoort aan 'n vroeere gekorrigeerde voorskou. Niks is aangeteken nie. Gebruik die huidige voorskou.",
+            "pending_ambiguous": "<b>HERDMASTER - WATTER OPDATERING?</b>\n\nMeer as een hangende opdatering kan pas. Antwoord op die presiese vraagkaart.",
+            "identity_required": "<b>HERDMASTER BENODIG EEN IDENTITEIT</b>\n\nNoem die vark of oorplaatjie een keer sodat ek die opdatering veilig kan koppel. Niks is aangeteken nie.",
+            "provider_identity_required": "<b>HERDMASTER-BOODSKAP NIE AANVAAR NIE</b>\n\nDie geverifieerde boodskapidentiteit of tydstempel ontbreek. Niks is aangeteken nie.",
+            "chronology_conflict": "<b>HERDMASTER-OPVOLG OPGESKORT</b>\n\nHierdie opdatering bots met die aktiewe saak se tydlyn. Niks is aangeteken nie.",
+            "binding_mismatch": "<b>HERDMASTER-VOORSKOU HET VERANDER</b>\n\nDie beskermde voorskou pas nie meer by die aktiewe vrektesaak nie. Niks is aangeteken nie.",
+            "observation_recorded": "<b>HERDMASTER-WAARNEMING AANGETEKEN</b>\n\nDie bevestigde feitelike waarneming is een keer aangeteken. Geen diagnose of behandeling is bygevoeg nie.",
+            "recording_contained": "<b>HERDMASTER-AANTEKENING OPGESKORT</b>\n\nNiks is geskryf nie. Verfris die presiese voorskou voor bevestiging.",
+            "completion_recovery": "<b>HERDMASTER-VOLTOOIING BENODIG HERSTEL</b>\n\nDie plaasaksie is voltooi, maar die sigbare voltooiing kon nie gestoor word nie. Moenie die aksie herhaal nie.",
+            "cancelled": "<b>HERDMASTER-VOORSKOU GEKANSELLEER</b>\n\nNiks is aangeteken nie.",
+            "claim_unavailable": "<b>HERDMASTER-BEVESTIGING NIE BESKIKBAAR NIE</b>\n\nDie voorskou is behou, maar die beskermde knoppies kon nie veilig gestoor word nie. Niks is aangeteken nie.",
+        },
+    }
+    selected = "af" if str(language).casefold().startswith("af") else "en"
+    return messages[selected][key]
+
+
+def _mortality_completion_message(recorded: Mapping[str, Any], language: str) -> str:
+    af = str(language).casefold().startswith("af")
+    name = html.escape(str(recorded.get("pig_name") or recorded.get("tag_number") or
+               ("Die vark" if af else "The pig")))
+    if af:
+        lines = [f"<b>{name} SE AFSTERWE AANGETEKEN</b>", "",
+                 "Die bevestigde afsterwe is een keer aangeteken en die vark is nie meer op die plaas beskikbaar nie."]
+        if recorded.get("welfare_case_closed"):
+            lines.append("Die verwante lewende-welsynsaak is met afsterwe as rede gesluit.")
+        if recorded.get("living_checks_reconciled"):
+            lines.append("Toekomstige lewende-dier kontroles wat nie meer geldig is nie, is afgesluit.")
+        lines.append("Oorsaak en presiese tyd bly Onbekend.")
+        if int(recorded.get("preserved_distinct_work") or 0):
+            lines.append("Afsonderlike wegdoenings- of biosekuriteitswerk bly sigbaar omdat dit nog oop is.")
+    else:
+        lines = [f"<b>{name} - DEATH RECORDED</b>", "",
+                 "The confirmed death was recorded once and the pig is no longer available on farm."]
+        if recorded.get("welfare_case_closed"):
+            lines.append("The related living-welfare case was closed with death as the reason.")
+        if recorded.get("living_checks_reconciled"):
+            lines.append("Future living-animal checks that no longer apply were closed.")
+        lines.append("Cause and exact time remain Unknown.")
+        if int(recorded.get("preserved_distinct_work") or 0):
+            lines.append("Separate disposal or biosecurity work stays visible because it is still open.")
+    return "\n".join(lines)
 
 
 def _existing_lifecycle_result(active: Mapping[str, Any]) -> dict:
@@ -523,6 +583,10 @@ def load_canonical_health_loss_evidence(*, connect_factory=None):
 
 
 def _owner_message(preview: Mapping[str, Any]) -> str:
+    # The pure composer owns every visible fragment and its recipient language.
+    # Do not wrap it with a second, hard-coded English projection.
+    if str(preview.get("owner_text") or "").strip():
+        return str(preview["owner_text"])
     evaluator = preview.get("evaluator") if isinstance(preview.get("evaluator"), Mapping) else {}
     identity = evaluator.get("identity") if isinstance(evaluator.get("identity"), Mapping) else {}
     question = str(evaluator.get("smallest_missing_follow_up_question") or preview.get("owner_text") or "").strip()
