@@ -49,6 +49,15 @@ artifact. It never claims that the recovery workflow built the image; the
 predicate binds the original failed publication run and identifies only the
 later evidence-completion effects. Recovery is a
 separately protected dispatch and never grants installation or print authority.
+If an evidence-completion run creates the signature and both attestations but
+fails before its packet, continuation must preserve those objects. The OCI
+labels, SBOM subject and recovery predicate continue to bind the original image
+source. GitHub's attestation envelope separately and truthfully binds the main
+revision that ran the evidence-completion workflow. Continuation accepts only
+one exact pair of attestations, the exact failed recovery run and its successful
+sign/attest then failed-verify chronology; it skips every evidence mutation and
+emits a packet only after both revision bindings verify. The two revisions must
+never be substituted for or collapsed into each other.
 
 ## Install and commissioning
 

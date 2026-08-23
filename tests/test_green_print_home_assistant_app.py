@@ -318,6 +318,8 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert inputs["complete_partial_publication"]["default"] is False
     assert inputs["expected_manifest_digest"]["required"] is False
     assert inputs["original_publication_run_id"]["required"] is False
+    assert inputs["existing_recovery_source_commit"]["required"] is False
+    assert inputs["existing_recovery_run_id"]["required"] is False
     recovery=parsed["jobs"]["recover_partial_publication"]
     text=json.dumps(recovery)
     assert recovery["if"]=="github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication"
@@ -327,6 +329,7 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert 'test "${PUBLISH_REQUESTED}" = "false"' in binding
     assert 'test "${VERIFY_ONLY_REQUESTED}" = "false"' in binding
     assert 'ORIGINAL_PUBLICATION_RUN_ID' in binding
+    assert 'test "${EXISTING_RECOVERY_SOURCE_COMMIT}" != "${EXPECTED_SOURCE_COMMIT}"' in binding
     assert binding.count('^sha256:[0-9a-f]{64}$')==2 and '^[0-9a-f]{40}$' in binding
     original=steps[names.index("Verify truthful original publication run identity")]["run"]
     for stage,outcome in (("Build and push untagged exact linux arm64 manifest","success"),("Create the unique version tag as an arm64 index","success"),("Verify pushed index descriptor, config and OCI bindings","failure"),("Install pinned Cosign signer and verifier","skipped"),("Keylessly sign verified arm64 index","skipped"),("Generate SPDX SBOM from exact linux arm64 digest","skipped"),("Attest build provenance","skipped"),("Attest SBOM","skipped"),("Verify signature and digest-bound attestations","skipped")):
@@ -339,11 +342,16 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert '"${IMAGE}@${EXPECTED_MANIFEST_DIGEST}" --format' in existing
     assert 'tag-recheck.txt' in existing and 'org.opencontainers.image.revision' in existing
     signature=steps[names.index("Inspect existing signature and refuse foreign or ambiguous state")]["run"]
-    assert "cosign triangulate" in signature and "test \"$(jq 'length' recovered-cosign-verification.json)\" = \"1\"" in signature
+    assert "cosign triangulate" in signature and "validate-cosign" in signature
+    for flag in ("--certificate-github-workflow-sha","--certificate-github-workflow-name","--certificate-github-workflow-repository","--certificate-github-workflow-ref","--certificate-github-workflow-trigger"):
+        assert flag in signature
     attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
     assert "green_print_attestation_inventory.py" in attestations
     assert 'test "${foreign_count}" = "0"' in attestations
     assert 'test "${recovery_count}" -le 1' in attestations and 'test "${sbom_count}" -le 1' in attestations
+    assert "validate-recovery-run" in attestations
+    assert attestations.count("validate-verification-run")==2
+    assert attestations.count('--source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}"')==2
     assert "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" in text
     assert "actions/attest-build-provenance" not in text
     assert "claimsBuildProvenance:false" in text and "original_publication_run_id" in text
@@ -353,6 +361,11 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert names.index("Inspect attestations and refuse foreign, duplicate or malformed state") < first_effect
     assert names.index("Prepare truthful post-build recovery predicate") < first_effect
     assert names.index("Verify completed signature, attestations and immutable tag") < names.index("Emit partial-publication recovery receipt")
+    final_verify=steps[names.index("Verify completed signature, attestations and immutable tag")]["run"]
+    assert 'attestation_source_commit="${EXISTING_RECOVERY_SOURCE_COMMIT:-${GITHUB_SHA}}"' in final_verify
+    assert final_verify.count('--source-digest "${attestation_source_commit}"')==2
+    assert final_verify.count("validate-verification-run")==2
+    assert "validate-cosign" in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
 
@@ -399,6 +412,71 @@ def test_attestation_fetch_maps_only_exact_github_not_found_to_empty():
 def test_attestation_fetch_keeps_nonexact_not_found_and_every_other_failure_fatal(result):
     with pytest.raises(RuntimeError,match="attestation_inventory_fetch_failed"):
         I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,lambda *_a,**_k:result)
+
+def _failed_recovery_run(source="0bd8069fc63a71fee9923d131eb60bc378d6a22d",run_id=32625792776):
+    return {"id":run_id,"run_attempt":1,"name":"Green Print immutable image","event":"workflow_dispatch","head_sha":source,"status":"completed","conclusion":"failure","html_url":f"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/{run_id}"}
+
+def _failed_recovery_jobs():
+    steps=[{"name":name,"conclusion":conclusion,"number":number} for number,(name,conclusion) in enumerate(I.RECOVERY_STEP_TRUTH,start=11)]
+    return {"total_count":2,"jobs":[{"id":97100000001,"name":"Verify aarch64 package","conclusion":"success","steps":[]},{"id":97100000002,"name":I.RECOVERY_JOB,"conclusion":"failure","steps":steps}]}
+
+def test_existing_recovery_run_accepts_exact_production_shaped_two_revision_chronology():
+    source="0bd8069fc63a71fee9923d131eb60bc378d6a22d"; run_id="32625792776"
+    assert I.validate_recovery_run(_failed_recovery_run(source,int(run_id)),_failed_recovery_jobs(),source,run_id) is None
+
+@pytest.mark.parametrize("mutate",[
+    lambda run,jobs: run.update(head_sha="7d4c2d7ffa552223440967acbedda2659c3b0c0c"),
+    lambda run,jobs: run.update(id=32625792777),
+    lambda run,jobs: run.update(run_attempt=2),
+    lambda run,jobs: run.update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][1].update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][1]["steps"][2].update(conclusion="failure"),
+    lambda run,jobs: jobs["jobs"][1]["steps"][3].update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][1]["steps"][4].update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][1]["steps"][5].update(number=10),
+    lambda run,jobs: jobs["jobs"].append(dict(jobs["jobs"][1])),
+])
+def test_existing_recovery_run_rejects_identity_effect_failure_skip_order_and_duplicates(mutate):
+    source="0bd8069fc63a71fee9923d131eb60bc378d6a22d"; run_id="32625792776"
+    run=_failed_recovery_run(); jobs=_failed_recovery_jobs(); mutate(run,jobs)
+    with pytest.raises(ValueError): I.validate_recovery_run(run,jobs,source,run_id)
+
+def _attestation_verification(run_id="32625792776",uri=None):
+    invocation=uri or f"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/{run_id}/attempts/1"
+    return [{"attestation":{"bundle":{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}},"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"0bd8069fc63a71fee9923d131eb60bc378d6a22d","runInvocationURI":invocation}}}}]
+
+def test_attestation_verification_accepts_exact_single_first_attempt_run_uri():
+    assert I.validate_verification_run(_attestation_verification(),"Crewless9086/amadeus-pig-tracking-system","32625792776","1") is None
+
+@pytest.mark.parametrize("document,run_id,attempt",[
+    ([],"32625792776","1"),
+    (_attestation_verification()+_attestation_verification(),"32625792776","1"),
+    ([{"verificationResult":{"signature":{"certificate":{}}}}],"32625792776","1"),
+    (_attestation_verification(uri="https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792777/attempts/1"),"32625792776","1"),
+    (_attestation_verification(uri="https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/10"),"32625792776","1"),
+    (_attestation_verification(),"32625792776","2"),
+])
+def test_attestation_verification_rejects_missing_multiple_different_run_near_match_and_attempt(document,run_id,attempt):
+    with pytest.raises(ValueError): I.validate_verification_run(document,"Crewless9086/amadeus-pig-tracking-system",run_id,attempt)
+
+def _cosign_verification():
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64
+    native={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://sigstore.dev/cosign/sign/v1"},"optional":{}}
+    recovery={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://in-toto.io/Statement/v0.1"},"optional":{}}
+    sbom={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://in-toto.io/Statement/v1"},"optional":{}}
+    return [native,recovery,sbom]
+
+def test_cosign_verification_binds_exact_single_image_digest_workflow_repository_and_source():
+    assert I.validate_cosign_verification(_cosign_verification(),"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64) is None
+
+@pytest.mark.parametrize("document",[
+    [],
+    _cosign_verification()+[_cosign_verification()[0]],
+    [{**_cosign_verification()[0],"critical":{**_cosign_verification()[0]["critical"],"identity":{"docker-reference":"ghcr.io/foreign/image@sha256:"+"a"*64}}}]+_cosign_verification()[1:],
+    [{"critical":{},"optional":{}}],
+])
+def test_cosign_verification_rejects_missing_multiple_wrong_source_and_malformed(document):
+    with pytest.raises(ValueError): I.validate_cosign_verification(document,"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64)
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
