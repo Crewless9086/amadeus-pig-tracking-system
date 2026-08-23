@@ -19,17 +19,10 @@ def authority():
 
 def manager_authority():
     return issue_gateway_owner_authority("5721652188", "5721652188",
-        principal_role="farm_manager", capabilities=(
-            "mortality_confirmation", "herdmaster_management_input", "mating_execution",
-            "irrigation_start", "irrigation_continue", "payment", "publication"))
+        principal_role="farm_manager", capabilities=("mortality_confirmation",))
 
 
-@pytest.mark.parametrize("action_kind", [
-    "mortality", "herdmaster_breeding_grouped", "rootline_irrigation_segment",
-    "sam_sale_payment", "beacon_campaign_review", "beacon_media_review",
-    "documents_green_print",
-])
-def test_manager_callback_uses_explicit_full_oom_specialist_action_envelope(monkeypatch, action_kind):
+def test_manager_callback_is_narrowly_bounded_to_mortality(monkeypatch):
     observed = {}
     def claim(*args, **kwargs):
         observed.update(kwargs)
@@ -37,9 +30,20 @@ def test_manager_callback_uses_explicit_full_oom_specialist_action_envelope(monk
     monkeypatch.setattr(runtime, "claim_callback", claim)
     runtime.handle_protected_action_input(
         {**parsed(""), "callback_data": "oompa:opaque:confirm"}, manager_authority())
-    assert action_kind in observed["allowed_action_kinds"]
-    assert "core" not in observed["allowed_action_kinds"]
-    assert "charlie" not in observed["allowed_action_kinds"]
+    assert observed["allowed_action_kinds"] == frozenset({"mortality"})
+
+
+def test_sealed_authority_must_match_parsed_actor_before_claim(monkeypatch):
+    calls=[]
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:calls.append(kwargs))
+    result,status=runtime.handle_protected_action_input({
+        "telegram_user_id":"1002","telegram_chat_id":"1002",
+        "provider_message_id":"cb-cross","provider_timestamp":"2026-08-23T20:27:24Z",
+        "reply_to_message_id":"700","callback_data":"oompa:opaque:confirm","text":""},
+        issue_gateway_owner_authority("1003","1003",principal_role="farm_manager",
+            capabilities=("mortality_confirmation",)))
+    assert status==200 and result["status"]=="protected_action_not_applicable"
+    assert calls==[]
 
 
 def test_buttons_are_short_opaque_and_have_required_afrikaans_labels():
@@ -402,6 +406,26 @@ def test_manager_capability_envelope_excludes_non_farm_and_ungranted_actions(mon
     assert status==403
     assert observed["allowed_action_kinds"]==frozenset({"mortality"})
     assert all(value not in observed["allowed_action_kinds"] for value in ("core","charlie","payment"))
+
+
+@pytest.mark.parametrize("denied_kind", [
+    "grouped_weights", "herdmaster_breeding_grouped", "herdmaster_record_farrowing_litter",
+    "rootline_irrigation_segment", "rootline_fertilizer_mixer_presence_refresh",
+    "rootline_fertilizer_mixer_commissioning", "sam_sale_payment",
+    "beacon_campaign_review", "beacon_private_album_finish", "beacon_media_review",
+    "documents_green_print", "documents_green_physical_acceptance", "core", "charlie",
+])
+def test_manager_urgent_callback_scope_explicitly_denies_every_non_mortality_kind(
+        monkeypatch, denied_kind):
+    observed={}
+    def claim(*args,**kwargs):
+        observed.update(kwargs)
+        assert denied_kind not in kwargs["allowed_action_kinds"]
+        return {"success":False,"status":"protected_action_not_allowed"},403
+    monkeypatch.setattr(runtime,"claim_callback",claim)
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"callback_data":"oompa:opaque:confirm"},manager_authority())
+    assert status==403 and observed["allowed_action_kinds"]==frozenset({"mortality"})
 
 
 def test_direct_callback_preserves_digest_scoped_card_lifecycle(monkeypatch):

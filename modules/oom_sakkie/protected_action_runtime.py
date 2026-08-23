@@ -8,36 +8,18 @@ from modules.oom_sakkie.protected_action_claims import (
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
 
 NATURAL_CONFIRM=re.compile(r"^(?:i\s+confirm(?:\s+this)?|confirm(?:\s+all)?|yes[, ]*confirm|ek\s+bevestig(?:\s+alles)?|bevestig(?:\s+alles)?)\s*[.!]?$",re.I)
-OOM_SAKKIE_MANAGER_ACTION_KINDS=frozenset({
-    "mortality", "grouped_weights", "herdmaster_breeding_grouped",
-    "herdmaster_record_farrowing_litter", "rootline_irrigation_segment",
-    "rootline_fertilizer_mixer_presence_refresh",
-    "rootline_fertilizer_mixer_commissioning",
-    "sam_sale_payment", "beacon_campaign_review", "beacon_private_album_finish",
-    "beacon_media_review", "documents_green_print",
-    "documents_green_physical_acceptance",
-})
+OOM_SAKKIE_MANAGER_ACTION_KINDS=frozenset({"mortality"})
 OOM_SAKKIE_MANAGER_ACTION_CAPABILITIES={
     "mortality": "mortality_confirmation",
-    "grouped_weights": "herdmaster_management_input",
-    "herdmaster_breeding_grouped": "mating_execution",
-    "herdmaster_record_farrowing_litter": "herdmaster_management_input",
-    "rootline_irrigation_segment": "irrigation_start",
-    "rootline_fertilizer_mixer_presence_refresh": "irrigation_continue",
-    "rootline_fertilizer_mixer_commissioning": "irrigation_start",
-    "sam_sale_payment": "payment",
-    "beacon_campaign_review": "publication",
-    "beacon_private_album_finish": "publication",
-    "beacon_media_review": "publication",
-    "documents_green_print": "publication",
-    "documents_green_physical_acceptance": "publication",
 }
 
 def handle_protected_action_input(parsed, gateway_authority, *, callback_data="",
                                   connect_factory=None, health_handler=None,
                                   irrigation_handler=None, documents_handler=None):
     owner=str(parsed.get("telegram_user_id") or "");chat=str(parsed.get("telegram_chat_id") or "")
-    if not validates_gateway_owner_authority(gateway_authority) or not owner or owner!=chat:
+    if (not validates_gateway_owner_authority(gateway_authority) or not owner or owner!=chat
+            or gateway_authority.owner_user_id != owner
+            or gateway_authority.private_chat_id != chat):
         return {"handled":False,"status":"protected_action_not_applicable"},200
     data=str(callback_data or parsed.get("callback_data") or "")
     if not data:
