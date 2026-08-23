@@ -116,15 +116,10 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
         lifecycle = (validate_zone_lifecycle(
             (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
             or project_zone_lifecycle(zone_id=zone, recommendation=row))
-        decision_value = ("Completed" if lifecycle.get("state") == "Completed" else
-                          row.get("status") or row.get("recommendation"))
-        decision = _decision(decision_value, af)
+        decision = _lifecycle_decision(lifecycle, row, af)
         window = _human_window(row.get("preferred_window"))
         suffix = f" · {html.escape(window)}" if window and window.lower() not in {"unavailable", "unknown"} else ""
-        already_recommendation = decision.casefold().startswith(
-            "aanbeveling" if af else "recommendation")
-        prefix = "" if already_recommendation else ("Aanbeveling: " if af else "Recommendation: ")
-        lines.append(f"• <b>{label}:</b> {prefix}{decision}{suffix}")
+        lines.append(f"• <b>{label}:</b> {decision}{suffix}")
         reason = str(row.get("reason") or "").strip()
         if reason and reason not in reasons:
             reasons.append(reason)
@@ -162,6 +157,35 @@ def _decision(value: Any, af: bool) -> str:
         return "Hou" if af else "Hold"
     if text == "completed":
         return "Voltooi" if af else "Completed"
+    return "Data nodig" if af else "Needs Data"
+
+
+def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[str, Any],
+                        af: bool) -> str:
+    state = str(lifecycle.get("state") or "Held")
+    if state == "Started":
+        return "Loop tans" if af else "Currently running"
+    if state == "Authorized":
+        return "Gereed — begin veilig" if af else "Ready — starting safely"
+    if state == "Eligible":
+        return ("Gereed na die finale veiligheidskontrole" if af else
+                "Ready after the final safety check")
+    if state == "Revalidating":
+        return "Kontroleer veiligheid" if af else "Checking safely"
+    if state == "Recommended":
+        return "Moet natgemaak word" if af else "Needs watering"
+    if state == "Held":
+        recommendation_value = str(recommendation.get("status") or
+            recommendation.get("recommendation") or "").casefold()
+        if recommendation_value in {"hold", "do not run", "do_not_run"}:
+            return ("Loop nie — het nie water nodig nie" if af else
+                    "Not running — does not need watering")
+        return "Teruggehou — loop nie" if af else "Held — not running"
+    if state == "Failed":
+        return ("Veilig teruggehou — probleem word outomaties nagegaan" if af else
+                "Held safely — problem under automatic review")
+    if state == "Completed":
+        return "Voltooi — af en geverifieer" if af else "Completed — off and verified"
     return "Data nodig" if af else "Needs Data"
 
 

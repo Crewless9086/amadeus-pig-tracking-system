@@ -63,8 +63,8 @@ def test_delayed_refresh_waits_without_claim_then_sends_when_fresh():
 
 def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     text = compose_daily_rootline_plan(result())
-    assert "<b>B Camp:</b> Recommendation: Hold" in text
-    assert "<b>C Camp:</b> Recommendation: Hold" in text
+    assert "<b>B Camp:</b> Not running — does not need watering" in text
+    assert "<b>C Camp:</b> Not running — does not need watering" in text
     assert "Lifecycle:" not in text and "ROOTLINE must claim" not in text
     assert "Started: no" not in text and "Completed: no" not in text
     assert "Observed rain supports Hold" in text
@@ -74,7 +74,7 @@ def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
 
 def test_recommendation_never_claims_irrigation_executed():
     text = compose_daily_rootline_plan(result(b="Recommend", c="Run"))
-    assert "Recommendation - irrigate" in text
+    assert "Needs watering" in text
     assert ">Run<" not in text and ":</b> Run" not in text
 
 
@@ -93,9 +93,9 @@ def test_completed_canonical_lifecycle_never_maps_to_hold():
                     "next_action": "Reassess when weather changes."},
     }
     text = compose_daily_rootline_plan(value)
-    assert "<b>B Camp:</b> Recommendation: Completed" in text
+    assert "<b>B Camp:</b> Completed — off and verified" in text
     assert "Lifecycle:" not in text
-    assert "B Camp:</b> Recommendation: Hold" not in text
+    assert "B Camp:</b> Not running" not in text
 
 
 def test_volatile_cutoff_and_formatting_never_change_material_decision_content():
@@ -198,8 +198,8 @@ def test_live_backend_tokens_are_not_exposed_and_hold_never_claims_eligibility()
                     "next_action": "ROOTLINE must claim existing canonical execution exactly once"},
     }
     text = compose_daily_rootline_plan(value)
-    assert "B Camp:</b> Recommendation - irrigate" in text
-    assert "C Camp:</b> Recommendation: Hold" in text
+    assert "B Camp:</b> Ready after the final safety check" in text
+    assert "C Camp:</b> Ready after the final safety check" in text
     for internal in ("Lifecycle", "Eligible", "now_after", "zone_decision", "claim existing"):
         assert internal not in text
 
@@ -211,3 +211,49 @@ def test_next_check_aware_and_naive_sast_are_not_shifted_twice():
         text = compose_daily_rootline_plan(value)
         assert "around 22:45" in text
         assert "around 00:45" not in text
+
+
+def test_validated_started_and_failed_lifecycle_override_conflicting_recommendations_en_af():
+    value = result(b="Hold", c="Recommend", reason="now_after_fresh_execution_revalidation")
+    value["irrigation_lifecycle"] = {
+        "B12345": {"contract_version":"rootline_zone_lifecycle.v1","zone_id":"B12345",
+            "state":"Started","reason":"active_execution","next_action_owner":"ROOTLINE",
+            "next_action":"verify shutdown"},
+        "C12345": {"contract_version":"rootline_zone_lifecycle.v1","zone_id":"C12345",
+            "state":"Failed","reason":"contained","next_action_owner":"ROOTLINE",
+            "next_action":"reconcile safely"},
+    }
+    english = compose_daily_rootline_plan(value, language="en")
+    afrikaans = compose_daily_rootline_plan(value, language="af")
+    assert "B Camp:</b> Currently running" in english
+    assert "C Camp:</b> Held safely — problem under automatic review" in english
+    assert "B Kamp:</b> Loop tans" in afrikaans
+    assert "C Kamp:</b> Veilig teruggehou — probleem word outomaties nagegaan" in afrikaans
+    for text in (english, afrikaans):
+        assert "active_execution" not in text and "contained" not in text
+        assert "Lifecycle" not in text and "Lewensiklus" not in text
+
+
+def test_every_validated_lifecycle_state_has_human_en_af_projection():
+    expected = {
+        "Recommended": ("Needs watering", "Moet natgemaak word"),
+        "Revalidating": ("Checking safely", "Kontroleer veiligheid"),
+        "Eligible": ("Ready after the final safety check", "Gereed na die finale veiligheidskontrole"),
+        "Authorized": ("Ready — starting safely", "Gereed — begin veilig"),
+        "Started": ("Currently running", "Loop tans"),
+        "Completed": ("Completed — off and verified", "Voltooi — af en geverifieer"),
+        "Held": ("Not running — does not need watering", "Loop nie — het nie water nodig nie"),
+        "Failed": ("Held safely — problem under automatic review",
+                   "Veilig teruggehou — probleem word outomaties nagegaan"),
+    }
+    for state, (en, af) in expected.items():
+        value = result(b="Hold", c="Hold")
+        value["irrigation_lifecycle"] = {zone: {
+            "contract_version":"rootline_zone_lifecycle.v1","zone_id":zone,
+            "state":state,"reason":"internal_reason_token","next_action_owner":"ROOTLINE",
+            "next_action":"internal_next_action"} for zone in ("B12345","C12345")}
+        english = compose_daily_rootline_plan(value, language="en")
+        afrikaans = compose_daily_rootline_plan(value, language="af")
+        assert en in english and af in afrikaans
+        assert "internal_reason_token" not in english + afrikaans
+        assert "internal_next_action" not in english + afrikaans
