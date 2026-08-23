@@ -6,6 +6,8 @@ on:
       - ".github/workflows/green-print-image.yml"
       - "green_print_bridge/**"
       - "scripts/green_print_startup_apparmor_probe.py"
+      - "scripts/green_print_attestation_inventory.py"
+      - "scripts/green_print_sigstore_bundle_inventory.py"
       - "tests/test_green_print_home_assistant_app.py"
   workflow_dispatch:
     inputs:
@@ -28,7 +30,7 @@ on:
         required: false
         type: string
       complete_partial_publication:
-        description: Complete signing and attestations for an exact already-published artifact without pushing an image or tag
+        description: Verify already-completed 0.3.6 recovery evidence and emit its packet without any evidence mutation
         required: true
         default: false
         type: boolean
@@ -46,6 +48,14 @@ on:
         type: string
       existing_recovery_run_id:
         description: Exact failed recovery run that created the already-existing signature and attestations
+        required: false
+        type: string
+      deviation_signature_source_commit:
+        description: Exact main revision of the contained unauthorized signature effect
+        required: false
+        type: string
+      deviation_signature_run_id:
+        description: Exact contained run that appended the second native signature
         required: false
         type: string
 
@@ -395,18 +405,22 @@ jobs:
             recovered-sbom-attestation-verification.json
 
   recover_partial_publication:
-    name: Complete exact partial publication without image or tag push
+    name: Verify exact completed partial publication without evidence effects
     if: github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      id-token: write
-      packages: write
-      attestations: write
+      packages: read
+      attestations: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
         with:
           fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install exact native-bundle inspection dependency
+        run: python -m pip install cryptography==45.0.7
       - name: Bind partial recovery to exact source, index, manifest and main
         shell: bash
         env:
@@ -418,6 +432,8 @@ jobs:
           ORIGINAL_PUBLICATION_RUN_ID: ${{ inputs.original_publication_run_id }}
           EXISTING_RECOVERY_SOURCE_COMMIT: ${{ inputs.existing_recovery_source_commit }}
           EXISTING_RECOVERY_RUN_ID: ${{ inputs.existing_recovery_run_id }}
+          DEVIATION_SIGNATURE_SOURCE_COMMIT: ${{ inputs.deviation_signature_source_commit }}
+          DEVIATION_SIGNATURE_RUN_ID: ${{ inputs.deviation_signature_run_id }}
         run: |
           set -euo pipefail
           test "${PUBLISH_REQUESTED}" = "false"
@@ -426,13 +442,17 @@ jobs:
           [[ "${EXPECTED_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "${EXPECTED_MANIFEST_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "${ORIGINAL_PUBLICATION_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
-          if test -n "${EXISTING_RECOVERY_SOURCE_COMMIT}" || test -n "${EXISTING_RECOVERY_RUN_ID}"; then
-            [[ "${EXISTING_RECOVERY_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
-            [[ "${EXISTING_RECOVERY_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
-            test "${EXISTING_RECOVERY_SOURCE_COMMIT}" != "${EXPECTED_SOURCE_COMMIT}"
-            git cat-file -e "${EXISTING_RECOVERY_SOURCE_COMMIT}^{commit}"
-            git merge-base --is-ancestor "${EXISTING_RECOVERY_SOURCE_COMMIT}" "${GITHUB_SHA}"
-          fi
+          [[ "${EXISTING_RECOVERY_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXISTING_RECOVERY_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
+          [[ "${DEVIATION_SIGNATURE_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${DEVIATION_SIGNATURE_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
+          test "${EXISTING_RECOVERY_SOURCE_COMMIT}" != "${EXPECTED_SOURCE_COMMIT}"
+          test "${DEVIATION_SIGNATURE_SOURCE_COMMIT}" != "${EXPECTED_SOURCE_COMMIT}"
+          test "${DEVIATION_SIGNATURE_SOURCE_COMMIT}" != "${EXISTING_RECOVERY_SOURCE_COMMIT}"
+          git cat-file -e "${EXISTING_RECOVERY_SOURCE_COMMIT}^{commit}"
+          git merge-base --is-ancestor "${EXISTING_RECOVERY_SOURCE_COMMIT}" "${GITHUB_SHA}"
+          git cat-file -e "${DEVIATION_SIGNATURE_SOURCE_COMMIT}^{commit}"
+          git merge-base --is-ancestor "${DEVIATION_SIGNATURE_SOURCE_COMMIT}" "${GITHUB_SHA}"
           test "${EXPECTED_DIGEST}" != "${EXPECTED_MANIFEST_DIGEST}"
           test "${GITHUB_REF}" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
@@ -475,7 +495,7 @@ jobs:
               number("Create the unique version tag as an arm64 index") < number("Verify pushed index descriptor, config and OCI bindings") and
               number("Verify pushed index descriptor, config and OCI bindings") < number("Install pinned Cosign signer and verifier"))
           ' original-publication-jobs.json >/dev/null
-      - name: Authenticate only for exact signature and attestation completion
+      - name: Authenticate read-only for exact signature and attestation verification
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
@@ -533,6 +553,7 @@ jobs:
         env:
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           EXISTING_RECOVERY_SOURCE_COMMIT: ${{ inputs.existing_recovery_source_commit }}
+          DEVIATION_SIGNATURE_SOURCE_COMMIT: ${{ inputs.deviation_signature_source_commit }}
         run: |
           set -euo pipefail
           digest_ref="${IMAGE}@${EXPECTED_DIGEST}"
@@ -541,13 +562,22 @@ jobs:
           signature_ref="$(cosign triangulate "${digest_ref}")"
           if docker buildx imagetools inspect "${signature_ref}" >/dev/null 2>&1; then
             docker buildx imagetools inspect "${signature_ref}" --raw > existing-signature-manifest.json
-            jq -e '.mediaType == "application/vnd.oci.image.manifest.v1+json" and (.layers | length) == 1' existing-signature-manifest.json >/dev/null
-            cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${EXISTING_RECOVERY_SOURCE_COMMIT}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-verification.json
+            jq -e '.mediaType == "application/vnd.oci.image.manifest.v1+json" and (.layers | length) == 2' existing-signature-manifest.json >/dev/null
+            cat > expected-native-signatures.json <<'JSON'
+          [{"certificate_sha256":"17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","runInvocationURI":"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1"},{"certificate_sha256":"d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","runInvocationURI":"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1"}]
+          JSON
+            cosign download signature "${digest_ref}" > native-signature-bundles.jsonl
+            python scripts/green_print_sigstore_bundle_inventory.py native-signature-bundles.jsonl expected-native-signatures.json > native-signature-inventory.json
+            cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${EXISTING_RECOVERY_SOURCE_COMMIT}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-original-verification.json
             test -n "${EXISTING_RECOVERY_SOURCE_COMMIT}"
-            python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
-            echo "sign_required=false" >> "${GITHUB_OUTPUT}"
+            python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-original-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
+            cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${DEVIATION_SIGNATURE_SOURCE_COMMIT}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-deviation-verification.json
+            python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-deviation-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
+            echo "signature_manifest_sha256=$(sha256sum existing-signature-manifest.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+            echo "native_signature_inventory_sha256=$(sha256sum native-signature-inventory.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           else
-            echo "sign_required=true" >> "${GITHUB_OUTPUT}"
+            echo "Required exact existing signature is absent" >&2
+            exit 1
           fi
       - name: Install pinned Syft scanner
         id: recovery_syft
@@ -568,6 +598,8 @@ jobs:
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           EXISTING_RECOVERY_SOURCE_COMMIT: ${{ inputs.existing_recovery_source_commit }}
           EXISTING_RECOVERY_RUN_ID: ${{ inputs.existing_recovery_run_id }}
+          DEVIATION_SIGNATURE_SOURCE_COMMIT: ${{ inputs.deviation_signature_source_commit }}
+          DEVIATION_SIGNATURE_RUN_ID: ${{ inputs.deviation_signature_run_id }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -577,34 +609,20 @@ jobs:
           python scripts/green_print_attestation_inventory.py inspect existing-attestations.json "${IMAGE}" "${EXPECTED_DIGEST}" green-print-0.3.6.spdx.json "${EXPECTED_SOURCE_COMMIT}" "${{ inputs.expected_manifest_digest }}" "${{ inputs.original_publication_run_id }}" > attestation-inventory.env
           source attestation-inventory.env
           test "${foreign_count}" = "0"
-          test "${recovery_count}" -le 1
-          test "${sbom_count}" -le 1
-          if test "${recovery_count}" = "1" || test "${sbom_count}" = "1"; then
-            test "${recovery_count}" = "1"
-            test "${sbom_count}" = "1"
-            [[ "${EXISTING_RECOVERY_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
-            [[ "${EXISTING_RECOVERY_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
-            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${EXISTING_RECOVERY_RUN_ID}" > existing-recovery-run.json
-            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${EXISTING_RECOVERY_RUN_ID}/jobs?per_page=100" > existing-recovery-jobs.json
-            python scripts/green_print_attestation_inventory.py validate-recovery-run existing-recovery-run.json existing-recovery-jobs.json "${EXISTING_RECOVERY_SOURCE_COMMIT}" "${EXISTING_RECOVERY_RUN_ID}"
-          else
-            test -z "${EXISTING_RECOVERY_SOURCE_COMMIT}"
-            test -z "${EXISTING_RECOVERY_RUN_ID}"
-          fi
-          if test "${recovery_count}" = "1"; then
-            gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" --cert-identity "${identity}" --source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-recovery-attestation-verification.json
-            python scripts/green_print_attestation_inventory.py validate-verification-run recovered-recovery-attestation-verification.json "${GITHUB_REPOSITORY}" "${EXISTING_RECOVERY_RUN_ID}" 1
-            echo "recovery_attestation_required=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "recovery_attestation_required=true" >> "${GITHUB_OUTPUT}"
-          fi
-          if test "${sbom_count}" = "1"; then
-            gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
-            python scripts/green_print_attestation_inventory.py validate-verification-run recovered-sbom-attestation-verification.json "${GITHUB_REPOSITORY}" "${EXISTING_RECOVERY_RUN_ID}" 1
-            echo "sbom_required=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "sbom_required=true" >> "${GITHUB_OUTPUT}"
-          fi
+          test "${recovery_count}" = "1"
+          test "${sbom_count}" = "1"
+          [[ "${EXISTING_RECOVERY_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXISTING_RECOVERY_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${EXISTING_RECOVERY_RUN_ID}" > existing-recovery-run.json
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${EXISTING_RECOVERY_RUN_ID}/jobs?per_page=100" > existing-recovery-jobs.json
+          python scripts/green_print_attestation_inventory.py validate-recovery-run existing-recovery-run.json existing-recovery-jobs.json "${EXISTING_RECOVERY_SOURCE_COMMIT}" "${EXISTING_RECOVERY_RUN_ID}"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${DEVIATION_SIGNATURE_RUN_ID}" > deviation-signature-run.json
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${DEVIATION_SIGNATURE_RUN_ID}/jobs?per_page=100" > deviation-signature-jobs.json
+          python scripts/green_print_attestation_inventory.py validate-deviation-run deviation-signature-run.json deviation-signature-jobs.json "${DEVIATION_SIGNATURE_SOURCE_COMMIT}" "${DEVIATION_SIGNATURE_RUN_ID}"
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" --cert-identity "${identity}" --source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-recovery-attestation-verification.json
+          python scripts/green_print_attestation_inventory.py validate-verification-run recovered-recovery-attestation-verification.json "${GITHUB_REPOSITORY}" "${EXISTING_RECOVERY_RUN_ID}" 1
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
+          python scripts/green_print_attestation_inventory.py validate-verification-run recovered-sbom-attestation-verification.json "${GITHUB_REPOSITORY}" "${EXISTING_RECOVERY_RUN_ID}" 1
       - name: Prepare truthful post-build recovery predicate
         shell: bash
         run: |
@@ -614,27 +632,6 @@ jobs:
             --arg manifest_digest "${{ inputs.expected_manifest_digest }}" \
             --arg original_run_id "${{ inputs.original_publication_run_id }}" \
             '{recoveryKind:"post_build_release_evidence_completion",claimsBuildProvenance:false,originalPublication:{workflow:".github/workflows/green-print-image.yml",runId:$original_run_id,sourceCommit:$source_commit,verifyJob:"success",publishJob:"failed_after_tag_creation"},artifact:{indexDigest:$index_digest,soleLinuxArm64ManifestDigest:$manifest_digest},permittedEffects:["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],prohibitedEffects:["image_build","image_push","tag_create","retag","delete","install","print"]}' > green-print-0.3.6-recovery-predicate.json
-      - name: Keylessly sign exact existing arm64 index when absent
-        if: steps.partial_signature.outputs.sign_required == 'true'
-        shell: bash
-        run: cosign sign --yes "${IMAGE}@${{ inputs.expected_digest }}"
-      - name: Attest truthful post-build recovery evidence when absent
-        if: steps.partial_attestations.outputs.recovery_attestation_required == 'true'
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ inputs.expected_digest }}
-          predicate-type: https://amadeus.farm/attestations/green-partial-publication-recovery/v1
-          predicate-path: green-print-0.3.6-recovery-predicate.json
-          push-to-registry: true
-      - name: Attest exact existing SBOM when absent
-        if: steps.partial_attestations.outputs.sbom_required == 'true'
-        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ inputs.expected_digest }}
-          sbom-path: green-print-0.3.6.spdx.json
-          push-to-registry: true
       - name: Verify completed signature, attestations and immutable tag
         id: partial_verify
         shell: bash
@@ -642,6 +639,7 @@ jobs:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           EXISTING_RECOVERY_SOURCE_COMMIT: ${{ inputs.existing_recovery_source_commit }}
+          DEVIATION_SIGNATURE_SOURCE_COMMIT: ${{ inputs.deviation_signature_source_commit }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -650,14 +648,23 @@ jobs:
           issuer="https://token.actions.githubusercontent.com"
           attestation_source_commit="${EXISTING_RECOVERY_SOURCE_COMMIT:-${GITHUB_SHA}}"
           attestation_run_id="${{ inputs.existing_recovery_run_id || github.run_id }}"
-          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${attestation_source_commit}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-verification.json
-          python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
+          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${attestation_source_commit}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-original-verification.json
+          python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-original-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
+          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${DEVIATION_SIGNATURE_SOURCE_COMMIT}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-deviation-verification.json
+          python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-deviation-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
           gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" --cert-identity "${identity}" --source-digest "${attestation_source_commit}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-recovery-attestation-verification.json
           gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${attestation_source_commit}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
           python scripts/green_print_attestation_inventory.py validate-verification-run recovered-recovery-attestation-verification.json "${GITHUB_REPOSITORY}" "${attestation_run_id}" 1
           python scripts/green_print_attestation_inventory.py validate-verification-run recovered-sbom-attestation-verification.json "${GITHUB_REPOSITORY}" "${attestation_run_id}" 1
           test "$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" | awk '$1 == "Digest:" {print $2; exit}')" = "${EXPECTED_DIGEST}"
-          echo "cosign_sha256=$(sha256sum recovered-cosign-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          signature_ref="$(cosign triangulate "${digest_ref}")"
+          docker buildx imagetools inspect "${signature_ref}" --raw > final-signature-manifest.json
+          cmp -s existing-signature-manifest.json final-signature-manifest.json
+          cosign download signature "${digest_ref}" > final-native-signature-bundles.jsonl
+          python scripts/green_print_sigstore_bundle_inventory.py final-native-signature-bundles.jsonl expected-native-signatures.json > final-native-signature-inventory.json
+          cmp -s native-signature-inventory.json final-native-signature-inventory.json
+          echo "cosign_original_sha256=$(sha256sum recovered-cosign-original-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "cosign_deviation_sha256=$(sha256sum recovered-cosign-deviation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "recovery_attestation_sha256=$(sha256sum recovered-recovery-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "sbom_attestation_sha256=$(sha256sum recovered-sbom-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "sbom_sha256=$(sha256sum green-print-0.3.6.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
@@ -670,13 +677,33 @@ jobs:
             "source_commit=${{ inputs.expected_source_commit }}" \
             "recovery_evidence_source_commit=${{ inputs.existing_recovery_source_commit || github.sha }}" \
             "recovery_evidence_run_id=${{ inputs.existing_recovery_run_id || github.run_id }}" \
+            "signature_run_1=${{ inputs.existing_recovery_run_id }}" \
+            "signature_source_1=${{ inputs.existing_recovery_source_commit }}" \
+            "signature_run_2=${{ inputs.deviation_signature_run_id }}" \
+            "signature_source_2=${{ inputs.deviation_signature_source_commit }}" \
+            "native_signature_count=2" \
+            "signature_certificate_sha256_1=17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25" \
+            "signature_run_uri_1=https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1" \
+            "signature_certificate_sha256_2=d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437" \
+            "signature_run_uri_2=https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1" \
+            "authority_deviation=run_32627304614_unexpected_signature_effect_contained_no_reconciliation" \
+            "quarantined_packet_run_id=32627304614" \
+            "quarantined_packet_artifact_id=9490047287" \
+            "quarantined_packet_name=green-print-0.3.6-partial-publication-recovery-packet" \
+            "quarantined_packet_archive_sha256=1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548" \
+            "quarantined_packet_size_bytes=1515741" \
+            "quarantined_packet_expires=2026-11-21T08:05:08Z" \
+            "quarantined_packet_authority=non_authoritative_incident_evidence" \
             "digest=${{ inputs.expected_digest }}" \
             "manifest_digest=${{ inputs.expected_manifest_digest }}" \
             "tag_resolved_digest=${{ inputs.expected_digest }}" \
             "platform=linux/arm64" \
             "image_index_sha256=${{ steps.partial_existing.outputs.index_sha256 }}" \
             "image_config_sha256=${{ steps.partial_existing.outputs.config_sha256 }}" \
-            "cosign_verification_sha256=${{ steps.partial_verify.outputs.cosign_sha256 }}" \
+            "cosign_original_verification_sha256=${{ steps.partial_verify.outputs.cosign_original_sha256 }}" \
+            "cosign_deviation_verification_sha256=${{ steps.partial_verify.outputs.cosign_deviation_sha256 }}" \
+            "signature_manifest_sha256=${{ steps.partial_signature.outputs.signature_manifest_sha256 }}" \
+            "native_signature_inventory_sha256=${{ steps.partial_signature.outputs.native_signature_inventory_sha256 }}" \
             "recovery_attestation_verification_sha256=${{ steps.partial_verify.outputs.recovery_attestation_sha256 }}" \
             "sbom_attestation_sha256=${{ steps.partial_verify.outputs.sbom_attestation_sha256 }}" \
             "sbom_sha256=${{ steps.partial_verify.outputs.sbom_sha256 }}" \

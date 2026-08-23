@@ -5,12 +5,17 @@ import base64,importlib.util,json,sqlite3,sys
 from pathlib import Path
 from types import SimpleNamespace
 import pytest,yaml
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 
 ROOT=Path(__file__).parents[1]; APP=ROOT/"green_print_bridge"
 SPEC=importlib.util.spec_from_file_location("green_app",APP/"app"/"service.py"); S=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(S)
 sys.modules["service"]=S
 QUEUE_SPEC=importlib.util.spec_from_file_location("green_init_queue",APP/"app"/"init_queue.py"); Q=importlib.util.module_from_spec(QUEUE_SPEC); QUEUE_SPEC.loader.exec_module(Q)
 INVENTORY_SPEC=importlib.util.spec_from_file_location("green_attestation_inventory",ROOT/"scripts"/"green_print_attestation_inventory.py"); I=importlib.util.module_from_spec(INVENTORY_SPEC); INVENTORY_SPEC.loader.exec_module(I)
+BUNDLE_SPEC=importlib.util.spec_from_file_location("green_bundle_inventory",ROOT/"scripts"/"green_print_sigstore_bundle_inventory.py"); B=importlib.util.module_from_spec(BUNDLE_SPEC); BUNDLE_SPEC.loader.exec_module(B)
 NOW=datetime(2026,8,21,8,tzinfo=timezone.utc); PDF=b"%PDF-1.4\nsynthetic\n%%EOF"
 def config(tmp_path):
     cert=tmp_path/"private-ca.crt"; cert.write_text("synthetic",encoding="utf-8")
@@ -320,11 +325,17 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert inputs["original_publication_run_id"]["required"] is False
     assert inputs["existing_recovery_source_commit"]["required"] is False
     assert inputs["existing_recovery_run_id"]["required"] is False
+    assert inputs["deviation_signature_source_commit"]["required"] is False
+    assert inputs["deviation_signature_run_id"]["required"] is False
     recovery=parsed["jobs"]["recover_partial_publication"]
     text=json.dumps(recovery)
     assert recovery["if"]=="github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication"
-    assert recovery["permissions"]=={"contents":"read","id-token":"write","packages":"write","attestations":"write"}
+    assert recovery["permissions"]=={"contents":"read","packages":"read","attestations":"read"}
     steps=recovery["steps"]; names=[step.get("name") for step in steps]
+    assert "Install exact native-bundle inspection dependency" in names
+    assert names.index("Install exact native-bundle inspection dependency") < names.index("Inspect existing signature and refuse foreign or ambiguous state")
+    assert "cryptography==45.0.7" in steps[names.index("Install exact native-bundle inspection dependency")]["run"]
+    assert "Install exact native-bundle inspection dependency" not in [step.get("name") for step in parsed["jobs"]["recover"]["steps"]]
     binding=steps[names.index("Bind partial recovery to exact source, index, manifest and main")]["run"]
     assert 'test "${PUBLISH_REQUESTED}" = "false"' in binding
     assert 'test "${VERIFY_ONLY_REQUESTED}" = "false"' in binding
@@ -343,31 +354,66 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert 'tag-recheck.txt' in existing and 'org.opencontainers.image.revision' in existing
     signature=steps[names.index("Inspect existing signature and refuse foreign or ambiguous state")]["run"]
     assert "cosign triangulate" in signature and "validate-cosign" in signature
+    assert '(.layers | length) == 2' in signature
+    assert "recovered-cosign-original-verification.json" in signature
+    assert "recovered-cosign-deviation-verification.json" in signature
     for flag in ("--certificate-github-workflow-sha","--certificate-github-workflow-name","--certificate-github-workflow-repository","--certificate-github-workflow-ref","--certificate-github-workflow-trigger"):
         assert flag in signature
     attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
     assert "green_print_attestation_inventory.py" in attestations
     assert 'test "${foreign_count}" = "0"' in attestations
-    assert 'test "${recovery_count}" -le 1' in attestations and 'test "${sbom_count}" -le 1' in attestations
+    assert 'test "${recovery_count}" = "1"' in attestations and 'test "${sbom_count}" = "1"' in attestations
     assert "validate-recovery-run" in attestations
+    assert "validate-deviation-run" in attestations
     assert attestations.count("validate-verification-run")==2
     assert attestations.count('--source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}"')==2
     assert "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" in text
     assert "actions/attest-build-provenance" not in text
     assert "claimsBuildProvenance:false" in text and "original_publication_run_id" in text
-    first_effect=names.index("Keylessly sign exact existing arm64 index when absent")
-    assert names.index("Verify stable existing tag, index, sole manifest and OCI config") < first_effect
-    assert names.index("Inspect existing signature and refuse foreign or ambiguous state") < first_effect
-    assert names.index("Inspect attestations and refuse foreign, duplicate or malformed state") < first_effect
-    assert names.index("Prepare truthful post-build recovery predicate") < first_effect
     assert names.index("Verify completed signature, attestations and immutable tag") < names.index("Emit partial-publication recovery receipt")
     final_verify=steps[names.index("Verify completed signature, attestations and immutable tag")]["run"]
     assert 'attestation_source_commit="${EXISTING_RECOVERY_SOURCE_COMMIT:-${GITHUB_SHA}}"' in final_verify
     assert final_verify.count('--source-digest "${attestation_source_commit}"')==2
     assert final_verify.count("validate-verification-run")==2
     assert "validate-cosign" in final_verify
+    assert "cmp -s existing-signature-manifest.json final-signature-manifest.json" in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
+
+def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_command():
+    parsed=yaml.safe_load((ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8"))
+    recovery=parsed["jobs"]["recover_partial_publication"]
+    names=[step.get("name","") for step in recovery["steps"]]
+    stale_registry_probe={"signature_present":False,"sign_required":"true"}
+    assert stale_registry_probe["sign_required"]=="true"
+    assert not any(name.startswith("Keylessly sign") or name.startswith("Attest ") for name in names)
+    serialized=json.dumps(recovery)
+    for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
+        assert forbidden not in serialized
+    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
+        assert exact in serialized
+
+def _native_bundle(run_uri):
+    key=ec.generate_private_key(ec.SECP256R1()); subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,"synthetic")])
+    encoded=run_uri.encode(); extension=b"\x0c"+bytes([len(encoded)])+encoded
+    cert=(x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key()).serial_number(1).not_valid_before(datetime(2026,8,23,tzinfo=timezone.utc)).not_valid_after(datetime(2026,8,24,tzinfo=timezone.utc)).add_extension(x509.UnrecognizedExtension(B.RUN_INVOCATION_OID,extension),critical=False).sign(key,hashes.SHA256()))
+    raw=cert.public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.DER)
+    payload=base64.b64encode(json.dumps({"critical":{"type":B.NATIVE}}).encode()).decode()
+    bundle={"content":{"dsseEnvelope":{"payload":payload}},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()}}}
+    return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
+
+def test_native_bundle_inventory_accepts_exact_two_certificate_fingerprints_and_run_uris():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    assert B.inspect([first[0],second[0]],[first[1],second[1]])==sorted([first[1],second[1]],key=lambda row:row["certificate_sha256"])
+
+def test_native_bundle_inventory_rejects_substitution_missing_multiple_and_malformed():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]
+    adversaries=[([first[0]],expected),([first[0],second[0],second[0]],expected),([first[0],second[0]],[first[1],{**second[1],"certificate_sha256":"0"*64}]),([first[0],second[0]],[first[1],{**second[1],"runInvocationURI":second[1]["runInvocationURI"]+"0"}]),([first[0],"{}"],expected)]
+    for lines,wanted in adversaries:
+        with pytest.raises(ValueError): B.inspect(lines,wanted)
 
 def _recovery_predicate(index="sha256:"+"a"*64,manifest="sha256:"+"b"*64,source="c"*40,run_id="32622312938"):
     return {"recoveryKind":"post_build_release_evidence_completion","claimsBuildProvenance":False,"originalPublication":{"workflow":".github/workflows/green-print-image.yml","runId":run_id,"sourceCommit":source,"verifyJob":"success","publishJob":"failed_after_tag_creation"},"artifact":{"indexDigest":index,"soleLinuxArm64ManifestDigest":manifest},"permittedEffects":["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],"prohibitedEffects":["image_build","image_push","tag_create","retag","delete","install","print"]}
@@ -440,6 +486,31 @@ def test_existing_recovery_run_rejects_identity_effect_failure_skip_order_and_du
     source="0bd8069fc63a71fee9923d131eb60bc378d6a22d"; run_id="32625792776"
     run=_failed_recovery_run(); jobs=_failed_recovery_jobs(); mutate(run,jobs)
     with pytest.raises(ValueError): I.validate_recovery_run(run,jobs,source,run_id)
+
+def _contained_deviation_run(source="7286b2b3adcc721941760da7052615b89cdaa614",run_id=32627304614):
+    return {"id":run_id,"run_attempt":1,"name":"Green Print immutable image","event":"workflow_dispatch","head_sha":source,"status":"completed","conclusion":"success"}
+
+def _contained_deviation_jobs():
+    steps=[{"name":name,"conclusion":conclusion,"number":number} for number,(name,conclusion) in enumerate(I.DEVIATION_STEP_TRUTH,start=14)]
+    return {"total_count":1,"jobs":[{"id":97164485100,"name":I.DEVIATION_JOB,"conclusion":"success","steps":steps}]}
+
+def test_contained_signature_deviation_accepts_exact_production_run_chronology_only():
+    source="7286b2b3adcc721941760da7052615b89cdaa614"; run_id="32627304614"
+    assert I.validate_deviation_run(_contained_deviation_run(),_contained_deviation_jobs(),source,run_id) is None
+
+@pytest.mark.parametrize("mutate",[
+    lambda run,jobs: run.update(head_sha="0bd8069fc63a71fee9923d131eb60bc378d6a22d"),
+    lambda run,jobs: run.update(run_attempt=2),
+    lambda run,jobs: run.update(conclusion="failure"),
+    lambda run,jobs: jobs["jobs"][0]["steps"][0].update(conclusion="skipped"),
+    lambda run,jobs: jobs["jobs"][0]["steps"][1].update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][0]["steps"][3].update(conclusion="failure"),
+    lambda run,jobs: jobs["jobs"].append(dict(jobs["jobs"][0])),
+])
+def test_contained_signature_deviation_rejects_wrong_source_attempt_effects_and_duplicates(mutate):
+    source="7286b2b3adcc721941760da7052615b89cdaa614"; run_id="32627304614"
+    run=_contained_deviation_run(); jobs=_contained_deviation_jobs(); mutate(run,jobs)
+    with pytest.raises(ValueError): I.validate_deviation_run(run,jobs,source,run_id)
 
 def _attestation_verification(run_id="32625792776",uri=None):
     invocation=uri or f"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/{run_id}/attempts/1"

@@ -20,6 +20,15 @@ RECOVERY_STEP_TRUTH = [
     ("Emit partial-publication recovery receipt", "skipped"),
     ("Preserve partial-publication verified release packet", "skipped"),
 ]
+DEVIATION_JOB = "Complete exact partial publication without image or tag push"
+DEVIATION_STEP_TRUTH = [
+    ("Keylessly sign exact existing arm64 index when absent", "success"),
+    ("Attest truthful post-build recovery evidence when absent", "skipped"),
+    ("Attest exact existing SBOM when absent", "skipped"),
+    ("Verify completed signature, attestations and immutable tag", "success"),
+    ("Emit partial-publication recovery receipt", "success"),
+    ("Preserve partial-publication verified release packet", "success"),
+]
 
 
 def _decode_payload(value):
@@ -78,6 +87,33 @@ def validate_recovery_run(run, jobs, expected_source, expected_run_id):
         positions.append(matches[0]["number"])
     if positions != sorted(positions) or len(set(positions)) != len(positions):
         raise ValueError("recovery_step_chronology_mismatch")
+
+
+def validate_deviation_run(run, jobs, expected_source, expected_run_id):
+    if not (run.get("id") == int(expected_run_id) and
+            run.get("run_attempt") == 1 and
+            run.get("head_sha") == expected_source and
+            run.get("event") == "workflow_dispatch" and
+            run.get("name") == "Green Print immutable image" and
+            run.get("conclusion") == "success"):
+        raise ValueError("deviation_run_identity_mismatch")
+    candidates = [job for job in jobs.get("jobs", [])
+                  if job.get("name") == DEVIATION_JOB]
+    if len(candidates) != 1 or candidates[0].get("conclusion") != "success":
+        raise ValueError("deviation_job_identity_mismatch")
+    steps = candidates[0].get("steps")
+    if not isinstance(steps, list):
+        raise ValueError("deviation_step_chronology_mismatch")
+    positions = []
+    for name, conclusion in DEVIATION_STEP_TRUTH:
+        matches = [step for step in steps if step.get("name") == name and
+                   step.get("conclusion") == conclusion and
+                   isinstance(step.get("number"), int)]
+        if len(matches) != 1:
+            raise ValueError("deviation_step_chronology_mismatch")
+        positions.append(matches[0]["number"])
+    if positions != sorted(positions) or len(set(positions)) != len(positions):
+        raise ValueError("deviation_step_chronology_mismatch")
 
 
 def validate_verification_run(document, repository, run_id, attempt="1"):
@@ -177,6 +213,13 @@ def main():
         with open(sys.argv[3], encoding="utf-8") as handle:
             jobs = json.load(handle)
         validate_recovery_run(run, jobs, sys.argv[4], sys.argv[5])
+        return
+    if len(sys.argv) == 6 and sys.argv[1] == "validate-deviation-run":
+        with open(sys.argv[2], encoding="utf-8") as handle:
+            run = json.load(handle)
+        with open(sys.argv[3], encoding="utf-8") as handle:
+            jobs = json.load(handle)
+        validate_deviation_run(run, jobs, sys.argv[4], sys.argv[5])
         return
     if len(sys.argv) == 6 and sys.argv[1] == "validate-verification-run":
         with open(sys.argv[2], encoding="utf-8") as handle:
