@@ -250,13 +250,33 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_compact_authorization_transport_rejects_absent_pair_and_mismatch(self):
-        _install_exact_legacy_production_shape()
+        import psycopg
+
+        authorization = _install_exact_legacy_production_shape()
+        compact = _compact_authorization_env(authorization)
         with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_required"):
             run(DATABASE_URL, ENV)
         with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_transport_incomplete"):
             run(DATABASE_URL, {**ENV, "RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID": str(uuid.uuid4())})
         with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_transport_incomplete"):
             run(DATABASE_URL, {**ENV, "RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256": "0" * 64})
+        malformed = (
+            {**compact, "RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID": "not-a-uuid"},
+            {**compact, "RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID": compact["RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID"].upper()},
+            {**compact, "RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID": "00000000-0000-0000-0000-000000000000"},
+            {**compact, "RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256": "not-a-digest"},
+            {**compact, "RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256": compact["RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256"].upper()},
+        )
+        for supplied in malformed:
+            with self.subTest(supplied=supplied):
+                with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_invalid"):
+                    run(DATABASE_URL, {**ENV, **supplied})
+                with psycopg.connect(DATABASE_URL) as db:
+                    self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 3)
+                    self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_receipt_identity_anchors')").fetchone()[0])
+                    self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_baselines')").fetchone()[0])
+                    self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_catalog_checkpoints')").fetchone()[0])
+                    self.assertEqual(db.execute("select count(*) from app_private.migration_log where migration_id=%s", (ALLOWLIST[4].migration_id,)).fetchone()[0], 0)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_raw_and_mixed_authorization_transports_are_forbidden_with_zero_effect(self):

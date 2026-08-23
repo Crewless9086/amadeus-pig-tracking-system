@@ -1137,24 +1137,32 @@ def _verify_receipt_row(
     }
 
 
-def _requested_legacy_adoption(connection, environ, *, commit: str, service_id: str):
-    """Validate the externally authorized, catalog-bound pre-trust shape."""
+def _validate_legacy_adoption_transport(environ):
+    """Validate compact transport syntax without reading canonical state."""
     raw = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_JSON", "").strip()
     compact_id = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID", "").strip()
-    compact_digest = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256", "").strip().lower()
+    compact_digest = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256", "").strip()
     if raw:
         raise RuntimeError("migration_legacy_adoption_raw_transport_forbidden")
     if bool(compact_id) != bool(compact_digest):
         raise RuntimeError("migration_legacy_adoption_authorization_transport_incomplete")
     if not compact_id:
         return None
-    value = None
-    try:
-        authorization_id = str(uuid.UUID(compact_id))
-    except ValueError as exc:
-        raise RuntimeError("migration_legacy_adoption_authorization_invalid") from exc
-    if not re.fullmatch(r"[0-9a-f]{64}", compact_digest):
+    if not re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+        compact_id,
+    ) or not re.fullmatch(r"[0-9a-f]{64}", compact_digest):
         raise RuntimeError("migration_legacy_adoption_authorization_invalid")
+    return compact_id, compact_digest
+
+
+def _requested_legacy_adoption(connection, environ, *, commit: str, service_id: str):
+    """Validate the externally authorized, catalog-bound pre-trust shape."""
+    transport = _validate_legacy_adoption_transport(environ)
+    if transport is None:
+        return None
+    authorization_id, compact_digest = transport
+    value = None
     manifest, digest = _catalog_snapshot(connection)
     guard = connection.execute("""select t.tgenabled,t.tgtype,p.proname,n.nspname
       from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid=t.tgrelid
@@ -1606,6 +1614,7 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
 
     runtime_env = environ or dict(os.environ)
     commit, service_id, instance_id = _metadata(runtime_env)
+    _validate_legacy_adoption_transport(runtime_env)
     sql_by_id = [(item, _load_sql(item)) for item in ALLOWLIST]
     report = {"source_commit": commit, "service_id": service_id, "migrations": []}
     active_item: AllowedMigration | None = None
