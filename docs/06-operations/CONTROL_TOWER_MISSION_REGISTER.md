@@ -2044,3 +2044,41 @@ held by owner priority. A read-only CORE probe exposed a separate historical
 normalized audit write ending in `UndefinedColumn`; this finding is recorded
 without reprioritizing it ahead of the active acceptance lanes. **NO BUSINESS
 OUTCOME** at this checkpoint. OWNER ACTION: NONE.
+
+## 2026-08-23 - Live operating proof and BEACON scheduler correction
+
+The released operational-spine repair produced a genuine natural ROOTLINE
+cycle. At 16:15 UTC the unattended reassessment completed successfully, sent
+three Telegram lifecycle messages and issued one governed hardware command.
+Canonical readback records zone `C12345` as `STARTED` at
+`2026-08-23T16:17:30.151059Z` for a planned 60 minutes under event
+`ROOTLINE-HISTORY-47ADA6606BF59A4E8672B033`; Telegram delivery message `3901`
+is provider-confirmed. This is a real operational effect, but water flow and
+safe completed shutdown are not yet proven. Control Tower retains the mission
+through its due completion/readback and a later unattended cycle.
+
+The natural general-manager cycle also delivered one BEACON case through
+Telegram, but the message truthfully stated that no current proposal existed.
+Production-shaped readback isolated the reason: the automatic scheduler still
+called the retired livestock-enquiry solicitation builder, while the active
+META policy correctly prohibits public livestock acquisition solicitation.
+The existing compliant farm-awareness builder was present but unused.
+
+Bounded repair PR `#1196` now routes scheduled BEACON work to a protected,
+text-only farm-awareness card. It makes no stock, availability, price or sales
+claim and contains no acquisition call-to-action. Genuine independently
+initiated replies remain campaign-attributable and route privately to SAM.
+Generic media is not inferred to have exact event/subject authority. Focused
+verification is `104 passed`; all four hosted gates passed; the PR merged as
+`7777ee05b37b8ca6d3227bf112433d481066dbcb`; and Render proved that exact
+revision live with a healthy endpoint. Production-shaped canonical/config
+readback builds status `beacon_livestock_awareness_ready` with a protected
+campaign package.
+
+This is released technical and operational preparation, not a marketing or
+sales outcome. Acceptance still requires a natural deployed manager cycle to
+deliver the new exact owner card, the protected owner decision, META provider
+publication/readback and later genuine attributable inbound to SAM. Anton's
+new Pig 126 provider journey also remains a human acceptance action and has not
+been simulated or replayed. Green PR `#1194` remains held under the owner's
+changed priority. OWNER ACTION: NONE.
