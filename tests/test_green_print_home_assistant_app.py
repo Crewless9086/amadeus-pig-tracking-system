@@ -382,16 +382,17 @@ def test_partial_recovery_attestation_inventory_exposes_duplicate_foreign_and_ma
 
 def test_attestation_fetch_maps_only_exact_github_not_found_to_empty():
     def runner(*_args,**_kwargs):
-        return SimpleNamespace(returncode=1,stdout=json.dumps({"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/repos#list-attestations","status":"404"})+"\n",stderr="gh: Not Found (HTTP 404)\n")
+        return SimpleNamespace(returncode=1,stdout=json.dumps({"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404"})+"\n",stderr="gh: Not Found (HTTP 404)\n")
     assert I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,runner)=={"attestations":[]}
 
 @pytest.mark.parametrize("result",[
     SimpleNamespace(returncode=1,stdout="",stderr="gh: Forbidden (HTTP 403)\n"),
     SimpleNamespace(returncode=1,stdout="",stderr="network unavailable\n"),
     SimpleNamespace(returncode=1,stdout="",stderr="gh: Not Found (HTTP 404)\n"),
-    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/repos#list-attestations","status":404}',stderr="gh: Not Found (HTTP 404)\n"),
-    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/repos#list-attestations","status":"404","extra":true}',stderr="gh: Not Found (HTTP 404)\n"),
-    SimpleNamespace(returncode=1,stdout='{"message":"Forbidden","documentation_url":"https://docs.github.com/rest/repos/repos#list-attestations","status":"404"}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":404}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404","extra":true}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Forbidden","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404"}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/repos#list-attestations","status":"404"}',stderr="gh: Not Found (HTTP 404)\n"),
     SimpleNamespace(returncode=1,stdout="partial",stderr="gh: Not Found (HTTP 404)\n"),
     SimpleNamespace(returncode=2,stdout="",stderr="gh: Not Found (HTTP 404)\n"),
 ])

@@ -10,7 +10,7 @@ RECOVERY = "https://amadeus.farm/attestations/green-partial-publication-recovery
 SBOM = "https://spdx.dev/Document/v2.3"
 EXACT_NOT_FOUND = re.compile(r"gh: Not Found \(HTTP 404\)\r?\n?\Z")
 NOT_FOUND_DOCUMENTATION = (
-    "https://docs.github.com/rest/repos/repos#list-attestations")
+    "https://docs.github.com/rest/repos/attestations#list-attestations")
 
 
 def _decode_payload(value):
