@@ -72,3 +72,9 @@ def test_unrecognized_afrikaans_unbound_status_also_fails_closed_before_delivery
     }, specialist="FUTURE", sender=lambda *args: sent.append(args))
     assert result["status"] == "recipient_language_render_unrecognized"
     assert result["telegram_sends"] == 0 and sent == []
+
+
+def test_mixed_language_cannot_pass_merely_because_one_afrikaans_word_is_present():
+    localized = localize_recipient_result(AF, {"status":"future_state",
+        "answer":"Die request completed and nothing was recorded."}, "FUTURE")
+    assert localized["recipient_language_render_unrecognized"] is True

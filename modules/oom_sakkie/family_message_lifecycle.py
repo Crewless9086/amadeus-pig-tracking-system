@@ -124,9 +124,12 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
 
 def _looks_afrikaans(text: str) -> bool:
     words = {word.strip(".,:;!?()[]<>").casefold() for word in str(text).split()}
-    return bool(words & {"die", "het", "is", "nie", "geen", "word", "bevestig",
+    english = {"the", "and", "confirm", "please", "which", "want", "completed",
+        "received", "recorded", "nothing", "printed", "stored", "remaining"}
+    afrikaans = words & {"die", "het", "is", "nie", "geen", "word", "bevestig",
         "vark", "plaas", "besproeiing", "veilig", "wanneer", "hierdie", "jou",
-        "foto", "foto's", "voltooi", "reggestelde", "gekanselleer"})
+        "foto", "foto's", "voltooi", "reggestelde", "gekanselleer"}
+    return len(afrikaans) >= 2 and not bool(words & english)
 
 
 def _afrikaans_bound_facts(result: Mapping[str, Any]) -> str:
