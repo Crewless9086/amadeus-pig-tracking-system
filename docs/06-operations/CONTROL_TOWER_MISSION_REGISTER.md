@@ -2082,3 +2082,25 @@ publication/readback and later genuine attributable inbound to SAM. Anton's
 new Pig 126 provider journey also remains a human acceptance action and has not
 been simulated or replayed. Green PR `#1194` remains held under the owner's
 changed priority. OWNER ACTION: NONE.
+
+The next unattended manager cycle advanced BEACON to generation `92` and
+provider-confirmed Telegram card `3714`. Charl approved that newly bound exact
+card once. The protected publication consumer then executed and META confirmed
+post `920598737794159_122149046469122163` at
+`2026-08-23T16:41:42Z`; provider readback returned the identical post ID.
+Canonical attribution resolves successfully as
+`BEACON-CAMPAIGN-084B84F604CFAC6E983CB7EC`, packet
+`BEACON-AWARENESS-7B42DB6C7732388D6D8DD46A`, through protected consumer
+`BEACON-PUB-CONSUMER-8FC40D17BD899A9E39F394D9`. The post is text-only,
+zero-spend farm awareness and makes no stock, price, availability or sales
+claim. This is a genuine public BEACON owner outcome. It does not prove a SAM
+lead or sale; those require later genuine attributable customer inbound.
+
+Control Tower briefly opened PR `#1197` after initially interpreting the
+educational phrase `Follow the farm journey` as prohibited by the final
+validator. Canonical publication proof corrected that inference: the active
+policy and final validator both permit this bounded educational wording, and
+META accepted it. PR `#1197` was closed unmerged to avoid an unnecessary
+minor-fix release loop. ROOTLINE's second unattended post-repair cycle was
+claimed at `2026-08-23T16:45:24Z` and remains under readback. OWNER ACTION:
+NONE.
