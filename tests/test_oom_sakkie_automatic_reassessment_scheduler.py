@@ -149,6 +149,36 @@ def test_due_bucket_runs_after_owned_second_offset_has_elapsed():
     assert calls == [1]
 
 
+def test_current_bucket_second_offset_runs_once_and_replay_is_silent():
+    rows, store = memory_store()
+    rows["prior-OUTCOME"] = {"specialist": "ROOTLINE", "status": "completed",
+                             "next_due_at": "2026-08-05T10:15:32+02:00"}
+    calls = []
+    payload = scheduled_payload(due_at="2026-08-05T10:15:00+02:00",
+                                evidence_cutoff="2026-08-05T10:15:28+02:00")
+    first = run_due_reassessment(payload=payload,
+        invoke=lambda: calls.append(1) or {"success": True, "status": "advanced"},
+        store=store, now=datetime(2026, 8, 5, 8, 15, 28, tzinfo=timezone.utc))
+    replay = run_due_reassessment(payload=payload,
+        invoke=lambda: calls.append(2) or {"success": True, "status": "duplicate"},
+        store=store, now=datetime(2026, 8, 5, 8, 15, 29, tzinfo=timezone.utc))
+    assert first["terminal_outcome"] == "completed"
+    assert replay["status"] == "scheduled_reassessment_replayed_noop"
+    assert calls == [1]
+
+
+def test_future_minute_in_current_bucket_remains_strictly_suppressed():
+    rows, store = memory_store()
+    rows["prior-OUTCOME"] = {"specialist": "ROOTLINE", "status": "completed",
+                             "next_due_at": "2026-08-05T10:16:00+02:00"}
+    calls = []
+    result = run_due_reassessment(payload=scheduled_payload(),
+        invoke=lambda: calls.append(1), store=store,
+        now=datetime(2026, 8, 5, 8, 15, 28, tzinfo=timezone.utc))
+    assert result["status"] == "scheduled_reassessment_not_yet_due"
+    assert calls == []
+
+
 def test_gateway_scheduled_unchanged_records_receipt_and_zero_io():
     rows, schedules = memory_store(); state_rows = {}
     material = {"success": True, "overall_status": "Hold", "result_id": "R1", "generation": "G1",

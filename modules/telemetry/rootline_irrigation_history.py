@@ -127,6 +127,7 @@ def _attach_water_credits(history):
 def _attach_parent_jobs(history, rows):
     """Project incomplete immutable jobs without treating a segment as a day close."""
     from modules.telemetry.rootline_irrigation_job_contract import project_next_segment
+    _attach_latest_zone_executions(history, rows)
     grouped = {}
     for raw in rows or ():
         row = raw if isinstance(raw, dict) else {}
@@ -215,6 +216,45 @@ def _attach_parent_jobs(history, rows):
     for zone, values in contained_by_zone.items():
         if values:
             history["zones"][zone]["contained_parent_jobs"] = values
+
+
+def _attach_latest_zone_executions(history, rows):
+    """Expose current execution truth without creating a second state rail."""
+    terminal_actions = {"record_completed", "contain_zone",
+                        "record_ambiguous_shutdown", "record_claim_recovery"}
+    grouped = {}
+    for order, raw in enumerate(rows or ()):
+        item = raw if isinstance(raw, dict) else {}
+        execution_id = str(item.get("execution_id") or "").strip()
+        zone_id = str(item.get("zone_id") or "").strip()
+        if execution_id and zone_id in ZONES:
+            grouped.setdefault(execution_id, {"zone_id": zone_id, "events": []})[
+                "events"].append((order, item))
+    by_zone = {zone: [] for zone in ZONES}
+    for execution_id, grouped_execution in grouped.items():
+        events = grouped_execution["events"]
+        terminal = next((entry for entry in reversed(events)
+                         if str(entry[1].get("action") or "") in terminal_actions), None)
+        active = next((entry for entry in reversed(events)
+                       if str(entry[1].get("action") or "") in {
+                           "mark_active", "claim_before_on"}), None)
+        selected = terminal or active
+        if selected:
+            by_zone[grouped_execution["zone_id"]].append({
+                "execution_id": execution_id, "order": selected[0],
+                "terminal": terminal is not None, "event": dict(selected[1])})
+    for zone_id, candidates in by_zone.items():
+        active = [candidate for candidate in candidates if not candidate["terminal"]]
+        if len(active) > 1:
+            history["zones"][zone_id]["latest_execution"] = {
+                "state": "ambiguous", "reason": "conflicting_active_executions",
+                "execution_count": len(active)}
+            history["zones"][zone_id]["execution_projection_conflict"] = True
+            continue
+        selected = active[0] if active else (
+            max(candidates, key=lambda item: item["order"]) if candidates else None)
+        if selected:
+            history["zones"][zone_id]["latest_execution"] = selected["event"]
 
 
 def build_typed_history_event(*, event_id, event_at, event_type, zone_id, details,

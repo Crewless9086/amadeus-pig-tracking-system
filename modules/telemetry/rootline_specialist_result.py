@@ -130,7 +130,8 @@ def _irrigation_lifecycle(recommendations, irrigation_history):
     indexed = {str(row.get("subject") or ""): row for row in recommendations
                if isinstance(row, dict)}
     return {zone: project_zone_lifecycle(zone_id=zone,
-        recommendation=indexed.get(zone), history=histories.get(zone))
+        recommendation=indexed.get(zone), history=histories.get(zone),
+        execution=(histories.get(zone) or {}).get("latest_execution"))
         for zone in ("B12345", "C12345")}
 
 

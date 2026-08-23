@@ -267,3 +267,32 @@ def test_second_segment_containment_preserves_first_runtime_and_defers_residual(
     assert parent["projection"]["current_segment"]==2
     assert parent["projection"]["cumulative_verified_runtime_seconds"]==3599
     assert parent["remaining_seconds"]==3599
+
+
+def test_latest_same_zone_execution_projects_active_then_exact_terminal():
+    history=project_canonical_irrigation_history(
+        [epoch("C12345"),completed(execution="HISTORICAL")],snapshot_cutoff=NOW)
+    active={"action":"mark_active","execution_id":"EXEC-CURRENT","zone_id":"C12345",
+        "state":"Active","claimed_at":"2026-08-05T08:17:30+00:00"}
+    _attach_parent_jobs(history,[active])
+    assert history["zones"]["C12345"]["latest_execution"]==active
+    closed={**active,"action":"record_completed","state":"Completed",
+        "shutdown_verified":True,"objective_satisfied":True}
+    _attach_parent_jobs(history,[active,closed])
+    assert history["zones"]["C12345"]["latest_execution"]==closed
+
+
+def test_multiple_same_zone_active_executions_fail_closed_without_cross_zone_leakage():
+    history=project_canonical_irrigation_history(
+        [epoch("B12345"),epoch("C12345")],snapshot_cutoff=NOW)
+    rows=[{"action":"mark_active","execution_id":"EXEC-B-1","zone_id":"B12345",
+           "state":"Active"},
+          {"action":"mark_active","execution_id":"EXEC-B-2","zone_id":"B12345",
+           "state":"Active"},
+          {"action":"mark_active","execution_id":"EXEC-C","zone_id":"C12345",
+           "state":"Active"}]
+    _attach_parent_jobs(history,rows)
+    b=history["zones"]["B12345"]
+    assert b["execution_projection_conflict"] is True
+    assert b["latest_execution"]["state"]=="ambiguous"
+    assert history["zones"]["C12345"]["latest_execution"]["execution_id"]=="EXEC-C"
