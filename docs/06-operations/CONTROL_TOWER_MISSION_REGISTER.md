@@ -2654,3 +2654,39 @@ outcome is safely closed. No current B state, C Hold decision, scheduler
 authority or physical outcome is inferred from this token alone. Mission state
 adds `PER_ZONE_ATTRIBUTION_INCONSISTENCY_RECORDED / CURRENT_B_OUTCOME_UNBLOCKED`.
 OWNER ACTION: NONE for this finding.
+
+## 2026-08-23 - HERDMASTER date/identity separation repair merged
+
+PR `#1205` passed final independent review at exact head
+`1779a6d3da836df46f02589eeb097f9888e7a13a` against exact current main, with
+125 focused tests and all four hosted gates passing. It merged as
+`c824ae30c3285b7f696633bbf0128a6dd0bcfda9`. The bounded repair makes explicit
+Pig/Vark/Tag markers resolve exact canonical names or tags while excluding bare
+date, count and weight numerals from animal identity. Genuine duplicate-name
+and multiple explicitly marked animals remain ambiguous and fail closed. The
+exact provider-message-3926 family now resolves Pig 146 separately from
+`23 Aug 2026`, including governed English/Afrikaans and numeric date forms,
+without changing actor binding, language, protected confirmation or replay
+authority.
+
+Review, tests, CI and merge are technical progress only. Deployment of exact
+merge revision `c824ae30c3285b7f696633bbf0128a6dd0bcfda9` and a fresh genuine
+post-deployment identity journey remain pending. Pig 146 has not been changed,
+marked dead, removed, closed in welfare, or otherwise mutated; no owner outcome
+is inferred from the historical malformed intake. Mission state is
+`IDENTITY_REPAIR_MERGED / DEPLOYMENT_AND_GENUINE_ACCEPTANCE_PENDING / ZERO_PIG146_EFFECTS`.
+**NO PIG 146 OWNER OUTCOME.**
+
+Current operating state is preserved. ROOTLINE B execution
+`ROOTLINE-EXECUTION-AEABE2390A51356550A6A5AE` remains active and requires its
+own terminal canonical completion plus authoritative `OFF` readback before a
+completion outcome. The existing Pig 126 mortality claim remains active behind
+the live callback repair. **ACTION REQUIRED NOW:** Anton must press
+`Bevestig` once on existing Telegram card `3925`. No new Pig 146 owner action
+is requested before deployment and a later genuine acceptance opportunity.
+
+Control Tower Check Receipt: PR `#1205` is recorded as merged but not deployed
+or operationally accepted; zero Pig 146 effects and the existing Pig 126/B
+states are retained. No mission was created or reprioritized, and no provider,
+database, farm, scheduler or hardware mutation was performed by this register
+update.
