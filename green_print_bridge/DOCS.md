@@ -44,7 +44,10 @@ partial-publication recovery lane requires the reviewed source commit, index
 digest and sole arm64 manifest digest; rereads the stable tag and OCI labels
 with bounded registry-consistency retries; refuses foreign, duplicate or
 malformed signatures and attestations; and may complete only missing signature,
-SBOM and attestation evidence for that exact existing artifact. Recovery is a
+SBOM and explicitly post-build recovery evidence for that exact existing
+artifact. It never claims that the recovery workflow built the image; the
+predicate binds the original failed publication run and identifies only the
+later evidence-completion effects. Recovery is a
 separately protected dispatch and never grants installation or print authority.
 
 ## Install and commissioning

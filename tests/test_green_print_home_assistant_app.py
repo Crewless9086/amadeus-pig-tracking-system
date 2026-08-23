@@ -3,6 +3,7 @@ from datetime import datetime,timedelta,timezone
 from hashlib import sha256
 import base64,importlib.util,json,sqlite3,sys
 from pathlib import Path
+from types import SimpleNamespace
 import pytest,yaml
 
 ROOT=Path(__file__).parents[1]; APP=ROOT/"green_print_bridge"
@@ -279,7 +280,7 @@ def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
     names=[step.get("name") for step in steps]
     verify=steps[names.index("Verify signature and digest-bound attestations")]
     assert verify["env"]["GH_TOKEN"]=="${{ github.token }}"
-    assert workflow.count("GH_TOKEN: ${{ github.token }}")==4
+    assert workflow.count("GH_TOKEN: ${{ github.token }}")==5
     assert "gh attestation verify" in verify["run"] and "|| true" not in verify["run"]
     assert names.index("Verify signature and digest-bound attestations") < names.index("Emit digest-bound non-secret release receipt") < names.index("Preserve non-secret verified release packet")
 
@@ -316,13 +317,16 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     parsed=yaml.safe_load(workflow); inputs=parsed.get("on",parsed[True])["workflow_dispatch"]["inputs"]
     assert inputs["complete_partial_publication"]["default"] is False
     assert inputs["expected_manifest_digest"]["required"] is False
+    assert inputs["original_publication_run_id"]["required"] is False
     recovery=parsed["jobs"]["recover_partial_publication"]
+    text=json.dumps(recovery)
     assert recovery["if"]=="github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication"
     assert recovery["permissions"]=={"contents":"read","id-token":"write","packages":"write","attestations":"write"}
     steps=recovery["steps"]; names=[step.get("name") for step in steps]
     binding=steps[names.index("Bind partial recovery to exact source, index, manifest and main")]["run"]
     assert 'test "${PUBLISH_REQUESTED}" = "false"' in binding
     assert 'test "${VERIFY_ONLY_REQUESTED}" = "false"' in binding
+    assert 'ORIGINAL_PUBLICATION_RUN_ID' in binding
     assert binding.count('^sha256:[0-9a-f]{64}$')==2 and '^[0-9a-f]{40}$' in binding
     existing=steps[names.index("Verify stable existing tag, index, sole manifest and OCI config")]["run"]
     assert "for attempt in 1 2 3 4 5 6 7 8" in existing and "sleep 3" in existing
@@ -335,33 +339,57 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
     assert "green_print_attestation_inventory.py" in attestations
     assert 'test "${foreign_count}" = "0"' in attestations
-    assert 'test "${provenance_count}" -le 1' in attestations and 'test "${sbom_count}" -le 1' in attestations
-    assert names.index("Verify stable existing tag, index, sole manifest and OCI config") < names.index("Keylessly sign exact existing arm64 index when absent")
+    assert 'test "${recovery_count}" -le 1' in attestations and 'test "${sbom_count}" -le 1' in attestations
+    assert "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" in text
+    assert "actions/attest-build-provenance" not in text
+    assert "claimsBuildProvenance:false" in text and "original_publication_run_id" in text
+    first_effect=names.index("Keylessly sign exact existing arm64 index when absent")
+    assert names.index("Verify stable existing tag, index, sole manifest and OCI config") < first_effect
+    assert names.index("Inspect existing signature and refuse foreign or ambiguous state") < first_effect
+    assert names.index("Inspect attestations and refuse foreign, duplicate or malformed state") < first_effect
+    assert names.index("Prepare truthful post-build recovery predicate") < first_effect
     assert names.index("Verify completed signature, attestations and immutable tag") < names.index("Emit partial-publication recovery receipt")
-    text=json.dumps(recovery)
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
 
-def _attestation(predicate, image="ghcr.io/crewless9086/amadeus-green-print-bridge", digest="a"*64):
-    statement={"subject":[{"name":image,"digest":{"sha256":digest}}],"predicateType":predicate,"predicate":{}}
+def _recovery_predicate(index="sha256:"+"a"*64,manifest="sha256:"+"b"*64,source="c"*40,run_id="32622312938"):
+    return {"recoveryKind":"post_build_release_evidence_completion","claimsBuildProvenance":False,"originalPublication":{"workflow":".github/workflows/green-print-image.yml","runId":run_id,"sourceCommit":source,"verifyJob":"success","publishJob":"failed_after_tag_creation"},"artifact":{"indexDigest":index,"soleLinuxArm64ManifestDigest":manifest},"permittedEffects":["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],"prohibitedEffects":["image_build","image_push","tag_create","retag","delete","install","print"]}
+
+def _attestation(predicate, image="ghcr.io/crewless9086/amadeus-green-print-bridge", digest="a"*64,payload=None):
+    statement={"subject":[{"name":image,"digest":{"sha256":digest}}],"predicateType":predicate,"predicate":payload if payload is not None else {}}
     payload=base64.urlsafe_b64encode(json.dumps(statement).encode()).decode().rstrip("=")
     return {"bundle":{"dsseEnvelope":{"payload":payload}}}
 
 def test_partial_recovery_attestation_inventory_accepts_only_one_exact_pair():
-    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64
-    document={"attestations":[_attestation(I.PROVENANCE),_attestation(I.SBOM)]}
-    provenance,sbom,foreign,statements=I.inventory(document,image,digest)
-    assert (provenance,sbom,foreign)==(1,1,0) and len(statements)==2
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64; manifest="sha256:"+"b"*64; source="c"*40; run_id="32622312938"
+    document={"attestations":[_attestation(I.RECOVERY,payload=_recovery_predicate()),_attestation(I.SBOM)]}
+    recovery,sbom,foreign,statements=I.inventory(document,image,digest,expected_source=source,expected_manifest=manifest,expected_run_id=run_id)
+    assert (recovery,sbom,foreign)==(1,1,0) and len(statements)==2
 
 @pytest.mark.parametrize("records,expected",[
-    ([_attestation(I.PROVENANCE),_attestation(I.PROVENANCE)],(2,0,0)),
+    ([_attestation(I.RECOVERY,payload=_recovery_predicate()),_attestation(I.RECOVERY,payload=_recovery_predicate())],(2,0,0)),
     ([_attestation("https://foreign.invalid/predicate")],(0,0,1)),
-    ([_attestation(I.PROVENANCE,image="ghcr.io/foreign/image")],(0,0,1)),
+    ([_attestation(I.RECOVERY,image="ghcr.io/foreign/image",payload=_recovery_predicate())],(0,0,1)),
     ([{"bundle":{"dsseEnvelope":{"payload":"not-base64"}}}],(0,0,1)),
 ])
 def test_partial_recovery_attestation_inventory_exposes_duplicate_foreign_and_malformed(records,expected):
-    actual=I.inventory({"attestations":records},"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64)
+    actual=I.inventory({"attestations":records},"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,expected_source="c"*40,expected_manifest="sha256:"+"b"*64,expected_run_id="32622312938")
     assert actual[:3]==expected
+
+def test_attestation_fetch_maps_only_exact_github_not_found_to_empty():
+    def runner(*_args,**_kwargs):
+        return SimpleNamespace(returncode=1,stdout="",stderr="gh: Not Found (HTTP 404)\n")
+    assert I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,runner)=={"attestations":[]}
+
+@pytest.mark.parametrize("result",[
+    SimpleNamespace(returncode=1,stdout="",stderr="gh: Forbidden (HTTP 403)\n"),
+    SimpleNamespace(returncode=1,stdout="",stderr="network unavailable\n"),
+    SimpleNamespace(returncode=1,stdout="partial",stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=2,stdout="",stderr="gh: Not Found (HTTP 404)\n"),
+])
+def test_attestation_fetch_keeps_nonexact_not_found_and_every_other_failure_fatal(result):
+    with pytest.raises(RuntimeError,match="attestation_inventory_fetch_failed"):
+        I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,lambda *_a,**_k:result)
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
