@@ -408,6 +408,25 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
         assert exact in serialized
 
+def test_036_final_readonly_verification_has_bounded_retry_and_attributable_failures():
+    parsed=yaml.safe_load((ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8"))
+    job=parsed["jobs"]["recover_partial_publication"]
+    assert job["permissions"]=={"contents":"read","packages":"read","attestations":"read"}
+    steps=job["steps"]; names=[step.get("name") for step in steps]
+    final=steps[names.index("Verify completed signature, attestations and immutable tag")]["run"]
+    assert "set -Eeuo pipefail" in final
+    assert 'green_recovery_verify_failed stage=%s reason=assertion_failed' in final
+    assert "for attempt in 1 2 3 4" in final and 'if test "${attempt}" -lt 4; then sleep 3; fi' in final
+    assert 'test -s "${output}.tmp"' in final
+    assert final.count("verify_attestation_retry recovered-")==2
+    assert final.count("gh attestation verify")==2
+    assert "|| true" not in final
+    ordered=("cosign_original_verify","cosign_original_identity","cosign_deviation_verify","cosign_deviation_identity","recovery_attestation_verify","sbom_attestation_verify","attestation_run_identity","final_attestation_fetch","final_attestation_inventory","attestation_pre_post_equality","immutable_tag_equality","final_native_signature_fetch","final_native_signature_inventory","native_signature_pre_post_equality","receipt_hash_outputs")
+    positions=[final.index(f"mark_stage {stage}") for stage in ordered]
+    assert positions==sorted(positions)
+    unrelated=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
+    assert "verify_attestation_retry" not in unrelated
+
 BUNDLE_IMAGE="ghcr.io/crewless9086/amadeus-green-print-bridge"
 BUNDLE_DIGEST="sha256:"+"a"*64
 
