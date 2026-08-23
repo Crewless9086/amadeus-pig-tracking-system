@@ -2636,3 +2636,21 @@ or operationally accepted; PR `#1146` is truthfully retired as superseded; the
 active Pig 126 claim and active B execution are preserved without false owner
 outcomes. Exactly one human action remains, and no provider, database, farm,
 scheduler or hardware mutation was performed by this register update.
+
+## 2026-08-23 - ROOTLINE post-start per-zone attribution inconsistency
+
+This new finding remains in the existing ROOTLINE observability lineage and
+does not create or reprioritize a mission. The latest typed projection at
+`20:47:05Z` reports B decision `Run` with an empty blocker while C decision
+`Hold` carries `eligibility_blocker=execution_eligible`. The C blocker is
+internally inconsistent with its Hold decision and appears to attribute an
+execution-eligibility state to the wrong or non-running zone after PR `#1201`.
+
+PR `#1204`'s owner renderer is designed to suppress this backend token, so the
+inconsistency does not block the current genuine B execution or add owner work.
+It remains a source/readback truth defect to reconcile through the existing
+per-zone attribution and observability path after the current B physical
+outcome is safely closed. No current B state, C Hold decision, scheduler
+authority or physical outcome is inferred from this token alone. Mission state
+adds `PER_ZONE_ATTRIBUTION_INCONSISTENCY_RECORDED / CURRENT_B_OUTCOME_UNBLOCKED`.
+OWNER ACTION: NONE for this finding.
