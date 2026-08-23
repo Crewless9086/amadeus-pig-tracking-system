@@ -387,6 +387,17 @@ class WaterEnergyPlanTests(unittest.TestCase):
         self.assertEqual(adaptive["max_execution_minutes"], 60)
         self.assertFalse(adaptive["simultaneous_zones_allowed"])
 
+    @mock.patch("modules.telemetry.rootline_bounded_read_group.run_bounded_read_group")
+    def test_current_reader_outer_bound_exceeds_nested_advisor_contract(self, bounded):
+        bounded.return_value = {
+            "power": ({}, 200), "weather": ({}, 200), "forecast": ({}, 200),
+            "advisor": ({"zones": []}, 200), "balances": {}, "history": {},
+            "irrigation_history": {}, "tanks": {}, "owner_zone_need": {},
+        }
+        read_current_water_energy_evidence(now=NOW)
+        self.assertEqual(bounded.call_args.kwargs["max_workers"], 4)
+        self.assertEqual(bounded.call_args.kwargs["deadline_seconds"], 25)
+
     def test_authenticated_current_c_need_survives_adaptive_projection_and_ranks_c_first(self):
         item=evidence()
         item["irrigation"]={
