@@ -2368,3 +2368,48 @@ bucket proves the repaired cadence and truthful current-source projection and,
 if freshly eligible and safe, advances B through its governed lifecycle. No
 manual scheduler dispatch or B start is required. Mission state is
 `DEPLOYED / NEXT_UNATTENDED_BUCKET_PENDING`. OWNER ACTION: NONE.
+
+## 2026-08-23 20:30 SAST - Control Tower current-cycle and all-terminal sweep
+
+The deployed 20:30 ROOTLINE scheduler bucket was claimed and reached its
+durable completed scheduler outcome. Its current decision recommended B as
+`Run`, but execution remained `durable_parent_job_deferred`; canonical readback
+showed zero B executions. This proves the repaired scheduler continued
+unattended and retained the existing parent-job safety boundary. It does not
+prove that B started, watered or completed, so no B owner or physical outcome
+is claimed. ROOTLINE remains
+`C_OWNER_OUTCOME_CONFIRMED / B_DURABLE_PARENT_DEFERRED / ZERO_B_EXECUTIONS` and
+continues automatically through its governed later buckets. OWNER ACTION: NONE.
+
+The existing daily/debrief defects remain unresolved and retain their current
+priority and lineage: ROOTLINE still exposes verbose backend/audit text instead
+of a concise owner projection; Prince's attributable answered welfare question
+is resurrected by daily-identity filtering; and Tristan's completed charity
+sale with `payment_status=Not_Applicable` is incorrectly returned for payment
+review. These are current presentation/retirement blockers, not new missions,
+and no manual canonical correction is authorized. **NO OWNER OUTCOME.** OWNER
+ACTION: NONE.
+
+HERDMASTER remains deployed at exact revision
+`11030ae35958b34fcc744df766e1c59d4f9d7fc3`, with Pig 126 still protected from
+the failed earlier attempt. Its next acceptance step remains the genuine new
+Anton provider journey already stated above; code, CI and deployment alone are
+not acceptance. **NO OWNER OUTCOME.** **ACTION REQUIRED NOW:** Anton must send
+`Vark 126 is dood, ons het hom verwyder en begrawe.` once as a new Telegram
+message to Oom Sakkie.
+
+Terminal and collision sweep: the interactive Control Tower parent remains
+active. The Anton/HERDMASTER acceptance lane is active and awaits that single
+physical owner message. The Green repair lane is active independently. This
+durable-register lane is the only register writer and has no overlapping file
+changes. Current open PRs include Green `#1194`, migration transport `#1184`
+and older governance/product branches; none changes the recorded ROOTLINE or
+HERDMASTER priority here. No duplicate mission, new workflow, merge, deploy,
+provider action, database mutation, farm action or hardware command was created
+by this sweep.
+
+Control Tower Check Receipt: current facts were appended without rewriting
+history or reprioritizing work; technical progress remains distinct from owner
+outcomes; C's verified shutdown remains the latest genuine ROOTLINE physical
+outcome; B remains zero-execution; HERDMASTER remains pending Anton acceptance;
+automatic ROOTLINE continuation remains authorized and owner-independent.
