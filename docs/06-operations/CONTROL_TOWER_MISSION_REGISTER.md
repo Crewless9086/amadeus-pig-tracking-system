@@ -1977,3 +1977,41 @@ head `fb600789` uses a bounded launcher shadow that permits only the certificate
 readability preflight and fails only the service launch. Focused verification
 remains `116 passed`; hosted arm64 run `32649186158`, job `97218017923`, is
 active. **NO OWNER OUTCOME**. OWNER ACTION: NONE.
+
+## 2026-08-23 - Operational spine promoted; Green held by owner priority
+
+Charl explicitly changed the release order: Green is held until the other live
+operational missions are producing genuine outcomes. This supersedes the prior
+serialization of every release behind Green. PR `#1194` may retain its hosted
+technical evidence, but Control Tower must not merge, publish, install or
+commission another Green version while this hold remains.
+
+The live system health endpoint concealed a material operating failure. Render
+is loaded at exact main `3faf0ec00896662de99b794aeb4084da77b03edf` and the
+schedulers continue firing, but today's ROOTLINE reassessments repeatedly
+contain with `scheduled_reassessment_database_unavailable`, with zero Telegram
+sends and zero hardware commands. The general manager cycle repeatedly claims
+20 cases while confirming zero manager deliveries; BEACON reports a silent
+publication cycle; no current daily farm-manager presentation or new irrigation
+outcome was proven. This validates the owner's report that the deployed system
+is effectively silent despite technical activity.
+
+A bounded production-shaped component audit isolated two reusable source-read
+defects. ROOTLINE's nested daily advisor consumed nearly its entire 18-second
+deadline and the enclosing nine-reader group expired at 20 seconds. The daily
+manager breeding snapshot also referenced
+`current_canonical_litters.first_treatment_skipped_at`, a column not exposed in
+production, and failed with SQLSTATE `42703`. No database, provider, farm or
+hardware mutation occurred during diagnosis.
+
+Current-main repair PR `#1195`, exact head
+`d588622e5f82d0a365acb29df252f72140312b16`, gives the nested advisor an
+immediate worker and a 25-second outer bound, and projects the optional litter
+field through the row JSON shape so the absent field remains Unknown instead of
+crashing the whole manager inventory. Focused verification is `84 passed`.
+Against the live canonical data, the repaired ROOTLINE read returns a current
+`Recommend` result and the breeding snapshot returns all 24 current litters.
+Hosted exact-head gates, merge, deployment, live scheduler readback, provider
+delivery and later unattended continuity remain required. This is a P0 repair
+within the existing operational missions, not a new product mission and not yet
+an owner outcome. OWNER ACTION: NONE.
