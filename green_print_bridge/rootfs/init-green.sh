@@ -16,10 +16,17 @@ step() {
 }
 fail_initializer() {
   child_marker=""
-  if [ -s /run/cups/queue-initializer-error ] \
-    && [ "$(/bin/busybox wc -l < /run/cups/queue-initializer-error)" -eq 1 ]; then
-    child_marker="$(/bin/busybox head -n 1 /run/cups/queue-initializer-error)"
+  child_lines=""
+  child_bytes=""
+  if [ -s /run/cups/queue-initializer-error ]; then
+    child_lines="$(/bin/busybox wc -l < /run/cups/queue-initializer-error 2>/dev/null)" || child_lines=""
+    child_bytes="$(/bin/busybox wc -c < /run/cups/queue-initializer-error 2>/dev/null)" || child_bytes=""
+    if [ "${child_lines}" = "1" ]; then
+      child_marker="$(/bin/busybox head -n 1 /run/cups/queue-initializer-error 2>/dev/null)" || child_marker=""
+      [ "${child_bytes}" = "$(( ${#child_marker} + 1 ))" ] || child_marker=""
+    fi
   fi
+  /bin/busybox rm -f /run/cups/queue-initializer-error 2>/dev/null || true
   case "${child_marker}" in
     "green_startup_failed stage=configuration reason=options_invalid"|\
     "green_startup_failed stage=configuration reason=queue_invalid"|\

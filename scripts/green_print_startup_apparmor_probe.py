@@ -213,6 +213,10 @@ def main() -> int:
                         source.write_text("raise SystemExit(1)\n",encoding="ascii"); source.chmod(0o644)
                     elif shadow[0].endswith("-unrecognized-python"):
                         source.write_text("import sys\nprint('not-an-allowed-marker',file=sys.stderr)\nraise SystemExit(1)\n",encoding="ascii"); source.chmod(0o644)
+                    elif shadow[0].endswith("-multiline-unterminated-python"):
+                        source.write_text("import sys\nsys.stderr.write('green_startup_failed stage=printer_tls reason=identity_or_connection_failed\\nuntrusted-arbitrary-output')\nraise SystemExit(1)\n",encoding="ascii"); source.chmod(0o644)
+                    elif shadow[0].endswith("-multiline-terminated-python"):
+                        source.write_text("import sys\nsys.stderr.write('green_startup_failed stage=printer_tls reason=identity_or_connection_failed\\nuntrusted-arbitrary-output\\n')\nraise SystemExit(1)\n",encoding="ascii"); source.chmod(0o644)
                     elif shadow[0].endswith("-python"):
                         source.write_text("this is not valid python\n",encoding="ascii"); source.chmod(0o644)
                     elif shadow[0].endswith("-exit"):
@@ -240,9 +244,15 @@ def main() -> int:
                     if markers != [expected]: raise RuntimeError(f"negative diagnostic mismatch {name}: {markers}")
                     forbidden=("synthetic-startup-probe-token",options.get("printer_uri"),"BEGIN CERTIFICATE","/data/options.json","/homeassistant/private-ca.crt")
                     if any(value and value in combined for value in forbidden): raise RuntimeError(f"negative diagnostic leaked bounded material: {name}")
+                    if "untrusted-arbitrary-output" in combined:
+                        raise RuntimeError(f"negative diagnostic leaked untrusted child output: {name}")
                     if run("docker","inspect","-f","{{.State.ExitCode}}",case_container).stdout.strip()=="0": raise RuntimeError(f"negative case exited zero: {name}")
                     if EmptyCanonicalHandler.seen != seen_before:
                         raise RuntimeError(f"negative case reached canonical provider: {name}")
+                    capture_copy=case_root/"captured-child-output"
+                    if (run("docker","cp",f"{case_container}:/run/cups/queue-initializer-error",str(capture_copy),check=False).returncode==0
+                            or capture_copy.exists()):
+                        raise RuntimeError(f"negative case retained private child output: {name}")
                 finally: run("docker","rm","-f",case_container,check=False)
 
             negative_case("missing_options","green_startup_failed stage=mount_validation reason=options_missing_or_empty",options_mode="missing")
@@ -256,6 +266,8 @@ def main() -> int:
             negative_case("wrong_san","green_startup_failed stage=printer_tls reason=identity_or_connection_failed",cert_mode="wrong_san",printer_port=wrong_san_printer.server_port)
             negative_case("silent_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-silent-python","/opt/green/init_queue.py"))
             negative_case("unrecognized_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-unrecognized-python","/opt/green/init_queue.py"))
+            negative_case("multiline_unterminated_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-multiline-unterminated-python","/opt/green/init_queue.py"))
+            negative_case("multiline_terminated_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-multiline-terminated-python","/opt/green/init_queue.py"))
             negative_case("broken_interpreter","green_startup_failed stage=queue_initializer reason=initializer_interpreter_missing",shadow=("python-empty","/usr/bin/python3.12"))
             negative_case("init_exec","green_startup_failed stage=bootstrap_exec reason=init_script_failed",shadow=("init-shell","/init-green.sh"))
             negative_case("run_exec","green_startup_failed stage=s6_exec reason=run_script_failed",shadow=("run-shell","/run.sh"))

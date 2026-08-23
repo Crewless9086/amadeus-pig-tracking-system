@@ -104,11 +104,18 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     assert "2>/run/cups/queue-initializer-error" in init
     assert "identity_or_connection_failed" in init
     assert "wc -l < /run/cups/queue-initializer-error" in init
+    assert "wc -c < /run/cups/queue-initializer-error" in init
+    assert '${child_bytes}' in init and '${#child_marker} + 1' in init
+    assert init.index("rm -f /run/cups/queue-initializer-error") < init.index('case "${child_marker}" in')
     assert "2>/dev/null)\" || fail_startup queue_initializer" not in init
     assert 'negative_case("wrong_root"' in probe
     assert 'negative_case("wrong_san"' in probe
     assert 'negative_case("silent_initializer"' in probe
     assert 'negative_case("unrecognized_initializer"' in probe
+    assert 'negative_case("multiline_unterminated_initializer"' in probe
+    assert 'negative_case("multiline_terminated_initializer"' in probe
+    assert "negative case retained private child output" in probe
+    assert "untrusted-arbitrary-output" in probe
     assert "negative case reached canonical provider" in probe
 
 def test_printer_tls_preflight_requires_san_and_connects_only_to_pin(monkeypatch):
