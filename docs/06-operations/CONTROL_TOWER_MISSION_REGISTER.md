@@ -2104,3 +2104,12 @@ META accepted it. PR `#1197` was closed unmerged to avoid an unnecessary
 minor-fix release loop. ROOTLINE's second unattended post-repair cycle was
 claimed at `2026-08-23T16:45:24Z` and remains under readback. OWNER ACTION:
 NONE.
+
+ROOTLINE's second unattended post-repair cycle completed at
+`2026-08-23T16:46:33Z` with status
+`scheduled_rootline_plan_and_execution_completed`, two Telegram sends and zero
+hardware commands. This proves automatic continuity and no duplicate start
+while the active C12345 segment is still running. Final operational acceptance
+still requires the due shutdown/completion and safe-state readback. The sole
+current human acceptance action is Anton's own new Afrikaans Pig 126 report and
+his own `Bevestig`; no terminal replay or proxy confirmation is permitted.
