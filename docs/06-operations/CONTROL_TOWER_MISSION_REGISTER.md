@@ -2299,3 +2299,30 @@ fresh safety revalidation. No terminal command, irrigation mutation, synthetic
 closure or manual history correction is authorized. Mission state is
 `CONTINUITY_BLOCKED / CURRENT_C_OFF_CLOSURE_REQUIRED / PROJECTION_REPAIR_REQUIRED`.
 **NO OWNER OUTCOME.** OWNER ACTION: NONE.
+
+## 2026-08-23 - ROOTLINE current C safe-shutdown owner outcome
+
+This append-only entry supersedes only the stale current-C state in the
+preceding continuity finding; it preserves that incident and does not create or
+reprioritize a mission. The deployed 20:00 cycle reconciled C execution
+`ROOTLINE-EXECUTION-2A699BC07BD93EF40914AA69` to its own attributable terminal
+state. Canonical lifecycle evidence records `mark_stopping` at `18:02:14Z`, an
+`OFF` outcome, and `record_completed` at `18:02:27Z` with
+`shutdown_verified=true` and shutdown-evidence state `OFF`. Irrigation history
+records `COMPLETED` at `18:02:22Z` with actual duration `59.98` minutes. The
+completion notification was provider-delivered at `18:02:35Z`, and current
+`load_active` readback is now null.
+
+This is a genuine current C runtime and safe-shutdown owner outcome: the exact
+active execution completed, its controller state was verified off, its
+canonical execution and irrigation history closed, and its owner completion
+was delivered. It replaces the earlier uncertainty about C closure; it is not
+merely technical progress.
+
+The ROOTLINE mission is not complete. B did not start, and the scheduler
+phase-drift plus stale/source-mismatched owner-projection repairs remain
+pending. B may proceed only through the deployed governed scheduler after fresh
+safety revalidation; no terminal-start or synthetic completion is inferred or
+authorized by this record. Mission state is
+`C_OWNER_OUTCOME_CONFIRMED / B_NOT_STARTED / SCHEDULER_AND_PROJECTION_REPAIR_PENDING`.
+OWNER ACTION: NONE.
