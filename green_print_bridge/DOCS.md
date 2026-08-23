@@ -1,6 +1,6 @@
 # Amadeus Green Print Bridge
 
-Version 0.3.5 uses the Home Assistant supported prebuilt image reference
+Version 0.3.6 uses the Home Assistant supported prebuilt image reference
 `ghcr.io/crewless9086/amadeus-green-print-bridge`. Its tag may be published only
 once through the guarded manual workflow. GHCR does not provide a registry-level
 immutability guarantee for this private tag: the workflow refuses reuse, verifies
@@ -17,7 +17,7 @@ This private app hosts a local CUPS daemon and the bounded Documents adapter on 
 
 ## Security and configuration
 
-Publish no inbound ports or tunnels. Choose exactly one canonical transport profile. `private_pinned` preserves the private-network design: install the private CA at fixed `/config/private-ca.crt` and commission a non-empty `canonical_endpoint_ip` from the complete private DNS answer set; HTTPS connects only to that address while TLS verifies the configured hostname. For `public_pki_exact_origin`, leave `canonical_endpoint_ip` blank. Home Assistant saves that explicit blank and the worker normalizes it to no runtime pin. This public profile accepts only `https://amadeus-pig-tracking-system.onrender.com`, uses the system public trust store with hostname verification, follows no redirects, and forbids a non-empty endpoint pin, alternate port, path, credentials, query, or fragment. Canonical claim, command, transition, and PDF paths remain source-fixed; every request retains bearer, farm, and Green identity bindings.
+Publish no inbound ports or tunnels. Choose exactly one canonical transport profile. `private_pinned` preserves the private-network design: install the private CA at fixed Home Assistant host path `/config/private-ca.crt`; the read-only `homeassistant_config` mount exposes only that exact file to the app as `/homeassistant/private-ca.crt`. Commission a non-empty `canonical_endpoint_ip` from the complete private DNS answer set; HTTPS connects only to that address while TLS verifies the configured hostname. For `public_pki_exact_origin`, leave `canonical_endpoint_ip` blank. Home Assistant saves that explicit blank and the worker normalizes it to no runtime pin. This public profile accepts only `https://amadeus-pig-tracking-system.onrender.com`, uses the system public trust store with hostname verification, follows no redirects, and forbids a non-empty endpoint pin, alternate port, path, credentials, query, or fragment. Canonical claim, command, transition, and PDF paths remain source-fixed; every request retains bearer, farm, and Green identity bindings.
 
 The printer transport is always `private_ipps`; plain IPP and disabled TLS are unsupported. The protected private CA is installed as CUPS' site CA, while `AllowAnyRoot`, expired certificates, and trust-on-first-use are disabled and certificate-name validation plus encryption are required. Set `printer_endpoint_ip` to the commissioned private address. An IP-literal `printer_uri` requires that same address and a certificate with the IP SAN. For a hostname `printer_uri`, startup connects directly to the commissioned private IP while verifying that hostname as the certificate SAN; it does not trust or require ambient DNS. Only after that identity check succeeds is the hostname bound locally to the commissioned address for CUPS, and the binding is read back exactly. Conflicting, invalid, unwritable or mismatched bindings hold before CUPS starts. Enter values only in the Home Assistant app options UI.
 
@@ -40,7 +40,7 @@ It must never be installed, attested further, overwritten, deleted, or reused.
 
 ## Install and commissioning
 
-1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.5 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
+1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.6 release packet against the published immutable digest. There is no current local Supervisor-build fallback.
 2. Add the private repository in the Home Assistant app store and install or update only when Supervisor resolves the exact approved digest. Do not start until the canonical endpoint, least-privilege token, registry identities, printer URI and private CA are commissioned.
 3. Validate options and start the app. Confirm health is `event_waiting`, the local queue exists, logs contain no option values, and no job is eligible.
 4. Follow `docs/06-operations/GREEN_PRINT_BRIDGE_PHYSICAL_COMMISSIONING_GUIDE.md`. The development terminal must never manufacture the genuine request or operate the printer.
