@@ -7,6 +7,16 @@ on:
         description: Exact deployed main commit authorized for this run
         required: true
         type: string
+      legacy_adoption_authorization_id:
+        description: Owner-approved UUID for one-time legacy adoption; blank for normal runs
+        required: true
+        default: ""
+        type: string
+      legacy_adoption_packet_sha256:
+        description: SHA-256 of the exact canonical legacy-adoption packet; contains no receipt identities
+        required: true
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +34,8 @@ jobs:
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          LEGACY_ADOPTION_AUTHORIZATION_ID: ${{ inputs.legacy_adoption_authorization_id }}
+          LEGACY_ADOPTION_PACKET_SHA256: ${{ inputs.legacy_adoption_packet_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
@@ -35,23 +47,61 @@ jobs:
             echo "::error::production environment secret RENDER_API_KEY is unavailable"
             exit 1
           }
+          supplied=0
+          [[ -n "$LEGACY_ADOPTION_AUTHORIZATION_ID" ]] && supplied=$((supplied + 1))
+          [[ -n "$LEGACY_ADOPTION_PACKET_SHA256" ]] && supplied=$((supplied + 1))
+          [[ "$supplied" == 0 || "$supplied" == 2 ]] || {
+              echo "::error::legacy-adoption authorization transport is incomplete"
+              exit 1
+          }
+          if [[ "$supplied" == 2 ]]; then
+            [[ "$LEGACY_ADOPTION_AUTHORIZATION_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || {
+              echo "::error::legacy-adoption authorization identity is invalid"
+              exit 1
+            }
+            [[ "$LEGACY_ADOPTION_PACKET_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+              echo "::error::legacy-adoption authorization digest is invalid"
+              exit 1
+            }
+          fi
 
       - name: Create exact Render one-off migration job
         id: create
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          LEGACY_ADOPTION_AUTHORIZATION_ID: ${{ inputs.legacy_adoption_authorization_id }}
+          LEGACY_ADOPTION_PACKET_SHA256: ${{ inputs.legacy_adoption_packet_sha256 }}
           RENDER_SERVICE_ID: srv-d6sijjkhg0os73f7regg
         shell: bash
         run: |
           set -euo pipefail
-          body=$(jq -cn --arg command "RENDER_MIGRATION_EXPECTED_COMMIT=$EXPECTED_SOURCE_COMMIT python scripts/run_render_production_migrations.py" '{startCommand:$command}')
-          response=$(curl --fail-with-body --silent --show-error \
+          command="RENDER_MIGRATION_EXPECTED_COMMIT=$EXPECTED_SOURCE_COMMIT python scripts/run_render_production_migrations.py"
+          if [[ -n "$LEGACY_ADOPTION_AUTHORIZATION_ID" ]]; then
+            command="RENDER_MIGRATION_EXPECTED_COMMIT=$EXPECTED_SOURCE_COMMIT RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID=$LEGACY_ADOPTION_AUTHORIZATION_ID RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256=$LEGACY_ADOPTION_PACKET_SHA256 python scripts/run_render_production_migrations.py"
+          fi
+          body=$(jq -cn --arg command "$command" '{startCommand:$command}')
+          response_file=$(mktemp)
+          http_status=$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
             -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/jobs" \
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Content-Type: application/json" \
-            --data "$body")
-          job_id=$(jq -er '.id' <<<"$response")
+            --data "$body") || {
+              rm -f "$response_file"
+              echo "::error::Render migration job creation transport failed"
+              exit 1
+            }
+          [[ "$http_status" =~ ^2 ]] || {
+            rm -f "$response_file"
+            echo "::error::Render migration job creation was rejected (HTTP $http_status)"
+            exit 1
+          }
+          job_id=$(jq -er '.id' <"$response_file") || {
+            rm -f "$response_file"
+            echo "::error::Render migration job response identity was invalid"
+            exit 1
+          }
+          rm -f "$response_file"
           [[ "$job_id" == job-* ]] || { echo "::error::invalid Render job identity"; exit 1; }
           echo "job_id=$job_id" >> "$GITHUB_OUTPUT"
           echo "Render job created: $job_id"

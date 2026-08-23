@@ -206,6 +206,45 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_catalog_checkpoints").fetchone()[0], 1)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_compact_authorization_transport_is_exact_and_fail_closed(self):
+        import psycopg
+
+        packet = json.loads(_install_exact_legacy_production_shape())
+        for receipt in packet["receipts"]:
+            receipt["legacy_batch_id"] = receipt["identity"]["migration_id"]
+        packet["receipts"].sort(key=lambda receipt: receipt["identity"]["migration_id"])
+        packet_digest = hashlib.sha256(json.dumps(
+            packet, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")).hexdigest()
+        compact = dict(
+            ENV,
+            RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID=packet["authorization_id"],
+            RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256=packet_digest,
+        )
+        before = None
+        with psycopg.connect(DATABASE_URL) as db:
+            before = db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0]
+        with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_digest_mismatch"):
+            run(DATABASE_URL, {**compact, "RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256": "0" * 64})
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], before)
+            self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_receipt_identity_anchors')").fetchone()[0])
+        report = run(DATABASE_URL, compact)
+        self.assertEqual(report["legacy_adoption"]["receipt_count"], 3)
+        with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_already_initialized"):
+            run(DATABASE_URL, compact)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_compact_authorization_transport_rejects_absent_pair_and_mismatch(self):
+        _install_exact_legacy_production_shape()
+        with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_required"):
+            run(DATABASE_URL, ENV)
+        with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_transport_incomplete"):
+            run(DATABASE_URL, {**ENV, "RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID": str(uuid.uuid4())})
+        with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_transport_incomplete"):
+            run(DATABASE_URL, {**ENV, "RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256": "0" * 64})
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_legacy_role_power_drift_rejects_with_zero_trust_mutation(self):
         import psycopg
 

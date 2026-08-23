@@ -9,6 +9,7 @@ copying.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -1139,18 +1140,30 @@ def _verify_receipt_row(
 def _requested_legacy_adoption(connection, environ, *, commit: str, service_id: str):
     """Validate the externally authorized, catalog-bound pre-trust shape."""
     raw = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_JSON", "").strip()
-    if not raw:
+    compact_id = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID", "").strip()
+    compact_digest = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256", "").strip().lower()
+    if raw and (compact_id or compact_digest):
+        raise RuntimeError("migration_legacy_adoption_authorization_transport_ambiguous")
+    if bool(compact_id) != bool(compact_digest):
+        raise RuntimeError("migration_legacy_adoption_authorization_transport_incomplete")
+    if not raw and not compact_id:
         return None
-    try:
-        value = json.loads(raw)
-        authorization_id = str(uuid.UUID(value["authorization_id"]))
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError("migration_legacy_adoption_authorization_invalid") from exc
-    if value.get("expected_commit") != commit or value.get("render_service_id") != service_id:
-        raise RuntimeError("migration_legacy_adoption_runtime_binding_mismatch")
+    value = None
+    authorization_id = None
+    if raw:
+        try:
+            value = json.loads(raw)
+            authorization_id = str(uuid.UUID(value["authorization_id"]))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError("migration_legacy_adoption_authorization_invalid") from exc
+    else:
+        try:
+            authorization_id = str(uuid.UUID(compact_id))
+        except ValueError as exc:
+            raise RuntimeError("migration_legacy_adoption_authorization_invalid") from exc
+        if not re.fullmatch(r"[0-9a-f]{64}", compact_digest):
+            raise RuntimeError("migration_legacy_adoption_authorization_invalid")
     manifest, digest = _catalog_snapshot(connection)
-    if value.get("source_catalog_sha256") != digest:
-        raise RuntimeError(f"migration_legacy_adoption_catalog_mismatch:expected={value.get('source_catalog_sha256')}:actual={digest}")
     guard = connection.execute("""select t.tgenabled,t.tgtype,p.proname,n.nspname
       from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid=t.tgrelid
       join pg_catalog.pg_namespace cn on cn.oid=c.relnamespace
@@ -1159,6 +1172,39 @@ def _requested_legacy_adoption(connection, environ, *, commit: str, service_id: 
       and t.tgname='trg_guard_production_migration_receipts' and not t.tgisinternal""").fetchall()
     if guard != [("O", 27, "guard_production_migration_receipts", "app_private")]:
         raise RuntimeError("migration_legacy_adoption_receipt_guard_mismatch")
+    rows = connection.execute("""select receipt_id::text,migration_id,migration_filename,migration_sha256,
+      ordinal,outcome,source_commit,render_service_id,render_instance_id,error_class,applied_at
+      from app_private.production_migration_receipts""").fetchall()
+    if value is None:
+        canonical_receipts = []
+        for row in sorted(rows, key=lambda item: item[1]):
+            canonical_receipts.append({
+                "legacy_batch_id": row[1],
+                "identity": {
+                    "receipt_id": row[0], "migration_id": row[1],
+                    "migration_filename": row[2], "migration_sha256": row[3],
+                    "ordinal": row[4], "outcome": row[5], "source_commit": row[6],
+                    "render_service_id": row[7], "render_instance_id": row[8],
+                    "error_class": row[9],
+                    "applied_at": row[10].astimezone(timezone.utc).isoformat(timespec="microseconds"),
+                },
+            })
+        value = {
+            "authorization_id": authorization_id,
+            "expected_commit": commit,
+            "render_service_id": service_id,
+            "source_catalog_sha256": digest,
+            "receipts": canonical_receipts,
+        }
+        actual_packet_digest = hashlib.sha256(json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(actual_packet_digest, compact_digest):
+            raise RuntimeError("migration_legacy_adoption_authorization_digest_mismatch")
+    if value.get("expected_commit") != commit or value.get("render_service_id") != service_id:
+        raise RuntimeError("migration_legacy_adoption_runtime_binding_mismatch")
+    if value.get("source_catalog_sha256") != digest:
+        raise RuntimeError("migration_legacy_adoption_catalog_mismatch")
     expected = value.get("receipts")
     if not isinstance(expected, list):
         raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
@@ -1172,9 +1218,6 @@ def _requested_legacy_adoption(connection, environ, *, commit: str, service_id: 
         authorized_by_id[migration_id] = authorized
     if set(authorized_by_id) != set(LEGACY_ADOPTION_RECEIPT_IDS):
         raise RuntimeError("migration_legacy_adoption_receipt_set_mismatch")
-    rows = connection.execute("""select receipt_id::text,migration_id,migration_filename,migration_sha256,
-      ordinal,outcome,source_commit,render_service_id,render_instance_id,error_class,applied_at
-      from app_private.production_migration_receipts""").fetchall()
     rows_by_id = {}
     for row in rows:
         if row[1] in rows_by_id:
@@ -1609,7 +1652,11 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                         if any(trust_table_flags) and not trust_tables_exist:
                             raise RuntimeError("migration_trust_tables_partial_state")
                         if trust_tables_exist:
-                            if runtime_env.get("RENDER_MIGRATION_LEGACY_ADOPTION_JSON", "").strip():
+                            if any(runtime_env.get(name, "").strip() for name in (
+                                "RENDER_MIGRATION_LEGACY_ADOPTION_JSON",
+                                "RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID",
+                                "RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256",
+                            )):
                                 raise RuntimeError("migration_legacy_adoption_already_initialized")
                             receipt_guard = _verify_receipt_guard(connection)
                             report["prior_catalog_checkpoint"] = _verify_catalog_checkpoint(connection)
