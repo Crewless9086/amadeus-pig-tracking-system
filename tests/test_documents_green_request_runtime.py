@@ -1,7 +1,7 @@
 from datetime import datetime,timezone
 
 from modules.oom_sakkie.documents_green_request_runtime import handle_documents_green_request
-from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result, localize_recipient_result
 
 NOW=datetime(2026,8,21,8,0,tzinfo=timezone.utc)
 ENV={"DOCUMENTS_FARM_SCOPE_ID":"AMADEUS-FARM",
@@ -73,6 +73,18 @@ def test_ambiguous_semantic_result_asks_once_without_creating_claim():
     assert result["canonical_job_created"] is False and result["printer_calls"]==0
     assert result["answer"]=="Do you want the weekly weighing sheet printed?"
     assert calls==[]
+
+
+def test_actual_unbound_clarification_is_afrikaans_and_cannot_leak_english():
+    parsed={**PARSED,"output_language":"af","semantic":{
+        "domain":"documents","intent":"weekly_weighing_sheet_print",
+        "needs_clarification":True,
+        "clarification_question":"Do you want the weekly weighing sheet printed?"}}
+    result,status=handle_documents_green_request(parsed,environ=ENV,pig_loader=pigs,now=NOW)
+    localized=localize_recipient_result(parsed,result,"DOCUMENTS")
+    assert status==200 and localized["answer"] == (
+        "Wil jy hê ek moet die weeklikse weegblad vir drukwerk voorberei?")
+    assert "Do you" not in localized["answer"]
 
 
 def test_presenter_result_enters_exact_protected_delivery_binding():

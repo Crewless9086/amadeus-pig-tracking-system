@@ -65,6 +65,8 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             answer = (f"<b>BEACON — PRIVAAT GESTOOR</b>\n\n{count} foto('s) is veilig in hierdie album gestoor. "
                 "Voeg die oorblywende foto's by en kies Voltooi album. Biblioteekaanvaarding, openbare gebruik, "
                 "veldtoghersiening en publikasie bly afsonderlike beskermde handelinge.")
+        elif status == "documents_green_request_clarification_required":
+            answer = "Wil jy hê ek moet die weeklikse weegblad vir drukwerk voorberei?"
         elif isinstance(campaign, Mapping):
             budget = campaign.get("budget_cap") if isinstance(campaign.get("budget_cap"), Mapping) else {}
             duration = campaign.get("duration") if isinstance(campaign.get("duration"), Mapping) else {}
@@ -115,10 +117,16 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             rows.append(translated)
         localized["reply_markup"] = {**markup, "inline_keyboard": rows}
     localized["recipient_language"] = "af"
-    if (answer and answer == original_answer
-            and any(localized.get(key) for key in ("callback_token", "preview_digest", "action_kind"))):
+    if answer and answer == original_answer and not _looks_afrikaans(answer):
         localized["recipient_language_render_unrecognized"] = True
     return localized
+
+
+def _looks_afrikaans(text: str) -> bool:
+    words = {word.strip(".,:;!?()[]<>").casefold() for word in str(text).split()}
+    return bool(words & {"die", "het", "is", "nie", "geen", "word", "bevestig",
+        "vark", "plaas", "besproeiing", "veilig", "wanneer", "hierdie", "jou",
+        "foto", "foto's", "voltooi", "reggestelde", "gekanselleer"})
 
 
 def _afrikaans_bound_facts(result: Mapping[str, Any]) -> str:

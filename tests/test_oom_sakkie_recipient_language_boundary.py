@@ -62,3 +62,13 @@ def test_unrecognized_afrikaans_protected_status_fails_closed_before_delivery():
     }, specialist="FUTURE", sender=lambda *args: sent.append(args))
     assert result["status"] == "recipient_language_render_unrecognized"
     assert result["telegram_sends"] == 0 and sent == []
+
+
+def test_unrecognized_afrikaans_unbound_status_also_fails_closed_before_delivery():
+    sent = []
+    result = deliver_family_result({"output_language": "af", "telegram_user_id": "2",
+        "telegram_chat_id": "2", "provider_message_id": "10"}, {
+        "status": "future_unbound_clarification", "answer": "Which item do you mean?",
+    }, specialist="FUTURE", sender=lambda *args: sent.append(args))
+    assert result["status"] == "recipient_language_render_unrecognized"
+    assert result["telegram_sends"] == 0 and sent == []
