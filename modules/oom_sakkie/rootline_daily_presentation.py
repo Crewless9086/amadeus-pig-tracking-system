@@ -116,22 +116,10 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
         lifecycle = (validate_zone_lifecycle(
             (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
             or project_zone_lifecycle(zone_id=zone, recommendation=row))
-        decision_value = ("Completed" if lifecycle.get("state") == "Completed" else
-                          row.get("status") or row.get("recommendation"))
-        decision = _decision(decision_value, af)
+        decision = _lifecycle_decision(lifecycle, row, af, zone=zone)
         window = _human_window(row.get("preferred_window"))
         suffix = f" · {html.escape(window)}" if window and window.lower() not in {"unavailable", "unknown"} else ""
-        already_recommendation = decision.casefold().startswith(
-            "aanbeveling" if af else "recommendation")
-        prefix = "" if already_recommendation else ("Aanbeveling: " if af else "Recommendation: ")
-        lines.append(f"• <b>{label}:</b> {prefix}{decision}{suffix}")
-        lifecycle_state = str(lifecycle.get("state") or "Held")
-        lifecycle_reason = str(lifecycle.get("reason") or "Unknown")
-        lifecycle_next = str(lifecycle.get("next_action") or
-            "ROOTLINE must reassess on the next governed trigger.")
-        lines.append(f"  {'Lewensiklus' if af else 'Lifecycle'}: {html.escape(lifecycle_state)} · "
-                     f"{'Rede' if af else 'Reason'}: {html.escape(lifecycle_reason)} · "
-                     f"ROOTLINE: {html.escape(lifecycle_next)}")
+        lines.append(f"• <b>{label}:</b> {decision}{suffix}")
         reason = str(row.get("reason") or "").strip()
         if reason and reason not in reasons:
             reasons.append(reason)
@@ -172,8 +160,58 @@ def _decision(value: Any, af: bool) -> str:
     return "Data nodig" if af else "Needs Data"
 
 
+def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[str, Any],
+                        af: bool, *, zone: str) -> str:
+    state = str(lifecycle.get("state") or "Held")
+    if state == "Started":
+        return "Loop tans" if af else "Currently running"
+    if state == "Authorized":
+        return "Gereed — begin veilig" if af else "Ready — starting safely"
+    if state == "Eligible":
+        return ("Gereed na die finale veiligheidskontrole" if af else
+                "Ready after the final safety check")
+    if state == "Revalidating":
+        return "Kontroleer veiligheid" if af else "Checking safely"
+    if state == "Recommended":
+        return "Moet natgemaak word" if af else "Needs watering"
+    if state == "Held":
+        if lifecycle.get("watering_need_proven_false") is True:
+            return ("Loop nie — het nie water nodig nie" if af else
+                    "Not running — does not need watering")
+        return "Loop nie" if af else "Not running"
+    if state == "Failed":
+        return ("Veilig teruggehou — probleem word outomaties nagegaan" if af else
+                "Held safely — problem under automatic review")
+    if state == "Completed":
+        if _verified_completion(lifecycle, zone):
+            return "Voltooi — af en geverifieer" if af else "Completed — off and verified"
+        return "Loop nie" if af else "Not running"
+    return "Data nodig" if af else "Needs Data"
+
+
+def _verified_completion(lifecycle: Mapping[str, Any], zone: str) -> bool:
+    evidence = lifecycle.get("completion_evidence")
+    if not isinstance(evidence, Mapping) or str(evidence.get("zone_id") or "") != zone:
+        return False
+    shutdown = evidence.get("shutdown_evidence")
+    return (evidence.get("shutdown_verified") is True
+            and (evidence.get("objective_satisfied") is True
+                 or evidence.get("qualifies_as_completed_watering") is True)
+            and isinstance(shutdown, Mapping)
+            and shutdown.get("authoritative") is True
+            and str(shutdown.get("state") or "").upper() == "OFF")
+
+
 def _short_reason(value: str, af: bool) -> str:
     text = " ".join(str(value or "").split())
+    import re
+    if (text.casefold() in {
+            "now_after_fresh_execution_revalidation",
+            "zone_decision_not_run_now",
+            "durable_zone_containment"}
+            or re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+", text) is not None):
+        return ("Vars kanonieke bewyse bepaal die huidige besluit." if af else
+                "Fresh canonical evidence determines the current decision.")
     if not text:
         return "Vars kanonieke bewyse bepaal die huidige besluit." if af else "Fresh canonical evidence determines the current decision."
     sentence = text.split(". ", 1)[0].rstrip(".") + "."
@@ -197,7 +235,8 @@ def _human_window(value):
 def _human_reassessment(value, now_hint=None):
     text = " ".join(str(value or "").split())
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(SAST)
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = parsed.replace(tzinfo=SAST) if parsed.tzinfo is None else parsed.astimezone(SAST)
         return f"around {parsed:%H:%M}"
     except (TypeError, ValueError):
         pass
@@ -205,7 +244,7 @@ def _human_reassessment(value, now_hint=None):
     match = re.search(r"\bat\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})", text)
     if match:
         try:
-            parsed = datetime.fromisoformat(match.group(1)).astimezone(SAST)
+            parsed = datetime.fromisoformat(match.group(1)).replace(tzinfo=SAST)
             return f"around {parsed:%H:%M}"
         except ValueError:
             pass

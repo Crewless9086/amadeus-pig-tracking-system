@@ -241,7 +241,7 @@ def build_sale_watch_result(rows, *, now=None, language="en"):
         sale_status = _text(row, "sale_status").casefold()
         payment = _text(row, "payment_status").casefold()
         if sale_status == "cancelled" or (sale_status == "completed"
-                and payment in {"paid", "settled"}):
+                and payment in {"paid", "settled", "not_applicable", "not applicable"}):
             continue
         missing = []
         if sale_status != "completed" and int(row.get("item_count") or 0) <= 0:

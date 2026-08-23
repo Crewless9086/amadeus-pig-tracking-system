@@ -715,3 +715,13 @@ def test_reloaded_partial_exact_replay_is_silent_and_does_not_advance_generation
     assert first["status"] == "manager_question_partial_reply_recorded"
     assert status == 200 and replay["status"] == "manager_question_reply_replay_suppressed"
     assert replay["suppress_owner_delivery"] is True and len(state.rows) == 1
+
+
+def test_answered_attributable_question_is_consumed_across_daily_identity_changes():
+    import inspect
+    from modules.oom_sakkie import manager_question_runtime
+    source = inspect.getsource(manager_question_runtime._load_questions)
+    answered_clause = source.split("and not exists (select 1", 1)[1].split(")\n", 1)[0]
+    assert "owner_user_id" in answered_clause and "chat_id" in answered_clause
+    assert "task_id" in answered_clause and "dedupe_key" in answered_clause
+    assert "answered.review_json->'manager_question_reply'->>'daily_identity'" not in answered_clause
