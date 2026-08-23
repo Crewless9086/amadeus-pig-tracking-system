@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+import inspect
 import unittest
 from unittest.mock import patch
 
@@ -99,6 +100,19 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             list(farm_supabase_read_service.BREEDING_ATTENTION_READ_STAGES),
         )
         self.assertEqual(connection.exit_count, 1)
+
+    def test_litter_skip_projection_tolerates_pre_migration_canonical_view(self):
+        source = inspect.getsource(
+            farm_supabase_read_service._get_allocation_input_rows_queries
+        )
+        self.assertIn(
+            "to_jsonb(litter)->>'first_treatment_skipped_at'",
+            source,
+        )
+        self.assertNotIn(
+            "litter.litter_status, litter.first_treatment_skipped_at",
+            source,
+        )
 
     def test_breeding_attention_snapshot_fails_whole_inventory_on_slow_supporting_stage(self):
         connection = self._SnapshotConnection("from public.mating_events")
