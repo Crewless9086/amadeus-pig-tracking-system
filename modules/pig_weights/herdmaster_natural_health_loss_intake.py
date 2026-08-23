@@ -232,13 +232,15 @@ def _identity_result(matches):
 def _parse_report(text, provider_time):
     lower = text.casefold()
     reported_died = bool(re.search(
-        r"\bdied\b|\b(?:is|was) dead(?=\s*(?:[.!?,;:]|$)|\s+(?:and\s+)?"
-        r"(?:(?:was\s+)?buried|(?:was\s+)?removed|gone|no longer alive)\b)",
+        r"\bdied\b|\bgesterf\b|\b(?:is|was) dead(?=\s*(?:[.!?,;:]|$)|\s+(?:and\s+)?"
+        r"(?:(?:was\s+)?buried|(?:was\s+)?removed|gone|no longer alive)\b)|"
+        r"\bis dood(?=\s*(?:[.!?,;:]|$)|\s+(?:en\s+)?(?:verwyder|begrawe)\b)",
         lower,
     ))
     found_dead = bool(
         re.search(r"\bfound(?:\s+.+?)?\s+dead\b", lower)
         or re.search(r"\bwas dead(?:\s+when|\s+in|\s+at|[.!?]|$)", lower)
+        or re.search(r"\bdood gevind\b|\bwas dood(?:\s+toe|\s+in|\s+by|[.!?]|$)", lower)
     )
     dead = reported_died or found_dead
     farrowing = bool(re.search(r"\b(farrow|farrowing|gave birth)\b", lower))
@@ -454,10 +456,10 @@ def _parse_report(text, provider_time):
     )
     last_seen_supplied = bool(last_seen)
     found_time_supplied = bool(found_time)
-    removal_supplied = bool(re.search(r"\b(?:removed from (?:the )?pen|buried|disposed|cremated)\b", lower))
+    removal_supplied = bool(re.search(r"\b(?:removed from (?:the )?pen|buried|disposed|cremated|verwyder|begrawe|weggedoen)\b", lower))
     removal_outcome = (
-        "removed and buried" if re.search(r"\bremoved\b.{0,40}\bburied\b", lower)
-        else "buried" if re.search(r"\bburied\b", lower)
+        "removed and buried" if re.search(r"\b(?:removed|verwyder)\b.{0,40}\b(?:buried|begrawe)\b", lower)
+        else "buried" if re.search(r"\b(?:buried|begrawe)\b", lower)
         else "cremated" if re.search(r"\bcremated\b", lower)
         else "disposed" if re.search(r"\bdisposed\b", lower)
         else "removed from pen" if removal_supplied else ""

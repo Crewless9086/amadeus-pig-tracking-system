@@ -24,6 +24,12 @@ that no owner action is currently available.
 
 ## Conversation and specialist answers
 
+Resolve the recipient's output language from the existing authenticated family
+identity/profile before composing any visible text or buttons. The language of
+one inbound message is semantic evidence only and must not silently change that
+stored preference. A single selection governs headings, body, dates, facts,
+Unknowns, questions, corrections, failures, completion and buttons.
+
 An authenticated reply binds to its active provider-delivered question before
 generic semantic intake. Preserve supported portions of a partial reply and ask
 only the smallest materially missing follow-up. Grouped questions accept grouped

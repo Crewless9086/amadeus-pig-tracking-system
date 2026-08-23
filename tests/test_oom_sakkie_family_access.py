@@ -104,7 +104,10 @@ def test_farm_manager_is_delegated_not_owner_and_cannot_cross_charl_only_boundar
     for capability in permissions:
         assert authorize_family_message(principal, _parsed("1002"),
             capability=capability, summary_domain="herd").allowed
-    for capability in ("mortality_confirmation", "treatment", "mating_execution",
+    mortality = authorize_family_message(principal, _parsed("1002"),
+        capability="mortality_confirmation")
+    assert mortality.allowed and mortality.may_confirm_protected_action
+    for capability in ("treatment", "mating_execution",
                        "hardware_exception", "permission_change", "payment"):
         decision = authorize_family_message(principal, _parsed("1002"), capability=capability)
         assert not decision.allowed and not decision.may_confirm_protected_action

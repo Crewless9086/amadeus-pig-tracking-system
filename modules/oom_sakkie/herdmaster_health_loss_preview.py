@@ -7,6 +7,7 @@ It performs no I/O, routing, confirmation consumption, or persistence.
 from __future__ import annotations
 
 import hashlib
+import html
 import re
 from typing import Mapping
 
@@ -50,6 +51,7 @@ def prepare_health_loss_owner_preview(
             envelope.get("provider_timezone") or "Africa/Johannesburg"
         ).strip(),
         "text": _required(envelope, "text"),
+        "output_language": "af" if str(envelope.get("output_language") or "en").casefold().startswith("af") else "en",
     }
     if not all(report.values()):
         return _failure("authenticated_envelope_incomplete")
@@ -58,9 +60,9 @@ def prepare_health_loss_owner_preview(
     except IntakeEvidenceError as exc:
         return _failure(str(exc))
 
-    question = str(
+    question = _localize_question(str(
         evaluated.get("smallest_missing_follow_up_question") or ""
-    ).strip()
+    ).strip(), report["output_language"])
     if not evaluated.get("success"):
         return {
             "success": False,
@@ -86,6 +88,7 @@ def prepare_health_loss_owner_preview(
         "success": True,
         "status": "consolidated_preview_ready",
         "message_type": "consolidated_preview",
+        "output_language": report["output_language"],
         "owner_text": owner_text,
         "question_count": 1 if question else 0,
         "confirmation_required": True,
@@ -98,48 +101,69 @@ def prepare_health_loss_owner_preview(
 
 def _render_preview(value, report):
     identity = value["identity"]
+    af = report["output_language"] == "af"
+    name = html.escape(str(identity.get("name") or identity.get("tag_number") or ("Naam onbekend" if af else "Name unknown")))
+    tag = html.escape(str(identity.get("tag_number") or ("Onbekend" if af else "Unknown")))
+    dead = value.get("event_family") in {"found_dead", "mortality", "maternal_death", "compound_loss"}
+    facts = _owner_fact_summary(value, af=af)
     lines = [
-        "Oom Sakkie - HERDMASTER health/loss preview",
+        "<b>HERDMASTER - AFSTERWE VOORSKOU</b>" if af and dead else
+        "<b>HERDMASTER - GESONDHEID VOORSKOU</b>" if af else
+        "<b>HERDMASTER - DEATH PREVIEW</b>" if dead else "<b>HERDMASTER - HEALTH PREVIEW</b>",
         "",
-        f"Animal: {identity['name']} ({identity['pig_id']}; tag {identity['tag_number']})",
-        f"Provider message: {report['provider_message_id']}",
-        f"Observed at: {value['provider_report_time']}",
-        "Owner evidence: authenticated private owner binding",
-        f"Event: {value['event_family'].replace('_', ' ')}",
-        f"Welfare priority: {value['immediate_welfare_priority']['level'].replace('_', ' ')}",
-        f"Welfare action: {value['immediate_welfare_priority']['action']}",
-        "",
-        "Observed facts:",
-        *_facts(value["observed_facts"], "None"),
-        "Agent diagnosis: Unknown (none inferred)",
-        "Suspected cause: Unknown" if not value["owner_suspected_cause"] else "Owner-suspected cause (not a diagnosis):",
-        *_causes(value["owner_suspected_cause"], "None reported"),
-        _treatment_line(value["owner_report_text"]),
-        "Veterinary evidence:",
-        *_diagnoses(value["veterinary_evidence"], "None reported"),
-        "Agent inference: None",
-        "",
-        "Current canonical state:",
-        *_mapping_lines(value["preview"]["before"]),
-        "Proposed affected records (nothing written):",
-        *_effect_lines(value["canonical_effects"]),
-        "Intentionally unchanged:",
-        "- " + ", ".join(value["preview"]["intentionally_unchanged"]),
+        (f"Dier: {name} (etiket {tag})" if af else f"Animal: {name} (tag {tag})"),
+        (f"Aangemeld: {value['provider_report_time']}" if af else f"Reported: {value['provider_report_time']}"),
+        ("Wat aangeteken sal word:" if af else "What will be recorded:"),
+        *facts,
+        _treatment_line(value["owner_report_text"], language="af" if af else "en"),
+        ("Oorsaak en presiese tyd bly Onbekend tensy dit aangemeld is." if af else
+         "Cause and exact time remain Unknown unless reported."),
+        ("Geen diagnose of behandeling word afgelei nie." if af else
+         "No diagnosis or treatment is inferred."),
     ]
-    question = str(value.get("smallest_missing_follow_up_question") or "").strip()
+    question = _localize_question(str(value.get("smallest_missing_follow_up_question") or "").strip(), report["output_language"])
     if question:
-        lines.extend(["", f"One clarification: {question}"])
+        lines.extend(["", ("Een vraag: " if af else "One question: ") + html.escape(question)])
     else:
-        confirmations = ", ".join(value["required_confirmations"])
         lines.extend([
             "",
-            f"Protected confirmations covered: {confirmations or 'None'}",
-            f"Reply exactly: CONFIRM {value['operation_id']}",
+            ("Bevestig om slegs hierdie voorskou een keer aan te teken." if af else
+             "Confirm to record only this preview once."),
         ])
     return "\n".join(lines)
 
 
-def _treatment_line(owner_report_text):
+def _owner_fact_summary(value, *, af):
+    facts = []
+    for effect in value.get("canonical_effects") or []:
+        if not effect.get("supported"):
+            continue
+        area = str(effect.get("area") or "")
+        data = effect.get("facts") if isinstance(effect.get("facts"), Mapping) else {}
+        if area == "lifecycle":
+            facts.append(f"- {'Afsterwedatum' if af else 'Death date'}: {html.escape(str(data.get('date') or ('Onbekend' if af else 'Unknown')))}")
+        elif area == "movement_pen" and data.get("owner_reported_outcome"):
+            facts.append(f"- {'Verwydering/wegdoening aangemeld' if af else 'Removal/disposal reported'}: {html.escape(str(data['owner_reported_outcome']))}")
+        elif area == "medical_observation":
+            for row in data.get("observed") or []:
+                label = str(row.get('fact') or '').replace('_', ' ')
+                if af:
+                    label = {"not eating":"eet nie", "injured":"beseer", "bleeding":"bloei"}.get(label, label)
+                facts.append(f"- {html.escape(label)}: {html.escape(str(row.get('value')))}")
+    return facts or ["- Geen ondersteunde feit" if af else "- No supported fact"]
+
+
+def _localize_question(question, language):
+    question = re.sub(r"\s+\(PIG-[^)]+\)", "", question)
+    if not question or language != "af":
+        return question
+    question = re.sub(r"^Has (.+?) been removed from the pen; if yes, when and what was the disposal/removal outcome\?$",
+                      r"Is \1 uit die hok verwyder; indien wel, wanneer en wat was die verwydering/wegdoening?", question)
+    question = question.replace("Can ", "Kan ").replace(" able to stand, breathe normally and drink water?", " staan, normaal asemhaal en water drink?")
+    return question
+
+
+def _treatment_line(owner_report_text, language="en"):
     text = str(owner_report_text or "").casefold()
     absence_pattern = (
         r"\b(?:no|without)\s+(?:treatment|medication|medicine|antibiotic\w*)\b(?:\s+(?:initially|earlier|yesterday|today))?(?=\s*(?:[.!?;,]|except\b|$))|"
@@ -164,12 +188,15 @@ def _treatment_line(owner_report_text):
     mentioned = bool(mention_matches)
     exception_wording = explicit_none and bool(re.search(r"\bexcept\b", text))
     if explicit_none and (mentioned or exception_wording):
-        return "Treatment evidence: mixed or contradictory owner wording; details Unknown / not evaluated"
+        return ("Behandelingsbewys: gemengde of teenstrydige verslag; besonderhede Onbekend." if language == "af" else
+                "Treatment evidence: mixed or contradictory report; details Unknown.")
     if explicit_none:
-        return "Treatment evidence: owner reported absence wording; scope Unknown / not evaluated"
+        return ("Behandelingsbewys: geen behandeling is aangemeld; omvang Onbekend." if language == "af" else
+                "Treatment evidence: owner reported none; scope Unknown.")
     if mentioned:
-        return "Treatment evidence: mentioned by owner; details Unknown / not evaluated by this intake"
-    return "Treatment evidence: Unknown / not evaluated or extracted by this intake"
+        return ("Behandelingsbewys: behandeling is genoem; besonderhede Onbekend." if language == "af" else
+                "Treatment evidence: treatment mentioned; details Unknown.")
+    return "Behandelingsbewys: Onbekend." if language == "af" else "Treatment evidence: Unknown."
 
 
 def _facts(rows, empty):

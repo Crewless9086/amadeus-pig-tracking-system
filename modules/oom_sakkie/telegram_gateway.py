@@ -18,7 +18,9 @@ from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_mess
 from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import handle_grouped_breeding_message
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
-from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
+from modules.oom_sakkie.family_access import (
+    FamilyRole, authorize_family_message, family_access_policy, resolve_family_principal,
+)
 from modules.oom_sakkie.family_runtime import handle_family_runtime_message
 from modules.oom_sakkie.family_rootline_callback import (
     CALLBACK_PREFIX as FAMILY_CALLBACK_PREFIX, bind_family_rootline_preview_card,
@@ -262,6 +264,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     family_principal = resolve_family_principal(parsed, source)
     if family_principal.role is FamilyRole.UNKNOWN_SENDER:
         return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    parsed["output_language"] = family_principal.language
     if str(parsed.get("callback_data") or "").startswith(FAMILY_CALLBACK_PREFIX):
         if family_principal.role is not FamilyRole.FARM_MANAGER:
             callback_result, callback_status = ({"success": False,
@@ -284,6 +287,21 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "writes": False, "hardware_commands": int(callback_result.get("hardware_commands") or 0)})
         return body, callback_status if acknowledgement.get("success") else 202
     if family_principal.role is not FamilyRole.OWNER:
+        lifecycle_decision = authorize_family_message(
+            family_principal, parsed, capability="mortality_confirmation")
+        if lifecycle_decision.allowed:
+            manager_authority = issue_gateway_owner_authority(
+                family_principal.telegram_user_id, family_principal.private_chat_id)
+            if str(parsed.get("callback_data") or "").startswith(CALLBACK_PREFIX):
+                protected_result, protected_status = handle_protected_action_input(
+                    parsed, manager_authority)
+                if protected_result.get("handled"):
+                    return _protected_gateway_response(
+                        parsed, policy, protected_result, protected_status)
+            health_result, health_status = handle_authenticated_health_loss_message(
+                parsed, manager_authority)
+            if health_result.get("handled"):
+                return _health_gateway_response(parsed, policy, health_result, health_status)
         family_result, family_status = handle_family_runtime_message(parsed, family_principal,
             summary_loader=load_family_summary,
             observation_adapter=herdmaster_family_observation,
@@ -757,39 +775,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                       "Nothing was recorded; one technical follow-up is required.")
             health_result = {**health_result, "answer": answer,
                              "status": str(health_result.get("status") or "contained")}
-        body, _ = _gateway_result(
-            health_result.get("success") is True,
-            str(health_result.get("status") or "health_loss_contained"),
-            policy,
-            health_status,
-        )
-        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
-                     "status": "owner_delivery_suppressed_existing_card_unchanged"}
-                    if health_result.get("suppress_owner_delivery") is True else
-                    deliver_family_result(
-                        parsed, health_result, specialist="HERDMASTER",
-                        mission_id=str(health_result.get("mission_id") or ""),
-                        card_mission_id=str(health_result.get("card_mission_id") or "")))
-        delivery = _bind_protected_preview_card(health_result, delivery)
-        body.update({
-            "telegram_user_id": parsed["telegram_user_id"],
-            "telegram_chat_id": parsed["telegram_chat_id"],
-            "text": parsed["text"],
-            "answer": answer,
-            "message": health_result,
-            "records_audit_trace": health_result.get("records_audit_trace") is True,
-            "audit_trace_status": "stored" if health_result.get("records_audit_trace") is True else "not_written",
-            "reply": {
-                "chat_id": parsed["telegram_chat_id"],
-                "text": answer,
-                "parse_mode": "HTML",
-                "sends_telegram": False,
-            },
-            "delivery": delivery,
-            "reply_transport": "backend_handles_owner_task_delivery",
-            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
-        })
-        return body, health_status if delivery.get("success") else 202
+        return _health_gateway_response(parsed, policy, health_result, health_status)
 
     herd_request, herd_request_status = handle_herdmaster_request(parsed, gateway_authority)
     if herd_request.get("handled"):
@@ -1288,6 +1274,54 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         delivery=delivery_proof, state_store=state_store)
     return {**result, "delivery": delivery, "delivery_record": recorded,
             "telegram_sends": int(delivery.get("telegram_sends") or 0)}, 200 if delivery_proof["provider_delivery_confirmed"] else 202
+
+
+def _health_gateway_response(parsed, policy, health_result, health_status):
+    answer = str(health_result.get("answer") or "")
+    body, _ = _gateway_result(
+        health_result.get("success") is True,
+        str(health_result.get("status") or "health_loss_contained"),
+        policy, health_status)
+    delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                 "status": "owner_delivery_suppressed_existing_card_unchanged"}
+                if health_result.get("suppress_owner_delivery") is True else
+                deliver_family_result(
+                    parsed, health_result, specialist="HERDMASTER",
+                    mission_id=str(health_result.get("mission_id") or ""),
+                    card_mission_id=str(health_result.get("card_mission_id") or "")))
+    delivery = _bind_protected_preview_card(health_result, delivery)
+    body.update({
+        "telegram_user_id": parsed["telegram_user_id"],
+        "telegram_chat_id": parsed["telegram_chat_id"],
+        "text": parsed.get("text", ""), "answer": answer, "message": health_result,
+        "records_audit_trace": health_result.get("records_audit_trace") is True,
+        "audit_trace_status": "stored" if health_result.get("records_audit_trace") is True else "not_written",
+        "reply": {"chat_id": parsed["telegram_chat_id"], "text": answer,
+                  "parse_mode": "HTML", "sends_telegram": False},
+        "delivery": delivery, "reply_transport": "backend_handles_owner_task_delivery",
+        "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+    })
+    return body, health_status if delivery.get("success") else 202
+
+
+def _protected_gateway_response(parsed, policy, result, status):
+    delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                 "status": "protected_replay_noop"}
+                if result.get("suppress_owner_delivery") else deliver_family_result(
+                    parsed, result, specialist=str(result.get("specialist") or "HERDMASTER"),
+                    mission_id=str(result.get("mission_id") or ""),
+                    card_mission_id=str(result.get("card_mission_id") or result.get("mission_id") or "")))
+    if result.get("callback_token") and not result.get("suppress_owner_delivery"):
+        delivery = _bind_protected_preview_card(result, delivery)
+    body, _ = _gateway_result(result.get("success") is True,
+        str(result.get("status") or "protected_action_contained"), policy, status)
+    body.update({"telegram_user_id": parsed["telegram_user_id"],
+        "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed.get("text", ""),
+        "answer": result.get("answer", ""), "message": result, "delivery": delivery,
+        "records_audit_trace": True, "reply_transport": "backend_handles_owner_task_delivery",
+        "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+        "writes": result.get("writes_farm_data") is True})
+    return body, status if delivery.get("success") else (503 if result.get("success") else 202)
 
 
 def parse_telegram_gateway_payload(payload):
