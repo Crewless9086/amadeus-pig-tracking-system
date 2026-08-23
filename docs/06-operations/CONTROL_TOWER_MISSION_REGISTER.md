@@ -2122,3 +2122,17 @@ while the active C12345 segment is still running. Final operational acceptance
 still requires the due shutdown/completion and safe-state readback. The sole
 current human acceptance action is Anton's own new Afrikaans Pig 126 report and
 his own `Bevestig`; no terminal replay or proxy confirmation is permitted.
+
+Charl subsequently inspected the Amadeus Facebook Page in his authenticated
+owner session and confirmed that post
+`920598737794159_122149046469122163` is visible on the Page. This resolves the
+anonymous-browser visibility Unknown and proves the owner-visible BEACON
+publication outcome. The owner also reported that the post has no image and is
+visually poor. That is a genuine quality defect, not a publication failure:
+the deployed scheduler deliberately selected text-only output because no media
+asset with exact public-use and subject/event authority was available. Preserve
+the successful automated publication and campaign attribution. The bounded
+follow-on is to let BEACON select exact approved public-use media automatically;
+do not restore livestock solicitation, invent media authority, create a parallel
+publication workflow or claim a SAM lead before genuine attributable inbound.
+OWNER ACTION: NONE.
