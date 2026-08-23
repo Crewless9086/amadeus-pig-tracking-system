@@ -2182,3 +2182,15 @@ mission. The same mission is `CONTAINED / SYSTEMIC_ROLE_ROUTING_REPAIR_ACTIVE`;
 no further owner attempt is allowed until exact-current implementation, review,
 merge, deployment and non-actuating production readiness prove the old
 farm-manager observation-only branch is unreachable. OWNER ACTION: NONE.
+
+PR `#1198` passed all four exact-head hosted gates, merged as
+`efd8d302022b8e526fdc8f6a560d8838e758366a`, and Render proved that exact
+revision live. The deployed 19:16 SAST ROOTLINE reassessment then persisted a
+fresh typed decision for both zones: B12345 `Run` for 60 minutes and C12345
+`Run` for 60 minutes, each with adaptive window
+`now_after_fresh_execution_revalidation`. It scheduled the next reassessment
+for `2026-08-23T19:45:32+02:00`. C's current segment remains the active
+sequential execution; B is eligible after C shutdown/readback and fresh safety
+revalidation. This proves that B is neither uncommissioned nor daylight-blocked,
+but it is not yet proof that tonight's B physical run started or completed.
+The deployed ROOTLINE worker owns that outcome. OWNER ACTION: NONE.
