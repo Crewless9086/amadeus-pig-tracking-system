@@ -95,29 +95,24 @@ def validate_verification_run(document, repository, run_id, attempt="1"):
         raise ValueError("attestation_run_identity_mismatch")
 
 
-def validate_cosign_verification(document, image, digest, repository, source):
-    if not isinstance(document, list) or len(document) != 1:
-        raise ValueError("cosign_verification_result_ambiguous")
-    item = document[0]
-    expected_subject = (
-        f"https://github.com/{repository}/.github/workflows/"
-        "green-print-image.yml@refs/heads/main")
-    try:
-        bound = (
-            item["critical"]["identity"]["docker-reference"] == image and
-            item["critical"]["image"]["docker-manifest-digest"] == digest and
-            item["critical"]["type"] == "cosign container image signature" and
-            item["optional"]["Issuer"] ==
-                "https://token.actions.githubusercontent.com" and
-            item["optional"]["Subject"] == expected_subject and
-            item["optional"]["githubWorkflowSha"] == source and
-            item["optional"]["githubWorkflowRepository"] == repository and
-            item["optional"]["githubWorkflowRef"] == "refs/heads/main" and
-            item["optional"]["githubWorkflowTrigger"] == "workflow_dispatch")
-    except (KeyError, TypeError):
-        bound = False
-    if not bound:
-        raise ValueError("cosign_identity_mismatch")
+def validate_cosign_verification(document, image, digest):
+    if not isinstance(document, list):
+        raise ValueError("cosign_verification_result_malformed")
+    digest_ref = f"{image}@{digest}"
+    native = []
+    for item in document:
+        try:
+            if item["critical"]["type"] == \
+                    "https://sigstore.dev/cosign/sign/v1":
+                native.append(item)
+        except (KeyError, TypeError):
+            raise ValueError("cosign_verification_result_malformed") from None
+    if len(native) != 1:
+        raise ValueError("cosign_native_signature_ambiguous")
+    item = native[0]
+    if not (item["critical"]["identity"]["docker-reference"] == digest_ref and
+            item["critical"]["image"]["docker-manifest-digest"] == digest):
+        raise ValueError("cosign_native_signature_mismatch")
 
 
 def inventory(document, expected_name, expected_digest, *, expected_source="",
@@ -188,11 +183,10 @@ def main():
             document = json.load(handle)
         validate_verification_run(document, sys.argv[3], sys.argv[4], sys.argv[5])
         return
-    if len(sys.argv) == 7 and sys.argv[1] == "validate-cosign":
+    if len(sys.argv) == 5 and sys.argv[1] == "validate-cosign":
         with open(sys.argv[2], encoding="utf-8") as handle:
             document = json.load(handle)
-        validate_cosign_verification(
-            document, sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6])
+        validate_cosign_verification(document, sys.argv[3], sys.argv[4])
         return
     if len(sys.argv) not in {5, 6, 9} or sys.argv[1] != "inspect":
         raise SystemExit("usage: fetch repo digest | inspect inventory image digest [sbom-output source manifest run-id]")

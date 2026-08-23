@@ -342,7 +342,9 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert '"${IMAGE}@${EXPECTED_MANIFEST_DIGEST}" --format' in existing
     assert 'tag-recheck.txt' in existing and 'org.opencontainers.image.revision' in existing
     signature=steps[names.index("Inspect existing signature and refuse foreign or ambiguous state")]["run"]
-    assert "cosign triangulate" in signature and "test \"$(jq 'length' recovered-cosign-verification.json)\" = \"1\"" in signature
+    assert "cosign triangulate" in signature and "validate-cosign" in signature
+    for flag in ("--certificate-github-workflow-sha","--certificate-github-workflow-name","--certificate-github-workflow-repository","--certificate-github-workflow-ref","--certificate-github-workflow-trigger"):
+        assert flag in signature
     attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
     assert "green_print_attestation_inventory.py" in attestations
     assert 'test "${foreign_count}" = "0"' in attestations
@@ -457,21 +459,24 @@ def test_attestation_verification_accepts_exact_single_first_attempt_run_uri():
 def test_attestation_verification_rejects_missing_multiple_different_run_near_match_and_attempt(document,run_id,attempt):
     with pytest.raises(ValueError): I.validate_verification_run(document,"Crewless9086/amadeus-pig-tracking-system",run_id,attempt)
 
-def _cosign_verification(source="0bd8069fc63a71fee9923d131eb60bc378d6a22d"):
-    repository="Crewless9086/amadeus-pig-tracking-system"
-    return [{"critical":{"identity":{"docker-reference":"ghcr.io/crewless9086/amadeus-green-print-bridge"},"image":{"docker-manifest-digest":"sha256:"+"a"*64},"type":"cosign container image signature"},"optional":{"Issuer":"https://token.actions.githubusercontent.com","Subject":f"https://github.com/{repository}/.github/workflows/green-print-image.yml@refs/heads/main","githubWorkflowSha":source,"githubWorkflowRepository":repository,"githubWorkflowRef":"refs/heads/main","githubWorkflowTrigger":"workflow_dispatch"}}]
+def _cosign_verification():
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64
+    native={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://sigstore.dev/cosign/sign/v1"},"optional":{}}
+    recovery={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://in-toto.io/Statement/v0.1"},"optional":{}}
+    sbom={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://in-toto.io/Statement/v1"},"optional":{}}
+    return [native,recovery,sbom]
 
 def test_cosign_verification_binds_exact_single_image_digest_workflow_repository_and_source():
-    assert I.validate_cosign_verification(_cosign_verification(),"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,"Crewless9086/amadeus-pig-tracking-system","0bd8069fc63a71fee9923d131eb60bc378d6a22d") is None
+    assert I.validate_cosign_verification(_cosign_verification(),"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64) is None
 
 @pytest.mark.parametrize("document",[
     [],
-    _cosign_verification()+_cosign_verification(),
-    _cosign_verification("7d4c2d7ffa552223440967acbedda2659c3b0c0c"),
+    _cosign_verification()+[_cosign_verification()[0]],
+    [{**_cosign_verification()[0],"critical":{**_cosign_verification()[0]["critical"],"identity":{"docker-reference":"ghcr.io/foreign/image@sha256:"+"a"*64}}}]+_cosign_verification()[1:],
     [{"critical":{},"optional":{}}],
 ])
 def test_cosign_verification_rejects_missing_multiple_wrong_source_and_malformed(document):
-    with pytest.raises(ValueError): I.validate_cosign_verification(document,"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,"Crewless9086/amadeus-pig-tracking-system","0bd8069fc63a71fee9923d131eb60bc378d6a22d")
+    with pytest.raises(ValueError): I.validate_cosign_verification(document,"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64)
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")

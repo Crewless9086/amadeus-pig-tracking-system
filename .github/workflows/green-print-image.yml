@@ -542,10 +542,9 @@ jobs:
           if docker buildx imagetools inspect "${signature_ref}" >/dev/null 2>&1; then
             docker buildx imagetools inspect "${signature_ref}" --raw > existing-signature-manifest.json
             jq -e '.mediaType == "application/vnd.oci.image.manifest.v1+json" and (.layers | length) == 1' existing-signature-manifest.json >/dev/null
-            cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${digest_ref}" > recovered-cosign-verification.json
-            test "$(jq 'length' recovered-cosign-verification.json)" = "1"
+            cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${EXISTING_RECOVERY_SOURCE_COMMIT}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-verification.json
             test -n "${EXISTING_RECOVERY_SOURCE_COMMIT}"
-            python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-verification.json "${IMAGE}" "${EXPECTED_DIGEST}" "${GITHUB_REPOSITORY}" "${EXISTING_RECOVERY_SOURCE_COMMIT}"
+            python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
             echo "sign_required=false" >> "${GITHUB_OUTPUT}"
           else
             echo "sign_required=true" >> "${GITHUB_OUTPUT}"
@@ -651,8 +650,8 @@ jobs:
           issuer="https://token.actions.githubusercontent.com"
           attestation_source_commit="${EXISTING_RECOVERY_SOURCE_COMMIT:-${GITHUB_SHA}}"
           attestation_run_id="${{ inputs.existing_recovery_run_id || github.run_id }}"
-          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${digest_ref}" > recovered-cosign-verification.json
-          python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-verification.json "${IMAGE}" "${EXPECTED_DIGEST}" "${GITHUB_REPOSITORY}" "${attestation_source_commit}"
+          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${attestation_source_commit}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-verification.json
+          python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
           gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" --cert-identity "${identity}" --source-digest "${attestation_source_commit}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-recovery-attestation-verification.json
           gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${attestation_source_commit}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
           python scripts/green_print_attestation_inventory.py validate-verification-run recovered-recovery-attestation-verification.json "${GITHUB_REPOSITORY}" "${attestation_run_id}" 1
