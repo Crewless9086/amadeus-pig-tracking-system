@@ -1760,3 +1760,200 @@ runner artifacts are stale and `supervisor.stop` is present, so no CORE pickup,
 background work or release-lane ownership is claimed. The serialized production
 release lane is free of a proven active mutation owner but is not acquired by
 either source terminal.
+
+## 2026-08-23 - Green read-only recovery continuation and HERDMASTER mortality review
+
+This entry appends current evidence without changing mission priority or
+creating a new lineage.
+
+Green PR #1190 reached final independent PASS at exact head
+`727944f349a3d1af2595fbc3e0f98eec7dbc85ff` and merged to authoritative main as
+`301e65b7b339436b9a0a3270a62face26cb4eddd`. Post-merge CI runs
+`32633003500`, `32633003487` and `32633003510` all succeeded. This is reviewed,
+integrated technical state only; it is not installation, commissioning or an
+owner outcome.
+
+Read-only Green run `32633148563` subsequently passed the exact four-record
+signature parser, immutable image/tag/index/manifest checks and attestation
+inventory. It then failed without an actionable marker in the final
+verification step before receipt or packet creation. All effect-bearing jobs
+were skipped and no signing, attestation, image, tag, installation, document,
+job or physical-print mutation occurred. Diagnosis continues automatically on
+the existing Green 0.3.6 lineage. Lifecycle is
+`EXACT_PARSER_AND_IMMUTABLE_INVENTORY_VERIFIED / FINAL_VERIFICATION_SILENT_FAIL /
+NO_RECEIPT_OR_PACKET / READ_ONLY_DIAGNOSIS_ACTIVE`; **NO BUSINESS OUTCOME**.
+OWNER ACTION: NONE.
+
+HERDMASTER/Oom Sakkie PR #1191 initial exact head
+`3114c7f63a06f247e2a204db4b08c9f186cffd8e` received an independent BLOCK.
+The review identified four exact P1 requirements: the new PostgreSQL welfare
+event inserts omit the mandatory positive `sequence_no`; the writer does not
+discover, lock, append to and close the attributable existing open welfare case;
+pen occupancy and availability completion is inferred rather than proved by
+canonical projection readback; and the branch was behind authoritative current
+main and therefore required reconciliation plus fresh exact-current gates.
+
+The same review retained the correct bounded direction: Anton receives only
+governed farm-manager mortality authority in addition to his existing farm and
+irrigation envelope, without CORE, CHARLIE, permission-administration or
+unrelated authority; authorization reuses shared capabilities rather than an
+`is_owner` promotion; preview and confirmation remain bound to the same actor,
+card and claim with replay/concurrency containment; and English/Afrikaans intake,
+questions, previews, buttons, failures and completions follow the authenticated
+recipient language. Distinct mortality, disposal and biosecurity work remains
+excluded from living-welfare closure. No Pig 126, provider, production or
+database effect occurred. Lifecycle is
+`SOURCE_REVIEW_BLOCKED / SCHEMA_AND_ATTRIBUTABLE_CASE_REPAIR_REQUIRED /
+EXACT_CURRENT_RECONCILIATION_REQUIRED`; **NO BUSINESS OUTCOME**. OWNER ACTION:
+NONE.
+
+## 2026-08-23 - Control Tower bounded-attempt and outcome-driving correction
+
+Charl identified that repeated implement-review-dispatch-fail cycles were
+consuming time without producing an owner outcome. Control Tower accepts this
+as an operating-method defect. High commit, review, test or workflow counts do
+not offset a missing physical or business result and must not be reported as
+progress sufficient to continue the same approach indefinitely.
+
+Effective immediately, an existing mission may make at most three contained
+attempts against the same external acceptance boundary without achieving a
+materially deeper acceptance state. After that threshold, Control Tower must
+stop further dispatches on that design, preserve exact zero/effect evidence,
+and perform a design-simplification review before another attempt. A new attempt
+is permitted only when exact live sanitized inputs prove the prior failure,
+the revised contract removes the demonstrated brittle assumption, an
+independent reviewer passes the exact head, and the next run has attributable
+stage diagnostics. Rewording, adding retries, expanding synthetic fixtures or
+moving the same assertion does not reset the threshold.
+
+Provider evidence comparisons must distinguish stable governed facts from
+volatile transport/envelope representation. Stable semantic identity includes
+the authorized record set, counts, predicate and subject identities, immutable
+digests, source revisions, run/attempt identities, certificate/transparency-log
+identity and required chronology. Byte equality may be required only for data
+whose canonical serialization is itself an authoritative contract. Two or more
+direct live read-only snapshots must expose and document any excluded volatile
+fields; added, removed or materially changed governed evidence must still fail
+closed.
+
+Green crossed this threshold in read-only run `32633797982`. The run passed
+signature identities, attestation identities/counts, immutable artifact checks
+and canonical inventory, then failed exactly at
+`attestation_pre_post_equality` because two provider snapshots were compared as
+bytes. All effect-bearing jobs skipped and no registry, evidence, installation,
+document, job or print effect occurred. No fourth Green dispatch is authorized
+until repeated direct live snapshots identify the non-authoritative variance
+and a reviewed stable semantic equality contract replaces the brittle byte
+comparison. Lifecycle is `DESIGN_SIMPLIFICATION_REQUIRED /
+LIVE_SNAPSHOT_DIFF_ACTIVE / FURTHER_DISPATCH_HELD`; **NO BUSINESS OUTCOME**.
+OWNER ACTION: NONE.
+
+Control Tower will keep Green as the serialized owner-outcome lane after this
+contract repair and then proceed directly through installation, commissioning,
+one controlled print and physical readback. Independent non-colliding Anton
+health/loss source work may continue; BEACON and other release candidates remain
+held rather than generating review activity that does not unblock the current
+owner outcome.
+
+## 2026-08-23 - Green 0.3.6 release closure and Home Assistant installation attempt
+
+The bounded design simplification was completed and independently reviewed in
+PR `#1193`. Exact head `458a03d228ff5e4dd130863f8e7ba579c3873e76`
+replaced byte comparison of expiring provider URLs with fail-closed semantic
+comparison of the stable signed evidence. It merged as
+`3faf0ec00896662de99b794aeb4084da77b03edf`; all post-merge gates passed.
+Read-only verification run `32634662022` succeeded and produced authoritative
+packet artifact `9491984305`, archive digest
+`sha256:03e90878a4a2111a4eecc4d003488a8fcc96d34accf9b872e4b0d2e0da02f075`.
+Green 0.3.6 release evidence is therefore closed. This is technical release
+completion, not an owner outcome.
+
+At the owner's explicit action-time instruction to install Green 0.3.6, Control
+Tower opened the existing Home Assistant Green app page. It showed installed
+version `0.3.5`, available version `0.3.6`, and a stopped app. Control Tower
+submitted the Home Assistant `Update` action exactly once. The UI entered
+`Installing`; no duplicate update was submitted. The browser connection then
+became unresponsive during readback. Three bounded read-only attachment/state
+checks failed without producing authoritative post-installation state.
+
+Lifecycle is `INSTALLATION_REQUESTED / POST_INSTALL_READBACK_BLOCKED`.
+Installation is not claimed complete until Home Assistant visibly reports
+current version `0.3.6`. Commissioning, start, zero-job health, controlled print
+and physical readback remain outstanding. The next action is a single owner UI
+refresh/readback to restore the blocked external boundary; it is not another
+approval and must not trigger a second update.
+
+Owner readback subsequently proved Home Assistant reports `Current version:
+0.3.6`, so installation is complete. The same authoritative UI reports app
+state `Error`; Green is therefore not commissioned and no owner outcome or
+print is claimed. Control Tower attempted one fresh read-only browser attachment
+to inspect the app controls/logs after the owner's refresh. The tab was listed
+correctly but its DOM remained unresponsive, so no start action was repeated and
+no configuration was changed. Lifecycle is now `INSTALLED_0.3.6 /
+STARTUP_ERROR_DIAGNOSIS_BLOCKED_ON_LOG_READBACK`.
+
+Owner-supplied provider log readback removed that uncertainty. The S6 launcher
+continued after `/bin/sh: can't open '/init': Permission denied`, so that line is
+not the decisive terminal marker and no broader `/init` authority is justified.
+The exact terminal marker is `green_startup_failed stage=mount_validation
+reason=ca_missing_or_empty`. Source reconciliation proved 0.3.6 moved the
+certificate from the established app-owned `/config/private-ca.crt` contract to
+`/homeassistant/private-ca.crt` and added a broader `homeassistant_config` map.
+
+Control Tower created bounded current-main repair PR `#1194`, exact head
+`7e641543`, for immutable candidate 0.3.7. It restores the sole read-only
+`addon_config` map and exact `/config/private-ca.crt` access across initializer,
+queue preflight, worker, AppArmor and real startup probe; removes the broader HA
+config map; and updates the normal publication path while retaining historical
+0.3.6 recovery evidence constants. Focused local verification is `115 passed`;
+fresh independent review and hosted exact-head gates are pending. No install,
+start, certificate, registry, document, print-job or physical effect occurred.
+
+Green lifecycle is `INSTALLED_0.3.6_FAILED / PR1194_0.3.7_REPAIR_REVIEW_ACTIVE`.
+Commissioning must separately prove the certificate exists inside Green's
+private Supervisor `addon_config` mount; a File Editor path named `/config` is
+not by itself proof of another app's private mount. **NO OWNER OUTCOME**.
+
+Terminal sweep: PR `#1191` exact head
+`5746f9adc57193f5fc7ede5e9bc19f239e39efdd` received a fresh independent PASS,
+is clean/mergeable against exact main `3faf0ec00896662de99b794aeb4084da77b03edf`,
+and all hosted gates pass. No live or Pig 126 effects occurred. PR `#1184`
+remains migration-transport lineage requiring current-main reconciliation; PR
+`#1182` remains BEACON/SAM lineage requiring current-main reconciliation. CORE
+has no current release PR and requires current-main runtime/heartbeat readback.
+No direct file collision exists among those three open release candidates;
+release effects remain serialized behind Green. OWNER ACTION: NONE.
+
+## 2026-08-23 - Green 0.3.7 no-mount trust repair and hosted runtime continuation
+
+The initial PR `#1194` mount restoration was rejected after current Home
+Assistant contract review proved `addon_config` is a separate app-private
+location and cannot reuse the certificate previously saved in Home Assistant's
+main `/config`. Control Tower simplified the design: Green now accepts the
+commissioned printer certificate SHA-256 fingerprint, retrieves the certificate
+only from the configured private literal IP endpoint, verifies exact fingerprint
+and hostname identity, and installs only that verified public certificate inside
+the container. No Home Assistant configuration mount or committed certificate
+is required.
+
+Hosted arm64/AppArmor runs successively exposed real startup boundaries rather
+than owner outcomes: validation ordering, interpreter ordering, `/sbin/su-exec`
+AppArmor execution, and then the long-lived unprivileged worker retaining the
+root-private bootstrap CA path. Current exact PR head `7249ad39` points the
+worker at the already verified root-owned mode-0644 installed certificate
+`/etc/cups/ssl/site.crt` and performs an explicit `greenprint` readability check
+before service execution. Focused verification is `116 passed`; diff check is
+clean. Hosted run `32648715007`, job `97216884554`, has built the exact linux
+arm64 image and is executing the real zero-job startup under package AppArmor.
+It is still pending and is not claimed successful.
+
+Green lifecycle is `INSTALLED_0.3.6_FAILED / PR1194_HEAD_7249ad39_HOSTED_ARM64_ACTIVE`.
+No update, start, registry publication, document, print job or physical print
+effect occurred in this continuation. **NO OWNER OUTCOME**. OWNER ACTION: NONE.
+
+Terminal sweep remains: Herdmaster/Anton PR `#1191` is independently passed and
+release-ready but requires migration reconciliation, deployment and Anton's new
+provider-origin Pig 126 journey; BEACON/SAM PR `#1182` is independently passed
+and release-ready with no META publication effect; CORE has no proved operating
+cycle. Release effects remain serialized behind Green while non-colliding
+read-only/source preparation is retained.
