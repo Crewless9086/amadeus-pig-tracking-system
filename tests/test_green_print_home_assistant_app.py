@@ -1,14 +1,16 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timedelta,timezone
 from hashlib import sha256
-import importlib.util,json,sqlite3,sys
+import base64,importlib.util,json,sqlite3,sys
 from pathlib import Path
+from types import SimpleNamespace
 import pytest,yaml
 
 ROOT=Path(__file__).parents[1]; APP=ROOT/"green_print_bridge"
 SPEC=importlib.util.spec_from_file_location("green_app",APP/"app"/"service.py"); S=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(S)
 sys.modules["service"]=S
 QUEUE_SPEC=importlib.util.spec_from_file_location("green_init_queue",APP/"app"/"init_queue.py"); Q=importlib.util.module_from_spec(QUEUE_SPEC); QUEUE_SPEC.loader.exec_module(Q)
+INVENTORY_SPEC=importlib.util.spec_from_file_location("green_attestation_inventory",ROOT/"scripts"/"green_print_attestation_inventory.py"); I=importlib.util.module_from_spec(INVENTORY_SPEC); INVENTORY_SPEC.loader.exec_module(I)
 NOW=datetime(2026,8,21,8,tzinfo=timezone.utc); PDF=b"%PDF-1.4\nsynthetic\n%%EOF"
 def config(tmp_path):
     cert=tmp_path/"private-ca.crt"; cert.write_text("synthetic",encoding="utf-8")
@@ -278,7 +280,7 @@ def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
     names=[step.get("name") for step in steps]
     verify=steps[names.index("Verify signature and digest-bound attestations")]
     assert verify["env"]["GH_TOKEN"]=="${{ github.token }}"
-    assert workflow.count("GH_TOKEN: ${{ github.token }}")==2
+    assert workflow.count("GH_TOKEN: ${{ github.token }}")==5
     assert "gh attestation verify" in verify["run"] and "|| true" not in verify["run"]
     assert names.index("Verify signature and digest-bound attestations") < names.index("Emit digest-bound non-secret release receipt") < names.index("Preserve non-secret verified release packet")
 
@@ -309,6 +311,94 @@ def test_035_recovery_is_verification_only_exact_bound_and_replay_safe():
     forbidden=("docker/build-push-action","cosign sign","actions/attest-build-provenance","actions/attest-sbom","imagetools create","push: true")
     recovery_text=json.dumps(recovery)
     assert not any(token in recovery_text for token in forbidden)
+
+def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_or_tag():
+    workflow=(ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8")
+    parsed=yaml.safe_load(workflow); inputs=parsed.get("on",parsed[True])["workflow_dispatch"]["inputs"]
+    assert inputs["complete_partial_publication"]["default"] is False
+    assert inputs["expected_manifest_digest"]["required"] is False
+    assert inputs["original_publication_run_id"]["required"] is False
+    recovery=parsed["jobs"]["recover_partial_publication"]
+    text=json.dumps(recovery)
+    assert recovery["if"]=="github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication"
+    assert recovery["permissions"]=={"contents":"read","id-token":"write","packages":"write","attestations":"write"}
+    steps=recovery["steps"]; names=[step.get("name") for step in steps]
+    binding=steps[names.index("Bind partial recovery to exact source, index, manifest and main")]["run"]
+    assert 'test "${PUBLISH_REQUESTED}" = "false"' in binding
+    assert 'test "${VERIFY_ONLY_REQUESTED}" = "false"' in binding
+    assert 'ORIGINAL_PUBLICATION_RUN_ID' in binding
+    assert binding.count('^sha256:[0-9a-f]{64}$')==2 and '^[0-9a-f]{40}$' in binding
+    original=steps[names.index("Verify truthful original publication run identity")]["run"]
+    for stage,outcome in (("Build and push untagged exact linux arm64 manifest","success"),("Create the unique version tag as an arm64 index","success"),("Verify pushed index descriptor, config and OCI bindings","failure"),("Install pinned Cosign signer and verifier","skipped"),("Keylessly sign verified arm64 index","skipped"),("Generate SPDX SBOM from exact linux arm64 digest","skipped"),("Attest build provenance","skipped"),("Attest SBOM","skipped"),("Verify signature and digest-bound attestations","skipped")):
+        assert f'exact("{stage}"; "{outcome}")' in original
+    assert 'def number($name)' in original
+    existing=steps[names.index("Verify stable existing tag, index, sole manifest and OCI config")]["run"]
+    assert "for attempt in 1 2 3 4 5 6 7 8" in existing and "sleep 3" in existing
+    assert 'test "${tag_digest}" = "${EXPECTED_DIGEST}"' in existing
+    assert '.manifests[0].digest == $manifest' in existing
+    assert '"${IMAGE}@${EXPECTED_MANIFEST_DIGEST}" --format' in existing
+    assert 'tag-recheck.txt' in existing and 'org.opencontainers.image.revision' in existing
+    signature=steps[names.index("Inspect existing signature and refuse foreign or ambiguous state")]["run"]
+    assert "cosign triangulate" in signature and "test \"$(jq 'length' recovered-cosign-verification.json)\" = \"1\"" in signature
+    attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
+    assert "green_print_attestation_inventory.py" in attestations
+    assert 'test "${foreign_count}" = "0"' in attestations
+    assert 'test "${recovery_count}" -le 1' in attestations and 'test "${sbom_count}" -le 1' in attestations
+    assert "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" in text
+    assert "actions/attest-build-provenance" not in text
+    assert "claimsBuildProvenance:false" in text and "original_publication_run_id" in text
+    first_effect=names.index("Keylessly sign exact existing arm64 index when absent")
+    assert names.index("Verify stable existing tag, index, sole manifest and OCI config") < first_effect
+    assert names.index("Inspect existing signature and refuse foreign or ambiguous state") < first_effect
+    assert names.index("Inspect attestations and refuse foreign, duplicate or malformed state") < first_effect
+    assert names.index("Prepare truthful post-build recovery predicate") < first_effect
+    assert names.index("Verify completed signature, attestations and immutable tag") < names.index("Emit partial-publication recovery receipt")
+    for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
+        assert forbidden not in text
+
+def _recovery_predicate(index="sha256:"+"a"*64,manifest="sha256:"+"b"*64,source="c"*40,run_id="32622312938"):
+    return {"recoveryKind":"post_build_release_evidence_completion","claimsBuildProvenance":False,"originalPublication":{"workflow":".github/workflows/green-print-image.yml","runId":run_id,"sourceCommit":source,"verifyJob":"success","publishJob":"failed_after_tag_creation"},"artifact":{"indexDigest":index,"soleLinuxArm64ManifestDigest":manifest},"permittedEffects":["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],"prohibitedEffects":["image_build","image_push","tag_create","retag","delete","install","print"]}
+
+def _attestation(predicate, image="ghcr.io/crewless9086/amadeus-green-print-bridge", digest="a"*64,payload=None):
+    statement={"subject":[{"name":image,"digest":{"sha256":digest}}],"predicateType":predicate,"predicate":payload if payload is not None else {}}
+    payload=base64.urlsafe_b64encode(json.dumps(statement).encode()).decode().rstrip("=")
+    return {"bundle":{"dsseEnvelope":{"payload":payload}}}
+
+def test_partial_recovery_attestation_inventory_accepts_only_one_exact_pair():
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64; manifest="sha256:"+"b"*64; source="c"*40; run_id="32622312938"
+    document={"attestations":[_attestation(I.RECOVERY,payload=_recovery_predicate()),_attestation(I.SBOM)]}
+    recovery,sbom,foreign,statements=I.inventory(document,image,digest,expected_source=source,expected_manifest=manifest,expected_run_id=run_id)
+    assert (recovery,sbom,foreign)==(1,1,0) and len(statements)==2
+
+@pytest.mark.parametrize("records,expected",[
+    ([_attestation(I.RECOVERY,payload=_recovery_predicate()),_attestation(I.RECOVERY,payload=_recovery_predicate())],(2,0,0)),
+    ([_attestation("https://foreign.invalid/predicate")],(0,0,1)),
+    ([_attestation(I.RECOVERY,image="ghcr.io/foreign/image",payload=_recovery_predicate())],(0,0,1)),
+    ([{"bundle":{"dsseEnvelope":{"payload":"not-base64"}}}],(0,0,1)),
+])
+def test_partial_recovery_attestation_inventory_exposes_duplicate_foreign_and_malformed(records,expected):
+    actual=I.inventory({"attestations":records},"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,expected_source="c"*40,expected_manifest="sha256:"+"b"*64,expected_run_id="32622312938")
+    assert actual[:3]==expected
+
+def test_attestation_fetch_maps_only_exact_github_not_found_to_empty():
+    def runner(*_args,**_kwargs):
+        return SimpleNamespace(returncode=1,stdout=json.dumps({"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404"})+"\n",stderr="gh: Not Found (HTTP 404)\n")
+    assert I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,runner)=={"attestations":[]}
+
+@pytest.mark.parametrize("result",[
+    SimpleNamespace(returncode=1,stdout="",stderr="gh: Forbidden (HTTP 403)\n"),
+    SimpleNamespace(returncode=1,stdout="",stderr="network unavailable\n"),
+    SimpleNamespace(returncode=1,stdout="",stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":404}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404","extra":true}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Forbidden","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404"}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/repos#list-attestations","status":"404"}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout="partial",stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=2,stdout="",stderr="gh: Not Found (HTTP 404)\n"),
+])
+def test_attestation_fetch_keeps_nonexact_not_found_and_every_other_failure_fatal(result):
+    with pytest.raises(RuntimeError,match="attestation_inventory_fetch_failed"):
+        I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,lambda *_a,**_k:result)
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
