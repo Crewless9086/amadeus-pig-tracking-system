@@ -186,13 +186,27 @@ def _install_exact_legacy_production_shape():
       "source_catalog_sha256": digest, "receipts": receipts}, separators=(",", ":"))
 
 
+def _compact_authorization_env(authorization):
+    packet = json.loads(authorization) if isinstance(authorization, str) else json.loads(json.dumps(authorization))
+    for receipt in packet["receipts"]:
+        receipt["legacy_batch_id"] = receipt["identity"]["migration_id"]
+    packet["receipts"].sort(key=lambda receipt: receipt["identity"]["migration_id"])
+    digest = hashlib.sha256(json.dumps(
+        packet, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")).hexdigest()
+    return {
+        "RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID": packet["authorization_id"],
+        "RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256": digest,
+    }
+
+
 class RenderProductionMigrationRailTests(unittest.TestCase):
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_exact_legacy_production_shape_adopts_atomically_then_replays(self):
         import psycopg
 
         authorization = _install_exact_legacy_production_shape()
-        report = run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=authorization))
+        report = run(DATABASE_URL, {**ENV, **_compact_authorization_env(authorization)})
         self.assertEqual(report["legacy_adoption"]["receipt_count"], 3)
         self.assertEqual(report["migrations"][3]["outcome"], "baseline_verified")
         self.assertEqual(report["migrations"][4]["outcome"], "applied")
@@ -245,6 +259,27 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             run(DATABASE_URL, {**ENV, "RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256": "0" * 64})
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_raw_and_mixed_authorization_transports_are_forbidden_with_zero_effect(self):
+        import psycopg
+
+        authorization = _install_exact_legacy_production_shape()
+        compact = _compact_authorization_env(authorization)
+        for supplied in (
+            {"RENDER_MIGRATION_LEGACY_ADOPTION_JSON": authorization},
+            {"RENDER_MIGRATION_LEGACY_ADOPTION_JSON": authorization, **compact},
+            {"RENDER_MIGRATION_LEGACY_ADOPTION_JSON": "not-json"},
+        ):
+            with self.subTest(keys=sorted(supplied)):
+                with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_raw_transport_forbidden"):
+                    run(DATABASE_URL, {**ENV, **supplied})
+                with psycopg.connect(DATABASE_URL) as db:
+                    self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 3)
+                    self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_receipt_identity_anchors')").fetchone()[0])
+                    self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_baselines')").fetchone()[0])
+                    self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_catalog_checkpoints')").fetchone()[0])
+                    self.assertEqual(db.execute("select count(*) from app_private.migration_log where migration_id=%s", (ALLOWLIST[4].migration_id,)).fetchone()[0], 0)
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_legacy_role_power_drift_rejects_with_zero_trust_mutation(self):
         import psycopg
 
@@ -252,7 +287,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         with psycopg.connect(DATABASE_URL) as db:
             db.execute("alter role documents_api_executor inherit")
         with self.assertRaisesRegex(RuntimeError, "migration_private_schema_role_posture_mismatch"):
-            run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=authorization))
+            run(DATABASE_URL, {**ENV, **_compact_authorization_env(authorization)})
         with psycopg.connect(DATABASE_URL) as db:
             self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_receipt_identity_anchors')").fetchone()[0])
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 3)
@@ -264,13 +299,13 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         authorization = _install_exact_legacy_production_shape()
         with psycopg.connect(DATABASE_URL) as db:
             db.execute("alter table public.litter_supersessions add column unauthorized_drift text")
-        with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_catalog_mismatch"):
-            run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=authorization))
+        with self.assertRaisesRegex(RuntimeError, "migration_legacy_adoption_authorization_digest_mismatch"):
+            run(DATABASE_URL, {**ENV, **_compact_authorization_env(authorization)})
         with psycopg.connect(DATABASE_URL) as db:
             self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_baselines')").fetchone()[0])
 
         authorization = _install_exact_legacy_production_shape()
-        adopted_env = dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=authorization)
+        adopted_env = {**ENV, **_compact_authorization_env(authorization)}
         with ThreadPoolExecutor(max_workers=2) as pool:
             outcomes = []
             for future in (pool.submit(run, DATABASE_URL, adopted_env), pool.submit(run, DATABASE_URL, adopted_env)):
@@ -290,14 +325,14 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         for order in permutations(range(3)):
             authorization = json.loads(_install_exact_legacy_production_shape())
             authorization["receipts"] = [authorization["receipts"][index] for index in order]
-            report = run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=json.dumps(authorization)))
+            report = run(DATABASE_URL, {**ENV, **_compact_authorization_env(authorization)})
             self.assertEqual(report["legacy_adoption"]["receipt_count"], 3)
 
         def assert_zero_effect(mutator, expected_error):
             authorization = json.loads(_install_exact_legacy_production_shape())
             mutator(authorization["receipts"])
             with self.assertRaisesRegex(RuntimeError, expected_error):
-                run(DATABASE_URL, dict(ENV, RENDER_MIGRATION_LEGACY_ADOPTION_JSON=json.dumps(authorization)))
+                run(DATABASE_URL, {**ENV, **_compact_authorization_env(authorization)})
             with psycopg.connect(DATABASE_URL) as db:
                 self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_receipt_identity_anchors')").fetchone()[0])
                 self.assertIsNone(db.execute("select to_regclass('app_private.production_migration_baselines')").fetchone()[0])
@@ -320,7 +355,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         }
         for name, mutator in attacks.items():
             with self.subTest(attack=name):
-                assert_zero_effect(mutator, "migration_legacy_adoption_receipt_(set|identity|count)_mismatch")
+                assert_zero_effect(mutator, "migration_legacy_adoption_authorization_digest_mismatch")
 
     def test_allowlist_is_ordered_exact_and_checksum_bound(self):
         self.assertEqual([row.filename for row in ALLOWLIST], [

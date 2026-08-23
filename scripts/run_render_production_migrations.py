@@ -1142,27 +1142,19 @@ def _requested_legacy_adoption(connection, environ, *, commit: str, service_id: 
     raw = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_JSON", "").strip()
     compact_id = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_AUTHORIZATION_ID", "").strip()
     compact_digest = environ.get("RENDER_MIGRATION_LEGACY_ADOPTION_PACKET_SHA256", "").strip().lower()
-    if raw and (compact_id or compact_digest):
-        raise RuntimeError("migration_legacy_adoption_authorization_transport_ambiguous")
+    if raw:
+        raise RuntimeError("migration_legacy_adoption_raw_transport_forbidden")
     if bool(compact_id) != bool(compact_digest):
         raise RuntimeError("migration_legacy_adoption_authorization_transport_incomplete")
-    if not raw and not compact_id:
+    if not compact_id:
         return None
     value = None
-    authorization_id = None
-    if raw:
-        try:
-            value = json.loads(raw)
-            authorization_id = str(uuid.UUID(value["authorization_id"]))
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise RuntimeError("migration_legacy_adoption_authorization_invalid") from exc
-    else:
-        try:
-            authorization_id = str(uuid.UUID(compact_id))
-        except ValueError as exc:
-            raise RuntimeError("migration_legacy_adoption_authorization_invalid") from exc
-        if not re.fullmatch(r"[0-9a-f]{64}", compact_digest):
-            raise RuntimeError("migration_legacy_adoption_authorization_invalid")
+    try:
+        authorization_id = str(uuid.UUID(compact_id))
+    except ValueError as exc:
+        raise RuntimeError("migration_legacy_adoption_authorization_invalid") from exc
+    if not re.fullmatch(r"[0-9a-f]{64}", compact_digest):
+        raise RuntimeError("migration_legacy_adoption_authorization_invalid")
     manifest, digest = _catalog_snapshot(connection)
     guard = connection.execute("""select t.tgenabled,t.tgtype,p.proname,n.nspname
       from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid=t.tgrelid
