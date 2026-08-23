@@ -2445,3 +2445,33 @@ NOW:** Anton must send `Vark 126 is dood, ons het hom verwyder en begrawe.` once
 as a new Telegram message to Oom Sakkie. On receipt, the deployed HERDMASTER
 journey resumes automatically through optional date clarification, one
 `Bevestig`, provider delivery, canonical readback, replay and later continuity.
+
+## 2026-08-23 22:16 SAST - ROOTLINE post-fix exact zone blocker readback
+
+The first post-fix unattended evidence remains inside the existing ROOTLINE
+mission and does not change its priority. The 22:00 scheduler cycle was
+contained with one recommendation and zero executions. The 22:15 scheduler
+cycle reached its durable completed scheduler state with two recommendations
+and zero executions. At 22:16 the exact typed projection reported:
+
+- B: decision `Run`; eligibility blocker `durable_zone_containment`.
+- C: decision `Hold`; eligibility blocker `zone_decision_not_run_now`.
+
+This closes the observability Unknown: B is not waiting on an opaque parent-job
+deferment, weather inference or owner approval. It is fail-closed behind the
+canonical durable zone-containment boundary. C's zero execution is consistent
+with its explicit Hold decision. Both cycles retained zero execution and
+therefore establish no B irrigation, provider, physical or owner outcome.
+
+The existing ROOTLINE investigation must now reconcile the durable B
+containment identity, cause, evidence and governed release/retirement condition
+before any later eligibility or execution. No terminal may clear containment,
+dispatch a scheduler, manufacture a fresh execution, or operate hardware as a
+substitute for the deployed runtime. Mission state is
+`POST_FIX_PROJECTION_PROVEN / B_DURABLE_ZONE_CONTAINMENT / INVESTIGATION_ACTIVE`.
+**NO B OWNER OUTCOME.** OWNER ACTION: NONE.
+
+The portfolio's sole human blocker remains unchanged. **ACTION REQUIRED NOW:**
+Anton must send `Vark 126 is dood, ons het hom verwyder en begrawe.` once as a
+new Telegram message to Oom Sakkie. ROOTLINE continues its safe investigation
+and unattended observation independently of that action.
