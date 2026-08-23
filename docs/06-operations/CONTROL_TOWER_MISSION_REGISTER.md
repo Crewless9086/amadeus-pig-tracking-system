@@ -2326,3 +2326,45 @@ safety revalidation; no terminal-start or synthetic completion is inferred or
 authorized by this record. Mission state is
 `C_OWNER_OUTCOME_CONFIRMED / B_NOT_STARTED / SCHEDULER_AND_PROJECTION_REPAIR_PENDING`.
 OWNER ACTION: NONE.
+
+## 2026-08-23 - HERDMASTER Anton-parity deployment ready for genuine acceptance
+
+This append-only update advances the existing
+`HERDMASTER-NATURAL-HEALTH-LOSS-1 / OOM-INTAKE-SLICE-1` defect lineage without
+creating or reprioritizing a mission. PR `#1199` reached independently reviewed
+PASS at exact head `c781c7f0` with 164 focused tests passing and all four hosted
+gates green. It merged as
+`11030ae35958b34fcc744df766e1c59d4f9d7fc3`. Render deployment
+`dep-da5jjuid0e5s73bnl68g` became live at 20:21:44 SAST with that exact loaded
+revision, and `/health/revision` returned the same revision.
+
+Canonical readback at 20:22 SAST proves Pig 126 remains untouched: lifecycle
+`Active`, `on_farm=true`, current pen `PEN-012`. This is required containment of
+the earlier failed provider attempt, not a mortality or owner outcome. The code,
+review, CI and deployment are technical readiness only.
+
+Operational acceptance now requires one genuine new Anton-origin Telegram
+journey through the deployed revision: send the exact mortality report as a new
+provider message; answer the optional date clarification if presented; press
+`Bevestig` once; then verify provider completion, canonical pig/lifecycle,
+attributable welfare closure and distinct-work preservation, replay with zero
+duplicate effects, and a later unattended continuity cycle. Mission state is
+`DEPLOYED / GENUINE_ANTON_PROVIDER_ACCEPTANCE_REQUIRED`. **NO OWNER OUTCOME.**
+**ACTION REQUIRED NOW:** Anton must send `Vark 126 is dood, ons het hom verwyder
+en begrawe.` once as a new Telegram message to Oom Sakkie.
+
+## 2026-08-23 - ROOTLINE cadence repair deployed; unattended acceptance pending
+
+PR `#1200` passed independent exact-head review and all four hosted gates, then
+merged as `e9eaccba2e7df8508f79348aaac36c961ab2b8a9`. Its recovery-aware execution
+projection, bounded scheduler-bucket tolerance and active-over-history
+correction are live as part of the later exact current deployment
+`11030ae35958b34fcc744df766e1c59d4f9d7fc3`. The later revision supersedes the
+standalone merge revision operationally while retaining its reviewed changes.
+
+This is technical deployment progress following the genuine C safe-shutdown
+outcome. ROOTLINE acceptance remains open until the next unattended scheduler
+bucket proves the repaired cadence and truthful current-source projection and,
+if freshly eligible and safe, advances B through its governed lifecycle. No
+manual scheduler dispatch or B start is required. Mission state is
+`DEPLOYED / NEXT_UNATTENDED_BUCKET_PENDING`. OWNER ACTION: NONE.
