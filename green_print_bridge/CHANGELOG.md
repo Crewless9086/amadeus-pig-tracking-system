@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.6
+
+- Read the verified private CA from Home Assistant's distinct read-only `homeassistant_config` mount at `/homeassistant/private-ca.crt` while leaving the add-on private config and Supervisor options contract unchanged.
+- Restrict AppArmor to that exact certificate path; no other Home Assistant configuration file is readable.
+
 ## 0.3.5
 
 - Preserves Supervisor ownership of the `/data` mount and creates one bounded
