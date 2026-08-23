@@ -131,9 +131,9 @@ def test_scheduled_enquiry_result_is_stable_across_unclaimed_stock_and_media_cha
     assert first["result_digest"] == changed_stock["result_digest"]
     assert first["result_digest"] == changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
-    assert first["proposal"]["packet_type"] == "supported_offering_evidence_request"
-    assert first["proposal"]["status"] == "evidence_blocked"
-    assert "protected_campaign_package" not in first["proposal"]
+    assert first["proposal"]["packet_type"] == "live_stock_awareness_proposal"
+    assert first["proposal"]["media"]["status"] == "text_only"
+    assert first["proposal"]["protected_campaign_package"]["campaign_objective"] == "farm_awareness"
 
 
 def test_scheduled_enquiry_capture_is_explicitly_text_only():
@@ -144,9 +144,10 @@ def test_scheduled_enquiry_capture_is_explicitly_text_only():
         content_evidence_loader=lambda **kwargs: kwargs,
         content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
         now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
-    assert result["proposal"]["packet_type"] == "supported_offering_evidence_request"
+    assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
+    assert result["proposal"]["media"]["status"] == "text_only"
     assert result["proposal"]["authority"]["publishes"] is False
-    assert "protected_campaign_package" not in result["proposal"]
+    assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
 
 
 def test_supported_offering_read_rejects_fallback_or_partial_config_evidence():
@@ -209,8 +210,8 @@ def test_missing_sale_stock_does_not_block_supported_enquiry_service_copy():
         media_loader=lambda: public_awareness_media(),
         litter_loader=litter_evidence,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
-    assert result["status"] == "beacon_livestock_offering_evidence_exception"
-    assert result["proposal"]["packet_type"] == "supported_offering_evidence_request"
+    assert result["status"] == "beacon_livestock_awareness_ready"
+    assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
     assert result["publishes"] is False and result["spends_money"] is False
 
 
@@ -288,7 +289,7 @@ def test_unchanged_evidence_is_stable_across_scheduler_day_rollover():
         now=datetime(2026, 8, 19, 12, tzinfo=timezone.utc))
     assert first["proposal"]["packet_id"] == later["proposal"]["packet_id"]
     assert first["result_digest"] == later["result_digest"]
-    assert "protected_campaign_package" not in first["proposal"]
+    assert first["proposal"]["protected_campaign_package"]["campaign_lane"] == "live_stock_awareness"
 
 
 def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time():
@@ -327,7 +328,7 @@ def test_stock_neutral_packet_ignores_production_allocation_observation_churn():
 
     assert first["proposal"]["packet_id"] == refreshed["proposal"]["packet_id"]
     assert first["result_digest"] == refreshed["result_digest"]
-    assert "protected_campaign_package" not in first["proposal"]
+    assert first["proposal"]["protected_campaign_package"]["campaign_lane"] == "live_stock_awareness"
 
 
 def test_scheduled_generation_binds_configured_facebook_page_identity():
@@ -343,8 +344,9 @@ def test_scheduled_generation_binds_configured_facebook_page_identity():
 
     assert first["result_digest"] == replay["result_digest"]
     assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
-    assert first["result_digest"] == successor["result_digest"]
-    assert "target_page_id" not in first["proposal"]
+    assert first["result_digest"] != successor["result_digest"]
+    assert first["proposal"]["target_page_id"] == "PAGE-ONE"
+    assert successor["proposal"]["target_page_id"] == "PAGE-TWO"
 
 
 def test_scheduled_generation_cannot_restore_retired_enquiry_policy_by_patch():
@@ -357,8 +359,11 @@ def test_scheduled_generation_cannot_restore_retired_enquiry_policy_by_patch():
     replay = build_scheduled_sale_ready_stock_result(**fixed)
     successor = build_scheduled_sale_ready_stock_result(**fixed)
 
-    assert first["proposal"]["status"] == "evidence_blocked"
-    assert "protected_campaign_package" not in first["proposal"]
+    assert first["proposal"]["status"] == "ready_for_owner_review"
+    assert first["proposal"]["campaign_objective"] == "farm_awareness"
+    assert first["proposal"]["campaign_lane"] == "live_stock_awareness"
+    assert first["proposal"]["call_to_action"] == ""
+    assert first["proposal"]["protected_campaign_package"]["campaign_objective"] == "farm_awareness"
     assert first["result_digest"] == replay["result_digest"]
     assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
     assert first["result_digest"] == successor["result_digest"]

@@ -45,20 +45,23 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
         now=None, target_page_id=None):
     """Compose one governed, stock-neutral livestock enquiry result."""
     opportunities = opportunity_loader()
-    media_result = media_loader()
-    media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
     evidence_time = _stable_opportunity_time(opportunities, fallback=now)
-    # Keep the legacy awareness dependencies injectable for caller compatibility,
-    # but a scheduled revenue case must use the sale-ready demand contract.  An
-    # awareness/follow packet is never silently upgraded into a messages campaign.
-    packet = build_supported_livestock_enquiry_proposal(
-        opportunities, business_evidence_loader(), observed_at=evidence_time,
-        target_page_id=target_page_id)
+    # Public livestock acquisition solicitation is fail-closed by META policy.
+    # The autonomous public lane therefore prepares an allowed farm-awareness
+    # story; genuine independently initiated replies are attributed and routed
+    # privately to SAM.  Do not turn this into an availability or sales claim.
+    content_evidence = content_evidence_loader(opportunity_result=opportunities)
+    candidate = content_candidate_builder(content_evidence)
+    # Scheduled publication is deliberately text-only.  Generic library media
+    # cannot prove exact subject/event binding and must not be selected merely
+    # because it exists; a later owner-requested story may use governed media.
+    packet = build_live_stock_awareness_proposal(
+        opportunities, candidate, None, target_page_id=target_page_id)
     if packet.get("status") == "ready_for_owner_review":
         packet = build_protected_campaign_package(packet, now=evidence_time)
     return {
         "success": True,
-        "status": ("beacon_livestock_enquiry_capture_ready" if
+        "status": ("beacon_livestock_awareness_ready" if
             packet.get("protected_campaign_package") else
             "beacon_livestock_offering_evidence_exception"),
         "answer": render_beacon_packet(packet, language="en"),
@@ -677,12 +680,14 @@ def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=
     af = str(language).casefold().startswith("af")
     packet = {"contract_version": "beacon_live_stock_awareness_proposal_v1",
         "packet_type": "live_stock_awareness_proposal", "status": "ready_for_owner_review",
+        "campaign_objective": "farm_awareness", "campaign_lane": "live_stock_awareness",
         "objective": "Build familiarity and trust through a non-availability Amadeus Farm story",
         "audience": ("Mense wat belangstel in verantwoordelike plaaslike veeboerdery en plaaslewe" if af else
             str(review.get("audience") or "People interested in responsible local livestock and farm life")),
         "awareness_angle": ("Geduldige daaglikse versorging en eerlike plaaslewe agter die skerms" if af else
             "Patient daily care and honest behind-the-scenes farm life"),
         "intended_channel": "Facebook Page organic", "draft_caption": caption,
+        "call_to_action": "",
         "target_page_id": page_id,
         "public_content_policy": public_livestock_policy_binding(
             policy, target_page_id=page_id),
