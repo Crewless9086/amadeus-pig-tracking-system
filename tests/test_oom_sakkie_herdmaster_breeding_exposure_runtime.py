@@ -65,6 +65,7 @@ def test_authenticated_group_creates_one_existing_rail_claim_and_no_write():
     af = localize_recipient_result({"output_language":"af"}, result, "HERDMASTER")
     assert "BESKERMDE VOORSKOU" in af["answer"]
     assert "SOW-1" in af["answer"] and "SOW-2" in af["answer"]
+    assert "recovery_hold" not in af["answer"] and "near_farrowing" not in af["answer"]
     assert [item["text"] for item in af["reply_markup"]["inline_keyboard"][0]] == [
         "Bevestig", "Maak reg", "Kanselleer"]
     assert localize_recipient_result({"output_language":"en"}, result, "HERDMASTER") == result

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import html
 import os
 from unittest.mock import patch
 
@@ -66,6 +67,9 @@ def test_owner_card_is_compact_nonduplicative_and_has_real_callbacks():
                  preview["publication_time"], str(preview["budget_cap"]["total"])):
         assert fact in af["answer"]
     assert "Business objective" not in af["answer"] and "Publish by" not in af["answer"]
+    assert "farm_awareness" not in af["answer"]
+    assert "Gebonde publikasie-inhoud" in af["answer"]
+    assert f"<blockquote>{html.escape(preview['exact_post_copy'])}</blockquote>" in af["answer"]
     assert [button["text"] for button in af["reply_markup"]["inline_keyboard"][0]] == [
         "Bevestig", "Maak reg", "Kanselleer"]
     assert "Facebook Page ID:</b> PAGE-1" in value["answer"]

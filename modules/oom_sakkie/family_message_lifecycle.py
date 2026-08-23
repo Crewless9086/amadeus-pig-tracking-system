@@ -8,6 +8,7 @@ it creates no router, bot, specialist service, or farm-write authority.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 from typing import Any, Callable, Mapping
@@ -70,9 +71,13 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
         elif isinstance(campaign, Mapping):
             budget = campaign.get("budget_cap") if isinstance(campaign.get("budget_cap"), Mapping) else {}
             duration = campaign.get("duration") if isinstance(campaign.get("duration"), Mapping) else {}
+            objective = _afrikaans_campaign_objective(
+                campaign.get("campaign_objective") or campaign.get("campaign_lane"))
+            exact_copy = str(campaign.get("exact_post_copy") or "")
             answer = "\n".join(("<b>BEACON — BESKERMDE VELDTOGVOORSKOU</b>",
-                f"<b>Doel:</b> {campaign.get('campaign_objective') or campaign.get('campaign_lane')}",
-                f"<b>Plasing:</b> {campaign.get('exact_post_copy')}",
+                f"<b>Doel:</b> {objective}",
+                "<b>Gebonde publikasie-inhoud (presies; die inhoudstaal kan van jou kennisgewingstaal verskil):</b>",
+                f"<blockquote>{html.escape(exact_copy)}</blockquote>",
                 f"<b>Facebook-blad-ID:</b> {campaign.get('target_page_id')}",
                 f"<b>Publiseer teen:</b> {campaign.get('publication_time')}",
                 f"<b>Begroting:</b> ZAR {budget.get('total', '0.00')} totaal; ZAR {budget.get('daily', '0.00')} per dag; {duration.get('days', 0)} dae.",
@@ -122,6 +127,17 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
     return localized
 
 
+def _afrikaans_campaign_objective(value: Any) -> str:
+    key = str(value or "").strip().casefold()
+    return {"farm_awareness": "bewusmaking van die plaas",
+        "organic_awareness": "organiese bewusmaking",
+        "live_stock_enquiry_capture": "gekwalifiseerde lewendehawe-navrae",
+        "qualified_livestock_enquiries": "gekwalifiseerde lewendehawe-navrae",
+        "sale_ready_demand": "vraag na verkoopsgereed vee",
+        "litter_awareness": "bewusmaking van die werpsel"}.get(
+            key, "gebinde plaasveldtog")
+
+
 def _looks_afrikaans(text: str) -> bool:
     words = {word.strip(".,:;!?()[]<>").casefold() for word in str(text).split()}
     english = {"the", "and", "confirm", "please", "which", "want", "completed",
@@ -155,11 +171,21 @@ def _afrikaans_bound_facts(result: Mapping[str, Any]) -> str:
             if not isinstance(row, Mapping):
                 continue
             values = [str(row.get(key) or "") for key in
-                ("pig_id", "animal_ref", "action", "boar_id", "boar_ref", "to_pen_id")]
+                ("pig_id", "animal_ref", "boar_id", "boar_ref", "to_pen_id")]
+            if row.get("action"):
+                values.append(_afrikaans_farm_action(row.get("action")))
             values = [value for value in values if value]
             if values:
                 lines.append("<b>Dierhandeling:</b> " + " — ".join(values))
     return "\n".join(lines[:8])
+
+
+def _afrikaans_farm_action(value: Any) -> str:
+    key = str(value or "").strip().casefold()
+    return {"exposure": "dekking", "recovery_hold": "herstelwaarneming",
+        "near_farrowing": "naby kraam", "movement": "skuif",
+        "record_weight": "teken gewig aan", "mortality": "teken afsterwe aan"}.get(
+            key, "gebinde plaasaksie")
 
 
 def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], *,
