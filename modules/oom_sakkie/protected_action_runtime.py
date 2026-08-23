@@ -17,6 +17,21 @@ OOM_SAKKIE_MANAGER_ACTION_KINDS=frozenset({
     "beacon_media_review", "documents_green_print",
     "documents_green_physical_acceptance",
 })
+OOM_SAKKIE_MANAGER_ACTION_CAPABILITIES={
+    "mortality": "mortality_confirmation",
+    "grouped_weights": "herdmaster_management_input",
+    "herdmaster_breeding_grouped": "mating_execution",
+    "herdmaster_record_farrowing_litter": "herdmaster_management_input",
+    "rootline_irrigation_segment": "irrigation_start",
+    "rootline_fertilizer_mixer_presence_refresh": "irrigation_continue",
+    "rootline_fertilizer_mixer_commissioning": "irrigation_start",
+    "sam_sale_payment": "payment",
+    "beacon_campaign_review": "publication",
+    "beacon_private_album_finish": "publication",
+    "beacon_media_review": "publication",
+    "documents_green_print": "publication",
+    "documents_green_physical_acceptance": "publication",
+}
 
 def handle_protected_action_input(parsed, gateway_authority, *, callback_data="",
                                   connect_factory=None, health_handler=None,
@@ -33,8 +48,11 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         if not active:return {"handled":False,"status":"protected_confirmation_not_unambiguous"},200
         data=f"{CALLBACK_PREFIX}{active['callback_token']}:confirm"
     try:
-        allowed = (OOM_SAKKIE_MANAGER_ACTION_KINDS
-            if getattr(gateway_authority, "principal_role", "owner") == "farm_manager" else None)
+        allowed = None
+        if getattr(gateway_authority, "principal_role", "owner") == "farm_manager":
+            capabilities = frozenset(getattr(gateway_authority, "capabilities", ()))
+            allowed = frozenset(kind for kind in OOM_SAKKIE_MANAGER_ACTION_KINDS
+                if OOM_SAKKIE_MANAGER_ACTION_CAPABILITIES.get(kind) in capabilities)
         claimed,status=claim_callback(data,owner_user_id=owner,private_chat_id=chat,
           provider_message_id=str(parsed.get("provider_message_id") or parsed.get("callback_query_id") or ""),
           provider_timestamp=str(parsed.get("provider_timestamp") or ""),

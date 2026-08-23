@@ -19,7 +19,9 @@ def authority():
 
 def manager_authority():
     return issue_gateway_owner_authority("5721652188", "5721652188",
-        principal_role="farm_manager", capabilities=("farm_observation",))
+        principal_role="farm_manager", capabilities=(
+            "mortality_confirmation", "herdmaster_management_input", "mating_execution",
+            "irrigation_start", "irrigation_continue", "payment", "publication"))
 
 
 @pytest.mark.parametrize("action_kind", [
@@ -353,7 +355,53 @@ def test_allowed_family_reporter_cannot_use_protected_callback():
       "message":{"message_id":700,"chat":{"id":int(reporter),"type":"private"}}}}
     result,status=handle_telegram_direct_webhook(payload,
       headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
-    assert status==403 and result["status"]=="telegram_protected_action_owner_required"
+    assert status==403 and result["status"]=="telegram_protected_action_authority_required"
+
+
+def test_authenticated_farm_manager_mortality_callback_reaches_bound_protected_runtime(monkeypatch):
+    owner="5721652188";manager="1002";secret="s"*48
+    env={"OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED":"1","OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED":"1",
+      "OOM_SAKKIE_TELEGRAM_BOT_TOKEN":"123456789:"+"A"*40,
+      "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET":secret,
+      "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":owner+","+manager,
+      "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID":owner,
+      "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON":json.dumps([{"telegram_user_id":manager,
+        "role":"farm_manager","family_key":"dad",
+        "permissions":["mortality_confirmation"],"summary_domains":["herd"],
+        "authorization_id":"AUTH-MANAGER-1","authorized_by_user_id":owner,
+        "authorized_at":"2026-08-08T08:00:00+02:00","language":"af"}])}
+    observed={}
+    def protected(parsed, authority, **kwargs):
+        observed.update({"parsed":parsed,"authority":authority,"kwargs":kwargs})
+        return {"success":True,"status":"mortality_lifecycle_recorded","answer":"",
+                "writes_farm_data":True,"suppress_owner_delivery":True},200
+    monkeypatch.setattr(telegram_direct,"handle_protected_action_input",protected)
+    monkeypatch.setattr(telegram_direct,"acknowledge_telegram_callback",
+                        lambda *args,**kwargs:({"success":True},200))
+    payload={"callback_query":{"id":"cb-manager-1","data":"oompa:opaque:confirm",
+      "from":{"id":int(manager)},"message":{"message_id":700,
+      "chat":{"id":int(manager),"type":"private"}}}}
+    result,status=handle_telegram_direct_webhook(payload,
+      headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
+    assert status==200 and result["status"]=="mortality_lifecycle_recorded"
+    assert observed["authority"].principal_role=="farm_manager"
+    assert observed["authority"].capabilities==frozenset({"mortality_confirmation"})
+    assert observed["parsed"]["telegram_user_id"]==observed["parsed"]["telegram_chat_id"]==manager
+
+
+def test_manager_capability_envelope_excludes_non_farm_and_ungranted_actions(monkeypatch):
+    observed={}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:
+        (observed.update(kwargs) or {"success":False,"status":"protected_action_not_allowed"},403))
+    authority=issue_gateway_owner_authority("1002","1002",principal_role="farm_manager",
+        capabilities=("mortality_confirmation",))
+    result,status=runtime.handle_protected_action_input({
+        "telegram_user_id":"1002","telegram_chat_id":"1002","provider_message_id":"cb-2",
+        "provider_timestamp":"2026-08-23T20:27:24Z","reply_to_message_id":"700",
+        "callback_data":"oompa:opaque:confirm","text":""},authority)
+    assert status==403
+    assert observed["allowed_action_kinds"]==frozenset({"mortality"})
+    assert all(value not in observed["allowed_action_kinds"] for value in ("core","charlie","payment"))
 
 
 def test_direct_callback_preserves_digest_scoped_card_lifecycle(monkeypatch):
