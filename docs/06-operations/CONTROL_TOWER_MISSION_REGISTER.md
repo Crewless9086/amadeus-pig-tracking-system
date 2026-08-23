@@ -2194,3 +2194,40 @@ sequential execution; B is eligible after C shutdown/readback and fresh safety
 revalidation. This proves that B is neither uncommissioned nor daylight-blocked,
 but it is not yet proof that tonight's B physical run started or completed.
 The deployed ROOTLINE worker owns that outcome. OWNER ACTION: NONE.
+
+## 2026-08-23 19:09 SAST - Anton provider failure and superseding parity authority
+
+Under existing mission `HERDMASTER-NATURAL-HEALTH-LOSS-1` and bounded lineage
+`OOM-INTAKE-SLICE-1`, Anton sent the genuine provider-origin message exactly as
+follows: `Vark 126 is dood, ons het hom verwyder en begrawe.` Oom Sakkie returned
+the legacy reply requiring Charl to confirm the mortality/lifecycle change.
+This is a provider-confirmed acceptance failure, not completion. Canonical
+readback proves Pig 126 remains untouched: `Active`, on farm, in `PEN-012`, with
+no new mortality claim or lifecycle effect. Anton must not repeat the report
+while the systemic authority path is under repair.
+
+Charl's latest authority decision supersedes narrower wording in the preceding
+entry without deleting its incident history. Anton and Charl have parity across
+all governed Oom Sakkie specialist access, messages and approval journeys,
+localized by recipient (`Anton = af`; `Charl = en`). Only CORE and CHARLIE are
+excluded from that parity. This decision does not weaken same-actor/private-chat
+binding, exact protected confirmation, attributable audit, replay and
+concurrency containment, canonical readback, or physical and device-specific
+safety gates. It creates no new mission, agent, workflow, confirmation rail or
+authority store and does not reprioritize the register.
+
+Exact-current source inspection identifies a systemic implementation blocker.
+`modules/oom_sakkie/family_access.py` still classifies broad protected
+capabilities as owner-only and routes only enumerated farm-manager permissions;
+the protected-action manager allowlists and gateway projections retain the same
+broader owner-only assumptions across SAM, BEACON and other Oom Sakkie
+specialists. Repair must reconcile those shared authority paths with the parity
+decision while preserving action-specific governance and every existing safety
+boundary. Do not add specialist-specific bypasses or infer that one successful
+HERDMASTER path proves parity elsewhere.
+
+Mission state remains `CONTAINED / SYSTEMIC_ROLE_ROUTING_REPAIR_REQUIRED`.
+Completion still requires exact-current implementation, regression families for
+both actors and both languages across governed specialist journeys, independent
+review, merge, exact deployed-revision proof and genuine provider acceptance
+without proxying or replaying Pig 126. **NO OWNER OUTCOME.** OWNER ACTION: NONE.
