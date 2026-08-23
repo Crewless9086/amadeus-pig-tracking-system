@@ -421,7 +421,9 @@ def _certificate(run_uri):
 def _sigstore_bundle(predicate_type,run_uri):
     cert,raw=_certificate(run_uri); algorithm,value=BUNDLE_DIGEST.split(":",1)
     payload=base64.b64encode(json.dumps({"_type":B.STATEMENT_TYPE,"predicateType":predicate_type,"subject":[{"name":BUNDLE_IMAGE,"digest":{algorithm:value}}]}).encode()).decode()
-    bundle={"mediaType":B.MEDIA_TYPE,"dsseEnvelope":{"payload":payload,"payloadType":B.PAYLOAD_TYPE,"signatures":[{"sig":"c3ludGhldGlj"}]},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()},"tlogEntries":[{}]}}
+    proof={"checkpoint":{"envelope":"synthetic checkpoint"},"hashes":["c3ludGhldGlj"],"logIndex":"1","rootHash":"c3ludGhldGlj","treeSize":"2"}
+    tlog={"canonicalizedBody":"c3ludGhldGlj","inclusionPromise":{"signedEntryTimestamp":"c3ludGhldGlj"},"inclusionProof":proof,"integratedTime":"1787472000","kindVersion":{"kind":"dsse","version":"0.0.1"},"logId":{"keyId":"c3ludGhldGlj"},"logIndex":"1"}
+    bundle={"mediaType":B.MEDIA_TYPE,"dsseEnvelope":{"payload":payload,"payloadType":B.PAYLOAD_TYPE,"signatures":[{"sig":"c3ludGhldGlj"}]},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()},"timestampVerificationData":{"rfc3161Timestamps":[{"signedTimestamp":"c3ludGhldGlj"}]},"tlogEntries":[tlog]}}
     return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
 
 def _native_bundle(run_uri):
@@ -470,6 +472,21 @@ def test_native_bundle_inventory_rejects_legacy_shape_signature_transparency_and
     extra={**base,"unexpected":True}; adversaries.append(extra)
     hybrid={**base,"dsseEnvelope":{"payload":"c3ludGhldGlj"}}; adversaries.append(hybrid)
     empty_transparency=json.loads(first[0]); empty_transparency["bundle"]["Payload"]["logID"]=""; adversaries.append(empty_transparency)
+    for changed in adversaries:
+        with pytest.raises(ValueError): B.inspect([json.dumps(changed),second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
+
+def test_native_bundle_inventory_rejects_dsse_extra_empty_wrong_and_hybrid_nested_shapes():
+    first=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]; base=json.loads(first[0]); adversaries=[]
+    extra={**base,"unexpected":True}; adversaries.append(extra)
+    hybrid={**base,"critical":{"type":B.SIMPLE_SIGNING}}; adversaries.append(hybrid)
+    bad_signature=json.loads(first[0]); bad_signature["dsseEnvelope"]["signatures"][0]["sig"]="not-base64!"; adversaries.append(bad_signature)
+    empty_tlog=json.loads(first[0]); empty_tlog["verificationMaterial"]["tlogEntries"]=[]; adversaries.append(empty_tlog)
+    extra_cert=json.loads(first[0]); extra_cert["verificationMaterial"]["certificate"]["extra"]=True; adversaries.append(extra_cert)
+    extra_proof=json.loads(first[0]); extra_proof["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["extra"]=True; adversaries.append(extra_proof)
+    wrong_kind=json.loads(first[0]); wrong_kind["verificationMaterial"]["tlogEntries"][0]["kindVersion"]["kind"]="intoto"; adversaries.append(wrong_kind)
+    empty_hashes=json.loads(first[0]); empty_hashes["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["hashes"]=[]; adversaries.append(empty_hashes)
     for changed in adversaries:
         with pytest.raises(ValueError): B.inspect([json.dumps(changed),second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
 
