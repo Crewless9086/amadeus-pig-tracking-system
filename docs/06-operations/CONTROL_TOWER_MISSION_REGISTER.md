@@ -2536,3 +2536,57 @@ claim and zero farm effects are retained. ROOTLINE review and merge are
 recorded without promotion to an owner outcome. No mission was created or
 reprioritized, and no provider, database, farm, scheduler or hardware mutation
 was performed by this register update.
+
+## 2026-08-23 - HERDMASTER callback repair live; existing confirmation resumed
+
+This append-only entry supersedes only the preceding callback-repair blocker
+and preserves the genuine HTTP `403` incident. PR `#1203` passed repaired
+independent review at exact head
+`7038943d2e69114df91bc59990f82b47d9cd558b` with all four hosted gates passing,
+then merged and deployed in exact live revision
+`ed2f98fc914b83158c5ec0d1a23c9b060ab23f18`. The existing Pig 126 mortality claim remains active and bound to
+Anton, mission `OOM-HERDMASTER-24573EBB0512A640F782944F`, operation
+`HERD-HEALTH-LOSS-9F45FDA8FE1522C3E7BF6F47FF30A1CE`, and existing Afrikaans
+preview card `3925`. Pig 126 remains unchanged because no callback has yet
+passed the repaired deployed path.
+
+The callback repair, review, CI, merge and deployment are technical progress,
+not a mortality or welfare owner outcome. Genuine acceptance resumes from the
+existing protected claim; Anton must not resend the mortality report or create
+a second claim. After one accepted confirmation, Control Tower must verify the
+provider completion, exact-once pig lifecycle and removal facts, attributable
+welfare closure, obsolete-check reconciliation, preservation of distinct
+disposal/biosecurity work, canonical readback, replay and later continuity.
+Mission state is
+`REPAIR_DEPLOYED / CLAIM_ACTIVE / EXISTING_PREVIEW_CONFIRMATION_REQUIRED`.
+**ACTION REQUIRED NOW:** Anton must press `Bevestig` once on existing Telegram
+card `3925`.
+
+## 2026-08-23 22:47 SAST - ROOTLINE genuine B execution active
+
+ROOTLINE PR `#1202` is included in exact live revision
+`ed2f98fc914b83158c5ec0d1a23c9b060ab23f18`. The
+unattended 22:45 scheduler cycle used that deployed lineage and started genuine
+B execution `ROOTLINE-EXECUTION-AEABE2390A51356550A6A5AE` at 22:47:43 SAST
+with a governed planned duration of 60 minutes. This proves the stale durable
+containment was reconciled by the deployed runtime and that B advanced into a
+real execution without a manual scheduler dispatch.
+
+This is a genuine B start and current physical-runtime activity, but it is not
+a completed irrigation or safe-shutdown owner outcome. Completion remains
+pending until the same execution reaches its terminal state, authoritative
+controller readback proves `OFF`, canonical execution and irrigation history
+close consistently, and the attributable owner projection is delivered. No
+terminal may stop, extend, replay or synthesize completion of the execution.
+Mission state is
+`EXACT_LIVE / B_EXECUTION_ACTIVE / TERMINAL_OFF_AND_CANONICAL_COMPLETION_PENDING`.
+OWNER ACTION: NONE for ROOTLINE.
+
+Control Tower Check Receipt: exact live revision
+`ed2f98fc914b83158c5ec0d1a23c9b060ab23f18` contains both the
+HERDMASTER callback repair and ROOTLINE containment repair. Pig 126 remains
+unchanged behind one protected confirmation; B has genuinely started but has
+not completed. No mission was created or reprioritized, and no provider,
+database, farm, scheduler or hardware mutation was performed by this register
+update. The portfolio has exactly one current human blocker: Anton's single
+press on existing card `3925`.
