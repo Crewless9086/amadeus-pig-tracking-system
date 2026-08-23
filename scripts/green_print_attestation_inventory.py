@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import sys
+from urllib.parse import urlsplit
 
 RECOVERY = "https://amadeus.farm/attestations/green-partial-publication-recovery/v1"
 SBOM = "https://spdx.dev/Document/v2.3"
@@ -210,9 +211,26 @@ def canonical_inventory(document):
         raise ValueError("attestation_inventory_malformed")
     encoded = []
     for record in records:
-        if not isinstance(record, dict):
+        if (not isinstance(record, dict) or set(record) != {
+                "repository_id", "bundle_url", "initiator", "bundle"} or
+                not isinstance(record["repository_id"], int) or
+                record["repository_id"] <= 0 or
+                not isinstance(record["initiator"], str) or
+                not record["initiator"] or
+                not isinstance(record["bundle"], dict)):
             raise ValueError("attestation_inventory_malformed")
-        encoded.append(json.dumps(record, sort_keys=True, separators=(",", ":")))
+        location = urlsplit(record["bundle_url"])
+        if (location.scheme != "https" or not location.hostname or
+                location.username is not None or location.password is not None or
+                not location.path or location.fragment or not location.query):
+            raise ValueError("attestation_inventory_bundle_url_malformed")
+        stable = {
+            "repository_id": record["repository_id"],
+            "initiator": record["initiator"],
+            "bundle_url_identity": f"https://{location.netloc}{location.path}",
+            "bundle": record["bundle"],
+        }
+        encoded.append(json.dumps(stable, sort_keys=True, separators=(",", ":")))
     return {"attestations": [json.loads(item) for item in sorted(encoded)]}
 
 

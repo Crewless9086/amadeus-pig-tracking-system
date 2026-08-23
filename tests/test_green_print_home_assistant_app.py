@@ -557,10 +557,13 @@ def test_partial_recovery_attestation_inventory_exposes_duplicate_foreign_and_ma
     actual=I.inventory({"attestations":records},"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,expected_source="c"*40,expected_manifest="sha256:"+"b"*64,expected_run_id="32622312938")
     assert actual[:3]==expected
 
+def _provider_attestation_record(attestation,record_id,stamp="10%3A16%3A04Z"):
+    return {"repository_id":1184162702,"bundle_url":f"https://tmaproduction.blob.core.windows.net/attestations/1184162702/2026/08/23/{record_id}.json.sn?se=2026-08-23T11%3A16%3A04Z&sig=synthetic-{stamp}&st=2026-08-23T{stamp}","initiator":"user","bundle":attestation["bundle"]}
+
 def test_complete_canonical_attestation_inventory_is_order_stable_and_detects_intervening_drift():
-    recovery=_attestation(I.RECOVERY,payload=_recovery_predicate())
-    sbom=_attestation(I.SBOM)
-    foreign=_attestation("https://foreign.invalid/predicate")
+    recovery=_provider_attestation_record(_attestation(I.RECOVERY,payload=_recovery_predicate()),42399664)
+    sbom=_provider_attestation_record(_attestation(I.SBOM),42399668)
+    foreign=_provider_attestation_record(_attestation("https://foreign.invalid/predicate"),42399999)
     before=I.canonical_inventory({"attestations":[sbom,recovery]})
     reordered=I.canonical_inventory({"attestations":[recovery,sbom]})
     assert before==reordered
@@ -571,9 +574,25 @@ def test_complete_canonical_attestation_inventory_is_order_stable_and_detects_in
     assert len(duplicate["attestations"])==3
     assert len(foreign_drift["attestations"])==3
 
+def test_canonical_attestation_equality_ignores_only_proven_live_sas_query_volatility():
+    recovery=_provider_attestation_record(_attestation(I.RECOVERY,payload=_recovery_predicate()),42399664)
+    sbom=_provider_attestation_record(_attestation(I.SBOM),42399668)
+    first={"attestations":[sbom,recovery]}
+    second=json.loads(json.dumps(first))
+    for record in second["attestations"]:
+        record["bundle_url"]=record["bundle_url"].replace("10%3A16%3A04Z","10%3A16%3A10Z").replace("11%3A16%3A04Z","11%3A16%3A10Z")
+    canonical_first=I.canonical_inventory(first)
+    assert canonical_first==I.canonical_inventory(second)
+    removed={"attestations":second["attestations"][:-1]}
+    added={"attestations":second["attestations"]+[json.loads(json.dumps(recovery))]}
+    modified=json.loads(json.dumps(second)); modified["attestations"][0]["bundle"]["dsseEnvelope"]["payload"]="c3Vic3RpdHV0ZWQ="
+    moved=json.loads(json.dumps(second)); moved["attestations"][0]["bundle_url"]=moved["attestations"][0]["bundle_url"].replace("42399668","42399669")
+    for changed in (removed,added,modified,moved):
+        assert I.canonical_inventory(changed)!=canonical_first
+
 def test_canonical_final_inspect_executes_with_the_generated_exact_sbom_path(tmp_path):
     image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64
-    document={"attestations":[_attestation(I.RECOVERY,payload=_recovery_predicate()),_attestation(I.SBOM,payload={"spdxVersion":"SPDX-2.3"})]}
+    document={"attestations":[_provider_attestation_record(_attestation(I.RECOVERY,payload=_recovery_predicate()),42399664),_provider_attestation_record(_attestation(I.SBOM,payload={"spdxVersion":"SPDX-2.3"}),42399668)]}
     fetched=tmp_path/"final-attestations.json"; fetched.write_text(json.dumps(document),encoding="utf-8")
     canonical=tmp_path/"canonical-final-attestations.json"
     helper=ROOT/"scripts"/"green_print_attestation_inventory.py"
