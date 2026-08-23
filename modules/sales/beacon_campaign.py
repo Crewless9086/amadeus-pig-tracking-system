@@ -20,7 +20,7 @@ from modules.beacon.facebook_media_transport import (
 from modules.beacon.public_livestock_content_policy import (
     RISK_STATUS,
     assess_public_livestock_content,
-    assess_public_livestock_enquiry_capture,
+    public_livestock_policy_binding_matches,
     public_livestock_policy_contract,
 )
 from modules.beacon.organic_publication_binding import (
@@ -1258,6 +1258,29 @@ def facebook_posting_policy(environ=None):
     }
 
 
+def _public_livestock_execution_policy_assessment(params, *, environ=None, now=None):
+    """Return the fresh assessment when public execution authority is invalid."""
+    lane = normalize_campaign_lane(params.get("campaign_lane"))
+    if lane not in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
+        return None
+    source = environ if environ is not None else os.environ
+    configured_page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    target_page_id = _clean_text(params.get("target_page_id"))
+    assessment = assess_public_livestock_content(
+        params.get("exact_text") or params.get("message"),
+        objective=params.get("objective") or "farm_awareness",
+        campaign_lane=lane,
+        media=params.get("selected_assets") or params.get("selected_asset"),
+    )
+    if (not configured_page_id or target_page_id != configured_page_id
+            or not assessment["allowed"]
+            or not public_livestock_policy_binding_matches(
+                params.get("public_content_policy"), assessment,
+                target_page_id=target_page_id, now=now)):
+        return assessment
+    return None
+
+
 def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
                                       meat_launch_authorized=False, media_projector=None,
                                       now_provider=None, publish_now_authority_reader=None,
@@ -1306,16 +1329,9 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
     if campaign_lane == "meat_launch" and not meat_launch_authorized:
         return controlled_mode_denial("publish_meat_campaign")
     if campaign_lane in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
-        assessment = (assess_public_livestock_enquiry_capture(
-            payload.get("exact_text") or payload.get("message"),
-            campaign_lane=campaign_lane,
-            media=payload.get("selected_assets") or payload.get("selected_asset"))
-            if campaign_lane == "live_stock_enquiry_capture" else assess_public_livestock_content(
-                payload.get("exact_text") or payload.get("message"),
-                objective=raw_objective or "farm_awareness",
-                campaign_lane=campaign_lane,
-                media=payload.get("selected_assets") or payload.get("selected_asset")))
-        if not assessment["allowed"]:
+        assessment = _public_livestock_execution_policy_assessment(
+            payload, environ=environ, now=current_time())
+        if assessment is not None:
             return {
                 "success": False,
                 "status": RISK_STATUS,
@@ -1416,14 +1432,9 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
                 **_facebook_execution_authority(False),
             }, 409
 
-        final_assessment = (assess_public_livestock_enquiry_capture(
-            params.get("exact_text"), campaign_lane=params.get("campaign_lane"),
-            media=params.get("selected_assets") or params.get("selected_asset"))
-            if params.get("campaign_lane") == "live_stock_enquiry_capture" else
-            assess_public_livestock_content(params.get("exact_text"),
-                objective=params.get("objective"), campaign_lane=params.get("campaign_lane"),
-                media=params.get("selected_assets") or params.get("selected_asset")))
-        if not final_assessment["allowed"]:
+        final_assessment = _public_livestock_execution_policy_assessment(
+            params, environ=environ, now=current_time())
+        if final_assessment is not None:
             return {
                 "success": False,
                 "status": RISK_STATUS,
@@ -1497,6 +1508,19 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
                 **_facebook_execution_authority(False),
             }, authority_status
 
+    def public_policy_guard():
+        return _public_livestock_execution_policy_assessment(
+            params, environ=environ, now=current_time()) is None
+
+    if not public_policy_guard():
+        return {
+            "success": False,
+            "status": RISK_STATUS,
+            "outcome": "definite_failure_before_meta",
+            "automatic_retry_allowed": False,
+            **_facebook_execution_authority(False),
+        }, 409
+
     if poster:
         post_result, post_status = poster(params, policy)
     else:
@@ -1529,6 +1553,7 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
         post_result, post_status = _post_to_facebook_page(
             params, policy, stage_recorder=record_stage,
             authority_guard=authority_guard,
+            public_policy_guard=public_policy_guard,
         )
         if protected_token and post_status < 400 and post_result.get("success") is True:
             readback = meta_readback_reader or _readback_facebook_page_post
@@ -2755,6 +2780,11 @@ def _facebook_post_params(payload, policy):
         "timing_end": _clean_text(payload.get("timing_end"))[:80],
         "campaign_lane": payload.get("campaign_lane", ""),
         "objective": payload.get("objective", ""),
+        "target_page_id": _clean_text(payload.get("target_page_id"))[:160],
+        "public_content_policy": deepcopy(payload.get("public_content_policy"))
+            if isinstance(payload.get("public_content_policy"), dict) else {},
+        "protected_campaign_claim_token": _clean_text(
+            payload.get("protected_campaign_claim_token"))[:240],
         "execution_status": "not_attempted",
         "facebook_post_id": "",
         "facebook_response_json": "{}",
@@ -2799,29 +2829,42 @@ def _facebook_post_validation_error(params, policy):
 
 
 def _post_to_facebook_page(params, policy, environ=None, stage_recorder=None,
-                           authority_guard=None):
+                           authority_guard=None, public_policy_guard=None):
     if params.get("post_kind") == "multi_photo":
         return _post_to_facebook_page_binary_images(
             params, policy, environ=environ, stage_recorder=stage_recorder,
             authority_guard=authority_guard,
+            public_policy_guard=public_policy_guard,
         )
     if params.get("post_kind") == "video":
-        return _post_to_facebook_page_video(params, policy, environ=environ)
+        return _post_to_facebook_page_video(
+            params, policy, environ=environ,
+            public_policy_guard=public_policy_guard,
+        )
     if params.get("asset_id"):
         return _post_to_facebook_page_binary_images(
             params, policy, environ=environ, stage_recorder=stage_recorder,
             authority_guard=authority_guard,
+            public_policy_guard=public_policy_guard,
         )
-    return _post_to_facebook_page_feed(params, policy, environ=environ)
+    return _post_to_facebook_page_feed(
+        params, policy, environ=environ,
+        public_policy_guard=public_policy_guard,
+    )
 
 
-def _post_to_facebook_page_feed(params, policy, environ=None):
+def _post_to_facebook_page_feed(params, policy, environ=None,
+                                public_policy_guard=None):
     source = environ if environ is not None else os.environ
     page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
     token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
     version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
     if not page_id or not token:
         return {"success": False, "status": "facebook_page_credentials_missing"}, 503
+    if public_policy_guard is not None and not public_policy_guard():
+        return {"success": False, "status": RISK_STATUS,
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False}, 409
     endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/feed"
     body = urllib_parse.urlencode({
         "message": params.get("exact_text", ""),
@@ -2860,6 +2903,7 @@ def _post_to_facebook_page_binary_images(
     photo_uploader=None,
     feed_creator=None,
     authority_guard=None,
+    public_policy_guard=None,
 ):
     """Validate all bytes, then upload once per image with no retry."""
     source = environ if environ is not None else os.environ
@@ -2954,25 +2998,19 @@ def _post_to_facebook_page_binary_images(
             "automatic_retry_allowed": False,
         }, 503
 
-    if params.get("campaign_lane") in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
-        final_policy = (assess_public_livestock_enquiry_capture(
-            params.get("exact_text"), campaign_lane=params.get("campaign_lane"), media=assets)
-            if params.get("campaign_lane") == "live_stock_enquiry_capture" else
-            assess_public_livestock_content(params.get("exact_text"),
-                objective=params.get("objective") or "farm_awareness",
-                campaign_lane=params.get("campaign_lane"), media=assets))
-        if not final_policy["allowed"]:
-            return {
-                "success": False,
-                "status": RISK_STATUS,
-                "public_livestock_policy": final_policy,
+    if public_policy_guard is not None and not public_policy_guard():
+        return {"success": False, "status": RISK_STATUS,
                 "outcome": "definite_failure_before_meta",
                 "uploaded_media_ids": [],
-                "automatic_retry_allowed": False,
-            }, 409
+                "automatic_retry_allowed": False}, 409
 
     media_ids = []
     for position, (asset, data, mime_type) in enumerate(loaded, start=1):
+        if public_policy_guard is not None and not public_policy_guard():
+            return {"success": False, "status": RISK_STATUS,
+                    "outcome": "definite_failure_before_meta",
+                    "uploaded_media_ids": media_ids,
+                    "automatic_retry_allowed": False}, 409
         if not authority_fn():
             return {"success": False, "status": "publish_now_authority_not_actionable",
                     "outcome": "definite_failure_before_meta",
@@ -3028,6 +3066,11 @@ def _post_to_facebook_page_binary_images(
                 "automatic_retry_allowed": False,
             }, status
 
+    if public_policy_guard is not None and not public_policy_guard():
+        return {"success": False, "status": RISK_STATUS,
+                "outcome": "media_uploaded_final_post_not_published",
+                "uploaded_media_ids": media_ids,
+                "automatic_retry_allowed": False}, 409
     if not authority_fn():
         return {"success": False, "status": "publish_now_authority_not_actionable",
                 "outcome": "media_uploaded_final_post_not_published",
@@ -3178,7 +3221,8 @@ def _post_to_facebook_page_multi_photo(params, policy, environ=None):
     }, status
 
 
-def _post_to_facebook_page_video(params, policy, environ=None):
+def _post_to_facebook_page_video(params, policy, environ=None,
+                                 public_policy_guard=None):
     source = environ if environ is not None else os.environ
     page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
     token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
@@ -3189,6 +3233,10 @@ def _post_to_facebook_page_video(params, policy, environ=None):
     signed, signed_status = _signed_supabase_media_url(params, environ=source, asset=asset)
     if signed_status >= 400:
         return signed, signed_status
+    if public_policy_guard is not None and not public_policy_guard():
+        return {"success": False, "status": RISK_STATUS,
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False}, 409
     endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/videos"
     body = urllib_parse.urlencode({
         "file_url": signed.get("signed_url", ""),

@@ -7,7 +7,7 @@ import json
 import os
 
 from modules.beacon.public_livestock_content_policy import (
-    assess_public_livestock_content, assess_public_livestock_enquiry_capture,
+    assess_public_livestock_content, public_livestock_policy_binding_matches,
 )
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.sales.beacon_campaign import (
@@ -39,6 +39,7 @@ def run_protected_publication_cycle(*, database_url=None, worker_id=None,
         "channel": "facebook_organic",
         "campaign_lane": preview.get("campaign_lane") or "live_stock_awareness",
         "objective": preview.get("campaign_objective") or "farm_awareness",
+        "public_content_policy": dict(preview.get("public_content_policy") or {}),
         "exact_text": preview["exact_post_copy"],
         "selected_assets": media, "selected_asset": media[0] if media else {},
         "asset_id": media[0]["asset_id"] if media else "",
@@ -159,11 +160,11 @@ def validate_claimed_approval(claim, *, now=None):
             r"kom\s+(?:kyk|besoek|loer)|gaan\s+kyk|besoek|deel|lees\s+meer|vind\s+meer\s+uit|klik|druk|kyk|teken\s+in)\b",
             caption, __import__("re").I):
         return "protected_campaign_story_only_cta_failed"
-    policy = (assess_public_livestock_enquiry_capture(preview.get("exact_post_copy"),
-        campaign_lane="live_stock_enquiry_capture", media=[] if text_only else media) if enquiry_capture else
-        assess_public_livestock_content(preview.get("exact_post_copy"),
-            objective="farm_awareness", campaign_lane="live_stock_awareness", media=media))
-    if not policy.get("allowed"):
+    policy = assess_public_livestock_content(preview.get("exact_post_copy"),
+        objective=objective, campaign_lane=lane, media=[] if text_only else media)
+    if (not policy.get("allowed") or not public_livestock_policy_binding_matches(
+            preview.get("public_content_policy"), policy,
+            target_page_id=preview.get("target_page_id"), now=now)):
         return "protected_campaign_public_policy_failed"
     return ""
 

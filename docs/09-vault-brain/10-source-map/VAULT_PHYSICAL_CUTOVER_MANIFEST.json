@@ -3,7 +3,7 @@
   "baseline": "5d27e4afe2c546963196ed93753cf88aad92ba2b",
   "generated_from_head": "5d27e4afe2c546963196ed93753cf88aad92ba2b",
   "owner_boundary": "Batch 29 completes the 29-batch cutover with deployed scheduled Brain Guard continuity; all 72 transitional Google Sheets and n8n technical documents remain bounded behind two named, owned, blocked runtime exit tests and are neither doctrine nor retirement-authorized",
-  "entry_count": 539,
+  "entry_count": 558,
   "counts": {
     "KEEP_ARCHIVE": 207,
     "KEEP_CONTROLLING_EXCEPTION": 2,
@@ -12,9 +12,70 @@
     "KEEP_POINTER": 18,
     "KEEP_TECHNICAL": 33,
     "KEEP_TRANSITIONAL": 72,
-    "KEEP_VAULT": 196
+    "KEEP_VAULT": 198,
+    "OWNER_REVIEW_REQUIRED": 17
   },
   "entries": [
+    {
+      "path": ".agents/skills/amadeus-implement/SKILL.md",
+      "sha256": "caf020da5a38dcb1b06ad92b832ab99098c1874aa6606809d045fe98a8a0cad8",
+      "physical_lines": 33,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": ".agents/skills/amadeus-operational-acceptance/SKILL.md",
+      "sha256": "b5b9325f815822d652ae99c8b8cadc96acd48e2cec8d39ac85967c583885bc80",
+      "physical_lines": 44,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": ".agents/skills/control-tower-operate/SKILL.md",
+      "sha256": "579c1aa685aecf512196db8016c4a0034a8c0e5f266a8fbedb0adc1af6536ab3",
+      "physical_lines": 75,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
     {
       "path": "CLAUDE.md",
       "sha256": "0f65d3861c2d1610655d3136594ea7e3324eacfc89f8f0e8c01eacfbf9f78598",
@@ -32,6 +93,106 @@
       ],
       "reason": "minimal compatibility pointer; cannot govern agents",
       "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "VISIBLE_OOM_LITTER_PR1161_8FAC_REPAIR_HANDOVER_20260822.md",
+      "sha256": "041f11f9fc1910e7648972f2d06c92e25879b0caef412af36269c20de635509f",
+      "physical_lines": 170,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "VISIBLE_OOM_LITTER_PR1161_IMPLEMENTER_HANDOVER_20260822.md",
+      "sha256": "5279427d6cf3e73611e21c9b21c2909c233e10d6549f8181c6df79eab092e661",
+      "physical_lines": 203,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "VISIBLE_OOM_LITTER_PR1161_REVIEW_BLOCKER_REPAIR_HANDOVER_20260822.md",
+      "sha256": "b7b36936b375625d15eff0942e657dad9aa70bf52df9b890ef3602ddd4dcb83b",
+      "physical_lines": 55,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "VISIBLE_SAM_PR1163_CANONICAL_ATTRIBUTION_REPAIR_HANDOVER_20260822.md",
+      "sha256": "825961114d1e156ee7908c60c329915eda96d36817cf21dc09768ba656826ce2",
+      "physical_lines": 200,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "VISIBLE_SAM_PR1163_PRODUCTION_SHAPE_REPAIR_HANDOVER_20260822.md",
+      "sha256": "98bfc4901ab3a342249d763a5539e1961587c51e721cecf874c28c04d9a30e51",
+      "physical_lines": 114,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
       "physical_change_authorized": false,
       "planned_batch": null,
       "reconciliation_family": null,
@@ -592,11 +753,10 @@
       "batch1_action": "split_doctrine_from_technical",
       "disposition": "KEEP_TECHNICAL",
       "destination_or_replacement": "docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md",
-      "exact_reference_count": 6,
+      "exact_reference_count": 5,
       "exact_references": [
         "docs/01-architecture/SYSTEM_ARCHITECTURE.md",
         "docs/02-backend/SUPABASE_FOUNDATION_PLAN.md",
-        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
         "docs/09-vault-brain/03-business/AMADEUS_FARM.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
         "docs/99-archive/vault-cutover/docs/06-operations/TESTING_CHECKLIST.md"
@@ -2622,8 +2782,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md",
-      "sha256": "3b2d3b5b6d04d21afbe1c3ddb8470797fa63b1ad74e1587c32a6f6f69d9db46e",
-      "physical_lines": 216,
+      "sha256": "6d81bdfd41770f30e7e2e9acea584e747e007fe3ab155d3427fb17599a26111f",
+      "physical_lines": 266,
       "batch1_lifecycle": "historical",
       "batch1_action": "extract_then_archive_or_delete",
       "disposition": "KEEP_CONTROLLING_EXCEPTION",
@@ -2650,8 +2810,8 @@
     },
     {
       "path": "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
-      "sha256": "397f197d15103770dea60221955e8f0dc360eef7668d4ff6d539b8a27cc86b75",
-      "physical_lines": 1037,
+      "sha256": "3d8e5ac9a58ae1401de129a7b427d75304ab9f23034c08daec5efce4720a805a",
+      "physical_lines": 2110,
       "batch1_lifecycle": "review_queue",
       "batch1_action": "split_active_runbook_from_history",
       "disposition": "KEEP_CURRENT_STATE",
@@ -2704,6 +2864,128 @@
       "exit_test_status": null
     },
     {
+      "path": "docs/06-operations/GREEN_PRINT_031_NON_ACTUATING_COMMISSIONING_PREFLIGHT_20260822.md",
+      "sha256": "926d4735cc01e94f0771f598d795ea0f13882c0804286da28af4c904ada9941e",
+      "physical_lines": 110,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "docs/06-operations/GREEN_PRINT_031_REGISTER_ADDENDUM_20260822.md",
+      "sha256": "5154aeb9b494b72a79eb59b34e542f99f278a6bac31ae67403b8822b2230da59",
+      "physical_lines": 23,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "docs/06-operations/GREEN_PRINT_BRIDGE_PHYSICAL_COMMISSIONING_GUIDE.md",
+      "sha256": "98b4cdf10bd3ca36d24feeaac921aa41d07297ef1f828a6e2e3a29c965e3f831",
+      "physical_lines": 106,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "green_print_bridge/DOCS.md"
+      ],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "docs/06-operations/ROOTLINE_BOREHOLE_1_COMMISSIONING_GUIDE_20260820.md",
+      "sha256": "191f82761d89889bb6f997c083378169bb9406ab6f6a7e9bca27ff1f1d80e449",
+      "physical_lines": 126,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "docs/06-operations/ROOTLINE_BOREHOLE_READINESS_HANDOVER_20260820.md",
+      "sha256": "2143cb98a3a358d38813e03e3725fd913e981ad68c3f9cd2bb4db6804b70c490",
+      "physical_lines": 152,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "docs/06-operations/ROOTLINE_FERTILIZER_MIXER_DEPLOYMENT_PROOF_HANDOVER_20260820.md",
+      "sha256": "39b0d78ea1a31de05bc411f2f1d1ea4b6625e63dba35894965a17ece67645a3f",
+      "physical_lines": 157,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
       "path": "docs/07-decisions/README.md",
       "sha256": "50daae83360d6bff50e4fb98eaa20ce049132a0d5be36577104982ff9bf7a752",
       "physical_lines": 9,
@@ -2727,14 +3009,15 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
-      "sha256": "f71e43381099bb08a89ec1de9fca07f124483f0de34ada95820ceb661aeb98f4",
-      "physical_lines": 1035,
+      "sha256": "44e34c69145b83d2cd5b6a5322a6c2c124789fa647e19f19b3e39a7293a5202b",
+      "physical_lines": 1127,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
-      "exact_reference_count": 9,
+      "exact_reference_count": 10,
       "exact_references": [
+        ".agents/skills/control-tower-operate/SKILL.md",
         "docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md",
         "docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md",
         "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
@@ -2883,13 +3166,13 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "sha256": "fb967a13f8c5d7825fc54a4fbff8eda04b9c31a1ee9a89e9efebd3fc7c32d8cd",
-      "physical_lines": 322,
+      "sha256": "39f00f8196013d480cd56a3e9c0d7ef84a6afa06dc2636595fe2598ffe948c5d",
+      "physical_lines": 332,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
-      "exact_reference_count": 12,
+      "exact_reference_count": 13,
       "exact_references": [
         "docs/09-vault-brain/02-agents/charlie-core/RISK_AGENT.md",
         "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
@@ -2902,6 +3185,7 @@
         "modules/charlie/source_map.py",
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
+        "tests/test_beacon_public_livestock_content_policy.py",
         "tests/test_vault_cutover_manifest.py"
       ],
       "reason": "canonical Vault doctrine/reference",
@@ -3041,8 +3325,8 @@
     },
     {
       "path": "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
-      "sha256": "90d2e0ac6186f6c7f4b79192a8622888a4cf2f36fad8757fa7f2bd6a36416ef8",
-      "physical_lines": 45,
+      "sha256": "abdbd9f6eca5258262238253828a3eea9a290e187b85e4788b5acc35f32b888e",
+      "physical_lines": 67,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -3867,7 +4151,7 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
-      "sha256": "df475995eedac3d188215cb3fb973087f5bbec8a7a7658114dae4d589b908e9e",
+      "sha256": "5117b7aab22f038a4459cfa043891c6eb15629ec6cd5e1358498ec6e27c4a740",
       "physical_lines": 103,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
@@ -3978,13 +4262,13 @@
     },
     {
       "path": "docs/09-vault-brain/02-agents/marketing/BEACON.md",
-      "sha256": "23d1d07aa5d854cd47ced4bd3494a63b5ff50eb540028438626dc34d52209b9f",
-      "physical_lines": 117,
+      "sha256": "c1888192ec7d346007f4b61736c6adc00ca65b452b46434c2c590b222ea36535",
+      "physical_lines": 121,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/02-agents/marketing/BEACON.md",
-      "exact_reference_count": 12,
+      "exact_reference_count": 13,
       "exact_references": [
         "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
@@ -3997,7 +4281,8 @@
         "modules/charlie/vault_alignment.py",
         "modules/charlie/vault_retrieval.py",
         "scripts/build_vault_cutover_manifest.py",
-        "static/assets/agents/beacon/agent.md"
+        "static/assets/agents/beacon/agent.md",
+        "tests/test_beacon_public_livestock_content_policy.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -4541,20 +4826,21 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
-      "sha256": "020ecc4494dcc9baf767b0d154fb932dc56696fa5aa003a8145f8046cc0ee556",
-      "physical_lines": 79,
+      "sha256": "0cdf9947379d8a41cd4e9886ba87b32a2b8916eb50bafbb572a411d80f4c494f",
+      "physical_lines": 90,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
-      "exact_reference_count": 6,
+      "exact_reference_count": 7,
       "exact_references": [
         "docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md",
         "docs/09-vault-brain/02-agents/marketing/BEACON.md",
         "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
         "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py"
+        "modules/charlie/vault_retrieval.py",
+        "tests/test_beacon_public_livestock_content_policy.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -4566,8 +4852,8 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md",
-      "sha256": "3727eee32edb3494da4fb69285c64a2771e3df0855657c1b0969856c7751a3e1",
-      "physical_lines": 98,
+      "sha256": "0ddb7a464d2fb2d3d6da5da2ef9987966eb8ae8d8e6d3e8f0deface892bde5da",
+      "physical_lines": 119,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4670,8 +4956,8 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md",
-      "sha256": "a8bfeb092a030248d21737831d56f486521445a6237caae120b7753f915add1b",
-      "physical_lines": 141,
+      "sha256": "bce2f681a5e002c216c509cebcfe8eb432fa194bb5da46c56c0026aad1bb1c32",
+      "physical_lines": 178,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4691,8 +4977,8 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
-      "sha256": "27a83df6539026c00efd584293daedc44bd633e40826930a3b45f3c1bbac8422",
-      "physical_lines": 21,
+      "sha256": "6746c14b2c133db3bc2e12050ed5e69bd39385a73de9db353b6559851886d36b",
+      "physical_lines": 35,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4735,8 +5021,8 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md",
-      "sha256": "685c246f44bbac5eac3093b2624736251a57a651fb975c6df66e2cb8fd64d4bb",
-      "physical_lines": 128,
+      "sha256": "d8c8a7d31600e9872bae49ebd9ed5d2743bbc68304b8bb89ce18723f06b272cb",
+      "physical_lines": 254,
       "batch1_lifecycle": "authoritative",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -4885,8 +5171,8 @@
     },
     {
       "path": "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
-      "sha256": "0472980ea18e46854bb7f0d65f8dba591d6dc8744fb59433dbc8665f6494f6af",
-      "physical_lines": 284,
+      "sha256": "a781377ec40bc1a90fdbc149bb5389cc1d1e2247ddccc2e0fc1fd03e406c88ba",
+      "physical_lines": 291,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -5302,14 +5588,15 @@
     },
     {
       "path": "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
-      "sha256": "02ade1385c519689ff2c25e87e19e70b448c387b661297c9608a569c371b0134",
-      "physical_lines": 84,
+      "sha256": "74e55ecf914940ed805976df5cf4bb882d52bc0df02712d338dfca573f79731b",
+      "physical_lines": 124,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
-      "exact_reference_count": 9,
+      "exact_reference_count": 10,
       "exact_references": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
         "docs/09-vault-brain/03-business/AMADEUS_FARM.md",
         "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
@@ -5369,8 +5656,8 @@
     },
     {
       "path": "docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md",
-      "sha256": "b90547027c82003813ef019e31056cfe0b792b3364795bb1e97809767996c593",
-      "physical_lines": 76,
+      "sha256": "78f37d7819284946b320d9b5fd42db681513bc589aa77e7268e3b1ed16116925",
+      "physical_lines": 85,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -5882,8 +6169,8 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
-      "sha256": "cc890a8afe4808506fdaef24e0d59673c73c70d404756e735c167bf5257b2215",
-      "physical_lines": 163,
+      "sha256": "4c66e992f5886bdfa3715074f8c75567516deff88819958b4a1d3b92f94f3b9b",
+      "physical_lines": 170,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -5911,19 +6198,20 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/MARKETING_RULES.md",
-      "sha256": "a94f6181a3c1ccb1450ae5f42f6708c22ae9d517009e189c8e46340dc7dae930",
-      "physical_lines": 17,
+      "sha256": "f8d67dca547eb49795fc10402af42c90416fe6efd0c068fcfe830706fb59520b",
+      "physical_lines": 32,
       "batch1_lifecycle": "superseded",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/08-business-rules/MARKETING_RULES.md",
-      "exact_reference_count": 5,
+      "exact_reference_count": 6,
       "exact_references": [
         "docs/09-vault-brain/02-agents/marketing/BEACON.md",
         "modules/beacon/marketing_operating_contract.py",
         "modules/charlie/execution_bridge.py",
         "modules/charlie/source_map.py",
-        "modules/charlie/vault_retrieval.py"
+        "modules/charlie/vault_retrieval.py",
+        "tests/test_beacon_public_livestock_content_policy.py"
       ],
       "reason": "canonical Vault doctrine/reference",
       "blockers": [],
@@ -6012,8 +6300,8 @@
     },
     {
       "path": "docs/09-vault-brain/08-business-rules/PAYMENT_RULES.md",
-      "sha256": "8ed187ddc0df9af0338d2a24ea59542b7125c3de03e1f241a991a6e0d3ef3757",
-      "physical_lines": 27,
+      "sha256": "da2544630ed1e9b48e1588b38f33f8cb6e4a994e88f05a361ac53cca46493963",
+      "physical_lines": 40,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -6040,8 +6328,9 @@
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
       "destination_or_replacement": "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
-      "exact_reference_count": 10,
+      "exact_reference_count": 11,
       "exact_references": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
         "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
         "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
         "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
@@ -6336,8 +6625,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
-      "sha256": "648024e38366833cbf7d2ac74936e7db5b53ce3f67d03d2d698e7d4ceb513aac",
-      "physical_lines": 249,
+      "sha256": "c0485a515c9cf9cb1e379ab9b31cda8b79b8b92edca254cf2fccef140b1277e1",
+      "physical_lines": 252,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -6377,8 +6666,8 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
-      "sha256": "7716b75778f9815414ff5876a637c8f3e82dee4ec38962dfdbfaffe2f3b041da",
-      "physical_lines": 866,
+      "sha256": "9af8fe677f69954a7267da6acd9762e57056964acc7f742a25b1fb604cad426e",
+      "physical_lines": 1021,
       "batch1_lifecycle": "historical",
       "batch1_action": "archive_or_delete_review",
       "disposition": "KEEP_VAULT",
@@ -6549,7 +6838,7 @@
     },
     {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH14_EXECUTION_SCHEDULE.md",
-      "sha256": "4905f7016a0be2ffdc6e01aeb6b997ea813f11bd360e9bb0fd296d232f9c8efa",
+      "sha256": "9f88cb70f7e4478e71fbf7efdbb186beb50d7c101f80245b15a5601b06a3ceb3",
       "physical_lines": 50,
       "batch1_lifecycle": "post_batch1_unclassified",
       "batch1_action": "post_batch1_unclassified",
@@ -6800,6 +7089,26 @@
       "exit_test_status": null
     },
     {
+      "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH29_ACCEPTANCE.md",
+      "sha256": "4470467f993f0e75ebd56670533a746831842a8ced2d3350ff9a2f56b971814d",
+      "physical_lines": 63,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH29_ACCEPTANCE.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "tests/test_vault_cutover_manifest.py"
+      ],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
       "path": "docs/09-vault-brain/10-source-map/VAULT_CUTOVER_BATCH5_RECONCILIATION.md",
       "sha256": "0a3788d1963120fc682d48bac999bd79b2b8de4d0819ef2874497b44a3435dca",
       "physical_lines": 38,
@@ -6912,9 +7221,29 @@
       "exit_test_status": null
     },
     {
+      "path": "docs/09-vault-brain/ACTIVE_AUTHORITY_INDEX.md",
+      "sha256": "5082296b678335ca8c7b9736bebe013c5ff567c1e8fb2a5f59bcefe3a8e29c64",
+      "physical_lines": 12,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "KEEP_VAULT",
+      "destination_or_replacement": "docs/09-vault-brain/ACTIVE_AUTHORITY_INDEX.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
+      ],
+      "reason": "canonical Vault doctrine/reference",
+      "blockers": [],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
       "path": "docs/09-vault-brain/CHANGELOG.md",
-      "sha256": "9059c0a073ff3feee9b84244381f4116c8e1d4ce3de1698526cad7542af0f715",
-      "physical_lines": 1523,
+      "sha256": "811280d6d711a601716380c3a5344a8d03cdb9eb39efd1157dce68f904ad9b0d",
+      "physical_lines": 1833,
       "batch1_lifecycle": "active",
       "batch1_action": "keep_review",
       "disposition": "KEEP_VAULT",
@@ -10845,6 +11174,68 @@
       "exit_test_status": null
     },
     {
+      "path": "green_print_bridge/CHANGELOG.md",
+      "sha256": "a179b9b78df4945456f781c4d8a0feeef8ed526768ed7394ed2d20fc05b0f8eb",
+      "physical_lines": 56,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "green_print_bridge/DOCS.md",
+      "sha256": "33c44af16eadf6e6629477eb66180080d98b3025f86b162a1f991d48141a133a",
+      "physical_lines": 52,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 1,
+      "exact_references": [
+        "docs/06-operations/GREEN_PRINT_BRIDGE_PHYSICAL_COMMISSIONING_GUIDE.md"
+      ],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
+      "path": "green_print_bridge/README.md",
+      "sha256": "902439bd120e20bfc8d7dc3d5dc32a86609df0d24c91df76a16278751279c092",
+      "physical_lines": 3,
+      "batch1_lifecycle": "post_batch1_unclassified",
+      "batch1_action": "post_batch1_unclassified",
+      "disposition": "OWNER_REVIEW_REQUIRED",
+      "destination_or_replacement": "docs/09-vault-brain/README.md",
+      "exact_reference_count": 0,
+      "exact_references": [],
+      "reason": "no safe deterministic conclusion (unspecified/review_queue)",
+      "blockers": [
+        "owner_classification_required"
+      ],
+      "physical_change_authorized": false,
+      "planned_batch": null,
+      "reconciliation_family": null,
+      "exit_test_id": null,
+      "exit_test_status": null
+    },
+    {
       "path": "planning/CODEX_CHAT.md",
       "sha256": "729bfc57f8a2343a357b3b9ed380c5b42c04fa36a27ccaabffa75e38d7d94b22",
       "physical_lines": 26,
@@ -10925,7 +11316,7 @@
     },
     {
       "path": "static/assets/agents/beacon/agent.md",
-      "sha256": "be569344c9426ed7ca30b65d828ca18754bc1b7ece8cda064ef6e9e6f4f53d47",
+      "sha256": "20b8dea90c5ab3bc6b8ca437e09edb2cb6e07b5ff068e4e31b173e334070b466",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",
@@ -10986,7 +11377,7 @@
     },
     {
       "path": "static/assets/agents/herdmaster/agent.md",
-      "sha256": "5fbbe913b49dd82c23a4f28f5e566060d4c8b2e8da459e7b191843da1f9a64a7",
+      "sha256": "eeca8af4e495c70bc77fd27bb9d5d8e5e4d36a6fa82d9a7aeaf11a0dd3b4ac00",
       "physical_lines": 19,
       "batch1_lifecycle": "runtime_reference",
       "batch1_action": "generate_or_reconcile",

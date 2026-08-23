@@ -8,15 +8,48 @@ from modules.beacon.protected_publication_worker import (
     validate_claimed_approval,
 )
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
-from modules.sales.beacon_campaign import _readback_facebook_page_post
+from modules.oom_sakkie.beacon_request_runtime import (
+    build_live_stock_awareness_proposal, build_protected_campaign_package,
+    prepare_campaign_owner_card,
+)
+from modules.sales.beacon_campaign import (
+    _facebook_post_execution_id, _readback_facebook_page_post,
+    execute_beacon_facebook_page_post,
+)
+from modules.beacon.public_livestock_content_policy import (
+    assess_public_livestock_content, public_livestock_policy_binding,
+)
 
 NOW = datetime(2026, 8, 19, 8, tzinfo=timezone.utc)
 
 
+def real_awareness_binding(caption):
+    proposal = build_live_stock_awareness_proposal(
+        {"success": True, "cards": []},
+        {"success": True, "owner_review_packet": {
+            "packet_id": "REAL-AWARENESS", "draft_copy": caption,
+            "audience": "Farm followers",
+            "public_livestock_policy": {"policy_version":
+                "beacon_public_livestock_awareness_only_v2"}}},
+        {"success": True, "items": []}, target_page_id="PAGE-1")
+    return proposal["public_content_policy"]
+
+
 def approval(caption="Molly is settling into the morning routine while her piglets stay close."):
+    assessment = assess_public_livestock_content(caption,
+        objective="farm_awareness", campaign_lane="live_stock_awareness")
+    try:
+        binding = real_awareness_binding(caption)
+    except ValueError:
+        # Forbidden copy cannot originate a binding; retain a real safe-builder
+        # binding so the downstream drift guard is exercised fail closed.
+        binding = real_awareness_binding(
+            "A quiet farm-life update from Amadeus Farm.")
     preview = {"contract_version":"beacon_campaign_owner_card_v1","packet_id":"PACKET-1",
         "target_page_id":"PAGE-1",
         "packet_generation":"G1","exact_post_copy":caption,
+        "campaign_lane":"live_stock_awareness","campaign_objective":"farm_awareness",
+        "public_content_policy":binding,
         "selected_media":[{"asset_id":"ASSET-1","content_sha256":"a"*64,
           "storage_readback_proof_id":"READBACK-1","library_accept_event_id":"ACCEPT-1",
           "public_use_event_id":"PUBLIC-1","public_use_authority":"approved",
@@ -42,6 +75,68 @@ class Store:
         item,self.item=self.item,None
         return item
     def finish(self, consumer, status, outcome, now): self.finished.append((status,outcome)); return True
+
+
+def test_untouched_real_builder_owner_card_worker_reaches_final_executor():
+    caption = "A quiet farm-life update from Amadeus Farm."
+    proposal = build_live_stock_awareness_proposal(
+        {"success": True, "cards": []},
+        {"success": True, "owner_review_packet": {
+            "packet_id": "REAL-CHAIN", "draft_copy": caption,
+            "audience": "Farm followers", "public_livestock_policy": {
+                "policy_version": "beacon_public_livestock_awareness_only_v2"}}},
+        {"success": True, "items": []}, target_page_id="PAGE-1")
+    package = build_protected_campaign_package(proposal, now=NOW)
+    created = []
+    prepare_campaign_owner_card(
+        package, owner_user_id="OWNER", private_chat_id="CHAT",
+        provider_message_id="MSG", packet_generation="GEN-1",
+        target_page_id="PAGE-1",
+        claim_creator=lambda **kwargs: (
+            created.append(kwargs) or {"callback_token": "TOKEN-REAL"}),
+    )
+    preview = created[0]["preview_payload"]
+    claim = {
+        "consumer_id": "CONSUMER-REAL", "callback_token": "TOKEN-REAL",
+        "action_kind": "beacon_campaign_review", "claim_status": "completed",
+        "evidence_generation": preview["campaign_digest"],
+        "preview_payload": preview,
+        "approval_result": {"status": "beacon_campaign_review_approved"},
+    }
+    final_payloads, provider_calls = [], []
+
+    def authority(_payload, params, _database_url):
+        identity = {**params, "publication_binding_id": "BINDING-REAL",
+            "owner_decision_event_id": "TOKEN-REAL",
+            "authorization_generation_id": preview["campaign_digest"]}
+        return ({"success": True,
+            "binding": {"binding_id": "BINDING-REAL",
+                "owner_decision_event_id": "TOKEN-REAL"},
+            "authorization": {"authorization_generation_id": preview["campaign_digest"],
+                "expected_attempt_identity": _facebook_post_execution_id(identity)}}, 200)
+
+    def executor(payload, **kwargs):
+        final_payloads.append(payload)
+        return execute_beacon_facebook_page_post(
+            payload, database_url=kwargs.get("database_url"),
+            protected_campaign_authority_reader=authority,
+            execution_recorder=lambda *_args, **_kwargs: (
+                {"success": True, "created_count": 1}, 201),
+            poster=lambda params, _policy: (
+                provider_calls.append(params) or
+                ({"success": False, "status": "synthetic_provider_stop"}, 400)),
+            environ={"BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                "BEACON_FACEBOOK_PAGE_ID": "PAGE-1",
+                "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token"},
+            now_provider=lambda: NOW,
+        )
+
+    run_protected_publication_cycle(store=Store(claim), executor=executor, now=NOW)
+    assert len(final_payloads) == 1
+    assert len(provider_calls) == 1
+    assert final_payloads[0]["exact_text"] == preview["exact_post_copy"] == caption
+    assert final_payloads[0]["public_content_policy"] == preview["public_content_policy"]
+    assert final_payloads[0]["target_page_id"] == preview["target_page_id"] == "PAGE-1"
 
 
 def confirmed_outcome(post_id="42_7"):
@@ -80,6 +175,36 @@ def test_altered_caption_or_media_is_contained():
         item=approval(); mutate(item); store=Store(item)
         result=run_protected_publication_cycle(store=store, executor=lambda *a,**k: (_ for _ in ()).throw(AssertionError()), now=NOW)
         assert result["status"] == "protected_campaign_binding_changed"
+
+
+def test_every_policy_authority_drift_is_contained_before_executor():
+    def replace(item, key, value):
+        item["preview_payload"]["public_content_policy"][key] = value
+    def authority(item, key, value):
+        item["preview_payload"]["public_content_policy"]["policy_authority"][key] = value
+    mutations = (
+        lambda item: replace(item, "policy_version", "stale-version"),
+        lambda item: replace(item, "evaluation_digest", "0"*64),
+        lambda item: authority(item, "target_page_id", "OTHER-PAGE"),
+        lambda item: authority(item, "entity_id", "OTHER-ENTITY"),
+        lambda item: authority(item, "jurisdiction", "OTHER"),
+        lambda item: authority(item, "valid_through", "2026-08-18"),
+        lambda item: authority(item, "source_digest", "0"*64),
+        lambda item: item["preview_payload"]["public_content_policy"][
+            "policy_authority"]["sources"][0].update(content_sha256="0"*64),
+    )
+    for mutate in mutations:
+        item=approval(); mutate(item)
+        preview=item["preview_payload"]
+        preview["campaign_digest"]=canonical_preview_digest(
+            "beacon_campaign_review", {k:v for k,v in preview.items()
+                if k!="campaign_digest"})
+        item["evidence_generation"]=preview["campaign_digest"]
+        calls=[]
+        result=run_protected_publication_cycle(store=Store(item),
+            executor=lambda *args,**kwargs: calls.append(1), now=NOW)
+        assert result["status"] == "protected_campaign_public_policy_failed"
+        assert calls == []
 
 
 def test_definite_failure_and_ambiguous_provider_are_terminal_and_replay_silent():
@@ -127,7 +252,7 @@ def test_text_only_requires_exact_class_and_target_page_binding():
     assert validate_claimed_approval(item, now=NOW)=="protected_campaign_target_page_required"
 
 
-def test_supported_enquiry_post_preserves_exact_lane_sam_identity_and_zero_spend():
+def test_legacy_enquiry_post_is_contained_before_executor():
     caption = ("Looking for live pigs? Amadeus Farm handles enquiries for piglets, weaners, "
         "growers and finishers. Message us with the type, number needed, intended use and your area. "
         "SAM will check current farm records before discussing any option; no stock, price, "
@@ -144,11 +269,8 @@ def test_supported_enquiry_post_preserves_exact_lane_sam_identity_and_zero_spend
     calls=[]
     result=run_protected_publication_cycle(store=Store(item), executor=lambda payload,**kwargs: (
         calls.append(payload) or confirmed_outcome("PAGE-1_8"),200), now=NOW)
-    assert result["consumer_status"] == "confirmed" and len(calls) == 1
-    assert calls[0]["campaign_lane"] == "live_stock_enquiry_capture"
-    assert calls[0]["objective"] == "qualified_livestock_enquiries"
-    assert calls[0]["attribution_identity"] == "ATTR-1"
-    assert calls[0]["selected_assets"] == [] and calls[0]["zero_spend"] is True
+    assert result["status"] == "protected_campaign_public_policy_failed"
+    assert calls == []
 
 
 def test_concurrent_workers_atomically_publish_once():
