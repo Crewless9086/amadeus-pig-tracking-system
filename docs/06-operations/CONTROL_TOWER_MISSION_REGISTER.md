@@ -2093,8 +2093,13 @@ Canonical attribution resolves successfully as
 `BEACON-AWARENESS-7B42DB6C7732388D6D8DD46A`, through protected consumer
 `BEACON-PUB-CONSUMER-8FC40D17BD899A9E39F394D9`. The post is text-only,
 zero-spend farm awareness and makes no stock, price, availability or sales
-claim. This is a genuine public BEACON owner outcome. It does not prove a SAM
-lead or sale; those require later genuine attributable customer inbound.
+claim. This is a genuine provider-confirmed BEACON publication effect. A
+logged-out Chrome read of the corresponding Facebook URL redirected to the
+page-scoped post URL but displayed `This content isn't available at the
+moment`; the provider readback contains no permalink or visibility field.
+Public audience visibility is therefore still unproven and the mission is not
+yet called a public owner outcome. It also does not prove a SAM lead or sale;
+those require later genuine attributable customer inbound.
 
 Control Tower briefly opened PR `#1197` after initially interpreting the
 educational phrase `Follow the farm journey` as prohibited by the final
