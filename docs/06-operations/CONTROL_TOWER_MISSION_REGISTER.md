@@ -2272,3 +2272,30 @@ ROOTLINE owner rendering, durable prior-answer reconciliation, and completed
 charity-sale retirement. No irrigation command, welfare closure, sale/payment
 change, provider action or canonical mutation is authorized or claimed here.
 **NO OWNER OUTCOME.** OWNER ACTION: NONE.
+
+## 2026-08-23 - ROOTLINE current execution continuity and truthful projection blocker
+
+This finding remains inside the existing ROOTLINE mission and directly blocks
+its current owner outcome. C execution
+`ROOTLINE-EXECUTION-2A699BC07BD93EF40914AA69` started channel 2 at
+18:17:30 SAST with native deadline 19:17:29. At 19:48 the canonical execution
+store still reported it `Active`; no current attributable `Completed` event or
+verified-off closure was present.
+
+The daily presentation nevertheless described C as `Completed` by projecting a
+historical 59.9833-minute completion. That projection is stale and untruthful
+for the current execution. Historical completion evidence must not substitute
+for the active execution's own identity-bound OFF and closure readback.
+
+The scheduled reassessment POST occurred at 19:45:28, four seconds before the
+recorded `next_reassessment_at` of 19:45:32. It produced no new reassessment or
+closure, and the next cron opportunity is later. This is timing/continuity
+evidence, not proof that the active segment stopped safely.
+
+B must not start while C lacks current verified-off closure. ROOTLINE must let
+the deployed scheduler reconcile the exact C execution, record attributable OFF
+and terminal state, refresh the typed decision, and only then consider B under
+fresh safety revalidation. No terminal command, irrigation mutation, synthetic
+closure or manual history correction is authorized. Mission state is
+`CONTINUITY_BLOCKED / CURRENT_C_OFF_CLOSURE_REQUIRED / PROJECTION_REPAIR_REQUIRED`.
+**NO OWNER OUTCOME.** OWNER ACTION: NONE.
