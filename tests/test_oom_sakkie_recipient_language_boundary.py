@@ -1,6 +1,6 @@
 import pytest
 
-from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result, localize_recipient_result
 
 
 AF = {"output_language": "af"}
@@ -51,3 +51,14 @@ def test_charl_english_result_is_unchanged():
         "reply_markup": {"inline_keyboard": [[{"text": "Confirm",
             "callback_data": "oompa:t:confirm"}]]}}
     assert localize_recipient_result({"output_language": "en"}, original, "SAM") == original
+
+
+def test_unrecognized_afrikaans_protected_status_fails_closed_before_delivery():
+    sent = []
+    result = deliver_family_result({"output_language": "af", "telegram_user_id": "2",
+        "telegram_chat_id": "2", "provider_message_id": "9"}, {
+        "status": "new_unrecognized_visible_state", "answer": "English leak",
+        "callback_token": "t", "preview_digest": "d", "action_kind": "future_action",
+    }, specialist="FUTURE", sender=lambda *args: sent.append(args))
+    assert result["status"] == "recipient_language_render_unrecognized"
+    assert result["telegram_sends"] == 0 and sent == []

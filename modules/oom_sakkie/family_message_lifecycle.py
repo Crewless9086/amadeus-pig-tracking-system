@@ -55,10 +55,32 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
         return localized
     status = str(localized.get("status") or "").casefold()
     answer = str(localized.get("answer") or "").strip()
+    original_answer = answer
     if answer:
         identity = str(localized.get("specialist_identity") or localized.get("specialist")
                        or specialist or "OOM SAKKIE").replace("_", " ")
-        if "change" in status or "correct" in status:
+        campaign = localized.get("campaign_review_preview")
+        if status == "media_album_received":
+            count = int(localized.get("album_stored_count") or 0)
+            answer = (f"<b>BEACON — PRIVAAT GESTOOR</b>\n\n{count} foto('s) is veilig in hierdie album gestoor. "
+                "Voeg die oorblywende foto's by en kies Voltooi album. Biblioteekaanvaarding, openbare gebruik, "
+                "veldtoghersiening en publikasie bly afsonderlike beskermde handelinge.")
+        elif isinstance(campaign, Mapping):
+            budget = campaign.get("budget_cap") if isinstance(campaign.get("budget_cap"), Mapping) else {}
+            duration = campaign.get("duration") if isinstance(campaign.get("duration"), Mapping) else {}
+            answer = "\n".join(("<b>BEACON — BESKERMDE VELDTOGVOORSKOU</b>",
+                f"<b>Doel:</b> {campaign.get('campaign_objective') or campaign.get('campaign_lane')}",
+                f"<b>Plasing:</b> {campaign.get('exact_post_copy')}",
+                f"<b>Facebook-blad-ID:</b> {campaign.get('target_page_id')}",
+                f"<b>Publiseer teen:</b> {campaign.get('publication_time')}",
+                f"<b>Begroting:</b> ZAR {budget.get('total', '0.00')} totaal; ZAR {budget.get('daily', '0.00')} per dag; {duration.get('days', 0)} dae.",
+                "Bevestig slegs hierdie presiese gebonde pakket. Geen outomatiese herprobeer word toegelaat nie."))
+        elif all(localized.get(key) not in (None, "") for key in
+                 ("received_amount", "payment_method", "payment_date")):
+            answer = (f"<b>SAM — VEREFFENING VOLTOOI</b>\n\nVeiling afgehandel. "
+                f"Ontvang: R{localized['received_amount']} via {localized['payment_method']} "
+                f"op {localized['payment_date']}. Volledig gerekonsilieer.")
+        elif "change" in status or "correct" in status:
             answer = "Stuur die reggestelde feite wanneer jy gereed is. Niks is uitgevoer nie."
         elif "cancel" in status or "declin" in status:
             answer = "Die beskermde handeling is gekanselleer. Niks is uitgevoer nie."
@@ -87,10 +109,15 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
                 action = str(item.get("callback_data") or "").rsplit(":", 1)[-1]
                 if action in labels:
                     item["text"] = labels[action]
+                elif str(item.get("text") or "").casefold() == "finish album":
+                    item["text"] = "Voltooi album"
                 translated.append(item)
             rows.append(translated)
         localized["reply_markup"] = {**markup, "inline_keyboard": rows}
     localized["recipient_language"] = "af"
+    if (answer and answer == original_answer
+            and any(localized.get(key) for key in ("callback_token", "preview_digest", "action_kind"))):
+        localized["recipient_language_render_unrecognized"] = True
     return localized
 
 
@@ -101,7 +128,7 @@ def _afrikaans_bound_facts(result: Mapping[str, Any]) -> str:
         "payment_amount": "Bedrag", "publication_time": "Publikasietyd",
         "printer_id": "Drukker", "copies": "Kopieë", "row_count": "Aantal"}
     sources = [result]
-    for key in ("preview", "preview_payload", "proposal", "canonical_preview"):
+    for key in ("preview", "preview_payload", "proposal", "canonical_preview", "document_preview"):
         if isinstance(result.get(key), Mapping):
             sources.append(result[key])
     lines, seen = [], set()
@@ -121,6 +148,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                           delivery_retry_authority=None, protected_delivery=None) -> dict[str, Any]:
     """Persist and visibly deliver one result; duplicate input is a no-op."""
     result = localize_recipient_result(parsed, result, specialist)
+    if result.get("recipient_language_render_unrecognized") is True:
+        return {"success": False, "status": "recipient_language_render_unrecognized",
+            "telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0,
+            "writes_farm_data": False}
     mission_id = mission_id or mission_identity(parsed, specialist)
     card_mission_id = card_mission_id or mission_id
     protected_fields = tuple(bool(result.get(key)) for key in

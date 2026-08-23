@@ -74,6 +74,9 @@ def handle_documents_green_request(parsed, *, environ=None, pig_loader=None,
         "card_mission_id":MISSION_ID+":"+revision.version_id,
         "callback_token":claim["callback_token"],"preview_digest":preview["preview_digest"],
         "action_kind":PRINT_ACTION_KIND,
+        "document_preview":{"effective_date":revision.sheet_date.isoformat(),
+            "row_count":len(revision.canonical_rows),"printer_id":required["printer_id"],
+            "copies":1,"paper":"A4","colour":"monochrome"},
         "answer":("Print the weekly weighing sheet?\n\n"
             f"Date: {revision.sheet_date.isoformat()}\nPigs: {len(revision.canonical_rows)}\n"
             "Printer: Green private printer\nCopies: 1, A4, monochrome\n\n"
