@@ -1,5 +1,21 @@
 # Vault Brain Changelog
 
+## 2026-08-23 - ROOTLINE B commissioning and adaptive timing reconciled
+
+- Reconciled the daily-advisor projection with the existing immutable B/C
+  commissioned controller baseline. B/channel 1 commissioning
+  `ROOTLINE-COMMISSION-D248A120ECE1961DB81B6C2E` remains durable and must not be
+  replaced by another owner-supervised proof merely because an older advisory
+  projection said `not_canary_proven`.
+- Reaffirmed the active B/C business rule that clock time is selected
+  adaptively from current crop need, weather, water and safe commissioned-device
+  evidence. A fixed daylight-only window is not an irrigation eligibility gate;
+  summer may favour evening or night execution.
+- This correction does not authorize duplicate watering, simultaneous B/C,
+  fertilizer or borehole operation. ROOTLINE must still verify current need,
+  same-day consumption, independent fail-stop, sequential execution and safe
+  shutdown before continuing to the next zone.
+
 ## 2026-08-23 - Anton farm-manager mortality authority reconciled
 
 - Recorded the owner's bounded decision that Anton may perform and confirm his
