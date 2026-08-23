@@ -494,6 +494,40 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     if specialist not in {"HERDMASTER", "ROOTLINE", "BEACON"}:
         return {"success": True, "status": "non_farm_case_delivery_suppressed",
                 "delivery_confirmed": False, "telegram_sends": 0}
+    if str(case.get("dedupe_key") or "").startswith("herdmaster:riversdale-auction:"):
+        from modules.oom_sakkie.riversdale_auction_manager import (
+            build_anton_prompt, build_owner_cohort_prompt,
+        )
+        cohort = any(str(value) == "reminder_phase:cohort-review"
+                     for value in case.get("evidence_refs") or ())
+        prepared = (build_owner_cohort_prompt(case) if cohort else build_anton_prompt(case))
+        if prepared.get("success") is not True:
+            return prepared
+        principal = prepared.pop("principal", None)
+        observed = _generation_timestamp(case["case_id"], int(case["generation"]))
+        mission_id = f"{case['case_id']}:G{int(case['generation'])}"
+        target = (principal.telegram_user_id if principal is not None else
+                  [value.strip() for value in str(os.getenv(
+                      "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",") if value.strip()][0])
+        parsed = {"telegram_user_id": target,
+            "telegram_chat_id": target, "telegram_chat_type": "private",
+            "provider_message_id": "scheduled:" + mission_id,
+            "provider_timestamp": observed.isoformat(), "text": "Riversdal-veiling"}
+        if deliver is None:
+            from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+            deliver = deliver_family_result
+        outcome = dict(deliver(parsed, prepared, specialist="HERDMASTER",
+            mission_id=mission_id, card_mission_id=case["case_id"]) or {})
+        if prepared.get("callback_token") and outcome.get("telegram_message_id"):
+            from modules.oom_sakkie.protected_action_claims import bind_claim_card
+            if not bind_claim_card(prepared["callback_token"], outcome["telegram_message_id"]):
+                return {**outcome, "success": False, "delivery_confirmed": False,
+                        "status": "auction_protected_card_binding_failed"}
+        confirmed = bool(outcome.get("telegram_message_id") and (
+            outcome.get("provider_delivery_confirmed") is True
+            or (outcome.get("success") is True and int(outcome.get("telegram_edits") or 0) == 1)))
+        return {**outcome, "delivery_confirmed": confirmed,
+                "success": outcome.get("success") is True and confirmed}
     owners = [value.strip() for value in str(
         os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",")
         if value.strip()]

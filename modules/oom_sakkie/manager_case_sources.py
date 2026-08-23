@@ -13,7 +13,7 @@ from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 
 def collect_manager_candidates(*, now: datetime, collectors=None):
-    selected = collectors or (_rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime)
+    selected = collectors or (_rootline, _herdmaster, _auction, _sam, _beacon, _delivery_gaps, _runtime)
     selected = tuple(selected)
 
     def collect(collector):
@@ -45,10 +45,13 @@ def collect_manager_candidates(*, now: datetime, collectors=None):
 def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str,
                               collectors=None):
     """Refresh one case from only its canonical owning collector."""
-    prefix = str(dedupe_key or "").split(":", 1)[0].casefold()
+    dedupe_key = str(dedupe_key or "")
+    prefix = ("auction" if dedupe_key.startswith("herdmaster:riversdale-auction:")
+              else dedupe_key.split(":", 1)[0].casefold())
     configured = {
         "rootline": (_rootline, "ROOTLINE"),
         "herdmaster": (_herdmaster, "HERDMASTER"),
+        "auction": (_auction, "HERDMASTER"),
         "sam": (_sam, "SAM"), "beacon": (_beacon, "BEACON"),
         "delivery": (_delivery_gaps, None), "runtime": (_runtime, "RUNTIME"),
     }
@@ -62,7 +65,8 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
             return None
     collector = selected[0]
     if collectors is not None:
-        expected_name = "delivery_gaps" if prefix == "delivery" else prefix
+        expected_name = ("delivery_gaps" if prefix == "delivery" else
+                         "auction" if prefix == "auction" else prefix)
         collector = next((value for value in collectors
             if getattr(value, "__name__", "").strip("_").casefold() == expected_name), None)
         if collector is None:
@@ -71,6 +75,11 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
     return next((row for row in rows
                  if str(row.get("dedupe_key") or "") == str(dedupe_key)
                  and str(row.get("specialist") or "").upper() == claimed_specialist), None)
+
+
+def _auction(now):
+    from modules.oom_sakkie.riversdale_auction_manager import collect_auction_manager_case
+    return collect_auction_manager_case(now)
 
 
 def _rootline(now):
