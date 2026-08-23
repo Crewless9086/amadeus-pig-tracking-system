@@ -2590,3 +2590,49 @@ not completed. No mission was created or reprioritized, and no provider,
 database, farm, scheduler or hardware mutation was performed by this register
 update. The portfolio has exactly one current human blocker: Anton's single
 press on existing card `3925`.
+
+## 2026-08-23 - Daily/debrief retirement and owner-projection repair merged
+
+PR `#1204` passed final independent review at exact head
+`b230443120a6b5c874828ac4fc83153a16a162c8` with all four exact-head hosted
+gates passing, then merged as
+`4c0f4cbe71095a47689340864f42cb694bb68d25`. The bounded repair retires a
+canonical `Completed` sale whose payment is explicitly `Not_Applicable` while
+retaining ordinary unpaid follow-up; consumes an attributable prior manager
+answer across later daily identities using owner, chat, task and dedupe
+bindings without closing or mutating welfare; and replaces ROOTLINE backend
+tokens with concise English/Afrikaans lifecycle truth. A completion owner claim
+now requires exact-zone nested evidence with verified shutdown, a qualifying
+objective, authoritative `OFF` state and canonical provenance; malformed or
+spoofed completion remains neutral. Held remains neutral unless explicit
+evidence proves no watering need, and aware `+02:00` plus naive SAST next-check
+times retain their correct local time.
+
+Older PR `#1146`, `fix(oom-sakkie): require HERDMASTER question consumption`,
+was closed unmerged as superseded by this reviewed current-lineage repair. This
+retires duplicate source work; it does not retire the active daily-manager
+mission or change its priority.
+
+Review, CI, merge and retirement of a superseded PR are technical integration
+progress only. Exact deployment of merge revision `4c0f4cbe71095a47689340864f42cb694bb68d25`
+and a genuine later daily/debrief provider message with canonical readback are
+still pending. No Prince welfare closure, Tristan payment change, ROOTLINE
+physical completion or concise owner-visible outcome is claimed from the merge.
+Mission state is
+`MERGED / SUPERSEDED_PR_RETIRED / DEPLOYMENT_AND_GENUINE_DAILY_READBACK_PENDING`.
+**NO OWNER OUTCOME.**
+
+Current operational holds remain unchanged. HERDMASTER callback repair
+`ed2f98fc914b83158c5ec0d1a23c9b060ab23f18` is live, but the existing Pig 126
+claim remains active and unconfirmed. **ACTION REQUIRED NOW:** Anton must press
+`Bevestig` once on existing Telegram card `3925`. ROOTLINE B execution
+`ROOTLINE-EXECUTION-AEABE2390A51356550A6A5AE` remains active; it has no
+completion outcome until its own canonical terminal state and authoritative
+`OFF` readback succeed. OWNER ACTION: NONE for ROOTLINE and the daily/debrief
+deployment/readback continuation.
+
+Control Tower Check Receipt: PR `#1204` is recorded as merged but not deployed
+or operationally accepted; PR `#1146` is truthfully retired as superseded; the
+active Pig 126 claim and active B execution are preserved without false owner
+outcomes. Exactly one human action remains, and no provider, database, farm,
+scheduler or hardware mutation was performed by this register update.
