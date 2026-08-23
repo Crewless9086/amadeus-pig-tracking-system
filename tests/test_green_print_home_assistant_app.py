@@ -332,6 +332,10 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert recovery["if"]=="github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication"
     assert recovery["permissions"]=={"contents":"read","packages":"read","attestations":"read"}
     steps=recovery["steps"]; names=[step.get("name") for step in steps]
+    assert "Install exact native-bundle inspection dependency" in names
+    assert names.index("Install exact native-bundle inspection dependency") < names.index("Inspect existing signature and refuse foreign or ambiguous state")
+    assert "cryptography==45.0.7" in steps[names.index("Install exact native-bundle inspection dependency")]["run"]
+    assert "Install exact native-bundle inspection dependency" not in [step.get("name") for step in parsed["jobs"]["recover"]["steps"]]
     binding=steps[names.index("Bind partial recovery to exact source, index, manifest and main")]["run"]
     assert 'test "${PUBLISH_REQUESTED}" = "false"' in binding
     assert 'test "${VERIFY_ONLY_REQUESTED}" = "false"' in binding
@@ -386,7 +390,7 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     serialized=json.dumps(recovery)
     for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
         assert forbidden not in serialized
-    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","non_authoritative_incident_evidence"):
+    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
         assert exact in serialized
 
 def _native_bundle(run_uri):
