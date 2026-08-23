@@ -651,7 +651,7 @@ jobs:
           python scripts/green_print_attestation_inventory.py validate-verification-run recovered-sbom-attestation-verification.json "${GITHUB_REPOSITORY}" "${attestation_run_id}" 1
           python scripts/green_print_attestation_inventory.py fetch "${GITHUB_REPOSITORY}" "${EXPECTED_DIGEST}" > final-attestations.json
           python scripts/green_print_attestation_inventory.py canonical final-attestations.json > canonical-final-attestations.json
-          python scripts/green_print_attestation_inventory.py inspect canonical-final-attestations.json "${IMAGE}" "${EXPECTED_DIGEST}" final-green-print-0.3.6.spdx.json "${EXPECTED_SOURCE_COMMIT}" "${{ inputs.expected_manifest_digest }}" "${{ inputs.original_publication_run_id }}" > final-attestation-inventory.env
+          python scripts/green_print_attestation_inventory.py inspect canonical-final-attestations.json "${IMAGE}" "${EXPECTED_DIGEST}" green-print-0.3.6.spdx.json "${EXPECTED_SOURCE_COMMIT}" "${{ inputs.expected_manifest_digest }}" "${{ inputs.original_publication_run_id }}" > final-attestation-inventory.env
           source final-attestation-inventory.env
           test "${foreign_count}" = "0"
           test "${recovery_count}" = "1"
