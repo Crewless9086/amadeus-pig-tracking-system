@@ -40,18 +40,48 @@ def _decode_base64(value):
     return base64.b64decode(padded, altchars=b"-_", validate=True)
 
 
+def _decode_canonical_base64(value):
+    if not isinstance(value, str) or not value:
+        raise ValueError("native_signature_base64_malformed")
+    raw = base64.b64decode(value, validate=True)
+    if base64.b64encode(raw).decode("ascii") != value:
+        raise ValueError("native_signature_base64_noncanonical")
+    return raw
+
+
 def _certificate_and_native(bundle, image, digest):
     if "critical" in bundle:
+        if set(bundle) != {"critical", "optional", "signature", "cert",
+                           "bundle"}:
+            raise ValueError("native_simple_signing_shape_mismatch")
         critical = bundle["critical"]
         if not (critical.get("type") == SIMPLE_SIGNING and
+                set(critical) == {"type", "identity", "image"} and
                 critical.get("identity") == {"docker-reference": image} and
                 critical.get("image") == {"docker-manifest-digest": digest} and
-                isinstance(bundle.get("signature"), str) and
-                bundle["signature"] and isinstance(bundle.get("bundle"), dict)):
+                isinstance(bundle.get("optional"), dict)):
             raise ValueError("native_simple_signing_payload_mismatch")
+        _decode_canonical_base64(bundle["signature"])
+        transparency = bundle.get("bundle")
+        if not (isinstance(transparency, dict) and
+                set(transparency) == {"SignedEntryTimestamp", "Payload"} and
+                isinstance(transparency.get("Payload"), dict) and
+                set(transparency["Payload"]) == {
+                    "body", "integratedTime", "logIndex", "logID"} and
+                isinstance(transparency["Payload"]["integratedTime"], int) and
+                transparency["Payload"]["integratedTime"] > 0 and
+                isinstance(transparency["Payload"]["logIndex"], int) and
+                transparency["Payload"]["logIndex"] >= 0 and
+                isinstance(transparency["Payload"]["logID"], str) and
+                transparency["Payload"]["logID"]):
+            raise ValueError("native_transparency_bundle_malformed")
+        _decode_canonical_base64(transparency["SignedEntryTimestamp"])
+        _decode_canonical_base64(transparency["Payload"]["body"])
         certificate = x509.load_pem_x509_certificate(
             bundle["cert"].encode("ascii"))
         return certificate
+    if "dsseEnvelope" in bundle and "critical" in bundle:
+        raise ValueError("native_sigstore_bundle_ambiguous")
     if bundle.get("mediaType") != MEDIA_TYPE:
         raise ValueError("native_sigstore_bundle_media_type_mismatch")
     envelope = bundle["dsseEnvelope"]

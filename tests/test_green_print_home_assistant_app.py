@@ -426,7 +426,7 @@ def _sigstore_bundle(predicate_type,run_uri):
 
 def _native_bundle(run_uri):
     cert,raw=_certificate(run_uri)
-    bundle={"critical":{"type":B.SIMPLE_SIGNING,"identity":{"docker-reference":BUNDLE_IMAGE},"image":{"docker-manifest-digest":BUNDLE_DIGEST}},"optional":{"runInvocationURI":"https://attacker.invalid/untrusted"},"signature":"c3ludGhldGlj","cert":cert.public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.PEM).decode(),"bundle":{"Payload":{"logIndex":1}}}
+    bundle={"critical":{"type":B.SIMPLE_SIGNING,"identity":{"docker-reference":BUNDLE_IMAGE},"image":{"docker-manifest-digest":BUNDLE_DIGEST}},"optional":{"runInvocationURI":"https://attacker.invalid/untrusted"},"signature":"c3ludGhldGlj","cert":cert.public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.PEM).decode(),"bundle":{"SignedEntryTimestamp":"c3ludGhldGlj","Payload":{"body":"c3ludGhldGlj","integratedTime":1787472000,"logIndex":1,"logID":"synthetic-log-id"}}}
     return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
 
 def test_native_bundle_inventory_accepts_exact_two_certificate_fingerprints_and_run_uris():
@@ -458,6 +458,19 @@ def test_native_bundle_inventory_rejects_signed_image_digest_or_type_substitutio
     assert B.inspect([first[0],second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)==sorted(expected,key=lambda row:row["certificate_sha256"])
     for key,value in (("type","foreign"),("identity",{"docker-reference":"ghcr.io/foreign/image"}),("image",{"docker-manifest-digest":"sha256:"+"0"*64})):
         changed=json.loads(first[0]); changed["critical"][key]=value
+        with pytest.raises(ValueError): B.inspect([json.dumps(changed),second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
+
+def test_native_bundle_inventory_rejects_legacy_shape_signature_transparency_and_hybrid_ambiguity():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]; base=json.loads(first[0])
+    adversaries=[]
+    for key,value in (("signature","not-base64!"),("bundle",{}),("bundle",{"wrong":"shape"})):
+        changed={**base,key:value}; adversaries.append(changed)
+    extra={**base,"unexpected":True}; adversaries.append(extra)
+    hybrid={**base,"dsseEnvelope":{"payload":"c3ludGhldGlj"}}; adversaries.append(hybrid)
+    empty_transparency=json.loads(first[0]); empty_transparency["bundle"]["Payload"]["logID"]=""; adversaries.append(empty_transparency)
+    for changed in adversaries:
         with pytest.raises(ValueError): B.inspect([json.dumps(changed),second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
 
 def _recovery_predicate(index="sha256:"+"a"*64,manifest="sha256:"+"b"*64,source="c"*40,run_id="32622312938"):
