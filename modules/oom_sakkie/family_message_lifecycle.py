@@ -139,6 +139,15 @@ def _afrikaans_bound_facts(result: Mapping[str, Any]) -> str:
                 continue
             seen.add((key, str(value)))
             lines.append(f"<b>{label}:</b> {value}")
+        rows = source.get("rows") if isinstance(source.get("rows"), (list, tuple)) else ()
+        for row in rows[:5]:
+            if not isinstance(row, Mapping):
+                continue
+            values = [str(row.get(key) or "") for key in
+                ("pig_id", "animal_ref", "action", "boar_id", "boar_ref", "to_pen_id")]
+            values = [value for value in values if value]
+            if values:
+                lines.append("<b>Dierhandeling:</b> " + " — ".join(values))
     return "\n".join(lines[:8])
 
 

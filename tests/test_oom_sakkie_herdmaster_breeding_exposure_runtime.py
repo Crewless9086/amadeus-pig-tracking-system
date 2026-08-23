@@ -6,6 +6,7 @@ from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import (
     parse_grouped_exposure_reply,
 )
 from pathlib import Path
+from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
 
 
 def _parsed(rows):
@@ -61,6 +62,12 @@ def test_authenticated_group_creates_one_existing_rail_claim_and_no_write():
     assert captured["preview_payload"]["writes_performed"] is False
     assert result["writes_farm_data"] is False
     assert result["sends_telegram"] is False
+    af = localize_recipient_result({"output_language":"af"}, result, "HERDMASTER")
+    assert "BESKERMDE VOORSKOU" in af["answer"]
+    assert "SOW-1" in af["answer"] and "SOW-2" in af["answer"]
+    assert [item["text"] for item in af["reply_markup"]["inline_keyboard"][0]] == [
+        "Bevestig", "Maak reg", "Kanselleer"]
+    assert localize_recipient_result({"output_language":"en"}, result, "HERDMASTER") == result
 
 
 def test_partial_group_fails_before_claim_or_write():
