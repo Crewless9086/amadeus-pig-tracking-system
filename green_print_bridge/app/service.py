@@ -12,7 +12,7 @@ from urllib.parse import quote, unquote, urlparse
 
 PILOT_DOCUMENT="farm.weekly_weight_sheet.v1"; PILOT_GENERATOR="web.print_sheets.v1"
 CLAIM_PATH="/api/documents/print-jobs/claims"; COMMAND_PATH="/api/documents/print-jobs/commands/claim"
-CANONICAL_INTAKE_PATH=CLAIM_PATH; CA_CERTIFICATE_PATH="/homeassistant/private-ca.crt"
+CANONICAL_INTAKE_PATH=CLAIM_PATH; CA_CERTIFICATE_PATH="/run/cups/printer-ca.crt"
 PRIVATE_PINNED="private_pinned"; PUBLIC_PKI_EXACT_ORIGIN="public_pki_exact_origin"
 APPROVED_PUBLIC_CANONICAL_ORIGIN="https://amadeus-pig-tracking-system.onrender.com"
 FIXED_OPTIONS={"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}

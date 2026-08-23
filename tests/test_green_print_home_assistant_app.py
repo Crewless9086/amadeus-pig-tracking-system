@@ -14,6 +14,7 @@ ROOT=Path(__file__).parents[1]; APP=ROOT/"green_print_bridge"
 SPEC=importlib.util.spec_from_file_location("green_app",APP/"app"/"service.py"); S=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(S)
 sys.modules["service"]=S
 QUEUE_SPEC=importlib.util.spec_from_file_location("green_init_queue",APP/"app"/"init_queue.py"); Q=importlib.util.module_from_spec(QUEUE_SPEC); QUEUE_SPEC.loader.exec_module(Q)
+TRUST_SPEC=importlib.util.spec_from_file_location("green_bootstrap_printer_trust",APP/"app"/"bootstrap_printer_trust.py"); T=importlib.util.module_from_spec(TRUST_SPEC); TRUST_SPEC.loader.exec_module(T)
 INVENTORY_SPEC=importlib.util.spec_from_file_location("green_attestation_inventory",ROOT/"scripts"/"green_print_attestation_inventory.py"); I=importlib.util.module_from_spec(INVENTORY_SPEC); INVENTORY_SPEC.loader.exec_module(I)
 BUNDLE_SPEC=importlib.util.spec_from_file_location("green_bundle_inventory",ROOT/"scripts"/"green_print_sigstore_bundle_inventory.py"); B=importlib.util.module_from_spec(BUNDLE_SPEC); BUNDLE_SPEC.loader.exec_module(B)
 NOW=datetime(2026,8,21,8,tzinfo=timezone.utc); PDF=b"%PDF-1.4\nsynthetic\n%%EOF"
@@ -23,6 +24,39 @@ def config(tmp_path):
 def envelope(**changes):
     value={"job_id":"JOB-SYNTHETIC-1","farm_scope_id":"farm-amadeus","document_id":"WWS-SYNTHETIC","document_version":"WWS-SYNTHETIC.r1.abcdef123456","document_revision":1,"document_type":S.PILOT_DOCUMENT,"generator_id":S.PILOT_GENERATOR,"pdf_sha256":sha256(PDF).hexdigest(),"retrieval_url":"https://documents.invalid/api/documents/WWS-SYNTHETIC/versions/WWS-SYNTHETIC.r1.abcdef123456/pdf","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","authorization_receipt_id":"AUTH-SYNTHETIC-1","authorization_expires_at":(NOW+timedelta(hours=1)).isoformat(),"options":dict(S.FIXED_OPTIONS)}
     value.update(changes); return value
+
+class _FakeTls:
+    def __init__(self, certificate): self.certificate=certificate
+    def __enter__(self): return self
+    def __exit__(self,*_): return False
+    def getpeercert(self,binary_form=False): return self.certificate if binary_form else {}
+
+class _FakeContext:
+    def __init__(self, certificate): self.certificate=certificate; self.check_hostname=None; self.verify_mode=None
+    def wrap_socket(self,raw,server_hostname=None): return _FakeTls(self.certificate)
+
+class _FakeSocket:
+    def __enter__(self): return self
+    def __exit__(self,*_): return False
+
+def test_printer_trust_bootstrap_requires_exact_fingerprint_then_hostname_verifies(tmp_path,monkeypatch):
+    certificate=b"synthetic-printer-certificate"
+    options=tmp_path/"options.json"; output=tmp_path/"printer-ca.crt"
+    valid_options={"cups_queue_id":"weekly-a4","printer_transport_profile":"private_ipps","printer_uri":"ipps://AmadeusKantoor:631/ipp/print","printer_endpoint_ip":"10.23.0.9","printer_certificate_sha256":sha256(certificate).hexdigest()}
+    options.write_text(json.dumps(valid_options),encoding="utf-8")
+    monkeypatch.setattr(T.socket,"create_connection",lambda *_args,**_kwargs:_FakeSocket())
+    monkeypatch.setattr(T.ssl,"SSLContext",lambda *_args,**_kwargs:_FakeContext(certificate))
+    monkeypatch.setattr(T.ssl,"DER_cert_to_PEM_cert",lambda value:"CERT:"+value.hex()+"\n")
+    calls=[]; monkeypatch.setattr(T,"printer_tls_preflight",lambda *args:calls.append(args))
+    T.bootstrap(str(options),str(output))
+    assert output.read_text(encoding="ascii")=="CERT:"+certificate.hex()+"\n"
+    assert calls==[("amadeuskantoor","10.23.0.9",631,str(output))]
+    options.write_text(json.dumps({**valid_options,"printer_certificate_sha256":"0"*64}),encoding="utf-8")
+    with pytest.raises(T.ssl.SSLCertVerificationError): T.bootstrap(str(options),str(output))
+    attempted=[]; monkeypatch.setattr(T.socket,"create_connection",lambda *args,**kwargs:attempted.append((args,kwargs)))
+    options.write_text(json.dumps({**valid_options,"printer_endpoint_ip":"printer.invalid"}),encoding="utf-8")
+    with pytest.raises(ValueError): T.bootstrap(str(options),str(output))
+    assert attempted==[]
 
 def test_package_is_bounded_and_privilege_split():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); run=(APP/"rootfs/run.sh").read_text(encoding="utf-8")
@@ -38,7 +72,7 @@ def test_package_is_bounded_and_privilege_split():
     assert 'green_startup_failed stage=$1 reason=$2' in init
     assert "green_startup_failed stage=bootstrap_exec reason=$1" in run and "fail_bootstrap init_script_unreadable" in run and "fail_bootstrap init_script_failed" in run
     assert "green_startup_failed stage=s6_exec reason=run_script_unreadable" in docker
-    for stage in ("mount_validation","runtime_directory","options_population","cups_directories","ca_install","queue_initializer","queue_ownership","cups_start","cups_readiness","service_exec"):
+    for stage in ("mount_validation","bootstrap_interpreter","printer_trust","runtime_directory","options_population","cups_directories","ca_install","queue_initializer","queue_ownership","cups_start","cups_readiness","service_exec"):
         assert f"step {stage} " in init or f"fail_startup {stage} " in init
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
@@ -58,11 +92,12 @@ def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
     assert "printer_tls_preflight(uri.hostname,str(pin)" in queue and 'uri.scheme=="ipps"' in queue
     assert "install_binding(Path(hosts_path),uri.hostname,pin)" in queue
     assert queue.index("printer_tls_preflight(uri.hostname,str(pin)") < queue.index("install_binding(Path(hosts_path),uri.hostname,pin)")
-    assert "/homeassistant/private-ca.crt /etc/cups/ssl/site.crt" in init
-    assert cfg["map"]==[{"type":"addon_config","read_only":True},{"type":"homeassistant_config","read_only":True}]
+    assert "/run/cups/printer-ca.crt /etc/cups/ssl/site.crt" in init
+    assert cfg["map"]==[]
     apparmor=(APP/"apparmor.txt").read_text(encoding="utf-8")
-    assert "/homeassistant/private-ca.crt r," in apparmor
-    assert "/homeassistant/**" not in apparmor and "/homeassistant/ r" not in apparmor and "/config/private-ca.crt" not in apparmor
+    assert "/config" not in apparmor and "/homeassistant" not in apparmor
+    assert cfg["schema"]["printer_certificate_sha256"]=="str"
+    assert "/opt/green/bootstrap_printer_trust.py /data/options.json /run/cups/printer-ca.crt" in init
     assert "mkdir -p" in docker and "/etc/cups/ssl" in docker and "install -d -o root -g root -m 0755 /etc/cups/ssl" not in init
     for required in ("AllowAnyRoot No","AllowExpiredCerts No","Encryption IfRequested","TrustOnFirstUse No","ValidateCerts Yes"):
         assert required in policy
@@ -78,12 +113,11 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
     expected=(
         ("mount_validation","data_mount_invalid"),("mount_validation","options_missing_or_empty"),
-        ("mount_validation","options_unreadable"),("mount_validation","ca_missing_or_empty"),
-        ("mount_validation","ca_unreadable"),
+        ("mount_validation","options_unreadable"),("printer_trust","printer_identity_or_connection_failed"),
         ("runtime_directory","data_runtime_prepare_failed"),("runtime_directory","spool_prepare_failed"),
         ("options_population","runtime_options_install_failed"),("cups_directories","cups_runtime_prepare_failed"),
-        ("cups_directories","cups_spool_prepare_failed"),("ca_install","ca_install_failed"),
-        ("queue_initializer","initializer_interpreter_missing"),("queue_initializer","queue_initializer_failed"),
+        ("cups_directories","cups_spool_prepare_failed"),("bootstrap_interpreter","interpreter_missing"),
+        ("ca_install","ca_install_failed"),("queue_initializer","queue_initializer_failed"),
         ("queue_ownership","queue_owner_failed"),
         ("queue_ownership","queue_mode_failed"),("cups_start","cups_process_start_failed"),
         ("cups_readiness","cups_stopped_during_startup"),("cups_readiness","cups_or_queue_not_ready"),
@@ -101,12 +135,10 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     for case in ("missing_options","empty_options","readonly_data","ownership_conflict","missing_cert","empty_cert","invalid_options","broken_interpreter","init_exec","run_exec","cups_start","service_exec"):
         assert f'negative_case("{case}"' in probe
     assert "if markers != [expected]" in probe
-    for forbidden in ("synthetic-startup-probe-token",'options.get("printer_uri")',"BEGIN CERTIFICATE","/data/options.json","/homeassistant/private-ca.crt"):
+    for forbidden in ("synthetic-startup-probe-token",'options.get("printer_uri")',"BEGIN CERTIFICATE","/data/options.json","/run/cups/printer-ca.crt"):
         assert forbidden in probe
-    assert 'any(addon_config_dir.iterdir())' in probe
-    assert "test ! -e /config/private-ca.crt && test -s /homeassistant/private-ca.crt" in probe
-    assert 'AppArmor exposed non-certificate Home Assistant configuration' in probe
-    assert 'name="/homeassistant/secrets.yaml"' in probe
+    assert 'name="/etc/green/unrelated-secret"' in probe
+    assert "/homeassistant" not in probe
     assert "fail_initializer()" in init
     assert "2>/run/cups/queue-initializer-error" in init
     assert "identity_or_connection_failed" in init
@@ -166,7 +198,7 @@ def test_queue_startup_needs_no_ambient_printer_dns_and_verifies_fixed_binding(t
         return [(None,None,None,None,("10.23.0.9",0))]
     monkeypatch.setattr(Q.socket,"getaddrinfo",resolve)
     Q.main(str(options),str(queue),str(hosts))
-    assert calls==[("amadeuskantoor","10.23.0.9",8631,"/homeassistant/private-ca.crt","127.0.0.1 localhost\n")]
+    assert calls==[("amadeuskantoor","10.23.0.9",8631,"/run/cups/printer-ca.crt","127.0.0.1 localhost\n")]
     assert hosts.read_text(encoding="ascii").count("10.23.0.9 amadeuskantoor")==1
     assert "DeviceURI ipps://AmadeusKantoor:8631/ipp/print" in queue.read_text(encoding="utf-8")
 
@@ -211,7 +243,7 @@ def test_queue_wrong_literal_pin_fails_without_tls_or_queue(tmp_path,monkeypatch
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.6"
+    assert cfg["version"]=="0.3.7"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -235,7 +267,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.6-verified-release-packet" in workflow
+    assert "green-print-0.3.7-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
@@ -261,7 +293,7 @@ def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.6"
+    assert parsed["env"]["VERSION"]=="0.3.7"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -723,7 +755,7 @@ def test_apparmor_denies_admin_and_broad_writes():
 
 def test_apparmor_covers_inherited_s6_entrypoint_without_broad_shell_exec():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
-    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py rix,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec ix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,","/var/cache/cups/ rwk,","/usr/share/cups/ r,","/etc/cups/ rw,","/etc/cups/ppd/ rw,","/etc/cups/ssl/ rw,","/etc/cups/cupsd.conf rw,","/etc/cups/cups-files.conf rw,","deny /etc/printcap rwklx,","deny /etc/cups/ssl/*.key rwklx,"):
+    for required in ("capability fowner,","capability fsetid,","/ r,","/init rix,","/command/** ix,","/package/admin/execline*/** rix,","/package/admin/s6*/** rix,","/package/prog/skalibs*/** rix,","/etc/fix-attrs.d/ r,","/etc/services.d/ r,","/run/ rw,","/run/s6/ rwk,","/run/s6/** rwkix,","/run/service/ rwk,","/run/service/** rwkix,","/run/s6-rc* rwkl,","/run/s6-rc*/** rwkix,","/run/s6-linux-init-container-results/** rwkix,","/run/uncaught-logs/** rwkix,","/healthcheck.py rix,","/opt/green/ r,","/usr/bin/python3.12 ix,","/sbin/su-exec rix,","/data/ rwk,","/run/cups/ rwk,","/tmp/green-spool/ rwk,","/var/spool/cups/ rwk,","/var/log/cups/ rwk,","/var/cache/cups/ rwk,","/usr/share/cups/ r,","/etc/cups/ rw,","/etc/cups/ppd/ rw,","/etc/cups/ssl/ rw,","/etc/cups/cupsd.conf rw,","/etc/cups/cups-files.conf rw,","deny /etc/printcap rwklx,","deny /etc/cups/ssl/*.key rwklx,"):
         assert required in policy
     assert "/usr/bin/su-exec" not in policy
     assert "/bin/** ix" not in policy and "/usr/bin/** ix" not in policy

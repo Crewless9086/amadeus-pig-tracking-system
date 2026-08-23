@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import suppress
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -79,7 +80,7 @@ def main() -> int:
     parser.add_argument(
         "--work-root",
         type=Path,
-        default=Path(".codex-runtime/missions/GREEN-0.3.6"),
+        default=Path(".codex-runtime/missions/GREEN-0.3.7"),
     )
     args = parser.parse_args()
     suffix = uuid.uuid4().hex[:10]
@@ -93,14 +94,12 @@ def main() -> int:
     ) as raw:
         root = Path(raw)
         addon_config_dir = root / "addon-config"
-        ha_config_dir = root / "homeassistant-config"
         data_dir = root / "data"
         addon_config_dir.mkdir()
-        ha_config_dir.mkdir()
         data_dir.mkdir()
-        cert = ha_config_dir / "private-ca.crt"
-        forbidden_ha_file = ha_config_dir / "secrets.yaml"
-        forbidden_ha_file.write_text("must-not-be-readable\n", encoding="ascii")
+        cert = addon_config_dir / "private-ca.crt"
+        unrelated_file = addon_config_dir / "unrelated-secret"
+        unrelated_file.write_text("must-not-be-readable\n", encoding="ascii")
         key = root / "private-ca.key"
         run(
             "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
@@ -134,8 +133,9 @@ def main() -> int:
         ).stdout.strip()
         canonical = tls_server(cert, key)
         printer = tls_server(cert, key)
+        wrong_root_printer = tls_server(wrong_root_cert, wrong_root_key)
         wrong_san_printer = tls_server(wrong_san_cert, wrong_san_key)
-        servers.extend((canonical, printer, wrong_san_printer))
+        servers.extend((canonical, printer, wrong_root_printer, wrong_san_printer))
         options = {
             "canonical_transport_profile": "private_pinned",
             "canonical_api_origin": f"https://canonical.test:{canonical.server_port}",
@@ -149,6 +149,9 @@ def main() -> int:
             "printer_transport_profile": "private_ipps",
             "printer_uri": f"ipps://AmadeusKantoor:{printer.server_port}/ipp/print",
             "printer_endpoint_ip": gateway,
+            "printer_certificate_sha256": hashlib.sha256(
+                ssl.PEM_cert_to_DER_cert(cert.read_text(encoding="ascii"))
+            ).hexdigest(),
             "poll_seconds": 5,
         }
         options_path = data_dir / "options.json"
@@ -166,42 +169,45 @@ def main() -> int:
         # Reproduce the Supervisor boundary: Supervisor populates root-owned
         # options on a writable /data mount. Never pre-own the mount or its
         # contents for the image's runtime user.
-        run("sudo", "chown", "root:root", str(data_dir), str(options_path), str(addon_config_dir), str(ha_config_dir), str(cert), str(forbidden_ha_file))
-        run("sudo", "chmod", "0755", str(data_dir), str(addon_config_dir), str(ha_config_dir))
+        run("sudo", "chown", "root:root", str(data_dir), str(options_path), str(addon_config_dir), str(cert), str(unrelated_file))
+        run("sudo", "chmod", "0755", str(data_dir), str(addon_config_dir))
         run("sudo", "chmod", "0600", str(options_path))
         run("sudo", "chmod", "0644", str(cert))
 
         try:
             run("sudo", "apparmor_parser", "-r", str(args.profile.resolve()))
 
-            if any(addon_config_dir.iterdir()):
-                raise RuntimeError("Supervisor-shaped addon_config must remain empty")
             scope_denial_baseline = len(apparmor_denials())
-            denied_ha_read = run(
+            denied_unrelated_read = run(
                 "docker", "run", "--rm", "--platform", "linux/arm64",
                 "--security-opt", "apparmor=amadeus-green-print-bridge",
                 "--entrypoint", "/bin/busybox",
-                "--mount", f"type=bind,src={addon_config_dir},dst=/config,readonly",
-                "--mount", f"type=bind,src={ha_config_dir},dst=/homeassistant,readonly",
-                args.image, "cat", "/homeassistant/secrets.yaml", check=False,
+                "--mount", f"type=bind,src={addon_config_dir},dst=/etc/green,readonly",
+                args.image, "cat", "/etc/green/unrelated-secret", check=False,
             )
-            if denied_ha_read.returncode == 0 or "must-not-be-readable" in (denied_ha_read.stdout + denied_ha_read.stderr):
-                raise RuntimeError("AppArmor exposed non-certificate Home Assistant configuration")
+            if denied_unrelated_read.returncode == 0 or "must-not-be-readable" in (denied_unrelated_read.stdout + denied_unrelated_read.stderr):
+                raise RuntimeError("AppArmor exposed unrelated Green trust material")
             scope_denials = apparmor_denials()[scope_denial_baseline:]
-            if not any('name="/homeassistant/secrets.yaml"' in line for line in scope_denials):
-                raise RuntimeError("AppArmor did not prove denial of non-certificate Home Assistant configuration")
+            if not any('name="/etc/green/unrelated-secret"' in line for line in scope_denials):
+                raise RuntimeError("AppArmor did not prove exact-file trust scope")
 
             def negative_case(name: str, expected: str, *, options_mode: str = "valid", cert_mode: str = "valid", printer_port: int | None = None, data_readonly: bool = False, shadow: tuple[str, str] | None = None) -> None:
-                case_root=root/f"negative-{name}"; case_addon_config=case_root/"addon-config"; case_ha_config=case_root/"homeassistant-config"; case_data=case_root/"data"
-                case_addon_config.mkdir(parents=True); case_ha_config.mkdir(); case_data.mkdir()
+                case_root=root/f"negative-{name}"; case_addon_config=case_root/"addon-config"; case_data=case_root/"data"
+                case_addon_config.mkdir(parents=True); case_data.mkdir()
                 if options_mode != "missing":
                     case_options={**options,"printer_uri":f"ipps://AmadeusKantoor:{printer_port or printer.server_port}/ipp/print"}
-                    material=json.dumps(case_options) if options_mode == "valid" else ("" if options_mode == "empty" else "{}")
+                    if cert_mode == "missing": case_options.pop("printer_certificate_sha256", None)
+                    if cert_mode == "empty": case_options["printer_certificate_sha256"] = ""
+                    if cert_mode == "wrong_san":
+                        case_options["printer_certificate_sha256"] = hashlib.sha256(
+                            ssl.PEM_cert_to_DER_cert(wrong_san_cert.read_text(encoding="ascii"))
+                        ).hexdigest()
+                    material=json.dumps(case_options) if options_mode == "valid" else ("" if options_mode == "empty" else json.dumps({**case_options,"printer_transport_profile":"invalid"}))
                     (case_data/"options.json").write_text(material,encoding="utf-8")
                 if cert_mode != "missing":
                     cert_source={"valid":cert,"wrong_root":wrong_root_cert,
                         "wrong_san":wrong_san_cert}.get(cert_mode)
-                    (case_ha_config/"private-ca.crt").write_bytes(
+                    (case_addon_config/"private-ca.crt").write_bytes(
                         cert_source.read_bytes() if cert_source else b"")
                 if name == "ownership_conflict": (case_data/"green-runtime").write_text("not-a-directory",encoding="ascii")
                 source=None
@@ -223,11 +229,11 @@ def main() -> int:
                         source.write_text("#!/bin/sh\nexit 1\n",encoding="ascii"); source.chmod(0o755)
                     else:
                         source.write_text("this is not valid shell syntax (\n",encoding="ascii"); source.chmod(0o644)
-                run("sudo","chown","-R","root:root",str(case_root)); run("sudo","chmod","0755",str(case_root),str(case_addon_config),str(case_ha_config),str(case_data))
+                run("sudo","chown","-R","root:root",str(case_root)); run("sudo","chmod","0755",str(case_root),str(case_addon_config),str(case_data))
                 if (case_data/"options.json").exists(): run("sudo","chmod","0600",str(case_data/"options.json"))
-                if (case_ha_config/"private-ca.crt").exists(): run("sudo","chmod","0644",str(case_ha_config/"private-ca.crt"))
+                if (case_addon_config/"private-ca.crt").exists(): run("sudo","chmod","0644",str(case_addon_config/"private-ca.crt"))
                 case_container=f"{container}-{name}"
-                command=["docker","run","-d","--name",case_container,"--platform","linux/arm64","--network",network,"--add-host",f"canonical.test:{gateway}","--security-opt","apparmor=amadeus-green-print-bridge","--mount",f"type=bind,src={case_addon_config},dst=/config,readonly","--mount",f"type=bind,src={case_ha_config},dst=/homeassistant,readonly","--mount",f"type=bind,src={case_data},dst=/data" + (",readonly" if data_readonly else "")]
+                command=["docker","run","-d","--name",case_container,"--platform","linux/arm64","--network",network,"--add-host",f"canonical.test:{gateway}","--security-opt","apparmor=amadeus-green-print-bridge","--mount",f"type=bind,src={case_addon_config},dst=/etc/green,readonly","--mount",f"type=bind,src={case_data},dst=/data" + (",readonly" if data_readonly else "")]
                 if shadow:
                     command.extend(["--mount",f"type=bind,src={source},dst={shadow[1]},readonly"])
                 seen_before=list(EmptyCanonicalHandler.seen)
@@ -242,7 +248,7 @@ def main() -> int:
                     logs=run("docker","logs",case_container,check=False); combined=logs.stdout+logs.stderr
                     markers=[line for line in combined.splitlines() if "green_startup_failed" in line]
                     if markers != [expected]: raise RuntimeError(f"negative diagnostic mismatch {name}: {markers}")
-                    forbidden=("synthetic-startup-probe-token",options.get("printer_uri"),"BEGIN CERTIFICATE","/data/options.json","/homeassistant/private-ca.crt")
+                    forbidden=("synthetic-startup-probe-token",options.get("printer_uri"),"BEGIN CERTIFICATE","/data/options.json","/run/cups/printer-ca.crt")
                     if any(value and value in combined for value in forbidden): raise RuntimeError(f"negative diagnostic leaked bounded material: {name}")
                     if "untrusted-arbitrary-output" in combined:
                         raise RuntimeError(f"negative diagnostic leaked untrusted child output: {name}")
@@ -259,16 +265,16 @@ def main() -> int:
             negative_case("empty_options","green_startup_failed stage=mount_validation reason=options_missing_or_empty",options_mode="empty")
             negative_case("readonly_data","green_startup_failed stage=runtime_directory reason=data_runtime_prepare_failed",data_readonly=True)
             negative_case("ownership_conflict","green_startup_failed stage=runtime_directory reason=data_runtime_prepare_failed")
-            negative_case("missing_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="missing")
-            negative_case("empty_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="empty")
-            negative_case("invalid_options","green_startup_failed stage=configuration reason=queue_invalid",options_mode="invalid")
-            negative_case("wrong_root","green_startup_failed stage=printer_tls reason=identity_or_connection_failed",cert_mode="wrong_root")
-            negative_case("wrong_san","green_startup_failed stage=printer_tls reason=identity_or_connection_failed",cert_mode="wrong_san",printer_port=wrong_san_printer.server_port)
+            negative_case("missing_cert","green_startup_failed stage=printer_trust reason=printer_identity_or_connection_failed",cert_mode="missing")
+            negative_case("empty_cert","green_startup_failed stage=printer_trust reason=printer_identity_or_connection_failed",cert_mode="empty")
+            negative_case("invalid_options","green_startup_failed stage=printer_trust reason=printer_identity_or_connection_failed",options_mode="invalid")
+            negative_case("wrong_root","green_startup_failed stage=printer_trust reason=printer_identity_or_connection_failed",cert_mode="wrong_root",printer_port=wrong_root_printer.server_port)
+            negative_case("wrong_san","green_startup_failed stage=printer_trust reason=printer_identity_or_connection_failed",cert_mode="wrong_san",printer_port=wrong_san_printer.server_port)
             negative_case("silent_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-silent-python","/opt/green/init_queue.py"))
             negative_case("unrecognized_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-unrecognized-python","/opt/green/init_queue.py"))
             negative_case("multiline_unterminated_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-multiline-unterminated-python","/opt/green/init_queue.py"))
             negative_case("multiline_terminated_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-multiline-terminated-python","/opt/green/init_queue.py"))
-            negative_case("broken_interpreter","green_startup_failed stage=queue_initializer reason=initializer_interpreter_missing",shadow=("python-empty","/usr/bin/python3.12"))
+            negative_case("broken_interpreter","green_startup_failed stage=bootstrap_interpreter reason=interpreter_missing",shadow=("python-empty","/usr/bin/python3.12"))
             negative_case("init_exec","green_startup_failed stage=bootstrap_exec reason=init_script_failed",shadow=("init-shell","/init-green.sh"))
             negative_case("run_exec","green_startup_failed stage=s6_exec reason=run_script_failed",shadow=("run-shell","/run.sh"))
             negative_case("cups_start","green_startup_failed stage=cups_readiness reason=cups_stopped_during_startup",shadow=("cups-fail","/usr/sbin/cupsd"))
@@ -282,18 +288,10 @@ def main() -> int:
                 "--platform", "linux/arm64", "--network", network,
                 "--add-host", f"canonical.test:{gateway}",
                 "--security-opt", "apparmor=amadeus-green-print-bridge",
-                "--mount", f"type=bind,src={addon_config_dir},dst=/config,readonly",
-                "--mount", f"type=bind,src={ha_config_dir},dst=/homeassistant,readonly",
+                "--mount", f"type=bind,src={addon_config_dir},dst=/etc/green,readonly",
                 "--mount", f"type=bind,src={data_dir},dst=/data",
                 args.image,
             )
-            mount_contract = run(
-                "docker", "exec", container, "/bin/sh", "-c",
-                "test ! -e /config/private-ca.crt && test -s /homeassistant/private-ca.crt",
-                check=False,
-            )
-            if mount_contract.returncode != 0:
-                raise RuntimeError("Supervisor add-on/Home Assistant config mount separation failed\n" + failure_diagnostics(container))
             deadline = time.monotonic() + 45
             health: dict[str, object] | None = None
             while time.monotonic() < deadline:
@@ -311,6 +309,13 @@ def main() -> int:
                 time.sleep(1)
             if not health or health.get("business_state") != "event_waiting":
                 raise RuntimeError("event_waiting health not reached\n" + failure_diagnostics(container))
+            trust_readback = run(
+                "docker", "exec", container, "/usr/bin/python3", "-c",
+                "import hashlib,ssl;print(hashlib.sha256(ssl.PEM_cert_to_DER_cert(open('/run/cups/printer-ca.crt',encoding='ascii').read())).hexdigest())",
+                check=False,
+            )
+            if trust_readback.returncode != 0 or trust_readback.stdout.strip() != options["printer_certificate_sha256"]:
+                raise RuntimeError("Ephemeral printer trust readback mismatch\n" + failure_diagnostics(container))
             if health.get("terminal_participated") is not False or health.get("authority_mode") != "fixed_weekly_sheet_only":
                 raise RuntimeError(f"unexpected health contract: {health}")
             data_contract = run(

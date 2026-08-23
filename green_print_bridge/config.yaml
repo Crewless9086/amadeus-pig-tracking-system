@@ -1,5 +1,5 @@
 name: Amadeus Green Print Bridge
-version: "0.3.6"
+version: "0.3.7"
 slug: amadeus_green_print_bridge
 description: Fail-closed outbound weekly weighing-sheet adapter with private IPPS
 url: https://github.com/Crewless9086/amadeus-pig-tracking-system
@@ -27,6 +27,7 @@ options:
   printer_uri: null
   printer_transport_profile: private_ipps
   printer_endpoint_ip: null
+  printer_certificate_sha256: null
   poll_seconds: 30
 schema:
   canonical_transport_profile: list(private_pinned|public_pki_exact_origin)
@@ -41,12 +42,9 @@ schema:
   printer_uri: str
   printer_transport_profile: list(private_ipps)
   printer_endpoint_ip: str
+  printer_certificate_sha256: str
   poll_seconds: int(5,3600)
-map:
-  - type: addon_config
-    read_only: true
-  - type: homeassistant_config
-    read_only: true
+map: []
 apparmor: true
 host_network: false
 privileged: []

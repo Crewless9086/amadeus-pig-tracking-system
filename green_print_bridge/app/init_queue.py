@@ -45,7 +45,7 @@ def main(options_path,queue_path,hosts_path="/etc/hosts"):
     endpoint_valid=(options.get("printer_transport_profile")=="private_ipps" and uri.scheme=="ipps" and pin.is_private and not uri.username and not uri.password and not uri.query and not uri.fragment)
     if literal and literal!=pin: endpoint_valid=False
     if not endpoint_valid: fail("configuration","private_ipps_endpoint_invalid")
-    try: printer_tls_preflight(uri.hostname,str(pin),uri.port or 631,"/homeassistant/private-ca.crt")
+    try: printer_tls_preflight(uri.hostname,str(pin),uri.port or 631,"/run/cups/printer-ca.crt")
     except Exception: fail("printer_tls","identity_or_connection_failed")
     if not literal: install_binding(Path(hosts_path),uri.hostname,pin)
     try: Path(queue_path).write_text(f"""<Printer {queue}>

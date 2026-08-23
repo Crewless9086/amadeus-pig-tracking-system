@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.7
+
+- Replace ambiguous Home Assistant certificate mounts with a fail-closed SHA-256 printer-certificate pin. Green retrieves the certificate only from the configured private endpoint, requires the configured fingerprint, then performs normal hostname/TLS verification with those exact bytes.
+
 ## 0.3.6
 
 - Read the verified private CA from Home Assistant's distinct read-only `homeassistant_config` mount at `/homeassistant/private-ca.crt` while leaving the add-on private config and Supervisor options contract unchanged.
