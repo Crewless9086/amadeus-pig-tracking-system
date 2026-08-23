@@ -3,6 +3,7 @@ from unittest import mock
 
 from modules.telemetry.rootline_execution_runtime import (
     _bc_authority_policy_proven, _current, _persist_stale_parent_resolutions,
+    _planning_observation,
     run_protected_rootline_segment, run_rootline_execution_cycle,
 )
 from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
@@ -132,6 +133,28 @@ def test_scheduler_owner_binding_persists_hold_observation_without_notification_
     assert value["status"]=="observed_weather_not_fresh_and_dry"
     assert len(observations)==1 and next(iter(observations.values()))["delivery_state"]=="observation_only"
     assert notices==[] and transport.calls==[]
+
+
+def test_run_projection_never_inherits_opaque_global_parent_deferment():
+    initial={"plan":plan(),"evidence":evidence(),"operating_date":"2026-08-08",
+        "artifact":{"eligible":False,"status":"durable_parent_job_deferred",
+            "zone_eligibility_reasons":{
+                "B12345":"parent_operating_date_mismatch",
+                "C12345":"zone_decision_not_run_now"}}}
+    observation=_planning_observation(initial,"42","42","2026-08-08T18:15:00+00:00")
+    zones={row["zone_id"]:row for row in observation["zones"]}
+    assert zones["B12345"]["decision"]=="Run"
+    assert zones["B12345"]["eligibility_blocker"]=="parent_operating_date_mismatch"
+    assert zones["C12345"]["eligibility_blocker"]=="zone_decision_not_run_now"
+
+
+def test_run_projection_without_exact_defer_predicate_fails_closed():
+    initial={"plan":plan(),"evidence":evidence(),"operating_date":"2026-08-08",
+        "artifact":{"eligible":False,"status":"durable_parent_job_deferred"}}
+    observation=_planning_observation(initial,"42","42","")
+    b=next(row for row in observation["zones"] if row["zone_id"]=="B12345")
+    assert b["decision"]=="Run"
+    assert b["eligibility_blocker"]=="run_projection_eligibility_invariant_failed"
 
 
 def test_rain_hold_creates_no_artifact_command_or_notification():

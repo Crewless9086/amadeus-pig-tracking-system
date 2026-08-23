@@ -209,6 +209,24 @@ def test_prior_date_parent_is_deferred_and_never_regains_command_authority():
     assert result["status"]=="durable_parent_job_deferred"
     assert result["eligible"] is False and result["hardware_control"] is False
     assert result["job_resolution"]["operating_date"]=="2026-08-07"
+    assert result["zone_eligibility_reasons"]=={
+        "B12345":"parent_operating_date_mismatch"}
+
+
+def test_deferred_parent_reports_exact_bounded_segment_predicate_failure():
+    plan,evidence,controller=inputs()
+    task=plan["candidate_tasks"][0]
+    task["planned_duration_minutes"]=120
+    task["incomplete_parent_job"]={"job":{"job_id":"JOB-1","job_sha256":"a"*64,
+        "zone_id":"B12345","operating_date":"2026-08-08","expected_segment_count":2},
+        "projection":{"current_segment":2,"cumulative_verified_runtime_seconds":3599},
+        "remaining_seconds":3599}
+    result=build_execution_eligibility(plan=plan,evidence=evidence,
+        controller=controller,now=NOW)
+    assert result["status"]=="durable_parent_job_deferred"
+    assert result["zone_eligibility_reasons"]["B12345"]==(
+        "planned_duration_not_bounded_segment")
+    assert result["command_authority"] is False and result["hardware_control"] is False
 
 
 def test_contained_parent_defense_in_depth_rejects_run_now_task():
