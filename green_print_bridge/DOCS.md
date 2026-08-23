@@ -40,15 +40,29 @@ It must never be installed, attested further, overwritten, deleted, or reused.
 
 If a unique-version publication creates its index but stops before signing or
 attestation, do not rebuild, retag, delete or push the package again. The
-partial-publication recovery lane requires the reviewed source commit, index
+historical partial-publication recovery lane required the reviewed source commit, index
 digest and sole arm64 manifest digest; rereads the stable tag and OCI labels
 with bounded registry-consistency retries; refuses foreign, duplicate or
 malformed signatures and attestations; and may complete only missing signature,
 SBOM and explicitly post-build recovery evidence for that exact existing
-artifact. It never claims that the recovery workflow built the image; the
+artifact. The evidence now exists, so the retained 0.3.6 lane is verification
+and packet emission only: it has read-only package/attestation permissions,
+requires the exact existing signature and attestation pair, and contains no
+signing or attestation action. It never claims that the recovery workflow built the image; the
 predicate binds the original failed publication run and identifies only the
 later evidence-completion effects. Recovery is a
 separately protected dispatch and never grants installation or print authority.
+
+Run `32627304614` exposed a registry-consistency TOCTOU defect: the triangulated
+signature-reference presence probe missed the existing v3 signature, so the
+legacy effect step appended a second native signature before the registry read
+path converged. Both attributable signatures are retained as incident evidence;
+neither is deleted or replaced. The verification-only lane now requires both
+exact signature sources/runs, one recovery and one SPDX attestation, verifies
+the signature manifest is byte-identical before and after, and records the
+authority deviation in its receipt. A stale or missed registry probe cannot
+cause another effect because no evidence-write permission or effect command
+exists in the lane.
 If an evidence-completion run creates the signature and both attestations but
 fails before its packet, continuation must preserve those objects. The OCI
 labels, SBOM subject and recovery predicate continue to bind the original image
