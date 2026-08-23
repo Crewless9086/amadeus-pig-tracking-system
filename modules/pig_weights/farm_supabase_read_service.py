@@ -1275,7 +1275,9 @@ def _get_allocation_input_rows_queries(connect_factory, today=None):
         select litter.litter_id, litter.sow_pig_id, litter.boar_pig_id,
                litter.sow_tag_number, litter.boar_tag_number, litter.farrowing_date,
                litter.wean_date, litter.born_alive, litter.weaned_count,
-               litter.litter_status, litter.first_treatment_skipped_at,
+               litter.litter_status,
+               to_jsonb(litter)->>'first_treatment_skipped_at'
+                   as first_treatment_skipped_at,
                count(distinct case when pig.on_farm is true
                    and lower(coalesce(pig.status, '')) = 'active'
                    and medical.treatment_date >= litter.farrowing_date and (
@@ -1293,7 +1295,8 @@ def _get_allocation_input_rows_queries(connect_factory, today=None):
         group by litter.litter_id, litter.sow_pig_id, litter.boar_pig_id,
                  litter.sow_tag_number, litter.boar_tag_number, litter.farrowing_date,
                  litter.wean_date, litter.born_alive, litter.weaned_count,
-                 litter.litter_status, litter.first_treatment_skipped_at
+                 litter.litter_status,
+                 to_jsonb(litter)->>'first_treatment_skipped_at'
         order by litter_id
         """,
         connect_factory=connect_factory,

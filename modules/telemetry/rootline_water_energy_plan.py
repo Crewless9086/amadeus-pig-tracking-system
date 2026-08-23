@@ -389,7 +389,12 @@ def read_current_water_energy_evidence(
         "tanks": lambda: _read_latest_tank_observation(database_url),
         "owner_zone_need": lambda: _read_latest_owner_zone_need(database_url, now),
     }
-    loaded = run_bounded_read_group(readers,max_workers=3,deadline_seconds=20)
+    # The advisor is itself a bounded aggregate of canonical reads and can
+    # legitimately consume most of its 18-second inner deadline. Give that
+    # reader a worker immediately and keep the outer bound above the nested
+    # contract so normal queueing jitter cannot turn a safe read into a false
+    # database outage.
+    loaded = run_bounded_read_group(readers,max_workers=4,deadline_seconds=25)
     power_packet, _ = loaded["power"]
     weather_packet, _ = loaded["weather"]
     forecast_packet, _ = loaded["forecast"]
