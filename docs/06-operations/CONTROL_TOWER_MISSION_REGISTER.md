@@ -2690,3 +2690,29 @@ or operationally accepted; zero Pig 146 effects and the existing Pig 126/B
 states are retained. No mission was created or reprioritized, and no provider,
 database, farm, scheduler or hardware mutation was performed by this register
 update.
+
+## 2026-08-23 23:13 SAST - Combined HERDMASTER and daily/debrief release live
+
+Render deployment `dep-da5m4dmq1p3s73bcja20` became live at 23:13:24 SAST
+with declared exact revision `c824ae30c3285b7f696633bbf0128a6dd0bcfda9`.
+`/health/revision` now confirms exact loaded revision
+`c824ae30c3285b7f696633bbf0128a6dd0bcfda9` with `identity_complete=true`.
+This deployed lineage includes the reviewed PR `#1203` callback-authority
+repair, PR `#1204` daily/debrief retirement and concise owner-projection repair,
+and PR `#1205` date/animal-identity separation repair. Deployment and loaded
+source identity are therefore proven exact.
+
+The live deployment state is technical release progress only. It is not proof
+that Anton's protected Pig 126 callback succeeds, that a fresh Pig 146/date
+message resolves correctly, or that a later daily/debrief message retires the
+Prince and Tristan defects and renders concise truthful ROOTLINE state. Each
+requires its own genuine post-deployment provider journey and canonical
+readback. Pig 126 and Pig 146 remain unchanged, and no new owner outcome is
+claimed. Mission state is
+`EXACT_REVISION_LIVE / GENUINE_PROVIDER_ACCEPTANCE_PENDING`.
+
+The existing protected claim remains the only current human blocker.
+**ACTION REQUIRED NOW:** Anton must press `Bevestig` once on existing Telegram
+card `3925`. He must not resend the Pig 126 report or create a replacement
+claim. ROOTLINE B's active execution remains independently pending its own
+terminal canonical completion and authoritative `OFF` proof.
