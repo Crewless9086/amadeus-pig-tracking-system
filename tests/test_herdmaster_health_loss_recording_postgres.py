@@ -1,7 +1,9 @@
 """Production-shaped disposable PostgreSQL proof for mortality coordination."""
+import hashlib
+import json
 import os
-import uuid
 import unittest
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
@@ -33,6 +35,27 @@ class HealthLossRecordingPostgresTests(unittest.TestCase):
                 values(%s,%s,'customer_sale',%s,'{}')""",
                 ("OUTLET-" + self.suffix, self.pig_id, "SOURCE-" + self.suffix))
             self._open_case(db, occurred="2026-08-23 07:00+00")
+            self.manager_health_case = self._manager_case(
+                db, "health", self.pig_id, "Open health check for this pig")
+            self.manager_distinct_cases = [self._manager_case(
+                db, kind, self.pig_id, f"Open {kind} work for this pig")
+                for kind in ("mortality", "disposal", "biosecurity")]
+            self.unrelated_manager_case = self._manager_case(
+                db, "unrelated-health", "PIG-UNRELATED-" + self.suffix,
+                "Open health check for another pig")
+
+    def _manager_case(self, db, kind, pig_id, summary):
+        case_id = "OOM-HL-" + kind.upper() + "-" + self.suffix
+        evidence_refs = [f"pig:{pig_id}", f"source:{kind}:{self.suffix}"]
+        digest = hashlib.sha256(json.dumps(evidence_refs).encode()).hexdigest()
+        db.execute("""insert into app_private.oom_manager_cases(
+            case_id,dedupe_key,specialist,urgency,status,evidence_digest,evidence_refs,
+            unknowns,summary,next_action,next_reassessment_at,generation)
+            values(%s,%s,'HERDMASTER','urgent','open',%s,%s::jsonb,'[]'::jsonb,
+                   %s,'check animal',now(),1)""",
+            (case_id, "health-loss:" + kind + ":" + self.suffix,
+             digest, json.dumps(evidence_refs), summary))
+        return case_id
 
     def _open_case(self, db, *, occurred):
         db.execute("""insert into public.pig_welfare_cases(
@@ -84,6 +107,7 @@ class HealthLossRecordingPostgresTests(unittest.TestCase):
         self.assertEqual((status, result["status"]), (201, "mortality_lifecycle_recorded"), result)
         self.assertEqual(result["welfare_case_id"], self.case_id)
         self.assertTrue(result["canonical_readback"]["excluded_from_active_pen_and_availability_projections"])
+        self.assertEqual(result["canonical_readback"]["preserved_distinct_work"], 3)
         with psycopg.connect(DATABASE_URL) as db:
             rows = db.execute("""select sequence_no,event_type,case_state,closure_kind
                 from public.pig_welfare_case_events where welfare_case_id=%s
@@ -93,6 +117,18 @@ class HealthLossRecordingPostgresTests(unittest.TestCase):
                                         (self.pig_id,)).fetchone()[0], 1)
             self.assertEqual(db.execute("select count(*) from public.pig_active_outlets where pig_id=%s and active",
                                         (self.pig_id,)).fetchone()[0], 0)
+            statuses = dict(db.execute("""select case_id,status
+                from app_private.oom_manager_cases where case_id=any(%s)""",
+                ([self.manager_health_case, *self.manager_distinct_cases,
+                  self.unrelated_manager_case],)).fetchall())
+            self.assertEqual(statuses[self.manager_health_case], "completed")
+            self.assertTrue(all(statuses[case_id] == "open"
+                                for case_id in self.manager_distinct_cases))
+            self.assertEqual(statuses[self.unrelated_manager_case], "open")
+            self.assertEqual(db.execute("""select count(*)
+                from app_private.oom_manager_case_events
+                where case_id=%s and event_type='completed'""",
+                (self.manager_health_case,)).fetchone()[0], 1)
 
     def test_concurrent_same_operation_is_idempotent(self):
         packet = self._packet()

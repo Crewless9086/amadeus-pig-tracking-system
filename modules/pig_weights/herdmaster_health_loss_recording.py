@@ -311,7 +311,7 @@ def _coordinate_mortality_welfare(cursor, *, lifecycle, pig_id, event_id,
           and lower(summary) not like '%%biosecurity%%'
         returning case_id,generation""",
         (["open","delegated","waiting_reassessment","exception"],
-         json.dumps([{"pig_id": pig_id}], sort_keys=True)))
+         json.dumps(["pig:" + pig_id])))
     reconciled = list(cursor.fetchall())
     for manager_case_id, generation in reconciled:
         material = {"case_id": str(manager_case_id), "generation": int(generation),
@@ -359,7 +359,7 @@ def _readback_mortality_welfare(cursor, *, pig_id, event_id, welfare_case_id):
           and (lower(summary) like '%%mortality%%' or lower(summary) like '%%disposal%%'
                or lower(summary) like '%%biosecurity%%')""",
         (["open","delegated","waiting_reassessment","exception"],
-         json.dumps([{"pig_id": pig_id}], sort_keys=True)))
+         json.dumps(["pig:" + pig_id])))
     distinct = cursor.fetchone()
     verified = bool(row and str(row[0]).casefold()=="dead" and row[1] is False
                     and str(row[2]).casefold()=="died" and str(row[3])==event_id
