@@ -2475,3 +2475,64 @@ The portfolio's sole human blocker remains unchanged. **ACTION REQUIRED NOW:**
 Anton must send `Vark 126 is dood, ons het hom verwyder en begrawe.` once as a
 new Telegram message to Oom Sakkie. ROOTLINE continues its safe investigation
 and unattended observation independently of that action.
+
+## 2026-08-23 - HERDMASTER genuine Anton callback acceptance failure
+
+This append-only entry supersedes the preceding HERDMASTER owner-action state
+without creating or reprioritizing a mission. Anton sent provider message
+`3924`; the deployed Afrikaans journey correctly resolved Pig 126 and created
+active mortality claim mission `OOM-HERDMASTER-24573EBB0512A640F782944F`,
+operation `HERD-HEALTH-LOSS-9F45FDA8FE1522C3E7BF6F47FF30A1CE`, and preview
+card `3925`. The preview preserved death, removal and burial facts. Anton then
+pressed `Bevestig` once. Render chronology at `20:27:24.570911Z` proves the
+direct-webhook callback returned HTTP `403`: the protected callback-prefix
+branch still required `FamilyRole.OWNER` and rejected the authenticated
+`FARM_MANAGER` actor despite the deployed Anton specialist-parity policy.
+
+This is a genuine post-deployment operational acceptance **FAILURE**, not an
+owner outcome and not missing owner effort. The protected claim remains active
+with no accepted confirmation. Canonical readback keeps Pig 126
+`PIG-2026-3EE5` `Active`, `on_farm=true`, in `PEN-012`, with null exit facts,
+zero mortality lifecycle rows and zero attributable welfare closure effects.
+No completion was delivered and no terminal replay or proxy confirmation was
+performed. The same-lineage callback-authority repair is active. Anton must
+not press the existing card again until that repair is deployed and Control
+Tower resumes genuine acceptance. Mission state is
+`DEPLOYED / CALLBACK_403_ACCEPTANCE_FAILED / CLAIM_ACTIVE / ZERO_FARM_EFFECTS / REPAIR_ACTIVE`.
+**NO OWNER OUTCOME. OWNER ACTION: NONE.**
+
+The later provider message `3926`, `Vark nr 146 dood op 23 Aug 2026`, remains a
+separate `identity_required` intake that incorrectly offered date-derived Pig
+23 alongside Pig 146. It is logged as a new finding in the existing
+health/loss identity lineage without reprioritization; it does not invalidate
+or replace the protected Pig 126 claim.
+
+## 2026-08-23 - ROOTLINE terminal-containment repair merged; acceptance pending
+
+PR `#1202` passed independent exact-head review at
+`c5b4f3b940a217b3f6c544b485763d61fc881633` against exact base
+`bebd07fb3532dbbab915c0ffcbcd6964a6790cb7`. Focused review recorded 25 tests
+passing and four proportionately skipped, with all four hosted gates passing.
+The repair releases a durable zone containment only from a strictly later,
+same-execution, same-zone `record_completed` or `record_claim_recovery` event
+whose shutdown is explicitly verified, authoritative and `OFF`; mismatched,
+ambiguous, unverified, earlier or `ON` evidence remains contained. It adds no
+hardware or operating authority. The PR merged as
+`b13b91ae9338047fea338868f7b5b787becfcab8`.
+
+Merge and tests are technical progress only. Exact deployed revision and the
+next unattended scheduler acceptance remain pending, and B has no execution,
+irrigation, shutdown or owner outcome from this merge. The deployed runtime
+must independently encounter the later exact terminal evidence, retire only
+the attributable stale containment, and then prove any B lifecycle through
+canonical/provider/physical readback. No manual containment release, scheduler
+dispatch or hardware action is authorized. Mission state is
+`MERGED / DEPLOYMENT_PENDING / UNATTENDED_ACCEPTANCE_PENDING / ZERO_B_OUTCOME`.
+**NO B OWNER OUTCOME. OWNER ACTION: NONE.**
+
+Control Tower Check Receipt: the genuine Anton action and 403 response replace
+the stale human-blocker wording with a technical repair blocker; the active
+claim and zero farm effects are retained. ROOTLINE review and merge are
+recorded without promotion to an owner outcome. No mission was created or
+reprioritized, and no provider, database, farm, scheduler or hardware mutation
+was performed by this register update.
