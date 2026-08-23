@@ -563,7 +563,7 @@ jobs:
           [{"certificate_sha256":"17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","runInvocationURI":"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1"},{"certificate_sha256":"d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","runInvocationURI":"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1"}]
           JSON
           cosign download signature "${digest_ref}" > native-signature-bundles.jsonl
-          python scripts/green_print_sigstore_bundle_inventory.py native-signature-bundles.jsonl expected-native-signatures.json > native-signature-inventory.json
+          python scripts/green_print_sigstore_bundle_inventory.py native-signature-bundles.jsonl expected-native-signatures.json "${IMAGE}" "${EXPECTED_DIGEST}" > native-signature-inventory.json
           cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${EXISTING_RECOVERY_SOURCE_COMMIT}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-original-verification.json
           test -n "${EXISTING_RECOVERY_SOURCE_COMMIT}"
           python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-original-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
@@ -659,7 +659,7 @@ jobs:
           cmp -s canonical-existing-attestations.json canonical-final-attestations.json
           test "$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" | awk '$1 == "Digest:" {print $2; exit}')" = "${EXPECTED_DIGEST}"
           cosign download signature "${digest_ref}" > final-native-signature-bundles.jsonl
-          python scripts/green_print_sigstore_bundle_inventory.py final-native-signature-bundles.jsonl expected-native-signatures.json > final-native-signature-inventory.json
+          python scripts/green_print_sigstore_bundle_inventory.py final-native-signature-bundles.jsonl expected-native-signatures.json "${IMAGE}" "${EXPECTED_DIGEST}" > final-native-signature-inventory.json
           cmp -s native-signature-inventory.json final-native-signature-inventory.json
           echo "native_signature_inventory_post_sha256=$(sha256sum final-native-signature-inventory.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "attestation_inventory_post_sha256=$(sha256sum canonical-final-attestations.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
