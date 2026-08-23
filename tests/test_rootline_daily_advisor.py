@@ -188,6 +188,15 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         self.assertEqual(register["zones"]["C12345"]["crop_use"], "vegetables")
         self.assertFalse(register["zones"]["B12345"]["pump_required"])
         self.assertFalse(register["approved_policy"]["simultaneous_zones"])
+        self.assertFalse(register["approved_policy"]["daylight_only"])
+        self.assertEqual(
+            register["zones"]["B12345"]["physical_mapping_status"],
+            "supervised_commissioned",
+        )
+        self.assertEqual(
+            result["physical_identity_evidence"]["B12345"]["commissioning_id"],
+            "ROOTLINE-COMMISSION-D248A120ECE1961DB81B6C2E",
+        )
         self.assertEqual(register["approved_policy"]["seasonal_boundaries"], "Unknown")
         self.assertEqual(register["approved_policy"]["owner_hold_expiry"], "none_explicit_release_required")
         self.assertEqual(
@@ -286,15 +295,9 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         )
         self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
 
-    def test_daylight_window_is_start_inclusive_and_end_exclusive_in_sast(self):
+    def test_fixed_daylight_window_does_not_override_adaptive_timing(self):
         sast = timezone(timedelta(hours=2))
-        cases = (
-            ("07:59:59", "Hold", "outside"),
-            ("08:00:00", "Needs Data", "inside"),
-            ("16:59:59", "Needs Data", "inside"),
-            ("17:00:00", "Hold", "outside"),
-        )
-        for clock, expected, phrase in cases:
+        for clock in ("07:59:59", "08:00:00", "16:59:59", "17:00:00", "22:00:00"):
             with self.subTest(clock=clock):
                 local_time = datetime.fromisoformat(
                     f"2026-07-28T{clock}+02:00"
@@ -306,9 +309,11 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
                     now=local_time,
                 )
                 for zone in result["zones"]:
-                    self.assertEqual(zone["recommendation"], expected)
-                    self.assertEqual(zone["eligibility_today"], expected)
-                    self.assertIn(phrase, " ".join(zone["reasoning"]).lower())
+                    self.assertEqual(zone["recommendation"], "Needs Data")
+                    self.assertEqual(zone["eligibility_today"], "Needs Data")
+                    self.assertIn(
+                        "adaptively", " ".join(zone["reasoning"]).lower()
+                    )
                     self.assertIsNone(zone["proposed_runtime_minutes"])
                     self.assertEqual(
                         zone["proposed_runtime_status"], "Unavailable"
