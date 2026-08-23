@@ -354,12 +354,18 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                        "reply_transport": "family_message_lifecycle"})
         return intake, intake_status if delivery.get("success") else 202
 
-    owner_task, owner_task_status = handle_owner_task_input(
-        payload,
-        environ=source,
-        telegram_sender=lambda chat_id, text, purpose: _send_owner_task_telegram(
-            chat_id, text, source),
-    )
+    # The owner-task lifecycle accepts arbitrary specialist identities and is
+    # therefore not an Oom Sakkie farm-specialist capability surface. Keep it
+    # structurally owner-only so FARM_MANAGER can never dispatch CORE, CHARLIE
+    # or development tasks through an allow-list identity check.
+    owner_task, owner_task_status = ({"handled": False}, 200)
+    if family_principal.role is FamilyRole.OWNER:
+        owner_task, owner_task_status = handle_owner_task_input(
+            payload,
+            environ=source,
+            telegram_sender=lambda chat_id, text, purpose: _send_owner_task_telegram(
+                chat_id, text, source),
+        )
     if owner_task.get("handled"):
         owner_task.update({
             "mode": "authenticated_gateway_owner_task",

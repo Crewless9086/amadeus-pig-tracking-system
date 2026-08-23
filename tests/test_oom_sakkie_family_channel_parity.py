@@ -1,5 +1,6 @@
 import json
 from unittest.mock import patch
+import pytest
 
 from modules.oom_sakkie.telegram_direct import handle_telegram_direct_webhook
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
@@ -109,10 +110,11 @@ def test_gateway_routes_manager_afrikaans_mortality_through_shared_operational_l
 @patch("modules.oom_sakkie.telegram_gateway.handle_family_runtime_message")
 @patch("modules.oom_sakkie.telegram_gateway.herdmaster_family_observation")
 @patch("modules.oom_sakkie.telegram_gateway.handle_message")
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
 @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
 @patch("modules.oom_sakkie.telegram_gateway.handle_authenticated_health_loss_message")
 def test_manager_can_never_fall_back_to_legacy_observation_only_mortality_branch(
-        health, deliver, generic_core_or_charlie, legacy_observation, family_runtime):
+        health, deliver, owner_task, generic_core_or_charlie, legacy_observation, family_runtime):
     health.return_value = ({"handled": False, "status": "health_loss_intake_not_applicable"}, 200)
     deliver.return_value = {"success": True, "telegram_sends": 1, "telegram_edits": 0}
     def invoke_selected_adapter(parsed, principal, *, observation_adapter, **_kwargs):
@@ -132,6 +134,30 @@ def test_manager_can_never_fall_back_to_legacy_observation_only_mortality_branch
     assert "Charl se afsonderlike bevestiging" not in result["answer"]
     legacy_observation.assert_not_called()
     generic_core_or_charlie.assert_not_called()
+    owner_task.assert_not_called()
+
+
+@pytest.mark.parametrize("request_text", [
+    "CORE, verander die produksiekode en ontplooi dit nou.",
+    "CHARLIE, begin 'n ontwikkelingstaak en stuur dit aan die agent.",
+])
+@patch("modules.oom_sakkie.telegram_gateway.handle_family_runtime_message")
+@patch("modules.oom_sakkie.telegram_gateway.handle_message")
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+def test_manager_core_and_charlie_requests_have_zero_dispatch_or_owner_task_effects(
+        deliver, owner_task, generic, family_runtime, request_text):
+    family_runtime.return_value = ({"success": False,
+        "status": "family_private_capability_denied", "answer": "",
+        "writes_farm_data": False, "hardware_commands": 0}, 403)
+    result, status = handle_telegram_gateway_message(payload(request_text),
+        headers={"Authorization": "Bearer " + TOKEN}, environ=env())
+    assert status == 403
+    assert result["writes"] is False and result["hardware_commands"] == 0
+    assert result["sends_telegram"] is False
+    owner_task.assert_not_called()
+    generic.assert_not_called()
+    deliver.assert_not_called()
 
 
 def test_family_principals_cannot_enter_sam_owner_callbacks_or_owner_media():
