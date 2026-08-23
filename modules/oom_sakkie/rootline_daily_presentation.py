@@ -125,13 +125,6 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
             "aanbeveling" if af else "recommendation")
         prefix = "" if already_recommendation else ("Aanbeveling: " if af else "Recommendation: ")
         lines.append(f"• <b>{label}:</b> {prefix}{decision}{suffix}")
-        lifecycle_state = str(lifecycle.get("state") or "Held")
-        lifecycle_reason = str(lifecycle.get("reason") or "Unknown")
-        lifecycle_next = str(lifecycle.get("next_action") or
-            "ROOTLINE must reassess on the next governed trigger.")
-        lines.append(f"  {'Lewensiklus' if af else 'Lifecycle'}: {html.escape(lifecycle_state)} · "
-                     f"{'Rede' if af else 'Reason'}: {html.escape(lifecycle_reason)} · "
-                     f"ROOTLINE: {html.escape(lifecycle_next)}")
         reason = str(row.get("reason") or "").strip()
         if reason and reason not in reasons:
             reasons.append(reason)
@@ -174,6 +167,12 @@ def _decision(value: Any, af: bool) -> str:
 
 def _short_reason(value: str, af: bool) -> str:
     text = " ".join(str(value or "").split())
+    if text.casefold() in {
+            "now_after_fresh_execution_revalidation",
+            "zone_decision_not_run_now",
+            "durable_zone_containment"}:
+        return ("Vars kanonieke bewyse bepaal die huidige besluit." if af else
+                "Fresh canonical evidence determines the current decision.")
     if not text:
         return "Vars kanonieke bewyse bepaal die huidige besluit." if af else "Fresh canonical evidence determines the current decision."
     sentence = text.split(". ", 1)[0].rstrip(".") + "."
@@ -197,7 +196,8 @@ def _human_window(value):
 def _human_reassessment(value, now_hint=None):
     text = " ".join(str(value or "").split())
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(SAST)
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = parsed.replace(tzinfo=SAST) if parsed.tzinfo is None else parsed.astimezone(SAST)
         return f"around {parsed:%H:%M}"
     except (TypeError, ValueError):
         pass
@@ -205,7 +205,7 @@ def _human_reassessment(value, now_hint=None):
     match = re.search(r"\bat\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})", text)
     if match:
         try:
-            parsed = datetime.fromisoformat(match.group(1)).astimezone(SAST)
+            parsed = datetime.fromisoformat(match.group(1)).replace(tzinfo=SAST)
             return f"around {parsed:%H:%M}"
         except ValueError:
             pass

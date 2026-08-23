@@ -473,8 +473,6 @@ def _load_questions(owner, chat):
                           and answered.review_json->'manager_question_reply'->>'chat_id'=%s
                            and answered.review_json->'manager_question_reply'->>'task_id'=
                                daily.review_json->'daily_farm_manager'->'question_binding'->>'task_id'
-                           and answered.review_json->'manager_question_reply'->>'daily_identity'=
-                               daily.review_json->'daily_farm_manager'->>'daily_identity'
                            and answered.review_json->'manager_question_reply'->>'dedupe_key'=
                                daily.review_json->'daily_farm_manager'->'question_binding'->>'dedupe_key')
                     order by created_at desc, review_event_id desc limit 8) q

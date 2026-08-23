@@ -65,8 +65,7 @@ def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     text = compose_daily_rootline_plan(result())
     assert "<b>B Camp:</b> Recommendation: Hold" in text
     assert "<b>C Camp:</b> Recommendation: Hold" in text
-    assert "Lifecycle: Held" in text
-    assert "Reason: Observed rain supports Hold." in text
+    assert "Lifecycle:" not in text and "ROOTLINE must claim" not in text
     assert "Started: no" not in text and "Completed: no" not in text
     assert "Observed rain supports Hold" in text
     assert "SOC" not in text and "solar" not in text.casefold() and "grid" not in text.casefold()
@@ -95,7 +94,7 @@ def test_completed_canonical_lifecycle_never_maps_to_hold():
     }
     text = compose_daily_rootline_plan(value)
     assert "<b>B Camp:</b> Recommendation: Completed" in text
-    assert "Lifecycle: Completed" in text
+    assert "Lifecycle:" not in text
     assert "B Camp:</b> Recommendation: Hold" not in text
 
 
@@ -184,3 +183,31 @@ def test_started_completed_and_intervention_are_separate_visible_event_words():
         __import__("modules.oom_sakkie.telegram_gateway", fromlist=["handle_rootline_reassessment_trigger"]))
     assert "Started" in source and "Completed" in source and "Intervention" in source
     assert "automatic segment two" not in compose_daily_rootline_plan(result())
+
+
+def test_live_backend_tokens_are_not_exposed_and_hold_never_claims_eligibility():
+    value = result(b="Recommend", c="Hold", reason="now_after_fresh_execution_revalidation")
+    value["irrigation_lifecycle"] = {
+        "B12345": {"contract_version": "rootline_zone_lifecycle.v1", "zone_id": "B12345",
+                    "state": "Eligible", "reason": "now_after_fresh_execution_revalidation",
+                    "next_action_owner": "ROOTLINE",
+                    "next_action": "ROOTLINE must claim existing canonical execution exactly once"},
+        "C12345": {"contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",
+                    "state": "Eligible", "reason": "zone_decision_not_run_now",
+                    "next_action_owner": "ROOTLINE",
+                    "next_action": "ROOTLINE must claim existing canonical execution exactly once"},
+    }
+    text = compose_daily_rootline_plan(value)
+    assert "B Camp:</b> Recommendation - irrigate" in text
+    assert "C Camp:</b> Recommendation: Hold" in text
+    for internal in ("Lifecycle", "Eligible", "now_after", "zone_decision", "claim existing"):
+        assert internal not in text
+
+
+def test_next_check_aware_and_naive_sast_are_not_shifted_twice():
+    for timestamp in ("2026-08-23T22:45:15+02:00", "2026-08-23T22:45:15"):
+        value = result()
+        value["owner_brief"] = {"family_fact_needed": "", "reassess": timestamp}
+        text = compose_daily_rootline_plan(value)
+        assert "around 22:45" in text
+        assert "around 00:45" not in text

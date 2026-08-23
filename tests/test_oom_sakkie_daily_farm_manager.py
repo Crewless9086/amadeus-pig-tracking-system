@@ -91,6 +91,28 @@ def test_sale_watcher_surfaces_today_readiness_and_suppresses_closed_settled_sal
     assert task.authority is Authority.OWNER_DECISION
 
 
+@pytest.mark.parametrize("payment_status", ["Not_Applicable", "not applicable"])
+def test_completed_charity_sale_with_no_payment_required_is_retired(payment_status):
+    value = build_sale_watch_result([{
+        "sale_id": "SALE-CHARITY", "sale_date": "2026-08-10",
+        "sale_status": "Completed", "payment_status": payment_status,
+        "sale_stream": "Charity", "item_count": 1,
+        "external_reference": "CHARITY-ACK-1",
+    }], now=NOW)
+    assert value.work_items == ()
+
+
+def test_non_charity_unpaid_completed_sale_keeps_payment_control():
+    value = build_sale_watch_result([{
+        "sale_id": "SALE-NORMAL", "sale_date": "2026-08-10",
+        "sale_status": "Completed", "payment_status": "Unpaid",
+        "sale_stream": "Private sale", "item_count": 1,
+        "external_reference": "INV-2",
+    }], now=NOW)
+    assert len(value.work_items) == 1
+    assert "payment/settlement follow-up" in value.work_items[0].why
+
+
 def test_maximum_three_priorities_retains_watch_and_one_question():
     items=[item(f"I-{index}",f"Task {index}",WorkState.URGENT if index<2 else WorkState.PLANNED,
         100-index,"One grouped question?" if index==0 else "") for index in range(7)]
