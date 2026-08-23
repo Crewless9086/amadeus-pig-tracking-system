@@ -196,6 +196,7 @@ def _identity_matches(text, animals):
     tag_matches = set(re.findall(
         r"\b(?:tag|pig|vark)\b(?:\s+(?:nr|no|number))?\s*#?\s*([A-Za-z0-9-]+)\b",
         text, re.I))
+    marked_tokens = {value.casefold() for value in tag_matches}
     explicit_identity = bool(exact_ids or tag_matches)
     matches = []
     for animal in animals:
@@ -203,7 +204,8 @@ def _identity_matches(text, animals):
         tag = _clean(animal.get("tag_number"), 120)
         name = _clean(animal.get("name") or tag, 120)
         selected = pig_id in exact_ids
-        selected = selected or bool(tag and tag.casefold() in {x.casefold() for x in tag_matches})
+        selected = selected or bool(tag and tag.casefold() in marked_tokens)
+        selected = selected or bool(name and name.casefold() in marked_tokens)
         # Numeric tag/name values must be explicitly marked as animal
         # identities. Otherwise date days, months, years, counts and weights
         # can silently become pig candidates. Named animals remain available

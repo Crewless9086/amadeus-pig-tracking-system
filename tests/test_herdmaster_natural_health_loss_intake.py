@@ -257,6 +257,31 @@ def test_two_explicit_pig_markers_preserve_real_multi_animal_ambiguity():
     assert result["identity"]["candidate_pig_ids"] == ["PIG-2026-0023","PIG-2026-0146"]
 
 
+@pytest.mark.parametrize("text", ["Pig Maya died on 23 August 2026",
+                                   "Vark Maya is dood op 23 Augustus 2026"])
+def test_marked_nonnumeric_name_resolves_exact_canonical_name_not_only_tag(text):
+    maya=animal("PIG-2026-MAYA","Maya","999")
+    day=animal("PIG-2026-0023","23","23")
+    result=evaluate_health_loss_intake({**report(text),
+        "provider_timestamp":"2026-08-23T20:30:00+02:00"},
+        {**evidence(maya,day),"as_of_timestamp":"2026-08-23T20:31:00+02:00"})
+    assert result["identity"]["resolved"] is True
+    assert result["identity"]["pig_id"] == "PIG-2026-MAYA"
+    assert result["preview"]["event_date"] == "2026-08-23"
+
+
+def test_marked_duplicate_name_remains_ambiguous_and_bare_numeric_noise_matches_none():
+    first=animal("PIG-2026-MAYA1","Maya","998")
+    second=animal("PIG-2026-MAYA2","Maya","999")
+    ambiguous=evaluate_health_loss_intake(report("Vark Maya is dood"),evidence(first,second))
+    assert ambiguous["status"] == "identity_required"
+    assert ambiguous["identity"]["candidate_pig_ids"] == ["PIG-2026-MAYA1","PIG-2026-MAYA2"]
+    noisy=evaluate_health_loss_intake(report("Dead on day 23, weight 146 kg, 2 animals"),evidence(
+        animal("PIG-2026-0023","23","23"),animal("PIG-2026-0146","146","146")))
+    assert noisy["status"] == "identity_required"
+    assert noisy["identity"]["candidate_pig_ids"] == []
+
+
 def test_ambiguous_name_asks_one_precise_identity_question_and_no_effects():
     result = evaluate_health_loss_intake(
         report("Maya looks sick."),
