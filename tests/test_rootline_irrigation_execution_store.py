@@ -10,6 +10,7 @@ import pytest
 from modules.telemetry.rootline_irrigation_execution_store import (
     _claim_single_auxiliary, _claim_irrigation_output, _daily_dispatch_blocker,
     _event_id, _stored_event_body, _terminal_closes_active,
+    _verified_terminal_containment_resolution,
     _is_active_candidate, _verified_borehole_completion,
     _claim_borehole_material_load, RootlineExecutionStoreUnavailable,
     rootline_irrigation_execution_store,
@@ -34,6 +35,50 @@ def test_unverified_irrigation_containment_remains_recoverable_active_truth():
         "shutdown_verified":True},auxiliary=True) is True
     assert _terminal_closes_active({
         "action":"record_auxiliary_control_pulse_stopped"},auxiliary=True) is True
+
+
+def test_exact_verified_terminal_off_resolves_same_execution_containment_only():
+    containment={"action":"contain_zone","execution_id":"EXEC-B","zone_id":"B12345",
+        "shutdown_verified":False}
+    completed={"action":"record_completed","execution_id":"EXEC-B","zone_id":"B12345",
+        "shutdown_verified":True,"shutdown_evidence":{"authoritative":True,"state":"OFF"}}
+    assert _verified_terminal_containment_resolution(containment,completed) is True
+    assert _verified_terminal_containment_resolution(containment,
+        {**completed,"action":"record_claim_recovery"}) is True
+    for changed in ({"execution_id":"OTHER"},{"zone_id":"C12345"},
+                    {"shutdown_verified":False},
+                    {"shutdown_evidence":{"authoritative":False,"state":"OFF"}},
+                    {"shutdown_evidence":{"authoritative":True,"state":"ON"}},
+                    {"action":"record_ambiguous_shutdown"}):
+        assert _verified_terminal_containment_resolution(
+            containment,{**completed,**changed}) is False
+
+
+def test_zone_containment_loader_uses_later_exact_terminal_readback(monkeypatch):
+    contained_at=datetime(2026,8,16,1,1,tzinfo=timezone.utc)
+    containment={"action":"contain_zone","execution_id":"EXEC-B","zone_id":"B12345",
+        "shutdown_verified":False}
+    completed={"action":"record_completed","execution_id":"EXEC-B","zone_id":"B12345",
+        "shutdown_verified":True,"shutdown_evidence":{"authoritative":True,"state":"OFF"}}
+    class Cursor:
+        def __init__(self): self.calls=[]; self.index=0
+        def __enter__(self): return self
+        def __exit__(self,*_args): return False
+        def execute(self,query,params): self.calls.append((query,params)); return self
+        def fetchone(self): return (contained_at,containment)
+        def fetchall(self): return [(completed,)]
+    cursor=Cursor()
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self,*_args): return False
+        def cursor(self): return cursor
+    monkeypatch.setattr(
+        "modules.oom_sakkie.bounded_postgres_read.connect_bounded_rootline_postgres",
+        lambda **_kwargs:Connection())
+    result=rootline_irrigation_execution_store("load_zone_containment","B12345")
+    assert result=={"contained":False,"resolution_evidence":completed}
+    assert cursor.calls[1][1]==("rootline_irrigation_execution","EXEC-B",contained_at)
+    assert "created_at>%s" in cursor.calls[1][0]
 
 
 def _borehole_completion(execution_id="BOREHOLE-1"):
