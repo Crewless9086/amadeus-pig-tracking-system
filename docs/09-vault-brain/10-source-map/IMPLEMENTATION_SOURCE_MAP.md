@@ -330,7 +330,12 @@
   welfare closure and obsolete living-check reconciliation inside the existing
   transaction in `herdmaster_health_loss_recording.py`; completion is governed
   by canonical readback and distinct mortality/disposal/biosecurity work is
-  preserved.
+  preserved. `tests/test_herdmaster_health_loss_recording_postgres.py` exercises
+  the production-shaped welfare schema, positive serialized event sequences,
+  existing episode-bound case closure, concurrent replay, atomic rollback and
+  direct canonical pen-occupancy/active-outlet readback. The Oom Sakkie audit
+  workflow applies the required pig-exit and welfare lifecycle migrations
+  before running that disposable-PostgreSQL gate.
 - Dispatch truth reducer:
   `modules/oom_sakkie/specialist_dispatch_ack.py`.
 - Existing durable evidence rail:

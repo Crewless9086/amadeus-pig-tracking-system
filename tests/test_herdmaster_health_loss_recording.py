@@ -97,6 +97,8 @@ class MortalityCursor:
         if compact.startswith("select pg_advisory_xact_lock"): self.one=(1,)
         elif "from public.pig_lifecycle_events where idempotency_key" in compact:
             event=self.state.get("event"); self.one=(event["id"],event["pig_id"],event["payload"]) if event else None
+        elif "from public.pig_welfare_case_current current" in compact and "closure_kind='death'" in compact:
+            case=self.state.get("welfare_case"); self.one=(case["id"],) if case and case["state"]=="closed" else None
         elif "select status,on_farm,notes from public.pigs" in compact:
             pig=self.state["pig"]; self.one=(pig["status"],pig["on_farm"],pig["notes"])
         elif compact.startswith("update public.pigs"):
@@ -105,9 +107,11 @@ class MortalityCursor:
                 pig.update(status="Dead",on_farm=False,notes=params[1]);self.rowcount=1
         elif compact.startswith("insert into public.pig_lifecycle_events"):
             self.state["event"]={"id":params[0],"pig_id":params[1],"payload":__import__("json").loads(params[6])}
-        elif "from public.pig_welfare_case_current current" in compact and "for update" in compact:
+        elif compact.startswith("update public.pig_active_outlets"):
+            self.state["active_outlets"]=0
+        elif "from public.pig_welfare_cases c join lateral" in compact:
             case=self.state.get("welfare_case")
-            self.one=(case["id"],case["urgency"]) if case and case["state"]!="closed" else None
+            self.one=(case["id"],case["urgency"],case.get("sequence_no",1)) if case and case["state"]!="closed" else None
         elif "from public.pig_welfare_cases" in compact and "for update" in compact:
             case=self.state.get("welfare_case"); self.one=(case["id"],) if case else None
         elif compact.startswith("insert into public.pig_welfare_cases"):
@@ -115,6 +119,7 @@ class MortalityCursor:
         elif compact.startswith("insert into public.pig_welfare_case_events"):
             case=self.state["welfare_case"]
             case["state"]="closed" if "'closed','closed'" in compact else "open"
+            case["sequence_no"]=(params[2] if "'closed','closed'" in compact else 1)
             if case["state"]=="closed": case["closure_kind"]="death"
         elif compact.startswith("insert into public.pig_welfare_case_fact_links"):
             self.state["welfare_case"]["linked_event_id"]=params[3]
@@ -129,6 +134,10 @@ class MortalityCursor:
                       case["state"],case["closure_kind"],
                       case.get("linked_event_id")==self.state["event"]["id"]
                       and self.state.get("readback_valid", True))
+        elif compact.startswith("select count(*) from public.pig_current_state"):
+            self.one=(0,)
+        elif compact.startswith("select count(*) from public.pig_active_outlets"):
+            self.one=(self.state.get("active_outlets",0),)
         elif compact.startswith("select count(*) from app_private.oom_manager_cases"):
             self.one=(3,)
         else: raise AssertionError(compact)

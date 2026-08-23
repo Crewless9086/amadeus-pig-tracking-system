@@ -137,6 +137,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202605230001_create_irrigation_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606280001_create_bulk_weight_batch_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606290001_create_farm_canonical_tables.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606290002_add_pig_exit_fields.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606290003_add_litter_lifecycle_fields.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060001_create_oom_sakkie_traces.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql
@@ -197,6 +198,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608150007_allow_beacon_media_review_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608150008_add_beacon_album_review_envelope.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608170002_create_oom_manager_case_runtime.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608200002_create_pig_welfare_case_lifecycle.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608170004_allow_beacon_campaign_review_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608190002_create_beacon_protected_publication_consumer.sql
 
@@ -238,6 +240,9 @@ jobs:
 
       - name: Run Herdmaster Weaning Day atomic transaction gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
+
+      - name: Run Herdmaster mortality and welfare atomic transaction gates
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_herdmaster_health_loss_recording_postgres
 
       - name: Run Oom Sakkie protected breeding claim persistence gates
         run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_oom_sakkie_protected_breeding_claim_postgres tests.test_rootline_protected_irrigation_postgres

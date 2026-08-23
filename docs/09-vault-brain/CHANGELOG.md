@@ -14,6 +14,12 @@
 - This is source/prepared evidence only. Pig 126, historical provider events,
   production configuration and canonical data remain untouched pending a
   separately authorized release and genuine post-deployment Anton journey.
+- Independent review repair now allocates mandatory positive welfare event
+  sequences under the schema lock, discovers and closes the existing
+  episode-bound welfare case rather than creating a parallel death case,
+  releases canonical active outlets atomically, and verifies pen occupancy and
+  availability from their canonical projections. A disposable-PostgreSQL gate
+  proves concurrency, replay and transaction rollback.
 
 ## 2026-08-20 - BEACON stock-neutral livestock-enquiry capture
 
