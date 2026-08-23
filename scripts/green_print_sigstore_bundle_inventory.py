@@ -8,6 +8,10 @@ import sys
 from cryptography import x509
 
 NATIVE = "https://sigstore.dev/cosign/sign/v1"
+NON_NATIVE = {
+    "https://spdx.dev/Document/v2.3",
+    "https://amadeus.farm/attestations/green-partial-publication-recovery/v1",
+}
 SIMPLE_SIGNING = "cosign container image signature"
 MEDIA_TYPE = "application/vnd.dev.sigstore.bundle.v0.3+json"
 PAYLOAD_TYPE = "application/vnd.in-toto+json"
@@ -107,21 +111,33 @@ def _certificate_and_native(bundle, image, digest):
         raise ValueError("native_sigstore_envelope_malformed")
     _decode_canonical_base64(envelope["signatures"][0]["sig"])
     payload = json.loads(_decode_canonical_base64(envelope["payload"]))
-    if payload.get("_type") != STATEMENT_TYPE:
+    if (not isinstance(payload, dict) or
+            set(payload) != {"_type", "predicate", "predicateType", "subject"} or
+            payload.get("_type") != STATEMENT_TYPE or
+            payload.get("predicateType") not in {NATIVE, *NON_NATIVE} or
+            not isinstance(payload.get("predicate"), dict)):
         raise ValueError("native_sigstore_statement_malformed")
+    predicate_type = payload["predicateType"]
     verification = bundle["verificationMaterial"]
     if (not isinstance(verification, dict) or set(verification) != {
             "certificate", "timestampVerificationData", "tlogEntries"} or
             not isinstance(verification.get("certificate"), dict) or
             set(verification["certificate"]) != {"rawBytes"} or
-            not isinstance(verification.get("timestampVerificationData"), dict) or
-            set(verification["timestampVerificationData"]) != {
-                "rfc3161Timestamps"} or
-            not isinstance(verification["timestampVerificationData"]
-                           ["rfc3161Timestamps"], list) or
-            verification["timestampVerificationData"]
-                ["rfc3161Timestamps"] != []):
+            not isinstance(verification.get("timestampVerificationData"), dict)):
         raise ValueError("native_sigstore_verification_material_malformed")
+    timestamp_data = verification["timestampVerificationData"]
+    if predicate_type == NATIVE:
+        if (set(timestamp_data) != {"rfc3161Timestamps"} or
+                not isinstance(timestamp_data["rfc3161Timestamps"], list) or
+                len(timestamp_data["rfc3161Timestamps"]) != 1 or
+                not isinstance(timestamp_data["rfc3161Timestamps"][0], dict) or
+                set(timestamp_data["rfc3161Timestamps"][0]) != {
+                    "signedTimestamp"}):
+            raise ValueError("native_sigstore_timestamp_malformed")
+        timestamps = timestamp_data["rfc3161Timestamps"]
+        _decode_canonical_base64(timestamps[0]["signedTimestamp"])
+    elif timestamp_data != {}:
+        raise ValueError("non_native_sigstore_timestamp_malformed")
     entries = verification.get("tlogEntries")
     if not isinstance(entries, list) or len(entries) != 1:
         raise ValueError("native_sigstore_tlog_malformed")
@@ -163,11 +179,15 @@ def _certificate_and_native(bundle, image, digest):
         _decode_canonical_base64(item)
     raw = _decode_canonical_base64(
         verification["certificate"]["rawBytes"])
-    if payload.get("predicateType") != NATIVE:
-        return None
     algorithm, value = digest.split(":", 1)
-    if payload.get("subject") != [{"name": image,
-                                    "digest": {algorithm: value}}]:
+    if predicate_type != NATIVE:
+        if payload.get("subject") != [{"name": image,
+                                        "digest": {algorithm: value}}]:
+            raise ValueError("non_native_sigstore_subject_mismatch")
+        return None
+    if (payload.get("predicate") != {} or
+            payload.get("subject") != [{"annotations": {},
+                                         "digest": {algorithm: value}}]):
         raise ValueError("native_sigstore_subject_mismatch")
     return x509.load_der_x509_certificate(raw)
 
