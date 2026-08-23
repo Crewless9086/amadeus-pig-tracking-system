@@ -1868,3 +1868,14 @@
 - Projected one stable litter/cohort identity through weighing, protected purpose decision, deferment/reassessment and resolution using the existing Oom Sakkie manager-case lifecycle and shared owner-attention projection.
 - Made Pig Allocation the unified workspace while preserving `/purpose-review` as a compatibility deep link; no allocation, reservation, sale, customer, Telegram or farm-write authority was added.
 - Corrected HERDMASTER's stale purpose/data doctrine references to the authoritative Vault paths.
+## 2026-08-23 - Oom Sakkie farm-manager specialist parity clarified
+
+- Recorded the owner's binding rule that Anton and Charl receive the same
+  governed Oom Sakkie specialist routes and approval journeys, localized by
+  recipient language.
+- Kept CORE, CHARLIE, permission administration and unsafe hardware exceptions
+  outside the farm-manager envelope while preserving actor binding, replay,
+  audit, canonical revalidation and physical safety.
+- Recorded the fresh deployed Pig 126 failure as evidence in the existing
+  HERDMASTER natural health/loss mission; no provider or canonical data was
+  replayed or changed.

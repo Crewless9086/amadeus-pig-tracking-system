@@ -24,10 +24,20 @@ confirm Anton's claim. Audit evidence, canonical revalidation, atomic writes,
 idempotency, replay containment, and irrigation/device safety controls remain
 mandatory.
 
-This authority does not grant Anton access to CORE, CHARLIE, permission or role
-administration, credentials, payments, publication, customer commitments, or
-unrelated business authority. It creates no second manager, bot, parser,
-database, queue, or lifecycle.
+Across specialists governed by Oom Sakkie, Anton and Charl receive the same
+operational routes, protected approval journeys and messages; only the
+recipient's configured language differs. This parity includes HERDMASTER,
+ROOTLINE, SAM, BEACON and governed DOCUMENTS work. A `farm_manager` must never
+be diverted into the legacy observation-only family adapter after one of these
+shared routes declines. Capability and action-kind boundaries remain explicit;
+no wildcard owner identity is minted.
+
+This authority does not grant Anton access to CORE or CHARLIE, permission or
+role administration, credentials, or an unsafe hardware exception. Those are
+platform/owner-administration boundaries, not Oom Sakkie specialist work. Every
+shared specialist retains its existing actor-bound confirmation, evidence,
+revalidation, audit, replay, provider and physical-safety gates. This creates no
+second manager, bot, parser, database, queue, or lifecycle.
 
 The owner must not need to know database tables, forms, specialist lanes, or
 record types.

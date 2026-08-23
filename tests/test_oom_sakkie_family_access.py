@@ -92,7 +92,7 @@ def test_family_cannot_confirm_or_escalate_protected_authority():
         assert decision.may_confirm_protected_action is False
 
 
-def test_farm_manager_is_delegated_not_owner_and_cannot_cross_charl_only_boundary():
+def test_farm_manager_has_explicit_oom_specialist_parity_without_admin_escape_hatches():
     permissions = ["farm_observation", "active_follow_up", "explicit_summary",
         "welfare_hold", "welfare_escalation", "found_dead_observation",
         "herdmaster_management_input", "herdmaster_reassessment",
@@ -107,8 +107,11 @@ def test_farm_manager_is_delegated_not_owner_and_cannot_cross_charl_only_boundar
     mortality = authorize_family_message(principal, _parsed("1002"),
         capability="mortality_confirmation")
     assert mortality.allowed and mortality.may_confirm_protected_action
-    for capability in ("treatment", "mating_execution",
-                       "hardware_exception", "permission_change", "payment"):
+    for capability in ("treatment", "mating_execution", "sales_decision", "reservation",
+                       "payment", "publication", "customer_send"):
+        decision = authorize_family_message(principal, _parsed("1002"), capability=capability)
+        assert decision.allowed and decision.may_confirm_protected_action
+    for capability in ("hardware_exception", "permission_change"):
         decision = authorize_family_message(principal, _parsed("1002"), capability=capability)
         assert not decision.allowed and not decision.may_confirm_protected_action
 

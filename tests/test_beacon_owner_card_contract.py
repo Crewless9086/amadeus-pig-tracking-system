@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import html
 import os
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ from modules.oom_sakkie.beacon_request_runtime import (
     build_litter_media_choice, prepare_campaign_owner_card, select_litter_story_media,
 )
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
+from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
 
 os.environ.setdefault("BEACON_FACEBOOK_PAGE_ID", "PAGE-1")
 
@@ -60,6 +62,16 @@ def test_owner_card_is_compact_nonduplicative_and_has_real_callbacks():
     assert preview["packet_id"] and preview["packet_generation"]
     assert preview["campaign_digest"] and preview["stop_conditions"] and preview["rollback"]
     assert preview["target_page_id"] == "PAGE-1"
+    af = localize_recipient_result({"output_language": "af"}, value, "BEACON")
+    for fact in (preview["exact_post_copy"], preview["target_page_id"],
+                 preview["publication_time"], str(preview["budget_cap"]["total"])):
+        assert fact in af["answer"]
+    assert "Business objective" not in af["answer"] and "Publish by" not in af["answer"]
+    assert "farm_awareness" not in af["answer"]
+    assert "Gebonde publikasie-inhoud" in af["answer"]
+    assert f"<blockquote>{html.escape(preview['exact_post_copy'])}</blockquote>" in af["answer"]
+    assert [button["text"] for button in af["reply_markup"]["inline_keyboard"][0]] == [
+        "Bevestig", "Maak reg", "Kanselleer"]
     assert "Facebook Page ID:</b> PAGE-1" in value["answer"]
     assert "ZAR 0.00 total" in value["answer"] and "0 days; no boost" in value["answer"]
     assert "no automatic retry" in value["answer"]

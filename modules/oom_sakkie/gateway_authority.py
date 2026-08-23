@@ -26,6 +26,8 @@ class GatewayOwnerAuthority:
     tool_name: str
     issued_monotonic: float
     _seal: object
+    principal_role: str = "owner"
+    capabilities: frozenset[str] = frozenset({"*"})
 
 
 @dataclass(frozen=True)
@@ -64,7 +66,8 @@ class MortalityCorrectionAuthority:
     _seal: object
 
 
-def issue_gateway_owner_authority(owner_user_id, private_chat_id):
+def issue_gateway_owner_authority(owner_user_id, private_chat_id, *,
+                                  principal_role="owner", capabilities=("*",)):
     owner = str(owner_user_id or "").strip()
     chat = str(private_chat_id or "").strip()
     if not owner or not chat or owner != chat:
@@ -78,6 +81,9 @@ def issue_gateway_owner_authority(owner_user_id, private_chat_id):
         tool_name="",
         issued_monotonic=time.monotonic(),
         _seal=_AUTHORITY_SEAL,
+        principal_role=str(principal_role or "").strip(),
+        capabilities=frozenset(str(value or "").strip() for value in capabilities
+                               if str(value or "").strip()),
     )
 
 
@@ -93,6 +99,8 @@ def bind_gateway_owner_authority(authority, tool_name):
         tool_name=str(tool_name or "").strip(),
         issued_monotonic=authority.issued_monotonic,
         _seal=_AUTHORITY_SEAL,
+        principal_role=authority.principal_role,
+        capabilities=authority.capabilities,
     )
 
 

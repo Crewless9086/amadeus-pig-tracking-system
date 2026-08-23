@@ -1,5 +1,7 @@
-from modules.oom_sakkie.rootline_protected_irrigation import ACTION_KIND,build_preview_payload,execute_claimed_segment,protected_card_mission_id
+from modules.oom_sakkie.rootline_protected_irrigation import ACTION_KIND,build_preview_payload,create_irrigation_preview_claim,execute_claimed_segment,protected_card_mission_id
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
+from unittest.mock import patch
 def artifact(**changes):
  value={"contract_version":"rootline_execution_eligibility.v5","job_id":"JOB-1","job_sha256":"a"*64,"zone_id":"B12345","channel":1,"segment_identity":"SEG-1","current_segment":1,"segment_requested_seconds":3599,"requested_total_duration_seconds":7200,"governed_executable_duration_seconds":7198,"plan_generation":"PLAN-1","controller_safety_generation":"SAFE-1","eligibility_sha256":"b"*64,"expected_segment_count":2,"maximum_duration_seconds":3599};value.update(changes);return value
 def claim(payload=None):
@@ -7,6 +9,14 @@ def claim(payload=None):
 def parsed():return {"telegram_user_id":"1","telegram_chat_id":"1"}
 def test_preview_binds_exact_governed_boundary():
  payload=build_preview_payload(artifact(),mission_id="RMQ-20260813-04");assert payload["requested_total_duration_seconds"]==7200 and payload["governed_executable_duration_seconds"]==7198 and payload["segment_requested_seconds"]==3599 and payload["evidence_generation"]=="PLAN-1"
+def test_actual_preview_builder_preserves_rootline_facts_in_afrikaans_and_english():
+ with patch("modules.oom_sakkie.rootline_protected_irrigation.create_claim",return_value={"callback_token":"T","preview_digest":"d"*64,"action_kind":ACTION_KIND}):
+  result=create_irrigation_preview_claim(artifact=artifact(),owner_user_id="1",private_chat_id="1",mission_id="RMQ-20260813-04",provider_message_id="9")
+ result={**result,"status":"rootline_protected_preview_ready","answer":"Confirm zone B12345 for 3599 seconds.","action_kind":ACTION_KIND}
+ af=localize_recipient_result({"output_language":"af"},result,"ROOTLINE")
+ assert "B12345" in af["answer"] and "3599" in af["answer"]
+ assert [item["text"] for item in af["reply_markup"]["inline_keyboard"][0]]==["Bevestig","Maak reg","Kanselleer"]
+ assert localize_recipient_result({"output_language":"en"},result,"ROOTLINE")==result
 def test_each_preview_digest_has_distinct_card_lifecycle_identity():
  one=protected_card_mission_id("a"*64);two=protected_card_mission_id("b"*64)
  assert one!=two and one.startswith("RMQ-20260813-04:PROTECTED:")

@@ -8,6 +8,15 @@ from modules.oom_sakkie.protected_action_claims import (
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
 
 NATURAL_CONFIRM=re.compile(r"^(?:i\s+confirm(?:\s+this)?|confirm(?:\s+all)?|yes[, ]*confirm|ek\s+bevestig(?:\s+alles)?|bevestig(?:\s+alles)?)\s*[.!]?$",re.I)
+OOM_SAKKIE_MANAGER_ACTION_KINDS=frozenset({
+    "mortality", "grouped_weights", "herdmaster_breeding_grouped",
+    "herdmaster_record_farrowing_litter", "rootline_irrigation_segment",
+    "rootline_fertilizer_mixer_presence_refresh",
+    "rootline_fertilizer_mixer_commissioning",
+    "sam_sale_payment", "beacon_campaign_review", "beacon_private_album_finish",
+    "beacon_media_review", "documents_green_print",
+    "documents_green_physical_acceptance",
+})
 
 def handle_protected_action_input(parsed, gateway_authority, *, callback_data="",
                                   connect_factory=None, health_handler=None,
@@ -24,10 +33,13 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         if not active:return {"handled":False,"status":"protected_confirmation_not_unambiguous"},200
         data=f"{CALLBACK_PREFIX}{active['callback_token']}:confirm"
     try:
+        allowed = (OOM_SAKKIE_MANAGER_ACTION_KINDS
+            if getattr(gateway_authority, "principal_role", "owner") == "farm_manager" else None)
         claimed,status=claim_callback(data,owner_user_id=owner,private_chat_id=chat,
           provider_message_id=str(parsed.get("provider_message_id") or parsed.get("callback_query_id") or ""),
           provider_timestamp=str(parsed.get("provider_timestamp") or ""),
-          source_card_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
+          source_card_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory,
+          allowed_action_kinds=allowed)
     except Exception as exc:
         from modules.oom_sakkie.bounded_postgres_read import is_database_unavailable
         if not is_database_unavailable(exc):
