@@ -49,6 +49,14 @@ def _decode_canonical_base64(value):
     return raw
 
 
+def _canonical_decimal(value, *, positive=False):
+    if (not isinstance(value, str) or not value.isdigit() or
+            (len(value) > 1 and value.startswith("0")) or
+            (positive and int(value) <= 0)):
+        raise ValueError("native_sigstore_decimal_malformed")
+    return int(value)
+
+
 def _certificate_and_native(bundle, image, digest):
     if "critical" in bundle and "dsseEnvelope" in bundle:
         raise ValueError("native_sigstore_bundle_ambiguous")
@@ -111,14 +119,9 @@ def _certificate_and_native(bundle, image, digest):
                 "rfc3161Timestamps"} or
             not isinstance(verification["timestampVerificationData"]
                            ["rfc3161Timestamps"], list) or
-            len(verification["timestampVerificationData"]
-                ["rfc3161Timestamps"]) != 1):
+            verification["timestampVerificationData"]
+                ["rfc3161Timestamps"] != []):
         raise ValueError("native_sigstore_verification_material_malformed")
-    timestamp = verification["timestampVerificationData"]\
-        ["rfc3161Timestamps"][0]
-    if not isinstance(timestamp, dict) or set(timestamp) != {"signedTimestamp"}:
-        raise ValueError("native_sigstore_timestamp_malformed")
-    _decode_canonical_base64(timestamp["signedTimestamp"])
     entries = verification.get("tlogEntries")
     if not isinstance(entries, list) or len(entries) != 1:
         raise ValueError("native_sigstore_tlog_malformed")
@@ -133,11 +136,10 @@ def _certificate_and_native(bundle, image, digest):
             not isinstance(entry.get("inclusionPromise"), dict) or
             set(entry["inclusionPromise"]) != {"signedEntryTimestamp"} or
             not isinstance(entry.get("integratedTime"), str) or
-            not entry["integratedTime"].isdigit() or
-            int(entry["integratedTime"]) <= 0 or
-            not isinstance(entry.get("logIndex"), str) or
-            not entry["logIndex"].isdigit()):
+            not isinstance(entry.get("logIndex"), str)):
         raise ValueError("native_sigstore_tlog_malformed")
+    _canonical_decimal(entry["integratedTime"], positive=True)
+    _canonical_decimal(entry["logIndex"])
     _decode_canonical_base64(entry["canonicalizedBody"])
     _decode_canonical_base64(entry["logId"]["keyId"])
     _decode_canonical_base64(entry["inclusionPromise"]["signedEntryTimestamp"])
@@ -151,10 +153,11 @@ def _certificate_and_native(bundle, image, digest):
             not isinstance(proof.get("hashes"), list) or not proof["hashes"] or
             not all(isinstance(item, str) and item for item in proof["hashes"]) or
             not isinstance(proof.get("logIndex"), str) or
-            proof["logIndex"] != entry["logIndex"] or
             not isinstance(proof.get("treeSize"), str) or
-            not proof["treeSize"].isdigit() or int(proof["treeSize"]) <= 0):
+            not proof["treeSize"].isdigit()):
         raise ValueError("native_sigstore_inclusion_proof_malformed")
+    _canonical_decimal(proof["logIndex"])
+    _canonical_decimal(proof["treeSize"], positive=True)
     _decode_canonical_base64(proof["rootHash"])
     for item in proof["hashes"]:
         _decode_canonical_base64(item)
