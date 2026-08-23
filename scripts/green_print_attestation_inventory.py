@@ -203,9 +203,28 @@ def inventory(document, expected_name, expected_digest, *, expected_source="",
     return counts[RECOVERY], counts[SBOM], foreign, statements
 
 
+def canonical_inventory(document):
+    """Return a stable, complete representation of every fetched attestation."""
+    records = document.get("attestations") if isinstance(document, dict) else None
+    if not isinstance(records, list):
+        raise ValueError("attestation_inventory_malformed")
+    encoded = []
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("attestation_inventory_malformed")
+        encoded.append(json.dumps(record, sort_keys=True, separators=(",", ":")))
+    return {"attestations": [json.loads(item) for item in sorted(encoded)]}
+
+
 def main():
     if len(sys.argv) == 4 and sys.argv[1] == "fetch":
         print(json.dumps(fetch(sys.argv[2], sys.argv[3]), sort_keys=True))
+        return
+    if len(sys.argv) == 3 and sys.argv[1] == "canonical":
+        with open(sys.argv[2], encoding="utf-8") as handle:
+            document = json.load(handle)
+        print(json.dumps(canonical_inventory(document), sort_keys=True,
+                         separators=(",", ":")))
         return
     if len(sys.argv) == 6 and sys.argv[1] == "validate-recovery-run":
         with open(sys.argv[2], encoding="utf-8") as handle:
@@ -232,7 +251,7 @@ def main():
         validate_cosign_verification(document, sys.argv[3], sys.argv[4])
         return
     if len(sys.argv) not in {5, 6, 9} or sys.argv[1] != "inspect":
-        raise SystemExit("usage: fetch repo digest | inspect inventory image digest [sbom-output source manifest run-id]")
+        raise SystemExit("usage: fetch repo digest | canonical inventory | inspect inventory image digest [sbom-output source manifest run-id]")
     with open(sys.argv[2], encoding="utf-8") as handle:
         document = json.load(handle)
     recovery, sbom, foreign, statements = inventory(

@@ -361,6 +361,8 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
         assert flag in signature
     attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
     assert "green_print_attestation_inventory.py" in attestations
+    assert "canonical existing-attestations.json" in attestations
+    assert "attestation_inventory_pre_sha256" in attestations
     assert 'test "${foreign_count}" = "0"' in attestations
     assert 'test "${recovery_count}" = "1"' in attestations and 'test "${sbom_count}" = "1"' in attestations
     assert "validate-recovery-run" in attestations
@@ -378,6 +380,9 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert "validate-cosign" in final_verify
     assert "cosign download signature" in final_verify
     assert "cmp -s native-signature-inventory.json final-native-signature-inventory.json" in final_verify
+    assert "canonical final-attestations.json" in final_verify
+    assert "cmp -s canonical-existing-attestations.json canonical-final-attestations.json" in final_verify
+    assert "attestation_inventory_post_sha256" in final_verify
     assert "cosign triangulate" not in final_verify and "signature_ref" not in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
@@ -394,6 +399,8 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     assert "signature_ref" not in serialized
     assert "native_signature_inventory_pre_sha256" in serialized
     assert "native_signature_inventory_post_sha256" in serialized
+    assert "attestation_inventory_pre_sha256" in serialized
+    assert "attestation_inventory_post_sha256" in serialized
     for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
         assert forbidden not in serialized
     for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
@@ -444,6 +451,20 @@ def test_partial_recovery_attestation_inventory_accepts_only_one_exact_pair():
 def test_partial_recovery_attestation_inventory_exposes_duplicate_foreign_and_malformed(records,expected):
     actual=I.inventory({"attestations":records},"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,expected_source="c"*40,expected_manifest="sha256:"+"b"*64,expected_run_id="32622312938")
     assert actual[:3]==expected
+
+def test_complete_canonical_attestation_inventory_is_order_stable_and_detects_intervening_drift():
+    recovery=_attestation(I.RECOVERY,payload=_recovery_predicate())
+    sbom=_attestation(I.SBOM)
+    foreign=_attestation("https://foreign.invalid/predicate")
+    before=I.canonical_inventory({"attestations":[sbom,recovery]})
+    reordered=I.canonical_inventory({"attestations":[recovery,sbom]})
+    assert before==reordered
+    duplicate=I.canonical_inventory({"attestations":[recovery,sbom,recovery]})
+    foreign_drift=I.canonical_inventory({"attestations":[recovery,sbom,foreign]})
+    assert duplicate!=before
+    assert foreign_drift!=before
+    assert len(duplicate["attestations"])==3
+    assert len(foreign_drift["attestations"])==3
 
 def test_attestation_fetch_maps_only_exact_github_not_found_to_empty():
     def runner(*_args,**_kwargs):
