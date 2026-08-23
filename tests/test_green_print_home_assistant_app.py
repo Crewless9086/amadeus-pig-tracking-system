@@ -353,8 +353,8 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert '"${IMAGE}@${EXPECTED_MANIFEST_DIGEST}" --format' in existing
     assert 'tag-recheck.txt' in existing and 'org.opencontainers.image.revision' in existing
     signature=steps[names.index("Inspect existing signature and refuse foreign or ambiguous state")]["run"]
-    assert "cosign triangulate" in signature and "validate-cosign" in signature
-    assert '(.layers | length) == 2' in signature
+    assert "cosign download signature" in signature and "validate-cosign" in signature
+    assert "cosign triangulate" not in signature and "signature_ref" not in signature
     assert "recovered-cosign-original-verification.json" in signature
     assert "recovered-cosign-deviation-verification.json" in signature
     for flag in ("--certificate-github-workflow-sha","--certificate-github-workflow-name","--certificate-github-workflow-repository","--certificate-github-workflow-ref","--certificate-github-workflow-trigger"):
@@ -376,7 +376,9 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert final_verify.count('--source-digest "${attestation_source_commit}"')==2
     assert final_verify.count("validate-verification-run")==2
     assert "validate-cosign" in final_verify
-    assert "cmp -s existing-signature-manifest.json final-signature-manifest.json" in final_verify
+    assert "cosign download signature" in final_verify
+    assert "cmp -s native-signature-inventory.json final-native-signature-inventory.json" in final_verify
+    assert "cosign triangulate" not in final_verify and "signature_ref" not in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
 
@@ -388,6 +390,10 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     assert stale_registry_probe["sign_required"]=="true"
     assert not any(name.startswith("Keylessly sign") or name.startswith("Attest ") for name in names)
     serialized=json.dumps(recovery)
+    assert "cosign triangulate" not in serialized
+    assert "signature_ref" not in serialized
+    assert "native_signature_inventory_pre_sha256" in serialized
+    assert "native_signature_inventory_post_sha256" in serialized
     for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
         assert forbidden not in serialized
     for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
