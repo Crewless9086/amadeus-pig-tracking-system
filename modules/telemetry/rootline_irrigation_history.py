@@ -52,7 +52,8 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
                     where event_source='rootline_irrigation_execution'
                       and review_json->'rootline_execution'->>'action'
                           in ('record_eligibility','claim_before_on','mark_active','record_completed',
-                              'record_job_resolution','contain_zone','record_ambiguous_shutdown')
+                              'record_job_resolution','contain_zone','record_ambiguous_shutdown',
+                              'record_claim_recovery')
                     order by created_at,review_event_id""")
                 execution_rows = [row[0] for row in cursor.fetchall()]
         result = project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
@@ -234,7 +235,9 @@ def _attach_latest_zone_executions(history, rows):
     for execution_id, grouped_execution in grouped.items():
         events = grouped_execution["events"]
         terminal = next((entry for entry in reversed(events)
-                         if str(entry[1].get("action") or "") in terminal_actions), None)
+                         if str(entry[1].get("action") or "") in terminal_actions
+                         and (entry[1].get("action") != "record_claim_recovery"
+                              or entry[1].get("shutdown_verified") is True)), None)
         active = next((entry for entry in reversed(events)
                        if str(entry[1].get("action") or "") in {
                            "mark_active", "claim_before_on"}), None)
