@@ -9,6 +9,8 @@ import sys
 RECOVERY = "https://amadeus.farm/attestations/green-partial-publication-recovery/v1"
 SBOM = "https://spdx.dev/Document/v2.3"
 EXACT_NOT_FOUND = re.compile(r"gh: Not Found \(HTTP 404\)\r?\n?\Z")
+NOT_FOUND_DOCUMENTATION = (
+    "https://docs.github.com/rest/repos/repos#list-attestations")
 
 
 def _decode_payload(value):
@@ -28,9 +30,17 @@ def fetch(repository, expected_digest, runner=subprocess.run):
                 document.get("attestations"), list):
             raise ValueError("attestation_inventory_malformed")
         return document
-    if result.returncode == 1 and not result.stdout and EXACT_NOT_FOUND.fullmatch(
-            result.stderr or ""):
-        return {"attestations": []}
+    if result.returncode == 1 and EXACT_NOT_FOUND.fullmatch(result.stderr or ""):
+        try:
+            error = json.loads(result.stdout)
+        except (TypeError, json.JSONDecodeError):
+            error = None
+        if error == {
+                "message": "Not Found",
+                "documentation_url": NOT_FOUND_DOCUMENTATION,
+                "status": "404",
+        }:
+            return {"attestations": []}
     raise RuntimeError("attestation_inventory_fetch_failed")
 
 

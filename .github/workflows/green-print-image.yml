@@ -439,7 +439,24 @@ jobs:
           gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${ORIGINAL_PUBLICATION_RUN_ID}/jobs?per_page=100" > original-publication-jobs.json
           jq -e '
             ([.jobs[] | select(.name == "Verify aarch64 package" and .conclusion == "success")] | length) == 1 and
-            ([.jobs[] | select(.name == "Publish signed immutable aarch64 package" and .conclusion == "failure")] | length) == 1
+            ([.jobs[] | select(.name == "Publish signed immutable aarch64 package" and .conclusion == "failure")] | length) == 1 and
+            ([.jobs[] | select(.name == "Publish signed immutable aarch64 package")][0].steps as $steps |
+              def exact($name; $conclusion):
+                [$steps[] | select(.name == $name and .conclusion == $conclusion)] | length == 1;
+              def number($name): [$steps[] | select(.name == $name)][0].number;
+              exact("Build and push untagged exact linux arm64 manifest"; "success") and
+              exact("Create the unique version tag as an arm64 index"; "success") and
+              exact("Verify pushed index descriptor, config and OCI bindings"; "failure") and
+              exact("Install pinned Cosign signer and verifier"; "skipped") and
+              exact("Keylessly sign verified arm64 index"; "skipped") and
+              exact("Install pinned Syft scanner"; "skipped") and
+              exact("Generate SPDX SBOM from exact linux arm64 digest"; "skipped") and
+              exact("Attest build provenance"; "skipped") and
+              exact("Attest SBOM"; "skipped") and
+              exact("Verify signature and digest-bound attestations"; "skipped") and
+              number("Build and push untagged exact linux arm64 manifest") < number("Create the unique version tag as an arm64 index") and
+              number("Create the unique version tag as an arm64 index") < number("Verify pushed index descriptor, config and OCI bindings") and
+              number("Verify pushed index descriptor, config and OCI bindings") < number("Install pinned Cosign signer and verifier"))
           ' original-publication-jobs.json >/dev/null
       - name: Authenticate only for exact signature and attestation completion
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
