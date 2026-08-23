@@ -225,6 +225,13 @@ def main() -> int:
                         source.write_text("import sys\nsys.stderr.write('green_startup_failed stage=printer_tls reason=identity_or_connection_failed\\nuntrusted-arbitrary-output\\n')\nraise SystemExit(1)\n",encoding="ascii"); source.chmod(0o644)
                     elif shadow[0].endswith("-python"):
                         source.write_text("this is not valid python\n",encoding="ascii"); source.chmod(0o644)
+                    elif shadow[0] == "service-launcher-exit":
+                        source.write_text(
+                            "#!/bin/sh\n"
+                            "if [ \"$2\" = test ] && [ \"$3\" = -r ]; then test -r \"$4\"; exit $?; fi\n"
+                            "exit 1\n",
+                            encoding="ascii",
+                        ); source.chmod(0o755)
                     elif shadow[0].endswith("-exit"):
                         source.write_text("#!/bin/sh\nexit 1\n",encoding="ascii"); source.chmod(0o755)
                     else:
@@ -278,7 +285,7 @@ def main() -> int:
             negative_case("init_exec","green_startup_failed stage=bootstrap_exec reason=init_script_failed",shadow=("init-shell","/init-green.sh"))
             negative_case("run_exec","green_startup_failed stage=s6_exec reason=run_script_failed",shadow=("run-shell","/run.sh"))
             negative_case("cups_start","green_startup_failed stage=cups_readiness reason=cups_stopped_during_startup",shadow=("cups-fail","/usr/sbin/cupsd"))
-            negative_case("service_exec","green_startup_failed stage=service_exec reason=service_process_failed",shadow=("service-exit","/opt/green/service.py"))
+            negative_case("service_exec","green_startup_failed stage=service_exec reason=service_process_failed",shadow=("service-launcher-exit","/sbin/su-exec"))
             # A deliberately shadowed executable can itself produce an expected
             # denial. Only denials created by the following healthy journey are
             # evidence against the production profile.
