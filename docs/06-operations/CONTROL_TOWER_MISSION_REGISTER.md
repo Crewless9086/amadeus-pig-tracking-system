@@ -2108,3 +2108,36 @@ gates required before handover. Decision: `CONTINUE AUTOMATICALLY / NO OWNER
 OUTCOME YET`.
 
 OWNER ACTION: NONE
+
+## 2026-08-23 HERDMASTER / Anton fresh deployed failure
+
+At 19:09 SAST Anton sent `Vark 126 is dood, ons het hom verwyder en
+begrawe.` Production, loaded at exact revision
+`7777ee05b37b8ca6d3227bf112433d481066dbcb`, returned the legacy
+observation-only response requiring Charl's separate confirmation. Canonical
+read-only evidence still showed Pig 126 Active, on farm and in PEN-012, with no
+mortality claim. Pig 126 and the old provider event remain sealed from terminal
+mutation or replay.
+
+This is new evidence in existing mission
+`HERDMASTER-NATURAL-HEALTH-LOSS-1 / OOM-INTAKE-SLICE-1`, not a new mission. The
+semantic front door omitted Afrikaans `vark` identity and standalone `dood`, and
+the gateway diverted every non-owner through a reduced family lane before the
+shared Oom Sakkie specialist pipeline. Older capability policy also retained
+owner-only assumptions beyond mortality.
+
+The bounded repair gives FARM_MANAGER the same governed Oom Sakkie specialist
+messages and actor-bound approval journeys as OWNER, localized to the recipient,
+through explicit capabilities and action kinds. CORE and CHARLIE remain
+structurally unreachable; permission administration and unsafe hardware
+exceptions remain excluded. Replay, audit, canonical revalidation,
+confirmation and physical safety controls remain mandatory.
+
+Lifecycle: `WORKING / SOURCE_AND_TEST_IMPLEMENTATION_ACTIVE`; **NO BUSINESS
+OUTCOME**. Do not request another Anton test until exact-current tests, Brain
+Guard, independent review, merge, exact loaded revision and non-actuating
+production readiness prove the legacy farm-manager branch is unreachable. Only
+a new provider-origin report and Anton's own confirmation may then establish
+acceptance.
+
+OWNER ACTION: NONE

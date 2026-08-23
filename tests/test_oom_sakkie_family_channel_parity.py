@@ -87,6 +87,53 @@ def test_gateway_and_direct_select_same_role_capability_domain(summary, deliver)
     assert gateway["message"]["authorization_id"] == "AUTH-ANTON"
 
 
+@patch("modules.oom_sakkie.telegram_gateway.handle_family_runtime_message")
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+@patch("modules.oom_sakkie.telegram_gateway.handle_authenticated_health_loss_message")
+def test_gateway_routes_manager_afrikaans_mortality_through_shared_operational_lifecycle(
+        health, deliver, family_runtime):
+    health.return_value = ({"handled": True, "success": True,
+        "status": "waiting_for_input", "answer": "Een vraag: Op watter datum?",
+        "records_audit_trace": True, "writes_farm_data": False}, 200)
+    deliver.return_value = {"success": True, "telegram_sends": 1, "telegram_edits": 0}
+    result, status = handle_telegram_gateway_message(
+        payload("Vark 126 is dood, ons het hom verwyder en begrawe."),
+        headers={"Authorization": "Bearer " + TOKEN}, environ=env())
+    assert status == 200 and result["message"]["status"] == "waiting_for_input"
+    inbound = health.call_args.args[0]
+    assert inbound["output_language"] == "af"
+    assert inbound["text"].startswith("Vark 126 is dood")
+    family_runtime.assert_not_called()
+
+
+@patch("modules.oom_sakkie.telegram_gateway.handle_family_runtime_message")
+@patch("modules.oom_sakkie.telegram_gateway.herdmaster_family_observation")
+@patch("modules.oom_sakkie.telegram_gateway.handle_message")
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+@patch("modules.oom_sakkie.telegram_gateway.handle_authenticated_health_loss_message")
+def test_manager_can_never_fall_back_to_legacy_observation_only_mortality_branch(
+        health, deliver, generic_core_or_charlie, legacy_observation, family_runtime):
+    health.return_value = ({"handled": False, "status": "health_loss_intake_not_applicable"}, 200)
+    deliver.return_value = {"success": True, "telegram_sends": 1, "telegram_edits": 0}
+    def invoke_selected_adapter(parsed, principal, *, observation_adapter, **_kwargs):
+        return observation_adapter(parsed=parsed, principal=principal,
+            capability="found_dead_observation", replay_identity="manager-fallback"), 200
+    family_runtime.side_effect = invoke_selected_adapter
+    manager_env = env()
+    manager_binding = binding()
+    manager_binding["permissions"] += ["found_dead_observation", "mortality_confirmation"]
+    manager_env["OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON"] = json.dumps([manager_binding])
+    result, status = handle_telegram_gateway_message(
+        payload("Vark 126 is dood, ons het hom verwyder en begrawe."),
+        headers={"Authorization": "Bearer " + TOKEN}, environ=manager_env)
+    assert status == 200
+    assert result["message"]["status"] == "farm_manager_operational_clarification_required"
+    assert result["message"]["legacy_observation_path_used"] is False
+    assert "Charl se afsonderlike bevestiging" not in result["answer"]
+    legacy_observation.assert_not_called()
+    generic_core_or_charlie.assert_not_called()
+
+
 def test_family_principals_cannot_enter_sam_owner_callbacks_or_owner_media():
     with patch("modules.oom_sakkie.telegram_direct.process_owner_attention_callback") as attention, \
             patch("modules.oom_sakkie.telegram_direct.process_sam_live_stock_owner_callback") as sam:

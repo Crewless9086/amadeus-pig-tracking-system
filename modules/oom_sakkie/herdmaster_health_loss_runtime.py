@@ -33,12 +33,12 @@ from modules.pig_weights.pig_welfare_case_runtime import (
 EVENT_SOURCE = "oom_sakkie_herdmaster_health_loss_runtime"
 CONTEXT_WINDOW = timedelta(hours=24)
 HEALTH_PATTERN = re.compile(
-    r"\b(?:pig|tag)\s*[a-z0-9-]+\b.*\b(?:"
+    r"\b(?:pig|tag|vark)\s*[a-z0-9-]+\b.*\b(?:"
     r"not eating|won't eat|wont eat|laying down|lying down|acting weird|"
     r"sick|ill|injured|limping|bleeding|dead|died|farrowing|stillborn|"
     r"infection|vomit|diarrh|cough|breath|cannot stand|can't stand|"
     r"dood|gesterf|siek|beseer|eet nie|mank|bloei"
-    r")\b|\b(?:sick|injured|dead|died|farrowing|stillborn)\b",
+    r")\b|\b(?:sick|injured|dead|died|farrowing|stillborn|dood|gesterf|siek|beseer)\b",
     re.I,
 )
 FOLLOW_UP_PATTERN = re.compile(
@@ -51,7 +51,7 @@ UNRELATED_OPERATIONAL_PATTERN = re.compile(
     r"\b(?:reservoir|storage tanks?|borehole|irrigation|valves?|b camp|c camp|"
     r"solar|soc|grid|inverter|power|fertili[sz]er)\b", re.I,
 )
-ENTITY_PATTERN = re.compile(r"\b(?:pig|tag)\s*([a-z0-9-]+)\b", re.I)
+ENTITY_PATTERN = re.compile(r"\b(?:pig|tag|vark)\s*([a-z0-9-]+)\b", re.I)
 CONFIRMATION_PATTERN = re.compile(r"^CONFIRM HERD-[A-Z0-9-]+$")
 CORRECTION_PATTERN = re.compile(
     r"\b(?:correction|incorrect|wrong|must be|should be|mark(?:ed)? as|"

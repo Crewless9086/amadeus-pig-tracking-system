@@ -25,6 +25,11 @@ PROTECTED_CAPABILITIES = frozenset({
     "mating_execution", "treatment", "hardware_exception",
     "permission_change", "publication", "customer_send",
 })
+OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES = PROTECTED_CAPABILITIES - {
+    # These are platform/owner-administration escape hatches, not governed
+    # Oom Sakkie specialist work.
+    "hardware_exception", "permission_change",
+}
 REPORTER_CAPABILITIES = frozenset({"farm_observation", "active_follow_up"})
 READ_ONLY_CAPABILITY = "explicit_summary"
 FARM_MANAGER_CAPABILITIES = frozenset({
@@ -32,6 +37,7 @@ FARM_MANAGER_CAPABILITIES = frozenset({
     "welfare_hold", "welfare_escalation", "herdmaster_management_input",
     "herdmaster_reassessment", "found_dead_observation", "mortality_confirmation",
     "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
+    *OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES,
 })
 DELEGATED_ROOTLINE_CAPABILITIES = frozenset({
     "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
@@ -160,7 +166,7 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
     if capability in PROTECTED_CAPABILITIES:
         allowed = (principal.is_owner or
             (principal.role is FamilyRole.FARM_MANAGER
-             and capability == "mortality_confirmation"))
+             and capability in OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES))
         return FamilyAccessDecision(allowed,
             "governed_farm_lifecycle_authority" if allowed else "owner_authority_required",
             principal, attribution, may_read_private_context=allowed,
@@ -210,7 +216,8 @@ def family_access_policy(environ: Mapping[str, str]) -> dict[str, Any]:
         "family_bindings_count": len(principals) if valid else 0,
         "roles": [role.value for role in FamilyRole],
         "protected_actions_owner_only": False,
-        "farm_manager_mortality_confirmation_capability": True,
+        "farm_manager_oom_specialist_protected_capabilities": sorted(
+            OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES),
         "display_names_are_authority": False,
         "language_is_authority": False,
     }

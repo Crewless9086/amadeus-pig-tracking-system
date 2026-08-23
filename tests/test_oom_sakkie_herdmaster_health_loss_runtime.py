@@ -86,6 +86,25 @@ def memory_store(active=None):
     return store, recorded
 
 
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.prepare_health_loss_owner_preview")
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_natural_afrikaans_vark_mortality_without_date_enters_shared_preview(loader, prepare):
+    loader.return_value = evidence()
+    prepare.return_value = {"question_count": 1, "owner_message": "Een vraag: Op watter datum?",
+        "confirmation_binding": {"operation_id": ""}, "evaluator": {"identity": {
+            "pig_id": "PIG-2026-125A", "tag_number": "126"}}}
+    store, recorded = memory_store()
+    message = {**parsed("Vark 126 is dood, ons het hom verwyder en begrawe.", "fresh-anton-126"),
+        "output_language": "af"}
+    result, status = handle_authenticated_health_loss_message(
+        message, issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["handled"] is True
+    assert result["status"] == "waiting_for_input"
+    assert len(recorded) == 1 and recorded[0]["output_language"] == "af"
+    assert recorded[0]["combined_text"].startswith("Vark 126 is dood")
+    prepare.assert_called_once()
+
+
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_litter_register_rows")
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_mating_overview")
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_pig_master_rows")

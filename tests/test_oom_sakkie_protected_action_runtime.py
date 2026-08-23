@@ -17,6 +17,29 @@ def authority():
     return issue_gateway_owner_authority("5721652188", "5721652188")
 
 
+def manager_authority():
+    return issue_gateway_owner_authority("5721652188", "5721652188",
+        principal_role="farm_manager", capabilities=("farm_observation",))
+
+
+@pytest.mark.parametrize("action_kind", [
+    "mortality", "herdmaster_breeding_grouped", "rootline_irrigation_segment",
+    "sam_sale_payment", "beacon_campaign_review", "beacon_media_review",
+    "documents_green_print",
+])
+def test_manager_callback_uses_explicit_full_oom_specialist_action_envelope(monkeypatch, action_kind):
+    observed = {}
+    def claim(*args, **kwargs):
+        observed.update(kwargs)
+        return {"success": False, "status": "protected_callback_unknown"}, 404
+    monkeypatch.setattr(runtime, "claim_callback", claim)
+    runtime.handle_protected_action_input(
+        {**parsed(""), "callback_data": "oompa:opaque:confirm"}, manager_authority())
+    assert action_kind in observed["allowed_action_kinds"]
+    assert "core" not in observed["allowed_action_kinds"]
+    assert "charlie" not in observed["allowed_action_kinds"]
+
+
 def test_buttons_are_short_opaque_and_have_required_afrikaans_labels():
     mortality = build_buttons("abc123", grouped=False)["inline_keyboard"][0]
     grouped = build_buttons("abc123", grouped=True)["inline_keyboard"][0]

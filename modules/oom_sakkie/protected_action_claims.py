@@ -224,7 +224,8 @@ def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
             "expires_at":row[7].isoformat(),"result":result}
 
 def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_message_id,
-                   provider_timestamp, source_card_message_id="", connect_factory=None):
+                   provider_timestamp, source_card_message_id="", connect_factory=None,
+                   allowed_action_kinds=None):
     data=str(callback_data or "")
     try:
         provider_time=datetime.fromisoformat(str(provider_timestamp or "").replace("Z","+00:00"))
@@ -241,6 +242,10 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         row=cur.fetchone()
         if not row:return {"success":False,"status":"protected_callback_unknown"},404
         if str(row[1])!=str(owner_user_id) or str(row[2])!=str(private_chat_id):return {"success":False,"status":"protected_callback_unauthorized"},403
+        if allowed_action_kinds is not None and str(row[0]) not in set(allowed_action_kinds):
+            return {"success":False,"status":"protected_callback_capability_denied",
+                    "action_kind":str(row[0]),"mission_id":str(row[3]),
+                    "writes_farm_data":False,"hardware_commands":0},403
         if not row[10]:
             return {"success":False,"status":"protected_callback_card_unbound"},409
         if str(row[10])!=str(source_card_message_id or ""):
