@@ -2015,3 +2015,32 @@ Hosted exact-head gates, merge, deployment, live scheduler readback, provider
 delivery and later unattended continuity remain required. This is a P0 repair
 within the existing operational missions, not a new product mission and not yet
 an owner outcome. OWNER ACTION: NONE.
+
+## 2026-08-23 - Operational spine released; BEACON and Anton advanced
+
+PR `#1195` passed all four exact-head hosted gates, merged as
+`97d12e2c9f95eacf1c64b2e26d442625fc09eea7`, and was proven live on Render
+before the next release. BEACON/SAM PR `#1182` was then refreshed onto that
+main, passed all four hosted gates, merged as
+`86fe618ac21a0c8f93d248fd8ac0f62fe94c77a9`, and was proven live. This removes
+the contradictory public-livestock solicitation bypass that caused the owner to
+decline card 3714. The declined card remains cancelled and is not replayed.
+
+Herdmaster/Anton PR `#1191` was refreshed again onto the BEACON merge, passed
+all four hosted gates including the disposable-Postgres mortality/welfare
+transaction gate, and merged as
+`6102ebab37d6fc9f64f29f91663267217be50f94`. Its Render deployment is active.
+No Pig 126 record, old Telegram event, Facebook post, customer message,
+irrigation hardware or Green state was mutated by these release steps.
+
+Remaining acceptance boundaries are explicit. ROOTLINE must complete a natural
+post-deployment scheduled reassessment without the prior database-unavailable
+containment and later repeat unattended. BEACON must generate a new compliant
+owner card from the deployed policy and may publish only after the protected
+owner decision; SAM must then prove attributable customer intake. Anton must
+send a new Afrikaans Telegram report for Pig 126 and press his own `Bevestig`
+button; canonical and provider readback must prove the result. Green remains
+held by owner priority. A read-only CORE probe exposed a separate historical
+normalized audit write ending in `UndefinedColumn`; this finding is recorded
+without reprioritizing it ahead of the active acceptance lanes. **NO BUSINESS
+OUTCOME** at this checkpoint. OWNER ACTION: NONE.
