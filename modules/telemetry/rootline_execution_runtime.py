@@ -454,14 +454,23 @@ def _planning_observation(initial, owner, chat, next_due):
         task = tasks.get(zone, {})
         raw = str(task.get("zone_decision") or "Needs Data")
         decision = raw if raw in {"Run now", "Run later", "Hold", "Needs Data", "Not Due"} else "Needs Data"
+        artifact = initial["artifact"]
+        per_zone = (artifact.get("zone_eligibility_reasons")
+                    if isinstance(artifact.get("zone_eligibility_reasons"), dict) else {})
+        if artifact.get("eligible") is True and artifact.get("zone_id") == zone:
+            blocker = ""
+        elif artifact.get("status") == "durable_parent_job_deferred" and decision == "Run now":
+            blocker = str(per_zone.get(zone) or "run_projection_eligibility_invariant_failed")
+            if blocker == "eligible_candidate":
+                blocker = "run_projection_eligibility_invariant_failed"
+        else:
+            blocker = str(per_zone.get(zone) or artifact.get("status") or "")
         zones.append({"zone_id": zone, "decision": "Run" if decision == "Run now" else decision,
-            "reason": str(task.get("reason") or initial["artifact"].get("status") or
+            "reason": str(task.get("reason") or artifact.get("status") or
                           "No canonical zone task is available."),
             "planned_duration_minutes": task.get("planned_duration_minutes"),
             "feasible_window": task.get("preferred_window"),
-            "eligibility_blocker": "" if initial["artifact"].get("eligible") is True
-                                  and initial["artifact"].get("zone_id") == zone
-                                  else str(initial["artifact"].get("status") or "")})
+            "eligibility_blocker": blocker})
     material = {"operating_date": operating_date, "generation": generation,
                 "evidence_cutoff": cutoff, "zones": zones}
     digest = _digest(material)
