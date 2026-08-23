@@ -6,6 +6,8 @@ on:
       - ".github/workflows/green-print-image.yml"
       - "green_print_bridge/**"
       - "scripts/green_print_startup_apparmor_probe.py"
+      - "scripts/green_print_attestation_inventory.py"
+      - "scripts/green_print_sigstore_bundle_inventory.py"
       - "tests/test_green_print_home_assistant_app.py"
   workflow_dispatch:
     inputs:
@@ -301,6 +303,11 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
         with:
           fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install exact native-bundle inspection dependency
+        run: python -m pip install cryptography==45.0.7
       - name: Bind recovery to exact source, digest, main and package version
         shell: bash
         env:
@@ -556,12 +563,18 @@ jobs:
           if docker buildx imagetools inspect "${signature_ref}" >/dev/null 2>&1; then
             docker buildx imagetools inspect "${signature_ref}" --raw > existing-signature-manifest.json
             jq -e '.mediaType == "application/vnd.oci.image.manifest.v1+json" and (.layers | length) == 2' existing-signature-manifest.json >/dev/null
+            cat > expected-native-signatures.json <<'JSON'
+          [{"certificate_sha256":"17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","runInvocationURI":"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1"},{"certificate_sha256":"d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","runInvocationURI":"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1"}]
+          JSON
+            cosign download signature "${digest_ref}" > native-signature-bundles.jsonl
+            python scripts/green_print_sigstore_bundle_inventory.py native-signature-bundles.jsonl expected-native-signatures.json > native-signature-inventory.json
             cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${EXISTING_RECOVERY_SOURCE_COMMIT}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-original-verification.json
             test -n "${EXISTING_RECOVERY_SOURCE_COMMIT}"
             python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-original-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
             cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" --certificate-github-workflow-sha "${DEVIATION_SIGNATURE_SOURCE_COMMIT}" --certificate-github-workflow-name "Green Print immutable image" --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" --certificate-github-workflow-ref "refs/heads/main" --certificate-github-workflow-trigger "workflow_dispatch" "${digest_ref}" > recovered-cosign-deviation-verification.json
             python scripts/green_print_attestation_inventory.py validate-cosign recovered-cosign-deviation-verification.json "${IMAGE}" "${EXPECTED_DIGEST}"
             echo "signature_manifest_sha256=$(sha256sum existing-signature-manifest.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+            echo "native_signature_inventory_sha256=$(sha256sum native-signature-inventory.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           else
             echo "Required exact existing signature is absent" >&2
             exit 1
@@ -647,6 +660,9 @@ jobs:
           signature_ref="$(cosign triangulate "${digest_ref}")"
           docker buildx imagetools inspect "${signature_ref}" --raw > final-signature-manifest.json
           cmp -s existing-signature-manifest.json final-signature-manifest.json
+          cosign download signature "${digest_ref}" > final-native-signature-bundles.jsonl
+          python scripts/green_print_sigstore_bundle_inventory.py final-native-signature-bundles.jsonl expected-native-signatures.json > final-native-signature-inventory.json
+          cmp -s native-signature-inventory.json final-native-signature-inventory.json
           echo "cosign_original_sha256=$(sha256sum recovered-cosign-original-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "cosign_deviation_sha256=$(sha256sum recovered-cosign-deviation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "recovery_attestation_sha256=$(sha256sum recovered-recovery-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
@@ -665,7 +681,19 @@ jobs:
             "signature_source_1=${{ inputs.existing_recovery_source_commit }}" \
             "signature_run_2=${{ inputs.deviation_signature_run_id }}" \
             "signature_source_2=${{ inputs.deviation_signature_source_commit }}" \
+            "native_signature_count=2" \
+            "signature_certificate_sha256_1=17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25" \
+            "signature_run_uri_1=https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1" \
+            "signature_certificate_sha256_2=d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437" \
+            "signature_run_uri_2=https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1" \
             "authority_deviation=run_32627304614_unexpected_signature_effect_contained_no_reconciliation" \
+            "quarantined_packet_run_id=32627304614" \
+            "quarantined_packet_artifact_id=9490047287" \
+            "quarantined_packet_name=green-print-0.3.6-partial-publication-recovery-packet" \
+            "quarantined_packet_archive_sha256=1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548" \
+            "quarantined_packet_size_bytes=1515741" \
+            "quarantined_packet_expires=2026-11-21" \
+            "quarantined_packet_authority=non_authoritative_incident_evidence" \
             "digest=${{ inputs.expected_digest }}" \
             "manifest_digest=${{ inputs.expected_manifest_digest }}" \
             "tag_resolved_digest=${{ inputs.expected_digest }}" \
@@ -675,6 +703,7 @@ jobs:
             "cosign_original_verification_sha256=${{ steps.partial_verify.outputs.cosign_original_sha256 }}" \
             "cosign_deviation_verification_sha256=${{ steps.partial_verify.outputs.cosign_deviation_sha256 }}" \
             "signature_manifest_sha256=${{ steps.partial_signature.outputs.signature_manifest_sha256 }}" \
+            "native_signature_inventory_sha256=${{ steps.partial_signature.outputs.native_signature_inventory_sha256 }}" \
             "recovery_attestation_verification_sha256=${{ steps.partial_verify.outputs.recovery_attestation_sha256 }}" \
             "sbom_attestation_sha256=${{ steps.partial_verify.outputs.sbom_attestation_sha256 }}" \
             "sbom_sha256=${{ steps.partial_verify.outputs.sbom_sha256 }}" \

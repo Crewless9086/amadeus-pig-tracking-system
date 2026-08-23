@@ -5,12 +5,17 @@ import base64,importlib.util,json,sqlite3,sys
 from pathlib import Path
 from types import SimpleNamespace
 import pytest,yaml
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 
 ROOT=Path(__file__).parents[1]; APP=ROOT/"green_print_bridge"
 SPEC=importlib.util.spec_from_file_location("green_app",APP/"app"/"service.py"); S=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(S)
 sys.modules["service"]=S
 QUEUE_SPEC=importlib.util.spec_from_file_location("green_init_queue",APP/"app"/"init_queue.py"); Q=importlib.util.module_from_spec(QUEUE_SPEC); QUEUE_SPEC.loader.exec_module(Q)
 INVENTORY_SPEC=importlib.util.spec_from_file_location("green_attestation_inventory",ROOT/"scripts"/"green_print_attestation_inventory.py"); I=importlib.util.module_from_spec(INVENTORY_SPEC); INVENTORY_SPEC.loader.exec_module(I)
+BUNDLE_SPEC=importlib.util.spec_from_file_location("green_bundle_inventory",ROOT/"scripts"/"green_print_sigstore_bundle_inventory.py"); B=importlib.util.module_from_spec(BUNDLE_SPEC); BUNDLE_SPEC.loader.exec_module(B)
 NOW=datetime(2026,8,21,8,tzinfo=timezone.utc); PDF=b"%PDF-1.4\nsynthetic\n%%EOF"
 def config(tmp_path):
     cert=tmp_path/"private-ca.crt"; cert.write_text("synthetic",encoding="utf-8")
@@ -381,6 +386,30 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     serialized=json.dumps(recovery)
     for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
         assert forbidden not in serialized
+    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","non_authoritative_incident_evidence"):
+        assert exact in serialized
+
+def _native_bundle(run_uri):
+    key=ec.generate_private_key(ec.SECP256R1()); subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,"synthetic")])
+    encoded=run_uri.encode(); extension=b"\x0c"+bytes([len(encoded)])+encoded
+    cert=(x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key()).serial_number(1).not_valid_before(datetime(2026,8,23,tzinfo=timezone.utc)).not_valid_after(datetime(2026,8,24,tzinfo=timezone.utc)).add_extension(x509.UnrecognizedExtension(B.RUN_INVOCATION_OID,extension),critical=False).sign(key,hashes.SHA256()))
+    raw=cert.public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.DER)
+    payload=base64.b64encode(json.dumps({"critical":{"type":B.NATIVE}}).encode()).decode()
+    bundle={"content":{"dsseEnvelope":{"payload":payload}},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()}}}
+    return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
+
+def test_native_bundle_inventory_accepts_exact_two_certificate_fingerprints_and_run_uris():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    assert B.inspect([first[0],second[0]],[first[1],second[1]])==sorted([first[1],second[1]],key=lambda row:row["certificate_sha256"])
+
+def test_native_bundle_inventory_rejects_substitution_missing_multiple_and_malformed():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]
+    adversaries=[([first[0]],expected),([first[0],second[0],second[0]],expected),([first[0],second[0]],[first[1],{**second[1],"certificate_sha256":"0"*64}]),([first[0],second[0]],[first[1],{**second[1],"runInvocationURI":second[1]["runInvocationURI"]+"0"}]),([first[0],"{}"],expected)]
+    for lines,wanted in adversaries:
+        with pytest.raises(ValueError): B.inspect(lines,wanted)
 
 def _recovery_predicate(index="sha256:"+"a"*64,manifest="sha256:"+"b"*64,source="c"*40,run_id="32622312938"):
     return {"recoveryKind":"post_build_release_evidence_completion","claimsBuildProvenance":False,"originalPublication":{"workflow":".github/workflows/green-print-image.yml","runId":run_id,"sourceCommit":source,"verifyJob":"success","publishJob":"failed_after_tag_creation"},"artifact":{"indexDigest":index,"soleLinuxArm64ManifestDigest":manifest},"permittedEffects":["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],"prohibitedEffects":["image_build","image_push","tag_create","retag","delete","install","print"]}
