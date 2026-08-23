@@ -123,20 +123,20 @@ def _certificate_and_native(bundle, image, digest):
             "certificate", "timestampVerificationData", "tlogEntries"} or
             not isinstance(verification.get("certificate"), dict) or
             set(verification["certificate"]) != {"rawBytes"} or
-            not isinstance(verification.get("timestampVerificationData"), dict) or
-            set(verification["timestampVerificationData"]) != {
-                "rfc3161Timestamps"} or
-            not isinstance(verification["timestampVerificationData"]
-                           ["rfc3161Timestamps"], list)):
+            not isinstance(verification.get("timestampVerificationData"), dict)):
         raise ValueError("native_sigstore_verification_material_malformed")
-    timestamps = verification["timestampVerificationData"]\
-        ["rfc3161Timestamps"]
+    timestamp_data = verification["timestampVerificationData"]
     if predicate_type == NATIVE:
-        if (len(timestamps) != 1 or not isinstance(timestamps[0], dict) or
-                set(timestamps[0]) != {"signedTimestamp"}):
+        if (set(timestamp_data) != {"rfc3161Timestamps"} or
+                not isinstance(timestamp_data["rfc3161Timestamps"], list) or
+                len(timestamp_data["rfc3161Timestamps"]) != 1 or
+                not isinstance(timestamp_data["rfc3161Timestamps"][0], dict) or
+                set(timestamp_data["rfc3161Timestamps"][0]) != {
+                    "signedTimestamp"}):
             raise ValueError("native_sigstore_timestamp_malformed")
+        timestamps = timestamp_data["rfc3161Timestamps"]
         _decode_canonical_base64(timestamps[0]["signedTimestamp"])
-    elif timestamps != []:
+    elif timestamp_data != {}:
         raise ValueError("non_native_sigstore_timestamp_malformed")
     entries = verification.get("tlogEntries")
     if not isinstance(entries, list) or len(entries) != 1:

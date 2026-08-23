@@ -424,8 +424,8 @@ def _sigstore_bundle(predicate_type,run_uri):
     payload=base64.b64encode(json.dumps({"_type":B.STATEMENT_TYPE,"predicate":{},"predicateType":predicate_type,"subject":[subject]}).encode()).decode()
     proof={"checkpoint":{"envelope":"synthetic checkpoint"},"hashes":["c3ludGhldGlj"],"logIndex":"0","rootHash":"c3ludGhldGlj","treeSize":"2"}
     tlog={"canonicalizedBody":"c3ludGhldGlj","inclusionPromise":{"signedEntryTimestamp":"c3ludGhldGlj"},"inclusionProof":proof,"integratedTime":"1787472000","kindVersion":{"kind":"dsse","version":"0.0.1"},"logId":{"keyId":"c3ludGhldGlj"},"logIndex":"1"}
-    timestamps=[{"signedTimestamp":"c3ludGhldGlj"}] if predicate_type==B.NATIVE else []
-    bundle={"mediaType":B.MEDIA_TYPE,"dsseEnvelope":{"payload":payload,"payloadType":B.PAYLOAD_TYPE,"signatures":[{"sig":"c3ludGhldGlj"}]},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()},"timestampVerificationData":{"rfc3161Timestamps":timestamps},"tlogEntries":[tlog]}}
+    timestamp_data={"rfc3161Timestamps":[{"signedTimestamp":"c3ludGhldGlj"}]} if predicate_type==B.NATIVE else {}
+    bundle={"mediaType":B.MEDIA_TYPE,"dsseEnvelope":{"payload":payload,"payloadType":B.PAYLOAD_TYPE,"signatures":[{"sig":"c3ludGhldGlj"}]},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()},"timestampVerificationData":timestamp_data,"tlogEntries":[tlog]}}
     return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
 
 def _native_bundle(run_uri):
@@ -451,7 +451,7 @@ def test_native_bundle_inventory_accepts_exact_live_cosign_v3_mixed_four_bundle_
         assert entry["logIndex"]=="1" and entry["inclusionProof"]["logIndex"]=="0"
     for non_native in (spdx,recovery):
         live=json.loads(non_native[0])
-        assert live["verificationMaterial"]["timestampVerificationData"]["rfc3161Timestamps"]==[]
+        assert live["verificationMaterial"]["timestampVerificationData"]=={}
     assert B.inspect(lines,expected,BUNDLE_IMAGE,BUNDLE_DIGEST)==sorted(expected,key=lambda row:row["certificate_sha256"])
 
 def test_native_bundle_inventory_rejects_substitution_missing_multiple_and_malformed():
@@ -496,7 +496,7 @@ def test_native_bundle_inventory_rejects_dsse_extra_empty_wrong_and_hybrid_neste
     extra_proof=json.loads(first[0]); extra_proof["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["extra"]=True; adversaries.append(extra_proof)
     wrong_kind=json.loads(first[0]); wrong_kind["verificationMaterial"]["tlogEntries"][0]["kindVersion"]["kind"]="intoto"; adversaries.append(wrong_kind)
     empty_hashes=json.loads(first[0]); empty_hashes["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["hashes"]=[]; adversaries.append(empty_hashes)
-    missing_native_timestamp=json.loads(first[0]); missing_native_timestamp["verificationMaterial"]["timestampVerificationData"]["rfc3161Timestamps"]=[]; adversaries.append(missing_native_timestamp)
+    missing_native_timestamp=json.loads(first[0]); missing_native_timestamp["verificationMaterial"]["timestampVerificationData"]={}; adversaries.append(missing_native_timestamp)
     leading_zero_entry=json.loads(first[0]); leading_zero_entry["verificationMaterial"]["tlogEntries"][0]["logIndex"]="01"; adversaries.append(leading_zero_entry)
     leading_zero_proof=json.loads(first[0]); leading_zero_proof["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["logIndex"]="00"; adversaries.append(leading_zero_proof)
     for changed in adversaries:
@@ -509,7 +509,7 @@ def test_native_bundle_inventory_rejects_per_predicate_subject_and_timestamp_sha
     recovery=_sigstore_bundle(I.RECOVERY,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
     expected=[first[1],second[1]]
     native_named=json.loads(first[0]); native_payload=json.loads(base64.b64decode(native_named["dsseEnvelope"]["payload"])); native_payload["subject"]=[{"name":BUNDLE_IMAGE,"digest":{"sha256":"a"*64}}]; native_named["dsseEnvelope"]["payload"]=base64.b64encode(json.dumps(native_payload).encode()).decode()
-    nonnative_timestamp=json.loads(spdx[0]); nonnative_timestamp["verificationMaterial"]["timestampVerificationData"]["rfc3161Timestamps"]=[{"signedTimestamp":"c3ludGhldGlj"}]
+    nonnative_timestamp=json.loads(spdx[0]); nonnative_timestamp["verificationMaterial"]["timestampVerificationData"]={"rfc3161Timestamps":[]}
     foreign_predicate=json.loads(recovery[0]); foreign_payload=json.loads(base64.b64decode(foreign_predicate["dsseEnvelope"]["payload"])); foreign_payload["predicateType"]="https://foreign.invalid/predicate"; foreign_predicate["dsseEnvelope"]["payload"]=base64.b64encode(json.dumps(foreign_payload).encode()).decode()
     for records in ([json.dumps(native_named),spdx[0],recovery[0],second[0]],[first[0],json.dumps(nonnative_timestamp),recovery[0],second[0]],[first[0],spdx[0],json.dumps(foreign_predicate),second[0]]):
         with pytest.raises(ValueError): B.inspect(records,expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
