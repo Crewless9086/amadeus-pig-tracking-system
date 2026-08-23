@@ -139,6 +139,31 @@ def test_untouched_real_builder_owner_card_worker_reaches_final_executor():
     assert final_payloads[0]["target_page_id"] == preview["target_page_id"] == "PAGE-1"
 
 
+def test_scheduled_story_only_builder_passes_final_publication_validation():
+    proposal = build_live_stock_awareness_proposal(
+        {"success": True, "cards": []},
+        {"success": True, "owner_review_packet": {
+            "packet_id": "SCHEDULED-STORY", "draft_copy": "Follow the farm journey.",
+            "audience": "Farm followers", "public_livestock_policy": {
+                "policy_version": "beacon_public_livestock_awareness_only_v2"}}},
+        None, target_page_id="PAGE-1", story_only=True)
+    package = build_protected_campaign_package(proposal, now=NOW)
+    created = []
+    prepare_campaign_owner_card(
+        package, owner_user_id="OWNER", private_chat_id="CHAT",
+        provider_message_id="SCHEDULED", packet_generation="GEN-SCHEDULED",
+        target_page_id="PAGE-1",
+        claim_creator=lambda **kwargs: (
+            created.append(kwargs) or {"callback_token": "TOKEN-SCHEDULED"}),
+    )
+    preview = created[0]["preview_payload"]
+    claim = {"action_kind": "beacon_campaign_review", "claim_status": "completed",
+        "evidence_generation": preview["campaign_digest"], "preview_payload": preview,
+        "approval_result": {"status": "beacon_campaign_review_approved"}}
+    assert "follow" not in preview["exact_post_copy"].casefold()
+    assert validate_claimed_approval(claim, now=NOW) == ""
+
+
 def confirmed_outcome(post_id="42_7"):
     return {"success":True,"status":"facebook_page_post_sent","facebook_post_id":post_id,
         "facebook_result":{"success":True,"provider_readback_confirmed":True,

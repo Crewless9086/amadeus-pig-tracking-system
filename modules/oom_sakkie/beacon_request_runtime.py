@@ -56,7 +56,8 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
     # cannot prove exact subject/event binding and must not be selected merely
     # because it exists; a later owner-requested story may use governed media.
     packet = build_live_stock_awareness_proposal(
-        opportunities, candidate, None, target_page_id=target_page_id)
+        opportunities, candidate, None, target_page_id=target_page_id,
+        story_only=True)
     if packet.get("status") == "ready_for_owner_review":
         packet = build_protected_campaign_package(packet, now=evidence_time)
     return {
@@ -650,7 +651,7 @@ def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
 
 
 def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=None, *, language="en",
-        target_page_id=None):
+        target_page_id=None, story_only=False):
     """Normalize the existing awareness builder for the Oom Sakkie owner lane."""
     if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
         raise ValueError("canonical_opportunity_evidence_required")
@@ -667,8 +668,13 @@ def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=
             "request": "Optional: one portrait photo or short vertical video of piglets during a calm daily-care moment, with no people, vehicle plates, customer locations, illness or sales signage."}
     capacity = _awareness_capacity_context(opportunities)
     caption = str(review["draft_copy"])
+    if story_only:
+        caption = ("A small moment from life at Amadeus Farm. These curious piglets remind us "
+            "how much patient daily care shapes everyday farm life.")
     if str(language).casefold().startswith("af"):
         caption = ("'n Klein oomblik uit die lewe op Amadeus Farm. Geduldige daaglikse versorging "
+            "vorm die alledaagse plaaslewe." if story_only else
+            "'n Klein oomblik uit die lewe op Amadeus Farm. Geduldige daaglikse versorging "
             "vorm die alledaagse plaaslewe.\n\nVolg die plaas se reis vir meer eerlike oomblikke agter die skerms.")
     policy = assess_public_livestock_content(caption, objective="farm_awareness",
         campaign_lane="live_stock_awareness", media=([] if media_plan.get("status") == "text_only"
