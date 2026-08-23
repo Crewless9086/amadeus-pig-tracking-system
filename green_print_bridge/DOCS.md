@@ -38,6 +38,15 @@ labels runnable manifest
 as `linux/amd64` while its image config and layers are arm64.
 It must never be installed, attested further, overwritten, deleted, or reused.
 
+If a unique-version publication creates its index but stops before signing or
+attestation, do not rebuild, retag, delete or push the package again. The
+partial-publication recovery lane requires the reviewed source commit, index
+digest and sole arm64 manifest digest; rereads the stable tag and OCI labels
+with bounded registry-consistency retries; refuses foreign, duplicate or
+malformed signatures and attestations; and may complete only missing signature,
+SBOM and attestation evidence for that exact existing artifact. Recovery is a
+separately protected dispatch and never grants installation or print authority.
+
 ## Install and commissioning
 
 1. Review the exact commit, approve one guarded publication, and verify the complete non-secret 0.3.6 release packet against the published immutable digest. There is no current local Supervisor-build fallback.

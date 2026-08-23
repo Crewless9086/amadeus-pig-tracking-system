@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timedelta,timezone
 from hashlib import sha256
-import importlib.util,json,sqlite3,sys
+import base64,importlib.util,json,sqlite3,sys
 from pathlib import Path
 import pytest,yaml
 
@@ -9,6 +9,7 @@ ROOT=Path(__file__).parents[1]; APP=ROOT/"green_print_bridge"
 SPEC=importlib.util.spec_from_file_location("green_app",APP/"app"/"service.py"); S=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(S)
 sys.modules["service"]=S
 QUEUE_SPEC=importlib.util.spec_from_file_location("green_init_queue",APP/"app"/"init_queue.py"); Q=importlib.util.module_from_spec(QUEUE_SPEC); QUEUE_SPEC.loader.exec_module(Q)
+INVENTORY_SPEC=importlib.util.spec_from_file_location("green_attestation_inventory",ROOT/"scripts"/"green_print_attestation_inventory.py"); I=importlib.util.module_from_spec(INVENTORY_SPEC); INVENTORY_SPEC.loader.exec_module(I)
 NOW=datetime(2026,8,21,8,tzinfo=timezone.utc); PDF=b"%PDF-1.4\nsynthetic\n%%EOF"
 def config(tmp_path):
     cert=tmp_path/"private-ca.crt"; cert.write_text("synthetic",encoding="utf-8")
@@ -278,7 +279,7 @@ def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
     names=[step.get("name") for step in steps]
     verify=steps[names.index("Verify signature and digest-bound attestations")]
     assert verify["env"]["GH_TOKEN"]=="${{ github.token }}"
-    assert workflow.count("GH_TOKEN: ${{ github.token }}")==2
+    assert workflow.count("GH_TOKEN: ${{ github.token }}")==4
     assert "gh attestation verify" in verify["run"] and "|| true" not in verify["run"]
     assert names.index("Verify signature and digest-bound attestations") < names.index("Emit digest-bound non-secret release receipt") < names.index("Preserve non-secret verified release packet")
 
@@ -309,6 +310,58 @@ def test_035_recovery_is_verification_only_exact_bound_and_replay_safe():
     forbidden=("docker/build-push-action","cosign sign","actions/attest-build-provenance","actions/attest-sbom","imagetools create","push: true")
     recovery_text=json.dumps(recovery)
     assert not any(token in recovery_text for token in forbidden)
+
+def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_or_tag():
+    workflow=(ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8")
+    parsed=yaml.safe_load(workflow); inputs=parsed.get("on",parsed[True])["workflow_dispatch"]["inputs"]
+    assert inputs["complete_partial_publication"]["default"] is False
+    assert inputs["expected_manifest_digest"]["required"] is False
+    recovery=parsed["jobs"]["recover_partial_publication"]
+    assert recovery["if"]=="github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication"
+    assert recovery["permissions"]=={"contents":"read","id-token":"write","packages":"write","attestations":"write"}
+    steps=recovery["steps"]; names=[step.get("name") for step in steps]
+    binding=steps[names.index("Bind partial recovery to exact source, index, manifest and main")]["run"]
+    assert 'test "${PUBLISH_REQUESTED}" = "false"' in binding
+    assert 'test "${VERIFY_ONLY_REQUESTED}" = "false"' in binding
+    assert binding.count('^sha256:[0-9a-f]{64}$')==2 and '^[0-9a-f]{40}$' in binding
+    existing=steps[names.index("Verify stable existing tag, index, sole manifest and OCI config")]["run"]
+    assert "for attempt in 1 2 3 4 5 6 7 8" in existing and "sleep 3" in existing
+    assert 'test "${tag_digest}" = "${EXPECTED_DIGEST}"' in existing
+    assert '.manifests[0].digest == $manifest' in existing
+    assert '"${IMAGE}@${EXPECTED_MANIFEST_DIGEST}" --format' in existing
+    assert 'tag-recheck.txt' in existing and 'org.opencontainers.image.revision' in existing
+    signature=steps[names.index("Inspect existing signature and refuse foreign or ambiguous state")]["run"]
+    assert "cosign triangulate" in signature and "test \"$(jq 'length' recovered-cosign-verification.json)\" = \"1\"" in signature
+    attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
+    assert "green_print_attestation_inventory.py" in attestations
+    assert 'test "${foreign_count}" = "0"' in attestations
+    assert 'test "${provenance_count}" -le 1' in attestations and 'test "${sbom_count}" -le 1' in attestations
+    assert names.index("Verify stable existing tag, index, sole manifest and OCI config") < names.index("Keylessly sign exact existing arm64 index when absent")
+    assert names.index("Verify completed signature, attestations and immutable tag") < names.index("Emit partial-publication recovery receipt")
+    text=json.dumps(recovery)
+    for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
+        assert forbidden not in text
+
+def _attestation(predicate, image="ghcr.io/crewless9086/amadeus-green-print-bridge", digest="a"*64):
+    statement={"subject":[{"name":image,"digest":{"sha256":digest}}],"predicateType":predicate,"predicate":{}}
+    payload=base64.urlsafe_b64encode(json.dumps(statement).encode()).decode().rstrip("=")
+    return {"bundle":{"dsseEnvelope":{"payload":payload}}}
+
+def test_partial_recovery_attestation_inventory_accepts_only_one_exact_pair():
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64
+    document={"attestations":[_attestation(I.PROVENANCE),_attestation(I.SBOM)]}
+    provenance,sbom,foreign,statements=I.inventory(document,image,digest)
+    assert (provenance,sbom,foreign)==(1,1,0) and len(statements)==2
+
+@pytest.mark.parametrize("records,expected",[
+    ([_attestation(I.PROVENANCE),_attestation(I.PROVENANCE)],(2,0,0)),
+    ([_attestation("https://foreign.invalid/predicate")],(0,0,1)),
+    ([_attestation(I.PROVENANCE,image="ghcr.io/foreign/image")],(0,0,1)),
+    ([{"bundle":{"dsseEnvelope":{"payload":"not-base64"}}}],(0,0,1)),
+])
+def test_partial_recovery_attestation_inventory_exposes_duplicate_foreign_and_malformed(records,expected):
+    actual=I.inventory({"attestations":records},"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64)
+    assert actual[:3]==expected
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")

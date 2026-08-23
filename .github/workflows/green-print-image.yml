@@ -27,6 +27,15 @@ on:
         description: Exact sha256 digest to verify in recovery mode
         required: false
         type: string
+      complete_partial_publication:
+        description: Complete signing and attestations for an exact already-published artifact without pushing an image or tag
+        required: true
+        default: false
+        type: boolean
+      expected_manifest_digest:
+        description: Exact sole linux/arm64 manifest digest for partial-publication recovery
+        required: false
+        type: string
 
 concurrency:
   group: green-print-image-${{ github.event.pull_request.number || github.ref }}
@@ -372,3 +381,222 @@ jobs:
             recovered-cosign-verification.json
             recovered-provenance-verification.json
             recovered-sbom-attestation-verification.json
+
+  recover_partial_publication:
+    name: Complete exact partial publication without image or tag push
+    if: github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Bind partial recovery to exact source, index, manifest and main
+        shell: bash
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          EXPECTED_MANIFEST_DIGEST: ${{ inputs.expected_manifest_digest }}
+          PUBLISH_REQUESTED: ${{ inputs.publish }}
+          VERIFY_ONLY_REQUESTED: ${{ inputs.recover_existing }}
+        run: |
+          set -euo pipefail
+          test "${PUBLISH_REQUESTED}" = "false"
+          test "${VERIFY_ONLY_REQUESTED}" = "false"
+          [[ "${EXPECTED_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "${EXPECTED_MANIFEST_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "${EXPECTED_DIGEST}" != "${EXPECTED_MANIFEST_DIGEST}"
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git cat-file -e "${EXPECTED_SOURCE_COMMIT}^{commit}"
+          git merge-base --is-ancestor "${EXPECTED_SOURCE_COMMIT}" "${GITHUB_SHA}"
+          test "$(git show "${EXPECTED_SOURCE_COMMIT}:green_print_bridge/config.yaml" | sed -n 's/^version: "\([^"]*\)"$/\1/p')" = "${VERSION}"
+          test "$(git show "${EXPECTED_SOURCE_COMMIT}:green_print_bridge/config.yaml" | sed -n 's/^image: \(.*\)$/\1/p')" = "${IMAGE}"
+      - name: Authenticate only for exact signature and attestation completion
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - name: Verify stable existing tag, index, sole manifest and OCI config
+        id: partial_existing
+        shell: bash
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          EXPECTED_MANIFEST_DIGEST: ${{ inputs.expected_manifest_digest }}
+        run: |
+          set -euo pipefail
+          inspect_retry() {
+            local output="$1"
+            shift
+            for attempt in 1 2 3 4 5 6 7 8; do
+              if "$@" > "${output}.next" 2>/dev/null && test -s "${output}.next"; then
+                mv "${output}.next" "${output}"
+                return 0
+              fi
+              rm -f "${output}.next"
+              sleep 3
+            done
+            return 1
+          }
+          tag_ref="${IMAGE}:${VERSION}"
+          inspect_retry tag-inspection.txt docker buildx imagetools inspect "${tag_ref}"
+          tag_digest="$(awk '$1 == "Digest:" {print $2; exit}' tag-inspection.txt)"
+          test "${tag_digest}" = "${EXPECTED_DIGEST}"
+          inspect_retry recovered-index.json docker buildx imagetools inspect "${IMAGE}@${EXPECTED_DIGEST}" --raw
+          jq -e --arg manifest "${EXPECTED_MANIFEST_DIGEST}" '
+            .mediaType == "application/vnd.oci.image.index.v1+json" and
+            (.manifests | length) == 1 and
+            .manifests[0].platform.os == "linux" and
+            .manifests[0].platform.architecture == "arm64" and
+            .manifests[0].digest == $manifest
+          ' recovered-index.json >/dev/null
+          inspect_retry recovered-image-config.json docker buildx imagetools inspect "${IMAGE}@${EXPECTED_MANIFEST_DIGEST}" --format '{{json .Image}}'
+          jq -e '.architecture == "arm64" and .os == "linux"' recovered-image-config.json >/dev/null
+          jq -e --arg source "${EXPECTED_SOURCE_COMMIT}" '.config.Labels["org.opencontainers.image.revision"] == $source' recovered-image-config.json >/dev/null
+          jq -e --arg repo "https://github.com/${GITHUB_REPOSITORY}" '.config.Labels["org.opencontainers.image.source"] == $repo' recovered-image-config.json >/dev/null
+          jq -e --arg version "${VERSION}" '.config.Labels["org.opencontainers.image.version"] == $version' recovered-image-config.json >/dev/null
+          inspect_retry tag-recheck.txt docker buildx imagetools inspect "${tag_ref}"
+          test "$(awk '$1 == "Digest:" {print $2; exit}' tag-recheck.txt)" = "${EXPECTED_DIGEST}"
+          echo "index_sha256=$(sha256sum recovered-index.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "config_sha256=$(sha256sum recovered-image-config.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+      - name: Install pinned Cosign signer and verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Inspect existing signature and refuse foreign or ambiguous state
+        id: partial_signature
+        shell: bash
+        env:
+          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+        run: |
+          set -euo pipefail
+          digest_ref="${IMAGE}@${EXPECTED_DIGEST}"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main"
+          issuer="https://token.actions.githubusercontent.com"
+          signature_ref="$(cosign triangulate "${digest_ref}")"
+          if docker buildx imagetools inspect "${signature_ref}" >/dev/null 2>&1; then
+            docker buildx imagetools inspect "${signature_ref}" --raw > existing-signature-manifest.json
+            jq -e '.mediaType == "application/vnd.oci.image.manifest.v1+json" and (.layers | length) == 1' existing-signature-manifest.json >/dev/null
+            cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${digest_ref}" > recovered-cosign-verification.json
+            test "$(jq 'length' recovered-cosign-verification.json)" = "1"
+            echo "sign_required=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "sign_required=true" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Keylessly sign exact existing arm64 index when absent
+        if: steps.partial_signature.outputs.sign_required == 'true'
+        shell: bash
+        run: cosign sign --yes "${IMAGE}@${{ inputs.expected_digest }}"
+      - name: Install pinned Syft scanner
+        id: recovery_syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.42.3
+      - name: Generate SPDX SBOM from exact existing arm64 manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${{ steps.recovery_syft.outputs.cmd }}" scan --platform linux/arm64 "registry:${IMAGE}@${{ inputs.expected_manifest_digest }}" --output "spdx-json=green-print-0.3.6.spdx.json"
+          jq -e '.spdxVersion == "SPDX-2.3"' green-print-0.3.6.spdx.json >/dev/null
+      - name: Inspect attestations and refuse foreign, duplicate or malformed state
+        id: partial_attestations
+        shell: bash
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          digest_ref="${IMAGE}@${EXPECTED_DIGEST}"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main"
+          gh api -H "Accept: application/vnd.github+json" "/repos/${GITHUB_REPOSITORY}/attestations/${EXPECTED_DIGEST}" > existing-attestations.json
+          python scripts/green_print_attestation_inventory.py existing-attestations.json "${IMAGE}" "${EXPECTED_DIGEST}" green-print-0.3.6.spdx.json > attestation-inventory.env
+          source attestation-inventory.env
+          test "${foreign_count}" = "0"
+          test "${provenance_count}" -le 1
+          test "${sbom_count}" -le 1
+          if test "${provenance_count}" = "1"; then
+            gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://slsa.dev/provenance/v1" --cert-identity "${identity}" --source-digest "${EXPECTED_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-provenance-verification.json
+            echo "provenance_required=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "provenance_required=true" >> "${GITHUB_OUTPUT}"
+          fi
+          if test "${sbom_count}" = "1"; then
+            gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${EXPECTED_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
+            echo "sbom_required=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "sbom_required=true" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Attest exact existing build provenance when absent
+        if: steps.partial_attestations.outputs.provenance_required == 'true'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ inputs.expected_digest }}
+          push-to-registry: true
+      - name: Attest exact existing SBOM when absent
+        if: steps.partial_attestations.outputs.sbom_required == 'true'
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ inputs.expected_digest }}
+          sbom-path: green-print-0.3.6.spdx.json
+          push-to-registry: true
+      - name: Verify completed signature, attestations and immutable tag
+        id: partial_verify
+        shell: bash
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          digest_ref="${IMAGE}@${EXPECTED_DIGEST}"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main"
+          issuer="https://token.actions.githubusercontent.com"
+          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${digest_ref}" > recovered-cosign-verification.json
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://slsa.dev/provenance/v1" --cert-identity "${identity}" --source-digest "${EXPECTED_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-provenance-verification.json
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${EXPECTED_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
+          test "$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" | awk '$1 == "Digest:" {print $2; exit}')" = "${EXPECTED_DIGEST}"
+          echo "cosign_sha256=$(sha256sum recovered-cosign-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "provenance_sha256=$(sha256sum recovered-provenance-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_attestation_sha256=$(sha256sum recovered-sbom-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_sha256=$(sha256sum green-print-0.3.6.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+      - name: Emit partial-publication recovery receipt
+        shell: bash
+        run: |
+          printf '%s\n' \
+            "image=${IMAGE}" \
+            "version=${VERSION}" \
+            "source_commit=${{ inputs.expected_source_commit }}" \
+            "digest=${{ inputs.expected_digest }}" \
+            "manifest_digest=${{ inputs.expected_manifest_digest }}" \
+            "tag_resolved_digest=${{ inputs.expected_digest }}" \
+            "platform=linux/arm64" \
+            "image_index_sha256=${{ steps.partial_existing.outputs.index_sha256 }}" \
+            "image_config_sha256=${{ steps.partial_existing.outputs.config_sha256 }}" \
+            "cosign_verification_sha256=${{ steps.partial_verify.outputs.cosign_sha256 }}" \
+            "provenance_verification_sha256=${{ steps.partial_verify.outputs.provenance_sha256 }}" \
+            "sbom_attestation_sha256=${{ steps.partial_verify.outputs.sbom_attestation_sha256 }}" \
+            "sbom_sha256=${{ steps.partial_verify.outputs.sbom_sha256 }}" \
+            "recovery_workflow_run_id=${GITHUB_RUN_ID}" | tee green-print-image-partial-recovery-receipt.txt
+      - name: Preserve partial-publication verified release packet
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: green-print-0.3.6-partial-publication-recovery-packet
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            green-print-image-partial-recovery-receipt.txt
+            recovered-index.json
+            recovered-image-config.json
+            recovered-cosign-verification.json
+            recovered-provenance-verification.json
+            recovered-sbom-attestation-verification.json
+            green-print-0.3.6.spdx.json
