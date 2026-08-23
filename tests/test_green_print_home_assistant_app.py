@@ -64,6 +64,8 @@ def test_package_is_bounded_and_privilege_split():
     assert "adduser -S -D -H" in docker and "/sbin/su-exec greenprint:greenprint" in init
     assert "/usr/sbin/cupsd -f -c /etc/cups/cupsd.conf -s /etc/cups/cups-files.conf 2>/dev/null &" in init and "/sbin/su-exec cupsd" not in init
     assert "lpadmin" not in init and "/sbin/su-exec greenprint:greenprint /usr/bin/python3 /opt/green/service.py 2>/dev/null || fail_startup service_exec service_process_failed" in init
+    assert S.CA_CERTIFICATE_PATH=="/etc/cups/ssl/site.crt"
+    assert "step service_exec service_ca_unreadable /sbin/su-exec greenprint:greenprint test -r /etc/cups/ssl/site.crt" in init
     assert "PYTHONPATH=/opt/green /usr/bin/python3 /opt/green/init_queue.py" in init
     assert init.startswith("#!/bin/sh\nset -eu\numask 0077\n") and run.startswith("#!/bin/sh\nset -eu\numask 0077\n")
     assert "install -d -o greenprint -g greenprint -m 0700 /data/green-runtime" in init

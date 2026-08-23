@@ -94,4 +94,5 @@ fi
 step service_exec service_launcher_missing test -x /sbin/su-exec
 step service_exec service_interpreter_missing test -x /usr/bin/python3
 step service_exec service_script_unreadable test -r /opt/green/service.py
+step service_exec service_ca_unreadable /sbin/su-exec greenprint:greenprint test -r /etc/cups/ssl/site.crt
 /sbin/su-exec greenprint:greenprint /usr/bin/python3 /opt/green/service.py 2>/dev/null || fail_startup service_exec service_process_failed
