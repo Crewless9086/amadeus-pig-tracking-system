@@ -51,7 +51,8 @@ UNRELATED_OPERATIONAL_PATTERN = re.compile(
     r"\b(?:reservoir|storage tanks?|borehole|irrigation|valves?|b camp|c camp|"
     r"solar|soc|grid|inverter|power|fertili[sz]er)\b", re.I,
 )
-ENTITY_PATTERN = re.compile(r"\b(?:pig|tag|vark)\s*([a-z0-9-]+)\b", re.I)
+ENTITY_PATTERN = re.compile(
+    r"\b(?:pig|tag|vark)\b(?:\s+(?:nr|no|number|nommer))?\s*#?\s*([a-z0-9-]+)\b", re.I)
 CONFIRMATION_PATTERN = re.compile(r"^CONFIRM HERD-[A-Z0-9-]+$")
 CORRECTION_PATTERN = re.compile(
     r"\b(?:correction|incorrect|wrong|must be|should be|mark(?:ed)? as|"
@@ -867,7 +868,7 @@ def _resolve_active_context(text, contexts, provider_message_id="", *,
 
 def _semantic_tag(entity_refs):
     for value in entity_refs or ():
-        match = re.search(r"(?:pig|tag|vark)?\s*([0-9]{1,8})\b", str(value), re.I)
+        match = ENTITY_PATTERN.search(str(value))
         if match:
             return match.group(1).casefold()
     return ""

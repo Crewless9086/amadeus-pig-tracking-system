@@ -225,6 +225,38 @@ def test_ordinary_journeys(text, tag, family, observed):
     assert result["zero_io"] is True
 
 
+@pytest.mark.parametrize("text", [
+    "Vark nr 146 dood op 23 Aug 2026",
+    "Vark no 146 is dood op 23 Augustus 2026",
+    "Pig number 146 died on 23 August 2026",
+    "Pig #146 died on 23/08/2026",
+])
+def test_explicit_pig_marker_wins_and_date_numbers_never_become_candidates(text):
+    target=animal("PIG-2026-0146","146","146")
+    day_number=animal("PIG-2026-0023","23","23")
+    result=evaluate_health_loss_intake({**report(text),
+        "provider_timestamp":"2026-08-23T20:30:00+02:00"},
+        {**evidence(target,day_number),"as_of_timestamp":"2026-08-23T20:31:00+02:00"})
+    assert result["identity"]["resolved"] is True
+    assert result["identity"]["pig_id"] == "PIG-2026-0146"
+    assert result["preview"]["event_date"] == "2026-08-23"
+    assert "candidate_pig_ids" not in result["identity"]
+
+
+def test_unmarked_date_numerals_do_not_resolve_numeric_animal_identity():
+    result=evaluate_health_loss_intake(report("Found dead on 23 August 2026"),
+        evidence(animal("PIG-2026-0023","23","23")))
+    assert result["status"] == "identity_required"
+    assert result["identity"]["candidate_pig_ids"] == []
+
+
+def test_two_explicit_pig_markers_preserve_real_multi_animal_ambiguity():
+    result=evaluate_health_loss_intake(report("Pig 146 and vark nr 23 are dead"),evidence(
+        animal("PIG-2026-0146","146","146"),animal("PIG-2026-0023","23","23")))
+    assert result["status"] == "identity_required"
+    assert result["identity"]["candidate_pig_ids"] == ["PIG-2026-0023","PIG-2026-0146"]
+
+
 def test_ambiguous_name_asks_one_precise_identity_question_and_no_effects():
     result = evaluate_health_loss_intake(
         report("Maya looks sick."),

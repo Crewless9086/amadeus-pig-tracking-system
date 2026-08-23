@@ -193,7 +193,10 @@ def _provider_time(report):
 def _identity_matches(text, animals):
     lower = text.casefold()
     exact_ids = set(re.findall(r"\bPIG-\d{4}-[A-Z0-9]{4}\b", text.upper()))
-    tag_matches = set(re.findall(r"\b(?:tag|pig)\s*#?([A-Za-z0-9-]+)\b", text, re.I))
+    tag_matches = set(re.findall(
+        r"\b(?:tag|pig|vark)\b(?:\s+(?:nr|no|number))?\s*#?\s*([A-Za-z0-9-]+)\b",
+        text, re.I))
+    explicit_identity = bool(exact_ids or tag_matches)
     matches = []
     for animal in animals:
         pig_id = _clean(animal.get("pig_id"), 80)
@@ -201,9 +204,14 @@ def _identity_matches(text, animals):
         name = _clean(animal.get("name") or tag, 120)
         selected = pig_id in exact_ids
         selected = selected or bool(tag and tag.casefold() in {x.casefold() for x in tag_matches})
-        selected = selected or bool(
-            name and re.search(rf"(?<!\w){re.escape(name.casefold())}(?!\w)", lower)
-        )
+        # Numeric tag/name values must be explicitly marked as animal
+        # identities. Otherwise date days, months, years, counts and weights
+        # can silently become pig candidates. Named animals remain available
+        # only when no explicit Pig ID/tag marker already supplied the typed
+        # identity boundary.
+        selected = selected or bool(not explicit_identity and name
+            and not name.replace("-", "").isdigit()
+            and re.search(rf"(?<!\w){re.escape(name.casefold())}(?!\w)", lower))
         if selected:
             matches.append(animal)
     return sorted(matches, key=lambda row: _clean(row.get("pig_id"), 80))
@@ -234,7 +242,8 @@ def _parse_report(text, provider_time):
     reported_died = bool(re.search(
         r"\bdied\b|\bgesterf\b|\b(?:is|was) dead(?=\s*(?:[.!?,;:]|$)|\s+(?:and\s+)?"
         r"(?:(?:was\s+)?buried|(?:was\s+)?removed|gone|no longer alive)\b)|"
-        r"\bis dood(?=\s*(?:[.!?,;:]|$)|\s+(?:en\s+)?(?:verwyder|begrawe)\b)",
+        r"\bis dood(?=\s*(?:[.!?,;:]|$)|\s+(?:en\s+)?(?:verwyder|begrawe)\b)|"
+        r"\bvark\b(?:\s+(?:nr|no|nommer))?\s*#?\s*[a-z0-9-]+\s+(?:is\s+)?dood\b",
         lower,
     ))
     found_dead = bool(
@@ -317,8 +326,8 @@ def _parse_report(text, provider_time):
     if sick:
         families.append("sick")
     family = families[0] if len(set(families)) == 1 else "compound_event" if families else "unknown"
-    explicit_dates = sorted(set(re.findall(r"\b20\d{2}-\d{2}-\d{2}\b", lower)))
-    event_date = datetime.fromisoformat(explicit_dates[0]).date() if len(explicit_dates) == 1 else provider_time.date()
+    explicit_dates = _explicit_event_dates(lower)
+    event_date = explicit_dates[0] if len(explicit_dates) == 1 else provider_time.date()
     if not explicit_dates and "yesterday" in lower:
         event_date -= timedelta(days=1)
     observed = []
@@ -513,6 +522,37 @@ def _parse_report(text, provider_time):
         "current_signs": sick or injured,
         "severe_signs": injured or severe_sick or complications,
     }
+
+
+def _explicit_event_dates(text):
+    values = set()
+    for raw in re.findall(r"\b20\d{2}-\d{2}-\d{2}\b", text):
+        try:
+            values.add(datetime.fromisoformat(raw).date())
+        except ValueError:
+            pass
+    months = {
+        "jan": 1, "january": 1, "januarie": 1, "feb": 2, "february": 2,
+        "februarie": 2, "mar": 3, "march": 3, "maart": 3, "apr": 4,
+        "april": 4, "may": 5, "mei": 5, "jun": 6, "june": 6, "juni": 6,
+        "jul": 7, "july": 7, "juli": 7, "aug": 8, "august": 8,
+        "augustus": 8, "sep": 9, "september": 9, "oct": 10, "october": 10,
+        "okt": 10, "oktober": 10, "nov": 11, "november": 11, "dec": 12,
+        "december": 12, "des": 12, "desember": 12,
+    }
+    for day, month, year in re.findall(
+            r"\b(\d{1,2})\s+([a-z]+)\s+(20\d{2})\b", text, re.I):
+        try:
+            if month.casefold() in months:
+                values.add(datetime(int(year), months[month.casefold()], int(day)).date())
+        except ValueError:
+            pass
+    for day, month, year in re.findall(r"\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b", text):
+        try:
+            values.add(datetime(int(year), int(month), int(day)).date())
+        except ValueError:
+            pass
+    return sorted(values)
 
 
 def _chronology(animal, parsed, canonical):
