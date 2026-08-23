@@ -278,7 +278,7 @@ def main() -> int:
             negative_case("init_exec","green_startup_failed stage=bootstrap_exec reason=init_script_failed",shadow=("init-shell","/init-green.sh"))
             negative_case("run_exec","green_startup_failed stage=s6_exec reason=run_script_failed",shadow=("run-shell","/run.sh"))
             negative_case("cups_start","green_startup_failed stage=cups_readiness reason=cups_stopped_during_startup",shadow=("cups-fail","/usr/sbin/cupsd"))
-            negative_case("service_exec","green_startup_failed stage=service_exec reason=service_process_failed",shadow=("service-exit","/sbin/su-exec"))
+            negative_case("service_exec","green_startup_failed stage=service_exec reason=service_process_failed",shadow=("service-exit","/opt/green/service.py"))
             # A deliberately shadowed executable can itself produce an expected
             # denial. Only denials created by the following healthy journey are
             # evidence against the production profile.
