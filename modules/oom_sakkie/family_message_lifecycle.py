@@ -47,11 +47,80 @@ def mission_identity(parsed: Mapping[str, Any], specialist: str) -> str:
     return "OOM-FAMILY-" + hashlib.sha256(raw.encode()).hexdigest()[:24].upper()
 
 
+def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, Any],
+                              specialist: str) -> dict[str, Any]:
+    """Final provider boundary: one language for every Oom Sakkie specialist."""
+    localized = dict(result)
+    if not str(parsed.get("output_language") or "en").casefold().startswith("af"):
+        return localized
+    status = str(localized.get("status") or "").casefold()
+    answer = str(localized.get("answer") or "").strip()
+    if answer:
+        identity = str(localized.get("specialist_identity") or localized.get("specialist")
+                       or specialist or "OOM SAKKIE").replace("_", " ")
+        if "change" in status or "correct" in status:
+            answer = "Stuur die reggestelde feite wanneer jy gereed is. Niks is uitgevoer nie."
+        elif "cancel" in status or "declin" in status:
+            answer = "Die beskermde handeling is gekanselleer. Niks is uitgevoer nie."
+        elif any(word in status for word in ("preview", "review_ready", "waiting_for_confirmation")):
+            facts = _afrikaans_bound_facts(localized)
+            answer = (f"<b>{identity} — BESKERMDE VOORSKOU</b>\n\n"
+                + (facts + "\n\n" if facts else "") +
+                "Hersien die gebonde besonderhede en bevestig slegs as dit korrek is. "
+                "Niks word uitgevoer voordat jy bevestig nie.")
+        elif any(word in status for word in ("completed", "recorded", "started", "accepted")):
+            answer = (f"<b>{identity} — VOLTOOI</b>\n\n"
+                "Die bevestigde handeling is een keer voltooi en die kanonieke resultaat is behou.")
+        elif any(word in status for word in ("replay", "duplicate")):
+            answer = "Hierdie bevestiging is reeds veilig verwerk. Geen duplikaat is geskep nie."
+        elif any(word in status for word in ("fail", "unavailable", "invalid", "contained", "hold")):
+            answer = "Die handeling is veilig teruggehou. Niks is uitgevoer nie; probeer later weer."
+        localized["answer"] = answer
+    markup = localized.get("reply_markup")
+    if isinstance(markup, Mapping):
+        labels = {"confirm": "Bevestig", "change": "Maak reg", "cancel": "Kanselleer"}
+        rows = []
+        for row in markup.get("inline_keyboard", []):
+            translated = []
+            for button in row:
+                item = dict(button)
+                action = str(item.get("callback_data") or "").rsplit(":", 1)[-1]
+                if action in labels:
+                    item["text"] = labels[action]
+                translated.append(item)
+            rows.append(translated)
+        localized["reply_markup"] = {**markup, "inline_keyboard": rows}
+    localized["recipient_language"] = "af"
+    return localized
+
+
+def _afrikaans_bound_facts(result: Mapping[str, Any]) -> str:
+    labels = {"pig_id": "Vark", "pig_number": "Vark", "tag_number": "Oormerk",
+        "effective_date": "Datum", "weight_date": "Datum", "zone_id": "Sone",
+        "segment_requested_seconds": "Tyd (sekondes)", "amount": "Bedrag",
+        "payment_amount": "Bedrag", "publication_time": "Publikasietyd",
+        "printer_id": "Drukker", "copies": "Kopieë", "row_count": "Aantal"}
+    sources = [result]
+    for key in ("preview", "preview_payload", "proposal", "canonical_preview"):
+        if isinstance(result.get(key), Mapping):
+            sources.append(result[key])
+    lines, seen = [], set()
+    for source in sources:
+        for key, label in labels.items():
+            value = source.get(key)
+            if value in (None, "", [], {}) or (key, str(value)) in seen:
+                continue
+            seen.add((key, str(value)))
+            lines.append(f"<b>{label}:</b> {value}")
+    return "\n".join(lines[:8])
+
+
 def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], *,
                           specialist: str, mission_id: str = "", card_mission_id: str = "",
                           event_store=None, sender=None, editor=None,
                           delivery_retry_authority=None, protected_delivery=None) -> dict[str, Any]:
     """Persist and visibly deliver one result; duplicate input is a no-op."""
+    result = localize_recipient_result(parsed, result, specialist)
     mission_id = mission_id or mission_identity(parsed, specialist)
     card_mission_id = card_mission_id or mission_id
     protected_fields = tuple(bool(result.get(key)) for key in
