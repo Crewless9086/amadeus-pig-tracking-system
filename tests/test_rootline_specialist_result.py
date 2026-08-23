@@ -101,7 +101,8 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         self.assertEqual(result["irrigation_lifecycle"]["B12345"]["state"], "Started")
         text = __import__("modules.oom_sakkie.rootline_daily_presentation", fromlist=[
             "compose_daily_rootline_plan"]).compose_daily_rootline_plan(result)
-        self.assertIn("Lifecycle: Started", text)
+        self.assertIn("B Camp:</b> Currently running", text)
+        self.assertNotIn("Lifecycle:", text)
         self.assertNotIn("59.9833 minutes", text)
 
     def test_plan_projection_retains_timing_cadence_and_recovery(self):

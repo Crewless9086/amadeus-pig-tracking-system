@@ -63,8 +63,8 @@ def test_delayed_refresh_waits_without_claim_then_sends_when_fresh():
 
 def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     text = compose_daily_rootline_plan(result())
-    assert "<b>B Camp:</b> Not running — does not need watering" in text
-    assert "<b>C Camp:</b> Not running — does not need watering" in text
+    assert "<b>B Camp:</b> Not running" in text
+    assert "<b>C Camp:</b> Not running" in text
     assert "Lifecycle:" not in text and "ROOTLINE must claim" not in text
     assert "Started: no" not in text and "Completed: no" not in text
     assert "Observed rain supports Hold" in text
@@ -85,7 +85,10 @@ def test_completed_canonical_lifecycle_never_maps_to_hold():
                     "zone_id": "B12345", "state": "Completed",
                     "reason": "Verified shutdown and runtime.",
                     "next_action_owner": "ROOTLINE",
-                    "next_action": "Reassess at the next governed due time."},
+                    "next_action": "Reassess at the next governed due time.",
+                    "completion_evidence": {"zone_id":"B12345","shutdown_verified":True,
+                        "objective_satisfied":True,
+                        "shutdown_evidence":{"authoritative":True,"state":"OFF"}}},
         "C12345": {"contract_version": "rootline_zone_lifecycle.v1",
                     "zone_id": "C12345", "state": "Held",
                     "reason": "Fresh observed rain.",
@@ -214,7 +217,7 @@ def test_next_check_aware_and_naive_sast_are_not_shifted_twice():
 
 
 def test_validated_started_and_failed_lifecycle_override_conflicting_recommendations_en_af():
-    value = result(b="Hold", c="Recommend", reason="now_after_fresh_execution_revalidation")
+    value = result(b="Hold", c="Recommend", reason="active_execution")
     value["irrigation_lifecycle"] = {
         "B12345": {"contract_version":"rootline_zone_lifecycle.v1","zone_id":"B12345",
             "state":"Started","reason":"active_execution","next_action_owner":"ROOTLINE",
@@ -242,7 +245,7 @@ def test_every_validated_lifecycle_state_has_human_en_af_projection():
         "Authorized": ("Ready — starting safely", "Gereed — begin veilig"),
         "Started": ("Currently running", "Loop tans"),
         "Completed": ("Completed — off and verified", "Voltooi — af en geverifieer"),
-        "Held": ("Not running — does not need watering", "Loop nie — het nie water nodig nie"),
+        "Held": ("Not running", "Loop nie"),
         "Failed": ("Held safely — problem under automatic review",
                    "Veilig teruggehou — probleem word outomaties nagegaan"),
     }
@@ -251,9 +254,52 @@ def test_every_validated_lifecycle_state_has_human_en_af_projection():
         value["irrigation_lifecycle"] = {zone: {
             "contract_version":"rootline_zone_lifecycle.v1","zone_id":zone,
             "state":state,"reason":"internal_reason_token","next_action_owner":"ROOTLINE",
-            "next_action":"internal_next_action"} for zone in ("B12345","C12345")}
+            "next_action":"internal_next_action",
+            **({"completion_evidence":{"zone_id":zone,"shutdown_verified":True,
+                "objective_satisfied":True,
+                "shutdown_evidence":{"authoritative":True,"state":"OFF"}}}
+               if state=="Completed" else {})} for zone in ("B12345","C12345")}
         english = compose_daily_rootline_plan(value, language="en")
         afrikaans = compose_daily_rootline_plan(value, language="af")
         assert en in english and af in afrikaans
         assert "internal_reason_token" not in english + afrikaans
         assert "internal_next_action" not in english + afrikaans
+
+
+def test_completed_owner_wording_requires_exact_canonical_zone_bound_off_evidence():
+    genuine = {"zone_id":"B12345","shutdown_verified":True,"objective_satisfied":True,
+        "shutdown_evidence":{"authoritative":True,"state":"OFF"}}
+    invalid = [
+        {},
+        {**genuine,"shutdown_verified":False},
+        {**genuine,"shutdown_evidence":{"authoritative":False,"state":"OFF"}},
+        {**genuine,"shutdown_evidence":{"authoritative":True,"state":"ON"}},
+        {**genuine,"zone_id":"C12345"},
+        {**genuine,"objective_satisfied":False},
+    ]
+    for evidence in invalid:
+        value=result(b="Hold",c="Hold")
+        value["irrigation_lifecycle"]={"B12345":{
+            "contract_version":"rootline_zone_lifecycle.v1","zone_id":"B12345",
+            "state":"Completed","reason":"spoofed","next_action_owner":"ROOTLINE",
+            "next_action":"none","completion_evidence":evidence}}
+        for language, neutral in (("en","B Camp:</b> Not running"),("af","B Kamp:</b> Loop nie")):
+            text=compose_daily_rootline_plan(value,language=language)
+            assert neutral in text
+            assert "off and verified" not in text and "af en geverifieer" not in text
+    value=result(b="Hold",c="Hold")
+    value["irrigation_lifecycle"]={"B12345":{
+        "contract_version":"rootline_zone_lifecycle.v1","zone_id":"B12345",
+        "state":"Completed","reason":"verified","next_action_owner":"ROOTLINE",
+        "next_action":"reassess","completion_evidence":genuine}}
+    assert "Completed — off and verified" in compose_daily_rootline_plan(value,language="en")
+    assert "Voltooi — af en geverifieer" in compose_daily_rootline_plan(value,language="af")
+
+
+def test_held_only_claims_no_watering_need_when_specific_evidence_proves_it():
+    value=result(b="Hold",c="Hold")
+    value["irrigation_lifecycle"]={"B12345":{
+        "contract_version":"rootline_zone_lifecycle.v1","zone_id":"B12345",
+        "state":"Held","reason":"fresh_need_evidence","next_action_owner":"ROOTLINE",
+        "next_action":"reassess","watering_need_proven_false":True}}
+    assert "B Camp:</b> Not running — does not need watering" in compose_daily_rootline_plan(value)

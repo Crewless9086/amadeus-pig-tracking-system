@@ -116,7 +116,7 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
         lifecycle = (validate_zone_lifecycle(
             (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
             or project_zone_lifecycle(zone_id=zone, recommendation=row))
-        decision = _lifecycle_decision(lifecycle, row, af)
+        decision = _lifecycle_decision(lifecycle, row, af, zone=zone)
         window = _human_window(row.get("preferred_window"))
         suffix = f" · {html.escape(window)}" if window and window.lower() not in {"unavailable", "unknown"} else ""
         lines.append(f"• <b>{label}:</b> {decision}{suffix}")
@@ -161,7 +161,7 @@ def _decision(value: Any, af: bool) -> str:
 
 
 def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[str, Any],
-                        af: bool) -> str:
+                        af: bool, *, zone: str) -> str:
     state = str(lifecycle.get("state") or "Held")
     if state == "Started":
         return "Loop tans" if af else "Currently running"
@@ -175,26 +175,41 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
     if state == "Recommended":
         return "Moet natgemaak word" if af else "Needs watering"
     if state == "Held":
-        recommendation_value = str(recommendation.get("status") or
-            recommendation.get("recommendation") or "").casefold()
-        if recommendation_value in {"hold", "do not run", "do_not_run"}:
+        if lifecycle.get("watering_need_proven_false") is True:
             return ("Loop nie — het nie water nodig nie" if af else
                     "Not running — does not need watering")
-        return "Teruggehou — loop nie" if af else "Held — not running"
+        return "Loop nie" if af else "Not running"
     if state == "Failed":
         return ("Veilig teruggehou — probleem word outomaties nagegaan" if af else
                 "Held safely — problem under automatic review")
     if state == "Completed":
-        return "Voltooi — af en geverifieer" if af else "Completed — off and verified"
+        if _verified_completion(lifecycle, zone):
+            return "Voltooi — af en geverifieer" if af else "Completed — off and verified"
+        return "Loop nie" if af else "Not running"
     return "Data nodig" if af else "Needs Data"
+
+
+def _verified_completion(lifecycle: Mapping[str, Any], zone: str) -> bool:
+    evidence = lifecycle.get("completion_evidence")
+    if not isinstance(evidence, Mapping) or str(evidence.get("zone_id") or "") != zone:
+        return False
+    shutdown = evidence.get("shutdown_evidence")
+    return (evidence.get("shutdown_verified") is True
+            and (evidence.get("objective_satisfied") is True
+                 or evidence.get("qualifies_as_completed_watering") is True)
+            and isinstance(shutdown, Mapping)
+            and shutdown.get("authoritative") is True
+            and str(shutdown.get("state") or "").upper() == "OFF")
 
 
 def _short_reason(value: str, af: bool) -> str:
     text = " ".join(str(value or "").split())
-    if text.casefold() in {
+    import re
+    if (text.casefold() in {
             "now_after_fresh_execution_revalidation",
             "zone_decision_not_run_now",
-            "durable_zone_containment"}:
+            "durable_zone_containment"}
+            or re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+", text) is not None):
         return ("Vars kanonieke bewyse bepaal die huidige besluit." if af else
                 "Fresh canonical evidence determines the current decision.")
     if not text:
