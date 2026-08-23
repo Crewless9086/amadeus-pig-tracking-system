@@ -2158,3 +2158,27 @@ the deployed scheduler, not a terminal, must record authoritative OFF/shutdown
 and then create the next fresh typed decision. B must not be watered merely to
 repeat proof or satisfy a display expectation; it runs when current canonical
 need ranks it eligible inside standing authority. OWNER ACTION: NONE.
+
+At 19:09 SAST Anton performed the requested genuine post-deployment Pig 126
+acceptance from his own Telegram account with: `Vark 126 is dood, ons het hom
+verwyder en begrawe.` The deployed Oom Sakkie agent again routed him through
+the reduced observation-only family path and replied that HERDMASTER retained
+the attributable observation once but Charl still had to confirm mortality or
+lifecycle change. This is a fresh genuine failure, not acceptance. Readback at
+17:14 UTC confirms Pig 126 remains `Active`, on farm and in `PEN-012`, with no
+new mortality claim. The event is sealed as incident evidence; Anton must not
+repeat it until the reusable path is repaired and redeployed.
+
+Charl's authority correction is explicit: Anton and Charl receive the same Oom
+Sakkie farm-management messages and approval capabilities across all deployed
+farm specialists managed through Oom Sakkie, rendered in each recipient's
+configured language. Anton may manage and confirm governed farm and irrigation
+work. CORE, CHARLIE, owner-private/non-farm business authority, permission
+administration, payments and publication outside the farm-manager envelope do
+not transfer. Existing actor binding, audit, replay, concurrency, canonical
+safety and device-specific safeguards remain. This is an addendum to
+`HERDMASTER-NATURAL-HEALTH-LOSS-1 / OOM-INTAKE-SLICE-1`, not a new workflow or
+mission. The same mission is `CONTAINED / SYSTEMIC_ROLE_ROUTING_REPAIR_ACTIVE`;
+no further owner attempt is allowed until exact-current implementation, review,
+merge, deployment and non-actuating production readiness prove the old
+farm-manager observation-only branch is unreachable. OWNER ACTION: NONE.
