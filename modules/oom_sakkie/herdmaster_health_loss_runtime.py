@@ -35,14 +35,15 @@ HEALTH_PATTERN = re.compile(
     r"\b(?:pig|tag)\s*[a-z0-9-]+\b.*\b(?:"
     r"not eating|won't eat|wont eat|laying down|lying down|acting weird|"
     r"sick|ill|injured|limping|bleeding|dead|died|farrowing|stillborn|"
-    r"infection|vomit|diarrh|cough|breath|cannot stand|can't stand"
+    r"infection|vomit|diarrh|cough|breath|cannot stand|can't stand|"
+    r"dood|gesterf|siek|beseer|eet nie|mank|bloei"
     r")\b|\b(?:sick|injured|dead|died|farrowing|stillborn)\b",
     re.I,
 )
 FOLLOW_UP_PATTERN = re.compile(
     r"\b(?:cannot|can't|cant|yes|no|seen alive|last seen|stand|standing|breathe|breathing|"
     r"drink|drinking|water|bleed|bleeding|distress|responsive|unresponsive|"
-    r"removed|buried|disposed|cremated|body)\b",
+    r"removed|buried|disposed|cremated|body|verwyder|begrawe|weggegooi|liggaam)\b",
     re.I,
 )
 UNRELATED_OPERATIONAL_PATTERN = re.compile(

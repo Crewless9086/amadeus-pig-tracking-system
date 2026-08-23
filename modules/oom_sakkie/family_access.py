@@ -28,7 +28,7 @@ READ_ONLY_CAPABILITY = "explicit_summary"
 FARM_MANAGER_CAPABILITIES = frozenset({
     *REPORTER_CAPABILITIES,
     "welfare_hold", "welfare_escalation", "herdmaster_management_input",
-    "herdmaster_reassessment", "found_dead_observation",
+    "herdmaster_reassessment", "found_dead_observation", "mortality_confirmation",
     "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
 })
 DELEGATED_ROOTLINE_CAPABILITIES = frozenset({
@@ -154,9 +154,11 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
                                     replay_identity=replay_identity)
     capability = _clean(capability)
     if capability in PROTECTED_CAPABILITIES:
-        allowed = principal.is_owner
+        allowed = (principal.is_owner or
+            (principal.role is FamilyRole.FARM_MANAGER
+             and capability == "mortality_confirmation"))
         return FamilyAccessDecision(allowed,
-            "owner_protected_authority" if allowed else "owner_authority_required",
+            "governed_farm_lifecycle_authority" if allowed else "owner_authority_required",
             principal, attribution, may_read_private_context=allowed,
             may_confirm_protected_action=allowed, replay_identity=replay_identity)
     if capability in REPORTER_CAPABILITIES:
@@ -203,7 +205,8 @@ def family_access_policy(environ: Mapping[str, str]) -> dict[str, Any]:
         "authorized_identity_count": (1 if owner_id else 0) + len(principals) if valid else 0,
         "family_bindings_count": len(principals) if valid else 0,
         "roles": [role.value for role in FamilyRole],
-        "protected_actions_owner_only": True,
+        "protected_actions_owner_only": False,
+        "farm_manager_mortality_confirmation_capability": True,
         "display_names_are_authority": False,
         "language_is_authority": False,
     }
