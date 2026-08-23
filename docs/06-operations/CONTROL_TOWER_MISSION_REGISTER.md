@@ -2413,3 +2413,35 @@ history or reprioritizing work; technical progress remains distinct from owner
 outcomes; C's verified shutdown remains the latest genuine ROOTLINE physical
 outcome; B remains zero-execution; HERDMASTER remains pending Anton acceptance;
 automatic ROOTLINE continuation remains authorized and owner-independent.
+
+## 2026-08-23 21:37 SAST - ROOTLINE defer-observability repair live
+
+This append-only update advances the same ROOTLINE lineage without changing
+priority. PR `#1201` passed independent review at exact head
+`ee9cf0466d4be567a45de658ffa097c5b49bd2ed`, 50 focused independent tests and
+all four hosted gates. It merged as
+`bebd07fb3532dbbab915c0ffcbcd6964a6790cb7`. Render deployment
+`dep-da5kn77avr4c73f67nkg` became live at 21:37 SAST and `/health/revision`
+returned that exact loaded revision.
+
+The 20:30, 21:00 and 21:30 unattended scheduler cycles all occurred before this
+repair was live. Each retained zero B executions. They are truthful pre-fix
+continuity and containment evidence, not proof that B started, watered or
+completed. The first post-deployment unattended acceptance is due at about
+22:01:34 SAST. It must show the exact per-zone eligibility/deferment reason and
+preserve canonical/provider/physical facts separately; any B execution must be
+proved from its own execution, provider readback, safe shutdown and canonical
+history rather than inferred from `Run`.
+
+ROOTLINE state is
+`DEPLOYED / THREE_PRE_FIX_ZERO_EXECUTION_CYCLES / POST_FIX_UNATTENDED_ACCEPTANCE_PENDING`.
+There is **NO B OWNER OUTCOME**. ROOTLINE continues automatically and needs no
+manual scheduler or hardware action. OWNER ACTION: NONE.
+
+Across the current Control Tower portfolio, Anton's already-recorded genuine
+HERDMASTER acceptance action remains the sole human blocker. No new owner
+choice or approval is introduced by this ROOTLINE release. **ACTION REQUIRED
+NOW:** Anton must send `Vark 126 is dood, ons het hom verwyder en begrawe.` once
+as a new Telegram message to Oom Sakkie. On receipt, the deployed HERDMASTER
+journey resumes automatically through optional date clarification, one
+`Bevestig`, provider delivery, canonical readback, replay and later continuity.
