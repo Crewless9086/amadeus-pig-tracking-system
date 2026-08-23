@@ -40,6 +40,14 @@ on:
         description: Exact failed publication workflow run that built and tagged the partial artifact
         required: false
         type: string
+      existing_recovery_source_commit:
+        description: Exact main revision that created already-existing recovery attestations during a failed recovery run
+        required: false
+        type: string
+      existing_recovery_run_id:
+        description: Exact failed recovery run that created the already-existing signature and attestations
+        required: false
+        type: string
 
 concurrency:
   group: green-print-image-${{ github.event.pull_request.number || github.ref }}
@@ -408,6 +416,8 @@ jobs:
           PUBLISH_REQUESTED: ${{ inputs.publish }}
           VERIFY_ONLY_REQUESTED: ${{ inputs.recover_existing }}
           ORIGINAL_PUBLICATION_RUN_ID: ${{ inputs.original_publication_run_id }}
+          EXISTING_RECOVERY_SOURCE_COMMIT: ${{ inputs.existing_recovery_source_commit }}
+          EXISTING_RECOVERY_RUN_ID: ${{ inputs.existing_recovery_run_id }}
         run: |
           set -euo pipefail
           test "${PUBLISH_REQUESTED}" = "false"
@@ -416,6 +426,13 @@ jobs:
           [[ "${EXPECTED_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "${EXPECTED_MANIFEST_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "${ORIGINAL_PUBLICATION_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
+          if test -n "${EXISTING_RECOVERY_SOURCE_COMMIT}" || test -n "${EXISTING_RECOVERY_RUN_ID}"; then
+            [[ "${EXISTING_RECOVERY_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+            [[ "${EXISTING_RECOVERY_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
+            test "${EXISTING_RECOVERY_SOURCE_COMMIT}" != "${EXPECTED_SOURCE_COMMIT}"
+            git cat-file -e "${EXISTING_RECOVERY_SOURCE_COMMIT}^{commit}"
+            git merge-base --is-ancestor "${EXISTING_RECOVERY_SOURCE_COMMIT}" "${GITHUB_SHA}"
+          fi
           test "${EXPECTED_DIGEST}" != "${EXPECTED_MANIFEST_DIGEST}"
           test "${GITHUB_REF}" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
@@ -547,6 +564,8 @@ jobs:
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          EXISTING_RECOVERY_SOURCE_COMMIT: ${{ inputs.existing_recovery_source_commit }}
+          EXISTING_RECOVERY_RUN_ID: ${{ inputs.existing_recovery_run_id }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -558,14 +577,26 @@ jobs:
           test "${foreign_count}" = "0"
           test "${recovery_count}" -le 1
           test "${sbom_count}" -le 1
+          if test "${recovery_count}" = "1" || test "${sbom_count}" = "1"; then
+            test "${recovery_count}" = "1"
+            test "${sbom_count}" = "1"
+            [[ "${EXISTING_RECOVERY_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+            [[ "${EXISTING_RECOVERY_RUN_ID}" =~ ^[1-9][0-9]{5,19}$ ]]
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${EXISTING_RECOVERY_RUN_ID}" > existing-recovery-run.json
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${EXISTING_RECOVERY_RUN_ID}/jobs?per_page=100" > existing-recovery-jobs.json
+            python scripts/green_print_attestation_inventory.py validate-recovery-run existing-recovery-run.json existing-recovery-jobs.json "${EXISTING_RECOVERY_SOURCE_COMMIT}" "${EXISTING_RECOVERY_RUN_ID}"
+          else
+            test -z "${EXISTING_RECOVERY_SOURCE_COMMIT}"
+            test -z "${EXISTING_RECOVERY_RUN_ID}"
+          fi
           if test "${recovery_count}" = "1"; then
-            gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" --cert-identity "${identity}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-recovery-attestation-verification.json
+            gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" --cert-identity "${identity}" --source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-recovery-attestation-verification.json
             echo "recovery_attestation_required=false" >> "${GITHUB_OUTPUT}"
           else
             echo "recovery_attestation_required=true" >> "${GITHUB_OUTPUT}"
           fi
           if test "${sbom_count}" = "1"; then
-            gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${EXPECTED_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
+            gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
             echo "sbom_required=false" >> "${GITHUB_OUTPUT}"
           else
             echo "sbom_required=true" >> "${GITHUB_OUTPUT}"
@@ -606,15 +637,17 @@ jobs:
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          EXISTING_RECOVERY_SOURCE_COMMIT: ${{ inputs.existing_recovery_source_commit }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           digest_ref="${IMAGE}@${EXPECTED_DIGEST}"
           identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main"
           issuer="https://token.actions.githubusercontent.com"
+          attestation_source_commit="${EXISTING_RECOVERY_SOURCE_COMMIT:-${GITHUB_SHA}}"
           cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${digest_ref}" > recovered-cosign-verification.json
-          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" --cert-identity "${identity}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-recovery-attestation-verification.json
-          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${EXPECTED_SOURCE_COMMIT}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" --cert-identity "${identity}" --source-digest "${attestation_source_commit}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-recovery-attestation-verification.json
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${attestation_source_commit}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovered-sbom-attestation-verification.json
           test "$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" | awk '$1 == "Digest:" {print $2; exit}')" = "${EXPECTED_DIGEST}"
           echo "cosign_sha256=$(sha256sum recovered-cosign-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "recovery_attestation_sha256=$(sha256sum recovered-recovery-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
@@ -627,6 +660,8 @@ jobs:
             "image=${IMAGE}" \
             "version=${VERSION}" \
             "source_commit=${{ inputs.expected_source_commit }}" \
+            "recovery_evidence_source_commit=${{ inputs.existing_recovery_source_commit || github.sha }}" \
+            "recovery_evidence_run_id=${{ inputs.existing_recovery_run_id || github.run_id }}" \
             "digest=${{ inputs.expected_digest }}" \
             "manifest_digest=${{ inputs.expected_manifest_digest }}" \
             "tag_resolved_digest=${{ inputs.expected_digest }}" \
