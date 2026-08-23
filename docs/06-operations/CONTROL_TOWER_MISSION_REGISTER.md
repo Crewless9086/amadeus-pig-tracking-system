@@ -2108,3 +2108,143 @@ gates required before handover. Decision: `CONTINUE AUTOMATICALLY / NO OWNER
 OUTCOME YET`.
 
 OWNER ACTION: NONE
+
+## 2026-08-22 superseding Control Tower outcome-depth snapshot
+
+This append-only entry supersedes the immediately preceding lane-state snapshot
+without rewriting its evidence or changing mission priority. Authoritative main
+is `61a8d196736a2153e87e12b910445967a9ba6ed6`. The tracked operating standard
+is blob `3002b94713e286c4eb2019419c438cc378c337fa` and was read completely for this
+reconciliation. This documentation-only update performed no merge, deployment,
+Home Assistant, provider, production database, farm, customer or hardware action.
+
+### Green immutable package and commissioning lineage
+
+Green 0.3.4 was published and installed through the existing immutable-package
+and Home Assistant lineage. Its single bounded startup attempt failed and was
+contained. The app remains stopped, all automatic controls remain OFF, and
+canonical readback establishes zero known document, queue/job or physical-print
+effects. Publication and installation are technical transitions; Green has not
+completed zero-job commissioning and there is **NO OWNER OUTCOME**.
+
+The same-lineage correction is Green 0.3.5 PR #1179. Independent review failed
+exact head `b92751a3b2cc23945dd043e6d685e40fe484c8f1` against main `61a8d196...`.
+The positive Supervisor-shaped linux/arm64/AppArmor zero-job journey passed, but
+the executable negative startup matrix and deterministic bootstrap/interpreter
+stderr boundary were absent. This exact head must not merge or publish. The
+implementer automatically repairs review findings B1-B3 on PR #1179 and returns
+a new exact head for fresh independent review. Green 0.3.4 must not be retried.
+No owner fact or approval is needed for that repository/test repair.
+
+### BEACON stable decision and SAM dependency
+
+PR #1178 merged as `53559da7965f633733c7270bfcec152b05035527` and Render loaded
+that exact revision for the two required deployed acceptance cycles. The
+deployed Oom Sakkie/BEACON scheduler created one legitimate current successor,
+case `OOM-CASE-63E41A327E76EB895B4B76B8:G89`, and provider-confirmed Telegram
+card `3714`. Immediate refresh retained G89. A later genuine terminal-independent
+scheduled cycle retained the same packet, evidence digest, active claim and card,
+and recorded `manager_delivery_duplicate_suppressed`; no G90 or duplicate
+delivery was created. This closes the PR #1174/#1178 generation-churn defect and
+is an owner-reachable operational result, not publication or customer acceptance.
+
+The card remains an exact protected decision. Publication consumers, Facebook
+execution events attributable to this acceptance, and post-deployment SAM
+customer inbound remain zero. BEACON must not publish until Charl selects the
+card decision. If approved, the deployed protected executor must prove exactly-once
+Meta publication and provider readback; only genuine attributed customer inbound
+may then wake deployed SAM. If corrected or declined, deployed actors verify
+containment and continue from that explicit decision. A terminal must not click,
+publish, manufacture inbound or send a customer response.
+
+### PR #1167 governed migration release
+
+PR #1167 merged and deployed as exact main
+`61a8d196736a2153e87e12b910445967a9ba6ed6`. Governed migration workflow run
+`32592110607` created exact Render one-off job `job-da4v0knqj5pc73ba37vg`, which
+failed closed during receipt-guard preflight before the migration allowlist.
+Read-only provider and canonical diagnosis establishes zero migrations, receipts,
+anchors, baselines, checkpoints, constraint changes, HERDMASTER claims, litter
+facts or other business effects from this run. No rollback is required and an
+unchanged retry is forbidden.
+
+The failure exposed a reusable production-shape compatibility defect: intentional
+least-privilege schema `USAGE` grants are rejected, the legacy receipt ledger lacks
+the newer trust tables, historical immutable receipt ordinals cannot be compared
+to a later expanded allowlist position, and one already-applied migration predates
+the receipt lineage. The existing PR #1167 lineage is under bounded read-only
+diagnosis and must implement one explicit production-shaped legacy-adoption
+boundary with exact authorization, disposable PostgreSQL proof, independent
+review and fresh governed-run authority. Deployment and the failed run are
+technical state; the farrowing release has **NO OWNER OUTCOME**.
+
+### Fresh terminal, PR, collision and release sweep
+
+| Lane | Classification | Exact continuation |
+|---|---|---|
+| Green 0.3.5 / PR #1179 | `ACTIVE - REVIEW FAIL REPAIR` | Repair B1-B3 on the same lineage, rerun positive and negative arm64/AppArmor gates, then obtain fresh independent exact-head review. No publication, installation or Home Assistant retry. |
+| BEACON / G89 | `OWNER DECISION PENDING` | Preserve active card `3714`; after the owner's one decision, deployed actors continue automatically through publication or containment and readback. |
+| SAM Livestock | `DEPENDENCY IDLE` | Auto-send remains OFF. Wake only from genuine attributed inbound after a provider-confirmed authorized BEACON publication; no manufactured customer event. |
+| Oom Sakkie / HERDMASTER / PR #1167 | `ACTIVE - CONTAINED PRODUCTION FAILURE DIAGNOSIS` | Complete the production-shaped legacy-adoption repair, disposable database proof and independent review. Do not retry run `32592110607`. |
+| CORE | `UNKNOWN - VERIFY` | No fresh target-bound terminal or deployed-worker heartbeat was established by this documentation lane; process existence is not activity proof. |
+| ROOTLINE | `DEPENDENCY IDLE` | Existing priority is preserved; promote only on its recorded release trigger or a proven incident that unblocks an existing outcome. |
+| CODEX UI and historical PRs/worktrees | `PRESERVED / NOT REPRIORITIZED` | Retain collision evidence; no new writer, release authority or WIP slot is created by this entry. |
+| Control Tower register | `ACTIVE - DOCUMENTATION ONLY` | This is the sole writer to the durable register; pass exact-current gates and independent review, with no self-merge. |
+
+Open PR sweep found PR #1179 as the only current same-day implementation PR.
+Older open PRs remain preserved and were not treated as fresh activity. The
+Green, BEACON and migration source lineages do not overlap this register-only
+change. The serialized production release lane is free but no protected action
+is eligible until its stated gate is met.
+
+Automatic continuations are bound as follows: Green repairs the current review
+FAIL without owner intervention; PR #1167 repairs and reviews the contained
+production-shape defect without retrying production; BEACON holds the exact
+current claim and continues immediately from the owner's card decision; SAM
+wakes only on genuine attributed inbound; Control Tower continues review and
+integration coordination without asking Charl to relay terminal prompts.
+
+### Control Tower Check Receipt and full handover
+
+```text
+CONTROL TOWER CHECK RECEIPT
+Governance preflight: PASS - exact main 61a8d196736a2153e87e12b910445967a9ba6ed6;
+  tracked standard blob 3002b94713e286c4eb2019419c438cc378c337fa;
+  standard and control-tower-operate skill read completely.
+Business result: BEACON G89 owner card 3714 is provider-confirmed and stable
+  through later duplicate-suppressed scheduled replay. No publication or customer
+  outcome exists. Green and PR #1167 produced no owner/business outcome.
+Runtime truth: Green 0.3.4 stopped with automatic controls OFF and zero known
+  document/job/print effects; BEACON card active; SAM genuine inbound zero;
+  PR #1167 failed run committed zero effects.
+Technical blockers: Green PR #1179 review FAIL repair; PR #1167 production-shape
+  legacy-adoption repair. Neither requires owner action.
+Protected owner blocker: one decision on Telegram card 3714.
+Release lane: free; no eligible protected release inferred.
+Collision sweep: register-only writer isolated; historical branches/worktrees
+  preserved; no mission reprioritized or duplicate system created.
+Automatic continuation: Green and PR #1167 repair/review continue; BEACON/SAM
+  continue from the exact protected decision and genuine downstream events.
+Terminal sweep: completed in the table above.
+Owner-work delta: inspect internal generation/replay state and coordinate SAM ->
+  make one concise protected decision; deployed actors perform and verify later work.
+```
+
+Decision: `YES` - preserve the stable BEACON decision and continue every safe
+technical repair automatically.
+
+Why: card `3714` is the one genuine protected business choice; all other current
+blocks are bounded technical work owned by the existing lanes.
+
+Send to exact terminal: `CONTINUE - SEND NOTHING` for Green PR #1179 and PR #1167
+repair/review terminals. Control Tower resumes BEACON/SAM automatically after the
+owner decision; no prompt must be relayed.
+
+Expected business result: one owner decision leads either to exactly-once verified
+BEACON publication and genuine SAM inbound handling, or to verified containment,
+while Green and HERDMASTER repairs proceed without further owner supervision.
+
+ACTION REQUIRED NOW: On Telegram card `3714`, tap exactly one option: `Approve`,
+`Correct`, or `Decline`; this protected marketing decision cannot be made by
+Control Tower, and the deployed BEACON/SAM continuation resumes automatically
+from your selection.
