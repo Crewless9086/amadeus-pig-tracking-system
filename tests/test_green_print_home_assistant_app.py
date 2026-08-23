@@ -408,19 +408,40 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
         assert exact in serialized
 
-def _native_bundle(run_uri):
+BUNDLE_IMAGE="ghcr.io/crewless9086/amadeus-green-print-bridge"
+BUNDLE_DIGEST="sha256:"+"a"*64
+
+def _certificate(run_uri):
     key=ec.generate_private_key(ec.SECP256R1()); subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,"synthetic")])
     encoded=run_uri.encode(); extension=b"\x0c"+bytes([len(encoded)])+encoded
     cert=(x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key()).serial_number(1).not_valid_before(datetime(2026,8,23,tzinfo=timezone.utc)).not_valid_after(datetime(2026,8,24,tzinfo=timezone.utc)).add_extension(x509.UnrecognizedExtension(B.RUN_INVOCATION_OID,extension),critical=False).sign(key,hashes.SHA256()))
     raw=cert.public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.DER)
-    payload=base64.b64encode(json.dumps({"critical":{"type":B.NATIVE}}).encode()).decode()
-    bundle={"content":{"dsseEnvelope":{"payload":payload}},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()}}}
+    return cert,raw
+
+def _sigstore_bundle(predicate_type,run_uri):
+    cert,raw=_certificate(run_uri); algorithm,value=BUNDLE_DIGEST.split(":",1)
+    payload=base64.b64encode(json.dumps({"_type":B.STATEMENT_TYPE,"predicateType":predicate_type,"subject":[{"name":BUNDLE_IMAGE,"digest":{algorithm:value}}]}).encode()).decode()
+    bundle={"mediaType":B.MEDIA_TYPE,"dsseEnvelope":{"payload":payload,"payloadType":B.PAYLOAD_TYPE,"signatures":[{"sig":"c3ludGhldGlj"}]},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()},"tlogEntries":[{}]}}
+    return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
+
+def _native_bundle(run_uri):
+    cert,raw=_certificate(run_uri)
+    bundle={"critical":{"type":B.SIMPLE_SIGNING,"identity":{"docker-reference":BUNDLE_IMAGE},"image":{"docker-manifest-digest":BUNDLE_DIGEST}},"optional":{"runInvocationURI":"https://attacker.invalid/untrusted"},"signature":"c3ludGhldGlj","cert":cert.public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.PEM).decode(),"bundle":{"Payload":{"logIndex":1}}}
     return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
 
 def test_native_bundle_inventory_accepts_exact_two_certificate_fingerprints_and_run_uris():
     first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
     second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
-    assert B.inspect([first[0],second[0]],[first[1],second[1]])==sorted([first[1],second[1]],key=lambda row:row["certificate_sha256"])
+    assert B.inspect([first[0],second[0]],[first[1],second[1]],BUNDLE_IMAGE,BUNDLE_DIGEST)==sorted([first[1],second[1]],key=lambda row:row["certificate_sha256"])
+
+def test_native_bundle_inventory_accepts_exact_live_cosign_v3_mixed_four_bundle_schema():
+    first=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    spdx=_sigstore_bundle(I.SBOM,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    recovery=_sigstore_bundle(I.RECOVERY,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    lines=[first[0],spdx[0],recovery[0],second[0]]
+    expected=[first[1],second[1]]
+    assert B.inspect(lines,expected,BUNDLE_IMAGE,BUNDLE_DIGEST)==sorted(expected,key=lambda row:row["certificate_sha256"])
 
 def test_native_bundle_inventory_rejects_substitution_missing_multiple_and_malformed():
     first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
@@ -428,7 +449,16 @@ def test_native_bundle_inventory_rejects_substitution_missing_multiple_and_malfo
     expected=[first[1],second[1]]
     adversaries=[([first[0]],expected),([first[0],second[0],second[0]],expected),([first[0],second[0]],[first[1],{**second[1],"certificate_sha256":"0"*64}]),([first[0],second[0]],[first[1],{**second[1],"runInvocationURI":second[1]["runInvocationURI"]+"0"}]),([first[0],"{}"],expected)]
     for lines,wanted in adversaries:
-        with pytest.raises(ValueError): B.inspect(lines,wanted)
+        with pytest.raises(ValueError): B.inspect(lines,wanted,BUNDLE_IMAGE,BUNDLE_DIGEST)
+
+def test_native_bundle_inventory_rejects_signed_image_digest_or_type_substitution_and_ignores_optional_identity():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]
+    assert B.inspect([first[0],second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)==sorted(expected,key=lambda row:row["certificate_sha256"])
+    for key,value in (("type","foreign"),("identity",{"docker-reference":"ghcr.io/foreign/image"}),("image",{"docker-manifest-digest":"sha256:"+"0"*64})):
+        changed=json.loads(first[0]); changed["critical"][key]=value
+        with pytest.raises(ValueError): B.inspect([json.dumps(changed),second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
 
 def _recovery_predicate(index="sha256:"+"a"*64,manifest="sha256:"+"b"*64,source="c"*40,run_id="32622312938"):
     return {"recoveryKind":"post_build_release_evidence_completion","claimsBuildProvenance":False,"originalPublication":{"workflow":".github/workflows/green-print-image.yml","runId":run_id,"sourceCommit":source,"verifyJob":"success","publishJob":"failed_after_tag_creation"},"artifact":{"indexDigest":index,"soleLinuxArm64ManifestDigest":manifest},"permittedEffects":["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],"prohibitedEffects":["image_build","image_push","tag_create","retag","delete","install","print"]}
