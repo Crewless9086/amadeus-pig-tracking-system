@@ -2716,3 +2716,37 @@ The existing protected claim remains the only current human blocker.
 card `3925`. He must not resend the Pig 126 report or create a replacement
 claim. ROOTLINE B's active execution remains independently pending its own
 terminal canonical completion and authoritative `OFF` proof.
+
+## 2026-08-23 - Pig 126 post-repair confirmation press not delivered
+
+This append-only entry records the latest genuine acceptance evidence without
+creating or reprioritizing a mission. The owner observed Anton press
+`Bevestig` after exact repaired revision
+`c824ae30c3285b7f696633bbf0128a6dd0bcfda9` was live. Read-only acceptance
+probe still finds the existing Pig 126 claim active with no new runtime result.
+Canonical Pig 126 remains `Active`, `on_farm=true`, in `PEN-012`, with no
+mortality or attributable welfare effects. Render chronology contains no new
+direct-webhook callback after the c824 deployment; its latest matching callback
+remains the earlier pre-repair HTTP `403` at `20:27:24Z`.
+
+The physical press is genuine owner effort, but it was not delivered to the
+repaired runtime and therefore is not a protected confirmation, mortality
+outcome or owner outcome. The absence of a post-repair webhook blocks only the
+unsupported action; it does not invalidate the active claim or authorize a
+terminal proxy, report resend, replay or canonical mutation. Mission state is
+`EXACT_REPAIR_LIVE / PHYSICAL_PRESS_NOT_DELIVERED / CLAIM_ACTIVE / ZERO_FARM_EFFECTS`.
+
+**ACTION REQUIRED NOW:** Anton must press `Bevestig` exactly once again on the
+existing Telegram card `3925`, now that repaired revision c824 is live. He must
+not resend the mortality report and must not repeat the press after this one
+attempt. Control Tower must then inspect the post-press provider callback,
+runtime result, completion delivery, canonical mortality and welfare readback,
+exact-once/replay state and later continuity without asking Anton for another
+action unless new evidence proves a genuinely different blocker.
+
+Control Tower Check Receipt and full handover: the exact loaded revision,
+existing claim identity and zero Pig 126 effects remain authoritative. The
+observed-but-undelivered press is retained as acceptance evidence, not counted
+as outcome. ROOTLINE B remains independently active pending terminal `OFF` and
+canonical completion. No mission or priority changed, and this register update
+performed no provider, database, farm, scheduler or hardware mutation.
