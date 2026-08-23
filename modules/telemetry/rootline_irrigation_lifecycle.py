@@ -26,7 +26,8 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
     decision = str(recommendation.get("status") or recommendation.get("recommendation") or "")
 
     revalidating = bool(history.get("incomplete_parent_job"))
-    completed = _completed(events, execution, allow_historical=not revalidating)
+    completed = _completed(events, execution,
+                           allow_historical=not revalidating and not execution)
     failed = (action in {"contain_zone", "record_ambiguous_shutdown"}
               or execution_state in {"failed", "ambiguous", "contained"})
     started = (action == "mark_active" or execution_state in {"active", "started", "running"})

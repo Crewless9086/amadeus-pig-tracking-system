@@ -13,6 +13,25 @@ def test_completed_history_outranks_a_later_hold_recommendation():
     assert "59.98" in lifecycle["reason"]
 
 
+def test_newer_active_execution_outranks_historical_completion():
+    lifecycle = project_zone_lifecycle(zone_id="C12345", recommendation=rec("Hold"),
+        history={"events": [{"qualifies_as_completed_watering": True,
+            "shutdown_verified": True, "verified_runtime_minutes": 59.9833}]},
+        execution={"action": "mark_active", "state": "Active",
+                   "execution_id": "ROOTLINE-EXECUTION-CURRENT"})
+    assert lifecycle["state"] == "Started"
+    assert lifecycle["next_action_owner"] == "ROOTLINE"
+
+
+def test_ambiguous_current_execution_fails_closed_over_historical_completion():
+    lifecycle = project_zone_lifecycle(zone_id="B12345", recommendation=rec(),
+        history={"events": [{"qualifies_as_completed_watering": True,
+            "shutdown_verified": True, "verified_runtime_minutes": 59.9833}]},
+        execution={"state": "ambiguous", "reason": "conflicting_active_executions"})
+    assert lifecycle["state"] == "Failed"
+    assert lifecycle["reason"] == "conflicting_active_executions"
+
+
 def test_completed_segment_with_remaining_parent_is_revalidating_not_complete():
     lifecycle = project_zone_lifecycle(zone_id="C12345", recommendation=rec(),
         history={"incomplete_parent_job": {"job": {"job_id": "JOB-1"}},

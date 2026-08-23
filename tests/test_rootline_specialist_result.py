@@ -90,6 +90,20 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         self.assertFalse(result["current_local_weather"]["is_forecast"])
         self.assertFalse(result["forecast"]["is_current_local_weather"])
 
+    def test_actual_builder_prefers_current_execution_over_historical_completion(self):
+        history = {"zones": {"B12345": {"events": [{
+            "qualifies_as_completed_watering": True, "shutdown_verified": True,
+            "verified_runtime_minutes": 59.9833}], "latest_execution": {
+                "action": "mark_active", "state": "Active",
+                "execution_id": "ROOTLINE-EXECUTION-CURRENT"}},
+            "C12345": {"events": []}}}
+        result = self.build(irrigation_history=history)
+        self.assertEqual(result["irrigation_lifecycle"]["B12345"]["state"], "Started")
+        text = __import__("modules.oom_sakkie.rootline_daily_presentation", fromlist=[
+            "compose_daily_rootline_plan"]).compose_daily_rootline_plan(result)
+        self.assertIn("Lifecycle: Started", text)
+        self.assertNotIn("59.9833 minutes", text)
+
     def test_plan_projection_retains_timing_cadence_and_recovery(self):
         plan = {
             "success": True,
