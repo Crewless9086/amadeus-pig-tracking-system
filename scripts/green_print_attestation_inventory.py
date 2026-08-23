@@ -55,6 +55,7 @@ def fetch(repository, expected_digest, runner=subprocess.run):
 
 def validate_recovery_run(run, jobs, expected_source, expected_run_id):
     if not (run.get("id") == int(expected_run_id) and
+            run.get("run_attempt") == 1 and
             run.get("head_sha") == expected_source and
             run.get("event") == "workflow_dispatch" and
             run.get("name") == "Green Print immutable image" and
@@ -77,6 +78,46 @@ def validate_recovery_run(run, jobs, expected_source, expected_run_id):
         positions.append(matches[0]["number"])
     if positions != sorted(positions) or len(set(positions)) != len(positions):
         raise ValueError("recovery_step_chronology_mismatch")
+
+
+def validate_verification_run(document, repository, run_id, attempt="1"):
+    if not (str(run_id).isdigit() and str(attempt) == "1"):
+        raise ValueError("attestation_run_identity_mismatch")
+    if not isinstance(document, list) or len(document) != 1:
+        raise ValueError("attestation_verification_result_ambiguous")
+    try:
+        certificate = document[0]["verificationResult"]["signature"]["certificate"]
+        actual = certificate["runInvocationURI"]
+    except (KeyError, TypeError):
+        raise ValueError("attestation_run_identity_missing") from None
+    expected = f"https://github.com/{repository}/actions/runs/{run_id}/attempts/1"
+    if actual != expected:
+        raise ValueError("attestation_run_identity_mismatch")
+
+
+def validate_cosign_verification(document, image, digest, repository, source):
+    if not isinstance(document, list) or len(document) != 1:
+        raise ValueError("cosign_verification_result_ambiguous")
+    item = document[0]
+    expected_subject = (
+        f"https://github.com/{repository}/.github/workflows/"
+        "green-print-image.yml@refs/heads/main")
+    try:
+        bound = (
+            item["critical"]["identity"]["docker-reference"] == image and
+            item["critical"]["image"]["docker-manifest-digest"] == digest and
+            item["critical"]["type"] == "cosign container image signature" and
+            item["optional"]["Issuer"] ==
+                "https://token.actions.githubusercontent.com" and
+            item["optional"]["Subject"] == expected_subject and
+            item["optional"]["githubWorkflowSha"] == source and
+            item["optional"]["githubWorkflowRepository"] == repository and
+            item["optional"]["githubWorkflowRef"] == "refs/heads/main" and
+            item["optional"]["githubWorkflowTrigger"] == "workflow_dispatch")
+    except (KeyError, TypeError):
+        bound = False
+    if not bound:
+        raise ValueError("cosign_identity_mismatch")
 
 
 def inventory(document, expected_name, expected_digest, *, expected_source="",
@@ -141,6 +182,17 @@ def main():
         with open(sys.argv[3], encoding="utf-8") as handle:
             jobs = json.load(handle)
         validate_recovery_run(run, jobs, sys.argv[4], sys.argv[5])
+        return
+    if len(sys.argv) == 6 and sys.argv[1] == "validate-verification-run":
+        with open(sys.argv[2], encoding="utf-8") as handle:
+            document = json.load(handle)
+        validate_verification_run(document, sys.argv[3], sys.argv[4], sys.argv[5])
+        return
+    if len(sys.argv) == 7 and sys.argv[1] == "validate-cosign":
+        with open(sys.argv[2], encoding="utf-8") as handle:
+            document = json.load(handle)
+        validate_cosign_verification(
+            document, sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6])
         return
     if len(sys.argv) not in {5, 6, 9} or sys.argv[1] != "inspect":
         raise SystemExit("usage: fetch repo digest | inspect inventory image digest [sbom-output source manifest run-id]")

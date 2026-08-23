@@ -348,6 +348,7 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert 'test "${foreign_count}" = "0"' in attestations
     assert 'test "${recovery_count}" -le 1' in attestations and 'test "${sbom_count}" -le 1' in attestations
     assert "validate-recovery-run" in attestations
+    assert attestations.count("validate-verification-run")==2
     assert attestations.count('--source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}"')==2
     assert "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" in text
     assert "actions/attest-build-provenance" not in text
@@ -361,6 +362,8 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     final_verify=steps[names.index("Verify completed signature, attestations and immutable tag")]["run"]
     assert 'attestation_source_commit="${EXISTING_RECOVERY_SOURCE_COMMIT:-${GITHUB_SHA}}"' in final_verify
     assert final_verify.count('--source-digest "${attestation_source_commit}"')==2
+    assert final_verify.count("validate-verification-run")==2
+    assert "validate-cosign" in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
 
@@ -409,7 +412,7 @@ def test_attestation_fetch_keeps_nonexact_not_found_and_every_other_failure_fata
         I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,lambda *_a,**_k:result)
 
 def _failed_recovery_run(source="0bd8069fc63a71fee9923d131eb60bc378d6a22d",run_id=32625792776):
-    return {"id":run_id,"name":"Green Print immutable image","event":"workflow_dispatch","head_sha":source,"status":"completed","conclusion":"failure","html_url":f"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/{run_id}"}
+    return {"id":run_id,"run_attempt":1,"name":"Green Print immutable image","event":"workflow_dispatch","head_sha":source,"status":"completed","conclusion":"failure","html_url":f"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/{run_id}"}
 
 def _failed_recovery_jobs():
     steps=[{"name":name,"conclusion":conclusion,"number":number} for number,(name,conclusion) in enumerate(I.RECOVERY_STEP_TRUTH,start=11)]
@@ -422,6 +425,7 @@ def test_existing_recovery_run_accepts_exact_production_shaped_two_revision_chro
 @pytest.mark.parametrize("mutate",[
     lambda run,jobs: run.update(head_sha="7d4c2d7ffa552223440967acbedda2659c3b0c0c"),
     lambda run,jobs: run.update(id=32625792777),
+    lambda run,jobs: run.update(run_attempt=2),
     lambda run,jobs: run.update(conclusion="success"),
     lambda run,jobs: jobs["jobs"][1].update(conclusion="success"),
     lambda run,jobs: jobs["jobs"][1]["steps"][2].update(conclusion="failure"),
@@ -434,6 +438,40 @@ def test_existing_recovery_run_rejects_identity_effect_failure_skip_order_and_du
     source="0bd8069fc63a71fee9923d131eb60bc378d6a22d"; run_id="32625792776"
     run=_failed_recovery_run(); jobs=_failed_recovery_jobs(); mutate(run,jobs)
     with pytest.raises(ValueError): I.validate_recovery_run(run,jobs,source,run_id)
+
+def _attestation_verification(run_id="32625792776",uri=None):
+    invocation=uri or f"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/{run_id}/attempts/1"
+    return [{"attestation":{"bundle":{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}},"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"0bd8069fc63a71fee9923d131eb60bc378d6a22d","runInvocationURI":invocation}}}}]
+
+def test_attestation_verification_accepts_exact_single_first_attempt_run_uri():
+    assert I.validate_verification_run(_attestation_verification(),"Crewless9086/amadeus-pig-tracking-system","32625792776","1") is None
+
+@pytest.mark.parametrize("document,run_id,attempt",[
+    ([],"32625792776","1"),
+    (_attestation_verification()+_attestation_verification(),"32625792776","1"),
+    ([{"verificationResult":{"signature":{"certificate":{}}}}],"32625792776","1"),
+    (_attestation_verification(uri="https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792777/attempts/1"),"32625792776","1"),
+    (_attestation_verification(uri="https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/10"),"32625792776","1"),
+    (_attestation_verification(),"32625792776","2"),
+])
+def test_attestation_verification_rejects_missing_multiple_different_run_near_match_and_attempt(document,run_id,attempt):
+    with pytest.raises(ValueError): I.validate_verification_run(document,"Crewless9086/amadeus-pig-tracking-system",run_id,attempt)
+
+def _cosign_verification(source="0bd8069fc63a71fee9923d131eb60bc378d6a22d"):
+    repository="Crewless9086/amadeus-pig-tracking-system"
+    return [{"critical":{"identity":{"docker-reference":"ghcr.io/crewless9086/amadeus-green-print-bridge"},"image":{"docker-manifest-digest":"sha256:"+"a"*64},"type":"cosign container image signature"},"optional":{"Issuer":"https://token.actions.githubusercontent.com","Subject":f"https://github.com/{repository}/.github/workflows/green-print-image.yml@refs/heads/main","githubWorkflowSha":source,"githubWorkflowRepository":repository,"githubWorkflowRef":"refs/heads/main","githubWorkflowTrigger":"workflow_dispatch"}}]
+
+def test_cosign_verification_binds_exact_single_image_digest_workflow_repository_and_source():
+    assert I.validate_cosign_verification(_cosign_verification(),"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,"Crewless9086/amadeus-pig-tracking-system","0bd8069fc63a71fee9923d131eb60bc378d6a22d") is None
+
+@pytest.mark.parametrize("document",[
+    [],
+    _cosign_verification()+_cosign_verification(),
+    _cosign_verification("7d4c2d7ffa552223440967acbedda2659c3b0c0c"),
+    [{"critical":{},"optional":{}}],
+])
+def test_cosign_verification_rejects_missing_multiple_wrong_source_and_malformed(document):
+    with pytest.raises(ValueError): I.validate_cosign_verification(document,"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,"Crewless9086/amadeus-pig-tracking-system","0bd8069fc63a71fee9923d131eb60bc378d6a22d")
 
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
