@@ -309,6 +309,19 @@ def test_irrigation_database_degraded_hold_contains_claim_and_clears_card(monkey
     assert "No controller command" in result["answer"]
 
 
+def test_completed_mortality_recovery_targets_exact_generation_card(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_completed_delivery_retry",
+      "callback_token":"opaque","action_kind":"mortality","mission_id":"MISSION",
+      "preview_digest":"b"*64,"result":{"success":True,
+        "status":"mortality_lifecycle_recorded","answer":"Aangeteken"}},200))
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority())
+    assert status==200
+    assert result["card_mission_id"]=="MISSION:PROTECTED:"+"B"*24
+    assert result["reply_markup"]=={"inline_keyboard":[]}
+
+
 def test_connection_failure_after_claim_is_retained_for_exact_recovery(monkeypatch):
     payload={"preview":{"row_count":7},"preview_sha256":"DIGEST"}
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
