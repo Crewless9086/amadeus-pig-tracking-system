@@ -3406,6 +3406,7 @@ def _mission_metadata_select(compact=False):
             'queue', metadata_json->'queue',
             'mission_governance', metadata_json->'mission_governance',
             'mission_family', metadata_json->'mission_family',
+            'mission_control_projection', metadata_json->'mission_control_projection',
             'outcome_closure', metadata_json->'outcome_closure',
             'unfinished_business', metadata_json->'unfinished_business',
             'outcome_closure_tracking', metadata_json->'outcome_closure_tracking',
