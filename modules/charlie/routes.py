@@ -23,6 +23,7 @@ from modules.charlie.runner_control import runner_status as local_runner_status
 from modules.charlie.mission_store import (
     get_mission,
     get_mission_review_packet,
+    append_mission_control_event,
     list_missions,
     list_owner_work_missions,
     create_owner_execution_hold,
@@ -347,6 +348,19 @@ def charlie_build_relay_missions_route():
     if compact and isinstance(result, dict) and isinstance(result.get("missions"), list):
         result = {**result, "missions": [_mission_dashboard_summary(mission) for mission in result.get("missions", [])]}
     return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/control-events", methods=["POST"])
+def charlie_mission_control_event_route(mission_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "status": "mission_control_event_mapping_required"}), 400
+    result, status = append_mission_control_event(
+        mission_id, payload, recorded_by=strict_owner_admin_principal())
+    return jsonify(result), status
 
 
 @charlie_bp.route("/charlie/build-relay/missions", methods=["POST"])
@@ -1347,6 +1361,7 @@ def _mission_dashboard_summary(mission):
         "updated_at": mission.get("updated_at", ""),
         "queue_class": mission.get("queue_class", "owner_work"),
         "queue_priority": mission.get("queue_priority"),
+        "owner_projection": mission.get("owner_projection", {}),
         "vault": compact_vault,
         "agent_workflow": _compact_workflow(mission.get("agent_workflow", [])),
         "metadata": compact_metadata,

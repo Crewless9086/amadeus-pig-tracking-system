@@ -157,6 +157,11 @@
     return metadata.owner_action_guidance && typeof metadata.owner_action_guidance === "object" ? metadata.owner_action_guidance : {};
   }
 
+  function ownerProjection(mission) {
+    return mission && mission.owner_projection && typeof mission.owner_projection === "object"
+      ? mission.owner_projection : {};
+  }
+
   function formatDuration(seconds) {
     const value = Math.max(0, Number(seconds || 0));
     if (!value) return "--";
@@ -243,6 +248,9 @@
     }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if ([401, 403].includes(response.status) && text(data.status).includes("owner_")) {
+        window.location.assign(`/owner/login?next=${encodeURIComponent(window.location.pathname)}`);
+      }
       const error = new Error(data.status || `HTTP ${response.status}`);
       error.data = data;
       error.status = response.status;
@@ -475,6 +483,7 @@
       const family = missionFamily(mission);
       const telemetry = missionTelemetry(mission);
       const executionWarning = missionExecutionWarning(mission);
+      const owner = ownerProjection(mission);
       const matrixCounts = governance.acceptance_counts || {};
       const familyLabel = family.parent_mission_id ? `Follow-up ${family.sequence || ""}` : "";
       return `<button class="mission-card ${statusClass(status)} ${mission.mission_id === state.selectedId ? "selected" : ""}" data-select="${escapeAttr(mission.mission_id)}">
@@ -491,6 +500,8 @@
         <div class="mission-card-runs">Matrix ${Number(matrixCounts.passed || 0)}/${Number(matrixCounts.passed || 0) + Number(matrixCounts.failed || 0) + Number(matrixCounts.pending || 0)} · ${Number(governance.fix_count || 0)} fixes · ${Number(governance.review_runs || 0)} reviews${governance.cycling ? " · CYCLING" : ""}</div>
         <div class="mission-card-runs">${Number(telemetry.attempt_count || 0)} attempts | ${Number(telemetry.recovery_count || 0)} recoveries | ${Number(telemetry.backflow_count || 0)} backflows${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? ` | repeat x${Number(telemetry.highest_blocker_repeat)}` : ""}</div>
         <div class="reason">${escapeHtml(executionWarning || headlineReason(mission) || "No reason recorded yet.")}</div>
+        <div class="mission-card-runs">${escapeHtml(text(owner.real_life_state, "unknown"))} | ${escapeHtml(text(owner.current_worker, "no worker"))}</div>
+        <div class="reason">${escapeHtml(text(owner.outcome, "Outcome not yet reconciled."))}</div>
       </button>`;
     }).join("");
   }
@@ -516,6 +527,7 @@
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const stages = workflow.length ? workflow : placeholderStages(mission);
     const executionWarning = missionExecutionWarning(mission);
+    const owner = ownerProjection(mission);
     el.workflowPanel.innerHTML = `
       <div class="mission-hero">
         <div>
@@ -540,6 +552,13 @@
       ${renderGovernanceSummary(governance, missionFamily(mission))}
       <div class="timeline">${stages.map((stage) => renderStage(stage, mission)).join("")}</div>
       <div class="evidence">
+        ${evidenceRow("Owner outcome", text(owner.outcome, "Outcome not yet reconciled."))}
+        ${evidenceRow("Real-life state", text(owner.real_life_state, "unknown"))}
+        ${evidenceRow("First missing acceptance gate", text(owner.first_missing_acceptance_gate, "Not yet recorded."))}
+        ${evidenceRow("Current worker", text(owner.current_worker, "No current worker recorded."))}
+        ${evidenceRow("Latest finding", text(owner.latest_finding, "No finding recorded."))}
+        ${evidenceRow("Next automatic step", text(owner.next_automatic_step, "No automatic step recorded."))}
+        ${evidenceRow("Exact owner action", text(owner.owner_action, "NONE"))}
         ${evidenceRow("Why this matters", text(review.summary, text(mission.raw_text, "No mission detail loaded.")))}
         ${evidenceRow("Next action", text(review.recommended_next_action, nextActionText(mission)))}
         ${renderTestEvidence(review)}
