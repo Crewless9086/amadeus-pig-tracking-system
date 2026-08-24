@@ -3,6 +3,25 @@ from pathlib import Path
 
 
 class CharlieMissionControlFrontendTests(unittest.TestCase):
+    def test_initial_owner_page_renders_before_bounded_api_waits(self):
+        script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")
+
+        initial_render = script.index("if (!state.initialized)")
+        mission_request = script.index("fetchJson(API.missionControl", initial_render)
+        api_wait = script.index("await Promise.all", initial_render)
+        self.assertLess(initial_render, mission_request)
+        self.assertLess(initial_render, api_wait)
+        self.assertIn("timeoutMs: 4000", script[initial_render:api_wait + 500])
+        self.assertIn("the page remains usable", script)
+        self.assertIn("state.loadError", script)
+        self.assertIn("el.refreshBtn.disabled = false", script)
+        self.assertIn("el.queueRefreshBtn.disabled = false", script)
+
+    def test_owner_page_uses_current_loading_recovery_asset(self):
+        template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
+
+        self.assertIn("20260824-owner-load-recovery", template)
+
     def test_runner_strip_exposes_restarts_and_latest_failure(self):
         script = (Path(__file__).parents[1] / "static" / "js" / "charlieMissionControlV2.js").read_text(encoding="utf-8")
         self.assertIn('strip("Restarts"', script)

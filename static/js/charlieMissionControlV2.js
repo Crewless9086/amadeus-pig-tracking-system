@@ -30,6 +30,7 @@
     polling: true,
     loading: false,
     initialized: false,
+    loadError: "",
   };
 
   const el = {
@@ -265,18 +266,27 @@
     try {
       el.refreshBtn.disabled = true;
       el.queueRefreshBtn.disabled = true;
-      const runnerPromise = fetchJson(API.runner, { timeoutMs: 18000 }).then((runner) => {
+      if (!state.initialized) {
+        state.initialized = true;
+        state.lastUpdated = new Date();
+        render();
+      }
+      const runnerPromise = fetchJson(API.runner, { timeoutMs: 4000 }).then((runner) => {
         state.runner = runner;
-        if (state.initialized) {
-          renderHeader();
-          renderActionPanel();
-          renderStrip();
-        }
+        renderHeader();
+        renderActionPanel();
+        renderStrip();
       }).catch(() => null);
       const [snapshot, policy] = await Promise.all([
-        fetchJson(API.missionControl, { timeoutMs: 18000 }).catch(() => null),
-        fetchJson(API.policy, { timeoutMs: 18000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
+        fetchJson(API.missionControl, { timeoutMs: 4000 }).catch((error) => {
+          state.loadError = error.name === "AbortError"
+            ? "Mission data is taking too long. Refresh to retry; the page remains usable."
+            : "Mission data is temporarily unavailable. Refresh to retry.";
+          return null;
+        }),
+        fetchJson(API.policy, { timeoutMs: 4000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
       ]);
+      if (snapshot) state.loadError = "";
       if (snapshot && snapshot.counts) state.counts = snapshot.counts;
       if (snapshot && snapshot.buckets) state.buckets = mergeBuckets(state.buckets, snapshot.buckets);
       state.policy = policy.charlie_build_relay || {};
@@ -288,7 +298,6 @@
       }
       state.lastUpdated = new Date();
       ensureSelection();
-      state.initialized = true;
       render();
       void runnerPromise;
     } catch (error) {
@@ -473,7 +482,7 @@
   function renderQueue() {
     const missions = familyOrdered(dedupe(state.buckets[state.activeTab] || []));
     if (!missions.length) {
-      el.queueList.innerHTML = `<div class="notice">No ${escapeHtml(state.activeTab)} missions are visible. Use another tab or create a mission.</div>`;
+      el.queueList.innerHTML = `<div class="notice${state.loadError ? " danger" : ""}">${escapeHtml(state.loadError || `No ${state.activeTab} missions are visible. Use another tab or create a mission.`)}</div>`;
       return;
     }
     el.queueList.innerHTML = missions.map((mission) => {
