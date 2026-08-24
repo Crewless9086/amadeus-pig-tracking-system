@@ -36,6 +36,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
         return _contained("rootline_reassessment_observation_unproven")
     delivered = state_store("load_delivered", f"{owner_user_id}|{chat_id}", None) or {}
     current_identity = state_store("load_identity", identity, None) or {}
+    current_answer = compose_daily_rootline_plan(current, language=language)
     # A fresher generation remains durable observation evidence, but is not
     # owner-notification material by itself. Daily and change rails share the
     # date + material identity and stay silent when the supported action did
@@ -43,6 +44,16 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     if (delivered.get("material_digest") == material
             and str(delivered.get("operating_date") or "") == operating_date
             and str(delivered.get("provider_message_id") or "")):
+        return {**_result("rootline_reassessment_unchanged", material, notify=False),
+                "operating_date": operating_date,
+                "result_id": result_id,
+                "evidence_generation": evidence_generation,
+                "next_due_at": _declared_next_due(current),
+                "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
+    if (_volatile_reassessment_clock(current)
+            and _exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
+            and _stable_owner_plan(delivered.get("answer"))
+            and _stable_owner_plan(delivered.get("answer")) == _stable_owner_plan(current_answer)):
         return {**_result("rootline_reassessment_unchanged", material, notify=False),
                 "operating_date": operating_date,
                 "result_id": result_id,
@@ -63,7 +74,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
               "evidence_cutoff": str(current.get("evidence_cutoff") or ""),
               "next_reassessment_at": _declared_next_due(current),
               "zones": _typed_zone_projection(current),
-              "answer": compose_daily_rootline_plan(current, language=language), "delivery_state": "pending"}
+              "answer": current_answer, "delivery_state": "pending"}
     recorded = state_store("claim_pending", identity, packet)
     if not isinstance(recorded, Mapping) or recorded.get("success") is not True:
         return _contained("rootline_reassessment_persistence_unproven")
@@ -180,3 +191,34 @@ def _contained(status):
     return {"success": False, "status": status, "notify_owner": False,
             "telegram_sends": 0, "hardware_commands": 0, "writes_farm_data": False,
             "automatic_irrigation_authority": False}
+
+
+def _exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date):
+    return (str(delivered.get("delivery_state") or "") == "delivered"
+            and str(delivered.get("provider_message_id") or "") != ""
+            and str(delivered.get("owner_user_id") or "") == owner_user_id
+            and str(delivered.get("chat_id") or "") == chat_id
+            and str(delivered.get("operating_date") or "") == operating_date
+            and str(delivered.get("identity") or "") != "")
+
+
+def _stable_owner_plan(value):
+    lines = []
+    for raw in str(value or "").splitlines():
+        line = " ".join(raw.split())
+        folded = line.casefold()
+        if (folded.startswith("<b>next automatic reassessment")
+                or folded.startswith("<b>volgende outomatiese herbeoordeling")):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _volatile_reassessment_clock(result):
+    value = result.get("next_reassessment") if isinstance(result, Mapping) else None
+    trigger = str((value or {}).get("trigger") or "") if isinstance(value, Mapping) else ""
+    return trigger in {
+        "canonical_plan_reassessment",
+        "new_canonical_evidence",
+        "new_canonical_evidence_or_next_read",
+    }

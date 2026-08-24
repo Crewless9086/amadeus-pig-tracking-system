@@ -228,6 +228,54 @@ def test_owner_visible_zone_change_still_emits_one_successor_plan():
     assert "C Camp:</b> Needs watering" in changed["answer"]
 
 
+def test_legacy_digest_cutover_uses_exact_stable_owner_plan_and_stays_silent():
+    rows, state = store()
+    first_packet = rootline("Recommend")
+    first_packet["next_reassessment"] = {
+        "trigger": "new_canonical_evidence", "at": "2026-08-04T10:00:00+02:00"}
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest="legacy-digest-before-semantic-fix",
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], result_id=first["result_id"],
+        evidence_generation=first["evidence_generation"], state_store=state)
+    later = {**first_packet, "generation": "G2", "result_id": "R2",
+        "next_reassessment": {"trigger": "new_canonical_evidence",
+                              "at": "2026-08-04T10:15:00+02:00"}}
+
+    unchanged = reassess_rootline(owner_user_id="42", chat_id="42",
+        trigger="declared_time", specialist_loader=lambda: later, state_store=state)
+
+    assert unchanged["status"] == "rootline_reassessment_unchanged"
+    assert unchanged["notify_owner"] is False and unchanged["telegram_sends"] == 0
+
+
+def test_digest_cutover_never_suppresses_wrong_recipient_date_or_changed_question():
+    from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_plan
+    current = rootline("Recommend")
+    current["operating_date"] = "2026-08-24"
+    prior = {"identity": "PRIOR", "owner_user_id": "42", "chat_id": "42",
+        "operating_date": "2026-08-23", "delivery_state": "delivered",
+        "provider_message_id": "7001", "material_digest": "legacy",
+        "answer": compose_daily_rootline_plan(current)}
+    rows, base = store()
+    calls = []
+    def state(action, identity, payload):
+        if action == "load_delivered": return prior
+        return base(action, identity, payload)
+    wrong_date = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: current, state_store=state)
+    assert wrong_date["notify_owner"] is True
+
+    prior["operating_date"] = "2026-08-24"
+    changed = {**current, "owner_brief": {**current["owner_brief"],
+        "family_fact_needed": "Is the tank empty?"}}
+    changed_question = reassess_rootline(owner_user_id="42", chat_id="42",
+        trigger="declared_time", specialist_loader=lambda: changed, state_store=state)
+    assert changed_question["notify_owner"] is True
+
+
 def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
     rows, state = store()
     first_packet = rootline("Recommend")
