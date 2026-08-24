@@ -57,6 +57,15 @@ def public_awareness_media(trusted=True):
             "source": "Charl Telegram intake"}}]}
 
 
+def approved_legacy_media(owner_context, *, confidence="evidence_supported"):
+    payload = public_awareness_media()
+    payload["items"][0]["observation"] = {
+        "classification": "private_farm_photo", "owner_context": owner_context}
+    payload["items"][0]["owner_explanation"] = owner_context
+    payload["items"][0]["observation_confidence"] = confidence
+    return payload
+
+
 def parsed(text="Please prepare the current marketing proposal", language="en"):
     return {"telegram_user_id": "42", "telegram_chat_id": "42", "provider_message_id": "9001",
         "provider_timestamp": "2026-08-14T08:01:00+00:00", "text": text,
@@ -189,6 +198,37 @@ def test_scheduled_approved_media_selection_is_deterministic_and_copy_neutral():
     assert first["proposal"]["call_to_action"] == ""
     assert first["proposal"]["protected_campaign_package"]["budget_cap"] == {
         "currency": "ZAR", "total": "0.00", "daily": "0.00"}
+
+
+def test_scheduled_generation_uses_governed_legacy_owner_context_without_mutating_tags():
+    for context in ("Bella - New born litter 13", "Bella - just delivered 13 little piglets",
+            "Bella het pas 13 klein varkies gekry"):
+        payload = approved_legacy_media(context)
+        result = build_scheduled_sale_ready_stock_result(
+            opportunity_loader=opportunity, media_loader=lambda: payload,
+            content_evidence_loader=lambda **kwargs: kwargs,
+            content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
+            now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc), target_page_id="PAGE-ONE")
+        selected = result["proposal"]["protected_campaign_package"]["selected_approved_media"]
+        assert selected[0]["asset_id"] == "BEACON-ASSET-1"
+        assert set(selected[0]["subject_tags"]).intersection({"piglets", "litter", "live_stock"})
+        assert payload["items"][0]["observation"].get("tags") is None
+
+
+def test_scheduled_generation_fails_closed_for_ambiguous_or_unrelated_legacy_context():
+    for payload in (
+        approved_legacy_media("Bella at the farm"),
+        approved_legacy_media("Bella with chickens and a new litter"),
+        approved_legacy_media("Bella - just delivered 13 little piglets", confidence="unavailable"),
+    ):
+        result = build_scheduled_sale_ready_stock_result(
+            opportunity_loader=opportunity, media_loader=lambda payload=payload: payload,
+            content_evidence_loader=lambda **kwargs: kwargs,
+            content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
+            now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc), target_page_id="PAGE-ONE")
+        assert result["proposal"]["media"]["status"] == "text_only"
+        assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {
+            "mode": "text_only"}
 
 
 def test_supported_offering_read_rejects_fallback_or_partial_config_evidence():
