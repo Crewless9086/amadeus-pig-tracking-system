@@ -19,9 +19,17 @@ OPEN_STATES = ("open", "monitoring", "escalated")
 
 
 def welfare_case_runtime_enabled(environ: Mapping[str, str] | None = None) -> bool:
-    """Require an explicit post-migration activation switch."""
-    value = (environ or os.environ).get("PIG_WELFARE_CASE_RUNTIME_ENABLED", "")
-    return str(value).strip().lower() == "true"
+    """Enable the migrated canonical runtime unless explicitly contained.
+
+    Migration 202608200002 is mandatory on the production migration rail. An
+    exact ``false`` remains a kill switch; malformed configured values fail
+    closed instead of silently activating.
+    """
+    source = os.environ if environ is None else environ
+    if "PIG_WELFARE_CASE_RUNTIME_ENABLED" not in source:
+        return bool(str(source.get("DATABASE_URL") or "").strip())
+    value = str(source.get("PIG_WELFARE_CASE_RUNTIME_ENABLED") or "").strip().lower()
+    return value == "true"
 
 
 def load_open_welfare_case_contexts(chat_id: str, owner_user_id: str, *, connect_factory=None):

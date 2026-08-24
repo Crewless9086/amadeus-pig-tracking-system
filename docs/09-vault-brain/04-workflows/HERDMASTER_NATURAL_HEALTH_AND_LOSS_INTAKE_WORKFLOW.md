@@ -194,10 +194,13 @@ context, prefers durable open cases over its legacy 24-hour compatibility
 chronology, carries HERDMASTER owner/urgency/next-check state and projects the
 same case/work identity for the existing shared-attention contract. It creates
 no second observation, treatment, movement, mortality, manager, queue or
-Telegram lifecycle. Runtime reads and writes remain fail-closed unless
-`PIG_WELFARE_CASE_RUNTIME_ENABLED=true`; production application, explicit
-post-migration activation and exact deployed revision remain separate evidence
-gates until an immutable migration receipt and readiness proof are verified.
+Telegram lifecycle. Migration `202608200002` is mandatory on the production
+migration rail. Once its immutable receipt, readiness probe and canonical
+database configuration are present, the runtime is active by default;
+`PIG_WELFARE_CASE_RUNTIME_ENABLED=false` is the explicit containment switch.
+Missing schema, missing database configuration, malformed configured values
+and database failure remain fail-closed. Exact deployed revision,
+provider confirmation and canonical readback remain separate evidence gates.
 
 ### Production status
 

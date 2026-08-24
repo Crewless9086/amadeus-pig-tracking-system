@@ -196,11 +196,12 @@ def test_confirmed_mortality_transaction_and_concurrent_replay_write_once():
     assert replay["welfare_case_closed"] is True
 
 
-def test_mortality_requires_enabled_welfare_runtime_before_any_write():
-    result,status=confirm_health_loss_preview(mortality_lifecycle(),
-        "CONFIRM HERD-HEALTH-LOSS-ABC",actor_id="42",
-        evidence_loader=lambda:{"evidence_generation":"GEN-11"},
-        connect_factory=lambda: (_ for _ in ()).throw(AssertionError("no transaction")))
+def test_mortality_respects_explicit_welfare_runtime_containment_before_any_write():
+    with patch.dict("os.environ", {"PIG_WELFARE_CASE_RUNTIME_ENABLED":"false"}):
+        result,status=confirm_health_loss_preview(mortality_lifecycle(),
+            "CONFIRM HERD-HEALTH-LOSS-ABC",actor_id="42",
+            evidence_loader=lambda:{"evidence_generation":"GEN-11"},
+            connect_factory=lambda: (_ for _ in ()).throw(AssertionError("no transaction")))
     assert status==503 and result["status"]=="welfare_case_runtime_required_for_atomic_mortality"
     assert result["writes_farm_data"] is False
 
