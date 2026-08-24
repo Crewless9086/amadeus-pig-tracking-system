@@ -2327,3 +2327,116 @@ zone/lifecycle/verified-completion/owner-question changes and fixed meaningful
 deadlines must still produce exactly one successor. Completion still requires
 reviewed deployment, a natural materially changed plan when one genuinely
 occurs, and a later natural unchanged zero-send cycle.
+
+### First compatibility deployment failed and existing fertilizer delay evidence
+
+PR #1235 independently passed and merged as
+`5c3ba98af02a8220adaf715d5b002988deb1d4c1`; Render loaded that exact revision.
+The first natural due cycle then recorded observation
+`OOM-ROOTLINE-OBS-DAE1CCE12878150024CB5914-RECORD_OBSERVATION` at
+`2026-08-24T12:17:01.610604Z` with the same visible B/C semantics as message
+`3986`, but claimed pending notification
+`OOM-ROOTLINE-REASSESS-245167D18F25A1595F1F9EFE` and delivered provider message
+`3987` at `12:17:13.522650Z`. Only the next-check time moved from 14:16 to 14:46
+SAST. Raw append-only packet readback proves exact predecessor owner/chat/date,
+identity, provider receipt and pending-answer enrichment; suppression failed
+because production's `durable_backend_schedule` trigger was excluded from the
+hard-coded volatile-trigger allowlist. This remains a notification-only
+acceptance failure with zero irrigation, fertilizer, borehole or farm effect.
+
+The same-lineage repair on exact current main replaces that brittle trigger
+allowlist with a versioned owner-plan semantic fingerprint stored in the
+existing pending/delivery packet. It normalizes only the visible next-check
+line and retains exact recipient, date, provider receipt and predecessor
+binding. Existing historical packet text supplies the transition fingerprint;
+missing or ambiguous predecessor evidence still permits the first legitimate
+plan, and a visible zone, lifecycle, verified-completion or owner-question
+change still produces one successor. Lifecycle notices remain separate.
+
+Owner evidence also states that no fertilizer has been used for three weeks and
+that further delay is unacceptable. This is consolidated into the existing
+`RMQ-20260813-02` Mixer and `RMQ-20260813-03A/03B` Injection lineage; it creates
+no new mission and does not change priority. Source and canonical readiness are
+not physical commissioning: Mixer CH2 is read-only observed and bounded for a
+future supervised five-minute proof, while Injection CH1 remains dependent on
+commissioned Mixer plus genuine active B/C preflow, pulse, flush and exact OFF
+evidence. The current absence of a dedicated canonical Mission Control row for
+these register-retained identities remains a visibility gap; no substitute row
+or direct database mutation was made here.
+
+Lifecycle: `WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / SEMANTIC_REPAIR_ACTIVE`.
+Measurable outcomes remain two natural unchanged cycles with zero standalone
+plan delivery, then one technically ready supervised Mixer proof and later
+separate Injection acceptance. **OWNER ACTION: NONE** until the notification
+repair is reviewed/deployed and the exact commissioning rail reports readiness;
+do not ask the owner to wait at equipment or repeat a presence statement.
+
+#### Supervised Mixer physical commissioning evidence in progress
+
+On `2026-08-24` the owner first reported `CH2 OFF, pump stopped`; exact source
+wall-clock time was not supplied and remains Unknown. This is attributable
+physical preflight evidence for existing `RMQ-20260813-02`, not commissioning
+completion. At `2026-08-24T16:15:11+02:00` Control Tower received the owner's
+next physical observation: `CH2 ON, pump running, tank recirculating` for
+`Controller (1) Right` / device `100204d497` / CH2 `Kunsmis Meng`. The owner is
+now observing the existing 300-second native auto-OFF window. No Injection CH1
+or Borehole action is authorized or reported. Completion remains blocked on
+physical pump/recirculation stop at native timeout plus exact provider OFF and
+canonical execution/commissioning readback. **OWNER ACTION: observe only and
+report immediately when CH2, pump and recirculation stop; do not toggle another
+control or retry ON.**
+
+The owner subsequently reported `CH2 auto-OFF, pump stopped, recirculation
+stopped.` This is attributable physical mapping and native 300-second fail-stop
+proof, not a ROOTLINE outcome. The next deployed manager readback at
+`2026-08-24T14:20:22.769628Z` reached generation 8 with readiness digest
+`3da21131194f782aaefe4b393a8405f99958f7f2a739330a57bdc8c74eaf985b`,
+unknowns `[]`, and zero canonical auxiliary execution events. Under the
+readiness collector contract this proves fresh authoritative provider binding,
+CH2 current OFF, native auto-OFF exactly 300 seconds, no conflicting active
+auxiliary execution and zero provider control calls. It also proves the manual
+run did not become canonical commissioning.
+
+The exact existing governed continuation is one fresh owner Telegram presence
+statement bound to Mixer CH2, followed by the ROOTLINE protected preview and
+one actor-bound `Confirm` approval. The runtime must then own one exactly-once
+ON, native timeout/recovery, provider OFF, physical stopped-flow evidence,
+canonical completion and zero-ON replay. No manual repeat, Injection CH1 or
+Borehole action is part of this acceptance.
+
+### 2026-08-24 - Mission Control latency outcome and ROOTLINE current hold
+
+Existing `CMQ-20260813-05` achieved one bounded owner-visible outcome without
+closing the broader operating-spine mission. PR #1236 merged as exact main
+`c210c5295c37d0ca6424173207387ba24621d113`; Render loaded that exact revision.
+Two separate authenticated owner-page loads then displayed all six current
+canonical Control Tower missions with their counts, details, next steps and
+owner-action state inside the existing Mission Control page, with no timeout.
+This retires the page-critical query-latency acceptance gate only. CMQ remains
+`WORKING`: runner continuity, automatic governed mission progression and the
+broader operating-spine acceptance are not claimed complete. No mission, row,
+store, page, priority, provider or farm state was created or changed by this
+register receipt.
+
+ROOTLINE PR #1237 exact head
+`4444861d6be5f6af33f98e869b05e05369aff537` independently passed against its
+then-current base with 69 focused local tests, 32 independent focused tests,
+clean diff and all four hosted gates. It adds a production-shaped pre-upgrade
+message `3986` predecessor and proves the clock-only `3987` successor is silent,
+while fixed deadlines, changed B/C semantics, lifecycle/completion and owner
+questions remain material. Main subsequently advanced to the disjoint CMQ
+merge above, so #1237 is being reconciled and re-gated before any integration;
+no stale-base merge or deployment is authorized.
+
+The owner's fresh Mixer presence statement did not reach the deployed direct
+Telegram webhook: Render request evidence through
+`2026-08-24T14:42:47.051211Z` contains no corresponding POST, and canonical
+readback at `2026-08-24T14:40:05.648244Z` contains no new Mixer claim or card.
+The remaining `active` presence claim was created on 16 August, expired on 17
+August and has no preview-card binding. It is historical stale state, but it
+cannot have intercepted a new request that never reached Amadeus. Exact blocker
+is upstream Telegram/n8n relay ingestion; root cause below that boundary is
+still Unknown. Zero new claim, card, execution, provider call or hardware/farm
+effect occurred. `OWNER ACTION: NONE`: do not resend the message, press an old
+button or operate CH1, CH2 or Borehole until exact dedupe-safe relay recovery is
+proved and one fresh protected Mixer preview is visible.
