@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 import hashlib, json
+import re
 from typing import Any, Callable, Mapping
 from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_plan
-from modules.oom_sakkie.rootline_material import rootline_material_digest, stable_reassessment
+from modules.oom_sakkie.rootline_material import (
+    rootline_material_digest,
+    stable_reassessment,
+)
+
+
+OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v3"
 
 
 def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
@@ -37,6 +44,10 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     delivered = state_store("load_delivered", f"{owner_user_id}|{chat_id}", None) or {}
     current_identity = state_store("load_identity", identity, None) or {}
     current_answer = compose_daily_rootline_plan(current, language=language)
+    current_owner_plan_reassessment = _owner_plan_reassessment(
+        current.get("next_reassessment"))
+    current_owner_plan_fingerprint = _owner_plan_fingerprint(
+        current_answer, current_owner_plan_reassessment)
     # A fresher generation remains durable observation evidence, but is not
     # owner-notification material by itself. Daily and change rails share the
     # date + material identity and stay silent when the supported action did
@@ -50,10 +61,19 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
                 "evidence_generation": evidence_generation,
                 "next_due_at": _declared_next_due(current),
                 "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
-    if (_volatile_reassessment_clock(current)
-            and _exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
-            and _stable_owner_plan(delivered.get("answer"))
-            and _stable_owner_plan(delivered.get("answer")) == _stable_owner_plan(current_answer)):
+    delivered_owner_plan_fingerprint = _delivered_owner_plan_fingerprint(delivered)
+    if (_exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
+            and delivered_owner_plan_fingerprint
+            and delivered_owner_plan_fingerprint == current_owner_plan_fingerprint):
+        return {**_result("rootline_reassessment_unchanged", material, notify=False),
+                "operating_date": operating_date,
+                "result_id": result_id,
+                "evidence_generation": evidence_generation,
+                "next_due_at": _declared_next_due(current),
+                "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
+    if (_exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
+            and _legacy_volatile_owner_plan_matches(
+                delivered, current_answer, current_owner_plan_reassessment)):
         return {**_result("rootline_reassessment_unchanged", material, notify=False),
                 "operating_date": operating_date,
                 "result_id": result_id,
@@ -74,7 +94,11 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
               "evidence_cutoff": str(current.get("evidence_cutoff") or ""),
               "next_reassessment_at": _declared_next_due(current),
               "zones": _typed_zone_projection(current),
-              "answer": current_answer, "delivery_state": "pending"}
+              "answer": current_answer,
+              "owner_plan_fingerprint_version": OWNER_PLAN_FINGERPRINT_VERSION,
+              "owner_plan_fingerprint": current_owner_plan_fingerprint,
+              "owner_plan_reassessment": current_owner_plan_reassessment,
+              "delivery_state": "pending"}
     recorded = state_store("claim_pending", identity, packet)
     if not isinstance(recorded, Mapping) or recorded.get("success") is not True:
         return _contained("rootline_reassessment_persistence_unproven")
@@ -141,10 +165,6 @@ def _material_digest(result):
     return rootline_material_digest(result)
 
 
-def _stable_reassessment(value):
-    return stable_reassessment(value)
-
-
 def _declared_next_due(result):
     value = result.get("next_reassessment") if isinstance(result, Mapping) else None
     return str((value or {}).get("at") or "") if isinstance(value, Mapping) else ""
@@ -209,16 +229,56 @@ def _stable_owner_plan(value):
         folded = line.casefold()
         if (folded.startswith("<b>next automatic reassessment")
                 or folded.startswith("<b>volgende outomatiese herbeoordeling")):
-            continue
+            # Only an explicitly approximate HH:MM clock token is volatile.
+            # Keep the line, language, reassessment mode, conditions and any
+            # fixed/deadline wording in the semantic identity.
+            line = re.sub(r"\b(around|omtrent)\s+\d{1,2}:\d{2}\b",
+                          r"\1 <volatile-clock>", line,
+                          flags=re.IGNORECASE)
         lines.append(line)
     return "\n".join(lines).strip()
 
 
-def _volatile_reassessment_clock(result):
-    value = result.get("next_reassessment") if isinstance(result, Mapping) else None
-    trigger = str((value or {}).get("trigger") or "") if isinstance(value, Mapping) else ""
-    return trigger in {
-        "canonical_plan_reassessment",
-        "new_canonical_evidence",
-        "new_canonical_evidence_or_next_read",
-    }
+def _owner_plan_fingerprint(value, reassessment=None):
+    stable = _stable_owner_plan(value)
+    if not stable:
+        return ""
+    material = {"version": OWNER_PLAN_FINGERPRINT_VERSION, "owner_text": stable,
+                "reassessment": dict(reassessment or {})}
+    return hashlib.sha256(json.dumps(material, sort_keys=True,
+        separators=(",", ":")).encode()).hexdigest()
+
+
+def _delivered_owner_plan_fingerprint(delivered):
+    version = str(delivered.get("owner_plan_fingerprint_version") or "")
+    fingerprint = str(delivered.get("owner_plan_fingerprint") or "")
+    if version == OWNER_PLAN_FINGERPRINT_VERSION and len(fingerprint) == 64:
+        return fingerprint
+    # Exact historical pending packets already preserve the delivered owner
+    # text. Derive the same versioned semantic identity for the one-time
+    # transition without weakening recipient/date/provider binding.
+    reassessment = delivered.get("owner_plan_reassessment")
+    if not isinstance(reassessment, Mapping):
+        reassessment = _owner_plan_reassessment({
+            "trigger": delivered.get("trigger"),
+            "at": delivered.get("next_reassessment_at"),
+        })
+    return _owner_plan_fingerprint(delivered.get("answer"), reassessment)
+
+
+def _owner_plan_reassessment(value):
+    result = stable_reassessment(value)
+    return dict(result) if isinstance(result, Mapping) else {}
+
+
+def _legacy_volatile_owner_plan_matches(delivered, current_answer, current_reassessment):
+    """One-way compatibility for an exact delivered pre-v3 moving-clock packet."""
+    if (not isinstance(delivered, Mapping)
+            or isinstance(delivered.get("owner_plan_reassessment"), Mapping)
+            or str(current_reassessment.get("trigger") or "") not in {
+                "canonical_plan_reassessment", "durable_backend_schedule",
+                "new_canonical_evidence", "new_canonical_evidence_or_next_read"}):
+        return False
+    delivered_answer = _stable_owner_plan(delivered.get("answer"))
+    current = _stable_owner_plan(current_answer)
+    return bool(delivered_answer and delivered_answer == current)
