@@ -124,6 +124,29 @@ def test_completed_prince_observation_is_not_rewritten_as_death(monkeypatch):
     assert delivered[0]["writes_farm_data"] is False and delivered[0]["rows_created"]==0
 
 
+def test_database_confirmation_datetime_keeps_exact_iso_provider_binding(monkeypatch):
+    class ObservationStore(Store):
+        def acquire(self, cycle, now):
+            with self.lock:
+                if self.claimed: return None
+                self.claimed=True
+                return {**CLAIM,"action_kind":"mortality","status":"completed",
+                    "canonical_effect_kind":"health_observation",
+                    "confirmation_provider_timestamp":datetime(2026,8,24,9,42,31,
+                        178208,tzinfo=timezone.utc),
+                    "result_payload":{"status":"completed",
+                        "answer":"<b>HERDMASTER OBSERVATION RECORDED</b>"}}
+    class Principal: language="en"
+    monkeypatch.setattr("modules.oom_sakkie.family_access.resolve_family_principal",
+                        lambda *a,**k:Principal())
+    seen=[]
+    result=run_payment_recovery_cycle(store=ObservationStore(),
+        deliverer=lambda parsed,*a,**k: seen.append(parsed["provider_timestamp"]) or
+            {"success":True,"telegram_message_id":"3979","telegram_edits":1})
+    assert result["status"]=="payment_recovery_completed"
+    assert seen==["2026-08-24T09:42:31.178208+00:00"]
+
+
 def test_unknown_legacy_health_effect_fails_closed_without_delivery():
     class UnknownStore(Store):
         def acquire(self, cycle, now):

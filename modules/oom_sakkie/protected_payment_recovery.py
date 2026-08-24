@@ -56,7 +56,8 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
         parsed = {"telegram_user_id": claim["owner_user_id"],
             "telegram_chat_id": claim["private_chat_id"], "telegram_chat_type": "private",
             "provider_message_id": str(claim["confirmation_provider_message_id"]),
-            "provider_timestamp": str(claim["confirmation_provider_timestamp"]), "text": ""}
+            "provider_timestamp": _provider_timestamp(
+                claim["confirmation_provider_timestamp"]), "text": ""}
         specialist = "SAM"
         if claim.get("action_kind") == "mortality":
             from modules.oom_sakkie.family_access import resolve_family_principal
@@ -119,6 +120,10 @@ def _summary(status, cycle_id, next_cycle):
         "heartbeat_at": datetime.now(timezone.utc).isoformat(),
         "next_cycle_at": next_cycle.isoformat(), "writes_to_supabase": False,
         "telegram_sends": 0, "telegram_edits": 0}
+
+
+def _provider_timestamp(value):
+    return value.isoformat() if isinstance(value, datetime) else str(value or "")
 
 
 def _bound_effect_kind(bound, result):
