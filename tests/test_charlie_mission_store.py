@@ -1077,6 +1077,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("metadata_json->'intake_quality'->>'queue_class'", sql)
         self.assertIn("owner_work", sql)
         self.assertIn("when 'in_progress' then 0", sql)
+        self.assertIn("when 'paused' then 2", sql)
+        self.assertLess(sql.index("when 'paused' then 2"), sql.index("when 'new' then 7"))
         self.assertIn("metadata_json->'queue'->>'priority'", sql)
         self.assertIn("created_at asc", sql)
         self.assertEqual(params["owner_queue_statuses"], [

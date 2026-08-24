@@ -3388,12 +3388,13 @@ def _mission_order_clause(status):
                         case status
                             when 'in_progress' then 0
                             when 'release_in_progress' then 1
-                            when 'pr_ready' then 2
-                            when 'blocked' then 3
-                            when 'release_approved' then 4
-                            when 'approved' then 5
-                            when 'new' then 6
-                            else 7
+                            when 'paused' then 2
+                            when 'pr_ready' then 3
+                            when 'blocked' then 4
+                            when 'release_approved' then 5
+                            when 'approved' then 6
+                            when 'new' then 7
+                            else 8
                         end asc,
                         case
                             when (metadata_json->'queue'->>'priority') ~ '^[0-9]+$'
