@@ -149,6 +149,12 @@ ZERO_AUTHORITY = {"writes_farm_data": False, "hardware_commands": 0,
                   "protected_actions_performed": False, "sends_telegram": False}
 
 
+def is_exact_fertilizer_commissioning_presence(parsed: Mapping[str, Any]) -> bool:
+    """Identify only the governed, explicit Mixer commissioning presence phrase."""
+    return bool(_FERTILIZER_COMMISSIONING_PRESENCE.search(
+        str((parsed or {}).get("text") or "").strip()))
+
+
 def handle_operational_specialist_message(
     parsed: Mapping[str, Any], gateway_authority: Any, *, now: datetime | None = None,
     rootline_dispatcher: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = accept_supervised_commissioning_presence,
@@ -164,7 +170,7 @@ def handle_operational_specialist_message(
     semantic_rootline_observation = (semantic.get("domain") == "rootline"
         and semantic.get("message_kind") in {"observation", "correction"}
         and not semantic.get("needs_clarification"))
-    commissioning_presence = bool(_FERTILIZER_COMMISSIONING_PRESENCE.search(text))
+    commissioning_presence = is_exact_fertilizer_commissioning_presence(parsed)
     pending = _pending_specialist_context(
         parsed, pending_specialist_loader or _load_pending_specialist_context)
     if pending and pending.get("binding_error"):

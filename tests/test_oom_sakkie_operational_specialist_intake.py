@@ -209,6 +209,98 @@ def test_contextual_commissioning_reply_binds_existing_specialist_before_observa
     assert value["hardware_commands"]==0 and len(calls)==1
 
 
+def test_exact_live_stale_projection_remains_actor_mission_age_and_digest_bound():
+    observed=datetime(2026,8,24,15,26,34,tzinfo=timezone.utc)
+    item={**operational(
+        "I am at the fertilizer valves and ready for the five-minute Mixer CH2 commissioning test."),
+        "provider_message_id":"4001","provider_timestamp":observed.isoformat(),
+        "semantic":{"domain":"rootline","intent":"commissioning_ready",
+            "message_kind":"confirmation","continuation":True,"language":"en",
+            "needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "state":"updated","task_state":"waiting_for_input",
+        "telegram_message_id":"3480","notification_message_id":"3674",
+        "delivery_provider_timestamp":"2026-08-10T11:00:08+00:00",
+        "contextual_task_kind":"fertilizer_commissioning",
+        "required_owner_confirmations":["physical_presence_at_fertilizer_valves",
+            "exactly_one_mixer_ch2_five_minute_test"],
+        "text_sha256":"a"*64}]
+    captured=[]
+    def followup(context,now=None):
+        captured.append(context)
+        return {"success":True,"contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"specialist_accepted","answer":"Protected preview ready",
+            "next_specialist_step":"supervised_fertilizer_mixer_proof",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=observed,pending_specialist_loader=pending,contextual_specialist_dispatcher=followup)
+    assert status==200 and value["status"]=="specialist_accepted"
+    assert captured[0]["mission_id"]=="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    assert captured[0]["parent_telegram_message_id"]=="3480"
+    assert len(captured[0]["text_sha256"])==64
+    assert value["hardware_commands"]==0 and value["provider_control_calls"]==0
+
+
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+@patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message")
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_operational_continuation")
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
+def test_exact_mixer_presence_precedes_stale_generic_operational_context(
+        owner_task, continuation, operational, deliver):
+    owner_task.return_value=({"handled":False},200)
+    continuation.return_value=({"handled":True,"success":False,
+        "status":"owner_operational_replay_binding_conflict"},409)
+    operational.return_value=({"handled":True,"success":True,"status":"specialist_accepted",
+        "answer":"Protected preview ready","specialist_identity":"ROOTLINE",
+        "mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False},200)
+    deliver.return_value={"success":True,"status":"family_message_delivered",
+        "telegram_sends":1,"telegram_edits":0}
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1",
+         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
+         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+    payload={"message":{"message_id":4001,"date":1787585194,
+        "text":"I am at the fertilizer valves and ready for the five-minute Mixer CH2 commissioning test.",
+        "from":{"id":42},"chat":{"id":42,"type":"private"}}}
+    with patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",
+               return_value=None):
+        value,status=handle_telegram_gateway_message(payload,
+            headers={"Authorization":"Bearer "+"x"*40},environ=env)
+    assert status==200 and value["message"]["status"]=="specialist_accepted"
+    continuation.assert_not_called()
+    operational.assert_called_once()
+    assert value["message"]["hardware_commands"]==0
+
+
+@patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message")
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_operational_continuation")
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
+def test_nonexact_fertilizer_wording_cannot_bypass_generic_context_order(
+        owner_task, continuation, operational):
+    owner_task.return_value=({"handled":False},200)
+    continuation.return_value=({"handled":True,"success":True,"status":"contained",
+        "suppress_owner_delivery":True},200)
+    operational.return_value=({"handled":False},200)
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1",
+         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
+         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+    payload={"message":{"message_id":4002,"date":1787585194,
+        "text":"I am near the fertilizer area.",
+        "from":{"id":42},"chat":{"id":42,"type":"private"}}}
+    with patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",
+               return_value=None):
+        _,status=handle_telegram_gateway_message(payload,
+            headers={"Authorization":"Bearer "+"x"*40},environ=env)
+    assert status==200
+    continuation.assert_called_once()
+    operational.assert_not_called()
+
+
 def test_exact_mixer_readiness_outranks_generic_rootline_water_power_semantics():
     item={**operational(
         "I am at the fertilizer valves and ready for the five-minute Mixer CH2 commissioning test."),

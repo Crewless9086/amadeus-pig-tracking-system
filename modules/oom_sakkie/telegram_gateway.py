@@ -9,7 +9,8 @@ from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 from modules.oom_sakkie.herdmaster_farrowing_runtime import handle_farrowing_litter_message
 from modules.oom_sakkie.operational_specialist_intake import (
-    handle_operational_specialist_message, recover_contextual_specialist_replay)
+    handle_operational_specialist_message, is_exact_fertilizer_commissioning_presence,
+    recover_contextual_specialist_replay)
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
@@ -631,9 +632,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, manager_reply_status if delivery.get("success") else 202
 
-    continuation_result, continuation_status = handle_owner_operational_continuation(
-        parsed, gateway_authority,
-    )
+    # An exact Mixer commissioning-presence reply belongs to the already-bound
+    # specialist lifecycle.  Resolve that lifecycle before the broader owner
+    # operational continuation reader, which may contain old irrigation
+    # context.  All actor, chat, chronology, mission and digest checks remain
+    # inside the specialist handler; this grants no generic stale-context path.
+    operational_result, operational_status = ({"handled": False}, 200)
+    if is_exact_fertilizer_commissioning_presence(parsed):
+        operational_result, operational_status = handle_operational_specialist_message(
+            parsed, gateway_authority,
+        )
+
+    continuation_result, continuation_status = ({"handled": False}, 200)
+    if not operational_result.get("handled"):
+        continuation_result, continuation_status = handle_owner_operational_continuation(
+            parsed, gateway_authority,
+        )
     if continuation_result.get("handled"):
         delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
                      "status": "owner_delivery_suppressed_replay_or_metadata"}
@@ -651,9 +665,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, 200 if delivery.get("success") else 202
 
-    operational_result, operational_status = handle_operational_specialist_message(
-        parsed, gateway_authority,
-    )
+    if not operational_result.get("handled"):
+        operational_result, operational_status = handle_operational_specialist_message(
+            parsed, gateway_authority,
+        )
     if operational_result.get("handled"):
         if (str(operational_result.get("status") or "") == "specialist_accepted"
                 and str(operational_result.get("next_specialist_step") or "") ==
