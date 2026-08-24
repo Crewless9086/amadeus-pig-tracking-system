@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import unittest
+from types import SimpleNamespace
 
 import psycopg
 
@@ -581,6 +582,47 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
                    where binary_asset_id=%s""",
                 (finalized["binary_asset_id"],),
             )
+            self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_concurrent_semantic_adoption_serializes_on_binary_and_replays(self):
+        store = IntakeStore(DATABASE_URL)
+        envelope, identity = self.envelope(), self.identity()
+        store.prepare(envelope, identity)
+        finalized, status = store.finalize(envelope, identity, {
+            "binary_asset_id": "BEACON-BINARY-SEMANTIC-RACE",
+            "content_sha256": "8" * 64, "observed_mime_type": "image/jpeg",
+            "byte_size": 100, "width": 10, "height": 10,
+            "storage_path": "telegram/semantic/one.jpg",
+            "thumbnail_storage_path": "telegram-thumbnails/semantic/one.jpg",
+            "thumbnail_sha256": "9" * 64,
+        })
+        self.assertEqual(status, 201, finalized)
+        accepted, accepted_status = store.review(finalized["binary_asset_id"], {
+            "event_type": "library_accepted", "owner_action_id": "semantic-library",
+            "expected_predecessor_event_id": ""}, "owner-admin:semantic")
+        self.assertEqual(accepted_status, 201, accepted)
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("""insert into public.beacon_media_asset_events
+                (event_id,asset_id,event_type,recorded_by,approval_status,public_use_approved)
+                values('SEMANTIC-PUBLIC-EVENT',%s,'approved_public_use',
+                       'legacy-reviewed-authority','approved',true)""",
+                (finalized["beacon_asset_id"],))
+        meaning = SimpleNamespace(subject_tags=("live_stock", "piglets"), confidence=.95,
+            model="semantic-test", observer_version="oom_semantic_media_v1",
+            semantic_digest="a" * 64)
+
+        def adopt(_value):
+            return IntakeStore(DATABASE_URL).append_semantic_understanding(
+                finalized["binary_asset_id"], "8" * 64, meaning)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(adopt, range(2)))
+        self.assertEqual(sorted(status for _result, status in results), [200, 201], results)
+        self.assertEqual(sorted(result["created_count"] for result, _status in results), [0, 1])
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("""select count(*) from public.beacon_media_understanding_events
+                where binary_asset_id=%s and observer_identity='beacon-deployed-runtime'
+                  and observation_json ? 'semantic_digest'""", (finalized["binary_asset_id"],))
             self.assertEqual(cursor.fetchone()[0], 1)
 
 

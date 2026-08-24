@@ -60,6 +60,11 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
     media_result = media_loader()
     media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
     media_payload, enrichment = media_enricher(media_payload)
+    if int(enrichment.get("http_status") or 0) in {409, 503}:
+        return {"success": False, "status": enrichment.get("status") or
+            "media_semantic_enrichment_failed_closed", "decision": "Hold",
+            "reason": "Approved media semantic adoption could not be safely reconciled.",
+            "semantic_enrichment": enrichment, **ZERO}
     packet = build_live_stock_awareness_proposal(
         opportunities, candidate, media_payload, target_page_id=target_page_id)
     if packet.get("status") == "ready_for_owner_review":

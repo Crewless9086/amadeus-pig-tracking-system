@@ -84,6 +84,35 @@ def test_deployed_enrichment_appends_then_projects_only_governed_semantics():
     assert result["items"][0]["understanding_event_id"] == "UNDERSTANDING-1"
 
 
+def test_deployed_enrichment_is_bounded_and_records_retry_state():
+    class Store:
+        calls = []
+        def append_semantic_adoption_state(self, binary_id, digest, status):
+            self.calls.append((binary_id, digest, status))
+            return {"created_count": 1, "status": "media_semantic_adoption_state_recorded"}, 201
+    payload = {"success": True, "items": [{**approved_legacy_media("unknown")["items"][0],
+        "binary_asset_id": f"BEACON-BINARY-{index}", "intake_at": f"2026-08-24T00:0{index}:00Z"}
+        for index in range(7)]}
+    store = Store()
+    _result, evidence = enrich_approved_media_semantics(payload, store=store,
+        interpreter=lambda *_args, **_kwargs: None)
+    assert evidence["attempted_count"] == 5
+    assert [call[0] for call in store.calls] == [f"BEACON-BINARY-{index}" for index in range(5)]
+
+
+def test_deployed_enrichment_surfaces_append_conflict_fail_closed():
+    class Store:
+        def append_semantic_understanding(self, *_args):
+            return {"success": False, "status": "media_semantic_authority_changed"}, 409
+    meaning = MediaSemanticUnderstanding(("live_stock", "piglets"), .95,
+        "semantic-test", "c" * 64)
+    _result, evidence = enrich_approved_media_semantics(
+        approved_legacy_media("Bella newborn litter"), store=Store(),
+        interpreter=lambda *_args, **_kwargs: meaning)
+    assert evidence["status"] == "media_semantic_authority_changed"
+    assert evidence["http_status"] == 409
+
+
 def parsed(text="Please prepare the current marketing proposal", language="en"):
     return {"telegram_user_id": "42", "telegram_chat_id": "42", "provider_message_id": "9001",
         "provider_timestamp": "2026-08-14T08:01:00+00:00", "text": text,
@@ -247,6 +276,8 @@ def test_scheduled_generation_does_not_reinterpret_raw_legacy_owner_language():
         payload = approved_legacy_media(context)
         result = build_scheduled_sale_ready_stock_result(
             opportunity_loader=opportunity, media_loader=lambda payload=payload: payload,
+            media_enricher=lambda value: (value, {"created_count": 0,
+                "status": "media_semantic_understanding_unchanged"}),
             content_evidence_loader=lambda **kwargs: kwargs,
             content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
             now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc), target_page_id="PAGE-ONE")
@@ -318,6 +349,24 @@ def test_missing_sale_stock_does_not_block_supported_enquiry_service_copy():
     assert result["status"] == "beacon_livestock_awareness_ready"
     assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
     assert result["publishes"] is False and result["spends_money"] is False
+
+
+def test_semantic_append_conflict_prevents_owner_prompt_and_package_build():
+    called = {"candidate": 0}
+    def candidate_builder(*_args, **_kwargs):
+        called["candidate"] += 1
+        return awareness_candidate()
+    result = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: opportunity(False),
+        media_loader=lambda: approved_legacy_media("current piglets"),
+        media_enricher=lambda payload: (payload, {"status":
+            "media_semantic_authority_changed", "http_status": 409, "created_count": 0}),
+        content_candidate_builder=candidate_builder, litter_loader=litter_evidence,
+        now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
+    assert result["status"] == "media_semantic_authority_changed"
+    assert result["decision"] == "Hold" and result["publishes"] is False
+    assert called["candidate"] == 1
+    assert "proposal" not in result
 
 
 def test_stock_claim_and_material_generation_bind_to_canonical_card():
