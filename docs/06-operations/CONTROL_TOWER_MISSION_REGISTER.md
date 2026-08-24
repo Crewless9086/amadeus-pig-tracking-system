@@ -2845,3 +2845,45 @@ tank default is now explicit. Anton has completed the requested press, so
 canonical readback, safe follow-up and later terminal-independent cycles must
 continue automatically. No mission was created or reprioritized, and this
 update performed no provider, database, farm, scheduler or hardware mutation.
+
+## 2026-08-24 - BEACON approved-media repair exactly deployed
+
+Following the independent PASS already recorded, PR `#1206` merged as exact
+revision `9f33b910254f85a02c1246d26884ae4ff37e8155` at `05:08:17Z`. Render
+deployment `dep-da5t3gqd0e5s73buqgng` is live at that exact revision, and
+`/health/revision` confirms the same loaded identity with
+`identity_complete=true`.
+
+This advances the bounded BEACON repair to **Integrated** only. No genuine
+provider-visible Facebook image post has yet proved approved-media selection,
+protected owner approval, exact media/hash binding, provider publication
+readback, SAM attribution or later unattended continuity. Merge and exact
+deployment are not a marketing or customer outcome. Mission state is
+`INTEGRATED / EXACT_REVISION_LIVE / GENUINE_IMAGE_POST_ACCEPTANCE_PENDING`.
+OWNER ACTION: NONE until the existing governed BEACON runtime presents a real
+protected decision or another genuinely necessary exception.
+
+## 2026-08-24 - Pig 126 second callback delivered but authorization rejected
+
+Render direct-webhook chronology now proves Anton's second physical press was
+delivered to the live service at exact timestamp
+`2026-08-24T04:59:20.485313244Z` and returned HTTP `403`. This supersedes only
+the earlier delivery Unknown: transport reached Render, but authorization still
+rejected the authenticated action. The active claim and canonical Pig 126
+remain unchanged, with no mortality, welfare, pen, availability or completion
+effect.
+
+The second press is a genuine acceptance **FAILURE**, not an owner outcome and
+not missing owner effort. Anton must not press a third time, resend the report
+or create a replacement claim. The existing HERDMASTER callback-authority
+lineage must diagnose why the live repaired revision still returns `403`, make
+the smallest governed correction, and resume acceptance without another owner
+action until a genuinely new physical step is unavoidable. Mission state is
+`CALLBACK_DELIVERED / AUTHORIZATION_403 / CLAIM_ACTIVE / ZERO_FARM_EFFECTS`.
+**OWNER ACTION: NONE.**
+
+Control Tower Check Receipt: BEACON is recorded as Integrated rather than
+provider-accepted, and the Pig 126 callback Unknown is narrowed to a proven
+live authorization rejection. No mission was created or reprioritized, no
+third owner press is requested, and this register update performed no provider,
+database, farm, publication, scheduler or hardware mutation.
