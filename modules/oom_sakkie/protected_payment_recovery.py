@@ -51,7 +51,8 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
             completion = completer(token, result, connect_factory=connect_factory)
             result = dict(completion.get("result") or result)
 
-        bound = claim.get("preview_payload") or {}
+        bound = {**dict(claim.get("preview_payload") or {}),
+            "canonical_effect_kind": str(claim.get("canonical_effect_kind") or "")}
         parsed = {"telegram_user_id": claim["owner_user_id"],
             "telegram_chat_id": claim["private_chat_id"], "telegram_chat_type": "private",
             "provider_message_id": "recovery:" + cycle_id,
@@ -101,10 +102,12 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
         store.finish_cycle(cycle_id, now, completed)
         return completed
     except Exception as exc:
+        unresolved = isinstance(exc, ValueError) and str(exc) == "health_loss_recovery_effect_unresolved"
         pending = {**_summary("payment_recovery_pending", cycle_id, next_cycle),
             "claim_digest": claim.get("preview_digest", ""),
             "error_type": type(exc).__name__}
-        store.release(token, cycle_id, now, "exception_pending", pending)
+        store.release(token, cycle_id, now,
+                      "effect_unresolved" if unresolved else "exception_pending", pending)
         store.finish_cycle(cycle_id, now, pending)
         return pending
 
@@ -119,11 +122,14 @@ def _summary(status, cycle_id, next_cycle):
 
 def _bound_effect_kind(bound, result):
     explicit = str((bound or {}).get("effect_kind") or "")
+    canonical = str((bound or {}).get("canonical_effect_kind") or "")
     status = str((result or {}).get("status") or "")
     if explicit == "mortality":
         return "mortality" if status.startswith("mortality_lifecycle_") else "unknown"
     if explicit == "health_observation":
         return "health_observation" if status == "completed" else "unknown"
+    if canonical in {"mortality", "health_observation"} and status == "completed":
+        return canonical
     if status.startswith("mortality_lifecycle_"):
         return "mortality"
     if status == "completed" and "OBSERVATION RECORDED" in str(
@@ -182,14 +188,23 @@ class _RecoveryStore:
                   returning callback_token""", (token, WORKER_ID, cycle_id, lease_until, now, now))
                 if not cur.fetchone():
                     return None
-                cur.execute("""select callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
+                cur.execute("""select c.callback_token,c.action_kind,c.owner_user_id,c.private_chat_id,c.mission_id,
                   preview_digest,evidence_generation,preview_payload,status,result_payload,
-                  preview_card_message_id,confirmation_provider_message_id,confirmation_provider_timestamp
-                  from app_private.oom_protected_action_claims where callback_token=%s""", (token,))
+                  preview_card_message_id,confirmation_provider_message_id,confirmation_provider_timestamp,
+                  case when exists(select 1 from public.pig_lifecycle_events life
+                         where life.pig_id=c.preview_payload->'identity'->>'pig_id'
+                           and life.idempotency_key=c.preview_payload->>'operation_id'
+                           and life.lifecycle_event_type='exited_farm') then 'mortality'
+                       when exists(select 1 from public.pig_observation_events observation
+                         where observation.pig_id=c.preview_payload->'identity'->>'pig_id'
+                           and observation.idempotency_key=c.preview_payload->>'operation_id')
+                         then 'health_observation' else 'unknown' end
+                  from app_private.oom_protected_action_claims c where callback_token=%s""", (token,))
                 values = cur.fetchone()
         keys = ("callback_token","action_kind","owner_user_id","private_chat_id","mission_id",
             "preview_digest","evidence_generation","preview_payload","status","result_payload",
-            "preview_card_message_id","confirmation_provider_message_id","confirmation_provider_timestamp")
+            "preview_card_message_id","confirmation_provider_message_id","confirmation_provider_timestamp",
+            "canonical_effect_kind")
         return dict(zip(keys, values))
 
     def release(self, token, cycle_id, now, status, result):
