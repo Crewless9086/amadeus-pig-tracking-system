@@ -55,8 +55,8 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
             "canonical_effect_kind": str(claim.get("canonical_effect_kind") or "")}
         parsed = {"telegram_user_id": claim["owner_user_id"],
             "telegram_chat_id": claim["private_chat_id"], "telegram_chat_type": "private",
-            "provider_message_id": "recovery:" + cycle_id,
-            "provider_timestamp": now.isoformat(), "text": ""}
+            "provider_message_id": str(claim["confirmation_provider_message_id"]),
+            "provider_timestamp": str(claim["confirmation_provider_timestamp"]), "text": ""}
         specialist = "SAM"
         if claim.get("action_kind") == "mortality":
             from modules.oom_sakkie.family_access import resolve_family_principal
@@ -73,6 +73,7 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
                     raise ValueError("health_loss_recovery_effect_unresolved")
                 result = {**result, "writes_farm_data": False, "rows_created": 0,
                     "delivery_recovery_required": True,
+                    "owner_visible_completion_policy": "verified_edit_or_new_message",
                     "recipient_render_contract": "specialist_structured_recipient_v1",
                     "recipient_language": language}
             result["card_mission_id"] = protected_card_mission_id(

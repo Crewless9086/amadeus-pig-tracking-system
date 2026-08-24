@@ -82,6 +82,8 @@ def test_completed_mortality_is_automatically_recomposed_and_delivered_without_w
     store=MortalityStore(); writes=[]; delivered=[]
     def deliver(parsed, result, **kwargs):
         delivered.append((parsed,result,kwargs))
+        assert parsed["provider_message_id"] == "original-callback"
+        assert parsed["provider_timestamp"] == "2026-08-15T12:16:15+00:00"
         return {"success":True,"telegram_message_id":"3959","telegram_sends":0,"telegram_edits":1}
     outcome=run_payment_recovery_cycle(store=store,
         executor=lambda *args,**kwargs:writes.append(args), deliverer=deliver)
