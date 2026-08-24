@@ -186,6 +186,20 @@ welfare closure and active-projection outcome before completion is composed;
 failure rolls the whole transaction back. Exact replay reuses the same
 operation and readback and creates no second effect.
 
+The protected claim stores that canonical completed result before Telegram
+presentation. If the provider completion edit/send fails after commit, an
+exact retry of the same bound callback receipt may reuse the stored result for
+delivery only; it must not enter the farm writer again.
+The existing scheduled protected-recovery cycle also leases a completed
+mortality claim whose delivery has not yet been recovered, recomposes the
+recipient-language presentation from the sealed identity and canonical result,
+and edits/sends through the existing idempotent card lifecycle. It neither
+requires another owner action nor creates a new provider or farm event. A
+completed animal may retain its last `pig_current_state.current_pen_id` as historical location
+context because that view derives the latest location event. Current pen
+occupancy is instead the governed projection of Active, on-farm animals; death
+completion must prove that active membership is zero rather than erase history.
+
 `202608200002_create_pig_welfare_case_lifecycle.sql` is the reviewed additive
 foundation for case identity, append-only case events and non-merging fact
 links. `modules/pig_weights/pig_welfare_case_runtime.py` is the bounded adapter:
@@ -204,8 +218,13 @@ provider confirmation and canonical readback remain separate evidence gates.
 
 ### Production status
 
-Production activation and a genuine end-to-end health/loss journey remain
-unproven by this workflow. Historical GateKeeper execution `64196`, relay
+Production activation and canonical mortality acceptance were proven on
+2026-08-24 by one actor-bound provider interaction: the transaction recorded
+the lifecycle and welfare closure exactly once and canonical readback proved
+the animal Dead, off farm, and absent from active pen and availability
+projections. The provider completion failed after commit, so visible completion
+and later terminal-independent continuity remain open acceptance evidence.
+Historical GateKeeper execution `64196`, relay
 execution `64197`, and the original Pig 002 provider update are failed-
 acceptance evidence only and must not be consumed, replayed, resent, or used as
 a write trigger.

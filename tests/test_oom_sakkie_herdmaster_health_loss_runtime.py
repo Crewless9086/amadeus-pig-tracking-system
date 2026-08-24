@@ -34,6 +34,10 @@ def test_all_runtime_status_fragments_follow_recipient_language_and_are_html_saf
     completion = _mortality_completion_message({"pig_name": "A<B & C",
         "welfare_case_closed": True, "living_checks_reconciled": 1}, "en")
     assert "A&lt;B &amp; C" in completion and "A<B" not in completion
+    af_completion = _mortality_completion_message({"tag_number": "126",
+        "welfare_case_closed": True, "living_checks_reconciled": 1}, "af")
+    assert af_completion.startswith("<b>VARK 126 AANGETEKEN</b>")
+    assert "SE AFSTERWE AANGETEKEN" not in af_completion
 
 
 def evidence():

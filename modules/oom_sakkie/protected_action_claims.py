@@ -255,7 +255,7 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         if str(row[10])!=str(source_card_message_id or ""):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
         if row[7]=="completed":
-            if row[0] in {"rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
+            if row[0] in {"mortality", "rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
                     "rootline_fertilizer_mixer_presence_refresh",
                     "sam_sale_payment", "beacon_media_review",
                     "herdmaster_record_farrowing_litter"}:

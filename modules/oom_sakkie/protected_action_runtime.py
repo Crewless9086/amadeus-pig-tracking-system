@@ -53,6 +53,10 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
         if claimed.get("action_kind")=="mortality":
             result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            from modules.oom_sakkie.herdmaster_health_loss_runtime import mortality_completion_recovery_result
+            result=mortality_completion_recovery_result(result,
+                claimed.get("preview_payload") or {},
+                str(parsed.get("output_language") or "en"))
             return {"handled":True,**result,"specialist":"HERDMASTER",
               "mission_id":claimed["mission_id"],
               "card_mission_id":generic_protected_card_mission_id(

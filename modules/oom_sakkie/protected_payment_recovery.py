@@ -55,8 +55,20 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
             "telegram_chat_id": claim["private_chat_id"], "telegram_chat_type": "private",
             "provider_message_id": "recovery:" + cycle_id,
             "provider_timestamp": now.isoformat(), "text": ""}
-        delivery = deliverer(parsed, result, specialist="SAM",
-            mission_id=claim["mission_id"], card_mission_id=str(result.get("card_mission_id") or ""))
+        specialist = "SAM"
+        if claim.get("action_kind") == "mortality":
+            from modules.oom_sakkie.family_access import resolve_family_principal
+            from modules.oom_sakkie.herdmaster_health_loss_runtime import mortality_completion_recovery_result
+            from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
+            language = resolve_family_principal(parsed, os.environ).language
+            parsed["output_language"] = language
+            result = mortality_completion_recovery_result(result, bound, language)
+            result["card_mission_id"] = protected_card_mission_id(
+                claim["mission_id"], claim["preview_digest"])
+            specialist = "HERDMASTER"
+        delivery = deliverer(parsed, result, specialist=specialist,
+            mission_id=claim["mission_id"], card_mission_id=str(
+                result.get("card_mission_id") or claim.get("card_mission_id") or claim["mission_id"]))
         if not delivery.get("success") or not str(delivery.get("telegram_message_id") or ""):
             pending = {**_summary("payment_recovery_delivery_pending", cycle_id, next_cycle),
                 "claim_digest": claim["preview_digest"], "telegram_sends": 0,
@@ -115,11 +127,15 @@ class _RecoveryStore:
             with db.cursor() as cur:
                 cur.execute("""select c.callback_token from app_private.oom_protected_action_claims c
                   left join app_private.oom_protected_payment_recovery_leases l using(callback_token)
-                  where c.action_kind='sam_sale_payment'
+                  where c.action_kind=any(%s)
                     and c.confirmation_provider_message_id is not null
-                    and (c.status='executing' or (c.status='completed' and l.last_status='delivery_pending'))
+                    and ((c.action_kind='sam_sale_payment' and
+                          (c.status='executing' or (c.status='completed' and l.last_status='delivery_pending')))
+                      or (c.action_kind='mortality' and c.status='completed' and
+                          (l.callback_token is null or l.last_status='delivery_pending')))
                     and (l.callback_token is null or l.lease_until<=%s)
-                  order by c.confirmation_provider_timestamp limit 1 for update of c skip locked""", (now,))
+                  order by c.confirmation_provider_timestamp limit 1 for update of c skip locked""",
+                  (["sam_sale_payment","mortality"],now))
                 row = cur.fetchone()
                 if not row:
                     return None
