@@ -90,6 +90,7 @@ def test_completed_mortality_is_automatically_recomposed_and_delivered_without_w
     assert result["answer"].startswith("<b>VARK 126 AANGETEKEN</b>")
     assert "Die vark SE AFSTERWE" not in result["answer"]
     assert result["writes_farm_data"] is False and result["rows_created"]==0
+    assert outcome["presentation_version"]=="mortality_completion_golden_v1"
 
 
 def test_concurrent_cycles_lease_one_execution_only():
