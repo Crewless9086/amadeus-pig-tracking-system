@@ -749,8 +749,7 @@ def _public_awareness_media(payload, *, required_tags=None):
     for row in rows or []:
         digest = str(row.get("content_sha256") or "").lower()
         observation = row.get("observation") if isinstance(row.get("observation"), Mapping) else {}
-        tags = {str(tag).casefold() for tag in
-            (observation.get("tags") or observation.get("subject_tags") or [])}
+        tags = _governed_awareness_tags(row, observation)
         relevant = (bool(tags.intersection({str(tag).casefold() for tag in required_tags}))
             if required_tags else bool(tags.intersection(
                 {"live_stock", "livestock", "piglet", "piglets", "litter", "weaner", "farm_life"})))
@@ -772,6 +771,32 @@ def _public_awareness_media(payload, *, required_tags=None):
                 "public_use_authority": "approved",
                 "subject_tags": sorted(tags)}
     return None
+
+
+def _governed_awareness_tags(row, observation):
+    """Project narrow livestock relevance from existing governed understanding."""
+    explicit = {str(tag).strip().casefold() for tag in
+        (observation.get("tags") or observation.get("subject_tags") or [])
+        if str(tag).strip()}
+    if explicit:
+        return explicit
+    if (str(observation.get("classification") or "") != "private_farm_photo"
+            or str(row.get("observation_confidence") or "") not in
+                {"evidence_supported", "owner_confirmed"}):
+        return set()
+    context = " ".join(str(value or "").strip() for value in (
+        row.get("owner_explanation"), observation.get("owner_context")) if value).casefold()
+    words = set(re.findall(r"[a-z0-9]+", context))
+    if words.intersection({"chicken", "chickens", "hen", "hens", "cow", "cows",
+            "cattle", "sheep", "lamb", "lambs", "goat", "goats", "horse", "horses"}):
+        return set()
+    if words.intersection({"piglet", "piglets", "piggie", "piggies", "varkie", "varkies"}):
+        return {"live_stock", "piglets"}
+    if words.intersection({"litter", "werpsel"}):
+        return {"live_stock", "litter"}
+    if words.intersection({"weaner", "weaners", "speenvark", "speenvarke"}):
+        return {"live_stock", "weaner"}
+    return set()
 
 
 def select_litter_story_media(payload, *, litter_id, pig_ids, event_id):
