@@ -123,7 +123,7 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     providers = loaders or {
         "herdmaster": lambda: _load_herdmaster(authority, owner, now,
             language=str(semantic.get("language") or "en")),
-        "rootline": lambda: _load_rootline(now),
+        "rootline": lambda: _load_rootline(now, str(semantic.get("language") or "en")),
         "sam": lambda: _missing("sam", now),
         "beacon": lambda: _missing("beacon", now),
     }
@@ -483,7 +483,7 @@ def _current_cycle_observations(tasks, observations, generated_at):
     return [row for pig_id, (_, row) in sorted(candidates.items()) if pig_id not in conflicted]
 
 
-def _load_rootline(now):
+def _load_rootline(now, language="en"):
     future = _ROOTLINE_REFRESH_EXECUTOR.submit(
         build_current_rootline_specialist_result,
         operating_date=now.date().isoformat(), now=now)
@@ -501,25 +501,22 @@ def _load_rootline(now):
             next_action="Oom Sakkie will reassess when fresh ROOTLINE readings are available; do not start irrigation or commissioning from this brief.",
             assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
             provenance=provenance, business_value=90,
-            genuine_question="What are the current storage and reservoir levels, and does C Camp visibly need water today?",
-            question_for="charl")
+            genuine_question="", question_for="")
         return SpecialistResult("rootline", provenance.result_id, now,
             SpecialistAvailability.AVAILABLE, work_items=(item,))
     observed = _time(((raw.get("evidence") or {}).get("generated_at") or raw.get("generated_at")), now)
     result_id = str(raw.get("result_id") or raw.get("plan_id") or "rootline-current")
     provenance = Provenance("rootline", result_id, ("canonical_rootline_specialist_result",), observed, 1.0)
-    recommendation = str((raw.get("owner_brief") or {}).get("recommend_now") or raw.get("overall_status") or "Needs Data")
-    state = WorkState.WAITING_EVIDENCE if "needs data" in recommendation.lower() else WorkState.PLANNED
+    from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_manager_item
+    projection = compose_daily_rootline_manager_item(raw, language=language)
+    state = WorkState.WAITING_EVIDENCE if "needs data" in projection["title"].lower() else WorkState.PLANNED
     item = SpecialistWorkItem(
         item_id=result_id + "-plan", dedupe_key="rootline:daily-plan", domain="water_energy",
-        title=f"Irrigation: Recommendation - {recommendation}",
-        why="The current canonical ROOTLINE plan determines the recommendation; it is not execution evidence.",
-        next_action=("Automatic authority is not active from this brief. ROOTLINE owns the next check: "
-            + str((raw.get("owner_brief") or {}).get("reassess") or
-                  "when canonical evidence changes.")),
+        title=projection["title"], why=projection["why"],
+        next_action=projection["next_action"],
         assignee="charl", state=state, authority=Authority.ADVISORY, provenance=provenance,
-        business_value=80, genuine_question=str((raw.get("owner_brief") or {}).get("family_fact_needed") or ""),
-        question_for="charl" if (raw.get("owner_brief") or {}).get("family_fact_needed") else "",
+        business_value=80, genuine_question=projection["question"],
+        question_for="charl" if projection["question"] else "",
     )
     return SpecialistResult("rootline", result_id, observed,
         SpecialistAvailability.AVAILABLE if raw.get("success") else SpecialistAvailability.CONTAINED,

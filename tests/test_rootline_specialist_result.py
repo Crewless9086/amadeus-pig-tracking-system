@@ -491,8 +491,7 @@ class RootlineSpecialistResultTests(unittest.TestCase):
             self.recommendation(result, "borehole")["status"], "Needs Data"
         )
         self.assertTrue(result["current_power"]["battery_soc_pct"])
-        self.assertEqual(len(result["owner_questions"]), 1)
-        self.assertFalse(result["owner_questions"][0]["required_now"])
+        self.assertEqual(result["owner_questions"], [])
 
     def test_transfer_pump_is_dependency_never_controllable(self):
         transfer = self.recommendation(self.build(), "solar_transfer_dependency")
@@ -680,7 +679,9 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         self.assertIn("recommend_now", brief)
         self.assertTrue(brief["why"])
         self.assertIn(" at ", brief["reassess"])
-        self.assertIn("LOW, OK or FULL", brief["family_fact_needed"])
+        self.assertNotIn("LOW, OK or FULL", brief["family_fact_needed"])
+        self.assertFalse(any(question.get("fact") == "current_tank_observation"
+                             for question in result["owner_questions"]))
 
 
 if __name__ == "__main__":

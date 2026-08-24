@@ -2,7 +2,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from modules.oom_sakkie.rootline_daily_presentation import (
-    compose_daily_rootline_plan, present_daily_rootline_plan,
+    compose_daily_rootline_manager_item, compose_daily_rootline_plan,
+    present_daily_rootline_plan,
 )
 
 SAST = ZoneInfo("Africa/Johannesburg")
@@ -303,3 +304,26 @@ def test_held_only_claims_no_watering_need_when_specific_evidence_proves_it():
         "state":"Held","reason":"fresh_need_evidence","next_action_owner":"ROOTLINE",
         "next_action":"reassess","watering_need_proven_false":True}}
     assert "B Camp:</b> Not running — does not need watering" in compose_daily_rootline_plan(value)
+
+
+def test_no_owner_fact_sentinel_is_not_rendered_as_a_question():
+    value = result()
+    value["owner_brief"]["family_fact_needed"] = "No owner fact is required now."
+    text = compose_daily_rootline_plan(value)
+    assert "No owner fact is required now" not in text
+    assert "What I need from you:</b> Nothing" in text
+    assert "No action required from you." in text
+
+
+def test_manager_item_uses_same_completed_projection_without_internal_tokens():
+    value = result(b="Recommend", c="Hold", reason="now_after_fresh_execution_revalidation")
+    value["irrigation_lifecycle"] = {"B12345": {
+        "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "B12345",
+        "state": "Completed", "reason": "record_completed", "next_action_owner": "ROOTLINE",
+        "next_action": "reassess", "completion_evidence": {"zone_id": "B12345",
+            "shutdown_verified": True, "objective_satisfied": True,
+            "shutdown_evidence": {"authoritative": True, "state": "OFF"}}}}
+    item = compose_daily_rootline_manager_item(value, language="en")
+    assert "B Camp: Completed" in item["title"] and "off and verified" in item["title"]
+    assert "now_after" not in " ".join(item.values())
+    assert item["question"] == ""
