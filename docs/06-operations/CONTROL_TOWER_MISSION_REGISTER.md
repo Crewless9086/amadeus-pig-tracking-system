@@ -2385,3 +2385,21 @@ physical pump/recirculation stop at native timeout plus exact provider OFF and
 canonical execution/commissioning readback. **OWNER ACTION: observe only and
 report immediately when CH2, pump and recirculation stop; do not toggle another
 control or retry ON.**
+
+The owner subsequently reported `CH2 auto-OFF, pump stopped, recirculation
+stopped.` This is attributable physical mapping and native 300-second fail-stop
+proof, not a ROOTLINE outcome. The next deployed manager readback at
+`2026-08-24T14:20:22.769628Z` reached generation 8 with readiness digest
+`3da21131194f782aaefe4b393a8405f99958f7f2a739330a57bdc8c74eaf985b`,
+unknowns `[]`, and zero canonical auxiliary execution events. Under the
+readiness collector contract this proves fresh authoritative provider binding,
+CH2 current OFF, native auto-OFF exactly 300 seconds, no conflicting active
+auxiliary execution and zero provider control calls. It also proves the manual
+run did not become canonical commissioning.
+
+The exact existing governed continuation is one fresh owner Telegram presence
+statement bound to Mixer CH2, followed by the ROOTLINE protected preview and
+one actor-bound `Confirm` approval. The runtime must then own one exactly-once
+ON, native timeout/recovery, provider OFF, physical stopped-flow evidence,
+canonical completion and zero-ON replay. No manual repeat, Injection CH1 or
+Borehole action is part of this acceptance.
