@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from modules.oom_sakkie.protected_action_claims import (
     CALLBACK_PREFIX, canonical_preview_digest, claim_callback, complete_claim, contain_claim, execute_grouped_weight_claim,
-    resolve_natural_confirmation,
+    protected_card_mission_id as generic_protected_card_mission_id, resolve_natural_confirmation,
 )
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
 
@@ -51,6 +51,15 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "durable_claim_truth_loaded":False,"current_segment_consumed":None,
           "segment_consumption_proven":False,"recovery_required":True},503
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
+        if claimed.get("action_kind")=="mortality":
+            result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            return {"handled":True,**result,"specialist":"HERDMASTER",
+              "mission_id":claimed["mission_id"],
+              "card_mission_id":generic_protected_card_mission_id(
+                  claimed["mission_id"], claimed["preview_digest"]),
+              "reply_markup":{"inline_keyboard":[]},
+              "owner_visible_completion_policy":"verified_edit_or_new_message",
+              "delivery_recovery_required":True,"writes_farm_data":False},200
         if claimed.get("action_kind")=="herdmaster_record_farrowing_litter":
             result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
             return {"handled":True,**result,"specialist":"HERDMASTER",
@@ -377,6 +386,8 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
     if result.get("success") is True and str(result.get("status") or "") in {"completed","mortality_lifecycle_recorded"}:
         complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         result={**result,"reply_markup":{"inline_keyboard":[]},
+          "card_mission_id":generic_protected_card_mission_id(
+              claimed["mission_id"], claimed["preview_digest"]),
           "owner_visible_completion_policy":"verified_edit_or_new_message"}
     elif result.get("success") is not True:
         contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
