@@ -11,6 +11,10 @@ def canonical_preview_digest(kind, payload):
     material={"kind":str(kind),"payload":payload}
     return hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest()
 
+def protected_card_mission_id(mission_id, preview_digest):
+    """Give each protected preview generation its own visible Telegram card."""
+    return f"{str(mission_id)}:PROTECTED:{str(preview_digest)[:24].upper()}"
+
 def build_buttons(token, *, grouped=False, language="af"):
     token=str(token)
     if str(language).casefold().startswith("af"):

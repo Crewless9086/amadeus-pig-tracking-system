@@ -102,6 +102,25 @@ def test_natural_afrikaans_vark_mortality_without_date_enters_shared_preview(loa
     assert result["status"] == "waiting_for_input"
     assert len(recorded) == 1 and recorded[0]["output_language"] == "af"
     assert recorded[0]["combined_text"].startswith("Vark 126 is dood")
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.prepare_health_loss_owner_preview")
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_fresh_mortality_preview_uses_generation_bound_visible_card(loader, prepare):
+    loader.return_value = evidence()
+    prepare.return_value = {"question_count": 0, "owner_message": "Voorskou",
+        "confirmation_binding": {"operation_id": "HERD-FRESH", "preview_sha256": "P" * 64},
+        "evaluator": {"identity": {"pig_id": "PIG-2026-E88A", "tag_number": "11"}}}
+    store, _recorded = memory_store()
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed("Vark 11 is dood en begrawe", "fresh-card"), "output_language": "af"},
+        issue_gateway_owner_authority("42", "42"), context_store=store,
+        claim_creator=lambda **_kwargs: {"preview_digest": "a" * 64,
+            "callback_token": "FRESH", "action_kind": "mortality"})
+    assert status == 200
+    assert result["mission_id"].startswith("OOM-HERDMASTER-")
+    assert result["card_mission_id"] == result["mission_id"] + ":PROTECTED:" + "A" * 24
+    assert result["card_mission_id"] != result["mission_id"]
     prepare.assert_called_once()
 
 

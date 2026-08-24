@@ -416,7 +416,8 @@ def handle_authenticated_health_loss_message(
     }
     protected={}
     if lifecycle["status"]=="preview_ready" and lifecycle["operation_id"] and (claim_creator or os.getenv("DATABASE_URL")):
-        from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
+        from modules.oom_sakkie.protected_action_claims import (
+            build_buttons, create_claim, protected_card_mission_id)
         creator=claim_creator or create_claim
         try:
             claim=creator(action_kind="mortality",owner_user_id=lifecycle["owner_user_id"],
@@ -427,6 +428,8 @@ def handle_authenticated_health_loss_message(
                 "identity":(preview.get("evaluator") or {}).get("identity") or {}})
             protected={"preview_digest":claim["preview_digest"],"callback_token":claim["callback_token"],
                        "action_kind":str(claim.get("action_kind") or "mortality"),
+                       "card_mission_id":protected_card_mission_id(
+                           mission_id, claim["preview_digest"]),
                        "reply_markup":build_buttons(claim["callback_token"],grouped=False,
                            language=output_language)}
         except Exception:
