@@ -1,9 +1,17 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
+import pytest
 
 from modules.pig_weights.bulk_body_condition_service import record_body_condition_batch
 
 NOW = datetime(2026, 8, 24, 10, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def no_committed_event():
+    with patch("modules.pig_weights.bulk_body_condition_service.observation_by_idempotency",
+               return_value=(None, 404)):
+        yield
 
 
 def payload(rows):
@@ -60,8 +68,9 @@ def test_correction_binds_latest_unsuperseded_body_condition():
 
 
 def test_replay_uses_stable_batch_and_pig_identity():
-    with patch("modules.pig_weights.bulk_body_condition_service.list_observations",
-               return_value=({"history": []}, 200)), patch(
+    with patch("modules.pig_weights.bulk_body_condition_service.observation_by_idempotency",
+               return_value=({"pig_id": "P1", "observation_event_id": "E1",
+                   "supersedes_observation_event_id": "ORIGINAL"}, 200)), patch(
         "modules.pig_weights.bulk_body_condition_service.record_observation",
         return_value=({"status": "observation_replayed_withheld", "observation_event_id": "E1"}, 200),
     ) as writer:
@@ -71,6 +80,25 @@ def test_replay_uses_stable_batch_and_pig_identity():
     assert status == 200
     assert result["replayed_count"] == 1
     assert writer.call_args.args[0]["idempotency_key"] == "bulk-bcs:DRAFT-1:P1"
+    assert writer.call_args.args[0]["supersedes_observation_event_id"] == "ORIGINAL"
+
+
+def test_partial_result_reports_prior_commits_and_failed_pig():
+    with patch("modules.pig_weights.bulk_body_condition_service.list_observations",
+               return_value=({"history": []}, 200)), patch(
+        "modules.pig_weights.bulk_body_condition_service.record_observation",
+        side_effect=[({"status": "observation_recorded", "observation_event_id": "E1"}, 201),
+                     ({"status": "observation_store_unavailable"}, 503)],
+    ):
+        result, status = record_body_condition_batch(payload([
+            {"pig_id": "P1", "body_condition_score": 2},
+            {"pig_id": "P2", "body_condition_score": 3},
+        ]), actor_id="owner", now=NOW)
+    assert status == 503 and result["success"] is False
+    assert result["events"][0]["pig_id"] == "P1"
+    assert result["failed_pig_id"] == "P2"
+    assert result["failed_status"] == "observation_store_unavailable"
+    assert result["draft_must_be_retained"] is True
 
 
 def test_invalid_or_duplicate_selection_fails_before_write():

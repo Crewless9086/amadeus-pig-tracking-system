@@ -604,7 +604,10 @@ async function uploadBodyConditionRows() {
     body: JSON.stringify({ draft_id: activeDraftId, observed_date: bulkDateInput.value, rows }),
   });
   const data = await parseBulkJsonResponse(response, endpoint);
-  if (!response.ok || !data.success) throw new Error(data.status || "body_condition_upload_failed");
+  if (!response.ok || !data.success) {
+    const completed = Array.isArray(data.events) ? data.events.length : 0;
+    throw new Error(`Body-condition upload paused on one selected pig after ${completed} completed row${completed === 1 ? "" : "s"}. Your draft is saved.`);
+  }
   return data;
 }
 
@@ -921,7 +924,9 @@ async function uploadBatch() {
     console.error("bulk upload error:", error);
     persistDraft({ statusLabel: "Upload error - draft kept", validation_status: "upload_exception" });
     if (continueButton) continueButton.classList.add("hidden");
-    setMessage("Upload paused because the server could not finish this step. Your draft is saved. Press Upload Weights to resume.", "error");
+    setMessage(String(error.message || "").startsWith("Body-condition upload paused")
+      ? error.message
+      : "Upload paused because the server could not finish this step. Your draft is saved. Press Upload Weights to resume.", "error");
     setUploadOverlay("", "");
   } finally {
     setUploadLocked(false);

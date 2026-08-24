@@ -10,6 +10,7 @@ import psycopg
 from modules.pig_weights.herdmaster_breeding_observation_service import (
     record_observation,
 )
+from modules.pig_weights.bulk_body_condition_service import record_body_condition_batch
 
 
 class BreedingObservationPostgresTests(unittest.TestCase):
@@ -59,6 +60,12 @@ class BreedingObservationPostgresTests(unittest.TestCase):
                       status=excluded.status,on_farm=excluded.on_farm,
                       sex=excluded.sex,animal_type=excluded.animal_type
                 """)
+                cursor.execute("""insert into public.pigs(
+                      pig_id,status,on_farm,sex,animal_type)
+                    values ('PHASE2-SOW-B','Active',true,'Female','Sow')
+                    on conflict (pig_id) do update set status=excluded.status,
+                      on_farm=excluded.on_farm,sex=excluded.sex,
+                      animal_type=excluded.animal_type""")
             connection.commit()
 
     @classmethod
@@ -174,6 +181,48 @@ class BreedingObservationPostgresTests(unittest.TestCase):
                     where supersedes_observation_event_id=%s
                 """, (prior["observation_event_id"],))
                 self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_bulk_retry_after_commit_reuses_original_predecessor(self):
+        prior, status = record_observation(self.payload("BULK-PRIOR"),
+            actor_id="owner-admin:test", connect_factory=self.connect_as_service)
+        self.assertEqual(status, 201)
+        batch = {"draft_id": "DRAFT-RESPONSE-LOSS", "observed_date": "2026-08-24",
+            "rows": [{"pig_id": "PHASE2-SOW", "body_condition_score": 2}]}
+        first, status = record_body_condition_batch(batch, actor_id="owner-admin:test",
+            connect_factory=self.connect_as_service)
+        self.assertEqual(status, 201, first)
+        event = first["events"][0]
+        self.assertEqual(event["supersedes_observation_event_id"], prior["observation_event_id"])
+        replay, status = record_body_condition_batch(batch, actor_id="owner-admin:test",
+            connect_factory=self.connect_as_service)
+        self.assertEqual((status, replay["replayed_count"]), (200, 1), replay)
+        self.assertEqual(replay["events"][0]["supersedes_observation_event_id"],
+                         prior["observation_event_id"])
+
+    def test_concurrent_bulk_replay_creates_one_event(self):
+        batch = {"draft_id": "DRAFT-CONCURRENT", "observed_date": "2026-08-24",
+            "rows": [{"pig_id": "PHASE2-SOW-B", "body_condition_score": 3}]}
+        def run(_value):
+            return record_body_condition_batch(batch, actor_id="owner-admin:test",
+                connect_factory=self.connect_as_service)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(run, range(2)))
+        self.assertEqual(sorted(status for _result, status in results), [200, 201], results)
+        with psycopg.connect(self.url) as connection, connection.cursor() as cursor:
+            cursor.execute("""select count(*) from public.pig_observation_events
+                where idempotency_key='bulk-bcs:DRAFT-CONCURRENT:PHASE2-SOW-B'""")
+            self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_multi_pig_partial_reports_committed_event_and_failed_pig(self):
+        batch = {"draft_id": "DRAFT-PARTIAL", "observed_date": "2026-08-24",
+            "rows": [{"pig_id": "PHASE2-SOW-B", "body_condition_score": 2},
+                     {"pig_id": "ZZ-MISSING", "body_condition_score": 3}]}
+        result, status = record_body_condition_batch(batch, actor_id="owner-admin:test",
+            connect_factory=self.connect_as_service)
+        self.assertEqual(status, 409, result)
+        self.assertEqual(result["events"][0]["pig_id"], "PHASE2-SOW-B")
+        self.assertEqual(result["failed_pig_id"], "ZZ-MISSING")
+        self.assertTrue(result["draft_must_be_retained"])
 
 
 if __name__ == "__main__":

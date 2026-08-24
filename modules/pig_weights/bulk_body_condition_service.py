@@ -1,7 +1,9 @@
 """Selective BCS capture through the existing canonical observation writer."""
 from datetime import datetime, timezone
 
-from modules.pig_weights.herdmaster_breeding_observation_service import list_observations, record_observation
+from modules.pig_weights.herdmaster_breeding_observation_service import (
+    list_observations, observation_by_idempotency, record_observation,
+)
 
 
 def record_body_condition_batch(payload, *, actor_id, database_url=None,
@@ -32,26 +34,49 @@ def record_body_condition_batch(payload, *, actor_id, database_url=None,
         selected.append((pig_id, score))
     events = []
     for pig_id, score in sorted(selected):
-        history, status = list_observations(pig_id, database_url=database_url,
-                                            connect_factory=connect_factory, now=now)
-        if status != 200:
-            return history, status
-        prior = next((item for item in history.get("history", [])
-                      if not item.get("superseded") and
-                      "body_condition_score" in item.get("measurements", {})), None)
+        idem = f"bulk-bcs:{batch_key}:{pig_id}"
+        committed, committed_status = observation_by_idempotency(
+            idem, database_url=database_url, connect_factory=connect_factory)
+        if committed_status not in (200, 404):
+            return {"success": False, "status": "body_condition_batch_partial",
+                "events": events, "failed_pig_id": pig_id,
+                "failed_status": "observation_store_unavailable",
+                "draft_must_be_retained": True}, committed_status
+        if committed is not None and committed.get("pig_id") != pig_id:
+            return {"success": False, "status": "body_condition_batch_partial",
+                "events": events, "failed_pig_id": pig_id,
+                "failed_status": "observation_idempotency_conflict",
+                "draft_must_be_retained": True}, 409
+        if committed is None:
+            history, status = list_observations(pig_id, database_url=database_url,
+                                                connect_factory=connect_factory, now=now)
+            if status != 200:
+                return {"success": False, "status": "body_condition_batch_partial",
+                    "events": events, "failed_pig_id": pig_id,
+                    "failed_status": history.get("status"),
+                    "draft_must_be_retained": True}, status
+            prior = next((item for item in history.get("history", [])
+                          if not item.get("superseded") and
+                          "body_condition_score" in item.get("measurements", {})), None)
+            predecessor = prior.get("observation_event_id") if prior else None
+        else:
+            predecessor = committed.get("supersedes_observation_event_id")
         result, status = record_observation({
             "pig_id": pig_id, "observed_at": observed_date + "T12:00:00+02:00",
             "body_condition_score": score,
             "factual_note": f"Body condition score {score:g}.",
-            "idempotency_key": f"bulk-bcs:{batch_key}:{pig_id}",
-            "supersedes_observation_event_id": prior.get("observation_event_id") if prior else None,
+            "idempotency_key": idem,
+            "supersedes_observation_event_id": predecessor,
         }, actor_id=actor_id, database_url=database_url,
            connect_factory=connect_factory, now=now)
         if status not in (200, 201):
-            return result, status
+            return {"success": False, "status": "body_condition_batch_partial",
+                "events": events, "failed_pig_id": pig_id,
+                "failed_status": result.get("status"),
+                "draft_must_be_retained": True}, status
         events.append({"pig_id": pig_id, "status": result["status"],
                        "observation_event_id": result.get("observation_event_id"),
-                       "supersedes_observation_event_id": prior.get("observation_event_id") if prior else None})
+                       "supersedes_observation_event_id": predecessor})
     recorded = sum(row["status"] == "observation_recorded" for row in events)
     return {"success": True,
             "status": "body_condition_batch_recorded" if events else "no_body_condition_selected",

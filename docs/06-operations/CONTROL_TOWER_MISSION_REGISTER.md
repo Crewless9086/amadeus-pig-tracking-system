@@ -2259,6 +2259,15 @@ store, queue or scheduler is added. Lifecycle remains `WORKING /
 SOURCE_REPAIR_ACTIVE`; **NO BUSINESS OUTCOME** and **OWNER ACTION: NONE** until
 reviewed release and genuine canonical/provider acceptance.
 
+Independent review found that a response-loss retry could recalculate a newer
+supersession predecessor and conflict with its already committed event, and
+that a later pig failure hid earlier committed rows. The repaired batch first
+reads the exact draft-plus-pig idempotency event and reuses its original
+predecessor before invoking the canonical writer. A partial response now lists
+all committed/replayed events, the exact failed pig and status, and requires the
+draft to remain retained. Production-shaped PostgreSQL tests cover
+retry-after-commit, concurrent replay and a genuine multi-pig partial.
+
 ## 2026-08-24 - Prince generic Telegram completion acceptance failure
 
 This owner finding is consolidated into existing mission
