@@ -364,7 +364,7 @@ def test_loader_uses_bounded_read_only_queries_and_latest_prior_day_only():
                 self.description = [Column(value) for value in ("pig_id", "event_type", "effective_at")]
                 self.current = []
             elif "select owner_hash,consumption,created_at" in normalized:
-                self.current = [("HASH42", {"evidence_digest": "D",
+                self.current = [(params[1][0], {"evidence_digest": "D",
                     "canonical_death_event_fingerprints": {}}, datetime(2026, 8, 13))]
             else:
                 self.current = []; self.one = ({"evidence_digest": "D"},)
@@ -406,3 +406,18 @@ def test_shared_mortality_history_requires_every_manager_to_have_consumed_fact()
     # canonical facts are projected identically to both recipients.
     fingerprints, digest, _ = _shared_mortality_history([charl], [], 2)
     assert fingerprints == {} and digest == ""
+
+
+def test_shared_mortality_history_merges_newer_round_for_same_actor_only():
+    older = datetime(2026, 8, 13, 6)
+    newer = datetime(2026, 8, 13, 7)
+    consumptions = [
+        ("CHARL", {"evidence_digest": "D", "canonical_death_event_fingerprints":
+                    {"LIFE-1": "OLD", "LIFE-2": "FP-2"}}, older),
+        ("ANTON", {"evidence_digest": "D", "canonical_death_event_fingerprints":
+                    {"LIFE-1": "NEW", "LIFE-2": "FP-2"}}, older),
+    ]
+    manager_rows = [("CHARL", {"LIFE-1": "NEW"}, newer)]
+    fingerprints, digest, _ = _shared_mortality_history(consumptions, manager_rows, 2)
+    assert fingerprints == {"LIFE-1": "NEW", "LIFE-2": "FP-2"}
+    assert digest == "D"

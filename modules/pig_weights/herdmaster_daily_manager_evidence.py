@@ -269,6 +269,9 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                   and review_json->'farm_manager_round'->'binding'->>'owner'=any(%s)
                 ) ranked where row_number=1 order by created_at desc""", (list(owners),))
             manager_rows = list(cursor.fetchall())
+            owner_by_hash = dict(zip(owner_hashes, owners))
+            consumption_rows = [(owner_by_hash.get(row[0]), row[1], row[2])
+                for row in consumption_rows if row and owner_by_hash.get(row[0])]
             prior_event_fingerprints, prior_digest, prior_consumption_at = \
                 _shared_mortality_history(consumption_rows, manager_rows, len(owners))
     if mortality_evidence_loader is None:
