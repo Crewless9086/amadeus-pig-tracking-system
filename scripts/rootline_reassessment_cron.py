@@ -1,8 +1,9 @@
 """Backend-owned Render cron client for recurring ROOTLINE reassessment.
 
 The deployed application remains the sole planner/action spine.  This process
-only supplies a signed, date-stable 15-minute trigger to its authenticated
-endpoint; Supabase schedule claims provide exactly-once ownership.
+only supplies a signed, minute-bucketed control trigger to its authenticated
+endpoint; Supabase schedule claims provide exactly-once ownership. Owner
+planning remains daily/change-only and is not coupled to this control cadence.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from modules.oom_sakkie.automatic_reassessment_scheduler import (
-    CADENCE_MINUTES, SCHEDULER_IDENTITY,
+    CADENCE_MINUTES, OWNER_PLANNING_CADENCE_MINUTES, SCHEDULER_IDENTITY,
 )
 
 
@@ -43,6 +44,7 @@ def build_payload(now: datetime, owner_id: str) -> dict:
         "trigger": "durable_backend_schedule",
         "trigger_id": f"ROOTLINE-AUTO-{identity}",
         "trigger_timestamp": current.isoformat(),
+        "owner_planning_due": current.minute % OWNER_PLANNING_CADENCE_MINUTES == 0,
         "language": "en",
     }
 
