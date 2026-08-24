@@ -625,6 +625,52 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
                   and observation_json ? 'semantic_digest'""", (finalized["binary_asset_id"],))
             self.assertEqual(cursor.fetchone()[0], 1)
 
+    def test_terminal_semantic_exception_has_one_atomic_configured_retry(self):
+        store = IntakeStore(DATABASE_URL)
+        envelope, identity = self.envelope(), self.identity()
+        store.prepare(envelope, identity)
+        finalized, status = store.finalize(envelope, identity, {
+            "binary_asset_id": "BEACON-BINARY-SEMANTIC-RESET",
+            "content_sha256": "d" * 64, "observed_mime_type": "image/jpeg",
+            "byte_size": 100, "width": 10, "height": 10,
+            "storage_path": "telegram/semantic/reset.jpg",
+            "thumbnail_storage_path": "telegram-thumbnails/semantic/reset.jpg",
+            "thumbnail_sha256": "e" * 64,
+        })
+        self.assertEqual(status, 201, finalized)
+        accepted, status = store.review(finalized["binary_asset_id"], {
+            "event_type": "library_accepted", "owner_action_id": "semantic-reset-library",
+            "expected_predecessor_event_id": ""}, "owner-admin:semantic")
+        self.assertEqual(status, 201, accepted)
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("""insert into public.beacon_media_asset_events
+                (event_id,asset_id,event_type,recorded_by,approval_status,public_use_approved)
+                values('SEMANTIC-RESET-PUBLIC',%s,'approved_public_use',
+                       'legacy-reviewed-authority','approved',true)""",
+                (finalized["beacon_asset_id"],))
+        for _index in range(3):
+            result, status = store.append_semantic_adoption_state(
+                finalized["binary_asset_id"], "d" * 64, "interpretation_unavailable")
+            self.assertIn(status, (200, 201), result)
+
+        def reset(_value):
+            return IntakeStore(DATABASE_URL).reset_semantic_adoption_exception(
+                finalized["binary_asset_id"], "d" * 64)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(reset, range(2)))
+        self.assertEqual(sorted(status for _result, status in results), [201, 409], results)
+        successful = next(result for result, status in results if status == 201)
+        self.assertEqual(successful["observation"]["semantic_adoption"], {
+            "state": "retry_pending", "attempt_count": 0,
+            "last_status": "configured_runtime_retry", "automatic_retry": True,
+            "config_recovery_count": 1,
+            "config_recovery_receipt": "bmq05-first-approved-asset-v1",
+            "recovery_binding_digest": successful["observation"]["semantic_adoption"][
+                "recovery_binding_digest"]})
+        again, status = store.reset_semantic_adoption_exception(
+            finalized["binary_asset_id"], "d" * 64)
+        self.assertEqual(status, 409, again)
+
 
 if __name__ == "__main__":
     unittest.main()
