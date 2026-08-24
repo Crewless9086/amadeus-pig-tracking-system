@@ -308,13 +308,14 @@ def observation_by_idempotency(idempotency_key, *, database_url=None,
         with _connection(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select observation_event_id,pig_id,
-                          supersedes_observation_event_id
+                          supersedes_observation_event_id,observed_at
                     from public.pig_observation_events where idempotency_key=%s""", (key,))
                 row = cursor.fetchone()
     except Exception:
         return None, 503
     return (None, 404) if not row else ({"observation_event_id": row[0],
-        "pig_id": row[1], "supersedes_observation_event_id": row[2]}, 200)
+        "pig_id": row[1], "supersedes_observation_event_id": row[2],
+        "observed_at": row[3].isoformat()}, 200)
 
 
 def record_observation(

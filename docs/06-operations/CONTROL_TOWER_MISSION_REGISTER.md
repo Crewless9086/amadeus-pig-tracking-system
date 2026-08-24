@@ -2267,9 +2267,10 @@ predecessor before invoking the canonical writer. A partial response now lists
 all committed/replayed events, the exact failed pig and status, and requires the
 draft to remain retained. Production-shaped PostgreSQL tests cover
 retry-after-commit, concurrent replay and a genuine multi-pig partial.
-The same-day observation timestamp is bound to authenticated server time in
-SAST rather than a fixed noon, so a pre-noon upload cannot manufacture future
-evidence. Past dates remain deterministic local noon and the canonical writer
+The same-day observation timestamp is bound to the authenticated server's
+current SAST date at local day-start rather than a fixed noon, so a pre-noon
+upload cannot manufacture future evidence and concurrent retries remain byte
+stable. A committed retry reuses its exact stored timestamp. Past dates remain deterministic local noon and the canonical writer
 continues to reject any future date.
 
 ## 2026-08-24 - Prince generic Telegram completion acceptance failure

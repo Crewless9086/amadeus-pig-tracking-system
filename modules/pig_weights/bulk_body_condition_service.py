@@ -21,7 +21,8 @@ def record_body_condition_batch(payload, *, actor_id, database_url=None,
     except ValueError:
         return {"success": False, "status": "invalid_observed_date"}, 400
     local_now = now.astimezone(ZoneInfo("Africa/Johannesburg"))
-    observed_at = (local_now if selected_date == local_now.date() else
+    observed_at = (datetime.combine(selected_date, time.min,
+        tzinfo=ZoneInfo("Africa/Johannesburg")) if selected_date == local_now.date() else
         datetime.combine(selected_date, time(hour=12), tzinfo=ZoneInfo("Africa/Johannesburg")))
     selected, seen = [], set()
     for raw in rows:
@@ -42,6 +43,7 @@ def record_body_condition_batch(payload, *, actor_id, database_url=None,
         selected.append((pig_id, score))
     events = []
     for pig_id, score in sorted(selected):
+        row_observed_at = observed_at
         idem = f"bulk-bcs:{batch_key}:{pig_id}"
         committed, committed_status = observation_by_idempotency(
             idem, database_url=database_url, connect_factory=connect_factory)
@@ -69,8 +71,9 @@ def record_body_condition_batch(payload, *, actor_id, database_url=None,
             predecessor = prior.get("observation_event_id") if prior else None
         else:
             predecessor = committed.get("supersedes_observation_event_id")
+            row_observed_at = datetime.fromisoformat(committed["observed_at"])
         result, status = record_observation({
-            "pig_id": pig_id, "observed_at": observed_at.isoformat(),
+            "pig_id": pig_id, "observed_at": row_observed_at.isoformat(),
             "body_condition_score": score,
             "factual_note": f"Body condition score {score:g}.",
             "idempotency_key": idem,

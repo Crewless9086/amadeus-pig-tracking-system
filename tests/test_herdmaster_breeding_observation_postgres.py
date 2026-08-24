@@ -235,7 +235,7 @@ class BreedingObservationPostgresTests(unittest.TestCase):
             cursor.execute("""select observed_at from public.pig_observation_events
                 where idempotency_key='bulk-bcs:DRAFT-PRE-NOON:PHASE2-SOW-B'""")
             observed = cursor.fetchone()[0]
-        self.assertEqual(observed, server_now)
+        self.assertEqual(observed, datetime(2026, 8, 23, 22, 0, tzinfo=timezone.utc))
         self.assertLessEqual(observed, server_now)
 
 

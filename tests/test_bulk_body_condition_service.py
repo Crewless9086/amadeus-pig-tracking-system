@@ -70,7 +70,8 @@ def test_correction_binds_latest_unsuperseded_body_condition():
 def test_replay_uses_stable_batch_and_pig_identity():
     with patch("modules.pig_weights.bulk_body_condition_service.observation_by_idempotency",
                return_value=({"pig_id": "P1", "observation_event_id": "E1",
-                   "supersedes_observation_event_id": "ORIGINAL"}, 200)), patch(
+                   "supersedes_observation_event_id": "ORIGINAL",
+                   "observed_at": "2026-08-24T00:00:00+02:00"}, 200)), patch(
         "modules.pig_weights.bulk_body_condition_service.record_observation",
         return_value=({"status": "observation_replayed_withheld", "observation_event_id": "E1"}, 200),
     ) as writer:
@@ -112,7 +113,7 @@ def test_same_day_before_noon_uses_non_future_authenticated_server_time():
             {"pig_id": "P1", "body_condition_score": 3},
         ]), actor_id="owner", now=before_noon)
     assert status == 201
-    assert writer.call_args.args[0]["observed_at"] == "2026-08-24T08:15:00+02:00"
+    assert writer.call_args.args[0]["observed_at"] == "2026-08-24T00:00:00+02:00"
     assert result["recorded_count"] == 1
 
 
