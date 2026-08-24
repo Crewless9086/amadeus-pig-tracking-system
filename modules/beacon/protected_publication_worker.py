@@ -132,19 +132,19 @@ def validate_claimed_approval(claim, *, now=None):
                 return "protected_campaign_media_authority_revoked"
             if not all(str(item.get(key) or "").strip() for key in (
                     "asset_id", "content_sha256", "storage_readback_proof_id",
-                    "library_accept_event_id", "public_use_event_id", "litter_id", "event_id")):
+                    "library_accept_event_id", "public_use_event_id")):
                 return "protected_campaign_media_evidence_incomplete"
     story = preview.get("story_context") if isinstance(preview.get("story_context"), dict) else {}
     sow_name = str(story.get("sow_name") or "").strip()
     litter_id = str(story.get("litter_id") or "").strip()
     caption = str(preview.get("exact_post_copy") or "")
-    if not text_only:
+    if not text_only and story:
         if not sow_name or sow_name not in caption or (litter_id and litter_id.casefold() in caption.casefold()):
             return "protected_campaign_public_sow_identity_failed"
         if any(str(item.get("litter_id") or "") != litter_id or
                str(item.get("event_id") or "") != str(story.get("event_id") or "") for item in media):
             return "protected_campaign_litter_media_binding_failed"
-    elif (preview.get("media_evidence_exception") !=
+    elif text_only and (preview.get("media_evidence_exception") !=
             "Explicit text-only publication; no media is selected or implied."):
         return "protected_campaign_text_only_boundary_invalid"
     lane = preview.get("campaign_lane") or "live_stock_awareness"

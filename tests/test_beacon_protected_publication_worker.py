@@ -139,6 +139,45 @@ def test_untouched_real_builder_owner_card_worker_reaches_final_executor():
     assert final_payloads[0]["target_page_id"] == preview["target_page_id"] == "PAGE-1"
 
 
+def test_real_builder_hash_bound_generic_awareness_media_reaches_executor_once():
+    caption = "A quiet farm-life update from Amadeus Farm."
+    media = {"success": True, "items": [{
+        "latest_library_event": "library_accepted", "beacon_asset_id": "ASSET-GENERIC",
+        "content_sha256": "c" * 64, "effective_public_use_approved": True,
+        "current_library_accept_event_id": "ACCEPT-GENERIC",
+        "current_public_use_event_id": "PUBLIC-GENERIC",
+        "private_storage_proof_id": "READBACK-GENERIC",
+        "observed_mime_type": "image/jpeg",
+        "observation": {"tags": ["farm_life"]},
+    }]}
+    proposal = build_live_stock_awareness_proposal(
+        {"success": True, "cards": []},
+        {"success": True, "owner_review_packet": {
+            "packet_id": "REAL-GENERIC", "draft_copy": caption,
+            "audience": "Farm followers", "public_livestock_policy": {
+                "policy_version": "beacon_public_livestock_awareness_only_v2"}}},
+        media, target_page_id="PAGE-1")
+    package = build_protected_campaign_package(proposal, now=NOW)
+    created = []
+    prepare_campaign_owner_card(package, owner_user_id="OWNER", private_chat_id="CHAT",
+        provider_message_id="MSG-GENERIC", packet_generation="GEN-GENERIC",
+        target_page_id="PAGE-1", claim_creator=lambda **kwargs: (
+            created.append(kwargs) or {"callback_token": "TOKEN-GENERIC"}))
+    preview = created[0]["preview_payload"]
+    claim = {"consumer_id": "CONSUMER-GENERIC", "callback_token": "TOKEN-GENERIC",
+        "action_kind": "beacon_campaign_review", "claim_status": "completed",
+        "evidence_generation": preview["campaign_digest"], "preview_payload": preview,
+        "approval_result": {"status": "beacon_campaign_review_approved"}}
+    calls = []
+    result = run_protected_publication_cycle(store=Store(claim),
+        executor=lambda payload, **kwargs: (calls.append(payload) or (confirmed_outcome(), 200)), now=NOW)
+
+    assert result["success"] is True, result
+    assert len(calls) == 1
+    assert calls[0]["selected_assets"][0]["asset_id"] == "ASSET-GENERIC"
+    assert calls[0]["zero_spend"] is True
+
+
 def confirmed_outcome(post_id="42_7"):
     return {"success":True,"status":"facebook_page_post_sent","facebook_post_id":post_id,
         "facebook_result":{"success":True,"provider_readback_confirmed":True,

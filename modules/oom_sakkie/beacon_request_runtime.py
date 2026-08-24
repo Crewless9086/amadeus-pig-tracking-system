@@ -52,11 +52,14 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
     # privately to SAM.  Do not turn this into an availability or sales claim.
     content_evidence = content_evidence_loader(opportunity_result=opportunities)
     candidate = content_candidate_builder(content_evidence)
-    # Scheduled publication is deliberately text-only.  Generic library media
-    # cannot prove exact subject/event binding and must not be selected merely
-    # because it exists; a later owner-requested story may use governed media.
+    # Reuse only the canonical media projection.  The proposal builder rejects
+    # anything without current Library acceptance, public-use approval, binary
+    # readback evidence and a stable content hash.  If no such relevant asset is
+    # available, the existing text-only boundary remains in force.
+    media_result = media_loader()
+    media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
     packet = build_live_stock_awareness_proposal(
-        opportunities, candidate, None, target_page_id=target_page_id)
+        opportunities, candidate, media_payload, target_page_id=target_page_id)
     if packet.get("status") == "ready_for_owner_review":
         packet = build_protected_campaign_package(packet, now=evidence_time)
     return {
@@ -227,9 +230,10 @@ def build_protected_campaign_package(packet, *, now=None):
             "capture_date", "source", "litter_id", "pig_ids", "event_id",
             "public_use_authority")} for item in litter_media]
     else:
-        exact_media = ({key: media.get(key) for key in (
+        exact_media = ([{key: media.get(key) for key in (
             "asset_id", "media_type", "content_sha256", "storage_readback_proof_id",
-            "library_accept_event_id", "public_use_event_id")}
+            "library_accept_event_id", "public_use_event_id", "public_use_authority",
+            "subject_tags")}]
             if media.get("status") == "approved_public_media_selected" else {"mode": "text_only"})
     exact_copy = str(packet.get("draft_caption") or packet.get("recommended_copy") or "").strip()
     if not exact_copy:
@@ -265,8 +269,14 @@ def build_protected_campaign_package(packet, *, now=None):
                 or not public_livestock_policy_binding_matches(
                     bound_policy, current_policy, target_page_id=page_id, now=now)):
             raise ValueError("beacon_campaign_enquiry_capture_policy_required")
-    if not litter_media and not text_only:
+    if packet.get("packet_type") == "litter_awareness_story" and not litter_media:
         raise ValueError("beacon_campaign_exact_litter_media_required")
+    if not litter_media and not text_only:
+        selected = exact_media[0] if isinstance(exact_media, list) and len(exact_media) == 1 else {}
+        if (selected.get("public_use_authority") != "approved"
+                or not set(selected.get("subject_tags") or []).intersection(
+                    {"live_stock", "livestock", "piglet", "piglets", "litter", "weaner", "farm_life"})):
+            raise ValueError("beacon_campaign_public_awareness_media_required")
     if text_only:
         capacity_source = (packet.get("business_offering_evidence") if enquiry_capture
             else packet.get("capacity_context"))
@@ -286,7 +296,7 @@ def build_protected_campaign_package(packet, *, now=None):
                 raise ValueError("beacon_campaign_sam_response_contract_required")
             sam = {"lane": "live_stock_sales", "campaign_attribution_required": True,
                 "inbound_only": True, "authority_boundary": str(packet["sam_routing"])}
-    else:
+    elif litter_media:
         story = stock.get("story_context") if isinstance(stock.get("story_context"), Mapping) else {}
         sow_name = str(story.get("sow_name") or "").strip()
         if not sow_name or str(story.get("litter_id") or "") in exact_copy:
@@ -300,6 +310,18 @@ def build_protected_campaign_package(packet, *, now=None):
                 or not sam.get("campaign_attribution_required")
                 or sam.get("inbound_only") is not True):
             raise ValueError("beacon_campaign_sam_response_contract_required")
+    else:
+        capacity = packet.get("capacity_context") if isinstance(
+            packet.get("capacity_context"), Mapping) else {}
+        if capacity.get("sale_availability_inferred") is not False:
+            raise ValueError("beacon_campaign_media_non_availability_required")
+        stock = {"source": "beacon_opportunity_scanner", **dict(capacity),
+            "claim_boundary": str(capacity.get("claim_boundary") or
+                "Awareness only; no stock, availability, price or fulfilment claim.")}
+        if not str(packet.get("sam_routing") or "").strip():
+            raise ValueError("beacon_campaign_sam_response_contract_required")
+        sam = {"lane": "live_stock_sales", "campaign_attribution_required": True,
+            "inbound_only": True, "authority_boundary": str(packet["sam_routing"])}
     envelope = {
         "contract_version": "beacon_protected_facebook_campaign_package_v1",
         "delivery_due_policy": "same_cycle_on_new_or_changed_evidence",
@@ -746,7 +768,9 @@ def _public_awareness_media(payload, *, required_tags=None):
                 "content_sha256": digest,
                 "storage_readback_proof_id": str(row["private_storage_proof_id"]),
                 "library_accept_event_id": str(row["current_library_accept_event_id"]),
-                "public_use_event_id": str(row["current_public_use_event_id"])}
+                "public_use_event_id": str(row["current_public_use_event_id"]),
+                "public_use_authority": "approved",
+                "subject_tags": sorted(tags)}
     return None
 
 

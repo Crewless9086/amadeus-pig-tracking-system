@@ -113,7 +113,7 @@ def test_missing_media_is_precise_and_afrikaans_rendered():
     assert "Aanbevole kanaal/kopie:" in answer and "Meet later:" in answer
 
 
-def test_scheduled_enquiry_result_is_stable_across_unclaimed_stock_and_media_changes():
+def test_scheduled_enquiry_result_binds_approved_media_and_ignores_unclaimed_stock_changes():
     fixed = {"content_evidence_loader": lambda **kwargs: kwargs,
         "content_candidate_builder": lambda evidence, **kwargs: awareness_candidate(),
         "litter_loader": litter_evidence,
@@ -124,15 +124,12 @@ def test_scheduled_enquiry_result_is_stable_across_unclaimed_stock_and_media_cha
     changed["cards"][0]["story_context"]["event_id"] = "EVENT-8"
     changed_stock = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: changed, media_loader=lambda: public_awareness_media(), **fixed)
-    changed_media = build_scheduled_sale_ready_stock_result(
-        opportunity_loader=lambda: opportunity(),
-        media_loader=lambda: public_awareness_media(trusted=False), **fixed)
     assert first["proposal"]["packet_id"]
     assert first["result_digest"] == changed_stock["result_digest"]
-    assert first["result_digest"] == changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
     assert first["proposal"]["packet_type"] == "live_stock_awareness_proposal"
-    assert first["proposal"]["media"]["status"] == "text_only"
+    assert first["proposal"]["media"]["status"] == "approved_public_media_selected"
+    assert first["proposal"]["protected_campaign_package"]["selected_approved_media"][0]["asset_id"] == "BEACON-ASSET-1"
     assert first["proposal"]["protected_campaign_package"]["campaign_objective"] == "farm_awareness"
 
 
@@ -148,6 +145,50 @@ def test_scheduled_enquiry_capture_is_explicitly_text_only():
     assert result["proposal"]["media"]["status"] == "text_only"
     assert result["proposal"]["authority"]["publishes"] is False
     assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
+
+
+def test_scheduled_generation_rejects_media_without_current_public_use_authority():
+    for payload in (
+        public_awareness_media(trusted=False),
+        media(accepted=False),
+        {"success": False, "items": public_awareness_media()["items"]},
+    ):
+        result = build_scheduled_sale_ready_stock_result(
+            opportunity_loader=opportunity,
+            media_loader=lambda payload=payload: payload,
+            content_evidence_loader=lambda **kwargs: kwargs,
+            content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
+            now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc),
+            target_page_id="PAGE-ONE")
+        assert result["proposal"]["media"]["status"] == "text_only"
+        assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
+        assert result["publishes"] is False
+        assert result["spends_money"] is False
+
+
+def test_scheduled_approved_media_selection_is_deterministic_and_copy_neutral():
+    approved = public_awareness_media()
+    duplicate = dict(approved["items"][0])
+    duplicate.update({"binary_asset_id": "BIN-2", "content_sha256": "b" * 64})
+    approved["items"].append(duplicate)
+    fixed = dict(
+        opportunity_loader=opportunity,
+        media_loader=lambda: approved,
+        content_evidence_loader=lambda **kwargs: kwargs,
+        content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
+        now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc),
+        target_page_id="PAGE-ONE")
+    first = build_scheduled_sale_ready_stock_result(**fixed)
+    replay = build_scheduled_sale_ready_stock_result(**fixed)
+
+    assert first["result_digest"] == replay["result_digest"]
+    assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
+    assert first["proposal"]["media"]["asset_id"] == "BEACON-ASSET-1"
+    copy = first["proposal"]["draft_caption"].casefold()
+    assert "available" not in copy and "for sale" not in copy and "price" not in copy
+    assert first["proposal"]["call_to_action"] == ""
+    assert first["proposal"]["protected_campaign_package"]["budget_cap"] == {
+        "currency": "ZAR", "total": "0.00", "daily": "0.00"}
 
 
 def test_supported_offering_read_rejects_fallback_or_partial_config_evidence():
