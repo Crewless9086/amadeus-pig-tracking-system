@@ -122,7 +122,8 @@ def _load_inputs(owner, now, source, *, herd_loader, rootline_loader,
         authority = issue_gateway_owner_authority(owner, owner)
         herd_loader = herd_loader or (lambda: _load_herdmaster(
             authority, owner, now, str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en")))
-        rootline_loader = rootline_loader or (lambda: _load_rootline(now))
+        rootline_loader = rootline_loader or (lambda: _load_rootline(
+            now, str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en")))
     if litter_loader is None:
         from modules.pig_weights.farm_supabase_read_service import get_breeding_attention_source_snapshot
         litter_loader = lambda: get_breeding_attention_source_snapshot(deadline_seconds=20)

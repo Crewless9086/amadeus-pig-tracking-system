@@ -123,10 +123,10 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
     assert rows[first["notification_identity"]]["zones"] == [
         {"zone_id":"B12345","decision":"Hold",
          "reason":"Reserve is below the governing target.",
-         "planned_duration_minutes":None,"feasible_window":None},
+         "planned_duration_minutes":None,"feasible_window":None,"lifecycle":{}},
         {"zone_id":"C12345","decision":"Hold",
          "reason":"Fresh evidence supports this C Camp decision.",
-         "planned_duration_minutes":None,"feasible_window":None},
+         "planned_duration_minutes":None,"feasible_window":None,"lifecycle":{}},
     ]
     assert rows[first["notification_identity"]]["operating_date"] == "2026-08-04"
     pending=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
@@ -138,18 +138,17 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
     unchanged=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
         specialist_loader=lambda:rootline(),state_store=state)
     changed=reassess_rootline(owner_user_id="42",chat_id="42",trigger="material_evidence_change",
-        specialist_loader=lambda:rootline("Run later"),state_store=state)
+        specialist_loader=lambda:rootline("Recommend"),state_store=state)
     record_reassessment_delivery(identity=changed["notification_identity"],owner_user_id="42",chat_id="42",
         material_digest=changed["material_digest"],delivery={"provider_delivery_confirmed":True,
         "provider_message_id":"7002"},state_store=state)
     replay=reassess_rootline(owner_user_id="42",chat_id="42",trigger="material_evidence_change",
-        specialist_loader=lambda:rootline("Run later"),state_store=state)
+        specialist_loader=lambda:rootline("Recommend"),state_store=state)
     assert first["notify_owner"] is True
     assert unchanged["notify_owner"] is False and unchanged["telegram_sends"]==0
     observations=[row for row in rows.values() if row.get("delivery_state")=="observation_only"]
     assert len(observations)==2
-    assert changed["notify_owner"] is True and "C Camp:</b> Recommendation - irrigate" in changed["answer"]
-    assert "Not yet authorized or started" in changed["answer"]
+    assert changed["notify_owner"] is True and "C Camp:</b> Needs watering" in changed["answer"]
     assert replay["notify_owner"] is False and len(rows)==4
     assert all(item["hardware_commands"]==0 for item in (first,unchanged,changed,replay))
 
@@ -175,6 +174,60 @@ def test_later_result_generation_updates_observation_silently_when_material_is_s
     assert changed["notify_owner"] is False and changed["telegram_sends"]==0
     assert any(row.get("result_id") == "R2" and row.get("delivery_state") == "observation_only"
                for row in rows.values())
+
+
+def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
+    rows, state = store()
+    first_packet = rootline("Recommend")
+    first_packet["recommendations"][1]["reason"] = "now_after_fresh_execution_revalidation"
+    first_packet["irrigation_lifecycle"] = {"C12345": {
+        "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",
+        "state": "Eligible", "reason": "now_after_fresh_execution_revalidation",
+        "next_action_owner": "ROOTLINE", "next_action": "claim exactly once"}}
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], state_store=state)
+    churn = {**first_packet, "result_id": "R2", "generation": "G2",
+        "recommendations": [dict(row) for row in first_packet["recommendations"]]}
+    churn["recommendations"][1]["reason"] = "durable_zone_containment"
+    quiet = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: churn, state_store=state)
+    assert quiet["status"] == "rootline_reassessment_unchanged"
+    completed = {**churn, "result_id": "R3", "generation": "G3",
+        "irrigation_lifecycle": {"C12345": {
+            "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",
+            "state": "Completed", "reason": "record_completed",
+            "next_action_owner": "ROOTLINE", "next_action": "reassess",
+            "completion_evidence": {"zone_id": "C12345", "shutdown_verified": True,
+                "objective_satisfied": True,
+                "shutdown_evidence": {"authoritative": True, "state": "OFF"}}}}}
+    changed = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: completed, state_store=state)
+    assert changed["status"] == "rootline_reassessment_changed"
+    assert "Completed — off and verified" in changed["answer"]
+
+
+def test_meaningful_owner_reason_change_is_material_with_same_decision():
+    rows, state = store()
+    first_packet = rootline()
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], state_store=state)
+    changed_packet = {**first_packet, "result_id": "R2", "generation": "G2",
+        "recommendations": [dict(row) for row in first_packet["recommendations"]]}
+    changed_packet["recommendations"][0]["reason"] = (
+        "Fresh observed rain means B Camp does not need another segment today.")
+    changed = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: changed_packet, state_store=state)
+    assert changed["status"] == "rootline_reassessment_changed"
+    assert changed["notify_owner"] is True
+    assert "Fresh observed rain" in changed["answer"]
 
 
 def test_fixed_reassessment_deadline_change_remains_material():

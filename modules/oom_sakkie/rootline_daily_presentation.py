@@ -6,7 +6,7 @@ from datetime import datetime, time, timezone
 import html
 from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
-from modules.oom_sakkie.rootline_material import rootline_material_digest
+from modules.oom_sakkie.rootline_material import rootline_material_digest, owner_reason_material
 from modules.oom_sakkie.delivery_retry_authority import issue_delivery_retry_authority
 from modules.telemetry.rootline_irrigation_lifecycle import (
     project_zone_lifecycle, validate_zone_lifecycle,
@@ -125,7 +125,7 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
             reasons.append(reason)
     why = _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af)
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
-    question = str(brief.get("family_fact_needed") or "").strip()
+    question = _owner_question(brief.get("family_fact_needed"))
     next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result), now_hint=result.get("evidence_cutoff"))
     lines.extend(["",
         f"<b>{'Hoekom' if af else 'Why'}:</b> {html.escape(why)}",
@@ -136,6 +136,37 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     if not question:
         lines.extend(["", "Geen aksie word van jou vereis nie." if af else "No action required from you."])
     return "\n".join(lines)
+
+
+def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="en") -> Mapping[str, str]:
+    """Plain-text ROOTLINE projection for the shared Charl/Anton manager brief."""
+    af = str(language).casefold().startswith("af")
+    recommendations = {str(row.get("subject") or ""): row
+        for row in result.get("recommendations") or () if isinstance(row, Mapping)}
+    decisions = []
+    reasons = []
+    for zone, label in (("B12345", "B Kamp" if af else "B Camp"),
+                        ("C12345", "C Kamp" if af else "C Camp")):
+        row = recommendations.get(zone, {})
+        lifecycle = (validate_zone_lifecycle(
+            (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
+            or project_zone_lifecycle(zone_id=zone, recommendation=row))
+        decisions.append(f"{label}: {_lifecycle_decision(lifecycle, row, af, zone=zone)}")
+        reason = str(row.get("reason") or "").strip()
+        if reason and reason not in reasons:
+            reasons.append(reason)
+    brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
+    question = _owner_question(brief.get("family_fact_needed"))
+    reassess = _human_reassessment(brief.get("reassess") or _next_reassessment(result),
+        now_hint=result.get("evidence_cutoff"))
+    return {
+        "title": ("Besproeiing: " if af else "Irrigation: ") + "; ".join(decisions),
+        "why": _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af),
+        "next_action": (("ROOTLINE heroorweeg outomaties" if af else
+                         "ROOTLINE will reassess automatically")
+                        + (f" {reassess}" if reassess else "")),
+        "question": question,
+    }
 
 
 def _fresh_result(result: Any, now: datetime) -> bool:
@@ -204,18 +235,22 @@ def _verified_completion(lifecycle: Mapping[str, Any], zone: str) -> bool:
 
 def _short_reason(value: str, af: bool) -> str:
     text = " ".join(str(value or "").split())
-    import re
-    if (text.casefold() in {
-            "now_after_fresh_execution_revalidation",
-            "zone_decision_not_run_now",
-            "durable_zone_containment"}
-            or re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+", text) is not None):
+    if owner_reason_material(text) == "canonical_decision_reason":
         return ("Vars kanonieke bewyse bepaal die huidige besluit." if af else
                 "Fresh canonical evidence determines the current decision.")
     if not text:
         return "Vars kanonieke bewyse bepaal die huidige besluit." if af else "Fresh canonical evidence determines the current decision."
     sentence = text.split(". ", 1)[0].rstrip(".") + "."
     return sentence[:300]
+
+
+def _owner_question(value: Any) -> str:
+    text = " ".join(str(value or "").split())
+    if text.casefold().rstrip(".") in {
+            "no owner fact is required now", "no owner action is required now",
+            "none", "nothing", "n/a"}:
+        return ""
+    return text
 
 
 def _next_reassessment(result: Mapping[str, Any]) -> str:
