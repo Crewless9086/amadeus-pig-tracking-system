@@ -26,7 +26,9 @@ from modules.charlie.evidence_reconciliation import (
     targeted_workflow_return,
 )
 from modules.charlie.adaptive_orchestration import validate_orchestration_binding
-from modules.charlie.mission_control import apply_event_to_projection, build_mission_control_event
+from modules.charlie.mission_control import (
+    apply_event_to_projection, build_mission_control_event, canonical_event_equal,
+)
 
 
 MISSION_STATUSES = {
@@ -771,7 +773,13 @@ def append_mission_control_event(mission_id, payload, *, recorded_by,
                 if not row:
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
                 mission = _mission_row(row)
-                projection = apply_event_to_projection(mission, event)
+                if event["event_type"] == "owner_correction_recorded":
+                    cursor.execute("""select metadata_json from public.charlie_mission_events
+                        where event_id=%(event_id)s and mission_id=%(mission_id)s limit 1""", {
+                        "event_id": event["corrects_event_id"], "mission_id": mission_id})
+                    if cursor.fetchone() is None:
+                        return {"success": False, "status": "correction_target_not_found_on_mission",
+                                "mission_id": mission_id}, 409
                 cursor.execute("""insert into public.charlie_mission_events
                     (event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at)
                     values (%(event_id)s,%(mission_id)s,%(event_type)s,%(notes)s,%(recorded_by)s,%(metadata)s::jsonb,%(created_at)s)
@@ -783,12 +791,23 @@ def append_mission_control_event(mission_id, payload, *, recorded_by,
                 })
                 created = cursor.fetchone() is not None
                 if created:
+                    projection = apply_event_to_projection(mission, event)
                     metadata = dict(mission.get("metadata") or {})
                     metadata["mission_control_projection"] = projection
                     cursor.execute("""update public.charlie_missions
                         set metadata_json=%(metadata)s::jsonb,updated_at=now()
                         where mission_id=%(mission_id)s""", {
                         "metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                else:
+                    cursor.execute("""select metadata_json from public.charlie_mission_events
+                        where event_id=%(event_id)s and mission_id=%(mission_id)s limit 1""", {
+                        "event_id": event["event_id"], "mission_id": mission_id})
+                    stored_row = cursor.fetchone()
+                    stored = stored_row[0] if stored_row and isinstance(stored_row[0], dict) else {}
+                    if not canonical_event_equal(stored, event):
+                        return {"success": False, "status": "mission_control_event_idempotency_conflict",
+                                "mission_id": mission_id, "event_id": event["event_id"]}, 409
+                    projection = mission.get("owner_projection") or {}
         return {"success": True, "status": "recorded" if created else "exact_replay",
                 "created": created, "event": event, "owner_projection": projection}, 201 if created else 200
     except Exception as exc:

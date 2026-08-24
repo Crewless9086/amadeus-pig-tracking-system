@@ -23,8 +23,15 @@ def validate_mission_control_event(value):
         state = _text(row.get("real_life_state"), 40)
         if state not in REAL_LIFE_STATES:
             return False, "invalid_real_life_state"
-        if row.get("accepted") not in {True, False}:
+        if not isinstance(row.get("accepted"), bool):
             return False, "accepted_boolean_required"
+        if row["accepted"] is False and state in {"operational", "business_complete", "closed"}:
+            return False, "rejected_acceptance_cannot_advance_real_life_state"
+        if row["accepted"] is True:
+            if state not in {"operational", "business_complete", "closed"}:
+                return False, "accepted_acceptance_requires_outcome_state"
+            if not row.get("evidence_refs"):
+                return False, "accepted_acceptance_requires_evidence"
     if event_type == "owner_correction_recorded" and not _text(row.get("corrects_event_id"), 120):
         return False, "corrects_event_id_required"
     return True, "ok"
@@ -58,6 +65,14 @@ def build_mission_control_event(mission_id, payload, *, recorded_by, now=None):
     row["event_id"] = "CORE-MISSION-CONTROL-" + hashlib.sha256(
         f"{row['mission_id']}|{row['event_type']}|{identity}".encode()).hexdigest()[:24].upper()
     return row
+
+
+def canonical_event_equal(left, right):
+    """Compare the governed payload; server recording time may differ on replay."""
+    def material(value):
+        return {key: item for key, item in dict(value or {}).items() if key != "recorded_at"}
+    return json.dumps(material(left), sort_keys=True, separators=(",", ":")) == json.dumps(
+        material(right), sort_keys=True, separators=(",", ":"))
 
 
 def owner_projection(mission, events=()):
