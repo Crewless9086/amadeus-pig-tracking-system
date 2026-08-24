@@ -2678,14 +2678,22 @@ def mission_control_snapshot(limit=100, database_url=None, connect_factory=None)
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
+                    with eligible_mission_ids as materialized (
+                        select mission_id
+                        from public.charlie_missions
+                        where {owner_filter}
+                          and jsonb_typeof(metadata_json->'mission_control_projection') = 'object'
+                          and metadata_json->'mission_control_projection' ? 'latest_event_id'
+                        {_mission_order_clause("owner_queue")}
+                        limit %(limit)s
+                    )
                     select mission_id, status, source, telegram_user_id, telegram_chat_id,
                            raw_text, title, urgency, mission_type, approval_level,
                            selected_next_step, owner_decision, codex_chat_write_status,
                            {metadata_select}, created_at, updated_at
                     from public.charlie_missions
-                    where {owner_filter}
+                    join eligible_mission_ids using (mission_id)
                     {_mission_order_clause("owner_queue")}
-                    limit %(limit)s
                     """,
                     params,
                 )
@@ -2701,8 +2709,6 @@ def mission_control_snapshot(limit=100, database_url=None, connect_factory=None)
         }, 503
 
     missions = [_mission_row(row) for row in rows]
-    missions = [mission for mission in missions if
-        str((mission.get("owner_projection") or {}).get("latest_event_id") or "").strip()]
     counts = {}
     for mission in missions:
         status = str(mission.get("status") or "")

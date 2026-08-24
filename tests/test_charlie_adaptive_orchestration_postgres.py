@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import unittest
 import uuid
 from unittest.mock import patch
@@ -13,6 +14,7 @@ from modules.charlie.mission_store import (
     list_missions,
     list_owner_work_missions,
     mission_status_summary,
+    mission_control_snapshot,
     record_mission,
 )
 
@@ -75,6 +77,7 @@ class CharlieAdaptiveOrchestrationPostgresTests(unittest.TestCase):
 
     def setUp(self):
         self.mission_id = f"CHARLIE-T0-PG-{uuid.uuid4().hex[:20].upper()}"
+        self.performance_prefix = f"CMQ-PERF-{uuid.uuid4().hex[:12].upper()}"
 
     def tearDown(self):
         with psycopg.connect(self.database_url) as connection:
@@ -87,6 +90,47 @@ class CharlieAdaptiveOrchestrationPostgresTests(unittest.TestCase):
                     "delete from public.charlie_missions where mission_id=%s",
                     (self.mission_id,),
                 )
+                cursor.execute(
+                    "delete from public.charlie_missions where mission_id like %s",
+                    (self.performance_prefix + "%",),
+                )
+
+    def test_mission_control_projects_only_visible_rows_within_local_latency_bound(self):
+        large_audit = "x" * 10000
+        projected_indexes = set(range(150, 156))
+        rows = []
+        for index in range(156):
+            projection = ({"latest_event_id": f"EVENT-{index}",
+                           "real_life_state": "working", "owner_action": "NONE"}
+                          if index in projected_indexes else None)
+            metadata = {"intake_quality": {"queue_class": "owner_work"},
+                        "queue": {"priority": 1}, "large_audit": large_audit}
+            if projection:
+                metadata["mission_control_projection"] = projection
+            rows.append((f"{self.performance_prefix}-{index:03d}", json.dumps(metadata),
+                         f"2000-{1 + index // 28:02d}-{1 + index % 28:02d}T00:00:00+00:00"))
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.executemany("""insert into public.charlie_missions (
+                    mission_id, status, source, raw_text, title, urgency,
+                    mission_type, approval_level, metadata_json, created_at, updated_at)
+                    values (%s, 'in_progress', 'performance_test', 'test', 'test',
+                            'P1', 'defect', 'LEVEL 1', %s::jsonb, %s::timestamptz,
+                            %s::timestamptz)""",
+                    [(mission_id, metadata, created_at, created_at)
+                     for mission_id, metadata, created_at in rows])
+
+        started = time.perf_counter()
+        result, status = mission_control_snapshot(limit=100,
+            database_url=self.database_url)
+        elapsed = time.perf_counter() - started
+
+        self.assertEqual(status, 200, result)
+        visible = [row for row in result["missions"]
+                   if row["mission_id"].startswith(self.performance_prefix)]
+        self.assertEqual(len(visible), 6)
+        self.assertLess(elapsed, 2.0,
+                        f"bounded local snapshot took {elapsed:.3f}s")
 
     def test_production_shaped_t0_is_bound_and_ingested_before_completion(self):
         created, created_status = record_mission(

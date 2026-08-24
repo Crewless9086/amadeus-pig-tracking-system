@@ -161,7 +161,12 @@ class CharlieMissionStoreTests(unittest.TestCase):
         statements = connection.cursor_instance.executed
         self.assertEqual(len(statements), 1)
         sql, _params = statements[0]
-        self.assertNotIn("jsonb_typeof(metadata_json->'mission_control_projection')", sql)
+        self.assertIn("with eligible_mission_ids as materialized", sql)
+        self.assertIn("select mission_id", sql)
+        self.assertIn("join eligible_mission_ids using (mission_id)", sql)
+        self.assertIn("jsonb_typeof(metadata_json->'mission_control_projection')", sql)
+        self.assertLess(sql.index("jsonb_typeof(metadata_json->'mission_control_projection')"),
+                        sql.index("limit %(limit)s"))
         self.assertNotIn("group by status", sql)
 
     def test_owner_review_packet_projects_authoritative_orchestration(self):
@@ -1132,6 +1137,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["counts"], {"in_progress": 1})
         self.assertEqual(result["missions"][0]["mission_id"], "MISSION-1")
         self.assertEqual(len(connection.cursor_instance.executed), 1)
+        self.assertIn("with eligible_mission_ids as materialized",
+                      connection.cursor_instance.executed[0][0])
         self.assertIn("metadata_json->'intake_quality'->>'queue_class'", connection.cursor_instance.executed[0][0])
         self.assertNotIn("group by status", connection.cursor_instance.executed[0][0])
 
