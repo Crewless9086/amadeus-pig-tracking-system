@@ -2327,3 +2327,46 @@ zone/lifecycle/verified-completion/owner-question changes and fixed meaningful
 deadlines must still produce exactly one successor. Completion still requires
 reviewed deployment, a natural materially changed plan when one genuinely
 occurs, and a later natural unchanged zero-send cycle.
+
+### First compatibility deployment failed and existing fertilizer delay evidence
+
+PR #1235 independently passed and merged as
+`5c3ba98af02a8220adaf715d5b002988deb1d4c1`; Render loaded that exact revision.
+The first natural due cycle then recorded observation
+`OOM-ROOTLINE-OBS-DAE1CCE12878150024CB5914-RECORD_OBSERVATION` at
+`2026-08-24T12:17:01.610604Z` with the same visible B/C semantics as message
+`3986`, but claimed pending notification
+`OOM-ROOTLINE-REASSESS-245167D18F25A1595F1F9EFE` and delivered provider message
+`3987` at `12:17:13.522650Z`. Only the next-check time moved from 14:16 to 14:46
+SAST. Raw append-only packet readback proves exact predecessor owner/chat/date,
+identity, provider receipt and pending-answer enrichment; suppression failed
+because production's `durable_backend_schedule` trigger was excluded from the
+hard-coded volatile-trigger allowlist. This remains a notification-only
+acceptance failure with zero irrigation, fertilizer, borehole or farm effect.
+
+The same-lineage repair on exact current main replaces that brittle trigger
+allowlist with a versioned owner-plan semantic fingerprint stored in the
+existing pending/delivery packet. It normalizes only the visible next-check
+line and retains exact recipient, date, provider receipt and predecessor
+binding. Existing historical packet text supplies the transition fingerprint;
+missing or ambiguous predecessor evidence still permits the first legitimate
+plan, and a visible zone, lifecycle, verified-completion or owner-question
+change still produces one successor. Lifecycle notices remain separate.
+
+Owner evidence also states that no fertilizer has been used for three weeks and
+that further delay is unacceptable. This is consolidated into the existing
+`RMQ-20260813-02` Mixer and `RMQ-20260813-03A/03B` Injection lineage; it creates
+no new mission and does not change priority. Source and canonical readiness are
+not physical commissioning: Mixer CH2 is read-only observed and bounded for a
+future supervised five-minute proof, while Injection CH1 remains dependent on
+commissioned Mixer plus genuine active B/C preflow, pulse, flush and exact OFF
+evidence. The current absence of a dedicated canonical Mission Control row for
+these register-retained identities remains a visibility gap; no substitute row
+or direct database mutation was made here.
+
+Lifecycle: `WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / SEMANTIC_REPAIR_ACTIVE`.
+Measurable outcomes remain two natural unchanged cycles with zero standalone
+plan delivery, then one technically ready supervised Mixer proof and later
+separate Injection acceptance. **OWNER ACTION: NONE** until the notification
+repair is reviewed/deployed and the exact commissioning rail reports readiness;
+do not ask the owner to wait at equipment or repeat a presence statement.
