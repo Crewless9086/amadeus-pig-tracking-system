@@ -11,7 +11,7 @@
   };
 
   const tabs = [
-    { id: "active", label: "Active", statuses: ["in_progress", "release_in_progress"] },
+    { id: "active", label: "Working", statuses: ["in_progress", "release_in_progress", "paused"] },
     { id: "new", label: "New", statuses: ["new"] },
     { id: "approved", label: "Approved", statuses: ["approved"] },
     { id: "review", label: "Review", statuses: ["pr_ready", "release_approved"] },
@@ -163,6 +163,27 @@
       ? mission.owner_projection : {};
   }
 
+  function isOwnerWork(mission) {
+    return text(mission && mission.queue_class, "owner_work") === "owner_work";
+  }
+
+  function ownerActionRequired(mission) {
+    const action = text(ownerProjection(mission).owner_action);
+    return !action || action.toUpperCase() !== "NONE";
+  }
+
+  function ownerOperatingState(mission) {
+    if (!isOwnerWork(mission) || ownerActionRequired(mission)) return ownerDisplayStatus(mission);
+    return text(mission && mission.status).toLowerCase() === "paused" ? "EVENT WAITING" : "WORKING";
+  }
+
+  function ownerOperatingChipClass(mission) {
+    const stateLabel = ownerOperatingState(mission);
+    if (stateLabel === "WORKING") return "green";
+    if (stateLabel === "EVENT WAITING") return "amber";
+    return chipClass(mission && mission.status);
+  }
+
   function formatDuration(seconds) {
     const value = Math.max(0, Number(seconds || 0));
     if (!value) return "--";
@@ -311,7 +332,7 @@
 
   async function loadMissionBuckets() {
     const plan = {
-      active: ["in_progress", "release_in_progress"],
+      active: ["in_progress", "release_in_progress", "paused"],
       new: ["new"],
       approved: ["approved"],
       review: ["pr_ready", "release_approved"],
@@ -413,13 +434,13 @@
 
   function renderMissionSummary() {
     const mission = selectedMission();
-    const activeCount = Number(state.counts.in_progress || 0) + Number(state.counts.release_in_progress || 0);
+    const activeCount = Number(state.counts.in_progress || 0) + Number(state.counts.release_in_progress || 0) + Number(state.counts.paused || 0);
     const reviewCount = Number(state.counts.pr_ready || 0) + Number(state.counts.release_approved || 0);
     const blockedCount = Number(state.counts.blocked || 0);
     const approvedCount = Number(state.counts.approved || 0);
     const currentAgent = mission ? stageLabel(mission) : (activeCount ? "Loading active mission" : "None");
     const items = [
-      ["Active", activeCount, currentAgent],
+      ["Working", activeCount, currentAgent],
       ["Approved queue", approvedCount, approvedCount ? "waiting for runner" : "queue clear"],
       ["Owner review", reviewCount, reviewCount ? "decision required" : "no review backlog"],
       ["Blocked", blockedCount, blockedCount ? "attention required" : "no blocked missions"],
@@ -430,7 +451,7 @@
     </div>`).join("");
     el.queueHealthChip.className = `chip ${blockedCount ? "red" : reviewCount ? "purple" : "green"}`;
     el.queueHealthChip.textContent = blockedCount ? `${blockedCount} blocked` : reviewCount ? `${reviewCount} review` : "Queue healthy";
-    el.activeAgentChip.className = `chip ${mission && ["blocked"].includes(text(mission.status).toLowerCase()) ? "red" : mission ? "green" : ""}`;
+    el.activeAgentChip.className = `chip ${mission ? ownerOperatingChipClass(mission) : ""}`;
     el.activeAgentChip.textContent = mission ? cleanAgentName(stageLabel(mission)) : "No agent";
   }
 
@@ -499,7 +520,7 @@
         <div class="mission-card-title">${familyLabel ? `<span class="family-tag">${escapeHtml(familyLabel)}</span>` : ""}${escapeHtml(titleOf(mission))}</div>
         <div class="mission-card-meta">
           <span>${escapeHtml(shortId(mission))} | ${escapeHtml(text(mission.approval_level, "LEVEL ?"))}</span>
-          <span class="chip ${chipClass(status)}">${escapeHtml(ownerDisplayStatus(mission))}</span>
+          <span class="chip ${ownerOperatingChipClass(mission)}">${escapeHtml(ownerOperatingState(mission))}</span>
         </div>
         <div class="bar"><span style="width:${pct}%"></span></div>
         <div class="mission-card-meta">
@@ -526,8 +547,8 @@
     }
     const status = text(mission.status, "unknown");
     const pct = progressPct(mission);
-    el.selectedStatusChip.className = `chip ${chipClass(status)}`;
-    el.selectedStatusChip.textContent = ownerDisplayStatus(mission);
+    el.selectedStatusChip.className = `chip ${ownerOperatingChipClass(mission)}`;
+    el.selectedStatusChip.textContent = ownerOperatingState(mission);
     el.workflowSub.textContent = `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")} | ${pct}%`;
     const review = missionReviewPacket(mission);
     const governance = missionGovernance(mission);
@@ -543,7 +564,7 @@
           <h2>${escapeHtml(titleOf(mission))}</h2>
           <p class="muted">${escapeHtml(text(mission.mission_type, "mission"))} | ${escapeHtml(text(mission.urgency, "P?"))}</p>
         </div>
-        <span class="chip ${chipClass(status)}">${escapeHtml(ownerDisplayStatus(mission))}</span>
+        <span class="chip ${ownerOperatingChipClass(mission)}">${escapeHtml(ownerOperatingState(mission))}</span>
       </div>
       <div class="mission-stats">
         ${metric("Acceptance", `${Number(governance.acceptance_percent || 0)}%`)}
@@ -748,6 +769,9 @@
 
   function actionButtons(mission) {
     const status = text(mission.status).toLowerCase();
+    if (isOwnerWork(mission) && !ownerActionRequired(mission)) {
+      return `<div class="notice">Automatic work continues safely. No owner action is needed.</div>`;
+    }
     if (status === "new") {
       return `<div class="button-grid">
         <button class="primary ok" data-decision="approved">Approve</button>

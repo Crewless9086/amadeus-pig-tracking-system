@@ -645,7 +645,11 @@ def charlie_mission_control_snapshot_route():
         "status": "mission_control_snapshot_ready",
         "counts": snapshot.get("counts", {}),
         "buckets": {
-            "active": [*raw_buckets.get("in_progress", []), *raw_buckets.get("release_in_progress", [])],
+            "active": [
+                *raw_buckets.get("in_progress", []),
+                *raw_buckets.get("release_in_progress", []),
+                *raw_buckets.get("paused", []),
+            ],
             "new": raw_buckets.get("new", []),
             "approved": raw_buckets.get("approved", []),
             "review": [*raw_buckets.get("pr_ready", []), *raw_buckets.get("release_approved", [])],

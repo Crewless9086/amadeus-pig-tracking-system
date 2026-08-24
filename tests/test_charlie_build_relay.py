@@ -1235,6 +1235,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         snapshot.return_value = ({"success": True, "counts": {"blocked": 1, "new": 2}, "missions": [
             {"mission_id": "NEW-1", "status": "new"},
             {"mission_id": "ACTIVE-1", "status": "in_progress"},
+            {"mission_id": "WAITING-1", "status": "paused"},
             {"mission_id": "BLOCK-1", "status": "blocked"},
         ]}, 200)
 
@@ -1252,7 +1253,10 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["authoritative"])
         self.assertEqual(data["source"], "supabase_charlie_missions")
-        self.assertEqual(data["buckets"]["active"][0]["mission_id"], "ACTIVE-1")
+        self.assertEqual(
+            [mission["mission_id"] for mission in data["buckets"]["active"]],
+            ["ACTIVE-1", "WAITING-1"],
+        )
         self.assertEqual(data["buckets"]["blocked"][0]["mission_id"], "BLOCK-1")
         self.assertEqual(data["revision_truth"]["github_accepted_commit"], "accepted")
         self.assertEqual(data["revision_truth"]["render_deployed_commit"], "render")

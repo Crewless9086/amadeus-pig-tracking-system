@@ -104,3 +104,61 @@ test("mission cockpit loads useful evidence and send-back requires owner comment
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test("control tower owner work is visible without false blocked or runner actions", async ({ page }) => {
+  const working = {
+    ...blockedMission,
+    mission_id: "OMQ-20260813-03",
+    title: "Oom Sakkie continuous farm manager",
+    owner_projection: {
+      outcome: "Operate the daily farm loop.",
+      real_life_state: "contained",
+      current_worker: "Control Tower",
+      next_automatic_step: "Continue the reviewed repair.",
+      owner_action: "NONE",
+    },
+  };
+  const waiting = {
+    ...blockedMission,
+    mission_id: "CMQ-20260813-05",
+    title: "CORE operating spine",
+    status: "paused",
+    owner_projection: {
+      outcome: "Complete one governed mission automatically.",
+      real_life_state: "contained",
+      current_worker: "Control Tower",
+      next_automatic_step: "Wait for the next governed event.",
+      owner_action: "NONE",
+    },
+  };
+  await page.route("**/api/charlie/build-relay/mission-control**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      counts: { blocked: 1, paused: 1 },
+      buckets: { active: [waiting], new: [], approved: [], review: [], blocked: [working] },
+    }),
+  }));
+  await page.route("**/api/charlie/build-relay/runner/status**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, local_runner_scope: "render_cannot_see_laptop_runner", local_runner: {} }),
+  }));
+  await page.route("**/api/charlie/build-relay/policy**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, charlie_build_relay: { enabled: true } }),
+  }));
+
+  await page.goto("/charlie-v2");
+  await expect(page.getByText("CORE operating spine").first()).toBeVisible();
+  await expect(page.getByText("EVENT WAITING", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Automatic work continues safely. No owner action is needed.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve Rerun" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /Blocked 1/ }).click();
+  await expect(page.getByText("Oom Sakkie continuous farm manager").first()).toBeVisible();
+  await expect(page.getByText("WORKING", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve Rerun" })).toHaveCount(0);
+});
