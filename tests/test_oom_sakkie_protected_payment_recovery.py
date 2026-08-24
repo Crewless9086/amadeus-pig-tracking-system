@@ -44,6 +44,22 @@ def test_observation_completion_preserves_exact_welfare_state(state,expected):
     assert expected in value
 
 
+@pytest.mark.parametrize(("state", "expected"), (
+    ("monitoring", "Die welsynsmonitering bly oop"),
+    ("open", "Die welsynsopvolg bly oop"),
+    ("escalated", "Die welsynsopvolg is ge\u00ebskaleer"),
+    ("closed", "Die welsynsaak is gesluit"),
+))
+def test_observation_completion_af_preserves_state_without_mojibake(state, expected):
+    value = _health_observation_completion({
+        **OBSERVATION_BINDING,
+        "canonical_welfare_state": state,
+    }, "af")
+    assert expected in value
+    assert "\u00c3" not in value
+    assert "\ufffd" not in value
+
+
 @pytest.mark.parametrize("patch",(
     {"canonical_human_identity":{}},
     {"canonical_observation":{"observed":[]}},

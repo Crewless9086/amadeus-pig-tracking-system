@@ -151,7 +151,7 @@ def _health_observation_completion(claim, language):
     af_states = {
         "monitoring": f"Die welsynsmonitering bly oop. Hou aan om {safe} te monitor.",
         "open": f"Die welsynsopvolg bly oop. Kontroleer {safe} soos geskeduleer.",
-        "escalated": "Die welsynsopvolg is geÃ«skaleer. Volg HERDMASTER se huidige aksie.",
+        "escalated": "Die welsynsopvolg is ge\u00ebskaleer. Volg HERDMASTER se huidige aksie.",
         "closed": "Die welsynsaak is gesluit; geen verdere welsynsopvolg is oop nie.",
     }
     en_states = {
