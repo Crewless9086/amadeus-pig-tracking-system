@@ -211,6 +211,7 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
 
 def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=None,
                                 owner_user_id=None,
+                                owner_user_ids=None,
                                 mortality_evidence_loader=None,
                                 mortality_packet_builder=None):
     """Load canonical Supabase truth through bounded read-only sessions."""
@@ -238,38 +239,38 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
             if (len(pigs) > 5000 or len(window_weights) > 10000
                     or len(prior_weights) > 10000 or len(lifecycle) > 5000):
                 raise RuntimeError("herdmaster_daily_evidence_row_bound_exceeded")
-            owner_hash = hashlib.sha256(str(owner_user_id or "").encode()).hexdigest()
-            cursor.execute("""select review_json->'mortality_consumption',created_at
+            owners = tuple(dict.fromkeys(str(value) for value in
+                (owner_user_ids or (owner_user_id,)) if str(value or "").strip()))
+            owner_hashes = [hashlib.sha256(value.encode()).hexdigest() for value in owners]
+            cursor.execute("""select owner_hash,consumption,created_at from (
+                select review_json->'mortality_consumption'->>'owner_identity_sha256' as owner_hash,
+                  review_json->'mortality_consumption' as consumption,created_at,
+                  row_number() over (partition by
+                    review_json->'mortality_consumption'->>'owner_identity_sha256'
+                    order by created_at desc,review_event_id desc) as row_number
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_herdmaster_mortality_consumption'
                   and review_json->'mortality_consumption'->>'review_identity'=%s
-                  and review_json->'mortality_consumption'->>'owner_identity_sha256'=%s
-                order by created_at desc,review_event_id desc limit 1""",
-                (MORTALITY_IDENTITY, owner_hash))
-            row = cursor.fetchone()
-            prior_consumption = (row[0] if row else {}) or {}
-            prior_consumption_at = row[1] if row and len(row) > 1 else None
-            prior_digest = str(prior_consumption.get("evidence_digest") or "")
-            prior_event_fingerprints = dict(
-                prior_consumption.get("canonical_death_event_fingerprints") or {})
-            cursor.execute("""select review_json->'farm_manager_round'->'result'
-                    ->'herdmaster_mortality_fingerprints',created_at
+                  and review_json->'mortality_consumption'->>'owner_identity_sha256'=any(%s)
+                ) ranked where row_number=1 order by created_at desc""",
+                (MORTALITY_IDENTITY, owner_hashes))
+            consumption_rows = list(cursor.fetchall())
+            cursor.execute("""select owner_id,fingerprints,created_at from (
+                select review_json->'farm_manager_round'->'binding'->>'owner' as owner_id,
+                  review_json->'farm_manager_round'->'result'
+                    ->'herdmaster_mortality_fingerprints' as fingerprints,created_at,
+                  row_number() over (partition by
+                    review_json->'farm_manager_round'->'binding'->>'owner'
+                    order by created_at desc,review_event_id desc) as row_number
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_farm_manager_round'
                   and review_json->'farm_manager_round'->'result'
                     ->'herdmaster_mortality_fingerprints' is not null
-                  and review_json->'farm_manager_round'->'binding'->>'owner'=%s
-                order by created_at desc,review_event_id desc limit 1""",
-                (str(owner_user_id or ""),))
-            manager_row = cursor.fetchone()
-            if manager_row and isinstance(manager_row[0], dict):
-                manager_values = dict(manager_row[0])
-                manager_at = manager_row[1] if len(manager_row) > 1 else None
-                if (prior_consumption_at is None or manager_at is None
-                        or manager_at >= prior_consumption_at):
-                    prior_event_fingerprints.update(manager_values)
-                else:
-                    prior_event_fingerprints = {**manager_values, **prior_event_fingerprints}
+                  and review_json->'farm_manager_round'->'binding'->>'owner'=any(%s)
+                ) ranked where row_number=1 order by created_at desc""", (list(owners),))
+            manager_rows = list(cursor.fetchall())
+            prior_event_fingerprints, prior_digest, prior_consumption_at = \
+                _shared_mortality_history(consumption_rows, manager_rows, len(owners))
     if mortality_evidence_loader is None:
         from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
         mortality_evidence_loader = load_current_mortality_evidence
@@ -287,6 +288,43 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
         prior_mortality_event_fingerprints=prior_event_fingerprints,
         prior_mortality_consumed_at=prior_consumption_at,
         analysis_date=analysis_date)
+
+
+def _shared_mortality_history(consumption_rows, manager_rows, owner_count):
+    histories = {}
+    digests = {}
+    timestamps = {}
+    for row in consumption_rows:
+        actor, value, observed_at = row
+        value = value or {}
+        histories[actor] = dict(value.get("canonical_death_event_fingerprints") or {})
+        digests[actor] = str(value.get("evidence_digest") or "")
+        timestamps[actor] = observed_at
+    for row in manager_rows:
+        actor, values, observed_at = row
+        if isinstance(values, dict):
+            prior = histories.get(actor, {})
+            if timestamps.get(actor) is None or observed_at is None \
+                    or observed_at >= timestamps[actor]:
+                histories[actor] = {**prior, **values}
+            else:
+                histories[actor] = {**values, **prior}
+    # A shared Brief may suppress a fact only after every governed recipient
+    # has consumed the same fingerprint. One actor's history must never hide a
+    # current canonical fact from another actor.
+    fingerprints = {}
+    values_by_actor = list(histories.values())
+    if values_by_actor and len(histories) >= owner_count:
+        common = set(values_by_actor[0])
+        for values in values_by_actor[1:]:
+            common.intersection_update(values)
+        fingerprints = {key: values_by_actor[0][key] for key in common
+            if all(values.get(key) == values_by_actor[0][key] for values in values_by_actor)}
+    digest_values = [value for value in digests.values() if value]
+    digest = digest_values[0] if len(digest_values) >= owner_count \
+        and len(set(digest_values)) == 1 else ""
+    consumed_at = min((value for value in timestamps.values() if value), default=None)
+    return fingerprints, digest, consumed_at
 
 
 def _rows(cursor, sql, params=()):

@@ -227,12 +227,11 @@ def _load_herdmaster_snapshot(owner, now):
     """Read one immutable canonical HERDMASTER evidence snapshot."""
     owners = tuple(dict.fromkeys(str(value) for value in
         (owner if isinstance(owner, (tuple, list, set)) else (owner,)) if str(value)))
-    primary_owner = owners[0] if owners else ""
     futures = {
         "canonical": _HERD_EVIDENCE_EXECUTOR.submit(load_current_breeding_operating_loop),
         "daily": _HERD_EVIDENCE_EXECUTOR.submit(load_daily_manager_evidence,
             analysis_date=now.astimezone(ZoneInfo("Africa/Johannesburg")).date(),
-            owner_user_id=primary_owner),
+            owner_user_ids=owners),
     }
     for actor in owners:
         futures["observations:" + actor] = _HERD_EVIDENCE_EXECUTOR.submit(_load_observations, actor)
