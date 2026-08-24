@@ -97,14 +97,14 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     if (presented is None or provider_at_value is None
             or not 0 <= (provider_at_value - presented).total_seconds() <= MAX_AGE_SECONDS):
         return {"handled": False, **ZERO}, 200
+    reply_to = str(parsed.get("reply_to_message_id") or "").strip()
+    exact_reply = bool(reply_to and reply_to == str(active.get("telegram_message_id") or ""))
     # A protected specialist packet owns its own preview/confirmation lifecycle.
     # Broad manager context must never consume it merely because it is conversational.
     if semantic is not None and (getattr(semantic, "protected_preview_required", False)
             or getattr(semantic, "recording_prohibited", False)
             or bool(getattr(semantic, "breeding_actions", ()) )):
         return {"handled": False, **ZERO}, 200
-    reply_to = str(parsed.get("reply_to_message_id") or "").strip()
-    exact_reply = bool(reply_to and reply_to == str(active.get("telegram_message_id") or ""))
     expected_domain = str((active.get("question_binding") or {}).get("domain") or "")
     rootline_question = expected_domain in {"rootline", "water_energy"}
     if rootline_question and semantic is not None:
@@ -239,8 +239,17 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "content_sha256": binding["content_sha256"]}
     downstream = None
     downstream_status = 200
-    pig_id = str((active.get("question_binding") or {}).get("pig_id") or "").strip()
+    pig_id, pig_binding_state = _bound_question_pig_id(active)
     herd_question = expected_domain in {"herd", "herd_health", "herd_management"}
+    dedupe_is_animal_specific = (dedupe_key.startswith("herdmaster:")
+        and dedupe_key != "herdmaster:mortality-current-assessment")
+    if herd_question and not partial and pig_binding_state != "resolved" \
+            and (pig_binding_state == "ambiguous" or dedupe_is_animal_specific):
+        return {"handled": True, "success": False,
+            "status": "manager_question_welfare_identity_unavailable",
+            "answer": ("I kept the welfare question open because its canonical animal binding "
+                       "is not exactly one pig. Nothing was recorded or closed."),
+            "requires_visible_notification": True, **ZERO}, 409
     if herd_question and pig_id and not partial:
         if health_handler is None:
             from modules.oom_sakkie.herdmaster_health_loss_runtime import (
@@ -571,6 +580,28 @@ def _compatible(expected, actual):
     groups = ({"herd", "herd_health", "herd_management"},
               {"sales", "sam"}, {"water_energy", "rootline"})
     return expected == actual or any(expected in group and actual in group for group in groups)
+
+
+def _bound_question_pig_id(question):
+    """Recover only canonical typed bindings; never infer from display prose."""
+    binding = question.get("question_binding") if isinstance(
+        question.get("question_binding"), dict) else {}
+    candidates = []
+    for value in (binding.get("pig_id"), *(binding.get("pig_ids") or ())):
+        value = str(value or "").strip()
+        if re.fullmatch(r"PIG-[A-Z0-9-]{4,64}", value):
+            candidates.append(value)
+    for value in binding.get("source_refs") or ():
+        match = re.fullmatch(r"pig:(PIG-[A-Z0-9-]{4,64})", str(value or "").strip())
+        if match:
+            candidates.append(match.group(1))
+    match = re.fullmatch(r"herdmaster:(PIG-[A-Z0-9-]{4,64})",
+                         str(binding.get("dedupe_key") or "").strip())
+    if match:
+        candidates.append(match.group(1))
+    values = sorted(set(candidates))
+    return (values[0], "resolved") if len(values) == 1 else \
+        ("", "ambiguous" if len(values) > 1 else "unavailable")
 
 
 _LITERAL_TANK_STATE = re.compile(
