@@ -163,7 +163,7 @@ def _farrowing_actions(cases, animals, today):
 
 def _inconclusive_actions(cases):
     rows=[row for row in cases if row.get("state")=="inconclusive"]
-    return [] if not rows else [_action("inconclusive-cycle",20,rows,"Preserve the unresolved cycle and perform the scheduled reproductive-status reassessment; do not recommend another mating.","Observe current heat/non-heat and ordinary reproductive changes once at the scheduled reassessment.","A governed Not Pregnant, Assumed Pregnant, confirmed result or return-to-heat observation changes the reproductive path.")]
+    return [] if not rows else [_action("inconclusive-cycle",20,rows,"Preserve the unresolved cycle and perform the scheduled reproductive-status reassessment; do not recommend another mating.","Observe current body condition, movement, welfare and any ordinary reproductive change once at the scheduled reassessment. Heat may be volunteered but is not required.","A governed Not Pregnant, Assumed Pregnant, confirmed result or volunteered return-to-heat observation changes the reproductive path.")]
 
 
 def _post_litter_actions(cases):
@@ -173,7 +173,7 @@ def _post_litter_actions(cases):
 
 def _cycle_review_actions(cases):
     rows=[row for row in cases if row.get("state")=="missing_evidence"]
-    return [] if not rows else [_action("reproductive-status-review",40,rows,"Establish current reproductive state without treating missing pedigree as a reason to suppress the supported status review.","For only these females, observe heat/non-heat, body condition, normal movement and visible concerns in one grouped round.","The observation can classify current management attention; final pairing remains blocked by independent pedigree and clearance gates.")]
+    return [] if not rows else [_action("reproductive-status-review",40,rows,"Establish current reproductive state without treating missing pedigree as a reason to suppress the supported status review.","For only these females, observe body condition, normal movement and visible concerns in one grouped round. Heat may be volunteered but is not required.","The observation can classify current management attention; final pairing remains blocked by independent pedigree and clearance gates.")]
 
 
 def _action(action_id, priority, rows, recommendation, observation, unlock):
