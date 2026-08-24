@@ -220,6 +220,47 @@ def test_unsuccessful_provider_confirmation_cannot_suppress_retry():
     assert row[1] != row[2]
 
 
+def test_provider_ambiguity_is_contained_without_five_minute_reclaim_or_duplicate_send():
+    now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=42)
+    dedupe = "beacon:provider-ambiguity-contained"
+    current = candidate("beacon_result:" + "a" * 64, now,
+        dedupe_key=dedupe, specialist="BEACON", urgency="due",
+        summary="Current protected BEACON proposal requires owner review.",
+        next_action="Retain the exact protected card without duplicate delivery.",
+        unknowns=["provider_delivery_truth"])
+    attempts = []
+
+    def ambiguous(case):
+        attempts.append(case["case_id"])
+        return {"success": False, "status": "protected_delivery_ambiguous",
+            "delivery_confirmed": False, "provider_outcome_ambiguous": True,
+            "do_not_retry_provider_effect": True, "telegram_sends": 0}
+
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    first = store.run_cycle([current], now=now, source_revision="test",
+        refresh=lambda claimed: current, deliver=ambiguous)
+    replay = store.run_cycle([current], now=now + timedelta(minutes=5),
+        source_revision="test", refresh=lambda claimed: current, deliver=ambiguous)
+    later_replay = store.run_cycle([current], now=now + timedelta(days=2),
+        source_revision="test", refresh=lambda claimed: current, deliver=ambiguous)
+    assert first["exceptions"] == 1
+    assert replay["candidate_replays"] == 1
+    assert replay["cases_claimed"] == 0
+    assert later_replay["cases_claimed"] == 0
+    assert len(attempts) == 1
+    with connect() as db:
+        row = db.execute("""select status,next_reassessment_at,last_delivery_digest,
+            evidence_digest from app_private.oom_manager_cases where dedupe_key=%s""",
+            (dedupe,)).fetchone()
+        event = db.execute("""select event_payload from app_private.oom_manager_case_events
+            where case_id=(select case_id from app_private.oom_manager_cases where dedupe_key=%s)
+              and event_type='contained' order by occurred_at desc limit 1""",
+            (dedupe,)).fetchone()
+    assert row[0] == "contained"
+    assert row[2] != row[3]
+    assert event[0]["provider_ambiguity_contained"] is True
+
+
 def test_older_observation_epoch_cannot_replace_newer_herd_evidence():
     now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=45)
     newer = candidate("observed:2026-08-17T13:10:00+00:00", now,
