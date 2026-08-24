@@ -101,6 +101,34 @@ def test_partial_result_reports_prior_commits_and_failed_pig():
     assert result["draft_must_be_retained"] is True
 
 
+def test_same_day_before_noon_uses_non_future_authenticated_server_time():
+    before_noon = datetime(2026, 8, 24, 6, 15, tzinfo=timezone.utc)
+    with patch("modules.pig_weights.bulk_body_condition_service.list_observations",
+               return_value=({"history": []}, 200)), patch(
+        "modules.pig_weights.bulk_body_condition_service.record_observation",
+        return_value=({"status": "observation_recorded", "observation_event_id": "E1"}, 201),
+    ) as writer:
+        result, status = record_body_condition_batch(payload([
+            {"pig_id": "P1", "body_condition_score": 3},
+        ]), actor_id="owner", now=before_noon)
+    assert status == 201
+    assert writer.call_args.args[0]["observed_at"] == "2026-08-24T08:15:00+02:00"
+    assert result["recorded_count"] == 1
+
+
+def test_past_date_remains_deterministic_local_noon():
+    with patch("modules.pig_weights.bulk_body_condition_service.list_observations",
+               return_value=({"history": []}, 200)), patch(
+        "modules.pig_weights.bulk_body_condition_service.record_observation",
+        return_value=({"status": "observation_recorded", "observation_event_id": "E1"}, 201),
+    ) as writer:
+        old = payload([{"pig_id": "P1", "body_condition_score": 3}])
+        old["observed_date"] = "2026-08-23"
+        _result, status = record_body_condition_batch(old, actor_id="owner", now=NOW)
+    assert status == 201
+    assert writer.call_args.args[0]["observed_at"] == "2026-08-23T12:00:00+02:00"
+
+
 def test_invalid_or_duplicate_selection_fails_before_write():
     for rows in ([{"pig_id": "P1", "body_condition_score": 6}], [
         {"pig_id": "P1", "body_condition_score": 2},

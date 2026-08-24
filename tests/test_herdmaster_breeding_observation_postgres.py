@@ -224,6 +224,20 @@ class BreedingObservationPostgresTests(unittest.TestCase):
         self.assertEqual(result["failed_pig_id"], "ZZ-MISSING")
         self.assertTrue(result["draft_must_be_retained"])
 
+    def test_same_day_pre_noon_bulk_timestamp_is_not_future(self):
+        server_now = datetime(2026, 8, 24, 6, 15, tzinfo=timezone.utc)
+        batch = {"draft_id": "DRAFT-PRE-NOON", "observed_date": "2026-08-24",
+            "rows": [{"pig_id": "PHASE2-SOW-B", "body_condition_score": 3.5}]}
+        result, status = record_body_condition_batch(batch, actor_id="owner-admin:test",
+            connect_factory=self.connect_as_service, now=server_now)
+        self.assertEqual(status, 201, result)
+        with psycopg.connect(self.url) as connection, connection.cursor() as cursor:
+            cursor.execute("""select observed_at from public.pig_observation_events
+                where idempotency_key='bulk-bcs:DRAFT-PRE-NOON:PHASE2-SOW-B'""")
+            observed = cursor.fetchone()[0]
+        self.assertEqual(observed, server_now)
+        self.assertLessEqual(observed, server_now)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 """Selective BCS capture through the existing canonical observation writer."""
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from modules.pig_weights.herdmaster_breeding_observation_service import (
     list_observations, observation_by_idempotency, record_observation,
@@ -15,6 +16,13 @@ def record_body_condition_batch(payload, *, actor_id, database_url=None,
     now = now or datetime.now(timezone.utc)
     if not batch_key or not observed_date:
         return {"success": False, "status": "batch_identity_and_date_required"}, 400
+    try:
+        selected_date = date.fromisoformat(observed_date)
+    except ValueError:
+        return {"success": False, "status": "invalid_observed_date"}, 400
+    local_now = now.astimezone(ZoneInfo("Africa/Johannesburg"))
+    observed_at = (local_now if selected_date == local_now.date() else
+        datetime.combine(selected_date, time(hour=12), tzinfo=ZoneInfo("Africa/Johannesburg")))
     selected, seen = [], set()
     for raw in rows:
         row = raw if isinstance(raw, dict) else {}
@@ -62,7 +70,7 @@ def record_body_condition_batch(payload, *, actor_id, database_url=None,
         else:
             predecessor = committed.get("supersedes_observation_event_id")
         result, status = record_observation({
-            "pig_id": pig_id, "observed_at": observed_date + "T12:00:00+02:00",
+            "pig_id": pig_id, "observed_at": observed_at.isoformat(),
             "body_condition_score": score,
             "factual_note": f"Body condition score {score:g}.",
             "idempotency_key": idem,
