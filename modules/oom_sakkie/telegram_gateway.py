@@ -600,6 +600,39 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         operational_result, operational_status = handle_operational_specialist_message(
             parsed, gateway_authority,
         )
+        if (operational_result.get("handled")
+                and str(operational_result.get("status") or "") == "specialist_accepted"
+                and str(operational_result.get("next_specialist_step") or "") ==
+                    "supervised_fertilizer_mixer_proof"):
+            # This exact phrase is the protected commissioning front door.  Do
+            # not carry its accepted readback through the generic contextual
+            # delivery path: turn it into the bound claim/card here, before an
+            # old manager context can project a plain reply.
+            from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
+            preview = create_mixer_preview(
+                owner_result=operational_result, parsed=parsed,
+                gateway_authority=gateway_authority)
+            operational_result = {**operational_result, **preview,
+                "mission_id": preview.get("mission_id") or operational_result.get("mission_id"),
+                "card_mission_id": preview.get("card_mission_id") or operational_result.get("card_mission_id"),
+                "specialist_identity": "ROOTLINE"}
+            delivery = deliver_family_result(
+                parsed, operational_result, specialist="ROOTLINE",
+                mission_id=str(operational_result.get("mission_id") or ""),
+                card_mission_id=str(operational_result.get("card_mission_id") or ""))
+            delivery = _bind_protected_preview_card(operational_result, delivery)
+            body, _ = _gateway_result(delivery.get("success") is True,
+                str(operational_result.get("status") or "contained"), policy,
+                operational_status)
+            body.update({"telegram_user_id": parsed["telegram_user_id"],
+                "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+                "answer": operational_result.get("answer", ""),
+                "message": operational_result, "delivery": delivery,
+                "records_audit_trace": True,
+                "reply_transport": "backend_handles_owner_task_delivery",
+                "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+                "writes": False})
+            return body, operational_status if delivery.get("success") else 202
 
     manager_reply, manager_reply_status = (({"handled": False}, 200)
         if operational_result.get("handled") else handle_manager_question_reply(

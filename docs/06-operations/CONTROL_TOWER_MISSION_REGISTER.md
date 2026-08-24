@@ -2504,3 +2504,23 @@ decision/reason, lifecycle or verified completion, fixed-deadline wording and
 owner-question changes remain material, while hidden trigger/reason/clock churn
 cannot manufacture an identical standalone plan. Lifecycle remains
 `WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / OWNER_VISIBLE_FINGERPRINT_REPAIR_ACTIVE`.
+
+#### Mixer message 4005 protected-preview failure after revision 857c6125
+
+At `2026-08-24T17:27:55Z` the owner's confirmed exact governed Mixer phrase
+arrived as provider message `4005`; the n8n webhook completed HTTP `200` at
+`17:28:34Z` on exact live revision
+`857c612560a861a5f7dea5400c9b625109aa377c`. The specialist readback was safe
+and current (`all_outputs_off=true`, Mixer CH2 native auto-off `300s`), but the
+gateway persisted `contextual_followup_claimed` against stale parent Telegram
+message `3480` and delivered plain readiness message `4006` instead of creating
+the protected Mixer claim/card. The expired 16 August presence claim remained
+and was not atomically retired. This is a further acceptance BLOCK in existing
+`RMQ-20260813-02`, not a new mission or priority change. There were zero
+provider-control calls, hardware commands or farm writes and no confirmation
+or actuation. The bounded repair makes the exact commissioning phrase enter
+the protected claim/card delivery boundary immediately after specialist
+acceptance, before any generic contextual projection, while retaining actor,
+chat, age, mission, digest, concurrency, replay and confirmation safeguards.
+Lifecycle is `WORKING / PROTECTED_PREVIEW_ACCEPTANCE_FAIL / REPAIR_ACTIVE`.
+**OWNER ACTION: NONE; do not resend or confirm until a reviewed repair is live.**
