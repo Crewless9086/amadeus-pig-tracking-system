@@ -125,7 +125,7 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
             reasons.append(reason)
     why = _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af)
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
-    question = str(brief.get("family_fact_needed") or "").strip()
+    question = _owner_question(brief.get("family_fact_needed"))
     next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result), now_hint=result.get("evidence_cutoff"))
     lines.extend(["",
         f"<b>{'Hoekom' if af else 'Why'}:</b> {html.escape(why)}",
@@ -216,6 +216,15 @@ def _short_reason(value: str, af: bool) -> str:
         return "Vars kanonieke bewyse bepaal die huidige besluit." if af else "Fresh canonical evidence determines the current decision."
     sentence = text.split(". ", 1)[0].rstrip(".") + "."
     return sentence[:300]
+
+
+def _owner_question(value: Any) -> str:
+    text = " ".join(str(value or "").split())
+    if text.casefold().rstrip(".") in {
+            "no owner fact is required now", "no owner action is required now",
+            "none", "nothing", "n/a"}:
+        return ""
+    return text
 
 
 def _next_reassessment(result: Mapping[str, Any]) -> str:

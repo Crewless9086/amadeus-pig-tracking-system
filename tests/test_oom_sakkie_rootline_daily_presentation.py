@@ -303,3 +303,12 @@ def test_held_only_claims_no_watering_need_when_specific_evidence_proves_it():
         "state":"Held","reason":"fresh_need_evidence","next_action_owner":"ROOTLINE",
         "next_action":"reassess","watering_need_proven_false":True}}
     assert "B Camp:</b> Not running — does not need watering" in compose_daily_rootline_plan(value)
+
+
+def test_no_owner_fact_sentinel_is_not_rendered_as_a_question():
+    value = result()
+    value["owner_brief"]["family_fact_needed"] = "No owner fact is required now."
+    text = compose_daily_rootline_plan(value)
+    assert "No owner fact is required now" not in text
+    assert "What I need from you:</b> Nothing" in text
+    assert "No action required from you." in text
