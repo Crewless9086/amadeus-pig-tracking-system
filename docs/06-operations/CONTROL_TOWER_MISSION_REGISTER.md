@@ -2403,3 +2403,40 @@ one actor-bound `Confirm` approval. The runtime must then own one exactly-once
 ON, native timeout/recovery, provider OFF, physical stopped-flow evidence,
 canonical completion and zero-ON replay. No manual repeat, Injection CH1 or
 Borehole action is part of this acceptance.
+
+### 2026-08-24 - Mission Control latency outcome and ROOTLINE current hold
+
+Existing `CMQ-20260813-05` achieved one bounded owner-visible outcome without
+closing the broader operating-spine mission. PR #1236 merged as exact main
+`c210c5295c37d0ca6424173207387ba24621d113`; Render loaded that exact revision.
+Two separate authenticated owner-page loads then displayed all six current
+canonical Control Tower missions with their counts, details, next steps and
+owner-action state inside the existing Mission Control page, with no timeout.
+This retires the page-critical query-latency acceptance gate only. CMQ remains
+`WORKING`: runner continuity, automatic governed mission progression and the
+broader operating-spine acceptance are not claimed complete. No mission, row,
+store, page, priority, provider or farm state was created or changed by this
+register receipt.
+
+ROOTLINE PR #1237 exact head
+`4444861d6be5f6af33f98e869b05e05369aff537` independently passed against its
+then-current base with 69 focused local tests, 32 independent focused tests,
+clean diff and all four hosted gates. It adds a production-shaped pre-upgrade
+message `3986` predecessor and proves the clock-only `3987` successor is silent,
+while fixed deadlines, changed B/C semantics, lifecycle/completion and owner
+questions remain material. Main subsequently advanced to the disjoint CMQ
+merge above, so #1237 is being reconciled and re-gated before any integration;
+no stale-base merge or deployment is authorized.
+
+The owner's fresh Mixer presence statement did not reach the deployed direct
+Telegram webhook: Render request evidence through
+`2026-08-24T14:42:47.051211Z` contains no corresponding POST, and canonical
+readback at `2026-08-24T14:40:05.648244Z` contains no new Mixer claim or card.
+The remaining `active` presence claim was created on 16 August, expired on 17
+August and has no preview-card binding. It is historical stale state, but it
+cannot have intercepted a new request that never reached Amadeus. Exact blocker
+is upstream Telegram/n8n relay ingestion; root cause below that boundary is
+still Unknown. Zero new claim, card, execution, provider call or hardware/farm
+effect occurred. `OWNER ACTION: NONE`: do not resend the message, press an old
+button or operate CH1, CH2 or Borehole until exact dedupe-safe relay recovery is
+proved and one fresh protected Mixer preview is visible.
