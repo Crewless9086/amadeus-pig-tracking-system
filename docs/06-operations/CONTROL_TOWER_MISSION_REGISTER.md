@@ -2524,3 +2524,26 @@ acceptance, before any generic contextual projection, while retaining actor,
 chat, age, mission, digest, concurrency, replay and confirmation safeguards.
 Lifecycle is `WORKING / PROTECTED_PREVIEW_ACCEPTANCE_FAIL / REPAIR_ACTIVE`.
 **OWNER ACTION: NONE; do not resend or confirm until a reviewed repair is live.**
+
+#### Mixer message 4007 cross-action stale-claim handoff failure
+
+After reviewed PR #1242 merged and exact revision
+`642af37cf77fec6bdb81d1bd1b5f322080a7bef3` was live, fresh manager readback
+again proved all outputs OFF and Mixer CH2 native auto-off `300s`. The owner's
+one exact post-deploy phrase arrived as message `4007` at
+`2026-08-24T17:43:01Z`; webhook HTTP `200` completed at `17:43:41Z`. The direct
+protected boundary was reached, but the old active-status, expired, unbound
+`rootline_fertilizer_mixer_presence_refresh` row is a different action kind
+from `rootline_fertilizer_mixer_commissioning`. The generic claim rail correctly
+refused to retire that foreign-action row, so no commissioning claim/card was
+created; the gateway then misleadingly retained the earlier plain readiness
+answer and delivered message `4008`. This is the same `RMQ-20260813-02`
+acceptance blocker, not a new mission or priority change. The repair adds one
+explicit atomic handoff: only the exact expired, unbound presence predecessor
+for the same mission, actor, chat and canonical payload digest may retire before
+the commissioning insert. Live, bound, malformed, mismatched and unrelated
+claims remain blockers. Claim failure produces an explicit contained/no-start
+answer and can never reuse plain readiness. There were zero provider-control
+calls, hardware commands or farm writes. Lifecycle is
+`WORKING / CROSS_ACTION_STALE_CLAIM_BLOCK / HANDOFF_REPAIR_ACTIVE`.
+**OWNER ACTION: NONE; do not resend or confirm during repair.**
