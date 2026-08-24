@@ -176,6 +176,58 @@ def test_later_result_generation_updates_observation_silently_when_material_is_s
                for row in rows.values())
 
 
+def test_hidden_specialist_churn_does_not_repeat_the_same_owner_water_plan():
+    rows, state = store()
+    first_packet = rootline("Recommend")
+    first_packet["next_reassessment"] = {
+        "trigger": "new_canonical_evidence", "at": "2026-08-04T10:00:00+02:00"}
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], result_id=first["result_id"],
+        evidence_generation=first["evidence_generation"], state_store=state)
+
+    later_packet = rootline("Recommend")
+    later_packet.update({"overall_status": "Internal auxiliary state changed",
+                         "generation": "G2", "result_id": "R2"})
+    later_packet["recommendations"][2].update(
+        {"status": "Recommend", "reason": "Borehole telemetry changed."})
+    later_packet["recommendations"][3].update(
+        {"status": "Hold", "reason": "Mixer evidence changed."})
+    later_packet["next_reassessment"] = {
+        "trigger": "new_canonical_evidence", "at": "2026-08-04T10:15:00+02:00"}
+
+    unchanged = reassess_rootline(owner_user_id="42", chat_id="42",
+        trigger="declared_time", specialist_loader=lambda: later_packet, state_store=state)
+
+    assert unchanged["status"] == "rootline_reassessment_unchanged"
+    assert unchanged["notify_owner"] is False
+    assert unchanged["telegram_sends"] == 0
+
+
+def test_owner_visible_zone_change_still_emits_one_successor_plan():
+    rows, state = store()
+    first_packet = rootline("Hold")
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], result_id=first["result_id"],
+        evidence_generation=first["evidence_generation"], state_store=state)
+
+    changed_packet = rootline("Recommend")
+    changed = reassess_rootline(owner_user_id="42", chat_id="42",
+        trigger="material_evidence_change", specialist_loader=lambda: changed_packet,
+        state_store=state)
+
+    assert changed["status"] == "rootline_reassessment_changed"
+    assert changed["notify_owner"] is True
+    assert "C Camp:</b> Needs watering" in changed["answer"]
+
+
 def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
     rows, state = store()
     first_packet = rootline("Recommend")
