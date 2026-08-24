@@ -14,7 +14,7 @@ WORKFLOW_PATH = Path("docs/04-n8n/workflows/2 - The GateKeeper/workflow.json")
 DIRECT_WEBHOOK_PATH = "/api/oom-sakkie/channels/telegram/direct-webhook"
 MEDIA_NODE = "Relay BEACON Photo to Backend"
 OWNER_TASK_MEDIA_NODE = "Relay Owner Request Media to Gateway"
-TEXT_NODE = "Call '2.0 - OOM SAKKIE - Amadeus Assistant Agent'"
+TEXT_NODE = "Call '2.0B - Oom Sakkie Backend Read-Only Relay'"
 SAM_NODE = "Relay SAM Callback to Backend"
 DEPLOYMENT_PACKET_ID = "BEACON-GATEKEEPER-DEPLOYMENT-20260727-01"
 NEXT_CANARY_ID = "BEACON-MEDIA-INTAKE-ACTIVATION-CANARY-20260727-02"
@@ -170,6 +170,10 @@ def build_n8n_workflow_update(
 
     merged_nodes = copy.deepcopy(live_nodes)
     merged_by_name = {node["name"]: node for node in merged_nodes}
+    relay_options = merged_by_name[LIVE_ORDINARY_NODE].setdefault(
+        "parameters", {}
+    ).setdefault("options", {})
+    relay_options["waitForSubWorkflow"] = True
     live_normalize = merged_by_name[NORMALIZE_NODE]
     reviewed_normalize = reviewed_by_name[NORMALIZE_NODE]
     live_normalize.setdefault("parameters", {})["jsCode"] = reviewed_normalize[
@@ -265,6 +269,13 @@ def validate_n8n_workflow_update(
             ]["parameters"]["jsCode"]
             if payload_by_name.get(name) != expected:
                 raise ValueError("workflow_update_normalizer_drift")
+        elif name == LIVE_ORDINARY_NODE:
+            expected = copy.deepcopy(live_node)
+            expected.setdefault("parameters", {}).setdefault(
+                "options", {}
+            )["waitForSubWorkflow"] = True
+            if payload_by_name.get(name) != expected:
+                raise ValueError("workflow_update_relay_receipt_drift")
         elif name == SAM_NODE:
             expected = copy.deepcopy(live_node)
             expected_params = expected.setdefault("parameters", {})

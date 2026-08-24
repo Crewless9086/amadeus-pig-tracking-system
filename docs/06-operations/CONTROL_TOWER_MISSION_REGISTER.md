@@ -2623,6 +2623,66 @@ calls, hardware commands or farm writes. Lifecycle is
 - The bounded repair keeps the generation visibly contained and unconfirmed, preserves every protected publication and actor/card/digest boundary, and makes explicit do-not-retry provider ambiguity terminal for that immutable generation. Unchanged cycles cannot reclaim it; genuinely changed canonical evidence still creates a successor generation normally.
 - No provider, publication, spend, customer, farm, hardware or production-data effect was performed. Business completion remains false until deployed natural cycles prove the reclaim loop stopped and later reconciliation remains safe.
 
+## 2026-08-24 - ROOTLINE provider-readback commissioning authority addendum
+
+Charl explicitly authorized the existing `RMQ-20260813-02`,
+`RMQ-20260813-03` and `RMQ-20260813-06` lineages to use fresh authoritative
+application/provider ON then OFF readback as sufficient operational start/stop
+proof for the governed Fertilizer mixer, Fertilizer injector and Borehole
+controller. Routine owner physical presence/observation is removed; Charl and
+Anton report exceptions later. No new mission or priority change results.
+Existing boundaries remain: Mixer is exact CH2 with a 300-second fail-stop;
+Injector requires exactly one active irrigation zone, at least ten minutes
+pre-flow, at most 120 seconds ON and at least ten minutes flush; Borehole cannot
+be commanded until exact binding and bounded fail-OFF are proven. Every path
+still requires idempotency, replay/concurrency containment, canonical lifecycle
+and final verified OFF. A command receipt alone proves no outcome.
+
+The same decision authorized exactly one retry of failed GateKeeper execution
+`66525`. Retry `66544` succeeded through the GateKeeper call node, but produced
+no fresh canonical Mixer commissioning claim/card on immediate readback and no
+pre-confirm hardware/provider-control effect. A second retry is prohibited;
+downstream transport diagnosis continues in the existing RMQ-02 lineage.
+**NO BUSINESS OUTCOME. OWNER ACTION: NONE.**
+
+Read-only diagnosis proved the live GateKeeper ordinary-message node calls
+backend relay `TlKy9kUgJJE0msU4` with `waitForSubWorkflow=false`. On retry,
+n8n marked that fire-and-forget call successful and returned unchanged input,
+while creating no child execution or durable relay receipt. The relay exposes
+only `Execute Workflow Trigger`, so no bounded public child-invocation API exists.
+The existing GateKeeper tracked definition is reconciled to the live 2.0B relay
+identity and now requires `waitForSubWorkflow=true`; the deployment contract
+forces the same receipt-bearing setting when reconciling live workflow state.
+Parent success can therefore no longer precede child completion/failure. The
+stored message may be recovered exactly once only after reviewed provider
+deployment/readback; no direct backend POST, manufactured card or pre-confirm
+actuation is permitted.
+
+## 2026-08-24 - GREEN farm-house printer risk acceptance addendum
+
+Charl accepts the confidentiality and local-network risk of practical
+farm-house printer operation by the farm team and removes private PKI,
+TLS/IPPS and certificate setup as blockers in the existing DMQ/GREEN lineage.
+No new mission or priority results. Minimum operational integrity remains:
+one fixed approved printer and queue, exact canonical job identity and digest,
+bounded retry, no duplicate/replay, and truthful printed-or-failed
+canonical/provider readback. No public arbitrary-print endpoint or
+caller-selected printer, queue, URL or payload is authorized. Existing jobs,
+documents and historical evidence are unchanged. **NO BUSINESS OUTCOME. OWNER
+ACTION: NONE** until reviewed source is integrated and one genuine exact job is
+read back without duplicate output.
+
+Current `green_print_bridge/DOCS.md` and app source still mandate
+`private_ipps`, private CA and TLS validation, and open PR #1194 further
+hardens that superseded policy. PR #1194 must not merge; this owner decision is
+not operative until a bounded reviewed source correction removes those gates
+while preserving the minimum job-integrity contract above.
+
+For `RMQ-20260813-06`, the owner will provide exact Borehole connector/binding
+details tomorrow. This is the existing external trigger; ask no further
+question tonight and do not command Borehole before exact binding plus bounded
+fail-OFF are proven.
+
 ## 2026-08-24 - HMQ heat-reminder projection correction
 
 Post-deployment read-only acceptance of existing mission `HMQ-20260813-05`

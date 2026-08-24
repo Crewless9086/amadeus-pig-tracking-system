@@ -43,7 +43,7 @@ creating a queue/job or printing.
 1. Confirm the Documents backend version containing the reviewed Green adapter contract is merged and deployed. If not, stop.
 2. Confirm Oom Sakkie's existing authenticated owner/family path can resolve the canonical current weekly weighing sheet. Do not use a file path, old download, or manually created PDF.
 3. Ask the technical maintainer for a one-use commissioning window and the protected identity-registration procedure. Charl must not invent IDs, URLs, tokens, certificates, queue names, or passwords.
-4. Keep Home Assistant, Green, CUPS, and the printer on the private farm network. No router port-forward, public DNS, public tunnel, cloud webhook, or Internet-exposed CUPS/Home Assistant endpoint is allowed.
+4. The 2026-08-24 owner decision accepts the farm-house printer's confidentiality and local-network risk for practical farm-team-only use. Private PKI, TLS/IPPS and certificate setup are not commissioning gates. Keep the adapter bound to the fixed approved printer and queue; do not expose a public arbitrary-print endpoint.
 5. Have A4 paper available. Do not load confidential discarded sheets for reuse.
 6. Review the exact app commit and `green_print_bridge/DOCS.md`. Preserve the
    prior manual print path; installation does not retire it.
@@ -60,15 +60,21 @@ creating a queue/job or printing.
 
 1. The maintainer registers one Green identity and one printer identity in the canonical protected registry, binding observed serials without logging secrets.
 2. The maintainer configures CUPS locally for that printer and verifies the queue is reachable only from the private adapter host. The queue name is treated as configuration, never shell input from a request.
-3. The maintainer installs a least-privilege adapter credential that can claim one authorized job and retrieve only its digest-bound PDF over the allowlisted private HTTPS origin.
-4. The maintainer configures a private trust chain/certificate. Disabling TLS verification is not permitted.
+3. The maintainer installs a bounded adapter credential that can claim one authorized job and retrieve only its digest-bound PDF from the configured origin.
+4. Private PKI/TLS/IPPS is not required for this farm-house deployment. The fixed approved printer, fixed queue, exact canonical job identity and digest remain mandatory; no caller may choose an arbitrary printer, queue, URL or print payload.
+
+Current runtime gap: `green_print_bridge/DOCS.md` and the existing app still
+require `private_ipps`, a private CA and TLS validation. Open PR #1194 further
+hardens that superseded policy and must not merge. This owner decision is not
+operative until a bounded reviewed source correction replaces those gates while
+preserving the minimum integrity contract above.
 5. The maintainer configures the durable local SQLite ledger and private spool with restricted permissions, disk monitoring, restart supervision, and no document-content logging.
 6. The maintainer sets the only allowed options: A4, one copy, monochrome, one-sided. No request can override them.
 7. The maintainer verifies restart recovery, expired-lease recovery, storage-exhaustion fail-safe, 48-hour retry-to-held transition, Continue/Cancel handling, and deletion of temporary PDFs after completion, cancellation, or held resolution using synthetic non-farm fixtures only.
 8. The maintainer proves that Green/CUPS is only a local execution adapter: the canonical Documents service owns request/job identity and Oom Sakkie delegates exactly one job. No Home Assistant automation, CUPS queue, spreadsheet, or local database becomes an authoritative document queue.
 9. Add the private repository and configure the app through Home Assistant only
-   after the exact artifact passes review. Place the private CA in the app's
-   read-only `addon_config` directory. Never paste options into a shell or log.
+   after the exact artifact passes review. Never paste credentials or options
+   into a shell or log.
 10. Confirm the app starts in protection mode with no published ports, host
     network, Docker socket, Home Assistant config map, USB or privileged access.
     Confirm `/data/health.json` reports a fresh `event_waiting` heartbeat and no
@@ -80,10 +86,10 @@ creating a queue/job or printing.
 2. Confirm Oom Sakkie resolves the canonical current sheet and creates exactly one canonical job identity. If two jobs appear, stop and Cancel; do not retry manually.
 3. Use the existing protected confirmation rail to authorize that exact job, version, digest, registered device pair, defaults, and expiry. Confirm the adapter claims it with a fenced lease, persists a unique pre-submission attempt, retrieves only from the allowlisted private HTTPS origin, and matches its SHA-256 before submission.
 4. Confirm CUPS reports the exact provider job ID, provider state, and observation time. Application logs must contain identities, states, digests, and timestamps only—never secrets or PDF content.
-5. Physically inspect that exactly one A4, monochrome, one-sided weekly weighing sheet emerged. This human observation is physical evidence; CUPS “completed” alone is not.
+5. Require truthful CUPS/provider and canonical printed-or-failed readback for the exact job. The farm team reports a missing, duplicate, wrong or damaged page as an exception; routine human observation is not a commissioning gate.
 6. Confirm the owner receives only completion, or one exception that says what action is needed. Do not send duplicate Telegram updates.
 7. Confirm the temporary PDF is gone while durable metadata, digest, lease chronology, exact CUPS evidence, and protected confirmation remain.
-8. Record canonical, provider, and physical evidence separately. Never manufacture a missing layer.
+8. Record canonical/provider result and any volunteered physical exception separately. Never manufacture a missing layer.
 
 ## Exception paths
 

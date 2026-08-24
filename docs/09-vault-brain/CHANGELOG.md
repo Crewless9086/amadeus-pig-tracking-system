@@ -1,5 +1,30 @@
 # Vault Brain Changelog
 
+## 2026-08-24 - ROOTLINE provider-readback commissioning authority
+
+- Recorded Charl's standing decision that authoritative application/provider
+  ON then OFF readback is sufficient start/stop proof for the governed
+  Fertilizer mixer, Fertilizer injector and Borehole controller; routine human
+  physical presence/observation is no longer required.
+- Preserved exact device binding, current-need and interlock checks, replay and
+  concurrency safety, bounded fail-OFF, canonical lifecycle and final verified
+  OFF. Mixer CH2 remains 300 seconds; injector remains one active zone, ten
+  minutes pre-flow, 120 seconds maximum and ten minutes flush; Borehole remains
+  uncommandable until exact binding and bounded fail-OFF are proven.
+
+## 2026-08-24 - GREEN farm-house printer risk acceptance
+
+- Recorded Charl's acceptance of confidentiality and local-network risk for
+  the farm-house printer used only by the farm team. Private PKI, TLS/IPPS and
+  certificate setup are no longer commissioning or operational gates.
+- Preserved minimum integrity: fixed approved printer and queue, exact canonical
+  job identity and digest, bounded retry, no duplicate/replay, and truthful
+  printed-or-failed canonical/provider readback. No public arbitrary-print
+  endpoint or caller-selected printer, queue, URL or payload is authorized.
+- Recorded that the current app/DOCS and open PR #1194 still mandate the now-
+  superseded private-IPPS/CA/TLS policy. The decision remains non-operative
+  until reviewed source removes those gates without weakening job integrity.
+
 ## 2026-08-23 - ROOTLINE B commissioning and adaptive timing reconciled
 
 - Reconciled the daily-advisor projection with the existing immutable B/C
