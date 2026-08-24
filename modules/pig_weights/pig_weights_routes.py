@@ -15,6 +15,7 @@ from modules.pig_weights.bulk_weight_batch_service import (
     retry_failed_bulk_weight_batch,
     stage_bulk_weight_batch,
 )
+from modules.pig_weights.bulk_body_condition_service import record_body_condition_batch
 from modules.pig_weights.herdmaster_piglet_observation_action import (
     execute_action as execute_piglet_observations,
     preview_authoritative as preview_piglet_observations,
@@ -511,6 +512,18 @@ def stage_weights_batch():
         return jsonify(result), status_code
     except Exception as exc:
         return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint="/api/pig-weights/bulk-batches")
+
+
+@pig_weights_bp.route("/bulk-body-condition", methods=["POST"])
+def add_bulk_body_condition():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_body_condition_batch(
+        request.get_json(silent=True) or {},
+        actor_id=strict_owner_admin_principal(),
+    )
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/bulk-batches/<batch_id>", methods=["GET"])

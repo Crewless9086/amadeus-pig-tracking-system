@@ -2246,6 +2246,33 @@ or create another mission. Lifecycle remains `WORKING / SOURCE_REPAIR_ACTIVE`;
 **NO BUSINESS OUTCOME** and **OWNER ACTION: NONE**. No provider, canonical,
 animal, farm or physical effect occurred.
 
+### Selective BCS source repair prepared on exact current main
+
+The serial HMQ-05 addendum reuses Bulk Weight Entry and HMQ-00's canonical
+`pig_observation_events` writer. A row is actionable when it contains only a
+valid BCS; blank BCS has zero observation effect. Each selected pig receives a
+separate append-only body-condition observation keyed by draft plus pig, with
+replay withheld and the latest effective BCS explicitly superseded on a
+correction. No heat input or derived heat work is introduced. The draft remains
+recoverable when either the BCS or weight/location rail fails. No schema, page,
+store, queue or scheduler is added. Lifecycle remains `WORKING /
+SOURCE_REPAIR_ACTIVE`; **NO BUSINESS OUTCOME** and **OWNER ACTION: NONE** until
+reviewed release and genuine canonical/provider acceptance.
+
+Independent review found that a response-loss retry could recalculate a newer
+supersession predecessor and conflict with its already committed event, and
+that a later pig failure hid earlier committed rows. The repaired batch first
+reads the exact draft-plus-pig idempotency event and reuses its original
+predecessor before invoking the canonical writer. A partial response now lists
+all committed/replayed events, the exact failed pig and status, and requires the
+draft to remain retained. Production-shaped PostgreSQL tests cover
+retry-after-commit, concurrent replay and a genuine multi-pig partial.
+The same-day observation timestamp is bound to the authenticated server's
+current SAST date at local day-start rather than a fixed noon, so a pre-noon
+upload cannot manufacture future evidence and concurrent retries remain byte
+stable. A committed retry reuses its exact stored timestamp. Past dates remain deterministic local noon and the canonical writer
+continues to reject any future date.
+
 ## 2026-08-24 - Prince generic Telegram completion acceptance failure
 
 This owner finding is consolidated into existing mission
