@@ -234,7 +234,7 @@ def preview_conversational_inspection(loop, user_text):
         "provisional_reassessment": (
             "Ready for mating review"
             if not missing_after and facts.get("standing_heat") == "observed"
-            else "Observe for heat"
+            else "Review current reproductive status"
             if facts.get("standing_heat") == "not_observed"
             else task["provisional_recommendation"]
         ),

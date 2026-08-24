@@ -217,6 +217,10 @@ def test_post_litter_natural_reply_previews_direct_facts_and_can_close_task():
     assert preview["facts"]["body_condition_score"] == 3
     assert preview["facts"]["standing_heat"] == "not_observed"
     assert preview["task_would_close"] is False
+    assert preview["provisional_reassessment"] == (
+        "Review current reproductive status"
+    )
+    assert "heat" not in preview["provisional_reassessment"].lower()
     assert preview["recording_contract"]["recording_enabled"] is False
 
 
