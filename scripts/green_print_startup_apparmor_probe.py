@@ -79,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--work-root",
         type=Path,
-        default=Path(".codex-runtime/missions/GREEN-0.3.6"),
+        default=Path(".codex-runtime/missions/GREEN-0.3.8"),
     )
     args = parser.parse_args()
     suffix = uuid.uuid4().hex[:10]
@@ -133,9 +133,7 @@ def main() -> int:
             "{{(index .IPAM.Config 0).Gateway}}", network,
         ).stdout.strip()
         canonical = tls_server(cert, key)
-        printer = tls_server(cert, key)
-        wrong_san_printer = tls_server(wrong_san_cert, wrong_san_key)
-        servers.extend((canonical, printer, wrong_san_printer))
+        servers.append(canonical)
         options = {
             "canonical_transport_profile": "private_pinned",
             "canonical_api_origin": f"https://canonical.test:{canonical.server_port}",
@@ -146,8 +144,8 @@ def main() -> int:
             "printer_id": "printer-startup-probe",
             "cups_queue_id": "weekly-a4",
             "registry_version": "registry-startup-probe-v1",
-            "printer_transport_profile": "private_ipps",
-            "printer_uri": f"ipps://AmadeusKantoor:{printer.server_port}/ipp/print",
+            "printer_transport_profile": "local_ipp_fixed",
+            "printer_uri": f"ipp://{gateway}/printers/weekly-a4",
             "printer_endpoint_ip": gateway,
             "poll_seconds": 5,
         }
@@ -191,11 +189,11 @@ def main() -> int:
             if not any('name="/homeassistant/secrets.yaml"' in line for line in scope_denials):
                 raise RuntimeError("AppArmor did not prove denial of non-certificate Home Assistant configuration")
 
-            def negative_case(name: str, expected: str, *, options_mode: str = "valid", cert_mode: str = "valid", printer_port: int | None = None, data_readonly: bool = False, shadow: tuple[str, str] | None = None) -> None:
+            def negative_case(name: str, expected: str, *, options_mode: str = "valid", cert_mode: str = "valid", data_readonly: bool = False, shadow: tuple[str, str] | None = None) -> None:
                 case_root=root/f"negative-{name}"; case_addon_config=case_root/"addon-config"; case_ha_config=case_root/"homeassistant-config"; case_data=case_root/"data"
                 case_addon_config.mkdir(parents=True); case_ha_config.mkdir(); case_data.mkdir()
                 if options_mode != "missing":
-                    case_options={**options,"printer_uri":f"ipps://AmadeusKantoor:{printer_port or printer.server_port}/ipp/print"}
+                    case_options={**options}
                     material=json.dumps(case_options) if options_mode == "valid" else ("" if options_mode == "empty" else "{}")
                     (case_data/"options.json").write_text(material,encoding="utf-8")
                 if cert_mode != "missing":
@@ -262,8 +260,6 @@ def main() -> int:
             negative_case("missing_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="missing")
             negative_case("empty_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="empty")
             negative_case("invalid_options","green_startup_failed stage=configuration reason=queue_invalid",options_mode="invalid")
-            negative_case("wrong_root","green_startup_failed stage=printer_tls reason=identity_or_connection_failed",cert_mode="wrong_root")
-            negative_case("wrong_san","green_startup_failed stage=printer_tls reason=identity_or_connection_failed",cert_mode="wrong_san",printer_port=wrong_san_printer.server_port)
             negative_case("silent_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-silent-python","/opt/green/init_queue.py"))
             negative_case("unrecognized_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-unrecognized-python","/opt/green/init_queue.py"))
             negative_case("multiline_unterminated_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-multiline-unterminated-python","/opt/green/init_queue.py"))
