@@ -21,7 +21,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from modules.oom_sakkie.automatic_reassessment_scheduler import (
-    CADENCE_MINUTES, OWNER_PLANNING_CADENCE_MINUTES, SCHEDULER_IDENTITY,
+    CADENCE_MINUTES, SCHEDULER_IDENTITY,
 )
 
 
@@ -44,7 +44,6 @@ def build_payload(now: datetime, owner_id: str) -> dict:
         "trigger": "durable_backend_schedule",
         "trigger_id": f"ROOTLINE-AUTO-{identity}",
         "trigger_timestamp": current.isoformat(),
-        "owner_planning_due": current.minute % OWNER_PLANNING_CADENCE_MINUTES == 0,
         "language": "en",
     }
 

@@ -21,7 +21,6 @@ def test_payload_is_stable_current_bucket_and_owner_private_chat_bound():
     assert value["evidence_cutoff"]=="2026-08-15T07:28:41+00:00"
     assert value["trigger_timestamp"]=="2026-08-15T07:28:41+00:00"
     assert value["trigger_id"]=="ROOTLINE-AUTO-20260815T072800Z"
-    assert value["owner_planning_due"] is False
     assert value["owner_user_id"]==value["chat_id"]=="42"
     assert value["specialist"]=="ROOTLINE"
 
@@ -32,7 +31,6 @@ def test_evidence_cutoff_does_not_alias_late_invocation_to_bucket_edge():
     assert early["trigger_id"]==late["trigger_id"]=="ROOTLINE-AUTO-20260815T073000Z"
     assert early["evidence_cutoff"]=="2026-08-15T07:30:01+00:00"
     assert late["evidence_cutoff"]=="2026-08-15T07:30:59+00:00"
-    assert early["owner_planning_due"] is True
 
 def test_cron_calls_only_authenticated_existing_application_spine():
     seen={}
