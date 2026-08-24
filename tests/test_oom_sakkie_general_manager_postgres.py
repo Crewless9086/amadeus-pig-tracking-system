@@ -241,9 +241,12 @@ def test_provider_ambiguity_is_contained_without_five_minute_reclaim_or_duplicat
         refresh=lambda claimed: current, deliver=ambiguous)
     replay = store.run_cycle([current], now=now + timedelta(minutes=5),
         source_revision="test", refresh=lambda claimed: current, deliver=ambiguous)
+    later_replay = store.run_cycle([current], now=now + timedelta(days=2),
+        source_revision="test", refresh=lambda claimed: current, deliver=ambiguous)
     assert first["exceptions"] == 1
     assert replay["candidate_replays"] == 1
     assert replay["cases_claimed"] == 0
+    assert later_replay["cases_claimed"] == 0
     assert len(attempts) == 1
     with connect() as db:
         row = db.execute("""select status,next_reassessment_at,last_delivery_digest,
@@ -251,10 +254,9 @@ def test_provider_ambiguity_is_contained_without_five_minute_reclaim_or_duplicat
             (dedupe,)).fetchone()
         event = db.execute("""select event_payload from app_private.oom_manager_case_events
             where case_id=(select case_id from app_private.oom_manager_cases where dedupe_key=%s)
-              and event_type='exception' order by occurred_at desc limit 1""",
+              and event_type='contained' order by occurred_at desc limit 1""",
             (dedupe,)).fetchone()
-    assert row[0] == "exception"
-    assert row[1] >= now + timedelta(hours=24)
+    assert row[0] == "contained"
     assert row[2] != row[3]
     assert event[0]["provider_ambiguity_contained"] is True
 
