@@ -257,8 +257,11 @@ def main() -> int:
             negative_case("empty_options","green_startup_failed stage=mount_validation reason=options_missing_or_empty",options_mode="empty")
             negative_case("readonly_data","green_startup_failed stage=runtime_directory reason=data_runtime_prepare_failed",data_readonly=True)
             negative_case("ownership_conflict","green_startup_failed stage=runtime_directory reason=data_runtime_prepare_failed")
-            negative_case("missing_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="missing")
-            negative_case("empty_cert","green_startup_failed stage=mount_validation reason=ca_missing_or_empty",cert_mode="empty")
+            # The certificate is canonical-API trust material, not printer
+            # transport material. Missing/empty trust therefore fails closed
+            # when the service validates canonical HTTPS.
+            negative_case("missing_cert","green_startup_failed stage=service_exec reason=service_process_failed",cert_mode="missing")
+            negative_case("empty_cert","green_startup_failed stage=service_exec reason=service_process_failed",cert_mode="empty")
             negative_case("invalid_options","green_startup_failed stage=configuration reason=queue_invalid",options_mode="invalid")
             negative_case("silent_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-silent-python","/opt/green/init_queue.py"))
             negative_case("unrecognized_initializer","green_startup_failed stage=queue_initializer reason=queue_initializer_failed",shadow=("initializer-unrecognized-python","/opt/green/init_queue.py"))
