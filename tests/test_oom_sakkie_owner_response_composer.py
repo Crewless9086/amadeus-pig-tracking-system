@@ -179,6 +179,7 @@ def test_later_result_generation_updates_observation_silently_when_material_is_s
 def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
     rows, state = store()
     first_packet = rootline("Recommend")
+    first_packet["recommendations"][1]["reason"] = "now_after_fresh_execution_revalidation"
     first_packet["irrigation_lifecycle"] = {"C12345": {
         "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",
         "state": "Eligible", "reason": "now_after_fresh_execution_revalidation",
@@ -207,6 +208,26 @@ def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
         specialist_loader=lambda: completed, state_store=state)
     assert changed["status"] == "rootline_reassessment_changed"
     assert "Completed — off and verified" in changed["answer"]
+
+
+def test_meaningful_owner_reason_change_is_material_with_same_decision():
+    rows, state = store()
+    first_packet = rootline()
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], state_store=state)
+    changed_packet = {**first_packet, "result_id": "R2", "generation": "G2",
+        "recommendations": [dict(row) for row in first_packet["recommendations"]]}
+    changed_packet["recommendations"][0]["reason"] = (
+        "Fresh observed rain means B Camp does not need another segment today.")
+    changed = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: changed_packet, state_store=state)
+    assert changed["status"] == "rootline_reassessment_changed"
+    assert changed["notify_owner"] is True
+    assert "Fresh observed rain" in changed["answer"]
 
 
 def test_fixed_reassessment_deadline_change_remains_material():

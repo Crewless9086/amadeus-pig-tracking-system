@@ -40,7 +40,8 @@ def run_synthetic_acceptance(identity, *, environ=None, now=None, store=None,
     try:
         if rootline_loader is None:
             from modules.oom_sakkie.farm_manager_runtime import _load_rootline
-            rootline_loader = lambda: _load_rootline(now or datetime.now(timezone.utc))
+            rootline_loader = lambda: _load_rootline(now or datetime.now(timezone.utc),
+                str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en"))
         result = rootline_loader()
         items = tuple(getattr(result, "work_items", ()) or ())
         if items:

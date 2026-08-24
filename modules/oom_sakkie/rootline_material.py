@@ -1,6 +1,7 @@
 """Stable owner-visible ROOTLINE decision material shared by daily/change rails."""
 import hashlib
 import json
+import re
 from typing import Any, Mapping
 
 
@@ -19,6 +20,7 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
                  "planned_duration_minutes")}
         item["lifecycle_state"] = _normal(lifecycle.get("state"))
         item["verified_completion"] = _verified_completion(lifecycle, subject)
+        item["owner_reason"] = owner_reason_material(row.get("reason"))
         recommendations.append(item)
     recommendations.sort(key=lambda row: (str(row.get("subject") or ""),
                                            str(row.get("status") or row.get("recommendation") or "")))
@@ -72,3 +74,14 @@ def _verified_completion(lifecycle, subject):
             and isinstance(shutdown, Mapping)
             and shutdown.get("authoritative") is True
             and str(shutdown.get("state") or "").upper() == "OFF")
+
+
+def owner_reason_material(value):
+    """Preserve meaningful owner reason changes while collapsing backend tokens."""
+    text = _normal(str(value or "")).strip()
+    if (not text or text.casefold() in {
+            "now_after_fresh_execution_revalidation", "zone_decision_not_run_now",
+            "durable_zone_containment", "durable_parent_job_deferred"}
+            or re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+", text) is not None):
+        return "canonical_decision_reason"
+    return text.casefold().rstrip(".")[:300]

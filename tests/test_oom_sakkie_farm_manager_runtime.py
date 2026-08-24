@@ -30,6 +30,29 @@ def parsed(text=EXACT):
             "provider_message_id": "3192", "provider_timestamp": "2026-08-03T05:15:11+00:00"}
 
 
+def test_rootline_manager_adapter_uses_shared_completed_projection_and_no_tank_query(monkeypatch):
+    raw = {"success": True, "result_id": "ROOT-CURRENT", "generated_at": NOW.isoformat(),
+        "evidence_cutoff": NOW.isoformat(), "overall_status": "Plan ready",
+        "recommendations": [
+            {"subject": "B12345", "status": "Recommend",
+             "reason": "now_after_fresh_execution_revalidation"},
+            {"subject": "C12345", "status": "Hold", "reason": "zone_decision_not_run_now"}],
+        "irrigation_lifecycle": {"B12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "B12345", "state": "Completed", "reason": "record_completed",
+            "next_action_owner": "ROOTLINE", "next_action": "reassess",
+            "completion_evidence": {"zone_id": "B12345", "shutdown_verified": True,
+                "objective_satisfied": True,
+                "shutdown_evidence": {"authoritative": True, "state": "OFF"}}}},
+        "owner_brief": {"family_fact_needed": "No owner fact is required now.",
+                        "reassess": "2026-08-24T08:00:00+02:00"}}
+    monkeypatch.setattr(farm_manager_runtime, "build_current_rootline_specialist_result",
+                        lambda **_kwargs: raw)
+    item = farm_manager_runtime._load_rootline(NOW, "en").work_items[0]
+    assert "B Camp: Completed" in item.title and "off and verified" in item.title
+    assert "now_after" not in " ".join((item.title, item.why, item.next_action))
+    assert item.genuine_question == "" and item.question_for == ""
+
+
 def memory_store():
     rows = {}
     def store(action, identity, payload):
