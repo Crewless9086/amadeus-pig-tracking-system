@@ -23,6 +23,7 @@ WORKER_ID = "oom-sakkie-general-manager-v1"
 TRIGGER_IDENTITY = "oom-sakkie-morning-scheduler:general-manager"
 CADENCE = timedelta(minutes=5)
 LEASE = timedelta(minutes=4)
+PROVIDER_AMBIGUITY_HOLD = timedelta(hours=24)
 SPECIALISTS = frozenset({"ROOTLINE", "HERDMASTER", "SAM", "BEACON", "RUNTIME"})
 URGENCIES = frozenset({"critical", "urgent", "due", "planned", "watch"})
 OPEN_STATES = frozenset({"open", "delegated", "waiting_reassessment", "exception"})
@@ -354,7 +355,18 @@ class PostgresManagerCaseStore:
         failed = outcome.get("success") is False
         state = "exception" if failed else "waiting_reassessment"
         event_type = "exception" if failed else ("delivery_confirmed" if confirmed else "delivery_suppressed")
+        provider_ambiguity_contained = bool(
+            failed
+            and outcome.get("provider_outcome_ambiguous") is True
+            and outcome.get("do_not_retry_provider_effect") is True)
         next_at = _time(outcome.get("next_reassessment_at") or case["next_reassessment_at"], "next_reassessment_at")
+        if provider_ambiguity_contained:
+            # Provider ambiguity is a terminal boundary for this attempt.  A
+            # five-minute manager cadence must not repeatedly reclaim the same
+            # immutable generation and repeatedly approach the provider.  The
+            # case remains visibly exceptional, while a later bounded audit may
+            # reconcile provider truth or a genuinely changed generation.
+            next_at = max(next_at, now + PROVIDER_AMBIGUITY_HOLD)
         with self.connect_factory() as connection:
             with connection.cursor() as cur:
                 cur.execute("""select generation,evidence_digest,last_delivery_digest,status,
@@ -381,7 +393,8 @@ class PostgresManagerCaseStore:
                     last_delivery_at=case when %s then %s else last_delivery_at end,updated_at=%s
                     where case_id=%s""", (state, next_at, now, delivery_digest, confirmed, now, now, case["case_id"]))
                 self._event(cur, case, event_type, now, cycle_id=cycle_id,
-                            outcome_status=str(outcome.get("status") or ""))
+                            outcome_status=str(outcome.get("status") or ""),
+                            provider_ambiguity_contained=provider_ambiguity_contained)
                 self._event(cur, case, "reassessment_scheduled", now,
                             next_reassessment_at=next_at.isoformat())
         return True

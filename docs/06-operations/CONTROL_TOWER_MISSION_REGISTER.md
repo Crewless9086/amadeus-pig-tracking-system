@@ -2615,3 +2615,10 @@ answer and can never reuse plain readiness. There were zero provider-control
 calls, hardware commands or farm writes. Lifecycle is
 `WORKING / CROSS_ACTION_STALE_CLAIM_BLOCK / HANDOFF_REPAIR_ACTIVE`.
 **OWNER ACTION: NONE; do not resend or confirm during repair.**
+
+### BMQ-20260813-05 protected-delivery ambiguity follow-up containment — 2026-08-24
+
+- Consolidated OMQ-20260813-03 natural-cycle finding into this existing BEACON sale/media lineage without changing mission priority.
+- Production readback proved one immutable BEACON manager generation was reclaimed every five minutes after an exact protected card update became provider-ambiguous. The protected lifecycle correctly forbade a duplicate provider call, but the manager case retained an already-due reassessment timestamp and therefore recorded an exception forever.
+- The bounded repair keeps the exception visible and unconfirmed, preserves every protected publication and actor/card/digest boundary, and advances explicit provider ambiguity to a 24-hour audit hold. Unchanged five-minute cycles cannot reclaim it; genuinely changed canonical evidence still creates a successor generation normally.
+- No provider, publication, spend, customer, farm, hardware or production-data effect was performed. Business completion remains false until deployed natural cycles prove the reclaim loop stopped and later reconciliation remains safe.
