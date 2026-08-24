@@ -663,7 +663,10 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
         self.assertEqual(successful["observation"]["semantic_adoption"], {
             "state": "retry_pending", "attempt_count": 0,
             "last_status": "configured_runtime_retry", "automatic_retry": True,
-            "config_recovery_count": 1})
+            "config_recovery_count": 1,
+            "config_recovery_receipt": "bmq05-first-approved-asset-v1",
+            "recovery_binding_digest": successful["observation"]["semantic_adoption"][
+                "recovery_binding_digest"]})
         again, status = store.reset_semantic_adoption_exception(
             finalized["binary_asset_id"], "d" * 64)
         self.assertEqual(status, 409, again)

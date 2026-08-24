@@ -2402,8 +2402,12 @@ configured and is durably in terminal `exception`; merely adding configuration
 cannot make the existing eligibility predicate select it again. The bounded
 same-mission repair permits exactly one append-only reset only after the runtime
 is configured and only for the exact approved binary/hash whose terminal cause
-is `interpretation_unavailable`. Authority changes, foreign failures, tagged
-assets, digest mismatch and a second reset fail closed. The retry interprets
+is `interpretation_unavailable`. The binary ID and SHA-256 must equal the
+explicit `BEACON_SEMANTIC_RECOVERY_BINARY_ASSET_ID` and
+`BEACON_SEMANTIC_RECOVERY_ASSET_SHA256` bindings. A global advisory lock and
+durable `bmq05-first-approved-asset-v1` ledger receipt prevent another asset
+from consuming a reset across later calls or configuration changes. Authority
+changes, foreign failures, tagged assets, digest mismatch and a second reset fail closed. The retry interprets
 authenticated owner context only; it performs no filename inference,
 publication, spend, customer send or provider mutation. Lifecycle remains
 `WORKING / CONFIG_REQUIRED / SOURCE_REPAIR_ACTIVE`; **NO BUSINESS OUTCOME**.

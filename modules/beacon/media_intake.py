@@ -37,6 +37,9 @@ ENABLED_ENV = "BEACON_TELEGRAM_MEDIA_INTAKE_ENABLED"
 # bounded semantic call per already-scheduled BEACON cycle.
 SEMANTIC_ADOPTION_BATCH_LIMIT = 1
 SEMANTIC_ADOPTION_MAX_ATTEMPTS = 3
+SEMANTIC_RECOVERY_BINARY_ID_ENV = "BEACON_SEMANTIC_RECOVERY_BINARY_ASSET_ID"
+SEMANTIC_RECOVERY_SHA256_ENV = "BEACON_SEMANTIC_RECOVERY_ASSET_SHA256"
+SEMANTIC_RECOVERY_RECEIPT = "bmq05-first-approved-asset-v1"
 ALLOWED_CHAT_IDS_ENV = "BEACON_TELEGRAM_MEDIA_ALLOWED_CHAT_IDS"
 BOT_TOKEN_ENV = "OOM_SAKKIE_TELEGRAM_BOT_TOKEN"
 ALLOWED_USER_IDS_ENV = "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS"
@@ -484,10 +487,15 @@ def enrich_approved_media_semantics(payload, *, database_url=None, environ=None,
     source_items = [dict(item) if isinstance(item, dict) else {} for item in payload.get("items") or []]
     policy = semantic_front_door_policy(environ)
     if policy["enabled"] and policy["configured"]:
+        source = environ if environ is not None else os.environ
+        recovery_binary_id = str(source.get(SEMANTIC_RECOVERY_BINARY_ID_ENV) or "").strip()
+        recovery_sha256 = str(source.get(SEMANTIC_RECOVERY_SHA256_ENV) or "").strip().lower()
         recoverable = next((item for item in sorted(source_items,
             key=lambda row: (str(row.get("intake_at") or row.get("source_message_at") or ""),
                              str(row.get("binary_asset_id") or "")))
-            if _semantic_adoption_exception_recoverable(item)), None)
+            if _semantic_adoption_exception_recoverable(item)
+            and str(item.get("binary_asset_id") or "") == recovery_binary_id
+            and str(item.get("content_sha256") or "").lower() == recovery_sha256), None)
         if recoverable is not None:
             reset, reset_status = store.reset_semantic_adoption_exception(
                 recoverable.get("binary_asset_id"), recoverable.get("content_sha256"))
@@ -1373,7 +1381,13 @@ class IntakeStore:
                     "semantic_digest": semantic_digest, "semantic_model": model,
                     "semantic_predecessor_event_id": predecessor,
                     "semantic_adoption": {"state": "completed", "attempt_count":
-                        int((prior_observation.get("semantic_adoption") or {}).get("attempt_count") or 0) + 1}}
+                        int((prior_observation.get("semantic_adoption") or {}).get("attempt_count") or 0) + 1,
+                        "config_recovery_count": int((prior_observation.get("semantic_adoption") or {}).get(
+                            "config_recovery_count") or 0),
+                        "config_recovery_receipt": str((prior_observation.get("semantic_adoption") or {}).get(
+                            "config_recovery_receipt") or ""),
+                        "recovery_binding_digest": str((prior_observation.get("semantic_adoption") or {}).get(
+                            "recovery_binding_digest") or "")}}
                 cursor.execute("""insert into public.beacon_media_understanding_events
                   (observation_event_id,binary_asset_id,asset_sha256,source_type,
                    observer_identity,observer_version,confidence_state,observation_json,observed_at)
@@ -1436,7 +1450,11 @@ class IntakeStore:
                 adoption = {"state": state, "attempt_count": attempt_count,
                     "last_status": failure_status, "automatic_retry": state == "retry_pending",
                     "config_recovery_count": int((observation.get("semantic_adoption") or {}).get(
-                        "config_recovery_count") or 0)}
+                        "config_recovery_count") or 0),
+                    "config_recovery_receipt": str((observation.get("semantic_adoption") or {}).get(
+                        "config_recovery_receipt") or ""),
+                    "recovery_binding_digest": str((observation.get("semantic_adoption") or {}).get(
+                        "recovery_binding_digest") or "")}
                 event_id = _stable_id("BEACON-UNDERSTANDING", _canonical_sha({
                     "binary_asset_id": binary_asset_id, "asset_sha256": binary[0],
                     "predecessor_event_id": predecessor, "semantic_adoption": adoption}))
@@ -1461,6 +1479,8 @@ class IntakeStore:
         """Grant one bounded retry after the semantic runtime becomes configured."""
         try:
             with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("beacon-semantic-config-recovery-global",))
                 cursor.execute("""select content_sha256 from public.beacon_media_binaries
                   where binary_asset_id=%s for update""", (str(binary_asset_id or "")[:120],))
                 binary = cursor.fetchone()
@@ -1481,16 +1501,25 @@ class IntakeStore:
                 prior = cursor.fetchone()
                 observation = dict(prior[1] or {}) if prior else {}
                 adoption = dict(observation.get("semantic_adoption") or {})
+                cursor.execute("""select exists(select 1
+                    from public.beacon_media_understanding_events
+                    where observation_json->'semantic_adoption'->>'config_recovery_receipt'=%s)""",
+                    (SEMANTIC_RECOVERY_RECEIPT,))
+                receipt_consumed = bool(cursor.fetchone()[0])
                 if (not prior or prior[2] != "library_accepted" or prior[3] != "approved_public_use"
                         or observation.get("tags") or observation.get("subject_tags")
                         or adoption.get("state") != "exception"
                         or adoption.get("last_status") != "interpretation_unavailable"
-                        or int(adoption.get("config_recovery_count") or 0) != 0):
+                        or int(adoption.get("config_recovery_count") or 0) != 0
+                        or receipt_consumed):
                     return {"success": False, "status": "media_semantic_exception_not_recoverable"}, 409
                 predecessor = str(prior[0] or "")
                 reset = {"state": "retry_pending", "attempt_count": 0,
                     "last_status": "configured_runtime_retry", "automatic_retry": True,
-                    "config_recovery_count": 1}
+                    "config_recovery_count": 1,
+                    "config_recovery_receipt": SEMANTIC_RECOVERY_RECEIPT,
+                    "recovery_binding_digest": _canonical_sha({
+                        "binary_asset_id": binary_asset_id, "asset_sha256": binary[0]})}
                 next_observation = {**observation, "semantic_adoption": reset,
                     "semantic_predecessor_event_id": predecessor}
                 event_id = _stable_id("BEACON-UNDERSTANDING", _canonical_sha({

@@ -131,7 +131,9 @@ def test_configured_runtime_resets_one_exact_terminal_exception_then_interprets(
     meaning = MediaSemanticUnderstanding(("live_stock", "piglets"), .95, "test", "c" * 64)
     result, evidence = enrich_approved_media_semantics(payload, store=store,
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret",
+            "BEACON_SEMANTIC_RECOVERY_BINARY_ASSET_ID": "BEACON-BINARY-1",
+            "BEACON_SEMANTIC_RECOVERY_ASSET_SHA256": "b" * 64},
         interpreter=lambda *_args, **_kwargs: meaning)
     assert store.resets == [("BEACON-BINARY-1", "b" * 64)]
     assert evidence["created_count"] == 1
@@ -168,6 +170,36 @@ def test_malformed_exception_recovery_count_fails_closed_without_reset():
             "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
         interpreter=lambda *_args, **_kwargs: None)
     assert evidence["attempted_count"] == 0
+
+
+def test_exact_recovery_binding_never_resets_foreign_asset_across_calls():
+    class Store:
+        resets = []
+        def reset_semantic_adoption_exception(self, binary_id, digest):
+            self.resets.append((binary_id, digest))
+            return {"observation": {"semantic_adoption": {"state": "retry_pending",
+                "attempt_count": 0, "config_recovery_count": 1}}}, 201
+        def append_semantic_adoption_state(self, *_args):
+            return {"status": "media_semantic_adoption_state_recorded"}, 201
+    def exception(binary_id, digest):
+        row = approved_legacy_media("unknown")["items"][0]
+        row["binary_asset_id"], row["content_sha256"] = binary_id, digest
+        row["observation"]["semantic_adoption"] = {"state": "exception",
+            "attempt_count": 3, "last_status": "interpretation_unavailable"}
+        return row
+    env = {"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret",
+        "BEACON_SEMANTIC_RECOVERY_BINARY_ASSET_ID": "TARGET",
+        "BEACON_SEMANTIC_RECOVERY_ASSET_SHA256": "1" * 64}
+    store = Store()
+    payload = {"success": True, "items": [exception("TARGET", "1" * 64),
+        exception("FOREIGN", "2" * 64)]}
+    enrich_approved_media_semantics(payload, store=store, environ=env,
+        interpreter=lambda *_args, **_kwargs: None)
+    foreign_only = {"success": True, "items": [exception("FOREIGN", "2" * 64)]}
+    enrich_approved_media_semantics(foreign_only, store=store, environ=env,
+        interpreter=lambda *_args, **_kwargs: None)
+    assert store.resets == [("TARGET", "1" * 64)]
 
 
 def parsed(text="Please prepare the current marketing proposal", language="en"):
