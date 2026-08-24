@@ -84,6 +84,14 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                   "preview_card_message_id":str(prior[8] or ""),"action_kind":action_kind}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
         if not supersede_active:
+            # Serialize the mission-wide active-claim invariant before cleanup
+            # and insert. The production partial unique index remains the final
+            # constraint; this lock turns a concurrent loser into the governed
+            # conflict below instead of leaking a database uniqueness error.
+            lock_material = hashlib.sha256(
+                f"protected-claim|{mission_id}".encode()).hexdigest()
+            cur.execute("select pg_advisory_xact_lock(%s)",
+                (int(lock_material[:15], 16),))
             # An unbound preview that expired before delivery cannot receive a
             # valid callback and must not block the next governed preview.
             # Bound cards retain their terminal audit/callback behavior.
