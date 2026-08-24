@@ -114,17 +114,24 @@ def test_fresh_mortality_preview_uses_generation_bound_visible_card(loader, prep
     loader.return_value = evidence()
     prepare.return_value = {"question_count": 0, "owner_message": "Voorskou",
         "confirmation_binding": {"operation_id": "HERD-FRESH", "preview_sha256": "P" * 64},
-        "evaluator": {"identity": {"pig_id": "PIG-2026-E88A", "tag_number": "11"}}}
+        "evaluator": {"event_family": "found_dead", "identity": {
+            "pig_id": "PIG-2026-E88A", "tag_number": "11"}}}
     store, _recorded = memory_store()
+    claimed = {}
+    def create(**kwargs):
+        claimed.update(kwargs)
+        return {"preview_digest": "a" * 64, "callback_token": "FRESH",
+                "action_kind": "mortality"}
     result, status = handle_authenticated_health_loss_message(
         {**parsed("Vark 11 is dood en begrawe", "fresh-card"), "output_language": "af"},
         issue_gateway_owner_authority("42", "42"), context_store=store,
-        claim_creator=lambda **_kwargs: {"preview_digest": "a" * 64,
-            "callback_token": "FRESH", "action_kind": "mortality"})
+        claim_creator=create)
     assert status == 200
     assert result["mission_id"].startswith("OOM-HERDMASTER-")
     assert result["card_mission_id"] == result["mission_id"] + ":PROTECTED:" + "A" * 24
     assert result["card_mission_id"] != result["mission_id"]
+    assert claimed["preview_payload"]["effect_kind"] == "mortality"
+    assert claimed["preview_payload"]["event_family"] == "found_dead"
     prepare.assert_called_once()
 
 

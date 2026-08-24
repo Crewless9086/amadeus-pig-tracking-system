@@ -71,7 +71,7 @@ def test_completed_mortality_is_automatically_recomposed_and_delivered_without_w
                 return {**CLAIM, "action_kind": "mortality", "status": "completed",
                     "mission_id": "OOM-HERDMASTER-1", "preview_digest": "d"*64,
                     "preview_payload": {"identity": {"pig_id": "PIG-126", "tag_number": "126"}},
-                    "result_payload": {"success": True, "status": "completed",
+                    "result_payload": {"success": True, "status": "mortality_lifecycle_recorded",
                         "answer": "<b>Die vark SE AFSTERWE AANGETEKEN</b>",
                         "writes_farm_data": True, "rows_created": 1,
                         "lifecycle_event_id": "LIFE-1", "welfare_case_closed": True}}
@@ -90,7 +90,48 @@ def test_completed_mortality_is_automatically_recomposed_and_delivered_without_w
     assert result["answer"].startswith("<b>VARK 126 AANGETEKEN</b>")
     assert "Die vark SE AFSTERWE" not in result["answer"]
     assert result["writes_farm_data"] is False and result["rows_created"]==0
-    assert outcome["presentation_version"]=="mortality_completion_golden_v1"
+    assert outcome["presentation_version"]=="health_loss_completion_typed_v2"
+
+
+def test_completed_prince_observation_is_not_rewritten_as_death(monkeypatch):
+    class ObservationStore(Store):
+        def acquire(self, cycle, now):
+            with self.lock:
+                if self.claimed: return None
+                self.claimed = True
+                return {**CLAIM, "action_kind": "mortality", "status": "completed",
+                    "mission_id": "OOM-HERDMASTER-PRINCE", "preview_digest": "e"*64,
+                    "preview_payload": {"identity": {"pig_id": "PIG-2026-E057",
+                        "tag_number": "Prince"}},
+                    "result_payload": {"success": True, "status": "completed",
+                        "answer": "<b>HERDMASTER OBSERVATION RECORDED</b>\n\nThe confirmed factual observation was recorded once.",
+                        "writes_farm_data": True, "rows_created": 1}}
+    class Principal: language = "en"
+    monkeypatch.setattr("modules.oom_sakkie.family_access.resolve_family_principal",
+                        lambda *args, **kwargs: Principal())
+    delivered=[]
+    outcome=run_payment_recovery_cycle(store=ObservationStore(),
+        executor=lambda *a,**k:(_ for _ in ()).throw(AssertionError("no writer")),
+        deliverer=lambda parsed,result,**kwargs: delivered.append(result) or
+            {"success":True,"telegram_message_id":"3979","telegram_sends":0,"telegram_edits":1})
+    assert outcome["status"]=="payment_recovery_completed"
+    assert delivered[0]["answer"].startswith("<b>HERDMASTER OBSERVATION RECORDED</b>")
+    assert "DEATH" not in delivered[0]["answer"]
+    assert delivered[0]["writes_farm_data"] is False and delivered[0]["rows_created"]==0
+
+
+def test_unknown_legacy_health_effect_fails_closed_without_delivery():
+    class UnknownStore(Store):
+        def acquire(self, cycle, now):
+            with self.lock:
+                if self.claimed: return None
+                self.claimed=True
+                return {**CLAIM,"action_kind":"mortality","status":"completed",
+                    "result_payload":{"success":True,"status":"completed","answer":"untyped"}}
+    delivered=[]
+    outcome=run_payment_recovery_cycle(store=UnknownStore(),
+        deliverer=lambda *a,**k:delivered.append(1))
+    assert outcome["status"]=="payment_recovery_pending" and delivered==[]
 
 
 def test_concurrent_cycles_lease_one_execution_only():

@@ -17,7 +17,7 @@ from modules.oom_sakkie.sam_payment_owner_runtime import execute_claimed_sale_pa
 WORKER_ID = "oom-sakkie-protected-payment-recovery-v1"
 INTERVAL_SECONDS = 300
 LEASE_SECONDS = 180
-MORTALITY_PRESENTATION_VERSION = "mortality_completion_golden_v1"
+MORTALITY_PRESENTATION_VERSION = "health_loss_completion_typed_v2"
 
 
 def run_payment_recovery_cycle(*, now=None, connect_factory=None,
@@ -63,7 +63,17 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
             from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
             language = resolve_family_principal(parsed, os.environ).language
             parsed["output_language"] = language
-            result = mortality_completion_recovery_result(result, bound, language)
+            if _bound_effect_kind(bound, result) == "mortality":
+                result = mortality_completion_recovery_result(result, bound, language)
+            else:
+                answer = str(result.get("answer") or "").strip()
+                if (_bound_effect_kind(bound, result) != "health_observation"
+                        or not answer or str(result.get("status") or "") != "completed"):
+                    raise ValueError("health_loss_recovery_effect_unresolved")
+                result = {**result, "writes_farm_data": False, "rows_created": 0,
+                    "delivery_recovery_required": True,
+                    "recipient_render_contract": "specialist_structured_recipient_v1",
+                    "recipient_language": language}
             result["card_mission_id"] = protected_card_mission_id(
                 claim["mission_id"], claim["preview_digest"])
             result["presentation_version"] = MORTALITY_PRESENTATION_VERSION
@@ -105,6 +115,21 @@ def _summary(status, cycle_id, next_cycle):
         "heartbeat_at": datetime.now(timezone.utc).isoformat(),
         "next_cycle_at": next_cycle.isoformat(), "writes_to_supabase": False,
         "telegram_sends": 0, "telegram_edits": 0}
+
+
+def _bound_effect_kind(bound, result):
+    explicit = str((bound or {}).get("effect_kind") or "")
+    status = str((result or {}).get("status") or "")
+    if explicit == "mortality":
+        return "mortality" if status.startswith("mortality_lifecycle_") else "unknown"
+    if explicit == "health_observation":
+        return "health_observation" if status == "completed" else "unknown"
+    if status.startswith("mortality_lifecycle_"):
+        return "mortality"
+    if status == "completed" and "OBSERVATION RECORDED" in str(
+            (result or {}).get("answer") or ""):
+        return "health_observation"
+    return "unknown"
 
 
 class _RecoveryStore:
