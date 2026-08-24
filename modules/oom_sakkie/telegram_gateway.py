@@ -591,8 +591,19 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, breeding_status if delivery.get("success") else 202
 
-    manager_reply, manager_reply_status = handle_manager_question_reply(
-        parsed, gateway_authority, semantic, question=active_manager_question)
+    # Exact governed Mixer presence belongs to its specialist-bound pending
+    # context, never to an older manager water question. Resolve it before the
+    # broad manager-question continuation while retaining every check inside
+    # the operational specialist handler.
+    operational_result, operational_status = ({"handled": False}, 200)
+    if is_exact_fertilizer_commissioning_presence(parsed):
+        operational_result, operational_status = handle_operational_specialist_message(
+            parsed, gateway_authority,
+        )
+
+    manager_reply, manager_reply_status = (({"handled": False}, 200)
+        if operational_result.get("handled") else handle_manager_question_reply(
+            parsed, gateway_authority, semantic, question=active_manager_question))
     if manager_reply.get("handled"):
         refreshed = None
         complete_receipt = (manager_reply.get("success") is True
@@ -637,12 +648,6 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     # operational continuation reader, which may contain old irrigation
     # context.  All actor, chat, chronology, mission and digest checks remain
     # inside the specialist handler; this grants no generic stale-context path.
-    operational_result, operational_status = ({"handled": False}, 200)
-    if is_exact_fertilizer_commissioning_presence(parsed):
-        operational_result, operational_status = handle_operational_specialist_message(
-            parsed, gateway_authority,
-        )
-
     continuation_result, continuation_status = ({"handled": False}, 200)
     if not operational_result.get("handled"):
         continuation_result, continuation_status = handle_owner_operational_continuation(

@@ -246,11 +246,12 @@ def test_exact_live_stale_projection_remains_actor_mission_age_and_digest_bound(
 
 
 @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+@patch("modules.oom_sakkie.telegram_gateway.handle_manager_question_reply")
 @patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message")
 @patch("modules.oom_sakkie.telegram_gateway.handle_owner_operational_continuation")
 @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
 def test_exact_mixer_presence_precedes_stale_generic_operational_context(
-        owner_task, continuation, operational, deliver):
+        owner_task, continuation, operational, manager_question, deliver):
     owner_task.return_value=({"handled":False},200)
     continuation.return_value=({"handled":True,"success":False,
         "status":"owner_operational_replay_binding_conflict"},409)
@@ -261,6 +262,9 @@ def test_exact_mixer_presence_precedes_stale_generic_operational_context(
         "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False},200)
     deliver.return_value={"success":True,"status":"family_message_delivered",
         "telegram_sends":1,"telegram_edits":0}
+    manager_question.return_value=({"handled":True,"success":True,
+        "status":"manager_question_rootline_observation_ambiguous",
+        "answer":"Which is full: the reservoir or the storage tanks?"},409)
     env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1",
          "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
          "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
@@ -273,6 +277,7 @@ def test_exact_mixer_presence_precedes_stale_generic_operational_context(
             headers={"Authorization":"Bearer "+"x"*40},environ=env)
     assert status==200 and value["message"]["status"]=="specialist_accepted"
     continuation.assert_not_called()
+    manager_question.assert_not_called()
     operational.assert_called_once()
     assert value["message"]["hardware_commands"]==0
 
