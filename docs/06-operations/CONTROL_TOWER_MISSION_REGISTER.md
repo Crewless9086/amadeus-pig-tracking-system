@@ -2645,6 +2645,19 @@ pre-confirm hardware/provider-control effect. A second retry is prohibited;
 downstream transport diagnosis continues in the existing RMQ-02 lineage.
 **NO BUSINESS OUTCOME. OWNER ACTION: NONE.**
 
+Read-only diagnosis proved the live GateKeeper ordinary-message node calls
+backend relay `TlKy9kUgJJE0msU4` with `waitForSubWorkflow=false`. On retry,
+n8n marked that fire-and-forget call successful and returned unchanged input,
+while creating no child execution or durable relay receipt. The relay exposes
+only `Execute Workflow Trigger`, so no bounded public child-invocation API exists.
+The existing GateKeeper tracked definition is reconciled to the live 2.0B relay
+identity and now requires `waitForSubWorkflow=true`; the deployment contract
+forces the same receipt-bearing setting when reconciling live workflow state.
+Parent success can therefore no longer precede child completion/failure. The
+stored message may be recovered exactly once only after reviewed provider
+deployment/readback; no direct backend POST, manufactured card or pre-confirm
+actuation is permitted.
+
 ## 2026-08-24 - GREEN farm-house printer risk acceptance addendum
 
 Charl accepts the confidentiality and local-network risk of practical

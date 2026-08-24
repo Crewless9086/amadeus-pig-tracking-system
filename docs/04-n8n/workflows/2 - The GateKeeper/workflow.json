@@ -186,10 +186,10 @@
                       "parameters":  {
                                          "workflowId":  {
                                                             "__rl":  true,
-                                                            "value":  "6UscGE44eTfdLp1A",
+                                                            "value":  "TlKy9kUgJJE0msU4",
                                                             "mode":  "list",
-                                                            "cachedResultUrl":  "/workflow/6UscGE44eTfdLp1A",
-                                                            "cachedResultName":  "My project - 2.0 - OOM SAKKIE - Amadeus Assistant Agent"
+                                                            "cachedResultUrl":  "/workflow/TlKy9kUgJJE0msU4",
+                                                            "cachedResultName":  "My project — 2.0B - Oom Sakkie Backend Read-Only Relay"
                                                         },
                                          "workflowInputs":  {
                                                                 "mappingMode":  "defineBelow",
@@ -259,7 +259,7 @@
                                                                 "convertFieldsToString":  true
                                                             },
                                          "options":  {
-                                                         "waitForSubWorkflow":  false
+                                                         "waitForSubWorkflow":  true
                                                      }
                                      },
                       "type":  "n8n-nodes-base.executeWorkflow",
@@ -268,8 +268,8 @@
                                        640,
                                        176
                                    ],
-                      "id":  "ac0f1067-7118-400e-adcb-6bcad839c941",
-                      "name":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027"
+                      "id":  "1d1e3ba4-c7a3-49b8-89de-73e7e1df6fdb",
+                      "name":  "Call \u00272.0B - Oom Sakkie Backend Read-Only Relay\u0027"
                   },
                   {
                       "parameters":  {
@@ -1055,7 +1055,7 @@
                                                                            ],
                                                                            [
                                                                                {
-                                                                                   "node":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027",
+                                                                                   "node":  "Call \u00272.0B - Oom Sakkie Backend Read-Only Relay\u0027",
                                                                                    "type":  "main",
                                                                                    "index":  0
                                                                                }
@@ -1377,10 +1377,10 @@
                                             "parameters":  {
                                                                "workflowId":  {
                                                                                   "__rl":  true,
-                                                                                  "value":  "6UscGE44eTfdLp1A",
+                                                                                  "value":  "TlKy9kUgJJE0msU4",
                                                                                   "mode":  "list",
-                                                                                  "cachedResultUrl":  "/workflow/6UscGE44eTfdLp1A",
-                                                                                  "cachedResultName":  "My project - 2.0 - OOM SAKKIE - Amadeus Assistant Agent"
+                                                                                  "cachedResultUrl":  "/workflow/TlKy9kUgJJE0msU4",
+                                                                                  "cachedResultName":  "My project — 2.0B - Oom Sakkie Backend Read-Only Relay"
                                                                               },
                                                                "workflowInputs":  {
                                                                                       "mappingMode":  "defineBelow",
@@ -1450,7 +1450,7 @@
                                                                                       "convertFieldsToString":  true
                                                                                   },
                                                                "options":  {
-                                                                               "waitForSubWorkflow":  false
+                                                                               "waitForSubWorkflow":  true
                                                                            }
                                                            },
                                             "type":  "n8n-nodes-base.executeWorkflow",
@@ -1459,8 +1459,8 @@
                                                              640,
                                                              176
                                                          ],
-                                            "id":  "ac0f1067-7118-400e-adcb-6bcad839c941",
-                                            "name":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027"
+                                            "id":  "1d1e3ba4-c7a3-49b8-89de-73e7e1df6fdb",
+                                            "name":  "Call \u00272.0B - Oom Sakkie Backend Read-Only Relay\u0027"
                                         },
                                         {
                                             "parameters":  {
@@ -1945,7 +1945,7 @@
                                                                                                  ],
                                                                                                  [
                                                                                                      {
-                                                                                                         "node":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027",
+                                                                                                         "node":  "Call \u00272.0B - Oom Sakkie Backend Read-Only Relay\u0027",
                                                                                                          "type":  "main",
                                                                                                          "index":  0
                                                                                                      }
