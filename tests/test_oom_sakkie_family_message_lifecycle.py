@@ -398,6 +398,30 @@ def test_later_natural_result_edits_same_card_and_replay_is_silent():
     assert replay["telegram_edits"]==0 and len(memory.edited)==1
 
 
+def test_claim_bound_recovery_restores_earlier_truth_after_false_latest_edit_once():
+    memory=Memory(); mission="OOM-HERDMASTER-PRINCE"
+    deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    callback={**PARSED,"provider_message_id":"6127564953733558272",
+        "provider_timestamp":"2026-08-24T09:42:31.178208+00:00"}
+    truth={**RESULT,"status":"completed","answer":"<b>HERDMASTER OBSERVATION RECORDED</b>",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    first=deliver_family_result(callback,truth,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    false={**truth,"answer":"<b>Prince - DEATH RECORDED</b>"}
+    deliver_family_result({**callback,"provider_message_id":"wrong-recovery"},false,
+        specialist="HERDMASTER",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    restored=deliver_family_result(callback,truth,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(callback,truth,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert first["telegram_edits"]==1 and restored["telegram_edits"]==1
+    assert restored["status"]=="family_message_completion_card_updated"
+    assert memory.edited[-1][2]=="<b>HERDMASTER OBSERVATION RECORDED</b>"
+    assert replay["telegram_edits"]==0 and len(memory.sent)==1 and len(memory.edited)==3
+
+
 def test_orphaned_exclusive_completion_edit_claim_gets_one_idempotent_recovery():
     memory=Memory();mission="OOM-BEACON-MEDIA-ALBUM"
     deliver_family_result(PARSED,RESULT,specialist="BEACON_MEDIA",mission_id=mission,

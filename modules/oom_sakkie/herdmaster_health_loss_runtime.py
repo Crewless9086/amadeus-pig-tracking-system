@@ -565,6 +565,7 @@ def mortality_completion_recovery_result(stored: Mapping[str, Any],
         "answer": _mortality_completion_message(presentation_facts, language),
         "recipient_render_contract": "specialist_structured_recipient_v1",
         "recipient_language": "af" if str(language).casefold().startswith("af") else "en",
+        "owner_visible_completion_policy": "verified_edit_or_new_message",
         "writes_farm_data": False, "rows_created": 0,
         "delivery_recovery_required": True}
 
