@@ -62,6 +62,36 @@ def test_sequential_replay_is_idle_with_zero_effect():
     assert replay["telegram_sends"] == replay["telegram_edits"] == 0
 
 
+def test_completed_mortality_is_automatically_recomposed_and_delivered_without_writer(monkeypatch):
+    class MortalityStore(Store):
+        def acquire(self, cycle, now):
+            with self.lock:
+                if self.claimed: return None
+                self.claimed = True
+                return {**CLAIM, "action_kind": "mortality", "status": "completed",
+                    "mission_id": "OOM-HERDMASTER-1", "preview_digest": "d"*64,
+                    "preview_payload": {"identity": {"pig_id": "PIG-126", "tag_number": "126"}},
+                    "result_payload": {"success": True, "status": "completed",
+                        "answer": "<b>Die vark SE AFSTERWE AANGETEKEN</b>",
+                        "writes_farm_data": True, "rows_created": 1,
+                        "lifecycle_event_id": "LIFE-1", "welfare_case_closed": True}}
+    class Principal: language = "af"
+    monkeypatch.setattr("modules.oom_sakkie.family_access.resolve_family_principal",
+                        lambda *args, **kwargs: Principal())
+    store=MortalityStore(); writes=[]; delivered=[]
+    def deliver(parsed, result, **kwargs):
+        delivered.append((parsed,result,kwargs))
+        return {"success":True,"telegram_message_id":"3959","telegram_sends":0,"telegram_edits":1}
+    outcome=run_payment_recovery_cycle(store=store,
+        executor=lambda *args,**kwargs:writes.append(args), deliverer=deliver)
+    assert outcome["status"]=="payment_recovery_completed" and writes==[]
+    parsed,result,kwargs=delivered[0]
+    assert parsed["output_language"]=="af" and kwargs["specialist"]=="HERDMASTER"
+    assert result["answer"].startswith("<b>VARK 126 AANGETEKEN</b>")
+    assert "Die vark SE AFSTERWE" not in result["answer"]
+    assert result["writes_farm_data"] is False and result["rows_created"]==0
+
+
 def test_concurrent_cycles_lease_one_execution_only():
     store = Store(); barrier = Barrier(2); effects = []
     def run():

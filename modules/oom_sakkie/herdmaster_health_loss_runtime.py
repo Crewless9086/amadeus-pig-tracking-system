@@ -512,7 +512,9 @@ def _mortality_completion_message(recorded: Mapping[str, Any], language: str) ->
     name = html.escape(str(recorded.get("pig_name") or recorded.get("tag_number") or
                ("Die vark" if af else "The pig")))
     if af:
-        lines = [f"<b>{name} SE AFSTERWE AANGETEKEN</b>", "",
+        heading = (f"VARK {name} AANGETEKEN" if name.casefold() != "die vark"
+                   else "VARK AANGETEKEN")
+        lines = [f"<b>{heading}</b>", "",
                  "Die bevestigde afsterwe is een keer aangeteken en die vark is nie meer op die plaas beskikbaar nie."]
         if recorded.get("welfare_case_closed"):
             lines.append("Die verwante lewende-welsynsaak is met afsterwe as rede gesluit.")
@@ -532,6 +534,21 @@ def _mortality_completion_message(recorded: Mapping[str, Any], language: str) ->
         if int(recorded.get("preserved_distinct_work") or 0):
             lines.append("Separate disposal or biosecurity work stays visible because it is still open.")
     return "\n".join(lines)
+
+
+def mortality_completion_recovery_result(stored: Mapping[str, Any],
+                                          preview_payload: Mapping[str, Any],
+                                          language: str) -> dict:
+    """Recompose owner presentation from a completed claim without farm I/O."""
+    identity = preview_payload.get("identity") if isinstance(
+        preview_payload.get("identity"), Mapping) else {}
+    presentation_facts = {**dict(stored),
+        "pig_name": str(identity.get("name") or identity.get("pig_name") or ""),
+        "tag_number": str(identity.get("tag_number") or identity.get("tag") or "")}
+    return {**dict(stored),
+        "answer": _mortality_completion_message(presentation_facts, language),
+        "writes_farm_data": False, "rows_created": 0,
+        "delivery_recovery_required": True}
 
 
 def _existing_lifecycle_result(active: Mapping[str, Any]) -> dict:
