@@ -425,7 +425,10 @@ def handle_authenticated_health_loss_message(
               provider_message_id=provider_message_id,evidence_generation=lifecycle["evidence_generation"],
               preview_payload={"operation_id":lifecycle["operation_id"],
                 "preview_sha256":str((preview.get("confirmation_binding") or {}).get("preview_sha256") or ""),
-                "identity":(preview.get("evaluator") or {}).get("identity") or {}})
+                "identity":(preview.get("evaluator") or {}).get("identity") or {},
+                "event_family":str((preview.get("evaluator") or {}).get("event_family") or ""),
+                "effect_kind":("mortality" if _preview_is_mortality(preview)
+                               else "health_observation")})
             protected={"preview_digest":claim["preview_digest"],"callback_token":claim["callback_token"],
                        "action_kind":str(claim.get("action_kind") or "mortality"),
                        "card_mission_id":protected_card_mission_id(
@@ -470,6 +473,19 @@ def _classify_preview_owner_intent(text: str, active: Mapping[str, Any] | None) 
     if text.strip().endswith("?"):
         return "asks_question"
     return "adds_evidence"
+
+
+def _preview_is_mortality(preview: Mapping[str, Any]) -> bool:
+    evaluator = preview.get("evaluator") if isinstance(preview.get("evaluator"), Mapping) else {}
+    if str(evaluator.get("event_family") or "") in {
+            "found_dead", "mortality", "maternal_death", "compound_loss"}:
+        return True
+    return any(isinstance(fact, Mapping)
+               and fact.get("fact") == "animal_reported_dead"
+               and fact.get("value") is True
+               for effect in evaluator.get("canonical_effects") or []
+               if isinstance(effect, Mapping)
+               for fact in (effect.get("facts") or {}).get("observed", []))
 
 
 def _health_loss_message(language: str, key: str) -> str:
