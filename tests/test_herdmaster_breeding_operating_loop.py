@@ -292,7 +292,32 @@ def test_canonical_mating_creates_milestones_without_writes():
     assert case["classification"]["canonical_mating_exists"] is True
     assert case["classification"]["latest_mating_id"] == "MAT-1"
     assert len(case["milestones"]) == 3
+    assert case["milestones"][0]["name"] == "Return-to-heat observation window"
+    assert all(
+        item["milestone"] != "Return-to-heat observation window"
+        for item in result["reminder_plan"]["items"]
+    )
     assert result["reminder_plan"]["sent_count"] == 0
+
+
+def test_heat_milestone_is_history_only_for_due_and_future_projection():
+    for mating_date in ("2026-06-01", "2026-08-20"):
+        result = build(matings=[{
+            "mating_id": f"MAT-{mating_date}", "sow_pig_id": "PIG-MS",
+            "boar_pig_id": "BOAR-1", "boar_tag_number": "Prince",
+            "mating_date": mating_date, "mating_status": "Open",
+        }])
+        case = result["cases"][0]
+        assert any(
+            item["name"] == "Return-to-heat observation window"
+            for item in case["milestones"]
+        )
+        assert all(
+            item["milestone"] != "Return-to-heat observation window"
+            for item in result["reminder_plan"]["items"]
+        )
+        assert result["reminder_plan"]["delivery_operational"] is False
+        assert result["reminder_plan"]["sent_count"] == 0
 
 
 def test_due_pregnancy_check_is_worklist_attention():
