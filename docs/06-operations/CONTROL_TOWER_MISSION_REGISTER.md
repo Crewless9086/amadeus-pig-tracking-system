@@ -2224,3 +2224,47 @@ invariant, full existing closed-loop scope, evidence boundaries, stale PR
 collision and acceptance contract without a technical-progress or owner-outcome
 claim. No provider, canonical, farm, animal, deployment or physical effect
 occurred.
+
+## 2026-08-24 - Prince generic Telegram completion acceptance failure
+
+This owner finding is consolidated into existing mission
+`HERDMASTER-NATURAL-HEALTH-LOSS-1`; no mission, document, store, page or priority
+was created. A provider completion that says only that a HERDMASTER observation
+was recorded, or exposes only a backend pig ID, is not an owner outcome. The
+completion must name the canonical human pig identity, state the exact confirmed
+facts, report the welfare state and next action bound to the exact protected
+operation and attributable welfare case, and render every part in the
+recipient's language. Backend-only identifiers may remain audit evidence but
+may not replace the human identity.
+
+Current state is `BLOCK / OWNER_ACCEPTANCE_FAILURE`. Independent review of PR
+`#1232` at head `281057cf30a17dad693fd77e5290d91303f4aeeb` blocks the candidate:
+the query selects the latest welfare state for the pig rather than binding the
+state to the exact welfare case attributable to the confirmed operation. A
+later or unrelated case could therefore produce a plausible but false state or
+next action. The implementation must fail closed unless identity, confirmed
+facts, operation, claim, exact welfare case, case state and next action all bind
+to one canonical chain at immediate pre-delivery readback.
+
+Evidence remains separated. **Source evidence:** exact current main
+`db72542499cd76ab7ebb06c777c0a1877f6e2f58` and the blocked PR `#1232` diff/checks.
+**Provider evidence:** the generic completion card is genuine delivered text but
+does not prove its omitted identity/facts/case state. **Canonical evidence:**
+the existing mission remains active; no farm or welfare row was changed by this
+intake. **Physical evidence:** Prince's real welfare state cannot be inferred
+from generic provider wording or source code and remains governed by the exact
+attributable canonical case and family observations.
+
+The measurable owner outcome is one recipient-localized completion that tells
+Charl or Anton which canonical pig was observed, exactly what was confirmed,
+whether the exact operation-bound welfare case is open, monitoring, escalated or
+closed, and the truthful next action; replay produces no duplicate edit/message
+or state effect. Source repair, tests, merge or deployment alone are not this
+outcome. Priority is unchanged because this finding directly unblocks the
+existing health/loss mission. **OWNER ACTION: NONE.** No repeat observation,
+confirmation or provider action is requested while the technical binding repair
+remains blocked.
+
+Control Tower Check Receipt: one existing mission lineage receives one
+append-only acceptance failure. PR `#1232` remains unmerged. This register
+intake performed no provider, welfare, farm, animal or physical mutation.
