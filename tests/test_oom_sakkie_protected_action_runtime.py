@@ -1,5 +1,7 @@
 from modules.oom_sakkie import protected_action_runtime as runtime
-from modules.oom_sakkie.protected_action_claims import build_buttons, canonical_preview_digest, create_claim
+from modules.oom_sakkie.protected_action_claims import (
+    build_buttons, canonical_preview_digest, claim_callback, create_claim,
+)
 from datetime import datetime, timedelta, timezone
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie import telegram_direct
@@ -216,6 +218,28 @@ def test_completed_irrigation_callback_retries_delivery_without_execution(monkey
       irrigation_handler=lambda *args,**kwargs:calls.append(args))
     assert status==200 and calls==[]
     assert result["hardware_commands"]==0 and result["provider_control_calls"]==0
+    assert result["reply_markup"]=={"inline_keyboard":[]}
+
+
+def test_completed_mortality_callback_reuses_canonical_result_without_farm_write(monkeypatch):
+    canonical={"success":True,"status":"completed",
+      "answer":"<b>Die vark SE AFSTERWE AANGETEKEN</b>",
+      "writes_farm_data":True,"rows_created":1,"lifecycle_event_id":"LIFE-1"}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_completed_delivery_retry",
+      "action_kind":"mortality","mission_id":"OOM-HERD-1",
+      "preview_digest":"d"*64,"preview_payload":{"identity":{"tag_number":"126"}},
+      "result":canonical},200))
+    writes=[]
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm","output_language":"af"},authority(),
+      health_handler=lambda *args,**kwargs:writes.append(args))
+    assert status==200 and writes==[]
+    assert result["answer"].startswith("<b>VARK 126 AANGETEKEN</b>")
+    assert "Die vark SE AFSTERWE" not in result["answer"]
+    assert result["lifecycle_event_id"]=="LIFE-1"
+    assert result["delivery_recovery_required"] is True
+    assert result["writes_farm_data"] is False
     assert result["reply_markup"]=={"inline_keyboard":[]}
 
 
@@ -489,6 +513,20 @@ class PriorClaimDb:
     def cursor(self):return self
     def execute(self,*args):pass
     def fetchone(self):return self.row
+
+
+def test_completed_mortality_claim_exposes_delivery_retry_from_canonical_result():
+    canonical={"success":True,"status":"completed","answer":"Recorded once.",
+               "lifecycle_event_id":"LIFE-1"}
+    row=("mortality","5721652188","5721652188","OOM-HERD-1","d"*64,"GEN",{},
+         "completed",datetime.now(timezone.utc)+timedelta(minutes=5),canonical,"700")
+    result,status=claim_callback("oompa:opaque:confirm",owner_user_id="5721652188",
+        private_chat_id="5721652188",provider_message_id="same-callback-receipt",
+        provider_timestamp="2026-08-24T06:10:37Z",source_card_message_id="700",
+        connect_factory=lambda:PriorClaimDb(row))
+    assert status==200
+    assert result["status"]=="protected_callback_completed_delivery_retry"
+    assert result["result"]==canonical
 
 
 def test_expired_or_cross_bound_claim_is_never_represented_with_dead_buttons():

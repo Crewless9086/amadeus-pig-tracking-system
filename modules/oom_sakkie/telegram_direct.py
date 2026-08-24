@@ -230,7 +230,8 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         parsed={"telegram_user_id":callback["telegram_user_id"],"telegram_chat_id":callback["telegram_chat_id"],
           "telegram_chat_type":"private","provider_message_id":callback["callback_query_id"],
           "provider_timestamp":datetime.now(timezone.utc).isoformat(),"reply_to_message_id":callback["telegram_message_id"],
-          "callback_query_id":callback["callback_query_id"],"callback_data":callback["callback_data"],"text":""}
+          "callback_query_id":callback["callback_query_id"],"callback_data":callback["callback_data"],"text":"",
+          "output_language":principal.language}
         authority=issue_gateway_owner_authority(callback["telegram_user_id"],callback["telegram_chat_id"],
           principal_role=principal.role.value,capabilities=principal.effective_permissions)
         action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
