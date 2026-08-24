@@ -2141,3 +2141,86 @@ a new provider-origin report and Anton's own confirmation may then establish
 acceptance.
 
 OWNER ACTION: NONE
+
+## 2026-08-24 - HMQ stale heat-gating intake consolidation
+
+GENERAL's stale heat-gating finding is consolidated into existing mission
+`HMQ-20260813-05`, with `HMQ-20260813-00` supplying the already-integrated
+individual-observation contract. No mission, document, store, queue or priority
+was created. Prince's P0 incident remains first; this finding retains the
+existing combined weighing-to-management-and-breeding lane position. Current
+state is `BLOCK / IMPLEMENTATION_MISALIGNMENT`, with **NO OWNER OUTCOME**.
+
+Controlling invariant: absence of attributable heat evidence may never create
+or retain work at any point in the closed loop. Heat is not a prerequisite for
+weighing recovery, management recommendation, boar recommendation, protected
+placement, the governed 17-day exposure, removal, or later reproductive-outcome
+follow-up. If Charl or Anton voluntarily supplies an exact-pig heat observation,
+it may be retained once as append-only canonical history under HMQ-00; it must
+not become an inferred fact, repeated question, work-retention gate or blocker.
+
+Scope is the existing HMQ-05 weighing-to-breeding closed loop: recover a genuine
+completed weight batch; optionally capture selective body-condition scores in
+the existing Bulk Weight Entry; produce concise management and boar
+recommendations; prepare protected, actor-bound placement; verify the governed
+17-day exposure; remove safely; and follow the later attributable reproductive
+outcome. HMQ-00's shared fact-intake/history path is reused for volunteered
+observations. The repair must retire stale heat-dependent questions or work when
+no evidence exists, preserve missing facts as Unknown, and carry source,
+provider, canonical and physical acceptance evidence through every protected
+transition.
+
+The required owner contract is one upload with distinct canonical effects: each
+entered weight becomes a weight event, each changed location becomes a location
+event, and each entered BCS becomes a separate observation event consumed by the
+existing Herdmaster management lifecycle. Blank BCS means no observation and
+must create no event, question or retained work. A BCS-only row is actionable
+without requiring a weight or location change. BCS must not be hidden in weight
+notes. Corrections and supersessions remain append-only and attributable; they
+must never overwrite observation history silently.
+
+Non-scope includes a new intake system, mission, schema, store, page, queue or
+scheduler; asking the family to inspect heat; inferring negative heat from
+silence; unprotected breeding or mating action; terminal-proxy confirmation;
+manual provider traffic; and database, animal or physical mutation during this
+intake. Breeding remains in scope as an outcome journey, but placement, exposure
+and removal remain protected physical actions and cannot be claimed from source
+or provider text alone.
+
+Evidence remains separated. **Source evidence:** authoritative main
+`ce906bd1713be942c58beec4c1e85de545d3e80b` contains the current HMQ product
+surface, while legacy PR `#603` remains open at head
+`895e5052fcdaad782dce37beff9aaa6d08d8149b` on stale base
+`4774420f7db56740be13c0667a5469aa8f389627`; its two-file prototype independently
+models `weight` and optional `heat_observation`, so it is collision evidence to
+reconcile, not authority to revive or merge. **Provider evidence:** no new
+attributable weighing, heat, placement, exposure or removal message was
+inspected. **Canonical evidence:** no production row was written or changed,
+the required database migration, RLS and trigger truth for separate weight,
+location and observation events is Unknown and therefore an implementation gate,
+and a genuine completed HMQ-05 batch plus downstream lifecycle readback remain
+pending. **Physical evidence:** no weighing, BCS, heat observation, placement,
+exposure, removal or reproductive outcome was performed or inferred; absence of
+heat evidence is not evidence that an animal is or is not in heat.
+
+The measurable owner outcome remains one genuine closed loop: Charl or Anton
+uploads the batch once; receives separate exact-once weight, location and
+selective BCS canonical events plus concise language-localized Herdmaster
+management and boar guidance without being asked for absent heat; performs only
+the protected, confirmed placement/removal steps; and later receives
+canonical/provider proof of exposure and reproductive outcome with replay-safe
+automatic follow-up. Blank BCS produces zero observation effect, BCS-only input
+is accepted, and a corrected BCS supersedes append-only history. Any volunteered
+heat fact remains visible as history but never creates a field, question, task,
+reminder, blocker or retained work.
+After Prince P0 release, the next automatic step is a current-main collision
+review and the smallest repair to the existing shared observation, weight and
+breeding projection, followed by exact regression tests, reviewed release,
+genuine acceptance at every real-world gate and a later stable cycle. PR `#603`
+must not be merged or used as a parallel implementation. **OWNER ACTION: NONE.**
+
+Control Tower Check Receipt: this append-only intake classification records the
+invariant, full existing closed-loop scope, evidence boundaries, stale PR
+collision and acceptance contract without a technical-progress or owner-outcome
+claim. No provider, canonical, farm, animal, deployment or physical effect
+occurred.
