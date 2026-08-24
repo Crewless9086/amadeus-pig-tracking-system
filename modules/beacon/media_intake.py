@@ -26,7 +26,10 @@ from modules.beacon.media_library import (
     SUPABASE_URL_ENV,
     upload_bytes_to_supabase_storage,
 )
-from modules.oom_sakkie.semantic_front_door import interpret_media_owner_context
+from modules.oom_sakkie.semantic_front_door import (
+    interpret_media_owner_context,
+    semantic_front_door_policy,
+)
 
 
 ENABLED_ENV = "BEACON_TELEGRAM_MEDIA_INTAKE_ENABLED"
@@ -479,6 +482,21 @@ def enrich_approved_media_semantics(payload, *, database_url=None, environ=None,
         return payload, {"created_count": 0, "status": "media_semantic_input_unavailable"}
     store = store or IntakeStore(database_url)
     source_items = [dict(item) if isinstance(item, dict) else {} for item in payload.get("items") or []]
+    policy = semantic_front_door_policy(environ)
+    if policy["enabled"] and policy["configured"]:
+        recoverable = next((item for item in sorted(source_items,
+            key=lambda row: (str(row.get("intake_at") or row.get("source_message_at") or ""),
+                             str(row.get("binary_asset_id") or "")))
+            if _semantic_adoption_exception_recoverable(item)), None)
+        if recoverable is not None:
+            reset, reset_status = store.reset_semantic_adoption_exception(
+                recoverable.get("binary_asset_id"), recoverable.get("content_sha256"))
+            if reset_status >= 400:
+                return payload, {"created_count": 0, "attempted_count": 0,
+                    "status": reset.get("status") or "media_semantic_adoption_reset_failed",
+                    "http_status": reset_status,
+                    "failed_binary_asset_id": recoverable.get("binary_asset_id")}
+            recoverable["observation"] = reset.get("observation") or recoverable.get("observation")
     eligible = sorted((item for item in source_items if _semantic_adoption_eligible(item)),
         key=lambda item: (str(item.get("intake_at") or item.get("source_message_at") or ""),
                           str(item.get("binary_asset_id") or "")))[:SEMANTIC_ADOPTION_BATCH_LIMIT]
@@ -540,6 +558,21 @@ def _semantic_adoption_eligible(row):
         and row.get("latest_library_event") == "library_accepted"
         and row.get("effective_public_use_approved") is True
         and attempt_count < SEMANTIC_ADOPTION_MAX_ATTEMPTS)
+
+
+def _semantic_adoption_exception_recoverable(row):
+    observation = dict((row or {}).get("observation") or {})
+    adoption = dict(observation.get("semantic_adoption") or {})
+    try:
+        recovery_count = int(adoption.get("config_recovery_count") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(not observation.get("tags") and not observation.get("subject_tags")
+        and row.get("latest_library_event") == "library_accepted"
+        and row.get("effective_public_use_approved") is True
+        and adoption.get("state") == "exception"
+        and adoption.get("last_status") == "interpretation_unavailable"
+        and recovery_count == 0)
 
 
 def private_album_review(intake_group_id, *, database_url=None, environ=None):
@@ -1401,7 +1434,9 @@ class IntakeStore:
                 attempt_count = int((observation.get("semantic_adoption") or {}).get("attempt_count") or 0) + 1
                 state = "retry_pending" if attempt_count < SEMANTIC_ADOPTION_MAX_ATTEMPTS else "exception"
                 adoption = {"state": state, "attempt_count": attempt_count,
-                    "last_status": failure_status, "automatic_retry": state == "retry_pending"}
+                    "last_status": failure_status, "automatic_retry": state == "retry_pending",
+                    "config_recovery_count": int((observation.get("semantic_adoption") or {}).get(
+                        "config_recovery_count") or 0)}
                 event_id = _stable_id("BEACON-UNDERSTANDING", _canonical_sha({
                     "binary_asset_id": binary_asset_id, "asset_sha256": binary[0],
                     "predecessor_event_id": predecessor, "semantic_adoption": adoption}))
@@ -1420,6 +1455,60 @@ class IntakeStore:
                 "semantic_adoption": adoption}, 201 if created else 200
         except Exception as exc:
             return {"success": False, "status": "media_semantic_adoption_state_failed",
+                "error_type": exc.__class__.__name__}, 503
+
+    def reset_semantic_adoption_exception(self, binary_asset_id, asset_sha256):
+        """Grant one bounded retry after the semantic runtime becomes configured."""
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("""select content_sha256 from public.beacon_media_binaries
+                  where binary_asset_id=%s for update""", (str(binary_asset_id or "")[:120],))
+                binary = cursor.fetchone()
+                if not binary or binary[0] != str(asset_sha256 or "").lower():
+                    return {"success": False, "status": "media_semantic_authority_changed"}, 409
+                cursor.execute("""select o.observation_event_id,coalesce(o.observation_json,'{}'::jsonb),
+                         le.event_type,coalesce(pe.event_type,'')
+                  from public.beacon_media_binaries b
+                  join public.beacon_media_source_links l using(binary_asset_id)
+                  left join lateral(select observation_event_id,observation_json
+                    from public.beacon_media_understanding_events where binary_asset_id=b.binary_asset_id
+                    order by observed_at desc,observation_event_id desc limit 1)o on true
+                  left join lateral(select event_type from public.beacon_media_library_events
+                    where binary_asset_id=b.binary_asset_id order by recorded_at desc,library_event_id desc limit 1)le on true
+                  left join lateral(select event_type from public.beacon_media_asset_events
+                    where asset_id=l.beacon_asset_id order by created_at desc,event_id desc limit 1)pe on true
+                  where b.binary_asset_id=%s""", (binary_asset_id,))
+                prior = cursor.fetchone()
+                observation = dict(prior[1] or {}) if prior else {}
+                adoption = dict(observation.get("semantic_adoption") or {})
+                if (not prior or prior[2] != "library_accepted" or prior[3] != "approved_public_use"
+                        or observation.get("tags") or observation.get("subject_tags")
+                        or adoption.get("state") != "exception"
+                        or adoption.get("last_status") != "interpretation_unavailable"
+                        or int(adoption.get("config_recovery_count") or 0) != 0):
+                    return {"success": False, "status": "media_semantic_exception_not_recoverable"}, 409
+                predecessor = str(prior[0] or "")
+                reset = {"state": "retry_pending", "attempt_count": 0,
+                    "last_status": "configured_runtime_retry", "automatic_retry": True,
+                    "config_recovery_count": 1}
+                next_observation = {**observation, "semantic_adoption": reset,
+                    "semantic_predecessor_event_id": predecessor}
+                event_id = _stable_id("BEACON-UNDERSTANDING", _canonical_sha({
+                    "binary_asset_id": binary_asset_id, "asset_sha256": binary[0],
+                    "predecessor_event_id": predecessor, "semantic_adoption": reset}))
+                cursor.execute("""insert into public.beacon_media_understanding_events
+                  (observation_event_id,binary_asset_id,asset_sha256,source_type,
+                   observer_identity,observer_version,confidence_state,observation_json,observed_at)
+                  values(%s,%s,%s,'model_observation','beacon-deployed-runtime',
+                         'oom_semantic_media_v1','unavailable',%s::jsonb,now())
+                  on conflict(observation_event_id) do nothing""",
+                  (event_id,binary_asset_id,binary[0],json.dumps(next_observation,sort_keys=True)))
+                created = cursor.rowcount
+            return {"success": True, "status": "media_semantic_exception_reset",
+                "created_count": created, "observation_event_id": event_id,
+                "observation": next_observation}, 201 if created else 200
+        except Exception as exc:
+            return {"success": False, "status": "media_semantic_adoption_reset_failed",
                 "error_type": exc.__class__.__name__}, 503
 
     def thumbnail(self, binary_asset_id):

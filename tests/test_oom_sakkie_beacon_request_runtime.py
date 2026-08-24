@@ -113,6 +113,63 @@ def test_deployed_enrichment_surfaces_append_conflict_fail_closed():
     assert evidence["http_status"] == 409
 
 
+def test_configured_runtime_resets_one_exact_terminal_exception_then_interprets():
+    class Store:
+        resets = []
+        def reset_semantic_adoption_exception(self, binary_id, digest):
+            self.resets.append((binary_id, digest))
+            return {"observation": {"semantic_adoption": {"state": "retry_pending",
+                "attempt_count": 0, "config_recovery_count": 1}}}, 201
+        def append_semantic_understanding(self, binary_id, digest, meaning):
+            return {"created_count": 1, "observation_event_id": "UNDERSTANDING-RESET",
+                "observation": {"subject_tags": list(meaning.subject_tags)}}, 201
+    payload = approved_legacy_media("Bella has a new litter")
+    payload["items"][0]["observation"]["semantic_adoption"] = {
+        "state": "exception", "attempt_count": 3,
+        "last_status": "interpretation_unavailable"}
+    store = Store()
+    meaning = MediaSemanticUnderstanding(("live_stock", "piglets"), .95, "test", "c" * 64)
+    result, evidence = enrich_approved_media_semantics(payload, store=store,
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+        interpreter=lambda *_args, **_kwargs: meaning)
+    assert store.resets == [("BEACON-BINARY-1", "b" * 64)]
+    assert evidence["created_count"] == 1
+    assert result["items"][0]["understanding_event_id"] == "UNDERSTANDING-RESET"
+
+
+def test_exception_reset_is_not_available_without_config_or_for_foreign_failure():
+    class Store:
+        def reset_semantic_adoption_exception(self, *_args):
+            raise AssertionError("reset must remain unreachable")
+    for last_status, environ in [
+        ("interpretation_unavailable", {}),
+        ("media_semantic_authority_changed", {"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"}),
+    ]:
+        payload = approved_legacy_media("Bella has a new litter")
+        payload["items"][0]["observation"]["semantic_adoption"] = {
+            "state": "exception", "attempt_count": 3, "last_status": last_status}
+        _result, evidence = enrich_approved_media_semantics(payload, store=Store(),
+            environ=environ, interpreter=lambda *_args, **_kwargs: None)
+        assert evidence["attempted_count"] == 0
+
+
+def test_malformed_exception_recovery_count_fails_closed_without_reset():
+    class Store:
+        def reset_semantic_adoption_exception(self, *_args):
+            raise AssertionError("reset must remain unreachable")
+    payload = approved_legacy_media("Bella has a new litter")
+    payload["items"][0]["observation"]["semantic_adoption"] = {
+        "state": "exception", "attempt_count": 3,
+        "last_status": "interpretation_unavailable", "config_recovery_count": "broken"}
+    _result, evidence = enrich_approved_media_semantics(payload, store=Store(),
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+        interpreter=lambda *_args, **_kwargs: None)
+    assert evidence["attempted_count"] == 0
+
+
 def parsed(text="Please prepare the current marketing proposal", language="en"):
     return {"telegram_user_id": "42", "telegram_chat_id": "42", "provider_message_id": "9001",
         "provider_timestamp": "2026-08-14T08:01:00+00:00", "text": text,
