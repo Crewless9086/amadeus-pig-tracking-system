@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 import hashlib, json
+import re
 from typing import Any, Callable, Mapping
 from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_plan
 from modules.oom_sakkie.rootline_material import rootline_material_digest
 
 
-OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v1"
+OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v2"
 
 
 def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
@@ -212,7 +213,12 @@ def _stable_owner_plan(value):
         folded = line.casefold()
         if (folded.startswith("<b>next automatic reassessment")
                 or folded.startswith("<b>volgende outomatiese herbeoordeling")):
-            continue
+            # Only an explicitly approximate HH:MM clock token is volatile.
+            # Keep the line, language, reassessment mode, conditions and any
+            # fixed/deadline wording in the semantic identity.
+            line = re.sub(r"\b(around|omtrent)\s+\d{1,2}:\d{2}\b",
+                          r"\1 <volatile-clock>", line,
+                          flags=re.IGNORECASE)
         lines.append(line)
     return "\n".join(lines).strip()
 

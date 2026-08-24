@@ -2370,3 +2370,18 @@ plan delivery, then one technically ready supervised Mixer proof and later
 separate Injection acceptance. **OWNER ACTION: NONE** until the notification
 repair is reviewed/deployed and the exact commissioning rail reports readiness;
 do not ask the owner to wait at equipment or repeat a presence statement.
+
+#### Supervised Mixer physical commissioning evidence in progress
+
+On `2026-08-24` the owner first reported `CH2 OFF, pump stopped`; exact source
+wall-clock time was not supplied and remains Unknown. This is attributable
+physical preflight evidence for existing `RMQ-20260813-02`, not commissioning
+completion. At `2026-08-24T16:15:11+02:00` Control Tower received the owner's
+next physical observation: `CH2 ON, pump running, tank recirculating` for
+`Controller (1) Right` / device `100204d497` / CH2 `Kunsmis Meng`. The owner is
+now observing the existing 300-second native auto-OFF window. No Injection CH1
+or Borehole action is authorized or reported. Completion remains blocked on
+physical pump/recirculation stop at native timeout plus exact provider OFF and
+canonical execution/commissioning readback. **OWNER ACTION: observe only and
+report immediately when CH2, pump and recirculation stop; do not toggle another
+control or retry ON.**

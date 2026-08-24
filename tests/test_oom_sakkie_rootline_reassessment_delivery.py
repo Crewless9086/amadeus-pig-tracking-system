@@ -2,6 +2,7 @@ import hashlib
 from modules.oom_sakkie.telegram_gateway import handle_rootline_reassessment_trigger
 from modules.oom_sakkie.rootline_material import rootline_material_digest
 from modules.oom_sakkie import rootline_reassessment_store
+from modules.oom_sakkie.rootline_reassessment_lifecycle import _owner_plan_fingerprint
 
 ENV={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
      "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
@@ -127,8 +128,7 @@ def test_production_shaped_3986_to_3987_clock_only_change_is_silent():
                     "zone_id": "B12345"},
                 "C12345": {"state": "Eligible", "reason": reason_c,
                     "zone_id": "C12345"}},
-            "owner_brief": {"family_fact_needed": "",
-                "reassess": f"At {at[11:16]} or when material evidence changes."},
+            "owner_brief": {"family_fact_needed": "", "reassess": ""},
             # This production trigger retained its moving clock in the old
             # material digest, even though only the rendered next-check line changed.
             "next_reassessment": {"trigger": "durable_backend_schedule", "at": at}}
@@ -179,6 +179,36 @@ def test_owner_plan_fingerprint_does_not_suppress_genuine_visible_zone_change():
         specialist_loader=lambda: changed, state_store=store, family_delivery=deliver)
     assert status == 200 and result["telegram_sends"] == 1
     assert len(calls) == 2
+
+
+def test_owner_plan_fingerprint_normalizes_only_approximate_clock_en_and_af():
+    en = "<b>Next automatic reassessment:</b> around {}\nNo action required from you."
+    af = "<b>Volgende outomatiese herbeoordeling:</b> omtrent {}\nGeen aksie word vereis nie."
+    assert _owner_plan_fingerprint(en.format("14:16")) == _owner_plan_fingerprint(
+        en.format("14:46"))
+    assert _owner_plan_fingerprint(af.format("14:16")) == _owner_plan_fingerprint(
+        af.format("14:46"))
+
+
+def test_owner_plan_fingerprint_preserves_mode_conditions_and_fixed_deadlines():
+    prefix = "<b>Next automatic reassessment:</b> "
+    assert _owner_plan_fingerprint(prefix + "around 14:16 after fresh evidence") != (
+        _owner_plan_fingerprint(prefix + "around 14:46 after provider recovery"))
+    assert _owner_plan_fingerprint(prefix + "at fixed deadline 14:16") != (
+        _owner_plan_fingerprint(prefix + "at fixed deadline 14:46"))
+    assert _owner_plan_fingerprint(prefix + "when conditions change") != (
+        _owner_plan_fingerprint(prefix + "on the next automatic cycle"))
+
+
+def test_owner_plan_fingerprint_preserves_lifecycle_completion_and_question_text():
+    base = ("<b>ROOTLINE — TODAY’S WATER PLAN</b>\n"
+            "• <b>B Camp:</b> Ready after the final safety check\n"
+            "<b>What I need from you:</b> Nothing\n"
+            "<b>Next automatic reassessment:</b> around 14:16")
+    assert _owner_plan_fingerprint(base) != _owner_plan_fingerprint(
+        base.replace("Ready after the final safety check", "Completed — off and verified"))
+    assert _owner_plan_fingerprint(base) != _owner_plan_fingerprint(
+        base.replace("Nothing", "Is the tank low?"))
 
 def test_legacy_ambiguous_identity_is_not_detached_or_retried():
     rows,store=memory_store(); value=current("Hold","2026-08-11")
