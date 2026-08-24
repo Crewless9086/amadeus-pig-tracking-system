@@ -312,6 +312,20 @@ def _parse_report(text, provider_time):
     drinking_negative = r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\bdrinking no water\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) drink(?:ing)?\b"
     not_eating = latest_negative(eating_positive, eating_negative, lower)
     eating = latest_positive(eating_positive, eating_negative, lower)
+    standing_positive = r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b|\bstanding\b"
+    standing_negative = (r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+"
+        r"(?:being\s+|able to\s+)?(?:stand|standing)\b|"
+        r"\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b")
+    moving_positive = r"\b(?:moving(?: around)?|walking)\b"
+    moving_negative = (r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+"
+        r"(?:(?:standing|moving)\s+(?:or|and)\s+)?(?:moving|walking)\b|"
+        r"\b(?:unable to|stopped|barely|hardly|scarcely)\s+(?:move|moving|walk|walking)\b")
+    normal_positive = r"\b(?:back to normal|acting normal(?:ly)?)\b"
+    normal_negative = (r"\b(?:not|no longer|isn't|wasn't)\s+(?:back to normal|acting normal(?:ly)?)\b|"
+        r"\b(?:not|no longer)\s+acting\s+normal(?:ly)?\b")
+    standing_now = latest_positive(standing_positive, standing_negative, lower)
+    moving_now = latest_positive(moving_positive, moving_negative, lower)
+    normal_now = latest_positive(normal_positive, normal_negative, lower)
     not_drinking = latest_negative(drinking_positive, drinking_negative, lower)
     other_sick = current_sign(r"sick|ill|vomit|diarrh|cough|fever")
     sick = not_eating or not_drinking or other_sick
@@ -328,8 +342,7 @@ def _parse_report(text, provider_time):
         families.append("injured")
     if sick:
         families.append("sick")
-    positive_welfare_update = bool(eating or re.search(
-        r"\b(?:back to normal|acting normal(?:ly)?|standing|walking|moving(?: around)?)\b", lower))
+    positive_welfare_update = bool(eating or standing_now or moving_now or normal_now)
     family = (families[0] if len(set(families)) == 1 else
               "compound_event" if families else
               "welfare_update" if positive_welfare_update else "unknown")
@@ -420,13 +433,11 @@ def _parse_report(text, provider_time):
         observed.append({"fact": "bleeding", "value": True})
     welfare_checks = {
         "standing": latest_positive(
-            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b|\bstanding\b",
-            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b",
+            standing_positive, standing_negative,
             lower,
         ),
         "moving": latest_positive(
-            r"\b(?:moving(?: around)?|walking)\b",
-            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b",
+            moving_positive, moving_negative,
             lower,
         ),
         "breathing": latest_positive(
@@ -442,10 +453,9 @@ def _parse_report(text, provider_time):
     }
     welfare_check_evidence = {
         "standing": welfare_evidence(
-            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b|\bstanding\b",
-            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b|\bnot able to do anything\b"),
-        "moving": welfare_evidence(r"\b(?:moving(?: around)?|walking)\b",
-            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b|\bnot able to do anything\b"),
+            standing_positive, standing_negative + r"|\bnot able to do anything\b"),
+        "moving": welfare_evidence(moving_positive,
+            moving_negative + r"|\bnot able to do anything\b"),
         "breathing": welfare_evidence(r"\bbreath(?:ing|es) normal(?:ly)?\b",
             r"\b(?:not|no longer|isn't|wasn't|without) breathing normal(?:ly)?\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) breath(?:e|ing)(?: normal(?:ly)?)?\b|\b(?:breathing abnormally|struggling to breathe)\b"),
         "drinking": welfare_evidence(drinking_positive,
@@ -463,7 +473,7 @@ def _parse_report(text, provider_time):
     for fact, supplied in welfare_checks.items():
         if supplied:
             observed.append({"fact": f"{fact}_reported", "value": True})
-    if re.search(r"\b(?:back to normal|acting normal(?:ly)?)\b", lower):
+    if normal_now:
         observed.append({"fact": "normal_behaviour_reported", "value": True,
                          "attribution": "owner_general_impression_not_welfare_clearance"})
     time_context = r"(?:today|yesterday|(?:this\s+)?morning|(?:this\s+)?afternoon|(?:this\s+)?evening|(?:last\s+)?night|\d{1,2}[:.]\d{2})"

@@ -75,6 +75,33 @@ def test_prince_recovery_observation_produces_protected_preview_without_repeat_q
     assert result["writes_performed"] is False
 
 
+def test_negated_recovery_words_never_become_reassuring_welfare_update():
+    prince = animal("PIG-2026-E057", "Prince", "Prince")
+    result = evaluate_health_loss_intake(report(
+        "Prince is not back to normal and is not standing or walking."), evidence(prince))
+    assert result["event_family"] != "welfare_update"
+    facts = {row["fact"]: row["value"] for row in result["observed_facts"]}
+    assert "normal_behaviour_reported" not in facts
+    assert "standing_reported" not in facts
+    assert "moving_reported" not in facts
+
+
+def test_latest_corrected_welfare_state_wins_over_earlier_clause():
+    prince = animal("PIG-2026-E057", "Prince", "Prince")
+    recovered = evaluate_health_loss_intake(report(
+        "Prince was not standing or walking earlier, but he is standing and walking normally now."),
+        evidence(prince))
+    worsened = evaluate_health_loss_intake(report(
+        "Prince was standing and walking earlier, but is not standing or walking now."),
+        evidence(prince))
+    recovered_facts = {row["fact"] for row in recovered["observed_facts"]}
+    worsened_facts = {row["fact"] for row in worsened["observed_facts"]}
+    assert recovered["event_family"] == "welfare_update"
+    assert {"standing_reported", "moving_reported"} <= recovered_facts
+    assert "standing_reported" not in worsened_facts
+    assert "moving_reported" not in worsened_facts
+
+
 def test_maya_compound_preview_preserves_counts_and_suspicion_boundary():
     maya, canonical = maya_packet()
     result = evaluate_health_loss_intake(report(MAYA_REPORT), canonical)
