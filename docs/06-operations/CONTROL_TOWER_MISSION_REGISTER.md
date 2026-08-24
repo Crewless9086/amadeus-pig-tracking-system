@@ -2268,3 +2268,40 @@ remains blocked.
 Control Tower Check Receipt: one existing mission lineage receives one
 append-only acceptance failure. PR `#1232` remains unmerged. This register
 intake performed no provider, welfare, farm, animal or physical mutation.
+## 2026-08-24 - ROOTLINE unchanged-plan owner-noise intake and exact diagnosis
+
+This is an outcome-unblocking addendum to existing `RMQ-20260813-04`, not a
+new mission, notification rail, store, queue or scheduler. Owner evidence says
+the same standalone `ROOTLINE TODAY'S WATER PLAN` continued approximately every
+fifteen to thirty minutes: B remained ready after the final safety check, C
+remained ready with the internal revalidation reason, no owner action was
+needed, and only the next-check clock moved. The required owner outcome is one
+plan inside the daily Brief; standalone plan delivery only after a material
+owner-visible B/C plan or owner-question change; immediate start, stop and
+verified-completion messages preserved; a concise close summary; and silent
+unchanged reassessments. `OWNER ACTION: NONE`.
+
+Read-only production evidence on exact deployed/current-main revision
+`a2f2c7c90f8226654ffdb7fdd766bad676cf6c97` proves provider messages `3982`,
+`3983` and `3985` were each delivered with a different material digest although
+their persisted B/C owner projections were semantically unchanged. The shared
+digest included hidden borehole, fertilizer and overall specialist state that
+the standalone B/C presentation does not render. This is a projection/deduplication
+defect, not a scheduler, provider or irrigation-control failure.
+
+Lifecycle: `WORKING / IMPLEMENTATION_PR_1234 / REVIEW_AND_DEPLOY_PENDING / NO
+BUSINESS OUTCOME`. PR #1234 exact source commit `7923625d` restricts the existing
+notification material identity to rendered B/C semantics while retaining owner
+question and stable reassessment material. Fifty-two focused owner-response,
+daily-presentation and automatic-scheduler tests pass; no Telegram message,
+provider control, database farm write or irrigation command was issued by the
+terminal. The existing canonical Mission Control row received idempotent event
+`CORE-MISSION-CONTROL-C5514E2F5DB7985EA6E79182`; exact replay was a no-op,
+status remains `paused / event_waiting`, and owner action remains `NONE`.
+
+First missing acceptance gate: independent exact-head PASS and hosted CI,
+serialized merge/deployment, then a natural provider-origin material-change
+delivery followed by a later unchanged natural reassessment with zero standalone
+plan delivery. Immediate lifecycle notifications must remain unaffected. This
+directly unblocks the existing owner outcome but does not otherwise reprioritize
+the durable mission order.
