@@ -2659,7 +2659,28 @@ documents and historical evidence are unchanged. **NO BUSINESS OUTCOME. OWNER
 ACTION: NONE** until reviewed source is integrated and one genuine exact job is
 read back without duplicate output.
 
+Current `green_print_bridge/DOCS.md` and app source still mandate
+`private_ipps`, private CA and TLS validation, and open PR #1194 further
+hardens that superseded policy. PR #1194 must not merge; this owner decision is
+not operative until a bounded reviewed source correction removes those gates
+while preserving the minimum job-integrity contract above.
+
 For `RMQ-20260813-06`, the owner will provide exact Borehole connector/binding
 details tomorrow. This is the existing external trigger; ask no further
 question tonight and do not command Borehole before exact binding plus bounded
 fail-OFF are proven.
+
+## 2026-08-24 - HMQ heat-reminder projection correction
+
+Post-deployment read-only acceptance of existing mission `HMQ-20260813-05`
+against exact live revision `2fdecec1444725d07e0b362dc95caaa3c6e99ea6`
+proved that the heat-only task and question gates were removed, but the current
+operating-loop projection still prepared 13 due `Return-to-heat observation
+window` reminders inside a 38-item reminder plan. No reminder was delivered
+(`delivery_operational=false`, `sent_count=0`), no canonical or physical effect
+occurred, and volunteered `standing_heat` facts remained append-only observation
+history. This is the same mission and priority: current and future reminder
+projection/delivery must exclude the legacy heat window while the historical
+milestone remains available for audit. Source repair is active; **NO BUSINESS
+OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
+questions, tasks and reminders on a later natural cycle.

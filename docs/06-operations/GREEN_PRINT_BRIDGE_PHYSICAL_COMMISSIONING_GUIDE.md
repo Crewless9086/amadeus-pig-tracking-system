@@ -62,6 +62,12 @@ creating a queue/job or printing.
 2. The maintainer configures CUPS locally for that printer and verifies the queue is reachable only from the private adapter host. The queue name is treated as configuration, never shell input from a request.
 3. The maintainer installs a bounded adapter credential that can claim one authorized job and retrieve only its digest-bound PDF from the configured origin.
 4. Private PKI/TLS/IPPS is not required for this farm-house deployment. The fixed approved printer, fixed queue, exact canonical job identity and digest remain mandatory; no caller may choose an arbitrary printer, queue, URL or print payload.
+
+Current runtime gap: `green_print_bridge/DOCS.md` and the existing app still
+require `private_ipps`, a private CA and TLS validation. Open PR #1194 further
+hardens that superseded policy and must not merge. This owner decision is not
+operative until a bounded reviewed source correction replaces those gates while
+preserving the minimum integrity contract above.
 5. The maintainer configures the durable local SQLite ledger and private spool with restricted permissions, disk monitoring, restart supervision, and no document-content logging.
 6. The maintainer sets the only allowed options: A4, one copy, monochrome, one-sided. No request can override them.
 7. The maintainer verifies restart recovery, expired-lease recovery, storage-exhaustion fail-safe, 48-hour retry-to-held transition, Continue/Cancel handling, and deletion of temporary PDFs after completion, cancellation, or held resolution using synthetic non-farm fixtures only.

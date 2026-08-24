@@ -21,6 +21,9 @@
   job identity and digest, bounded retry, no duplicate/replay, and truthful
   printed-or-failed canonical/provider readback. No public arbitrary-print
   endpoint or caller-selected printer, queue, URL or payload is authorized.
+- Recorded that the current app/DOCS and open PR #1194 still mandate the now-
+  superseded private-IPPS/CA/TLS policy. The decision remains non-operative
+  until reviewed source removes those gates without weakening job integrity.
 
 ## 2026-08-23 - ROOTLINE B commissioning and adaptive timing reconciled
 
