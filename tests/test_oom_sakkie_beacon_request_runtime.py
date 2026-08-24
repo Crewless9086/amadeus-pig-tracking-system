@@ -14,6 +14,8 @@ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.telegram_gateway import (
     _delivery_disabled_internal_proof, handle_telegram_gateway_message)
 from modules.oom_sakkie.semantic_front_door import SemanticInterpretation
+from modules.oom_sakkie.semantic_front_door import MediaSemanticUnderstanding
+from modules.beacon.media_intake import enrich_approved_media_semantics
 
 os.environ.setdefault("BEACON_FACEBOOK_PAGE_ID", "PAGE-1")
 
@@ -64,6 +66,22 @@ def approved_legacy_media(owner_context, *, confidence="evidence_supported"):
     payload["items"][0]["owner_explanation"] = owner_context
     payload["items"][0]["observation_confidence"] = confidence
     return payload
+
+
+def test_deployed_enrichment_appends_then_projects_only_governed_semantics():
+    class Store:
+        def append_semantic_understanding(self, binary_id, digest, meaning):
+            assert binary_id == "BEACON-BINARY-1" and digest == "b" * 64
+            return {"created_count": 1, "observation_event_id": "UNDERSTANDING-1",
+                "observation": {"subject_tags": list(meaning.subject_tags)}}, 201
+    meaning = MediaSemanticUnderstanding(("live_stock", "piglets"), .95,
+        "semantic-test", "c" * 64)
+    result, evidence = enrich_approved_media_semantics(
+        approved_legacy_media("Bella newborn litter"), store=Store(),
+        interpreter=lambda *_args, **_kwargs: meaning)
+    assert evidence["created_count"] == 1
+    assert result["items"][0]["observation"]["subject_tags"] == ["live_stock", "piglets"]
+    assert result["items"][0]["understanding_event_id"] == "UNDERSTANDING-1"
 
 
 def parsed(text="Please prepare the current marketing proposal", language="en"):

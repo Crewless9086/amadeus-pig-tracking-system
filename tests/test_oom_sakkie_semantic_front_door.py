@@ -5,9 +5,38 @@ import pytest
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_health_loss_runtime import _resolve_active_context
 from modules.oom_sakkie.semantic_front_door import (
-    SemanticInterpretation, _eligible_clarification_context, interpret_owner_message, parse_semantic_response,
+    SemanticInterpretation, _eligible_clarification_context, interpret_media_owner_context,
+    interpret_owner_message, parse_semantic_response,
     semantic_front_door_policy,
 )
+
+
+MEDIA_ENV = {"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+    "OOM_SAKKIE_LLM_ROUTER_MODEL": "semantic-test", "OPENAI_API_KEY": "secret"}
+
+
+def test_media_context_uses_typed_affirmative_semantics_and_binds_digest():
+    value = {"subject_tags": ["live_stock", "piglets", "litter"],
+        "affirmative_current_subject": True, "negated_or_absent": False,
+        "historical_or_future_only": False, "conflicting_subject": False,
+        "needs_clarification": False, "confidence": .96}
+    result = interpret_media_owner_context("Bella het pas 13 varkies gekry", "a" * 64,
+        environ=MEDIA_ENV, http_open=lambda *_args, **_kwargs: _HttpResponse(_response(value)))
+    assert result.subject_tags == ("litter", "live_stock", "piglets")
+    assert result.model == "semantic-test" and len(result.semantic_digest) == 64
+
+
+@pytest.mark.parametrize("override", [
+    {"negated_or_absent": True}, {"historical_or_future_only": True},
+    {"conflicting_subject": True}, {"needs_clarification": True}, {"confidence": .79},
+])
+def test_media_context_fails_closed_on_negation_time_conflict_ambiguity_or_low_confidence(override):
+    value = {"subject_tags": ["live_stock", "piglets"],
+        "affirmative_current_subject": True, "negated_or_absent": False,
+        "historical_or_future_only": False, "conflicting_subject": False,
+        "needs_clarification": False, "confidence": .96, **override}
+    assert interpret_media_owner_context("bounded context", "b" * 64, environ=MEDIA_ENV,
+        http_open=lambda *_args, **_kwargs: _HttpResponse(_response(value))) is None
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from modules.oom_sakkie.service import handle_message
 
