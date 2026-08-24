@@ -1,6 +1,6 @@
 import hashlib
 from modules.oom_sakkie.telegram_gateway import handle_rootline_reassessment_trigger
-from modules.oom_sakkie.rootline_material import rootline_material_digest
+from modules.oom_sakkie.rootline_material import rootline_material_digest, stable_reassessment
 from modules.oom_sakkie import rootline_reassessment_store
 from modules.oom_sakkie.rootline_reassessment_lifecycle import _owner_plan_fingerprint
 
@@ -162,6 +162,76 @@ def test_production_shaped_3986_to_3987_clock_only_change_is_silent():
     assert later["status"] == "rootline_reassessment_unchanged"
     assert later["telegram_sends"] == 0 and later["notify_owner"] is False
     assert len(calls) == 1
+
+
+def test_production_shaped_3997_to_4000_refresh_clock_only_change_is_silent():
+    rows, store = memory_store()
+    calls = []
+
+    def result(at, generation, result_id, *, reason="Refresh forecast, tanks."):
+        reason_b = "A completed irrigation is recorded for this zone today."
+        reason_c = ("Continue the durable parent irrigation objective after verified "
+                    "segment OFF and fresh reassessment.")
+        return {"success": True, "operating_date": "2026-08-24",
+            "generation": generation, "result_id": result_id,
+            "recommendations": [
+                {"subject": "B12345", "status": "Do Not Run", "reason": reason_b,
+                 "preferred_window": "on_material_evidence_change"},
+                {"subject": "C12345", "status": "Recommend", "reason": reason_c,
+                 "preferred_window": "now_after_fresh_execution_revalidation",
+                 "planned_duration_minutes": 60}],
+            "irrigation_lifecycle": {
+                "B12345": {"state": "Eligible", "reason": reason_b, "zone_id": "B12345"},
+                "C12345": {"state": "Eligible", "reason": reason_c, "zone_id": "C12345"}},
+            "owner_brief": {"family_fact_needed": "", "reassess": ""},
+            "next_reassessment": {"trigger": "refresh_missing_or_stale_evidence",
+                "reason": reason, "also_on": ["material_power_change",
+                    "local_weather_change", "owner_water_observation"], "at": at}}
+
+    def deliver(*_args, **_kwargs):
+        calls.append(1)
+        return {"success": True, "status": "family_message_delivered",
+            "telegram_message_id": str(3996 + len(calls)), "telegram_sends": 1,
+            "telegram_edits": 0}
+
+    first, _ = handle_rootline_reassessment_trigger(payload(), HEADERS, ENV,
+        specialist_loader=lambda: result("2026-08-24T17:46:09+02:00", "G3997", "R3997"),
+        state_store=store, family_delivery=deliver)
+    predecessor = next(row for row in rows.values()
+        if row.get("provider_message_id") == "3997")
+    predecessor.pop("owner_plan_reassessment", None)
+    predecessor.pop("owner_plan_fingerprint", None)
+    predecessor.pop("owner_plan_fingerprint_version", None)
+    predecessor["trigger"] = "durable_backend_schedule"
+    second, _ = handle_rootline_reassessment_trigger(
+        {**payload(), "trigger_id": "ROOTLINE-20260824-1546"}, HEADERS, ENV,
+        specialist_loader=lambda: result("2026-08-24T18:16:12+02:00", "G4000", "R4000"),
+        state_store=store, family_delivery=deliver)
+    third, _ = handle_rootline_reassessment_trigger(
+        {**payload(), "trigger_id": "ROOTLINE-20260824-1616"}, HEADERS, ENV,
+        specialist_loader=lambda: result("2026-08-24T18:46:12+02:00", "G4001", "R4001"),
+        state_store=store, family_delivery=deliver)
+
+    assert first["telegram_sends"] == 1
+    assert second["status"] == third["status"] == "rootline_reassessment_unchanged"
+    assert second["telegram_sends"] == third["telegram_sends"] == 0
+    assert len(calls) == 1
+
+
+def test_refresh_fingerprint_preserves_trigger_reason_and_material_owner_changes():
+    base = {"trigger": "refresh_missing_or_stale_evidence",
+        "reason": "Refresh forecast, tanks.",
+        "also_on": ["material_power_change"], "at": "2026-08-24T18:16:12+02:00"}
+    text = "<b>Next automatic reassessment:</b> around 18:16"
+    assert _owner_plan_fingerprint(text, stable_reassessment(base)) == _owner_plan_fingerprint(
+        text.replace("18:16", "18:46"), stable_reassessment(
+            {**base, "at": "2026-08-24T18:46:12+02:00"}))
+    assert _owner_plan_fingerprint(text, stable_reassessment(base)) != _owner_plan_fingerprint(
+        text, stable_reassessment({**base, "trigger": "fixed_deadline"}))
+    assert _owner_plan_fingerprint(text, stable_reassessment(base)) != _owner_plan_fingerprint(
+        text, stable_reassessment({**base, "reason": "Wait for a verified OFF completion."}))
+    assert _owner_plan_fingerprint(text, stable_reassessment(base)) != _owner_plan_fingerprint(
+        text.replace("around 18:16", "when C is verified complete"), stable_reassessment(base))
 
 
 def test_owner_plan_fingerprint_does_not_suppress_genuine_visible_zone_change():
