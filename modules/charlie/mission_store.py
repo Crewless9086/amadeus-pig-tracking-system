@@ -2672,6 +2672,8 @@ def mission_control_snapshot(limit=100, database_url=None, connect_factory=None)
     owner_filter = """
         status = any(%(owner_queue_statuses)s)
         and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+        and jsonb_typeof(metadata_json->'mission_control_projection') = 'object'
+        and metadata_json->'mission_control_projection' ? 'latest_event_id'
     """
     try:
         with _connect(database_url, connect_factory) as connection:

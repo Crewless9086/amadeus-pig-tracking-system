@@ -149,6 +149,21 @@ def _bound_artifact(agent, summary="pass", revision=None, fingerprint="candidate
 
 
 class CharlieMissionStoreTests(unittest.TestCase):
+    def test_mission_control_snapshot_uses_canonical_current_portfolio_projection(self):
+        connection = FakeConnection([])
+
+        result, status_code = mission_control_snapshot(
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        statements = connection.cursor_instance.executed
+        self.assertEqual(len(statements), 2)
+        for sql, _params in statements:
+            self.assertIn("jsonb_typeof(metadata_json->'mission_control_projection') = 'object'", sql)
+            self.assertIn("metadata_json->'mission_control_projection' ? 'latest_event_id'", sql)
+
     def test_owner_review_packet_projects_authoritative_orchestration(self):
         orchestration = {
             "version": "charlie_adaptive_orchestration_v1",

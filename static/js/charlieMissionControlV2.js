@@ -213,6 +213,10 @@
   function stageLabel(mission) {
     const review = missionReviewPacket(mission);
     const status = text(mission.status).toLowerCase();
+    const owner = ownerProjection(mission);
+    if (isOwnerWork(mission) && !ownerActionRequired(mission) && text(owner.current_worker)) {
+      return text(owner.current_worker);
+    }
     const metadata = mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
     const dependencies = Array.isArray(metadata.depends_on_mission_ids) ? metadata.depends_on_mission_ids : [];
     const coordinator = metadata.mission_coordinator && typeof metadata.mission_coordinator === "object" ? metadata.mission_coordinator : {};
@@ -597,6 +601,9 @@
 
   function missionExecutionWarning(mission) {
     if (!mission || text(mission.status).toLowerCase() !== "in_progress") return "";
+    const owner = ownerProjection(mission);
+    if (isOwnerWork(mission) && !ownerActionRequired(mission)
+        && ["working", "event_waiting"].includes(text(owner.real_life_state).toLowerCase())) return "";
     const updated = Date.parse(text(mission.updated_at));
     if (!Number.isFinite(updated)) return "";
     const idleMinutes = Math.max(0, Math.floor((Date.now() - updated) / 60000));
@@ -625,9 +632,12 @@
     const sameMission = text(local.last_mission_id) === text(mission.mission_id);
     const cloudOnly = text(runner.local_runner_scope) === "render_cannot_see_laptop_runner";
     const agent = sameMission ? text(local.current_agent, text(latest.agent, stageLabel(mission))) : stageLabel(mission);
+    const owner = ownerProjection(mission);
+    const externallyManaged = isOwnerWork(mission) && !ownerActionRequired(mission)
+      && ["working", "event_waiting"].includes(text(owner.real_life_state).toLowerCase());
     const action = sameMission
       ? text(local.current_action, text(latest.current_action, text(local.last_result_status, "Agent stage running")))
-      : nextActionText(mission);
+      : externallyManaged ? text(owner.next_automatic_step, "Automatic work continues safely.") : nextActionText(mission);
     const runtime = sameMission ? formatDuration(local.elapsed_seconds) : "--";
     const heartbeat = sameMission && local.last_seen
       ? `${text(local.age_seconds, "--")}s ago`
@@ -635,7 +645,9 @@
     const attempts = sameMission ? Number(latest.attempt || 0) : Number(missionTelemetry(mission).attempt_count || 0);
     const files = sameMission ? Number(local.changed_files_count || (latest.changed_files || []).length || 0) : 0;
     const commands = Array.isArray(latest.commands_run) ? latest.commands_run : [];
-    const stateLabel = cloudOnly
+    const stateLabel = externallyManaged
+      ? ownerOperatingState(mission)
+      : cloudOnly
       ? "Cloud snapshot"
       : sameMission ? operatingStateLabel(local.operating_state) : statusLabel(mission.status);
     return `<section class="live-activity ${sameMission && local.active ? "live" : cloudOnly ? "snapshot" : ""}">
@@ -647,7 +659,7 @@
         ${metric("Files changed", files ? String(files) : "--")}
       </div>
       ${commands.length ? `<div class="live-command"><strong>Latest check</strong><span>${escapeHtml(text(commands[commands.length - 1]))}</span></div>` : ""}
-      ${cloudOnly ? '<p>Render shows persisted Supabase progress. Open the local dashboard for second-by-second laptop heartbeat and commands.</p>' : ""}
+      ${externallyManaged ? '<p>Control Tower progress is shown from the canonical owner-work projection; it does not create a CORE runner lease.</p>' : cloudOnly ? '<p>Render shows persisted Supabase progress. Open the local dashboard for second-by-second laptop heartbeat and commands.</p>' : ""}
     </section>`;
   }
 
