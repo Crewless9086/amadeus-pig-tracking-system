@@ -344,11 +344,9 @@ def main() -> int:
                     f"queue was not empty: rc={queue.returncode} stdout={queue.stdout!r} stderr={queue.stderr!r}\n"
                     + failure_diagnostics(container)
                 )
-            binding = run("docker", "exec", container, "/bin/cat", "/etc/hosts", check=False)
-            bound_rows = [line.split() for line in binding.stdout.splitlines()]
-            matching = [row for row in bound_rows if len(row) >= 2 and "amadeuskantoor" in {value.casefold() for value in row[1:]}]
-            if binding.returncode != 0 or matching != [[gateway, "amadeuskantoor"]]:
-                raise RuntimeError("fixed printer binding missing or mismatched\n" + failure_diagnostics(container))
+            expected_destination = f"device for weekly-a4: ipp://{gateway}/printers/weekly-a4"
+            if destination.stdout.strip() != expected_destination:
+                raise RuntimeError("fixed printer endpoint missing or mismatched\n" + failure_diagnostics(container))
             cups_contract = run(
                 "docker", "exec", container, "/bin/sh", "-c",
                 "grep -Fx 'User cupsd' /etc/cups/cups-files.conf"
@@ -438,8 +436,7 @@ def main() -> int:
                 "local_transport": "unix_socket",
                 "printcap": "/run/cups/printcap",
                 "queue_jobs": 0,
-                "printer_dns_preseeded": False,
-                "printer_fixed_binding_verified": True,
+                "printer_endpoint_exact_verified": True,
                 "supervisor_data_prechown": False,
                 "supervisor_options_root_owned": True,
                 "tcp_631_listener": False,

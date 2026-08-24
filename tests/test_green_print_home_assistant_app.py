@@ -210,7 +210,8 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert '"--add-host", f"printer.test:' not in probe
     assert '"printer_transport_profile": "local_ipp_fixed"' in probe
     assert 'f"ipp://{gateway}/printers/weekly-a4"' in probe
-    assert '"printer_dns_preseeded": False' in probe and '"printer_fixed_binding_verified": True' in probe
+    assert '"printer_endpoint_exact_verified": True' in probe
+    assert 'device for weekly-a4: ipp://{gateway}/printers/weekly-a4' in probe
     assert '"pid,uid,gid,comm,args"' in probe
     for proof in ("docker\", \"top","cups_scheduler_identity","cups_worker_identity","green_runtime_identity","tcp_631_listener","tls_key_files","test ! -e /etc/printcap","test ! -e /etc/cups/ssl/*.key","unexpected AppArmor denials"):
         assert proof in probe
