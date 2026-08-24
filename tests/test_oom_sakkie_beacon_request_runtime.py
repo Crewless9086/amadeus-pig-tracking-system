@@ -96,8 +96,8 @@ def test_deployed_enrichment_is_bounded_and_records_retry_state():
     store = Store()
     _result, evidence = enrich_approved_media_semantics(payload, store=store,
         interpreter=lambda *_args, **_kwargs: None)
-    assert evidence["attempted_count"] == 5
-    assert [call[0] for call in store.calls] == [f"BEACON-BINARY-{index}" for index in range(5)]
+    assert evidence["attempted_count"] == 1
+    assert [call[0] for call in store.calls] == ["BEACON-BINARY-0"]
 
 
 def test_deployed_enrichment_surfaces_append_conflict_fail_closed():

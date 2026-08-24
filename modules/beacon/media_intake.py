@@ -30,7 +30,9 @@ from modules.oom_sakkie.semantic_front_door import interpret_media_owner_context
 
 
 ENABLED_ENV = "BEACON_TELEGRAM_MEDIA_INTAKE_ENABLED"
-SEMANTIC_ADOPTION_BATCH_LIMIT = 5
+# Keep legacy adoption outside the normal campaign path's latency budget: one
+# bounded semantic call per already-scheduled BEACON cycle.
+SEMANTIC_ADOPTION_BATCH_LIMIT = 1
 SEMANTIC_ADOPTION_MAX_ATTEMPTS = 3
 ALLOWED_CHAT_IDS_ENV = "BEACON_TELEGRAM_MEDIA_ALLOWED_CHAT_IDS"
 BOT_TOKEN_ENV = "OOM_SAKKIE_TELEGRAM_BOT_TOKEN"
