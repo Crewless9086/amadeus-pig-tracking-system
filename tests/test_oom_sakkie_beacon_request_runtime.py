@@ -200,10 +200,10 @@ def test_scheduled_approved_media_selection_is_deterministic_and_copy_neutral():
         "currency": "ZAR", "total": "0.00", "daily": "0.00"}
 
 
-def test_scheduled_generation_uses_governed_legacy_owner_context_without_mutating_tags():
-    for context in ("Bella - New born litter 13", "Bella - just delivered 13 little piglets",
-            "Bella het pas 13 klein varkies gekry"):
-        payload = approved_legacy_media(context)
+def test_scheduled_generation_uses_affirmative_structured_semantics_without_mutation():
+    for tags in (["live_stock", "piglets"], ["live_stock", "litter"], ["live_stock", "weaner"]):
+        payload = approved_legacy_media("Structured semantics are authoritative")
+        payload["items"][0]["observation"]["tags"] = tags
         result = build_scheduled_sale_ready_stock_result(
             opportunity_loader=opportunity, media_loader=lambda: payload,
             content_evidence_loader=lambda **kwargs: kwargs,
@@ -212,15 +212,21 @@ def test_scheduled_generation_uses_governed_legacy_owner_context_without_mutatin
         selected = result["proposal"]["protected_campaign_package"]["selected_approved_media"]
         assert selected[0]["asset_id"] == "BEACON-ASSET-1"
         assert set(selected[0]["subject_tags"]).intersection({"piglets", "litter", "live_stock"})
-        assert payload["items"][0]["observation"].get("tags") is None
+        assert payload["items"][0]["observation"]["tags"] == tags
 
 
-def test_scheduled_generation_fails_closed_for_ambiguous_or_unrelated_legacy_context():
-    for payload in (
-        approved_legacy_media("Bella at the farm"),
-        approved_legacy_media("Bella with chickens and a new litter"),
-        approved_legacy_media("Bella - just delivered 13 little piglets", confidence="unavailable"),
+def test_scheduled_generation_does_not_reinterpret_raw_legacy_owner_language():
+    for context in (
+        "Bella - just delivered 13 little piglets",
+        "Bella and her newborn pigs",
+        "No piglets are shown; this is an empty barn",
+        "This photo was taken before the piglets arrived",
+        "Bella het geen varkies nie",
+        "Bella met haar pasgebore varkies",
+        "Bella with chickens and a new litter",
+        "Correction: that is not Bella's litter",
     ):
+        payload = approved_legacy_media(context)
         result = build_scheduled_sale_ready_stock_result(
             opportunity_loader=opportunity, media_loader=lambda payload=payload: payload,
             content_evidence_loader=lambda **kwargs: kwargs,
