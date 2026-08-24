@@ -43,13 +43,10 @@ def load_active_manager_question(parsed, *, loader=None):
         if presented is None:
             continue
         age = (provider_at - presented).total_seconds()
+        if age < 0 or age > MAX_AGE_SECONDS:
+            continue
         card = str(row.get("telegram_message_id") or "")
         if reply_to and reply_to != card:
-            continue
-        # An unanswered provider card is a durable question. Its exact,
-        # authenticated Telegram reply-to remains attributable after the
-        # ambient 24-hour context window; unthreaded continuations do not.
-        if age < 0 or age > MAX_AGE_SECONDS:
             continue
         candidates.append((presented, row))
     if not candidates:
@@ -95,15 +92,13 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     active = question or load_active_manager_question(parsed, loader=question_loader)
     if not active:
         return {"handled": False, **ZERO}, 200
-    reply_to = str(parsed.get("reply_to_message_id") or "").strip()
-    active_card = str(active.get("telegram_message_id") or "").strip()
-    exact_reply = bool(reply_to and active_card and reply_to == active_card)
     presented = _timestamp(active.get("presented_at") or active.get("observed_at"))
     provider_at_value = _timestamp(parsed.get("provider_timestamp"))
     if (presented is None or provider_at_value is None
-            or (provider_at_value - presented).total_seconds() < 0
-            or (provider_at_value - presented).total_seconds() > MAX_AGE_SECONDS):
+            or not 0 <= (provider_at_value - presented).total_seconds() <= MAX_AGE_SECONDS):
         return {"handled": False, **ZERO}, 200
+    reply_to = str(parsed.get("reply_to_message_id") or "").strip()
+    exact_reply = bool(reply_to and reply_to == str(active.get("telegram_message_id") or ""))
     # A protected specialist packet owns its own preview/confirmation lifecycle.
     # Broad manager context must never consume it merely because it is conversational.
     if semantic is not None and (getattr(semantic, "protected_preview_required", False)
@@ -585,11 +580,6 @@ def _compatible(expected, actual):
     groups = ({"herd", "herd_health", "herd_management"},
               {"sales", "sam"}, {"water_energy", "rootline"})
     return expected == actual or any(expected in group and actual in group for group in groups)
-
-
-def _is_welfare_question(question):
-    return str((question.get("question_binding") or {}).get("domain") or "") in {
-        "herd", "herd_health", "herd_management"}
 
 
 def _bound_question_pig_id(question):
