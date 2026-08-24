@@ -29,9 +29,7 @@ def transition(*, expected_source_commit: str, request_json) -> dict:
             or service.get("suspended") != "not_suspended"):
         return _result(False, "render_cron_identity_mismatch")
     prior = str((service.get("serviceDetails") or {}).get("schedule") or "")
-    if prior == TARGET_SCHEDULE:
-        return _result(True, "render_cron_schedule_already_current", schedule=prior)
-    if prior != EXPECTED_PRIOR_SCHEDULE:
+    if prior not in {EXPECTED_PRIOR_SCHEDULE, TARGET_SCHEDULE}:
         return _result(False, "render_cron_prior_schedule_mismatch", schedule=prior)
     deploys = request_json("GET", f"{RENDER_BASE}/services/{CRON_ID}/deploys?limit=5", None)
     live_commits = {_deploy(row).get("commit", {}).get("id") for row in deploys
@@ -42,6 +40,8 @@ def transition(*, expected_source_commit: str, request_json) -> dict:
     if (health.get("status") != "ok" or health.get("identity_complete") is not True
             or health.get("revision") != expected_source_commit):
         return _result(False, "render_web_exact_revision_not_live", schedule=prior)
+    if prior == TARGET_SCHEDULE:
+        return _result(True, "render_cron_schedule_already_current", schedule=prior)
     request_json("PATCH", f"{RENDER_BASE}/services/{CRON_ID}",
                  {"serviceDetails": {"schedule": TARGET_SCHEDULE}})
     after = _service(request_json("GET", f"{RENDER_BASE}/services/{CRON_ID}", None))

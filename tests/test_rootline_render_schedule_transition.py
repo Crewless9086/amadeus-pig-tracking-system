@@ -52,6 +52,13 @@ def test_transition_fails_closed_on_unexpected_prior_schedule():
     assert not [call for call in state["calls"] if call[0] == "PATCH"]
 
 
+def test_already_current_schedule_still_requires_exact_live_revision():
+    state, request = provider(schedule=TARGET_SCHEDULE, cron_revision="b" * 40)
+    result = transition(expected_source_commit=REVISION, request_json=request)
+    assert result["status"] == "render_cron_exact_revision_not_live"
+    assert not [call for call in state["calls"] if call[0] == "PATCH"]
+
+
 def test_transition_attempts_exact_rollback_when_readback_does_not_change():
     state, request = provider(refuse_patch=True)
     result = transition(expected_source_commit=REVISION, request_json=request)
