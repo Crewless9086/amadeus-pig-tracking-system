@@ -17,6 +17,7 @@ from modules.oom_sakkie.sam_payment_owner_runtime import execute_claimed_sale_pa
 WORKER_ID = "oom-sakkie-protected-payment-recovery-v1"
 INTERVAL_SECONDS = 300
 LEASE_SECONDS = 180
+MORTALITY_PRESENTATION_VERSION = "mortality_completion_golden_v1"
 
 
 def run_payment_recovery_cycle(*, now=None, connect_factory=None,
@@ -65,6 +66,7 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
             result = mortality_completion_recovery_result(result, bound, language)
             result["card_mission_id"] = protected_card_mission_id(
                 claim["mission_id"], claim["preview_digest"])
+            result["presentation_version"] = MORTALITY_PRESENTATION_VERSION
             specialist = "HERDMASTER"
         delivery = deliverer(parsed, result, specialist=specialist,
             mission_id=claim["mission_id"], card_mission_id=str(
@@ -83,6 +85,8 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
             "telegram_edits": int(delivery.get("telegram_edits") or 0),
             "payment_write_observed": result.get("writes_to_supabase") is True,
             "canonical_status": str(result.get("status") or "")}
+        if claim.get("action_kind") == "mortality":
+            completed["presentation_version"] = MORTALITY_PRESENTATION_VERSION
         store.release(token, cycle_id, now, "completed", completed)
         store.finish_cycle(cycle_id, now, completed)
         return completed
@@ -132,10 +136,12 @@ class _RecoveryStore:
                     and ((c.action_kind='sam_sale_payment' and
                           (c.status='executing' or (c.status='completed' and l.last_status='delivery_pending')))
                       or (c.action_kind='mortality' and c.status='completed' and
-                          (l.callback_token is null or l.last_status='delivery_pending')))
+                          (l.callback_token is null or l.last_status='delivery_pending'
+                           or (l.last_status='completed' and
+                               coalesce(l.last_result->>'presentation_version','')<>%s))))
                     and (l.callback_token is null or l.lease_until<=%s)
                   order by c.confirmation_provider_timestamp limit 1 for update of c skip locked""",
-                  (["sam_sale_payment","mortality"],now))
+                  (["sam_sale_payment","mortality"],MORTALITY_PRESENTATION_VERSION,now))
                 row = cur.fetchone()
                 if not row:
                     return None
