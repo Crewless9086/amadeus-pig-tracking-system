@@ -47,6 +47,60 @@ def test_preview_binds_exact_non_actuating_mixer_contract():
     assert payload["injection_enabled"] is False
     assert payload["physical_observations_required"] == ["normal_recirculation", "pump_stopped"]
 
+def test_fresh_preview_requests_only_exact_expired_unbound_presence_handoff(monkeypatch):
+    captured = []
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_presence_claim",
+        lambda **_kwargs: None)
+    monkeypatch.setattr("modules.oom_sakkie.rootline_protected_mixer.create_claim",
+        lambda **kwargs: (captured.append(kwargs) or {"success": True,
+            "callback_token": "CURRENT", "preview_digest": canonical_preview_digest(
+                kwargs["action_kind"], kwargs["preview_payload"]),
+            "expires_at": "2026-08-16T13:40:32+00:00"}))
+    result = create_mixer_preview(owner_result={"handled": True,
+        "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof",
+        "ready_for_supervised_proof": True,
+        "authority": {"configuration_write": False, "hardware_control": False,
+            "farm_write": False, "telegram_send": False}}, parsed=parsed(),
+        gateway_authority=issue_gateway_owner_authority("5721652188", "5721652188"),
+        prepare=lambda **_kwargs: {"success": True,
+            "status": "commissioning_protected_preview_ready",
+            "eligibility": artifact(), "hardware_commands": 0,
+            "provider_control_calls": 0}, now=NOW)
+    handoff = captured[0]["retire_expired_unbound_predecessor"]
+    assert handoff == {"action_kind": PRESENCE_ACTION_KIND,
+        "contract_version": "oom_rootline_mixer_presence_refresh.v1",
+        "specialist_identity": "ROOTLINE",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof"}
+    assert result["status"] == "mixer_protected_preview_created"
+    assert result["hardware_commands"] == result["provider_control_calls"] == 0
+
+def test_claim_conflict_never_reuses_plain_ready_answer(monkeypatch):
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_presence_claim",
+        lambda **_kwargs: None)
+    monkeypatch.setattr("modules.oom_sakkie.rootline_protected_mixer.create_claim",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("active conflict")))
+    result = create_mixer_preview(owner_result={"handled": True,
+        "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof",
+        "ready_for_supervised_proof": True,
+        "answer": "FERTILIZER CHECK — READY",
+        "authority": {"configuration_write": False, "hardware_control": False,
+            "farm_write": False, "telegram_send": False}}, parsed=parsed(),
+        gateway_authority=issue_gateway_owner_authority("5721652188", "5721652188"),
+        prepare=lambda **_kwargs: {"success": True,
+            "status": "commissioning_protected_preview_ready",
+            "eligibility": artifact(), "hardware_commands": 0,
+            "provider_control_calls": 0}, now=NOW)
+    assert result["status"] == "mixer_protected_preview_conflict"
+    assert "Nothing started" in result["answer"]
+    assert "FERTILIZER CHECK" not in result["answer"]
+    assert result["hardware_commands"] == result["provider_control_calls"] == 0
+
 def test_preview_requires_exact_canonical_device_registry_record():
     with pytest.raises(ValueError,match="device_registry_missing"):
         build_preview_payload(artifact(),parsed(),device_loader=lambda _key:None)

@@ -39,7 +39,8 @@ def build_physical_acceptance_buttons(token):
 def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                  provider_message_id, evidence_generation, preview_payload,
                  ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True,
-                 reuse_active_provider_identity=False):
+                 reuse_active_provider_identity=False,
+                 retire_expired_unbound_predecessor=None):
     digest=canonical_preview_digest(action_kind,preview_payload)
     token=secrets.token_urlsafe(12).replace("-","").replace("_","")[:16]
     expires=(datetime.fromisoformat(str(expires_at).replace("Z","+00:00"))
@@ -92,6 +93,43 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                 f"protected-claim|{mission_id}".encode()).hexdigest()
             cur.execute("select pg_advisory_xact_lock(%s)",
                 (int(lock_material[:15], 16),))
+            predecessor = (retire_expired_unbound_predecessor
+                if isinstance(retire_expired_unbound_predecessor, dict) else None)
+            if predecessor:
+                predecessor_action = str(predecessor.get("action_kind") or "")
+                expected_contract = str(predecessor.get("contract_version") or "")
+                expected_specialist = str(predecessor.get("specialist_identity") or "")
+                expected_step = str(predecessor.get("next_specialist_step") or "")
+                if (not predecessor_action or predecessor_action == str(action_kind)
+                        or not expected_contract or not expected_specialist or not expected_step):
+                    raise ValueError("protected_claim_predecessor_contract_invalid")
+                cur.execute("""select callback_token,preview_digest,preview_payload,
+                    owner_user_id,private_chat_id,expires_at,preview_card_message_id
+                  from app_private.oom_protected_action_claims
+                  where action_kind=%s and mission_id=%s and status='active'
+                  order by created_at desc limit 2 for update""",
+                  (predecessor_action, mission_id))
+                predecessors = cur.fetchall()
+                if len(predecessors) == 1:
+                    predecessor_row = predecessors[0]
+                    predecessor_payload = predecessor_row[2]
+                    valid_payload = (isinstance(predecessor_payload, dict)
+                        and predecessor_payload.get("contract_version") == expected_contract
+                        and predecessor_payload.get("mission_id") == str(mission_id)
+                        and predecessor_payload.get("owner_user_id") == str(owner_user_id)
+                        and predecessor_payload.get("private_chat_id") == str(private_chat_id)
+                        and predecessor_payload.get("specialist_identity") == expected_specialist
+                        and predecessor_payload.get("next_specialist_step") == expected_step
+                        and predecessor_row[1] == canonical_preview_digest(
+                            predecessor_action, predecessor_payload))
+                    if (predecessor_row[3] == str(owner_user_id)
+                            and predecessor_row[4] == str(private_chat_id)
+                            and predecessor_row[5] <= datetime.now(timezone.utc)
+                            and predecessor_row[6] is None and valid_payload):
+                        cur.execute("""update app_private.oom_protected_action_claims
+                          set status='expired' where callback_token=%s and status='active'
+                          and expires_at<=now() and preview_card_message_id is null""",
+                          (predecessor_row[0],))
             # An unbound preview that expired before delivery cannot receive a
             # valid callback and must not block the next governed preview.
             # Bound cards retain their terminal audit/callback behavior.

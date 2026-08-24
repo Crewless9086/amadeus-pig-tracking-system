@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import psycopg
 from modules.oom_sakkie.protected_delivery_lifecycle import recover_protected_card
-from modules.oom_sakkie.protected_action_claims import create_claim
+from modules.oom_sakkie.protected_action_claims import canonical_preview_digest, create_claim
 
 URL=os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL","").strip()
 @unittest.skipUnless(URL,"disposable PostgreSQL URL is required")
@@ -176,3 +176,86 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
           (token,)).fetchone()[0]
         db.execute("delete from app_private.oom_protected_action_claims where mission_id=%s",(target,))
       self.assertEqual(state,"active")
+
+  def test_mixer_handoff_atomically_retires_only_exact_expired_unbound_predecessor(self):
+    mission="MIXER-HANDOFF-"+uuid.uuid4().hex
+    presence="rootline_fertilizer_mixer_presence_refresh"
+    commissioning="rootline_fertilizer_mixer_commissioning"
+    predecessor={"contract_version":"oom_rootline_mixer_presence_refresh.v1",
+      "mission_id":mission,"owner_user_id":"42","private_chat_id":"42",
+      "specialist_identity":"ROOTLINE",
+      "next_specialist_step":"supervised_fertilizer_mixer_proof"}
+    token="D"+uuid.uuid4().hex
+    expired=datetime.now(timezone.utc)-timedelta(minutes=1)
+    with self.connect() as db:
+      db.execute("""insert into app_private.oom_protected_action_claims
+       (callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
+        provider_message_id,preview_digest,evidence_generation,preview_payload,expires_at)
+       values(%s,%s,'42','42',%s,'OLD',%s,'OLD',%s::jsonb,%s)""",
+       (token,presence,mission,canonical_preview_digest(presence,predecessor),
+        __import__('json').dumps(predecessor),expired))
+    contract={"action_kind":presence,
+      "contract_version":"oom_rootline_mixer_presence_refresh.v1",
+      "specialist_identity":"ROOTLINE",
+      "next_specialist_step":"supervised_fertilizer_mixer_proof"}
+    def create(provider):
+      payload={"mission_id":mission,"provider":provider}
+      return create_claim(action_kind=commissioning,owner_user_id="42",
+        private_chat_id="42",mission_id=mission,provider_message_id=provider,
+        evidence_generation=provider,preview_payload=payload,ttl_minutes=5,
+        connect_factory=self.connect,supersede_active=False,
+        retire_expired_unbound_predecessor=contract)
+    outcomes=[]
+    def attempt(provider):
+      try: outcomes.append((provider,create(provider)["status"]))
+      except RuntimeError as exc: outcomes.append((provider,str(exc)))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+      list(pool.map(attempt,("NEW-A","NEW-B")))
+    winners=[row for row in outcomes if row[1]=="protected_claim_created"]
+    self.assertEqual(len(winners),1)
+    self.assertEqual(create(winners[0][0])["status"],"protected_claim_existing")
+    with self.connect() as db:
+      states=db.execute("""select action_kind,provider_message_id,status from
+       app_private.oom_protected_action_claims where mission_id=%s order by action_kind""",
+       (mission,)).fetchall()
+      db.execute("delete from app_private.oom_protected_action_claims where mission_id=%s",(mission,))
+    self.assertIn((presence,"OLD","expired"),states)
+    self.assertIn((commissioning,winners[0][0],"active"),states)
+
+  def test_mixer_handoff_preserves_live_bound_and_mismatched_predecessors(self):
+    presence="rootline_fertilizer_mixer_presence_refresh"
+    commissioning="rootline_fertilizer_mixer_commissioning"
+    contract={"action_kind":presence,
+      "contract_version":"oom_rootline_mixer_presence_refresh.v1",
+      "specialist_identity":"ROOTLINE",
+      "next_specialist_step":"supervised_fertilizer_mixer_proof"}
+    for case,live,card,mismatch in (
+        ("LIVE",True,None,False),("BOUND",False,"CARD",False),
+        ("MISMATCH",False,None,True)):
+      mission="MIXER-NEG-"+uuid.uuid4().hex
+      payload={"contract_version":"oom_rootline_mixer_presence_refresh.v1",
+        "mission_id":mission,"owner_user_id":"42","private_chat_id":"42",
+        "specialist_identity":"ROOTLINE",
+        "next_specialist_step":("wrong_step" if mismatch else
+          "supervised_fertilizer_mixer_proof")}
+      token="D"+uuid.uuid4().hex
+      expiry=datetime.now(timezone.utc)+(timedelta(minutes=5) if live else -timedelta(minutes=1))
+      with self.connect() as db:
+        db.execute("""insert into app_private.oom_protected_action_claims
+         (callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
+          provider_message_id,preview_card_message_id,preview_digest,
+          evidence_generation,preview_payload,expires_at)
+         values(%s,%s,'42','42',%s,'OLD',%s,%s,'OLD',%s::jsonb,%s)""",
+         (token,presence,mission,card,canonical_preview_digest(presence,payload),
+          __import__('json').dumps(payload),expiry))
+      with self.assertRaisesRegex(RuntimeError,"protected_claim_active_preview_conflict"):
+        create_claim(action_kind=commissioning,owner_user_id="42",private_chat_id="42",
+          mission_id=mission,provider_message_id="NEW",evidence_generation="NEW",
+          preview_payload={"mission_id":mission},ttl_minutes=5,
+          connect_factory=self.connect,supersede_active=False,
+          retire_expired_unbound_predecessor=contract)
+      with self.connect() as db:
+        state=db.execute("select status from app_private.oom_protected_action_claims where callback_token=%s",
+          (token,)).fetchone()[0]
+        db.execute("delete from app_private.oom_protected_action_claims where mission_id=%s",(mission,))
+      self.assertEqual(state,"active",case)
