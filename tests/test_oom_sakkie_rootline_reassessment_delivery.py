@@ -218,7 +218,7 @@ def test_production_shaped_3997_to_4000_refresh_clock_only_change_is_silent():
     assert len(calls) == 1
 
 
-def test_refresh_fingerprint_preserves_trigger_reason_and_material_owner_changes():
+def test_refresh_fingerprint_ignores_hidden_scheduler_churn_but_preserves_owner_changes():
     base = {"trigger": "refresh_missing_or_stale_evidence",
         "reason": "Refresh forecast, tanks.",
         "also_on": ["material_power_change"], "at": "2026-08-24T18:16:12+02:00"}
@@ -228,10 +228,53 @@ def test_refresh_fingerprint_preserves_trigger_reason_and_material_owner_changes
             {**base, "at": "2026-08-24T18:46:12+02:00"}))
     assert _owner_plan_fingerprint(text, stable_reassessment(base)) != _owner_plan_fingerprint(
         text, stable_reassessment({**base, "trigger": "fixed_deadline"}))
-    assert _owner_plan_fingerprint(text, stable_reassessment(base)) != _owner_plan_fingerprint(
+    assert _owner_plan_fingerprint(text, stable_reassessment(base)) == _owner_plan_fingerprint(
         text, stable_reassessment({**base, "reason": "Wait for a verified OFF completion."}))
     assert _owner_plan_fingerprint(text, stable_reassessment(base)) != _owner_plan_fingerprint(
         text.replace("around 18:16", "when C is verified complete"), stable_reassessment(base))
+
+
+def test_production_shaped_4000_to_4003_hidden_reason_churn_is_silent():
+    rows, store = memory_store()
+    calls = []
+
+    def result(reason, at, generation):
+        return {"success": True, "operating_date": "2026-08-24",
+            "generation": generation, "result_id": "ROOTLINE-RESULT-20260824-" + generation,
+            "recommendations": [
+                {"subject": "B12345", "status": "Do Not Run",
+                 "reason": "A completed irrigation is recorded for this zone today.",
+                 "preferred_window": "on_material_evidence_change"},
+                {"subject": "C12345", "status": "Recommend",
+                 "reason": ("Continue the durable parent irrigation objective after verified "
+                            "segment OFF and fresh reassessment."),
+                 "preferred_window": "now_after_fresh_execution_revalidation",
+                 "planned_duration_minutes": 60}],
+            "irrigation_lifecycle": {"B12345": {"state": "Eligible"},
+                                     "C12345": {"state": "Eligible"}},
+            "owner_brief": {"family_fact_needed": "", "reassess": ""},
+            "next_reassessment": {"trigger": "refresh_missing_or_stale_evidence",
+                "reason": reason, "also_on": ["material_power_change",
+                    "local_weather_change", "owner_water_observation"], "at": at}}
+
+    def deliver(*_args, **_kwargs):
+        calls.append(1)
+        return {"success": True, "status": "family_message_delivered",
+            "telegram_message_id": str(3999 + len(calls)), "telegram_sends": 1,
+            "telegram_edits": 0}
+
+    first, _ = handle_rootline_reassessment_trigger(payload(), HEADERS, ENV,
+        specialist_loader=lambda: result("Refresh forecast, tanks.",
+            "2026-08-24T18:16:12+02:00", "A700309E8F09AE5E"),
+        state_store=store, family_delivery=deliver)
+    second, _ = handle_rootline_reassessment_trigger(
+        {**payload(), "trigger_id": "ROOTLINE-20260824-1816"}, HEADERS, ENV,
+        specialist_loader=lambda: result("Refresh tanks.",
+            "2026-08-24T18:46:08+02:00", "B83DB00C54C2FE3E"),
+        state_store=store, family_delivery=deliver)
+    assert first["telegram_sends"] == 1
+    assert second["status"] == "rootline_reassessment_unchanged"
+    assert second["telegram_sends"] == 0 and len(calls) == 1
 
 
 def test_owner_plan_fingerprint_does_not_suppress_genuine_visible_zone_change():

@@ -2471,3 +2471,36 @@ priority is created. Lifecycle remains
 acceptance still requires reviewed deployment followed by two natural
 unchanged cycles with zero standalone plan messages and one later genuine
 material change producing exactly one successor. **OWNER ACTION: NONE.**
+
+#### Mixer message 4001 misrouting and ROOTLINE message 4003 continuation
+
+At `2026-08-24T16:13:21Z` the owner sent the exact governed Mixer readiness
+phrase as Telegram message `4001`. The direct webhook reached exact live
+revision `829b161f7f396b7e8b013e9aa98a6b953e1fc18e` but returned HTTP `409` and
+incorrectly projected existing manager-question mission
+`OOM-FAMILY-396CC42918431530CA7C373E` with task state
+`manager_question_rootline_observation_ambiguous`. The unrelated clarification
+`Which is full: the reservoir or the storage tanks?` was provider-confirmed as
+message `4002` at `2026-08-24T16:13:40.976546Z`. No fresh Mixer claim or card
+was created; the only active row remains the expired, unbound 16 August claim.
+There was no confirmation, execution, provider-control call, irrigation,
+fertilizer, borehole or farm effect. The exact source defect is precedence:
+the broad manager-question continuation runs before the already exact-matched
+Mixer specialist path. The repair moves only that exact phrase ahead of the
+manager question while preserving actor, chat, chronology, specialist mission,
+card, digest, pending-context, replay and zero-authority checks. All non-exact
+manager replies retain their existing path. **OWNER ACTION: NONE; do not resend
+or press message 4002.**
+
+The first natural reassessment after revision `829b161f...` was claimed at
+`2026-08-24T16:16:12.988067Z`, retained unchanged visible B/C decisions,
+reasons and owner question, but delivered another standalone plan as message
+`4003`. Its internal structured scheduler reason shortened from
+`Refresh forecast, tanks.` to `Refresh tanks.`; that token does not appear in
+the delivered owner plan. This is continued failure of the same notification
+mission, not a new mission or priority change. The semantic fingerprint is
+therefore versioned to bind the rendered owner-visible plan only: visible B/C
+decision/reason, lifecycle or verified completion, fixed-deadline wording and
+owner-question changes remain material, while hidden trigger/reason/clock churn
+cannot manufacture an identical standalone plan. Lifecycle remains
+`WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / OWNER_VISIBLE_FINGERPRINT_REPAIR_ACTIVE`.

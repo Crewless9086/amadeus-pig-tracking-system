@@ -11,7 +11,7 @@ from modules.oom_sakkie.rootline_material import (
 )
 
 
-OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v3"
+OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v4"
 
 
 def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
@@ -243,8 +243,19 @@ def _owner_plan_fingerprint(value, reassessment=None):
     stable = _stable_owner_plan(value)
     if not stable:
         return ""
+    # The delivery identity is primarily the rendered owner-visible plan.
+    # Known moving-schedule modes may churn internal trigger/reason tokens, but
+    # bounded/fixed modes retain their exact structured deadline. Safety and
+    # recovery commands remain material in every mode.
+    structured = dict(reassessment or {})
+    if str(structured.get("trigger") or "") in {
+            "canonical_plan_reassessment", "durable_backend_schedule",
+            "new_canonical_evidence", "new_canonical_evidence_or_next_read",
+            "refresh_missing_or_stale_evidence"}:
+        structured = {key: structured[key] for key in (
+            "automatic_command", "recovery_if_window_is_missed") if key in structured}
     material = {"version": OWNER_PLAN_FINGERPRINT_VERSION, "owner_text": stable,
-                "reassessment": dict(reassessment or {})}
+                "reassessment": structured}
     return hashlib.sha256(json.dumps(material, sort_keys=True,
         separators=(",", ":")).encode()).hexdigest()
 
