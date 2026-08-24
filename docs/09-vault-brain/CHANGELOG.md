@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+## 2026-08-24 - ROOTLINE provider-readback commissioning authority
+
+- Recorded Charl's standing decision that authoritative application/provider
+  ON then OFF readback is sufficient start/stop proof for the governed
+  Fertilizer mixer, Fertilizer injector and Borehole controller; routine human
+  physical presence/observation is no longer required.
+- Preserved exact device binding, current-need and interlock checks, replay and
+  concurrency safety, bounded fail-OFF, canonical lifecycle and final verified
+  OFF. Mixer CH2 remains 300 seconds; injector remains one active zone, ten
+  minutes pre-flow, 120 seconds maximum and ten minutes flush; Borehole remains
+  uncommandable until exact binding and bounded fail-OFF are proven.
+
 ## 2026-08-23 - ROOTLINE B commissioning and adaptive timing reconciled
 
 - Reconciled the daily-advisor projection with the existing immutable B/C

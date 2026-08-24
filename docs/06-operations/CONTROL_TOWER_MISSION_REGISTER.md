@@ -2622,3 +2622,25 @@ calls, hardware commands or farm writes. Lifecycle is
 - Production readback proved one immutable BEACON manager generation was reclaimed every five minutes after an exact protected card update became provider-ambiguous. The protected lifecycle correctly forbade a duplicate provider call, but the manager case retained an already-due reassessment timestamp and therefore recorded an exception forever.
 - The bounded repair keeps the generation visibly contained and unconfirmed, preserves every protected publication and actor/card/digest boundary, and makes explicit do-not-retry provider ambiguity terminal for that immutable generation. Unchanged cycles cannot reclaim it; genuinely changed canonical evidence still creates a successor generation normally.
 - No provider, publication, spend, customer, farm, hardware or production-data effect was performed. Business completion remains false until deployed natural cycles prove the reclaim loop stopped and later reconciliation remains safe.
+
+## 2026-08-24 - ROOTLINE provider-readback commissioning authority addendum
+
+Charl explicitly authorized the existing `RMQ-20260813-02`,
+`RMQ-20260813-03` and `RMQ-20260813-06` lineages to use fresh authoritative
+application/provider ON then OFF readback as sufficient operational start/stop
+proof for the governed Fertilizer mixer, Fertilizer injector and Borehole
+controller. Routine owner physical presence/observation is removed; Charl and
+Anton report exceptions later. No new mission or priority change results.
+Existing boundaries remain: Mixer is exact CH2 with a 300-second fail-stop;
+Injector requires exactly one active irrigation zone, at least ten minutes
+pre-flow, at most 120 seconds ON and at least ten minutes flush; Borehole cannot
+be commanded until exact binding and bounded fail-OFF are proven. Every path
+still requires idempotency, replay/concurrency containment, canonical lifecycle
+and final verified OFF. A command receipt alone proves no outcome.
+
+The same decision authorized exactly one retry of failed GateKeeper execution
+`66525`. Retry `66544` succeeded through the GateKeeper call node, but produced
+no fresh canonical Mixer commissioning claim/card on immediate readback and no
+pre-confirm hardware/provider-control effect. A second retry is prohibited;
+downstream transport diagnosis continues in the existing RMQ-02 lineage.
+**NO BUSINESS OUTCOME. OWNER ACTION: NONE.**

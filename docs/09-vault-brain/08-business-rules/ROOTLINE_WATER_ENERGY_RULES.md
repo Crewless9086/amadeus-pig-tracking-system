@@ -221,6 +221,19 @@ The safety objective is not "exactly one OFF request." The required physical out
 - `OFF` is a state-setting, physically idempotent action. Repeating `OFF` is safe and is required when stop confirmation is absent or ambiguous.
 - Before `ON`, ROOTLINE must arm and verify an independent maximum-runtime fail-stop that does not depend on the same process surviving. Preferred implementations, in order, are a device-native countdown/auto-OFF/inching function, a device-native paired stop schedule, or a separately durable controller/workflow with a device backup.
 - A command receipt proves transport acceptance only. Where direct device state, electrical-current, flow, or valve-position evidence exists, ROOTLINE uses it to verify start and stop. Until such telemetry exists, supervised physical observation may prove a bounded commissioning run.
+- Owner decision 2026-08-24: for the governed Fertilizer mixer, Fertilizer
+  injector and Borehole controller, fresh authoritative application/provider
+  ON then OFF readback is sufficient operational start/stop proof. Routine
+  owner physical presence or observation is not required; Charl and Anton will
+  report exceptions. This does not make a command receipt sufficient, prove
+  fertilizer or water moved, or waive exact device binding, current need,
+  interlocks, idempotency, replay protection, deterministic maximum-runtime
+  OFF, final verified OFF, or canonical lifecycle readback. Mixer remains bound
+  to the commissioned CH2 300-second fail-stop. Injector remains bound to
+  exactly one active irrigation zone, at least ten minutes pre-flow, at most
+  120 seconds injection and at least ten minutes clean-water flush. Borehole
+  may not be commanded until exact device/provider binding and bounded
+  fail-OFF are proven.
 - A bounded run records one authorized execution identity, its maximum runtime, backup-stop deadline, primary stop attempt, every safe repeated `OFF`, observed outcome, and final containment state.
 - Failure to arm the independent fail-stop blocks `ON`. Failure to verify shutdown after the fail-stop creates one urgent hardware exception and keeps the zone unavailable for autonomous reuse.
 
