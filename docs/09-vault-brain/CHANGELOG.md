@@ -12,6 +12,16 @@
   minutes pre-flow, 120 seconds maximum and ten minutes flush; Borehole remains
   uncommandable until exact binding and bounded fail-OFF are proven.
 
+## 2026-08-24 - GREEN farm-house printer risk acceptance
+
+- Recorded Charl's acceptance of confidentiality and local-network risk for
+  the farm-house printer used only by the farm team. Private PKI, TLS/IPPS and
+  certificate setup are no longer commissioning or operational gates.
+- Preserved minimum integrity: fixed approved printer and queue, exact canonical
+  job identity and digest, bounded retry, no duplicate/replay, and truthful
+  printed-or-failed canonical/provider readback. No public arbitrary-print
+  endpoint or caller-selected printer, queue, URL or payload is authorized.
+
 ## 2026-08-23 - ROOTLINE B commissioning and adaptive timing reconciled
 
 - Reconciled the daily-advisor projection with the existing immutable B/C

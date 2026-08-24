@@ -2644,3 +2644,22 @@ no fresh canonical Mixer commissioning claim/card on immediate readback and no
 pre-confirm hardware/provider-control effect. A second retry is prohibited;
 downstream transport diagnosis continues in the existing RMQ-02 lineage.
 **NO BUSINESS OUTCOME. OWNER ACTION: NONE.**
+
+## 2026-08-24 - GREEN farm-house printer risk acceptance addendum
+
+Charl accepts the confidentiality and local-network risk of practical
+farm-house printer operation by the farm team and removes private PKI,
+TLS/IPPS and certificate setup as blockers in the existing DMQ/GREEN lineage.
+No new mission or priority results. Minimum operational integrity remains:
+one fixed approved printer and queue, exact canonical job identity and digest,
+bounded retry, no duplicate/replay, and truthful printed-or-failed
+canonical/provider readback. No public arbitrary-print endpoint or
+caller-selected printer, queue, URL or payload is authorized. Existing jobs,
+documents and historical evidence are unchanged. **NO BUSINESS OUTCOME. OWNER
+ACTION: NONE** until reviewed source is integrated and one genuine exact job is
+read back without duplicate output.
+
+For `RMQ-20260813-06`, the owner will provide exact Borehole connector/binding
+details tomorrow. This is the existing external trigger; ask no further
+question tonight and do not command Borehole before exact binding plus bounded
+fail-OFF are proven.
