@@ -11,7 +11,7 @@ from modules.oom_sakkie.rootline_material import (
 )
 
 
-OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v2"
+OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v3"
 
 
 def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
@@ -65,6 +65,15 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     if (_exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
             and delivered_owner_plan_fingerprint
             and delivered_owner_plan_fingerprint == current_owner_plan_fingerprint):
+        return {**_result("rootline_reassessment_unchanged", material, notify=False),
+                "operating_date": operating_date,
+                "result_id": result_id,
+                "evidence_generation": evidence_generation,
+                "next_due_at": _declared_next_due(current),
+                "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
+    if (_exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
+            and _legacy_volatile_owner_plan_matches(
+                delivered, current_answer, current_owner_plan_reassessment)):
         return {**_result("rootline_reassessment_unchanged", material, notify=False),
                 "operating_date": operating_date,
                 "result_id": result_id,
@@ -260,3 +269,16 @@ def _delivered_owner_plan_fingerprint(delivered):
 def _owner_plan_reassessment(value):
     result = stable_reassessment(value)
     return dict(result) if isinstance(result, Mapping) else {}
+
+
+def _legacy_volatile_owner_plan_matches(delivered, current_answer, current_reassessment):
+    """One-way compatibility for an exact delivered pre-v3 moving-clock packet."""
+    if (not isinstance(delivered, Mapping)
+            or isinstance(delivered.get("owner_plan_reassessment"), Mapping)
+            or str(current_reassessment.get("trigger") or "") not in {
+                "canonical_plan_reassessment", "durable_backend_schedule",
+                "new_canonical_evidence", "new_canonical_evidence_or_next_read"}):
+        return False
+    delivered_answer = _stable_owner_plan(delivered.get("answer"))
+    current = _stable_owner_plan(current_answer)
+    return bool(delivered_answer and delivered_answer == current)

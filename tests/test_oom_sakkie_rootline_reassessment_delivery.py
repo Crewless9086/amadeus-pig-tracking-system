@@ -143,6 +143,14 @@ def test_production_shaped_3986_to_3987_clock_only_change_is_silent():
         specialist_loader=lambda: result("2026-08-24T14:16:10+02:00", "68246A588C700598",
                                          "ROOTLINE-RESULT-20260824-68246A588C700598"),
         state_store=store, family_delivery=deliver)
+    # Production message 3986 predates the structured owner-plan fingerprint.
+    # Its stored trigger is the runtime invocation, not the plan schedule mode.
+    predecessor = next(row for row in rows.values()
+        if row.get("provider_message_id") == "3986")
+    predecessor.pop("owner_plan_reassessment", None)
+    predecessor.pop("owner_plan_fingerprint", None)
+    predecessor.pop("owner_plan_fingerprint_version", None)
+    predecessor["trigger"] = "declared_time"
     later, later_status = handle_rootline_reassessment_trigger(
         {**payload(), "trigger_id": "ROOTLINE-20260824-1416"}, HEADERS, ENV,
         specialist_loader=lambda: result("2026-08-24T14:46:14+02:00", "0B03E23C5CAA017B",
