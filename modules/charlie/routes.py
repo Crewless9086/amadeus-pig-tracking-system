@@ -28,6 +28,7 @@ from modules.charlie.mission_store import (
     list_owner_work_missions,
     create_owner_execution_hold,
     release_owner_execution_hold,
+    mission_control_snapshot,
     mission_status_summary,
     record_mission,
     record_mission_review_decision,
@@ -633,22 +634,16 @@ def charlie_mission_control_snapshot_route():
     now = time.monotonic()
     if not refresh and MISSION_CONTROL_CACHE.get("packet") and now < float(MISSION_CONTROL_CACHE.get("expires_at") or 0):
         return jsonify({**MISSION_CONTROL_CACHE["packet"], "cache": "fresh"}), 200
-    # Supabase's transaction pool can reject the dashboard's simultaneous cold
-    # connections even while each query succeeds alone. Load the authoritative
-    # owner queue first; counts are useful metadata and may degrade independently.
-    owner_queue, queue_status = _retry_dashboard_read(_dashboard_owner_queue, 100)
-    summary, summary_status = _retry_dashboard_read(mission_status_summary)
-    statuses = [summary_status, queue_status]
-    if queue_status >= 400:
+    snapshot, snapshot_status = _retry_dashboard_read(mission_control_snapshot, 100)
+    statuses = [snapshot_status]
+    if snapshot_status >= 400:
         return jsonify({"success": False, "status": "mission_control_snapshot_unavailable", "statuses": statuses}), 503
-    owner_missions = _attach_mission_family_children(owner_queue.get("missions", []))
+    owner_missions = _attach_mission_family_children(snapshot.get("missions", []))
     raw_buckets = _mission_status_buckets(owner_missions)
-    fallback_counts = {status: len(missions) for status, missions in raw_buckets.items()}
-    counts = summary.get("counts", {}) if summary_status < 400 else fallback_counts
     packet = {
         "success": True,
         "status": "mission_control_snapshot_ready",
-        "counts": counts,
+        "counts": snapshot.get("counts", {}),
         "buckets": {
             "active": [*raw_buckets.get("in_progress", []), *raw_buckets.get("release_in_progress", [])],
             "new": raw_buckets.get("new", []),
@@ -659,7 +654,7 @@ def charlie_mission_control_snapshot_route():
         "source": "supabase_charlie_missions",
         "authoritative": True,
         "source_statuses": statuses,
-        "counts_source": "mission_status_summary" if summary_status < 400 else "owner_queue_fallback",
+        "counts_source": "canonical_owner_queue_snapshot",
         "revision_truth": revision_truth(
             REPO_ROOT,
             render_deployed_commit=str(os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or ""),

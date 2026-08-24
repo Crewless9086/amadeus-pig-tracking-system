@@ -2659,6 +2659,66 @@ def mission_status_summary(database_url=None, connect_factory=None):
     }, 200
 
 
+def mission_control_snapshot(limit=100, database_url=None, connect_factory=None):
+    """Read the owner queue and its counts over one canonical DB connection."""
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured", "counts": {}, "missions": []}, 503
+
+    parsed_limit = _bounded_limit(limit)
+    params = {"owner_queue_statuses": list(OWNER_QUEUE_STATUSES), "limit": parsed_limit}
+    metadata_select = _mission_metadata_select(compact=True)
+    owner_filter = """
+        status = any(%(owner_queue_statuses)s)
+        and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+    """
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select mission_id, status, source, telegram_user_id, telegram_chat_id,
+                           raw_text, title, urgency, mission_type, approval_level,
+                           selected_next_step, owner_decision, codex_chat_write_status,
+                           {metadata_select}, created_at, updated_at
+                    from public.charlie_missions
+                    where {owner_filter}
+                    {_mission_order_clause("owner_queue")}
+                    limit %(limit)s
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+                cursor.execute(
+                    f"""
+                    select status, count(*)
+                    from public.charlie_missions
+                    where {owner_filter}
+                    group by status
+                    order by status
+                    """,
+                    params,
+                )
+                count_rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_control_snapshot_failed",
+            "error_type": exc.__class__.__name__,
+            "counts": {},
+            "missions": [],
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "counts": {str(row[0]): int(row[1] or 0) for row in count_rows},
+        "missions": [_mission_row(row) for row in rows],
+    }, 200
+
+
 def _orchestration_throughput_rows(rows):
     """Derive owner-visible durable metrics from the existing mission ledger."""
     missions = []
