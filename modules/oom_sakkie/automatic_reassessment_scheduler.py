@@ -10,9 +10,9 @@ SAST = ZoneInfo("Africa/Johannesburg")
 CONTRACT_VERSION = "oom_sakkie_reassessment_schedule.v1"
 SCHEDULER_IDENTITY = "ALERT-POWER-BACKEND-DELIVERY:OOM-SAKKIE-REASSESSMENT"
 ENABLED_SPECIALISTS = frozenset({"ROOTLINE"})
-CADENCE_MINUTES = 15
+CADENCE_MINUTES = 1
 MAX_CLOCK_DRIFT = timedelta(minutes=5)
-MAX_MISSED_RUN_AGE = timedelta(minutes=CADENCE_MINUTES * 2)
+MAX_MISSED_RUN_AGE = timedelta(minutes=5)
 
 
 def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Mapping[str, Any]],

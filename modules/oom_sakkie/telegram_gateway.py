@@ -897,6 +897,30 @@ def _farm_manager_operational_fallback(*, parsed, principal, capability, replay_
         "protected_actions_performed": False, "legacy_observation_path_used": False}
 
 
+def _rootline_irrigation_completion_summary(zone, execution):
+    """Return concise owner text containing only verified completion facts."""
+    runtime_seconds = int(execution.get("verified_runtime_seconds") or 0)
+    cumulative_seconds = int(execution.get("cumulative_verified_runtime_seconds") or 0)
+    segment = int(execution.get("current_segment") or execution.get("segment_number") or 0)
+    expected = int(execution.get("expected_segment_count") or 0)
+    lines = ["<b>✅ IRRIGATION COMPLETED</b>", "", f"{zone} is stopped and verified off."]
+    if runtime_seconds > 0:
+        minutes, seconds = divmod(runtime_seconds, 60)
+        label = f"Segment {segment}/{expected}" if segment and expected else "This segment"
+        lines.append(f"{label} ran for {minutes}m {seconds}s.")
+    if cumulative_seconds > runtime_seconds > 0:
+        minutes, seconds = divmod(cumulative_seconds, 60)
+        lines.append(f"Total verified watering: {minutes}m {seconds}s.")
+    if execution.get("fertilizer_delivery_verified") is True:
+        injections = execution.get("verified_fertilizer_injection_count")
+        mixes = execution.get("verified_fertilizer_mixing_count")
+        if isinstance(injections, int):
+            lines.append(f"Verified fertilizer injections: {injections}.")
+        if isinstance(mixes, int):
+            lines.append(f"Verified mixing cycles: {mixes}.")
+    return "\n".join(lines)
+
+
 def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
                                          state_store=None, family_delivery=None, schedule_store=None,
                                          scheduler_now=None, execution_cycle=None):
@@ -1168,7 +1192,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 def notify(state, execution):
                     zone = str(execution.get("zone_id") or "irrigation")
                     answer = ({"Started": f"<b>💧 IRRIGATION STARTED</b>\n\n{zone} is running for no more than 59 minutes 59 seconds.",
-                               "Completed": f"<b>✅ IRRIGATION COMPLETED</b>\n\n{zone} is stopped and the supported segment is complete.",
+                               "Completed": _rootline_irrigation_completion_summary(zone, execution),
                                "Blocked": (f"<b>IRRIGATION WAITING</b>\n\n{zone} is ready for water but cannot start: "
                                            f"{execution.get('blocker')}. No owner action is currently required. "
                                            f"ROOTLINE will reassess at {execution.get('next_reassessment_at') or 'the next automatic check'}."),
