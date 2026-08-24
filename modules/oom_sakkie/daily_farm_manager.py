@@ -67,6 +67,9 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                        and str(prior.get("telegram_message_id") or ""))
     claim_id = (projection_identity + ":GENERATION:" + digest[:20].upper()
                 if replacement else projection_identity + ":DELIVERY")
+    retry_proven = bool(prior.get("status") == "provider_ambiguous"
+                        and prior.get("delivery_definitely_not_sent") is True
+                        and prior.get("material_digest") == digest)
     claim = store("claim_daily", claim_id, {"daily_identity": identity,
         "material_digest": digest, "status": "detected", "observed_at": now.isoformat(),
         "task_identities": [row["task_id"] for row in packet["all_tasks"]],
@@ -77,7 +80,7 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     # A duplicate claim may be a restart before the provider attempt. Continue
     # into the family lifecycle: its attempt claim safely sends when no attempt
     # exists and fails ambiguous without retry after any possible provider call.
-    if claim.get("created") is False and store is not daily_farm_manager_store:
+    if claim.get("created") is False and store is not daily_farm_manager_store and not retry_proven:
         return {"success": True, "status": "daily_manager_replay_suppressed",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
@@ -98,6 +101,12 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         "recipient_language": str(language),
         "rolling_brief_replacement": replacement,
         "hardware_commands": 0, "writes_farm_data": False}
+    retry_authority = None
+    if retry_proven:
+        from modules.oom_sakkie.delivery_retry_authority import issue_delivery_retry_authority
+        retry_authority = issue_delivery_retry_authority(mission_id=claim_id,
+            card_mission_id=projection_identity, text=packet["answer"],
+            proof_identity=projection_identity + ":PROVIDER-DEFINITELY-NOT-SENT")
     if replacement:
         if replace_brief is None:
             from modules.oom_sakkie.family_message_lifecycle import replace_current_brief
@@ -108,14 +117,18 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
             generation_digest=digest)
     else:
         delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
-            mission_id=claim_id, card_mission_id=projection_identity)
+            mission_id=claim_id, card_mission_id=projection_identity,
+            delivery_retry_authority=retry_authority)
     message_id = str((delivery or {}).get("telegram_message_id") or "")
     provider_confirmed = bool(message_id and ((delivery or {}).get("success") is True
         or (delivery or {}).get("provider_delivery_confirmed") is True))
     if not provider_confirmed:
         store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
             "material_digest": digest, "status": "provider_ambiguous",
-            "observed_at": now.isoformat(), "telegram_sends": 0})
+            "observed_at": now.isoformat(), "telegram_sends": 0,
+            "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+            "delivery_definitely_not_sent":
+                (delivery or {}).get("delivery_definitely_not_sent") is True})
         return {"success": False, "status": "daily_manager_delivery_ambiguous",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
@@ -357,7 +370,7 @@ def _load_daily(identity, binding):
                   and review_json->'daily_farm_manager'->>'owner_user_id'=%s
                   and review_json->'daily_farm_manager'->>'chat_id'=%s
                   and review_json->'daily_farm_manager'->>'status' in
-                      ('presented','unchanged')
+                      ('presented','unchanged','provider_ambiguous')
                 order by created_at desc, review_event_id desc limit 1""",
                 (EVENT_SOURCE, identity, str(binding.get("owner_user_id") or ""),
                  str(binding.get("chat_id") or "")))

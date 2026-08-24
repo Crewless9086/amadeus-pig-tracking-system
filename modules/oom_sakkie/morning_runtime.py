@@ -47,15 +47,16 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
 
     from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
     try:
+        snapshot = _load_input_snapshot(recipients[0].telegram_user_id, now, source,
+            herd_loader=herd_loader, rootline_loader=rootline_loader,
+            litter_loader=litter_loader, sales_loader=sales_loader)
         outcomes = []
         for principal in recipients:
             # The same read-only canonical source contract is projected by the
             # specialist adapters in the recipient's language. No business
             # truth, task, claim or write is duplicated by this presentation.
-            results, litters, sales = _load_inputs(
-                principal.telegram_user_id, now, source, language=principal.language,
-                herd_loader=herd_loader, rootline_loader=rootline_loader,
-                litter_loader=litter_loader, sales_loader=sales_loader)
+            results, litters, sales = _project_input_snapshot(snapshot,
+                principal.telegram_user_id, now, principal.language)
             outcomes.append(run_daily_farm_manager(
                 owner_user_id=principal.telegram_user_id,
                 chat_id=principal.private_chat_id, specialist_results=results,
@@ -125,15 +126,22 @@ def _runtime_loop(*, environ):
 
 def _load_inputs(owner, now, source, *, language=None, herd_loader, rootline_loader,
                  litter_loader, sales_loader):
-    language = str(language or source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en")
+    snapshot = _load_input_snapshot(owner, now, source, herd_loader=herd_loader,
+        rootline_loader=rootline_loader, litter_loader=litter_loader,
+        sales_loader=sales_loader)
+    return _project_input_snapshot(snapshot, owner, now,
+        str(language or source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en"))
+
+
+def _load_input_snapshot(owner, now, source, *, herd_loader, rootline_loader,
+                         litter_loader, sales_loader):
+    from modules.oom_sakkie.farm_manager_runtime import (
+        _load_herdmaster_snapshot, _load_rootline_snapshot)
+    injected_herd = herd_loader is not None
+    injected_rootline = rootline_loader is not None
     if herd_loader is None or rootline_loader is None:
-        from modules.oom_sakkie.farm_manager_runtime import _load_herdmaster, _load_rootline
-        from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
-        authority = issue_gateway_owner_authority(owner, owner)
-        herd_loader = herd_loader or (lambda: _load_herdmaster(
-            authority, owner, now, language))
-        rootline_loader = rootline_loader or (lambda: _load_rootline(
-            now, language))
+        herd_loader = herd_loader or (lambda: _load_herdmaster_snapshot(owner, now))
+        rootline_loader = rootline_loader or (lambda: _load_rootline_snapshot(now))
     if litter_loader is None:
         from modules.pig_weights.farm_supabase_read_service import get_breeding_attention_source_snapshot
         litter_loader = lambda: get_breeding_attention_source_snapshot(deadline_seconds=20)
@@ -150,7 +158,7 @@ def _load_inputs(owner, now, source, *, language=None, herd_loader, rootline_loa
                              timeout=OWNER_REQUEST_DEADLINE_SECONDS)
         if futures["herd"] not in done or futures["rootline"] not in done:
             raise TimeoutError("morning_runtime_specialist_deadline")
-        results = [futures["herd"].result(), futures["rootline"].result()]
+        herd = futures["herd"].result(); rootline = futures["rootline"].result()
         litters = []
         if futures["litters"] in done:
             snapshot = futures["litters"].result()
@@ -162,9 +170,23 @@ def _load_inputs(owner, now, source, *, language=None, herd_loader, rootline_loa
                 sales = payload.get("sales_transactions") or []
         for future in pending:
             future.cancel()
-        return results, litters, sales
+        return {"herd": herd, "rootline": rootline, "litters": tuple(litters),
+                "sales": tuple(sales), "injected_herd": injected_herd,
+                "injected_rootline": injected_rootline}
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _project_input_snapshot(snapshot, owner, now, language):
+    from modules.oom_sakkie.farm_manager_runtime import (
+        _project_herdmaster_snapshot, _project_rootline_snapshot)
+    from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+    authority = issue_gateway_owner_authority(owner, owner)
+    herd = (snapshot["herd"] if snapshot["injected_herd"] else
+            _project_herdmaster_snapshot(snapshot["herd"], authority, owner, now, language))
+    rootline = (snapshot["rootline"] if snapshot["injected_rootline"] else
+                _project_rootline_snapshot(snapshot["rootline"], now, language))
+    return [herd, rootline], list(snapshot["litters"]), list(snapshot["sales"])
 
 
 def _escalate_failure(recipients, now, deliver, exc, *, store=None):

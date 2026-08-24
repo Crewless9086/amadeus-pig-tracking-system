@@ -219,6 +219,12 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
 
 
 def _load_herdmaster(authority, owner, now, language="en"):
+    return _project_herdmaster_snapshot(
+        _load_herdmaster_snapshot(owner, now), authority, owner, now, language)
+
+
+def _load_herdmaster_snapshot(owner, now):
+    """Read one immutable canonical HERDMASTER evidence snapshot."""
     futures = {
         "canonical": _HERD_EVIDENCE_EXECUTOR.submit(load_current_breeding_operating_loop),
         "observations": _HERD_EVIDENCE_EXECUTOR.submit(_load_observations, owner),
@@ -239,7 +245,8 @@ def _load_herdmaster(authority, owner, now, language="en"):
             not in {"completed", "closed", "handled"})
         # Reproductive and welfare evidence remains in the existing whole-herd
         # result. Weekly cohort biology comes only from the versioned producer.
-        herd = _whole_herd_specialist_result(canonical, observations, active_current, now)
+        snapshot = {"canonical": canonical, "observations": observations,
+                    "active": tuple(active), "active_current": active_current}
     except Exception:
         try:
             active = futures["active"].result(timeout=0) if futures["active"] in done else ()
@@ -247,22 +254,32 @@ def _load_herdmaster(authority, owner, now, language="en"):
             active = ()
         active_current = tuple(row for row in active if str(row.get("state") or "").casefold()
             not in {"completed", "closed", "handled"})
-        return _active_welfare_result(active_current, now)
+        return {"failed": True, "active": tuple(active), "active_current": active_current}
     else:
         try:
             packet = futures["daily"].result() if futures["daily"] in done else None
         except Exception:
             packet = None
-        daily = consume_daily_manager_evidence(packet, observed_at=now,
-            active_lifecycles=active, language=language)
-        combined_id = herd.result_id + ":" + daily.result_id
-        items = tuple(replace(item, provenance=replace(item.provenance,
-                      result_id=combined_id))
-                      for item in tuple(daily.work_items) + tuple(herd.work_items))
-        return replace(herd, work_items=items, result_id=combined_id)
+        snapshot["daily_packet"] = packet
+        return snapshot
     finally:
         for future in pending:
             future.cancel()
+
+
+def _project_herdmaster_snapshot(snapshot, authority, owner, now, language="en"):
+    if snapshot.get("failed"):
+        return _active_welfare_result(snapshot.get("active_current") or (), now)
+    active = snapshot.get("active") or ()
+    herd = _whole_herd_specialist_result(snapshot["canonical"],
+        snapshot["observations"], snapshot.get("active_current") or (), now)
+    daily = consume_daily_manager_evidence(snapshot.get("daily_packet"), observed_at=now,
+        active_lifecycles=active, language=language)
+    combined_id = herd.result_id + ":" + daily.result_id
+    items = tuple(replace(item, provenance=replace(item.provenance,
+                  result_id=combined_id))
+                  for item in tuple(daily.work_items) + tuple(herd.work_items))
+    return replace(herd, work_items=items, result_id=combined_id)
 
 
 def _augment_herd_with_mortality(*,herd,mortality_future,mortality_done,authority,owner,
@@ -484,6 +501,10 @@ def _current_cycle_observations(tasks, observations, generated_at):
 
 
 def _load_rootline(now, language="en"):
+    return _project_rootline_snapshot(_load_rootline_snapshot(now), now, language)
+
+
+def _load_rootline_snapshot(now):
     future = _ROOTLINE_REFRESH_EXECUTOR.submit(
         build_current_rootline_specialist_result,
         operating_date=now.date().isoformat(), now=now)
@@ -502,8 +523,15 @@ def _load_rootline(now, language="en"):
             assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
             provenance=provenance, business_value=90,
             genuine_question="", question_for="")
-        return SpecialistResult("rootline", provenance.result_id, now,
-            SpecialistAvailability.AVAILABLE, work_items=(item,))
+        return {"failed_result": SpecialistResult("rootline", provenance.result_id, now,
+            SpecialistAvailability.AVAILABLE, work_items=(item,))}
+    return {"raw": raw}
+
+
+def _project_rootline_snapshot(snapshot, now, language="en"):
+    if snapshot.get("failed_result"):
+        return snapshot["failed_result"]
+    raw = snapshot["raw"]
     observed = _time(((raw.get("evidence") or {}).get("generated_at") or raw.get("generated_at")), now)
     result_id = str(raw.get("result_id") or raw.get("plan_id") or "rootline-current")
     provenance = Provenance("rootline", result_id, ("canonical_rootline_specialist_result",), observed, 1.0)

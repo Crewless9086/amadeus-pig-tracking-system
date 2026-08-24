@@ -258,7 +258,7 @@ def test_shared_plan_projects_once_per_owner_with_language_and_scoped_identity()
         sales_loader=lambda: ({"success": True, "sales_transactions": []}, 200))
     assert outcome["status"] == "morning_runtime_recipients_projected"
     assert outcome["recipient_count"] == 2 and outcome["telegram_sends"] == 2
-    assert loads == ["herd", "herd"]
+    assert loads == ["herd"]
     by_owner = {row[0]: row for row in deliveries}
     assert "TODAY'S FARM PLAN" in by_owner["42"][1]
     assert "VANDAG SE PLAASPLAN" in by_owner["77"][1]
@@ -267,23 +267,55 @@ def test_shared_plan_projects_once_per_owner_with_language_and_scoped_identity()
 
 
 def test_one_recipient_provider_failure_does_not_block_other_recipient():
-    events, attempted = {}, []
+    events, daily, attempted, retry_provider_sends = {}, {}, [], []
+    retry_lock = Lock()
+    retry_barrier = __import__("threading").Barrier(2)
+    concurrent_phase = [False]
     def store(action, identity, payload):
-        if action == "load_daily": return None
+        if action == "load_daily":
+            value = daily.get((identity, payload["owner_user_id"], payload["chat_id"]))
+            if concurrent_phase[0] and payload["owner_user_id"] == "77" \
+                    and value and value.get("status") == "provider_ambiguous":
+                retry_barrier.wait(timeout=3)
+            return value
         if action == "load_answered_questions": return ()
+        if action == "record_daily":
+            key = (payload["daily_identity"], payload.get("owner_user_id", ""),
+                   payload.get("chat_id", ""))
+            daily[key] = dict(payload)
+            return {"success": True, "created": True}
         created = identity not in events; events.setdefault(identity, dict(payload or {}))
         return {"success": True, "created": created}
     def deliver(parsed, result, **kwargs):
-        attempted.append(parsed["telegram_user_id"])
-        if parsed["telegram_user_id"] == "77":
-            return {"success": False, "telegram_sends": 0, "telegram_edits": 0}
-        return {"success": True, "telegram_message_id": "charl-card", "telegram_sends": 1}
-    outcome = run_morning_cycle(now=NOW, environ=_two_manager_env(), deliver=deliver,
+        with retry_lock:
+            attempted.append(parsed["telegram_user_id"])
+            anton_count = attempted.count("77")
+            if parsed["telegram_user_id"] == "77" and anton_count == 1:
+                return {"success": False, "telegram_sends": 0, "telegram_edits": 0,
+                        "delivery_definitely_not_sent": True}
+            if parsed["telegram_user_id"] == "77":
+                first_provider_effect = not retry_provider_sends
+                if first_provider_effect: retry_provider_sends.append("anton-card")
+                return {"success": True, "telegram_message_id": "anton-card",
+                        "telegram_sends": int(first_provider_effect), "telegram_edits": 0}
+            return {"success": True, "telegram_message_id": "charl-card", "telegram_sends": 1}
+    args = dict(now=NOW, environ=_two_manager_env(), deliver=deliver,
         store=store, herd_loader=lambda: _specialist("herdmaster"),
         rootline_loader=lambda: _specialist("rootline"),
         litter_loader=lambda: {"allocation_inputs": {"litter_rows": []}},
         sales_loader=lambda: ({"success": True, "sales_transactions": []}, 200))
+    outcome = run_morning_cycle(**args)
     assert attempted == ["42", "77"]
     assert outcome["success"] is False and outcome["telegram_sends"] == 1
     assert [row["status"] for row in outcome["recipient_results"]] == [
         "daily_manager_presented", "daily_manager_delivery_ambiguous"]
+    concurrent_phase[0] = True
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        recovered = list(executor.map(lambda _: run_morning_cycle(**args), range(2)))
+    assert attempted.count("42") == 1 and attempted.count("77") == 3
+    assert retry_provider_sends == ["anton-card"]
+    assert all(row["recipient_results"][0]["status"] == "daily_manager_unchanged_silent"
+               for row in recovered)
+    assert sum(row["telegram_sends"] for row in recovered) == 1
+    assert daily[("OOM-DAILY-FARM-MANAGER-2026-08-13", "42", "42")]["telegram_message_id"] == "charl-card"
+    assert daily[("OOM-DAILY-FARM-MANAGER-2026-08-13", "77", "77")]["telegram_message_id"] == "anton-card"
