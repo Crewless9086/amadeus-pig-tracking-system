@@ -5,7 +5,10 @@ import hashlib, json
 import re
 from typing import Any, Callable, Mapping
 from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_plan
-from modules.oom_sakkie.rootline_material import rootline_material_digest
+from modules.oom_sakkie.rootline_material import (
+    rootline_material_digest,
+    stable_reassessment,
+)
 
 
 OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v2"
@@ -41,7 +44,10 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     delivered = state_store("load_delivered", f"{owner_user_id}|{chat_id}", None) or {}
     current_identity = state_store("load_identity", identity, None) or {}
     current_answer = compose_daily_rootline_plan(current, language=language)
-    current_owner_plan_fingerprint = _owner_plan_fingerprint(current_answer)
+    current_owner_plan_reassessment = _owner_plan_reassessment(
+        current.get("next_reassessment"))
+    current_owner_plan_fingerprint = _owner_plan_fingerprint(
+        current_answer, current_owner_plan_reassessment)
     # A fresher generation remains durable observation evidence, but is not
     # owner-notification material by itself. Daily and change rails share the
     # date + material identity and stay silent when the supported action did
@@ -82,6 +88,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
               "answer": current_answer,
               "owner_plan_fingerprint_version": OWNER_PLAN_FINGERPRINT_VERSION,
               "owner_plan_fingerprint": current_owner_plan_fingerprint,
+              "owner_plan_reassessment": current_owner_plan_reassessment,
               "delivery_state": "pending"}
     recorded = state_store("claim_pending", identity, packet)
     if not isinstance(recorded, Mapping) or recorded.get("success") is not True:
@@ -223,13 +230,14 @@ def _stable_owner_plan(value):
     return "\n".join(lines).strip()
 
 
-def _owner_plan_fingerprint(value):
+def _owner_plan_fingerprint(value, reassessment=None):
     stable = _stable_owner_plan(value)
     if not stable:
         return ""
-    return hashlib.sha256(
-        f"{OWNER_PLAN_FINGERPRINT_VERSION}|{stable}".encode()
-    ).hexdigest()
+    material = {"version": OWNER_PLAN_FINGERPRINT_VERSION, "owner_text": stable,
+                "reassessment": dict(reassessment or {})}
+    return hashlib.sha256(json.dumps(material, sort_keys=True,
+        separators=(",", ":")).encode()).hexdigest()
 
 
 def _delivered_owner_plan_fingerprint(delivered):
@@ -240,4 +248,15 @@ def _delivered_owner_plan_fingerprint(delivered):
     # Exact historical pending packets already preserve the delivered owner
     # text. Derive the same versioned semantic identity for the one-time
     # transition without weakening recipient/date/provider binding.
-    return _owner_plan_fingerprint(delivered.get("answer"))
+    reassessment = delivered.get("owner_plan_reassessment")
+    if not isinstance(reassessment, Mapping):
+        reassessment = _owner_plan_reassessment({
+            "trigger": delivered.get("trigger"),
+            "at": delivered.get("next_reassessment_at"),
+        })
+    return _owner_plan_fingerprint(delivered.get("answer"), reassessment)
+
+
+def _owner_plan_reassessment(value):
+    result = stable_reassessment(value)
+    return dict(result) if isinstance(result, Mapping) else {}

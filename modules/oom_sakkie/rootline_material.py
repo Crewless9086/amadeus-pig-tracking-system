@@ -45,6 +45,7 @@ def stable_reassessment(value):
     ) if key in value}
     if trigger not in {
         "canonical_plan_reassessment",
+        "durable_backend_schedule",
         "new_canonical_evidence",
         "new_canonical_evidence_or_next_read",
     } and "at" in value:
