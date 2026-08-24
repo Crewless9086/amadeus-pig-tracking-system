@@ -2246,6 +2246,19 @@ or create another mission. Lifecycle remains `WORKING / SOURCE_REPAIR_ACTIVE`;
 **NO BUSINESS OUTCOME** and **OWNER ACTION: NONE**. No provider, canonical,
 animal, farm or physical effect occurred.
 
+### Selective BCS source repair prepared on exact current main
+
+The serial HMQ-05 addendum reuses Bulk Weight Entry and HMQ-00's canonical
+`pig_observation_events` writer. A row is actionable when it contains only a
+valid BCS; blank BCS has zero observation effect. Each selected pig receives a
+separate append-only body-condition observation keyed by draft plus pig, with
+replay withheld and the latest effective BCS explicitly superseded on a
+correction. No heat input or derived heat work is introduced. The draft remains
+recoverable when either the BCS or weight/location rail fails. No schema, page,
+store, queue or scheduler is added. Lifecycle remains `WORKING /
+SOURCE_REPAIR_ACTIVE`; **NO BUSINESS OUTCOME** and **OWNER ACTION: NONE** until
+reviewed release and genuine canonical/provider acceptance.
+
 ## 2026-08-24 - Prince generic Telegram completion acceptance failure
 
 This owner finding is consolidated into existing mission
