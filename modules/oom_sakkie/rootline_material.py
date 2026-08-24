@@ -13,6 +13,11 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
         if not isinstance(row, Mapping):
             continue
         subject = str(row.get("subject") or "")
+        # The standalone owner plan renders only the two irrigation zones.
+        # Hidden borehole, power and fertilizer recommendation churn must not
+        # manufacture a visibly identical Telegram plan every reassessment.
+        if subject not in {"B12345", "C12345"}:
+            continue
         lifecycle = lifecycles.get(subject)
         lifecycle = lifecycle if isinstance(lifecycle, Mapping) else {}
         item = {key: _normal(row.get(key)) for key in
@@ -24,8 +29,7 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
         recommendations.append(item)
     recommendations.sort(key=lambda row: (str(row.get("subject") or ""),
                                            str(row.get("status") or row.get("recommendation") or "")))
-    selected = {"overall_status": _normal(result.get("overall_status")),
-        "recommendations": recommendations,
+    selected = {"recommendations": recommendations,
         "next_reassessment": stable_reassessment(result.get("next_reassessment")),
         "owner_question": _owner_question((result.get("owner_brief") or {}).get("family_fact_needed"))}
     return hashlib.sha256(json.dumps(selected, sort_keys=True, separators=(",", ":"),
