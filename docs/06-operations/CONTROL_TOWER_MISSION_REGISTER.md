@@ -2750,3 +2750,98 @@ observed-but-undelivered press is retained as acceptance evidence, not counted
 as outcome. ROOTLINE B remains independently active pending terminal `OFF` and
 canonical completion. No mission or priority changed, and this register update
 performed no provider, database, farm, scheduler or hardware mutation.
+
+## 2026-08-24 - ROOTLINE B genuine execution and shutdown acceptance PASS
+
+This append-only entry supersedes the earlier active-B state without changing
+mission priority. Exact execution
+`ROOTLINE-EXECUTION-AEABE2390A51356550A6A5AE` claimed B/channel 1 at
+`2026-08-23T20:47:43Z`; the provider accepted `ON` at `20:47:46Z`, and the
+canonical execution became Active at `20:47:50Z`. The controller's native
+fail-stop deadline was `21:47:42Z`. There was no C overlap. Unattended recovery
+at `22:16:12Z` performed exactly one `OFF` attempt and obtained authoritative
+`OFF`; exact `record_completed` followed at `22:16:24Z` with
+`shutdown_verified=true` and runtime `3599` seconds. `load_active` is null,
+canonical history contains one qualifying completion and no duplicate, the
+completion delivery is recorded, and later unattended cycles produced zero
+duplicate effects.
+
+This is a genuine B irrigation and safe-shutdown owner outcome: the governed
+runtime started the exact zone, physical fail-stop protected the duration, the
+controller was authoritatively verified off, canonical execution/history
+closed once, and completion was delivered. The acceptance caveat remains
+material: canonical reconciliation occurred about 28 minutes 42 seconds after
+the native deadline. Physical fail-stop remained safe, but scheduler recovery
+punctuality stays tracked in the existing ROOTLINE continuity lineage. Mission
+state is
+`B_OWNER_OUTCOME_PASS / SAFE_OFF / EXACT_ONCE / RECOVERY_PUNCTUALITY_CAVEAT`.
+OWNER ACTION: NONE.
+
+## 2026-08-24 - C transcript evidence and canonical acceptance gap
+
+The user-visible provider transcript reports a C start and completion and also
+shows repeated noisy plan messages. This is genuine owner-visible evidence,
+but canonical C execution, provider actuation, authoritative terminal `OFF`,
+history closure, exact-once delivery and later continuity have not yet been
+read back as one attributable chain. C operational acceptance therefore
+remains pending; the transcript is not promoted to a canonical C physical
+outcome. Repeated plan delivery is retained as a current owner-work defect in
+the existing ROOTLINE projection/continuity lineage. OWNER ACTION: NONE.
+
+## 2026-08-24 - Morning brief acceptance failure and durable tank rule
+
+Anton received no morning brief. Charl's delivered morning brief remained
+operationally stale and noisy: it resurrected Prince's already-attributable
+answered welfare question, exposed backend ROOTLINE language, and dumped 76
+pig tags rather than presenting a concise prioritized owner plan. This is a
+genuine post-deployment daily/debrief acceptance **FAILURE**, not an owner
+outcome. It remains in the existing Oom Sakkie daily-manager and ROOTLINE owner
+projection lineages without reprioritization.
+
+Latest owner rule: assume the tanks have water unless Charl or Anton reports a
+tank low or empty. Oom Sakkie must not repeatedly ask for tank level in normal
+briefs. A tank question is permitted only when fresh attributable family or
+canonical evidence indicates low, empty or genuinely uncertain safety state,
+and it must remain one concise contextual question. This rule reduces repeated
+owner work; it does not authorize irrigation or override device safety.
+
+Anton has also physically performed the requested second `Bevestig` press, but
+the latest read-only evidence still does not prove a delivered post-repair
+callback or completed Pig 126 runtime result. The claim remains active and Pig
+126 remains `Active`, `on_farm=true`, in `PEN-012`. His required physical action
+is complete; no third press, report resend or terminal proxy is authorized.
+**NO PIG 126 OWNER OUTCOME. OWNER ACTION: NONE.** The existing acceptance lane
+must diagnose provider delivery and continue automatically.
+
+## 2026-08-24 - PR 1206 independent review and all-terminal sweep
+
+PR `#1206` passed independent exact-head review at
+`8acb750b8da9007d494166b910e0fface5e74af7` against exact current main
+`c824ae30c3285b7f696633bbf0128a6dd0bcfda9`. It is clean and mergeable, all
+four hosted gates pass, and 58 focused independent tests pass. The bounded
+BEACON repair selects only canonical media with current Library acceptance,
+public-use approval, storage readback, content hash and relevant awareness
+tags; binds the deterministic asset through proposal, package, claim and
+protected worker; preserves exact litter/event binding for litter stories; and
+keeps missing or untrusted media text-only. Owner approval, protected final
+execution, zero spend and no autonomous publication remain unchanged. Review
+is PASS; this register lane did not merge, deploy, publish or contact anyone.
+
+Terminal sweep: the interactive Control Tower parent is active. The
+Anton/HERDMASTER lane is active on the undelivered-callback diagnosis with no
+further owner action. The Green lane is active independently. This durable
+register lane remains the sole register writer. PR `#1206` is the only freshly
+reviewed clean current-main product PR; older open PRs `#1194`, `#1184` and
+legacy governance/product branches remain separate and are not inferred
+current or promoted by this sweep. No overlapping register writer, duplicate
+mission or production mutation was found.
+
+Control Tower Check Receipt and full handover: ROOTLINE B advances to a genuine
+safe exact-once owner outcome with its punctuality caveat retained. C remains
+provider-transcript evidence pending canonical acceptance. Morning briefs fail
+real-world acceptance for Anton absence and Charl stale/noisy content. The
+tank default is now explicit. Anton has completed the requested press, so
+**OWNER ACTION: NONE** across these findings; technical/provider diagnosis,
+canonical readback, safe follow-up and later terminal-independent cycles must
+continue automatically. No mission was created or reprioritized, and this
+update performed no provider, database, farm, scheduler or hardware mutation.
