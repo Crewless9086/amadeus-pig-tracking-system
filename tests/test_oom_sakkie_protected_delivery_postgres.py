@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import psycopg
 from modules.oom_sakkie.protected_delivery_lifecycle import recover_protected_card
+from modules.oom_sakkie.protected_action_claims import create_claim
 
 URL=os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL","").strip()
 @unittest.skipUnless(URL,"disposable PostgreSQL URL is required")
@@ -83,3 +84,28 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
           preview_digest,evidence_generation,preview_payload,expires_at,delivery_attempt_id)
          values(%s,'rootline_fertilizer_mixer_presence_refresh','42','42','M2','IN2','G2','E','{}',%s,'A')""",
          (other,datetime.now(timezone.utc)+timedelta(minutes=5)))
+
+  def test_expired_unbound_presence_claim_does_not_block_fresh_governed_preview(self):
+    mission="MIXER-"+uuid.uuid4().hex
+    stale="D"+uuid.uuid4().hex
+    with self.connect() as db:
+      db.execute("""insert into app_private.oom_protected_action_claims
+       (callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
+        provider_message_id,preview_digest,evidence_generation,preview_payload,expires_at)
+       values(%s,'rootline_fertilizer_mixer_presence_refresh','42','42',%s,
+        'OLD','OLD-DIGEST','OLD-EVIDENCE','{}',now()-interval '1 day')""",
+        (stale,mission))
+    payload={"mission_id":mission,"owner_user_id":"42","private_chat_id":"42",
+      "contract_version":"oom_rootline_mixer_presence_refresh.v1"}
+    created=create_claim(action_kind="rootline_fertilizer_mixer_presence_refresh",
+      owner_user_id="42",private_chat_id="42",mission_id=mission,
+      provider_message_id="NEW",evidence_generation="NEW-EVIDENCE",
+      preview_payload=payload,ttl_minutes=5,connect_factory=self.connect,
+      supersede_active=False)
+    self.assertEqual(created["status"],"protected_claim_created")
+    with self.connect() as db:
+      rows=db.execute("""select provider_message_id,status from
+       app_private.oom_protected_action_claims where mission_id=%s
+       order by provider_message_id""",(mission,)).fetchall()
+      db.execute("delete from app_private.oom_protected_action_claims where mission_id=%s",(mission,))
+    self.assertEqual(rows,[("NEW","active"),("OLD","expired")])

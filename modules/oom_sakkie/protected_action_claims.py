@@ -84,6 +84,13 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                   "preview_card_message_id":str(prior[8] or ""),"action_kind":action_kind}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
         if not supersede_active:
+            # An unbound preview that expired before delivery cannot receive a
+            # valid callback and must not block the next governed preview.
+            # Bound cards retain their terminal audit/callback behavior.
+            cur.execute("""update app_private.oom_protected_action_claims
+              set status='expired' where action_kind=%s and mission_id=%s
+              and status='active' and expires_at<=now()
+              and preview_card_message_id is null""", (action_kind, mission_id))
             cur.execute("""select 1 from app_private.oom_protected_action_claims
               where mission_id=%s and status='active' limit 1""", (mission_id,))
             if cur.fetchone():
