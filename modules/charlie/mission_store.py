@@ -26,6 +26,7 @@ from modules.charlie.evidence_reconciliation import (
     targeted_workflow_return,
 )
 from modules.charlie.adaptive_orchestration import validate_orchestration_binding
+from modules.charlie.mission_control import apply_event_to_projection, build_mission_control_event
 
 
 MISSION_STATUSES = {
@@ -745,6 +746,54 @@ def get_mission(mission_id, database_url=None, connect_factory=None):
     if not rows:
         return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
     return {"success": True, "configured": True, "status": "ok", "mission": _mission_row(rows[0])}, 200
+
+
+def append_mission_control_event(mission_id, payload, *, recorded_by,
+                                 database_url=None, connect_factory=None):
+    """Append one governed event and atomically refresh its derived owner projection."""
+    mission_id = _clean_text(mission_id, 90)
+    try:
+        event = build_mission_control_event(mission_id, payload, recorded_by=recorded_by)
+    except ValueError as exc:
+        return {"success": False, "status": str(exc)}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id,status,source,telegram_user_id,telegram_chat_id,
+                    raw_text,title,urgency,mission_type,approval_level,selected_next_step,
+                    owner_decision,codex_chat_write_status,metadata_json,created_at,updated_at
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                mission = _mission_row(row)
+                projection = apply_event_to_projection(mission, event)
+                cursor.execute("""insert into public.charlie_mission_events
+                    (event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at)
+                    values (%(event_id)s,%(mission_id)s,%(event_type)s,%(notes)s,%(recorded_by)s,%(metadata)s::jsonb,%(created_at)s)
+                    on conflict (event_id) do nothing returning event_id""", {
+                    "event_id": event["event_id"], "mission_id": mission_id,
+                    "event_type": event["event_type"], "notes": event["summary"],
+                    "recorded_by": recorded_by, "metadata": json.dumps(event, sort_keys=True),
+                    "created_at": event["recorded_at"],
+                })
+                created = cursor.fetchone() is not None
+                if created:
+                    metadata = dict(mission.get("metadata") or {})
+                    metadata["mission_control_projection"] = projection
+                    cursor.execute("""update public.charlie_missions
+                        set metadata_json=%(metadata)s::jsonb,updated_at=now()
+                        where mission_id=%(mission_id)s""", {
+                        "metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+        return {"success": True, "status": "recorded" if created else "exact_replay",
+                "created": created, "event": event, "owner_projection": projection}, 201 if created else 200
+    except Exception as exc:
+        return {"success": False, "status": "mission_control_event_write_failed",
+                "error_type": exc.__class__.__name__}, 503
 
 
 def update_mission_status(
@@ -2865,6 +2914,8 @@ def _mission_row(row):
     }
     result["technical_status"] = result["status"]
     result["mission_lifecycle"] = mission_lifecycle_projection(result)
+    from modules.charlie.mission_control import owner_projection
+    result["owner_projection"] = owner_projection(result)
     return result
 
 
