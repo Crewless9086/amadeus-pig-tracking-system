@@ -156,3 +156,31 @@ def test_store_reconstructs_date_from_append_only_pending_history(monkeypatch):
     loaded=rootline_reassessment_store._load("load_identity","LEGACY")
     assert loaded=={"identity":"LEGACY","delivery_state":"delivered",
                     "operating_date":"2026-08-15"}
+
+
+def test_store_load_delivered_enriches_only_exact_predecessor_pending_packet(monkeypatch):
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self,*_): pass
+        def execute(self,*_): pass
+        def fetchall(self):
+            return [
+                ({"identity":"CURRENT","owner_user_id":"42","chat_id":"42",
+                  "delivery_state":"delivered","provider_message_id":"8001"},),
+                ({"identity":"OTHER","owner_user_id":"42","chat_id":"42",
+                  "delivery_state":"pending","answer":"wrong"},),
+                ({"identity":"CURRENT","owner_user_id":"42","chat_id":"42",
+                  "delivery_state":"pending","operating_date":"2026-08-24",
+                  "answer":"exact prior plan","zones":[{"zone_id":"B12345"}]},),
+            ]
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self,*_): pass
+        def cursor(self): return Cursor()
+    monkeypatch.setattr(rootline_reassessment_store,"connect_bounded_read",
+                        lambda **_:Connection())
+    loaded=rootline_reassessment_store._load("load_delivered","42|42")
+    assert loaded["identity"] == "CURRENT"
+    assert loaded["answer"] == "exact prior plan"
+    assert loaded["operating_date"] == "2026-08-24"
+    assert loaded["zones"] == [{"zone_id":"B12345"}]

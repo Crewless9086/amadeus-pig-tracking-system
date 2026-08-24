@@ -2305,3 +2305,25 @@ delivery followed by a later unchanged natural reassessment with zero standalone
 plan delivery. Immediate lifecycle notifications must remain unaffected. This
 directly unblocks the existing owner outcome but does not otherwise reprioritize
 the durable mission order.
+
+### Post-deployment digest-cutover acceptance failure and compatibility repair
+
+PR #1234 independently passed, merged as
+`6040d34a36030101cd65218c50d728505d4b8b48`, and loaded exactly on Render.
+The first natural post-deployment cycle recorded observation at
+`2026-08-24T11:46:51.913854Z`, then delivered provider message `3986` at
+`11:47:03.557070Z`. Its B/C owner semantics remained unchanged, but the newly
+corrected semantic digest could not equal the predecessor's legacy digest, so
+the version cutover emitted one false duplicate. Zero hardware/farm mutation
+occurred and the separate execution-lifecycle notification rail was untouched.
+
+Lifecycle remains `WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / SAME_LINEAGE_COMPATIBILITY_REPAIR`;
+**NO BUSINESS OUTCOME** and `OWNER ACTION: NONE`. The bounded continuation must
+bind the prior delivered and pending packet to the exact recipient, operating
+date and predecessor identity; compare stable rendered semantics only for the
+declared volatile canonical reassessment clock; and fail open to one legitimate
+delivery when predecessor evidence is absent, ambiguous or mismatched. Genuine
+zone/lifecycle/verified-completion/owner-question changes and fixed meaningful
+deadlines must still produce exactly one successor. Completion still requires
+reviewed deployment, a natural materially changed plan when one genuinely
+occurs, and a later natural unchanged zero-send cycle.

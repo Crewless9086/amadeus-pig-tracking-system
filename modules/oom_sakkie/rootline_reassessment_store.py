@@ -48,7 +48,21 @@ def _load(action, identity):
                     where event_source=%s
                       and review_json->'rootline_reassessment'->>'owner_user_id'=%s
                       and review_json->'rootline_reassessment'->>'chat_id'=%s
-                      and review_json->'rootline_reassessment'->>'delivery_state'='delivered'
-                    order by created_at desc,review_event_id desc limit 1""", (EVENT_SOURCE, owner, chat))
-            row = cursor.fetchone()
-            return row[0] if row else None
+                    order by created_at desc,review_event_id desc limit 20""", (EVENT_SOURCE, owner, chat))
+                rows = cursor.fetchall()
+                delivered = next((dict(row[0] or {}) for row in rows
+                    if str((row[0] or {}).get("delivery_state") or "") == "delivered"), None)
+                if delivered is None:
+                    return None
+                same_identity = [dict(row[0] or {}) for row in rows
+                    if str((row[0] or {}).get("identity") or "") == str(delivered.get("identity") or "")]
+                return _merge_missing(delivered, same_identity)
+
+
+def _merge_missing(latest, history):
+    merged = dict(latest or {})
+    for prior in history:
+        for key, value in dict(prior or {}).items():
+            if key not in merged or merged.get(key) in (None, "", [], {}):
+                merged[key] = value
+    return merged
