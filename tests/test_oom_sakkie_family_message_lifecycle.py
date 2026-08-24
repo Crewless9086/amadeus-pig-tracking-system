@@ -8,6 +8,7 @@ import pytest
 from modules.oom_sakkie.family_message_lifecycle import (_visible_notification_events,
     bind_existing_card,bind_legacy_provider_request,deliver_family_result,
     replace_current_brief)
+from modules.oom_sakkie.herdmaster_health_loss_runtime import mortality_completion_recovery_result
 
 
 def test_brief_replacement_confirms_supersession_before_optional_cleanup():
@@ -206,6 +207,35 @@ def test_delivery_and_duplicate_update_are_exact_once():
     replay=deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",event_store=memory.store,sender=memory.send,editor=memory.edit)
     assert first["telegram_sends"]==1 and replay["telegram_sends"]==0
     assert len(memory.sent)==1 and memory.edited==[]
+
+
+def test_structured_mortality_completion_survives_actual_en_and_af_delivery_boundary():
+    stored={"success":True,"status":"completed","answer":"old stored prose",
+        "lifecycle_event_id":"LIFE-1","welfare_case_closed":True}
+    preview={"identity":{"tag_number":"126"}}
+    for language,heading in (("af","<b>VARK 126 AANGETEKEN</b>"),
+                             ("en","<b>126 - DEATH RECORDED</b>")):
+        memory=Memory()
+        result=mortality_completion_recovery_result(stored,preview,language)
+        delivered=deliver_family_result({**PARSED,"output_language":language},result,
+            specialist="HERDMASTER",event_store=memory.store,
+            sender=memory.send,editor=memory.edit)
+        assert delivered["success"] is True and delivered["telegram_sends"]==1
+        assert memory.sent[0][1].startswith(heading)
+        assert "kanonieke resultaat" not in memory.sent[0][1]
+
+
+def test_invalid_structured_af_contract_falls_back_to_safe_localization():
+    memory=Memory()
+    result={"success":True,"status":"completed","answer":"Completed internally.",
+        "recipient_render_contract":"specialist_structured_recipient_v1",
+        "recipient_language":"af"}
+    delivered=deliver_family_result({**PARSED,"output_language":"af"},result,
+        specialist="HERDMASTER",event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    assert delivered["success"] is True
+    assert "Completed internally" not in memory.sent[0][1]
+    assert "VOLTOOI" in memory.sent[0][1]
 
 def test_protected_preview_owns_durable_attempt_before_provider_send():
     memory=Memory(); order=[]

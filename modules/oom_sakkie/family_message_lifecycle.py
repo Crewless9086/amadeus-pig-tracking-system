@@ -87,6 +87,12 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             answer = (f"<b>SAM — VEREFFENING VOLTOOI</b>\n\nVeiling afgehandel. "
                 f"Ontvang: R{localized['received_amount']} via {localized['payment_method']} "
                 f"op {localized['payment_date']}. Volledig gerekonsilieer.")
+        elif (localized.get("recipient_render_contract") == "specialist_structured_recipient_v1"
+              and str(localized.get("recipient_language") or "").casefold().startswith("af")
+              and answer.startswith("<b>") and "</b>" in answer
+              and _looks_afrikaans(answer)):
+            # A specialist structured renderer already owns recipient wording.
+            answer = original_answer
         elif "change" in status or "correct" in status:
             answer = "Stuur die reggestelde feite wanneer jy gereed is. Niks is uitgevoer nie."
         elif "cancel" in status or "declin" in status:
