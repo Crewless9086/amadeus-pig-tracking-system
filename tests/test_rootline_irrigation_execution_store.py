@@ -235,6 +235,14 @@ def test_off_attempt_claims_are_unique_per_execution_and_attempt():
     assert _event_id("claim_off_attempt", {"execution_id": "EXEC-1", "attempt": 1}) in identities
 
 
+def test_terminal_defer_receipt_is_one_idempotent_job_identity():
+    base = {"contract_version": "rootline_irrigation_job_resolution.v1",
+        "resolution": "Deferred", "terminal": True, "job_id": "JOB-1",
+        "job_sha256": "a" * 64, "reason": "operating_date_elapsed"}
+    assert _event_id("record_job_resolution", base) == _event_id(
+        "record_job_resolution", {**base, "source_plan_generation": "LATER"})
+
+
 def test_store_action_cannot_be_shadowed_by_loaded_active_payload():
     value=_stored_event_body("record_completed",{
         "execution_id":"EXEC-1","action":"mark_active","state":"Completed"},"EVENT-1")

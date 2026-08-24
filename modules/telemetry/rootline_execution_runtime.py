@@ -291,9 +291,10 @@ def _persist_stale_parent_resolutions(plan, store):
     for task in (plan.get("candidate_tasks") or []):
         if not isinstance(task, dict):
             continue
-        deferred = [*(task.get("stale_incomplete_parent_jobs") or []),
-            *(task.get("contained_parent_jobs") or [])]
-        for parent in deferred:
+        deferred = [*((parent, True) for parent in
+            (task.get("stale_incomplete_parent_jobs") or [])),
+            *((parent, False) for parent in (task.get("contained_parent_jobs") or []))]
+        for parent, terminal in deferred:
             job = parent.get("job") if isinstance(parent, dict) else None
             projection = parent.get("projection") if isinstance(parent, dict) else None
             if not isinstance(job, dict) or not isinstance(projection, dict):
@@ -308,8 +309,11 @@ def _persist_stale_parent_resolutions(plan, store):
                     "cumulative_verified_runtime_seconds"),
                 "remaining_seconds": parent.get("remaining_seconds"),
                 "reason": str(parent.get("resolution_reason") or
-                    "parent_operating_date_elapsed_before_remaining_objective_completed"),
-                "source_plan_generation": plan.get("evidence_generation")}
+                    "parent_operating_date_elapsed_before_remaining_objective_completed")}
+            if terminal:
+                material["terminal"] = True
+            else:
+                material["source_plan_generation"] = plan.get("evidence_generation")
             digest = _digest(material)
             result = store("record_job_resolution", {**material,
                 "resolution_sha256": digest,

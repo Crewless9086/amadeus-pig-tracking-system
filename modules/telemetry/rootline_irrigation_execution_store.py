@@ -94,6 +94,9 @@ def _event_id(action, body):
             and body.get("contract_version") == "rootline_parent_job_terminal_resolution.v1"
             and body.get("resolution") == "Cancelled"):
         material = f"{body.get('job_id')}:{body.get('job_sha256')}:CANCELLED"
+    elif (action == "record_job_resolution" and body.get("resolution") == "Deferred"
+            and body.get("terminal") is True):
+        material = f"{body.get('job_id')}:{body.get('job_sha256')}:DEFERRED"
     elif action in {"claim_off_attempt", "claim_auxiliary_off_attempt",
                     "claim_borehole_off_attempt"}:
         material = f"{execution}:OFF:{int(body.get('attempt') or 0)}"
@@ -740,6 +743,7 @@ def _append_history(action, body):
     event_at = _time(body.get("completed_at") or body.get("claimed_at")) or datetime.now(timezone.utc)
     actual = _verified_runtime(body)
     details = {"execution_id": body.get("execution_id"),
+        "operating_date": body.get("operating_date"),
         "start_evidence_id": (body.get("start_evidence") or {}).get("evidence_id") or "Unavailable",
         "maximum_runtime_minutes": body.get("planned_runtime_minutes"),
         "verified_runtime_minutes": actual,
