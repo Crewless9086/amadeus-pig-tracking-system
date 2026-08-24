@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from typing import Any, Callable, Mapping
 
 from modules.beacon.marketing_proposal import prepare_marketing_proposal
-from modules.beacon.media_intake import list_media_intakes
+from modules.beacon.media_intake import enrich_approved_media_semantics, list_media_intakes
 from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
 from modules.beacon.public_livestock_content_policy import (
     POLICY_VERSION,
@@ -39,7 +39,8 @@ CAMPAIGN_REVIEW_ACTION = "beacon_campaign_review"
 
 
 def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_opportunity_cards,
-        media_loader=list_media_intakes, content_evidence_loader=gather_beacon_content_evidence,
+        media_loader=list_media_intakes, media_enricher=enrich_approved_media_semantics,
+        content_evidence_loader=gather_beacon_content_evidence,
         content_candidate_builder=build_beacon_content_candidate,
         litter_loader=list_litter_overview, business_evidence_loader=load_sam_farm_knowledge,
         now=None, target_page_id=None):
@@ -58,6 +59,12 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
     # available, the existing text-only boundary remains in force.
     media_result = media_loader()
     media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
+    media_payload, enrichment = media_enricher(media_payload)
+    if int(enrichment.get("http_status") or 0) in {409, 503}:
+        return {"success": False, "status": enrichment.get("status") or
+            "media_semantic_enrichment_failed_closed", "decision": "Hold",
+            "reason": "Approved media semantic adoption could not be safely reconciled.",
+            "semantic_enrichment": enrichment, **ZERO}
     packet = build_live_stock_awareness_proposal(
         opportunities, candidate, media_payload, target_page_id=target_page_id)
     if packet.get("status") == "ready_for_owner_review":
@@ -72,7 +79,8 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
         "result_digest": _digest(packet),
         "follow_up_owner": "BEACON",
         "next_trigger": "material canonical offering, policy or owner-decision change",
-        **ZERO,
+        **ZERO, "writes_media": bool(enrichment.get("created_count")),
+        "semantic_enrichment": enrichment,
     }
 
 
