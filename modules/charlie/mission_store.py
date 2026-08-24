@@ -172,6 +172,7 @@ OWNER_QUEUE_FILTERS = {"owner_queue", "owner", "active_owner", "actionable"}
 OWNER_QUEUE_STATUSES = (
     "in_progress",
     "release_in_progress",
+    "paused",
     "pr_ready",
     "blocked",
     "release_approved",

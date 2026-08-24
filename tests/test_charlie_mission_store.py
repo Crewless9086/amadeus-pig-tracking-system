@@ -1082,6 +1082,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(params["owner_queue_statuses"], [
             "in_progress",
             "release_in_progress",
+            "paused",
             "pr_ready",
             "blocked",
             "release_approved",
