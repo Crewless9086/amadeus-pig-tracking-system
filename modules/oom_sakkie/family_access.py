@@ -67,6 +67,19 @@ class FamilyPrincipal:
     language: str = "en"
 
     @property
+    def effective_permissions(self) -> frozenset[str]:
+        """Return the durable capability envelope granted by the bound role.
+
+        Historic deployment bindings listed capabilities individually.  A
+        farm-manager role is now itself the owner's durable delegation for the
+        governed Oom Sakkie farm-specialist envelope, so stale lists must not
+        silently remove one of those role capabilities at callback time.
+        """
+        if self.role is FamilyRole.FARM_MANAGER:
+            return self.permissions | FARM_MANAGER_CAPABILITIES
+        return self.permissions
+
+    @property
     def authenticated(self) -> bool:
         return self.role is not FamilyRole.UNKNOWN_SENDER
 
@@ -172,7 +185,7 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
             principal, attribution, may_read_private_context=allowed,
             may_confirm_protected_action=allowed, replay_identity=replay_identity)
     if capability in REPORTER_CAPABILITIES:
-        allowed = principal.is_owner or capability in principal.permissions
+        allowed = principal.is_owner or capability in principal.effective_permissions
         if capability == "active_follow_up" and context_owner_user_id:
             allowed = allowed and principal.telegram_user_id == _clean(context_owner_user_id)
         return FamilyAccessDecision(allowed,
@@ -181,14 +194,15 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
                                     replay_identity=replay_identity)
     if capability in FARM_MANAGER_CAPABILITIES:
         allowed = (principal.is_owner or
-            (principal.role is FamilyRole.FARM_MANAGER and capability in principal.permissions))
+            (principal.role is FamilyRole.FARM_MANAGER
+             and capability in principal.effective_permissions))
         return FamilyAccessDecision(allowed,
             "delegated_family_authority" if allowed else "family_authority_not_delegated",
             principal, attribution, may_read_private_context=allowed,
             replay_identity=replay_identity)
     if capability == READ_ONLY_CAPABILITY:
         domain = _clean(summary_domain).lower()
-        allowed = principal.is_owner or (capability in principal.permissions and
+        allowed = principal.is_owner or (capability in principal.effective_permissions and
             (domain in principal.summary_domains or "*" in principal.summary_domains))
         return FamilyAccessDecision(allowed,
             "family_summary_permitted" if allowed else "family_summary_not_permitted",

@@ -371,7 +371,10 @@ def test_authenticated_farm_manager_mortality_callback_reaches_bound_protected_r
       "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID":owner,
       "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON":json.dumps([{"telegram_user_id":manager,
         "role":"farm_manager","family_key":"dad",
-        "permissions":["mortality_confirmation"],"summary_domains":["herd"],
+        "permissions":["farm_observation", "active_follow_up", "found_dead_observation",
+            "herdmaster_management_input", "herdmaster_reassessment", "welfare_hold",
+            "welfare_escalation", "irrigation_start", "irrigation_continue"],
+        "summary_domains":["herd"],
         "authorization_id":"AUTH-MANAGER-1","authorized_by_user_id":owner,
         "authorized_at":"2026-08-08T08:00:00+02:00","language":"af"}])}
     observed={}
@@ -389,7 +392,9 @@ def test_authenticated_farm_manager_mortality_callback_reaches_bound_protected_r
       headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
     assert status==200 and result["status"]=="mortality_lifecycle_recorded"
     assert observed["authority"].principal_role=="farm_manager"
-    assert observed["authority"].capabilities==frozenset({"mortality_confirmation"})
+    assert "mortality_confirmation" in observed["authority"].capabilities
+    assert "hardware_exception" not in observed["authority"].capabilities
+    assert "permission_change" not in observed["authority"].capabilities
     assert observed["parsed"]["telegram_user_id"]==observed["parsed"]["telegram_chat_id"]==manager
 
 
