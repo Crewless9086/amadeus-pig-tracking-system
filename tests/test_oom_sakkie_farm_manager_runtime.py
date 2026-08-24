@@ -16,6 +16,18 @@ EXACT = ("Morning Oom Sakkie. What needs our attention on the farm today? We are
          "weighing priorities, welfare checks and anything else we should look out for.")
 
 
+def test_actor_scoped_welfare_rows_form_one_deduped_snapshot_with_provenance():
+    shared = {"pig_id": "PIG-SHARED", "state": "monitoring", "event_id": "W-1"}
+    charl = [shared, {"pig_id": "PIG-CHARL", "state": "open", "event_id": "W-2"}]
+    anton = [shared, {"pig_id": "PIG-ANTON", "state": "open", "event_id": "W-3"}]
+    union = farm_manager_runtime._provenance_union((("charl", charl), ("anton", anton)))
+    by_pig = {row["pig_id"]: row for row in union}
+    assert set(by_pig) == {"PIG-SHARED", "PIG-CHARL", "PIG-ANTON"}
+    assert by_pig["PIG-SHARED"]["attributable_actor_ids"] == ["anton", "charl"]
+    assert by_pig["PIG-CHARL"]["attributable_actor_ids"] == ["charl"]
+    assert by_pig["PIG-ANTON"]["attributable_actor_ids"] == ["anton"]
+
+
 def specialist(name, state=WorkState.DUE_TODAY, value=50, question="", availability=SpecialistAvailability.AVAILABLE):
     p = Provenance(name, name + "-result", (name + ":canonical",), NOW, 1.0)
     item = SpecialistWorkItem(name + "-item", name + ":daily", "herd" if name == "herdmaster" else "water_energy",

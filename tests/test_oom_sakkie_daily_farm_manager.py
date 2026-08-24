@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from dataclasses import replace
 import pytest
 
 from modules.oom_sakkie.daily_farm_manager import (
@@ -242,3 +243,46 @@ def test_prior_daily_receipt_retires_same_durable_welfare_question_without_closi
     assert reconciled.work_items[0].genuine_question==""
     assert reconciled.work_items[0].state==current.work_items[0].state
     assert reconciled.work_items[0].metadata==current.work_items[0].metadata
+
+
+def test_actual_delivery_boundary_preserves_complete_en_af_brief_without_mixed_language():
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    en_item=item("PRINCE-WELFARE","Prince welfare update",state=WorkState.URGENT,
+        question="Is Prince standing and drinking now?",specialist="herdmaster")
+    af_item=replace(en_item,title="Prince se welstandsopdatering",
+        why="Kanonieke plaasbewyse vereis 'n huidige waarneming.",
+        next_action="Bevestig of Prince nou staan en water drink.",
+        genuine_question="Staan Prince nou en drink hy water?")
+    packets = {"42": build_daily_management_packet([result("herdmaster",[en_item])],
+                   now=NOW,language="en"),
+               "77": build_daily_management_packet([result("herdmaster",[af_item])],
+                   now=NOW,language="af")}
+    visible = {}
+    for user, language in (("42","en"),("77","af")):
+        events=[]
+        def event_store(action, identity, payload):
+            if action == "load": return list(events)
+            created = not any(row.get("event_id") == identity for row in events)
+            if created: events.append(dict(payload))
+            return {"success":True,"created":created}
+        def sender(_chat,text):
+            visible[user]=text
+            return {"success":True,"telegram_message_id":"card-"+user}
+        parsed={"telegram_user_id":user,"telegram_chat_id":user,
+            "telegram_chat_type":"private","output_language":language,
+            "provider_message_id":"scheduled:"+user,
+            "provider_timestamp":NOW.isoformat(),"text":"Daily Farm Manager"}
+        packet=packets[user]
+        outcome={"success":True,"status":"daily_farm_manager_ready",
+            "answer":packet["answer"],"recipient_render_contract":"specialist_structured_recipient_v1",
+            "recipient_language":language,"writes_farm_data":False}
+        delivered=deliver_family_result(parsed,outcome,specialist="OOM_SAKKIE",
+            mission_id="BRIEF-"+user,card_mission_id="BRIEF-CARD-"+user,
+            event_store=event_store,sender=sender)
+        assert delivered["success"] is True and delivered["telegram_sends"] == 1
+    assert "TODAY'S FARM PLAN" in visible["42"] and "ONE QUESTION" in visible["42"]
+    assert "Prince welfare update" in visible["42"] and "standing and drinking" in visible["42"]
+    assert "VANDAG SE PLAASPLAN" in visible["77"] and "EEN VRAAG" in visible["77"]
+    assert "welstandsopdatering" in visible["77"] and "Staan Prince" in visible["77"]
+    assert not any(word in visible["77"].casefold() for word in
+                   ("today's", "one question", "supported action", "next check"))

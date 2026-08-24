@@ -47,7 +47,7 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
 
     from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
     try:
-        snapshot = _load_input_snapshot(recipients[0].telegram_user_id, now, source,
+        snapshot = _load_input_snapshot(tuple(row.telegram_user_id for row in recipients), now, source,
             herd_loader=herd_loader, rootline_loader=rootline_loader,
             litter_loader=litter_loader, sales_loader=sales_loader)
         outcomes = []

@@ -225,22 +225,29 @@ def _load_herdmaster(authority, owner, now, language="en"):
 
 def _load_herdmaster_snapshot(owner, now):
     """Read one immutable canonical HERDMASTER evidence snapshot."""
+    owners = tuple(dict.fromkeys(str(value) for value in
+        (owner if isinstance(owner, (tuple, list, set)) else (owner,)) if str(value)))
+    primary_owner = owners[0] if owners else ""
     futures = {
         "canonical": _HERD_EVIDENCE_EXECUTOR.submit(load_current_breeding_operating_loop),
-        "observations": _HERD_EVIDENCE_EXECUTOR.submit(_load_observations, owner),
-        "active": _HERD_EVIDENCE_EXECUTOR.submit(_load_manager_lifecycles, owner),
         "daily": _HERD_EVIDENCE_EXECUTOR.submit(load_daily_manager_evidence,
             analysis_date=now.astimezone(ZoneInfo("Africa/Johannesburg")).date(),
-            owner_user_id=owner),
+            owner_user_id=primary_owner),
     }
-    base_names=("canonical","observations","active")
+    for actor in owners:
+        futures["observations:" + actor] = _HERD_EVIDENCE_EXECUTOR.submit(_load_observations, actor)
+        futures["active:" + actor] = _HERD_EVIDENCE_EXECUTOR.submit(_load_manager_lifecycles, actor)
+    base_names = ("canonical", *["observations:" + actor for actor in owners],
+                  *["active:" + actor for actor in owners])
     done, pending = wait(tuple(futures.values()), timeout=9.0)
     try:
         if any(futures[name] not in done for name in base_names):
             raise TimeoutError("herd_evidence_deadline")
         canonical = futures["canonical"].result()
-        observations = futures["observations"].result()
-        active = futures["active"].result()
+        observations = _provenance_union(
+            (actor, futures["observations:" + actor].result()) for actor in owners)
+        active = _provenance_union(
+            (actor, futures["active:" + actor].result()) for actor in owners)
         active_current = tuple(row for row in active if str(row.get("state") or "").casefold()
             not in {"completed", "closed", "handled"})
         # Reproductive and welfare evidence remains in the existing whole-herd
@@ -249,7 +256,9 @@ def _load_herdmaster_snapshot(owner, now):
                     "active": tuple(active), "active_current": active_current}
     except Exception:
         try:
-            active = futures["active"].result(timeout=0) if futures["active"] in done else ()
+            active = _provenance_union((actor,
+                futures["active:" + actor].result(timeout=0)
+                if futures["active:" + actor] in done else ()) for actor in owners)
         except Exception:
             active = ()
         active_current = tuple(row for row in active if str(row.get("state") or "").casefold()
@@ -265,6 +274,23 @@ def _load_herdmaster_snapshot(owner, now):
     finally:
         for future in pending:
             future.cancel()
+
+
+def _provenance_union(actor_rows):
+    """Deduplicate identical actor-scoped rows without losing attribution."""
+    values = {}
+    for actor, rows in actor_rows:
+        for raw in rows or ():
+            row = dict(raw) if isinstance(raw, dict) else raw
+            digest = _digest(row)
+            if digest not in values:
+                if isinstance(row, dict):
+                    row = {**row, "attributable_actor_ids": [str(actor)]}
+                values[digest] = row
+            elif isinstance(values[digest], dict):
+                actors = set(values[digest].get("attributable_actor_ids") or ())
+                actors.add(str(actor)); values[digest]["attributable_actor_ids"] = sorted(actors)
+    return tuple(values[key] for key in sorted(values))
 
 
 def _project_herdmaster_snapshot(snapshot, authority, owner, now, language="en"):
