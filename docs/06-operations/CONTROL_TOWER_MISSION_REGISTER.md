@@ -2622,3 +2622,18 @@ calls, hardware commands or farm writes. Lifecycle is
 - Production readback proved one immutable BEACON manager generation was reclaimed every five minutes after an exact protected card update became provider-ambiguous. The protected lifecycle correctly forbade a duplicate provider call, but the manager case retained an already-due reassessment timestamp and therefore recorded an exception forever.
 - The bounded repair keeps the generation visibly contained and unconfirmed, preserves every protected publication and actor/card/digest boundary, and makes explicit do-not-retry provider ambiguity terminal for that immutable generation. Unchanged cycles cannot reclaim it; genuinely changed canonical evidence still creates a successor generation normally.
 - No provider, publication, spend, customer, farm, hardware or production-data effect was performed. Business completion remains false until deployed natural cycles prove the reclaim loop stopped and later reconciliation remains safe.
+
+## 2026-08-24 - HMQ heat-reminder projection correction
+
+Post-deployment read-only acceptance of existing mission `HMQ-20260813-05`
+against exact live revision `2fdecec1444725d07e0b362dc95caaa3c6e99ea6`
+proved that the heat-only task and question gates were removed, but the current
+operating-loop projection still prepared 13 due `Return-to-heat observation
+window` reminders inside a 38-item reminder plan. No reminder was delivered
+(`delivery_operational=false`, `sent_count=0`), no canonical or physical effect
+occurred, and volunteered `standing_heat` facts remained append-only observation
+history. This is the same mission and priority: current and future reminder
+projection/delivery must exclude the legacy heat window while the historical
+milestone remains available for audit. Source repair is active; **NO BUSINESS
+OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
+questions, tasks and reminders on a later natural cycle.

@@ -1081,6 +1081,12 @@ def _reminder_plan(cases, today):
     due = []
     for case in cases:
         for milestone in case["milestones"]:
+            # Heat observations supplied voluntarily remain historical breeding
+            # evidence, but absence of heat must never create owner work.  The
+            # legacy milestone stays in the case chronology while being
+            # excluded from every current/future reminder projection.
+            if milestone["name"] == "Return-to-heat observation window":
+                continue
             if milestone["state"] == "Due":
                 due.append({
                     "reminder_key": milestone["reminder_key"],
