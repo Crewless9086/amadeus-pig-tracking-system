@@ -448,7 +448,10 @@ def _valid_assumed_pregnancy(row, cycle, evidence, today):
 def _smallest_physical_question(row, state):
     if state in {"already_mated", "assumed_pregnant", "expected_to_farrow", "unresolved_expected_farrow", "inconclusive", "nursing", "recovering", "held", "unsuitable", "reproductive_conflict"}: return None
     observations = row.get("observations") if isinstance(row.get("observations"), dict) else {}
-    gaps = [label for key, label in (("body_condition", "body condition"), ("legs_sound", "legs and normal movement"), ("visible_concern", "any visible concern"), ("heat", "heat observed or not observed")) if observations.get(key) in {None, "", "Unknown", "unknown"}]
+    # Heat is optional history, never required work.  A volunteered exact-pig
+    # observation remains available to the canonical observation rail, but its
+    # absence must not manufacture a question or retain this review.
+    gaps = [label for key, label in (("body_condition", "body condition"), ("legs_sound", "legs and normal movement"), ("visible_concern", "any visible concern")) if observations.get(key) in {None, "", "Unknown", "unknown"}]
     return None if not gaps else f"For {row.get('tag_number') or row.get('pig_id')}, please report " + ", ".join(gaps) + " from one current inspection."
 
 

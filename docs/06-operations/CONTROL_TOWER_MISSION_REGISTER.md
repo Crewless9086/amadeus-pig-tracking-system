@@ -2225,6 +2225,27 @@ collision and acceptance contract without a technical-progress or owner-outcome
 claim. No provider, canonical, farm, animal, deployment or physical effect
 occurred.
 
+### Heat-gating source repair prepared on exact current main
+
+On authoritative main `a074ed18831f0695560ac8b9a310978aaffaaea6`, the
+remaining stale heat dependency was localized to owner questions, grouped
+management observations, one legacy heat-only task projection and its delay
+wording. The core classifiers already declared `heat_observation_required=false`
+and retained volunteered heat facts through the existing canonical observation
+rail. The bounded repair removes absent heat from questions and grouped required
+checks, retires a legacy heat-only task instead of projecting it, and replaces
+the not-pregnant fallback with a neutral reproductive-status review. Exact
+volunteered or ambiguous heat statements remain attributable history and may be
+clarified; silence creates no inferred fact or work.
+
+Selective Bulk Weight Entry BCS capture remains the next serial addendum in the
+same mission. It is deliberately excluded from this first PR because it crosses
+the weight upload, UI and canonical write boundary and requires separate
+append-only observation/supersession proof. This split does not change priority
+or create another mission. Lifecycle remains `WORKING / SOURCE_REPAIR_ACTIVE`;
+**NO BUSINESS OUTCOME** and **OWNER ACTION: NONE**. No provider, canonical,
+animal, farm or physical effect occurred.
+
 ## 2026-08-24 - Prince generic Telegram completion acceptance failure
 
 This owner finding is consolidated into existing mission

@@ -3,7 +3,10 @@ from datetime import date
 import hashlib
 import json
 
-from modules.pig_weights.herdmaster_breeding_management import build_breeding_management_packet
+from modules.pig_weights.herdmaster_breeding_management import (
+    build_breeding_management_packet, _cycle_review_actions,
+    _inconclusive_actions,
+)
 from modules.pig_weights.herdmaster_breeding_evidence import CONTRACT_VERSION as EVIDENCE_CONTRACT_VERSION
 from modules.pig_weights.herdmaster_breeding_recommendation import CONTRACT_VERSION as RECOMMENDATION_CONTRACT_VERSION
 
@@ -37,7 +40,17 @@ def test_publishes_only_three_highest_value_management_actions():
     reconciled,assessment=evidence()
     result=build_breeding_management_packet(reconciled,assessment,today=TODAY)
     assert [row["action_id"] for row in result["actions"]]==["farrowing-preparation","inconclusive-cycle","post-litter-care"]
-    assert len(result["actions"])==3
+
+
+def test_reproductive_status_round_does_not_make_heat_required_work():
+    missing = _cycle_review_actions([
+        case("UNKNOWN", "Unknown Sow", "missing_evidence")])[0]
+    inconclusive = _inconclusive_actions([
+        case("BABY", "Baby", "inconclusive")])[0]
+    for action in (missing, inconclusive):
+        text = action["smallest_physical_observation"]
+        assert "observe heat/non-heat" not in text.lower()
+        assert "not required" in text.lower()
 
 
 def test_assumed_pregnant_group_has_proportional_windows_not_clinical_claims():

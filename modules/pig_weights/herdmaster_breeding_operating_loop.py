@@ -685,7 +685,7 @@ def _classify(
         state, action, priority = (
             pregnancy["derived_status"],
             pregnancy_recommendation(pregnancy)
-            or "observe for standing heat", 15
+            or "review current reproductive status", 15
         )
         reason = "Not-pregnant or repeat-service evidence follows a canonical mating."
     elif len(unsuccessful) >= REPEAT_SERVICE_REVIEW_COUNT:
@@ -833,7 +833,11 @@ def _task(
     attention, readiness, classification, observations, male_recommendation,
     week_start, generated_at,
 ):
-    if classification["task_group"] == "monitor next milestone":
+    if classification["task_group"] in {
+        "monitor next milestone", "observe for standing heat",
+    }:
+        # Retire legacy heat-only work instead of projecting it as an empty or
+        # overdue task. Volunteered heat evidence remains canonical history.
         return None
     if (
         classification["state"] == "Confirmed pregnant"
@@ -1099,15 +1103,17 @@ def _required_checks(classification):
     group = classification["task_group"]
     checks = {
         "post-litter recovery check": [
-            "body condition", "movement", "visible concerns", "heat signs"
+            "body condition", "movement", "visible concerns"
         ],
         "weigh before breeding decision": [
             "current weight", "body condition", "movement"
         ],
         "inspect for breeding readiness": [
-            "body condition", "movement", "visible concerns", "heat signs"
+            "body condition", "movement", "visible concerns"
         ],
-        "observe for standing heat": ["heat signs"],
+        # Retire legacy persisted classifications without asking another heat
+        # question.  Volunteered heat facts are still parsed and retained.
+        "observe for standing heat": [],
         "pregnancy check due": ["governed pregnancy check result"],
         "repeat-service review": [
             "service chronology", "body condition", "owner decision"
@@ -1232,12 +1238,12 @@ def _delay_consequence(group):
         "post-litter recovery check": "Recovery readiness remains uncertain.",
         "weigh before breeding decision": "Weight-based readiness remains unsupported.",
         "inspect for breeding readiness": "Mating consideration remains blocked.",
-        "observe for standing heat": "The current heat window may be missed.",
+        "observe for standing heat": "No action is required for absent heat evidence.",
         "pregnancy check due": "Pregnancy and farrowing planning remain uncertain.",
         "repeat-service review": "Another unsupported service may be attempted.",
         "review medical or withdrawal hold": "Breeding remains on hold.",
         "resolve evidence before mating review": "The unsupported conclusion remains blocked.",
-        "prepare for mating": "The observed heat opportunity may pass.",
+        "prepare for mating": "The governed placement window may pass.",
     }.get(group, "The evidence gap remains unresolved.")
 
 

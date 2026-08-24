@@ -5,7 +5,21 @@ from modules.pig_weights.herdmaster_breeding_operating_loop import (
     build_breeding_operating_loop,
     oom_sakkie_worklist_summary,
     preview_conversational_inspection,
+    _required_checks,
+    _task,
 )
+
+
+def test_legacy_heat_task_and_current_inspection_never_require_heat():
+    legacy = {"task_group": "observe for standing heat", "observed_checks": {}}
+    inspection = {"task_group": "inspect for breeding readiness",
+        "observed_checks": {"body condition": False, "movement": False,
+                            "visible concerns": False, "heat signs": False}}
+    assert _required_checks(legacy) == []
+    assert _required_checks(inspection) == [
+        "body condition", "movement", "visible concerns"]
+    assert _task({}, {}, legacy, [], {}, date(2026, 8, 24),
+                 datetime(2026, 8, 24, tzinfo=timezone.utc)) is None
 
 TODAY = date(2026, 7, 28)
 
