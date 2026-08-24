@@ -142,6 +142,25 @@ def resolve_family_principal(parsed: Mapping[str, Any], environ: Mapping[str, st
     return _unknown(user_id, chat_id)
 
 
+def configured_farm_manager_principals(environ: Mapping[str, str]) -> tuple[FamilyPrincipal, ...]:
+    """Return the fail-closed private recipients for the shared farm brief.
+
+    This is a presentation projection only.  It does not grant a capability or
+    include trusted reporters/read-only family members.  CORE and CHARLIE are
+    outside this typed family-role set by construction.
+    """
+    owner_id = _owner_id(environ)
+    if not owner_id or not family_access_policy(environ)["configuration_valid"]:
+        return ()
+    owner = resolve_family_principal({"telegram_user_id": owner_id,
+        "telegram_chat_id": owner_id, "telegram_chat_type": "private"}, environ)
+    managers = [_principal_from_record(row, owner_id, _clean(row.get("telegram_user_id")))
+                for row in _bindings(environ)]
+    managers = [row for row in managers if row is not None
+                and row.role is FamilyRole.FARM_MANAGER]
+    return tuple([owner, *sorted(managers, key=lambda row: row.telegram_user_id)])
+
+
 def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, Any], *,
                              capability: str, context_owner_user_id: str = "",
                              summary_domain: str = "") -> FamilyAccessDecision:

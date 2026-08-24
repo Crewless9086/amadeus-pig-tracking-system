@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.family_access import (
     FamilyRole, authorize_family_message, bound_family_manager_result, family_access_policy,
-    resolve_family_principal,
+    resolve_family_principal, configured_farm_manager_principals,
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 
@@ -38,6 +38,15 @@ def test_current_configuration_is_charl_only_when_no_family_bindings_exist():
     assert policy["authorized_identity_count"] == 1
     assert policy["family_bindings_count"] == 0
     assert resolve_family_principal(_parsed(OWNER), _env()).role is FamilyRole.OWNER
+
+
+def test_daily_recipients_include_only_owner_and_farm_manager_not_other_family_or_agents():
+    env = _env([_binding(role="farm_manager"),
+                _binding("1003", family="mum", role="trusted_family_reporter")])
+    recipients = configured_farm_manager_principals(env)
+    assert [(row.telegram_user_id, row.role, row.language) for row in recipients] == [
+        (OWNER, FamilyRole.OWNER, "en"), ("1002", FamilyRole.FARM_MANAGER, "af")]
+    assert all(row.family_key not in {"core", "charlie"} for row in recipients)
 
 
 def test_afrikaans_and_mixed_observations_preserve_exact_reporter_provenance():

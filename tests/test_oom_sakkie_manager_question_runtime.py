@@ -64,6 +64,40 @@ def test_exact_reply_binds_group_evidence_and_replay_is_silent():
     assert replay["suppress_owner_delivery"] is True and replay["answer"] == ""
 
 
+def test_exact_pig_bound_welfare_reply_enters_canonical_preview_once_and_never_closes_from_silence():
+    state = memory(); calls = []
+    prince = {**question(), "question": "Is Prince standing and drinking now?",
+        "question_binding": {"task_id": "OLD-PRINCE", "dedupe_key": "prince-welfare",
+            "domain": "herd_health", "pig_id": "PIG-2026-E057"}}
+    inbound = parsed("Prince is standing and drinking.")
+    meaning = SemanticInterpretation(domain="herd_health", intent="welfare_follow_up",
+        message_kind="observation", continuation=True,
+        observation="Prince is standing and drinking.", language="en", confidence=.99)
+    def health(forwarded, _authority):
+        calls.append(forwarded)
+        assert forwarded["text"].startswith("Pig PIG-2026-E057:")
+        return ({"handled": True, "success": True, "status": "preview_ready",
+            "mission_id": "OOM-HERD-PRINCE", "card_mission_id": "OOM-HERD-PRINCE",
+            "answer": "<b>PRINCE - WELFARE UPDATE</b>\n\nConfirm the attributable observation.",
+            "welfare_case_state": "monitoring", "writes_farm_data": False,
+            "protected_actions_performed": False}, 200)
+    first, status = handle_manager_question_reply(inbound,
+        issue_gateway_owner_authority(OWNER, OWNER), meaning, question=prince,
+        event_store=state, event_loader=lambda key: state.rows.get(key, {}),
+        health_handler=health)
+    replay, replay_status = handle_manager_question_reply(inbound,
+        issue_gateway_owner_authority(OWNER, OWNER), meaning, question=prince,
+        event_store=state, event_loader=lambda key: state.rows.get(key, {}),
+        health_handler=health)
+    assert status == replay_status == 200 and first["status"] == "preview_ready"
+    assert first["welfare_case_state"] == "monitoring"
+    assert replay["replay_suppressed"] is True and replay["answer"] == ""
+    assert len(calls) == 1
+    receipt = next(iter(state.rows.values()))
+    assert receipt["canonical_welfare_intake"] is True
+    assert "closure" not in receipt and "closed" not in receipt
+
+
 @patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
 def test_morning_card_rootline_update_records_manager_receipt_before_canonical_dispatch(dispatch):
     downstream = ({"handled": True, "success": True,

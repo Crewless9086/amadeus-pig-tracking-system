@@ -86,7 +86,7 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
 
 def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                                   question_loader=None, event_store=None,
-                                  event_loader=None):
+                                  event_loader=None, health_handler=None):
     if authority is None:
         return {"handled": False, **ZERO}, 200
     active = question or load_active_manager_question(parsed, loader=question_loader)
@@ -239,6 +239,26 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "content_sha256": binding["content_sha256"]}
     downstream = None
     downstream_status = 200
+    pig_id = str((active.get("question_binding") or {}).get("pig_id") or "").strip()
+    herd_question = expected_domain in {"herd", "herd_health", "herd_management"}
+    if herd_question and pig_id and not partial:
+        if health_handler is None:
+            from modules.oom_sakkie.herdmaster_health_loss_runtime import (
+                handle_authenticated_health_loss_message)
+            health_handler = handle_authenticated_health_loss_message
+        forwarded = {**parsed, "text": f"Pig {pig_id}: {text}",
+            "semantic": {"domain": "herd_health", "continuation": True,
+                "entity_refs": [f"pig:{pig_id}"], "observation": text}}
+        downstream, downstream_status = health_handler(forwarded, authority)
+        if (not isinstance(downstream, dict) or downstream.get("handled") is not True
+                or downstream.get("success") is not True):
+            return ({**(downstream or {}), "handled": True,
+                "status": str((downstream or {}).get("status") or
+                              "manager_question_welfare_intake_unavailable")},
+                int(downstream_status or 503))
+        record.update({"downstream_result": dict(downstream),
+                       "downstream_status": int(downstream_status),
+                       "canonical_welfare_intake": True, "pig_id": pig_id})
     if rootline_question and semantic_domain == "rootline":
         store = event_store or manager_question_event_store
         if existing and existing.get("status") != "dispatch_claimed":
@@ -402,6 +422,11 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "status": "manager_question_concurrent_reply_conflict",
             "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
             "requires_visible_notification": True, **ZERO}, 409
+    if downstream is not None:
+        return {**downstream, "handled": True,
+            "manager_question_status": "manager_question_reply_recorded",
+            "manager_question_event_id": event_id,
+            "records_audit_trace": True}, downstream_status
     if partial:
         answer = clarification
         status = "manager_question_partial_reply_recorded"
