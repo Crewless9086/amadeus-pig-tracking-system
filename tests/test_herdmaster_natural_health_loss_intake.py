@@ -57,6 +57,24 @@ def maya_packet():
     return maya, evidence(maya, matings=[mating])
 
 
+def test_prince_recovery_observation_produces_protected_preview_without_repeat_question():
+    prince = animal("PIG-2026-E057", "Prince", "Prince")
+    result = evaluate_health_loss_intake(report(
+        "Prince is back to normal now from today. He is eating standing walking and acting normal again."),
+        evidence(prince))
+    assert result["status"] == "preview_ready"
+    assert result["event_family"] == "welfare_update"
+    assert result["smallest_missing_follow_up_question"] == ""
+    facts = {row["fact"]: row["value"] for row in result["observed_facts"]}
+    assert facts["eating_reported"] is True
+    assert facts["standing_reported"] is True
+    assert facts["moving_reported"] is True
+    assert facts["normal_behaviour_reported"] is True
+    effects = {row["area"]: row for row in result["canonical_effects"]}
+    assert effects["medical_observation"]["supported"] is True
+    assert result["writes_performed"] is False
+
+
 def test_maya_compound_preview_preserves_counts_and_suspicion_boundary():
     maya, canonical = maya_packet()
     result = evaluate_health_loss_intake(report(MAYA_REPORT), canonical)

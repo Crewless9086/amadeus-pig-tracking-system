@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 CONTRACT_VERSION = "herdmaster_natural_health_loss_intake_v1"
 RESULT_FAMILIES = {
     "sick", "injured", "found_dead", "farrowing_complication",
-    "piglet_loss", "compound_event",
+    "piglet_loss", "compound_event", "welfare_update",
 }
 AUTHORITY = {
     "zero_io": True,
@@ -311,6 +311,7 @@ def _parse_report(text, provider_time):
     drinking_positive = r"\bdrinking(?: water)?\b"
     drinking_negative = r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\bdrinking no water\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) drink(?:ing)?\b"
     not_eating = latest_negative(eating_positive, eating_negative, lower)
+    eating = latest_positive(eating_positive, eating_negative, lower)
     not_drinking = latest_negative(drinking_positive, drinking_negative, lower)
     other_sick = current_sign(r"sick|ill|vomit|diarrh|cough|fever")
     sick = not_eating or not_drinking or other_sick
@@ -327,7 +328,11 @@ def _parse_report(text, provider_time):
         families.append("injured")
     if sick:
         families.append("sick")
-    family = families[0] if len(set(families)) == 1 else "compound_event" if families else "unknown"
+    positive_welfare_update = bool(eating or re.search(
+        r"\b(?:back to normal|acting normal(?:ly)?|standing|walking|moving(?: around)?)\b", lower))
+    family = (families[0] if len(set(families)) == 1 else
+              "compound_event" if families else
+              "welfare_update" if positive_welfare_update else "unknown")
     explicit_dates = _explicit_event_dates(lower)
     event_date = explicit_dates[0] if len(explicit_dates) == 1 else provider_time.date()
     if not explicit_dates and "yesterday" in lower:
@@ -364,6 +369,9 @@ def _parse_report(text, provider_time):
         observed.append({"fact": "not_eating", "value": True})
     if not_drinking:
         observed.append({"fact": "not_drinking", "value": True})
+    if eating:
+        observed.append({"fact": "eating_reported", "value": True,
+                         "attribution": "owner_reported_observation"})
     lying_down = latest_positive(
         r"\b(?:is|was|appears? to be)\s+(?:lying|laying) down\b",
         r"\b(?:is|was)\s+(?:not|no longer)\s+(?:lying|laying) down\b|"
@@ -412,12 +420,12 @@ def _parse_report(text, provider_time):
         observed.append({"fact": "bleeding", "value": True})
     welfare_checks = {
         "standing": latest_positive(
-            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
+            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b|\bstanding\b",
             r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b",
             lower,
         ),
         "moving": latest_positive(
-            r"\bmoving(?: around)?\b",
+            r"\b(?:moving(?: around)?|walking)\b",
             r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b",
             lower,
         ),
@@ -434,9 +442,9 @@ def _parse_report(text, provider_time):
     }
     welfare_check_evidence = {
         "standing": welfare_evidence(
-            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
+            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b|\bstanding\b",
             r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b|\bnot able to do anything\b"),
-        "moving": welfare_evidence(r"\bmoving(?: around)?\b",
+        "moving": welfare_evidence(r"\b(?:moving(?: around)?|walking)\b",
             r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b|\bnot able to do anything\b"),
         "breathing": welfare_evidence(r"\bbreath(?:ing|es) normal(?:ly)?\b",
             r"\b(?:not|no longer|isn't|wasn't|without) breathing normal(?:ly)?\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) breath(?:e|ing)(?: normal(?:ly)?)?\b|\b(?:breathing abnormally|struggling to breathe)\b"),
@@ -455,6 +463,9 @@ def _parse_report(text, provider_time):
     for fact, supplied in welfare_checks.items():
         if supplied:
             observed.append({"fact": f"{fact}_reported", "value": True})
+    if re.search(r"\b(?:back to normal|acting normal(?:ly)?)\b", lower):
+        observed.append({"fact": "normal_behaviour_reported", "value": True,
+                         "attribution": "owner_general_impression_not_welfare_clearance"})
     time_context = r"(?:today|yesterday|(?:this\s+)?morning|(?:this\s+)?afternoon|(?:this\s+)?evening|(?:last\s+)?night|\d{1,2}[:.]\d{2})"
     last_seen = re.search(rf"\b(?:last\s+)?seen alive(?:\s+(?P<when>{time_context}))?\b", lower)
     found_words = list(re.finditer(r"\bfound\b", lower))
@@ -655,7 +666,8 @@ def _effects(animal, parsed, canonical, chronology):
         else:
             add("litter", "no_count_change_until_birth_outcomes_known", {}, "", supported=False)
             missing.append("piglet birth outcome counts")
-    if parsed["current_signs"] or parsed["suspected"] or parsed["veterinary"] or parsed["farrowing"]:
+    if (parsed["current_signs"] or parsed["suspected"] or parsed["veterinary"]
+            or parsed["farrowing"] or parsed["family"] == "welfare_update"):
         add("medical_observation", "record_reported_observation_context", {
             "observed": parsed["observed"], "owner_suspected": parsed["suspected"],
             "veterinary_evidence": parsed["veterinary"], "diagnosis_inferred": False,
@@ -693,6 +705,8 @@ def _welfare(parsed):
         return {"level": "monitor_closely", "action": "The immediate standing, breathing and drinking checks are reassuring; keep monitoring appetite and seek experienced or veterinary help if signs worsen or eating does not resume."}
     if parsed["current_signs"]:
         return {"level": "urgent_assessment", "action": "Physically assess breathing, standing, water intake, bleeding and distress now; seek veterinary help for serious signs."}
+    if parsed["family"] == "welfare_update":
+        return {"level": "monitor_closely", "action": "The reported recovery signs are reassuring; keep monitoring and report any renewed concern."}
     return {"level": "review", "action": "Verify the animal and observable welfare state."}
 
 

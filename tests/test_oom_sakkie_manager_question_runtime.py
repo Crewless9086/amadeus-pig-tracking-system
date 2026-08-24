@@ -64,6 +64,46 @@ def test_exact_reply_binds_group_evidence_and_replay_is_silent():
     assert replay["suppress_owner_delivery"] is True and replay["answer"] == ""
 
 
+def test_legacy_prince_card_without_pig_id_enters_welfare_preview_once():
+    old = {**question(at=NOW-timedelta(minutes=45)),
+        "question": "What exactly did you observe about Prince?",
+        "question_binding": {"task_id": "OLD-PRINCE",
+            "dedupe_key": "herdmaster:PIG-2026-E057", "domain": "herd"}}
+    exact = load_active_manager_question(parsed(), loader=lambda *_: [old])
+    assert exact == old
+
+    state = memory(); calls = []
+    def health(forwarded, _authority):
+        calls.append(forwarded)
+        return ({"handled": True, "success": True, "status": "preview_ready",
+            "answer": "Confirm Prince observation", "mission_id": "PRINCE-PREVIEW",
+            "writes_farm_data": False}, 200)
+    result, status = handle_manager_question_reply(parsed(),
+        issue_gateway_owner_authority(OWNER, OWNER), semantic(), question=old,
+        event_store=state, health_handler=health)
+    assert status == 200 and result["status"] == "preview_ready"
+    assert len(calls) == 1
+    assert calls[0]["text"].startswith("Pig PIG-2026-E057:")
+    assert next(iter(state.rows.values()))["canonical_welfare_intake"] is True
+
+
+def test_legacy_animal_question_ambiguous_or_unbound_identity_fails_closed():
+    base = {**question(), "question": "Prince welfare follow-up"}
+    ambiguous = {**base, "question_binding": {"task_id": "OLD-PRINCE",
+        "dedupe_key": "herdmaster:prince-welfare", "domain": "herd",
+        "pig_ids": ["PIG-2026-E057", "PIG-2026-OTHER"]}}
+    unbound = {**base, "question_binding": {"task_id": "OLD-PRINCE",
+        "dedupe_key": "herdmaster:prince-welfare", "domain": "herd"}}
+    for active in (ambiguous, unbound):
+        state = memory(); calls = []
+        result, status = handle_manager_question_reply(parsed(),
+            issue_gateway_owner_authority(OWNER, OWNER), semantic(), question=active,
+            event_store=state, health_handler=lambda *_: calls.append(True))
+        assert status == 409
+        assert result["status"] == "manager_question_welfare_identity_unavailable"
+        assert state.rows == {} and calls == []
+
+
 def test_exact_pig_bound_welfare_reply_enters_canonical_preview_once_and_never_closes_from_silence():
     state = memory(); calls = []
     prince = {**question(), "question": "Is Prince standing and drinking now?",
@@ -396,7 +436,8 @@ def test_protected_grouped_breeding_update_outranks_active_herd_question():
 
 def test_stale_or_mismatched_reply_does_not_bind():
     rows = lambda _owner, _chat: [question(NOW-timedelta(days=2))]
-    assert load_active_manager_question(parsed(), loader=rows) is None
+    assert load_active_manager_question(
+        {**parsed(), "reply_to_message_id": ""}, loader=rows) is None
     assert load_active_manager_question(parsed(reply="9999"),
         loader=lambda _owner, _chat: [question()]) is None
 
