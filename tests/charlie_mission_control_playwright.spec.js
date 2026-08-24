@@ -112,7 +112,7 @@ test("control tower owner work is visible without false blocked or runner action
     title: "Oom Sakkie continuous farm manager",
     owner_projection: {
       outcome: "Operate the daily farm loop.",
-      real_life_state: "contained",
+      real_life_state: "working",
       current_worker: "Control Tower",
       next_automatic_step: "Continue the reviewed repair.",
       owner_action: "NONE",
@@ -125,7 +125,7 @@ test("control tower owner work is visible without false blocked or runner action
     status: "paused",
     owner_projection: {
       outcome: "Complete one governed mission automatically.",
-      real_life_state: "contained",
+      real_life_state: "event_waiting",
       current_worker: "Control Tower",
       next_automatic_step: "Wait for the next governed event.",
       owner_action: "NONE",
@@ -160,5 +160,8 @@ test("control tower owner work is visible without false blocked or runner action
   await page.getByRole("button", { name: /Blocked 1/ }).click();
   await expect(page.getByText("Oom Sakkie continuous farm manager").first()).toBeVisible();
   await expect(page.getByText("WORKING", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Execution stopped", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Control Tower", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Control Tower progress is shown from the canonical owner-work projection", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve Rerun" })).toHaveCount(0);
 });
