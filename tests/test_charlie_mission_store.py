@@ -159,10 +159,10 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertTrue(result["success"])
         statements = connection.cursor_instance.executed
-        self.assertEqual(len(statements), 2)
-        for sql, _params in statements:
-            self.assertIn("jsonb_typeof(metadata_json->'mission_control_projection') = 'object'", sql)
-            self.assertIn("metadata_json->'mission_control_projection' ? 'latest_event_id'", sql)
+        self.assertEqual(len(statements), 1)
+        sql, _params = statements[0]
+        self.assertNotIn("jsonb_typeof(metadata_json->'mission_control_projection')", sql)
+        self.assertNotIn("group by status", sql)
 
     def test_owner_review_packet_projects_authoritative_orchestration(self):
         orchestration = {
@@ -1111,15 +1111,14 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["missions"], [])
 
     def test_mission_control_snapshot_reuses_one_connection_for_queue_and_counts(self):
+        projected = {"mission_control_projection": {"latest_event_id": "EVENT-1",
+            "real_life_state": "working", "owner_action": "NONE"}}
         mission_row = (
             "MISSION-1", "in_progress", "control_tower", "", "", "Current mission",
-            "Current mission", "P1", "defect", "LEVEL 3", "Continue", "", "", {}, None, None,
+            "Current mission", "P1", "defect", "LEVEL 3", "Continue", "", "", projected, None, None,
         )
         connection = FakeConnection()
-        connection.cursor_instance = SequencedCursor([
-            [mission_row],
-            [("in_progress", 1)],
-        ])
+        connection.cursor_instance = SequencedCursor([[mission_row]])
         connects = []
 
         result, status_code = mission_control_snapshot(
@@ -1132,9 +1131,9 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(connects, ["postgres://unit-test"])
         self.assertEqual(result["counts"], {"in_progress": 1})
         self.assertEqual(result["missions"][0]["mission_id"], "MISSION-1")
-        self.assertEqual(len(connection.cursor_instance.executed), 2)
+        self.assertEqual(len(connection.cursor_instance.executed), 1)
         self.assertIn("metadata_json->'intake_quality'->>'queue_class'", connection.cursor_instance.executed[0][0])
-        self.assertIn("group by status", connection.cursor_instance.executed[1][0])
+        self.assertNotIn("group by status", connection.cursor_instance.executed[0][0])
 
     def test_list_owner_work_missions_filters_one_status_in_sql(self):
         connection = FakeConnection([])
