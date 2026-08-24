@@ -48,6 +48,7 @@ def stable_reassessment(value):
         "durable_backend_schedule",
         "new_canonical_evidence",
         "new_canonical_evidence_or_next_read",
+        "refresh_missing_or_stale_evidence",
     } and "at" in value:
         stable["at"] = value.get("at")
     return stable

@@ -2440,3 +2440,34 @@ still Unknown. Zero new claim, card, execution, provider call or hardware/farm
 effect occurred. `OWNER ACTION: NONE`: do not resend the message, press an old
 button or operate CH1, CH2 or Borehole until exact dedupe-safe relay recovery is
 proved and one fresh protected Mixer preview is visible.
+
+#### ROOTLINE message 4000 post-deploy silence failure
+
+The first natural reassessment after exact live revision
+`42d8708335e89b8a1977dd69d4c45e2d314c03bf` did not meet the unchanged-plan
+silence gate. Observation
+`OOM-ROOTLINE-OBS-CE14204919D0E97A5B5C1BDD-RECORD_OBSERVATION` at
+`2026-08-24T15:46:54.825893Z` produced result
+`ROOTLINE-RESULT-20260824-A700309E8F09AE5E`; pending notification
+`OOM-ROOTLINE-REASSESS-A0AE5380D99026A01B83AD12` was then provider-confirmed
+as Telegram message `4000` at `2026-08-24T15:47:06.599047Z`. Its visible B/C
+plan, question and owner action were unchanged from delivered message `3997`;
+only the approximate next-check clock moved from `17:46` to `18:16`. This is a
+notification acceptance failure, not an irrigation, fertilizer, borehole or
+farm effect and not an owner outcome.
+
+Exact readback identified two same-lineage predicates: the pre-v3 message
+`3997` packet had no semantic fingerprint, and the one-way legacy transition
+excluded current trigger `refresh_missing_or_stale_evidence`; the v3 packet for
+message `4000` also retained its moving `at` value inside the otherwise stable
+reassessment fingerprint. The bounded correction normalizes only that `at`
+value for this exact trigger and admits the trigger to the exact-bound one-way
+legacy transition. Trigger, reason, conditions, recipient, operating date,
+provider receipt, predecessor identity, fixed deadlines, visible B/C state,
+lifecycle, verified completion and owner questions remain material and
+fail-closed. No new mission, notification rail, store, queue, scheduler or
+priority is created. Lifecycle remains
+`WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / CLOCK_FINGERPRINT_REPAIR_ACTIVE`;
+acceptance still requires reviewed deployment followed by two natural
+unchanged cycles with zero standalone plan messages and one later genuine
+material change producing exactly one successor. **OWNER ACTION: NONE.**

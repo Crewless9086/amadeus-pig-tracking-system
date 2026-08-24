@@ -277,7 +277,8 @@ def _legacy_volatile_owner_plan_matches(delivered, current_answer, current_reass
             or isinstance(delivered.get("owner_plan_reassessment"), Mapping)
             or str(current_reassessment.get("trigger") or "") not in {
                 "canonical_plan_reassessment", "durable_backend_schedule",
-                "new_canonical_evidence", "new_canonical_evidence_or_next_read"}):
+                "new_canonical_evidence", "new_canonical_evidence_or_next_read",
+                "refresh_missing_or_stale_evidence"}):
         return False
     delivered_answer = _stable_owner_plan(delivered.get("answer"))
     current = _stable_owner_plan(current_answer)
