@@ -101,6 +101,7 @@ def test_farm_manager_has_explicit_oom_specialist_parity_without_admin_escape_ha
     principal = resolve_family_principal(_parsed("1002"), _env([binding]))
     assert principal.role is FamilyRole.FARM_MANAGER and not principal.is_owner
     assert principal.language == "af"
+    assert "mortality_confirmation" in principal.effective_permissions
     for capability in permissions:
         assert authorize_family_message(principal, _parsed("1002"),
             capability=capability, summary_domain="herd").allowed
@@ -114,6 +115,23 @@ def test_farm_manager_has_explicit_oom_specialist_parity_without_admin_escape_ha
     for capability in ("hardware_exception", "permission_change"):
         decision = authorize_family_message(principal, _parsed("1002"), capability=capability)
         assert not decision.allowed and not decision.may_confirm_protected_action
+
+
+def test_stale_farm_manager_binding_cannot_remove_role_granted_mortality_authority():
+    binding = _binding(role="farm_manager", permissions=[
+        "farm_observation", "active_follow_up", "found_dead_observation",
+        "herdmaster_management_input", "herdmaster_reassessment",
+        "welfare_hold", "welfare_escalation", "irrigation_start", "irrigation_continue"])
+    principal = resolve_family_principal(_parsed("1002"), _env([binding]))
+
+    assert principal.role is FamilyRole.FARM_MANAGER
+    assert "mortality_confirmation" not in principal.permissions
+    assert "mortality_confirmation" in principal.effective_permissions
+    decision = authorize_family_message(principal, _parsed("1002"),
+        capability="mortality_confirmation")
+    assert decision.allowed and decision.may_confirm_protected_action
+    for capability in ("hardware_exception", "permission_change"):
+        assert capability not in principal.effective_permissions
 
 
 def test_permanent_afrikaans_binding_is_required_and_revocation_fails_closed():

@@ -232,7 +232,7 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
           "provider_timestamp":datetime.now(timezone.utc).isoformat(),"reply_to_message_id":callback["telegram_message_id"],
           "callback_query_id":callback["callback_query_id"],"callback_data":callback["callback_data"],"text":""}
         authority=issue_gateway_owner_authority(callback["telegram_user_id"],callback["telegram_chat_id"],
-          principal_role=principal.role.value,capabilities=principal.permissions)
+          principal_role=principal.role.value,capabilities=principal.effective_permissions)
         action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
           if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else
