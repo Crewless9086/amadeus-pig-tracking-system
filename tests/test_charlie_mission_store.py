@@ -12,6 +12,7 @@ from modules.charlie.mission_store import (
     list_missions,
     list_owner_work_missions,
     owner_execution_hold_status,
+    mission_control_snapshot,
     mission_status_summary,
     normalize_approval_level,
     record_mission_review_decision,
@@ -76,6 +77,15 @@ class FakeCursor:
 
     def fetchone(self):
         return self.rows[0] if self.rows else ("inserted",)
+
+
+class SequencedCursor(FakeCursor):
+    def __init__(self, result_sets):
+        super().__init__([])
+        self.result_sets = list(result_sets)
+
+    def fetchall(self):
+        return list(self.result_sets.pop(0))
 
 
 class FailingCursor(FakeCursor):
@@ -1081,6 +1091,32 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertNotIn("done", params["owner_queue_statuses"])
         self.assertNotIn("rejected", params["owner_queue_statuses"])
         self.assertEqual(result["missions"], [])
+
+    def test_mission_control_snapshot_reuses_one_connection_for_queue_and_counts(self):
+        mission_row = (
+            "MISSION-1", "in_progress", "control_tower", "", "", "Current mission",
+            "Current mission", "P1", "defect", "LEVEL 3", "Continue", "", "", {}, None, None,
+        )
+        connection = FakeConnection()
+        connection.cursor_instance = SequencedCursor([
+            [mission_row],
+            [("in_progress", 1)],
+        ])
+        connects = []
+
+        result, status_code = mission_control_snapshot(
+            limit=100,
+            database_url="postgres://unit-test",
+            connect_factory=lambda url: connects.append(url) or connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(connects, ["postgres://unit-test"])
+        self.assertEqual(result["counts"], {"in_progress": 1})
+        self.assertEqual(result["missions"][0]["mission_id"], "MISSION-1")
+        self.assertEqual(len(connection.cursor_instance.executed), 2)
+        self.assertIn("metadata_json->'intake_quality'->>'queue_class'", connection.cursor_instance.executed[0][0])
+        self.assertIn("group by status", connection.cursor_instance.executed[1][0])
 
     def test_list_owner_work_missions_filters_one_status_in_sql(self):
         connection = FakeConnection([])
