@@ -6,6 +6,7 @@ provider confirmation receipt.  It never creates a preview or a claim.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import html
 import json
 import os
 import uuid
@@ -17,7 +18,7 @@ from modules.oom_sakkie.sam_payment_owner_runtime import execute_claimed_sale_pa
 WORKER_ID = "oom-sakkie-protected-payment-recovery-v1"
 INTERVAL_SECONDS = 300
 LEASE_SECONDS = 180
-MORTALITY_PRESENTATION_VERSION = "health_loss_completion_typed_v2"
+MORTALITY_PRESENTATION_VERSION = "health_loss_completion_factual_v3"
 
 
 def run_payment_recovery_cycle(*, now=None, connect_factory=None,
@@ -68,11 +69,12 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
             if _bound_effect_kind(bound, result) == "mortality":
                 result = mortality_completion_recovery_result(result, bound, language)
             else:
-                answer = str(result.get("answer") or "").strip()
                 if (_bound_effect_kind(bound, result) != "health_observation"
-                        or not answer or str(result.get("status") or "") != "completed"):
+                        or str(result.get("status") or "") != "completed"):
                     raise ValueError("health_loss_recovery_effect_unresolved")
-                result = {**result, "writes_farm_data": False, "rows_created": 0,
+                answer = _health_observation_completion(claim, language)
+                result = {**result, "answer": answer,
+                    "writes_farm_data": False, "rows_created": 0,
                     "delivery_recovery_required": True,
                     "owner_visible_completion_policy": "verified_edit_or_new_message",
                     "recipient_render_contract": "specialist_structured_recipient_v1",
@@ -124,6 +126,49 @@ def _summary(status, cycle_id, next_cycle):
 
 def _provider_timestamp(value):
     return value.isoformat() if isinstance(value, datetime) else str(value or "")
+
+
+def _health_observation_completion(claim, language):
+    identity = claim.get("canonical_human_identity") or {}
+    name = str(identity.get("pig_name") or "").strip()
+    tag = str(identity.get("tag_number") or "").strip()
+    label = name or tag
+    if name and tag and name.casefold() != tag.casefold():
+        label = f"{name} (tag {tag})"
+    if not label:
+        raise ValueError("health_loss_recovery_effect_unresolved")
+    observed = (claim.get("canonical_observation") or {}).get("observed") or []
+    facts = {str(row.get("fact") or ""): row.get("value") for row in observed
+             if isinstance(row, dict)}
+    required = ("eating_reported", "standing_reported", "moving_reported",
+                "normal_behaviour_reported")
+    if any(facts.get(key) is not True for key in required):
+        raise ValueError("health_loss_recovery_effect_unresolved")
+    state = str(claim.get("canonical_welfare_state") or "").casefold()
+    if state not in {"open", "monitoring", "escalated", "closed"}:
+        raise ValueError("health_loss_recovery_effect_unresolved")
+    safe = html.escape(label)
+    af_states = {
+        "monitoring": f"Die welsynsmonitering bly oop. Hou aan om {safe} te monitor.",
+        "open": f"Die welsynsopvolg bly oop. Kontroleer {safe} soos geskeduleer.",
+        "escalated": "Die welsynsopvolg is geÃ«skaleer. Volg HERDMASTER se huidige aksie.",
+        "closed": "Die welsynsaak is gesluit; geen verdere welsynsopvolg is oop nie.",
+    }
+    en_states = {
+        "monitoring": f"Welfare monitoring remains open. Continue monitoring {safe}.",
+        "open": f"Welfare follow-up remains open. Check {safe} as scheduled.",
+        "escalated": "Welfare follow-up is escalated. Follow the current HERDMASTER action.",
+        "closed": "The welfare case is closed; no further welfare follow-up is open.",
+    }
+    if str(language).casefold().startswith("af"):
+        consequence = af_states[state]
+        return (f"<b>{safe} — WAARNEMING AANGETEKEN</b>\n\n"
+                f"{safe} eet, staan, loop en tree normaal op.\n"
+                f"Die waarneming is een keer aangeteken. {consequence}")
+    consequence = en_states[state]
+    return (f"<b>{safe} — OBSERVATION RECORDED</b>\n\n"
+            f"{safe} is eating, standing, walking and acting normally.\n"
+            f"The observation was recorded once. {consequence}")
 
 
 def _bound_effect_kind(bound, result):
@@ -204,13 +249,29 @@ class _RecoveryStore:
                        when exists(select 1 from public.pig_observation_events observation
                          where observation.pig_id=c.preview_payload->'identity'->>'pig_id'
                            and observation.idempotency_key=c.preview_payload->>'operation_id')
-                         then 'health_observation' else 'unknown' end
+                         then 'health_observation' else 'unknown' end,
+                  (select jsonb_build_object('pig_name',p.pig_name,'tag_number',p.tag_number)
+                     from public.pigs p
+                    where p.pig_id=c.preview_payload->'identity'->>'pig_id'),
+                  (select jsonb_build_object('observed',observation.measurements_json->'observed')
+                     from public.pig_observation_events observation
+                    where observation.pig_id=c.preview_payload->'identity'->>'pig_id'
+                      and observation.idempotency_key=c.preview_payload->>'operation_id'
+                    order by observation.recorded_at desc limit 1),
+                  (select event.case_state
+                     from public.pig_welfare_case_events event
+                     join public.pig_welfare_cases welfare using(welfare_case_id)
+                    where welfare.pig_id=c.preview_payload->'identity'->>'pig_id'
+                      and event.provenance_json->'intake_context'->>'operation_id'=
+                          c.preview_payload->>'operation_id'
+                    order by event.sequence_no desc,event.recorded_at desc limit 1)
                   from app_private.oom_protected_action_claims c where callback_token=%s""", (token,))
                 values = cur.fetchone()
         keys = ("callback_token","action_kind","owner_user_id","private_chat_id","mission_id",
             "preview_digest","evidence_generation","preview_payload","status","result_payload",
             "preview_card_message_id","confirmation_provider_message_id","confirmation_provider_timestamp",
-            "canonical_effect_kind")
+            "canonical_effect_kind","canonical_human_identity","canonical_observation",
+            "canonical_welfare_state")
         return dict(zip(keys, values))
 
     def release(self, token, cycle_id, now, status, result):

@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from threading import Barrier, Lock, Thread
+import pytest
 
-from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_cycle
+from modules.oom_sakkie.protected_payment_recovery import (
+    _health_observation_completion, run_payment_recovery_cycle)
 
 
 CLAIM = {"callback_token": "retained", "action_kind": "sam_sale_payment",
@@ -11,6 +13,52 @@ CLAIM = {"callback_token": "retained", "action_kind": "sam_sale_payment",
     "result_payload": None, "preview_card_message_id": "3638",
     "confirmation_provider_message_id": "original-callback",
     "confirmation_provider_timestamp": "2026-08-15T12:16:15+00:00"}
+OBSERVATION_BINDING = {"canonical_human_identity":{"pig_name":"","tag_number":"Prince"},
+    "canonical_observation":{"observed":[{"fact":key,"value":True} for key in
+        ("eating_reported","standing_reported","moving_reported","normal_behaviour_reported")]},
+    "canonical_welfare_state":"monitoring"}
+
+
+def test_observation_completion_uses_human_identity_facts_and_recipient_language():
+    bound={**OBSERVATION_BINDING,
+        "canonical_human_identity":{"pig_name":"Prince","tag_number":"146"}}
+    en=_health_observation_completion(bound,"en")
+    af=_health_observation_completion(bound,"af")
+    assert en.startswith("<b>Prince (tag 146) — OBSERVATION RECORDED</b>")
+    assert "eating, standing, walking and acting normally" in en
+    assert "Welfare monitoring remains open" in en and "PIG-" not in en
+    assert af.startswith("<b>Prince (tag 146) — WAARNEMING AANGETEKEN</b>")
+    assert "eet, staan, loop en tree normaal op" in af
+    assert "Welfare" not in af and "OBSERVATION" not in af
+
+
+@pytest.mark.parametrize(("state","expected"),(
+    ("monitoring","Welfare monitoring remains open"),
+    ("open","Welfare follow-up remains open"),
+    ("escalated","Welfare follow-up is escalated"),
+    ("closed","The welfare case is closed"),
+))
+def test_observation_completion_preserves_exact_welfare_state(state,expected):
+    value=_health_observation_completion({**OBSERVATION_BINDING,
+        "canonical_welfare_state":state},"en")
+    assert expected in value
+
+
+@pytest.mark.parametrize("patch",(
+    {"canonical_human_identity":{}},
+    {"canonical_observation":{"observed":[]}},
+    {"canonical_welfare_state":""},
+))
+def test_observation_completion_fails_closed_when_canonical_binding_incomplete(patch):
+    with pytest.raises(ValueError,match="health_loss_recovery_effect_unresolved"):
+        _health_observation_completion({**OBSERVATION_BINDING,**patch},"en")
+
+
+def test_observation_completion_escapes_human_identity():
+    value=_health_observation_completion({**OBSERVATION_BINDING,
+        "canonical_human_identity":{"pig_name":"Prince <One>","tag_number":"A&B"}},"en")
+    assert "Prince &lt;One&gt; (tag A&amp;B)" in value
+    assert "<One>" not in value
 
 
 class Store:
@@ -68,7 +116,7 @@ def test_completed_mortality_is_automatically_recomposed_and_delivered_without_w
             with self.lock:
                 if self.claimed: return None
                 self.claimed = True
-                return {**CLAIM, "action_kind": "mortality", "status": "completed",
+                return {**CLAIM, **OBSERVATION_BINDING, "action_kind": "mortality", "status": "completed",
                     "mission_id": "OOM-HERDMASTER-1", "preview_digest": "d"*64,
                     "canonical_effect_kind": "mortality",
                     "preview_payload": {"identity": {"pig_id": "PIG-126", "tag_number": "126"}},
@@ -93,7 +141,7 @@ def test_completed_mortality_is_automatically_recomposed_and_delivered_without_w
     assert result["answer"].startswith("<b>VARK 126 AANGETEKEN</b>")
     assert "Die vark SE AFSTERWE" not in result["answer"]
     assert result["writes_farm_data"] is False and result["rows_created"]==0
-    assert outcome["presentation_version"]=="health_loss_completion_typed_v2"
+    assert outcome["presentation_version"]=="health_loss_completion_factual_v3"
 
 
 def test_completed_prince_observation_is_not_rewritten_as_death(monkeypatch):
@@ -102,7 +150,7 @@ def test_completed_prince_observation_is_not_rewritten_as_death(monkeypatch):
             with self.lock:
                 if self.claimed: return None
                 self.claimed = True
-                return {**CLAIM, "action_kind": "mortality", "status": "completed",
+                return {**CLAIM, **OBSERVATION_BINDING, "action_kind": "mortality", "status": "completed",
                     "mission_id": "OOM-HERDMASTER-PRINCE", "preview_digest": "e"*64,
                     "canonical_effect_kind": "health_observation",
                     "preview_payload": {"identity": {"pig_id": "PIG-2026-E057",
@@ -119,7 +167,10 @@ def test_completed_prince_observation_is_not_rewritten_as_death(monkeypatch):
         deliverer=lambda parsed,result,**kwargs: delivered.append(result) or
             {"success":True,"telegram_message_id":"3979","telegram_sends":0,"telegram_edits":1})
     assert outcome["status"]=="payment_recovery_completed"
-    assert delivered[0]["answer"].startswith("<b>HERDMASTER OBSERVATION RECORDED</b>")
+    assert delivered[0]["answer"].startswith("<b>Prince — OBSERVATION RECORDED</b>")
+    assert "eating, standing, walking and acting normally" in delivered[0]["answer"]
+    assert "Welfare monitoring remains open" in delivered[0]["answer"]
+    assert "PIG-2026" not in delivered[0]["answer"]
     assert "DEATH" not in delivered[0]["answer"]
     assert delivered[0]["writes_farm_data"] is False and delivered[0]["rows_created"]==0
 
@@ -130,7 +181,7 @@ def test_database_confirmation_datetime_keeps_exact_iso_provider_binding(monkeyp
             with self.lock:
                 if self.claimed: return None
                 self.claimed=True
-                return {**CLAIM,"action_kind":"mortality","status":"completed",
+                return {**CLAIM,**OBSERVATION_BINDING,"action_kind":"mortality","status":"completed",
                     "canonical_effect_kind":"health_observation",
                     "confirmation_provider_timestamp":datetime(2026,8,24,9,42,31,
                         178208,tzinfo=timezone.utc),
@@ -170,7 +221,7 @@ def test_unresolved_legacy_claim_does_not_starve_later_typed_recoveries(monkeypa
         {**base,"preview_digest":"b"*64,"canonical_effect_kind":"mortality",
          "preview_payload":{"identity":{"tag_number":"126"}},
          "result_payload":{"status":"completed","answer":"old death"}},
-        {**base,"preview_digest":"c"*64,"canonical_effect_kind":"health_observation",
+        {**base,**OBSERVATION_BINDING,"preview_digest":"c"*64,"canonical_effect_kind":"health_observation",
          "result_payload":{"status":"completed","answer":"<b>HERDMASTER OBSERVATION RECORDED</b>"}},
     ]
     class QueueStore(Store):
@@ -186,7 +237,7 @@ def test_unresolved_legacy_claim_does_not_starve_later_typed_recoveries(monkeypa
     assert [row["status"] for row in outcomes] == ["payment_recovery_pending",
         "payment_recovery_completed","payment_recovery_completed"]
     assert "DEATH RECORDED" in delivered[0]
-    assert delivered[1] == "<b>HERDMASTER OBSERVATION RECORDED</b>"
+    assert delivered[1].startswith("<b>Prince — OBSERVATION RECORDED</b>")
 
 
 def test_concurrent_cycles_lease_one_execution_only():
