@@ -193,6 +193,65 @@ def test_parent_projection_survives_segment_level_completed_today():
     assert parent["projection"]["status"]=="segment_ready"
 
 
+def test_late_midnight_completion_keeps_parent_date_and_bounded_segment_two_continuity():
+    cutoff = datetime(2026, 8, 24, 0, 16, tzinfo=ZA)
+    history = project_canonical_irrigation_history([
+        epoch("B12345"), completed(execution="EXEC-LATE",
+            at=datetime(2026, 8, 24, 0, 1, tzinfo=ZA))], snapshot_cutoff=cutoff)
+    job = build_irrigation_job(zone_id="B12345", operating_date="2026-08-23",
+        requested_total_seconds=7200, requested_total_minutes=120,
+        maximum_segment_seconds=3599, expected_segment_count=2, plan_identity="PLAN-LATE")
+    segment = project_next_segment(job, [])
+    eligibility = {"action": "record_eligibility", **job,
+        "requested_total_duration_seconds": 7200, "requested_total_duration_minutes": 120,
+        "governed_executable_duration_seconds": 7198, "plan_generation": "PLAN-LATE"}
+    completion = {"action": "record_completed", "job_id": job["job_id"],
+        "operating_date": "2026-08-23", "segment_number": 1,
+        "segment_identity": segment["segment_identity"], "execution_id": "EXEC-LATE",
+        "state": "Completed", "verified_runtime_seconds": 3599,
+        "shutdown_verified": True, "completed_at": datetime(
+            2026, 8, 24, 0, 1, tzinfo=ZA).isoformat()}
+    _attach_parent_jobs(history, [eligibility, completion])
+    zone = history["zones"]["B12345"]
+    assert zone["verified_completed_days"] == ["2026-08-23"]
+    parent = zone["incomplete_parent_job"]
+    assert parent["job"]["operating_date"] == "2026-08-23"
+    assert parent["cross_operating_date_continuation"] is True
+    assert parent["projection"]["status"] == "segment_ready"
+
+
+def test_expired_midnight_parent_terminal_defer_disappears_idempotently():
+    history = project_canonical_irrigation_history([epoch("B12345")],
+        snapshot_cutoff=datetime(2026, 8, 24, 1, 0, tzinfo=ZA))
+    job = build_irrigation_job(zone_id="B12345", operating_date="2026-08-23",
+        requested_total_seconds=7200, maximum_segment_seconds=3599,
+        expected_segment_count=2, plan_identity="PLAN-OLD")
+    segment = project_next_segment(job, [])
+    eligibility = {"action": "record_eligibility", **job,
+        "requested_total_duration_seconds": 7200, "requested_total_duration_minutes": 120,
+        "governed_executable_duration_seconds": 7198, "plan_generation": "PLAN-OLD"}
+    completion = {"action": "record_completed", "job_id": job["job_id"],
+        "operating_date": "2026-08-23", "segment_number": 1,
+        "segment_identity": segment["segment_identity"], "execution_id": "EXEC-OLD",
+        "state": "Completed", "verified_runtime_seconds": 3599,
+        "shutdown_verified": True, "completed_at": "2026-08-24T00:01:00+02:00"}
+    material = {"contract_version": "rootline_irrigation_job_resolution.v1",
+        "resolution": "Deferred", "terminal": True, "job_id": job["job_id"],
+        "job_sha256": job["job_sha256"], "zone_id": "B12345",
+        "operating_date": "2026-08-23", "current_segment": 2,
+        "expected_segment_count": 2, "cumulative_verified_runtime_seconds": 3599,
+        "remaining_seconds": 3599,
+        "reason": "parent_operating_date_elapsed_before_remaining_objective_completed"}
+    import hashlib, json
+    resolution = {**material, "resolution_sha256": hashlib.sha256(json.dumps(
+        material, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+        "action": "record_job_resolution"}
+    _attach_parent_jobs(history, [eligibility, completion, resolution, dict(resolution)])
+    zone = history["zones"]["B12345"]
+    assert "incomplete_parent_job" not in zone
+    assert not zone.get("stale_incomplete_parent_jobs")
+
+
 def test_eligibility_only_history_never_becomes_continuing_parent():
     history=project_canonical_irrigation_history([epoch("B12345")],snapshot_cutoff=NOW)
     job=build_irrigation_job(zone_id="B12345",operating_date="2026-08-05",

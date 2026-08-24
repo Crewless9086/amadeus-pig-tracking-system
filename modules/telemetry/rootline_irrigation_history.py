@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 SAST = ZoneInfo("Africa/Johannesburg")
 ZONES = {"B12345", "C12345"}
+PARENT_MIDNIGHT_CONTINUITY_MINUTES = 30
 CONTRACT = "rootline_irrigation_outcome_v1"
 EPOCH_EVENT = "PLANNING_EPOCH_STARTED"
 QUALIFYING_FIELDS = (
@@ -129,6 +130,7 @@ def _attach_parent_jobs(history, rows):
     """Project incomplete immutable jobs without treating a segment as a day close."""
     from modules.telemetry.rootline_irrigation_job_contract import project_next_segment
     _attach_latest_zone_executions(history, rows)
+    _attribute_parent_operating_dates(history, rows)
     grouped = {}
     for raw in rows or ():
         row = raw if isinstance(raw, dict) else {}
@@ -144,6 +146,8 @@ def _attach_parent_jobs(history, rows):
         authority = next((row for row in events
             if row.get("action") == "record_eligibility" and row.get("job_sha256")), None)
         if not authority:
+            continue
+        if any(_valid_terminal_defer(row) for row in events):
             continue
         job = {"contract_version": "rootline_irrigation_job.v1",
             "job_id": authority.get("job_id"), "job_sha256": authority.get("job_sha256"),
@@ -199,9 +203,13 @@ def _attach_parent_jobs(history, rows):
             "completed_segment_count": len(completed_segments),
             "remaining_seconds": projection.get("remaining_seconds")}
         if zone in ZONES:
-            if current_date and job.get("operating_date") != current_date:
+            continuation = _cross_midnight_continuation(
+                job, completed_segments, cutoff, current_date)
+            if current_date and job.get("operating_date") != current_date and not continuation:
                 stale_by_zone[zone].append(candidate)
                 continue
+            if continuation:
+                candidate["cross_operating_date_continuation"] = True
             if zone in by_zone:
                 by_zone[zone] = {"job": {"job_id": "conflicting_incomplete_parent_jobs",
                     "zone_id": zone}, "projection": {
@@ -217,6 +225,40 @@ def _attach_parent_jobs(history, rows):
     for zone, values in contained_by_zone.items():
         if values:
             history["zones"][zone]["contained_parent_jobs"] = values
+
+
+def _cross_midnight_continuation(job, completed, cutoff, current_date):
+    if not cutoff or not current_date or not completed or job.get("operating_date") == current_date:
+        return False
+    times = [_timestamp(row.get("completed_at")) for row in completed]
+    latest = max((value for value in times if value is not None), default=None)
+    return bool(latest and latest.astimezone(SAST).date().isoformat() == current_date
+        and timedelta(0) <= cutoff-latest <= timedelta(minutes=PARENT_MIDNIGHT_CONTINUITY_MINUTES))
+
+
+def _valid_terminal_defer(row):
+    if not isinstance(row, dict) or row.get("resolution") != "Deferred" or row.get("terminal") is not True:
+        return False
+    keys = ("contract_version", "resolution", "terminal", "job_id", "job_sha256",
+        "zone_id", "operating_date", "current_segment", "expected_segment_count",
+        "cumulative_verified_runtime_seconds", "remaining_seconds", "reason")
+    return row.get("resolution_sha256") == _digest({key: row.get(key) for key in keys})
+
+
+def _attribute_parent_operating_dates(history, rows):
+    dates = {str(row.get("execution_id") or ""): str(row.get("operating_date") or "")
+        for row in rows or () if isinstance(row, dict) and row.get("action") == "record_completed"
+        and str(row.get("operating_date") or "")}
+    for zone in (history.get("zones") or {}).values():
+        for event in zone.get("events") or ():
+            operating_date = dates.get(str(event.get("execution_id") or ""))
+            if operating_date and event.get("qualifies_as_completed_watering") is True:
+                event["operating_date"] = operating_date
+        zone["verified_completed_days"] = sorted({
+            str(event.get("operating_date") or event.get("event_at_sast") or "")[:10]
+            for event in zone.get("events") or ()
+            if event.get("qualifies_as_completed_watering") is True})
+        zone["verified_completed_day_count"] = len(zone["verified_completed_days"])
 
 
 def _attach_latest_zone_executions(history, rows):
