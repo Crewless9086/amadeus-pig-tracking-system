@@ -17,10 +17,10 @@ class Response:
 
 def test_payload_is_stable_current_bucket_and_owner_private_chat_bound():
     value=build_payload(NOW,"42")
-    assert value["due_at"]=="2026-08-15T07:15:00+00:00"
+    assert value["due_at"]=="2026-08-15T07:28:00+00:00"
     assert value["evidence_cutoff"]=="2026-08-15T07:28:41+00:00"
     assert value["trigger_timestamp"]=="2026-08-15T07:28:41+00:00"
-    assert value["trigger_id"]=="ROOTLINE-AUTO-20260815T071500Z"
+    assert value["trigger_id"]=="ROOTLINE-AUTO-20260815T072800Z"
     assert value["owner_user_id"]==value["chat_id"]=="42"
     assert value["specialist"]=="ROOTLINE"
 

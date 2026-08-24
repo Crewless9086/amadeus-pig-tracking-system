@@ -4,8 +4,33 @@ from modules.oom_sakkie.automatic_reassessment_scheduler import (
     SCHEDULER_IDENTITY, run_due_reassessment,
 )
 from modules.oom_sakkie.telegram_gateway import handle_rootline_reassessment_trigger
+from modules.oom_sakkie.telegram_gateway import _rootline_irrigation_completion_summary
 
 NOW = datetime(2026, 8, 5, 8, 15, tzinfo=timezone.utc)
+
+
+def test_completion_summary_reports_verified_runtime_and_omits_unproven_fertilizer():
+    text = _rootline_irrigation_completion_summary("B12345", {
+        "current_segment": 2, "expected_segment_count": 2,
+        "verified_runtime_seconds": 3599,
+        "cumulative_verified_runtime_seconds": 7198,
+        "fertilizer_delivery_verified": False,
+    })
+    assert "stopped and verified off" in text
+    assert "Segment 2/2 ran for 59m 59s" in text
+    assert "Total verified watering: 119m 58s" in text
+    assert "fertilizer" not in text.casefold()
+
+
+def test_completion_summary_includes_only_commissioned_verified_fertilizer_counts():
+    text = _rootline_irrigation_completion_summary("B12345", {
+        "verified_runtime_seconds": 3599,
+        "fertilizer_delivery_verified": True,
+        "verified_fertilizer_injection_count": 3,
+        "verified_fertilizer_mixing_count": 1,
+    })
+    assert "Verified fertilizer injections: 3" in text
+    assert "Verified mixing cycles: 1" in text
 
 
 def memory_store():
@@ -48,7 +73,7 @@ def test_due_claim_is_deterministic_and_replay_never_invokes_twice():
     assert first["terminal_outcome"] == "completed"
     assert replay["status"] == "scheduled_reassessment_replayed_noop"
     assert len(calls) == 1 and len(rows) == 2
-    assert first["next_due_at"] == "2026-08-05T10:30:00+02:00"
+    assert first["next_due_at"] == "2026-08-05T10:16:00+02:00"
     outcome = rows[next(key for key in rows if key.endswith("-OUTCOME"))]
     assert outcome["execution_status"] == "execution_eligibility_changed"
     assert outcome["plan_delivery_status"] == "delivered_current_irrigation_plan"
@@ -72,7 +97,7 @@ def test_only_bounded_latest_missed_run_can_execute_after_restart():
         payload=scheduled_payload(due_at="2026-08-05T09:30:00+02:00"),
         invoke=lambda: calls.append(1), store=store, now=NOW)
     recent = run_due_reassessment(
-        payload=scheduled_payload(due_at="2026-08-05T09:50:00+02:00"),
+        payload=scheduled_payload(due_at="2026-08-05T10:12:00+02:00"),
         invoke=lambda: {"success": True, "status": "rootline_reassessment_unchanged"},
         store=store, now=NOW)
     assert old["status"] == "scheduled_reassessment_not_due" and calls == []

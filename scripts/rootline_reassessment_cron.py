@@ -1,8 +1,9 @@
 """Backend-owned Render cron client for recurring ROOTLINE reassessment.
 
 The deployed application remains the sole planner/action spine.  This process
-only supplies a signed, date-stable 15-minute trigger to its authenticated
-endpoint; Supabase schedule claims provide exactly-once ownership.
+only supplies a signed, minute-bucketed control trigger to its authenticated
+endpoint; Supabase schedule claims provide exactly-once ownership. Owner
+planning remains daily/change-only and is not coupled to this control cadence.
 """
 from __future__ import annotations
 
