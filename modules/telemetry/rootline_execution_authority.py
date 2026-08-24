@@ -36,7 +36,8 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             task.get("incomplete_parent_job"), dict) else {}
         parent_job = parent.get("job") if isinstance(parent.get("job"), dict) else {}
         parent_date_current = (not parent_job or parent_job.get("operating_date") ==
-            str(plan.get("operating_date") or "")[:10])
+            str(plan.get("operating_date") or "")[:10]
+            or parent.get("cross_operating_date_continuation") is True)
         contained = task.get("contained_parent_jobs") if isinstance(
             task.get("contained_parent_jobs"), list) else []
         durable_containment = (zone_containment_reader(zone) or {}

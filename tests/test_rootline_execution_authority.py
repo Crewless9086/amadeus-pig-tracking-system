@@ -213,6 +213,29 @@ def test_prior_date_parent_is_deferred_and_never_regains_command_authority():
         "B12345":"parent_operating_date_mismatch"}
 
 
+def test_fresh_cross_midnight_parent_may_rearm_exact_segment_two():
+    plan, evidence, controller = inputs()
+    from modules.telemetry.rootline_irrigation_job_contract import (
+        build_irrigation_job, project_next_segment)
+    parent_job = build_irrigation_job(zone_id="B12345", operating_date="2026-08-07",
+        requested_total_seconds=7200, requested_total_minutes=120,
+        maximum_segment_seconds=3599, expected_segment_count=2,
+        plan_identity="PRIOR-GENERATION")
+    first_segment = project_next_segment(parent_job, [])
+    task = plan["candidate_tasks"][0]
+    task["incomplete_parent_job"] = {"job": parent_job,
+        "projection": {"status": "segment_ready", "current_segment": 2,
+            "cumulative_verified_runtime_seconds": 3599, "remaining_seconds": 3599},
+        "remaining_seconds": 3599, "cross_operating_date_continuation": True}
+    event = {"job_id": parent_job["job_id"], "segment_number": 1,
+        "segment_identity": first_segment["segment_identity"], "execution_id": "EXEC-PRIOR",
+        "state": "Completed", "verified_runtime_seconds": 3599, "shutdown_verified": True}
+    result = build_execution_eligibility(plan=plan, evidence=evidence, controller=controller,
+        now=NOW, job_event_reader=lambda _job_id: [event])
+    assert result["eligible"] is True and result["current_segment"] == 2
+    assert result["operating_date"] == "2026-08-07"
+
+
 def test_deferred_parent_reports_exact_bounded_segment_predicate_failure():
     plan,evidence,controller=inputs()
     task=plan["candidate_tasks"][0]

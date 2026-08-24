@@ -26,6 +26,8 @@ def test_stale_parent_resolution_is_digest_bound_and_zero_control():
     assert [action for action,_ in calls]==["record_job_resolution","record_job_resolution"]
     assert calls[0][1]==calls[1][1]
     assert calls[0][1]["resolution"]=="Deferred"
+    assert calls[0][1]["terminal"] is True
+    assert "source_plan_generation" not in calls[0][1]
     assert calls[0][1]["remaining_seconds"]==3599
 
     contained={**parent,
