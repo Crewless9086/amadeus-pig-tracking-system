@@ -89,10 +89,13 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
     parsed = {"telegram_user_id": str(owner_user_id), "telegram_chat_id": str(chat_id),
+        "telegram_chat_type": "private", "output_language": str(language),
         "provider_message_id": "scheduled:" + claim_id,
         "provider_timestamp": now.isoformat(), "text": "Daily Farm Manager"}
     result = {"success": True, "status": "daily_farm_manager_ready",
         "answer": packet["answer"], "result_digest": digest,
+        "recipient_render_contract": "specialist_structured_recipient_v1",
+        "recipient_language": str(language),
         "rolling_brief_replacement": replacement,
         "hardware_commands": 0, "writes_farm_data": False}
     if replacement:
@@ -100,12 +103,12 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
             from modules.oom_sakkie.family_message_lifecycle import replace_current_brief
             replace_brief = replace_current_brief
         delivery = replace_brief(parsed, result, mission_id=claim_id,
-            card_mission_id=identity,
+            card_mission_id=projection_identity,
             previous_message_id=str(prior.get("telegram_message_id") or ""),
             generation_digest=digest)
     else:
         delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
-            mission_id=claim_id, card_mission_id=identity)
+            mission_id=claim_id, card_mission_id=projection_identity)
     message_id = str((delivery or {}).get("telegram_message_id") or "")
     provider_confirmed = bool(message_id and ((delivery or {}).get("success") is True
         or (delivery or {}).get("provider_delivery_confirmed") is True))
@@ -308,9 +311,15 @@ def build_daily_management_packet(results, *, now=None, language="en",
     digest = sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     question_item = next((item for item in ordered
                           if item.genuine_question.strip() == question), None)
+    pig_refs = ([str(value).removeprefix("pig:")
+                 for value in question_item.provenance.source_refs
+                 if str(value).startswith("pig:") and str(value).removeprefix("pig:")]
+                if question_item else [])
     question_binding = ({"task_id": question_item.item_id,
         "dedupe_key": question_item.dedupe_key, "domain": question_item.domain,
-        "question": question} if question_item else {})
+        "question": question,
+        **({"pig_id": pig_refs[0]} if len(set(pig_refs)) == 1 else {})}
+        if question_item else {})
     return {"contract_version": CONTRACT_VERSION, "material_digest": digest,
         "priorities": priorities, "watch": watch, "all_tasks": tasks,
         "question": question, "question_binding": question_binding,
@@ -365,20 +374,26 @@ def _load_answered_questions(binding):
                 where event_source='oom_sakkie_manager_question_reply'
                   and review_json->'manager_question_reply'->>'owner_user_id'=%s
                   and review_json->'manager_question_reply'->>'chat_id'=%s
-                  and review_json->'manager_question_reply'->>'daily_identity'=%s
                   and review_json->'manager_question_reply'->>'status'='recorded'
                 order by created_at, review_event_id""",
                 (str(binding.get("owner_user_id") or ""),
-                 str(binding.get("chat_id") or ""),
-                 str(binding.get("daily_identity") or "")))
-            return tuple(dict(row[0]) for row in cursor.fetchall()
-                         if row and isinstance(row[0], dict))
+                 str(binding.get("chat_id") or "")))
+            values = []
+            current_identity = str(binding.get("daily_identity") or "")
+            for row in cursor.fetchall():
+                if not row or not isinstance(row[0], dict):
+                    continue
+                value = dict(row[0])
+                value["durable_concern_receipt"] = bool(
+                    current_identity and str(value.get("daily_identity") or "") != current_identity)
+                values.append(value)
+            return tuple(values)
 
 
 def _render(priorities, watch, question, now, language):
     af = str(language).lower().startswith("af")
-    lines = ["<b>GOEIE MORE - PLAASPRIORITEITE</b>" if af
-             else "<b>GOOD MORNING - FARM PRIORITIES</b>"]
+    lines = ["<b>VANDAG SE PLAASPLAN</b>" if af
+             else "<b>TODAY'S FARM PLAN</b>"]
     if priorities:
         lines.extend(f"{index}. <b>{html.escape(_compact(row.title, 110))}</b> "
                      f"{html.escape(_compact(row.next_action, 170))}"

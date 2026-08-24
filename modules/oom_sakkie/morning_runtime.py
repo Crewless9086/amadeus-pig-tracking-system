@@ -30,8 +30,8 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
     source = environ if environ is not None else os.environ
     now = _aware(now or datetime.now(timezone.utc))
     local = now.astimezone(SAST)
-    owner = _configured_owner(source)
-    if not owner:
+    recipients = _configured_recipients(source)
+    if not recipients:
         return _safe("morning_runtime_owner_binding_unavailable", success=False)
     if local.time() < MORNING_DUE:
         return {**_safe("morning_runtime_not_due"),
@@ -42,19 +42,26 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
     deliver = deliver or deliver_family_result
     if local.time() >= PLAN_WINDOW_END:
         return _escalate_failure(
-            owner, now, deliver, MorningWindowMissed("morning_plan_window_missed"),
+            recipients, now, deliver, MorningWindowMissed("morning_plan_window_missed"),
             store=store)
 
     from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
     try:
-        results, litters, sales = _load_inputs(
-            owner, now, source,
-            herd_loader=herd_loader, rootline_loader=rootline_loader,
-            litter_loader=litter_loader, sales_loader=sales_loader)
-        return run_daily_farm_manager(
-            owner_user_id=owner, chat_id=owner, specialist_results=results,
-            litter_rows=litters, sale_rows=sales, deliver=deliver, store=store,
-            now=now, language=str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en"))
+        outcomes = []
+        for principal in recipients:
+            # The same read-only canonical source contract is projected by the
+            # specialist adapters in the recipient's language. No business
+            # truth, task, claim or write is duplicated by this presentation.
+            results, litters, sales = _load_inputs(
+                principal.telegram_user_id, now, source, language=principal.language,
+                herd_loader=herd_loader, rootline_loader=rootline_loader,
+                litter_loader=litter_loader, sales_loader=sales_loader)
+            outcomes.append(run_daily_farm_manager(
+                owner_user_id=principal.telegram_user_id,
+                chat_id=principal.private_chat_id, specialist_results=results,
+                litter_rows=litters, sale_rows=sales, deliver=deliver, store=store,
+                now=now, language=principal.language))
+        return _recipient_summary(outcomes)
     except Exception as exc:
         return {**_safe("morning_runtime_recovery_pending", success=False),
                 "failure_class": exc.__class__.__name__,
@@ -72,17 +79,19 @@ def reassess_current_brief_after_owner_answer(parsed, *, environ=None, deliver=N
     owner = str(parsed.get("telegram_user_id") or "").strip()
     chat = str(parsed.get("telegram_chat_id") or "").strip()
     now = _aware(_provider_time(parsed.get("provider_timestamp")))
-    if not owner or owner != chat or owner != _configured_owner(source):
+    principal = next((row for row in _configured_recipients(source)
+                      if row.telegram_user_id == owner and row.private_chat_id == chat), None)
+    if principal is None:
         return _safe("current_brief_owner_binding_denied", success=False)
     from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
     from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
-    results, litters, sales = _load_inputs(owner, now, source,
+    results, litters, sales = _load_inputs(owner, now, source, language=principal.language,
         herd_loader=herd_loader, rootline_loader=rootline_loader,
         litter_loader=litter_loader, sales_loader=sales_loader)
     return run_daily_farm_manager(owner_user_id=owner, chat_id=chat,
         specialist_results=results, litter_rows=litters, sale_rows=sales,
         deliver=deliver or deliver_family_result, store=store, now=now,
-        language=str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en"),
+        language=principal.language,
         replace_brief=replace_brief)
 
 
@@ -114,16 +123,17 @@ def _runtime_loop(*, environ):
         clock.sleep(POLL_SECONDS)
 
 
-def _load_inputs(owner, now, source, *, herd_loader, rootline_loader,
+def _load_inputs(owner, now, source, *, language=None, herd_loader, rootline_loader,
                  litter_loader, sales_loader):
+    language = str(language or source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en")
     if herd_loader is None or rootline_loader is None:
         from modules.oom_sakkie.farm_manager_runtime import _load_herdmaster, _load_rootline
         from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
         authority = issue_gateway_owner_authority(owner, owner)
         herd_loader = herd_loader or (lambda: _load_herdmaster(
-            authority, owner, now, str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en")))
+            authority, owner, now, language))
         rootline_loader = rootline_loader or (lambda: _load_rootline(
-            now, str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en")))
+            now, language))
     if litter_loader is None:
         from modules.pig_weights.farm_supabase_read_service import get_breeding_attention_source_snapshot
         litter_loader = lambda: get_breeding_attention_source_snapshot(deadline_seconds=20)
@@ -157,11 +167,22 @@ def _load_inputs(owner, now, source, *, herd_loader, rootline_loader,
         executor.shutdown(wait=False, cancel_futures=True)
 
 
-def _escalate_failure(owner, now, deliver, exc, *, store=None):
+def _escalate_failure(recipients, now, deliver, exc, *, store=None):
     from modules.oom_sakkie.daily_farm_manager import (
         daily_farm_manager_store, _owner_projection_identity)
     store = store or daily_farm_manager_store
     daily_identity = f"OOM-DAILY-FARM-MANAGER-{now.astimezone(SAST).date().isoformat()}"
+    outcomes = []
+    for principal in recipients:
+        outcomes.append(_escalate_recipient_failure(principal, daily_identity, now,
+            deliver, exc, store))
+    return _recipient_summary(outcomes, failure=True)
+
+
+def _escalate_recipient_failure(principal, daily_identity, now, deliver, exc, store):
+    from modules.oom_sakkie.daily_farm_manager import (
+        daily_farm_manager_store, _owner_projection_identity)
+    owner = principal.telegram_user_id
     projection_identity = _owner_projection_identity(daily_identity, owner, owner)
     claim_id = projection_identity + ":DELIVERY"
     claim = store("claim_daily", claim_id, {
@@ -179,17 +200,22 @@ def _escalate_failure(owner, now, deliver, exc, *, store=None):
     if claim.get("created") is False and store is not daily_farm_manager_store:
         return {**_safe("morning_runtime_failure_replay_suppressed"),
                 "failure_class": exc.__class__.__name__}
-    identity = daily_identity + ":FAILURE"
+    identity = projection_identity + ":FAILURE"
     parsed = {"telegram_user_id": owner, "telegram_chat_id": owner,
               "provider_message_id": "scheduled:" + identity,
+              "telegram_chat_type": "private", "output_language": principal.language,
               "provider_timestamp": now.isoformat(), "text": "Daily Farm Manager failure"}
+    af = principal.language == "af"
     result = {"success": True, "status": "daily_manager_creation_failed",
-              "answer": ("<b>Morning farm plan unavailable</b>\n\n"
+              "answer": (("<b>OGGEND-PLAASPLAN NIE BESKIKBAAR NIE</b>\n\n"
+                         "Oom Sakkie kon nie vandag se ondersteunde plaasbewyse saamstel nie. "
+                         "Geen plaas- of hardeware-aksie is uitgevoer nie.") if af else
+                         ("<b>Morning farm plan unavailable</b>\n\n"
                          "Oom Sakkie could not assemble today's supported farm evidence. "
-                         "No farm or hardware action was taken. The incident is retained for recovery."),
+                         "No farm or hardware action was taken.")),
               "hardware_commands": 0, "writes_farm_data": False}
     delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
-                       mission_id=identity, card_mission_id=daily_identity)
+                       mission_id=identity, card_mission_id=projection_identity)
     confirmed = bool((delivery or {}).get("success")
                      and (delivery or {}).get("telegram_message_id"))
     store("record_daily", claim_id + ":OUTCOME", {
@@ -214,6 +240,24 @@ def _configured_owner(source):
     if explicit:
         return explicit if explicit in allowed else ""
     return next(iter(allowed)) if len(allowed) == 1 else ""
+
+
+def _configured_recipients(source):
+    from modules.oom_sakkie.family_access import configured_farm_manager_principals
+    return configured_farm_manager_principals(source)
+
+
+def _recipient_summary(outcomes, *, failure=False):
+    rows = [dict(row) for row in outcomes]
+    if len(rows) == 1:
+        return rows[0]
+    delivered = sum(int(row.get("telegram_sends") or 0) for row in rows)
+    edited = sum(int(row.get("telegram_edits") or 0) for row in rows)
+    success = bool(rows) and all(row.get("success") is True for row in rows)
+    return {**_safe("morning_runtime_recipient_failure" if failure else
+                    "morning_runtime_recipients_projected", success=success),
+            "recipient_count": len(rows), "recipient_results": rows,
+            "telegram_sends": delivered, "telegram_edits": edited}
 
 
 def _safe(status, *, success=True):

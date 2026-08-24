@@ -199,7 +199,10 @@ def reconcile_manager_question_answer(result, receipt):
     matched = False
     items = []
     for item in result.work_items:
-        if (item.item_id == task_id and item.dedupe_key == dedupe
+        # The item id contains a daily material digest.  The governed dedupe
+        # key is the durable concern identity across daily projections.
+        if (item.dedupe_key == dedupe
+                and (item.item_id == task_id or receipt.get("durable_concern_receipt") is True)
                 and bool(item.genuine_question.strip())):
             item = replace(item, genuine_question="", question_for="")
             matched = True

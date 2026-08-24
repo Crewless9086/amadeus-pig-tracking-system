@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from threading import Lock
 from unittest.mock import patch
+import json
 
 from modules.oom_sakkie.farm_manager_loop import SpecialistAvailability, SpecialistResult
 from modules.oom_sakkie.morning_runtime import (
@@ -10,6 +11,17 @@ from modules.oom_sakkie.morning_runtime import (
 
 NOW = datetime(2026, 8, 13, 4, 50, tzinfo=timezone.utc)  # 06:50 SAST
 ENV = {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42"}
+
+
+def _two_manager_env():
+    return {"OOM_SAKKIE_TELEGRAM_OWNER_USER_ID": "42",
+        "OOM_SAKKIE_TELEGRAM_OWNER_LANGUAGE": "en",
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42,77",
+        "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON": json.dumps([{
+            "telegram_user_id": "77", "role": "farm_manager", "family_key": "dad",
+            "permissions": ["farm_observation"], "summary_domains": ["farm"],
+            "authorization_id": "AUTH-ANTON", "authorized_by_user_id": "42",
+            "authorized_at": "2026-08-01T00:00:00+00:00", "language": "af"}])}
 
 
 def _specialist(name):
@@ -128,7 +140,8 @@ def test_in_window_failure_retries_then_missed_window_escalates_once():
             "success": True, "telegram_message_id": "failure-1", "telegram_sends": 1})
     assert after["status"] == "morning_runtime_failure_escalated"
     assert after["provider_delivery_confirmed"] is True
-    assert deliveries == ["OOM-DAILY-FARM-MANAGER-2026-08-13:FAILURE"]
+    assert len(deliveries) == 1 and ":OWNER:" in deliveries[0]
+    assert deliveries[0].endswith(":FAILURE")
     replay = run_morning_cycle(now=datetime(2026, 8, 13, 10, 31, tzinfo=timezone.utc),
         environ=ENV, herd_loader=broken,
         rootline_loader=lambda: _specialist("rootline"), litter_loader=lambda: {},
@@ -177,7 +190,8 @@ def test_restart_after_window_never_loads_or_creates_a_plan():
     assert concurrent_restart["status"] == "morning_runtime_failure_replay_suppressed"
     assert concurrent_restart["telegram_sends"] == concurrent_restart["telegram_edits"] == 0
     assert loader_calls == []
-    assert deliveries == ["OOM-DAILY-FARM-MANAGER-2026-08-14:FAILURE"]
+    assert len(deliveries) == 1 and ":OWNER:" in deliveries[0]
+    assert deliveries[0].endswith(":FAILURE")
 
 
 def test_success_claim_blocks_later_failure_card_for_same_date():
@@ -219,3 +233,57 @@ def test_runtime_starts_only_under_production_ownership(monkeypatch):
                                             runner=lambda **k: None) is True
     assert start_production_morning_runtime(environ={"OOM_SAKKIE_DAILY_MANAGER_RUNTIME_ENABLED": "true"},
                                             runner=lambda **k: None) is False
+
+
+def test_shared_plan_projects_once_per_owner_with_language_and_scoped_identity():
+    events, deliveries, loads = {}, [], []
+    def store(action, identity, payload):
+        if action == "load_daily":
+            return None
+        if action == "load_answered_questions":
+            return ()
+        created = identity not in events
+        events.setdefault(identity, dict(payload or {}))
+        return {"success": True, "created": created}
+    def herd():
+        loads.append("herd")
+        return _specialist("herdmaster")
+    def deliver(parsed, result, **kwargs):
+        deliveries.append((parsed["telegram_user_id"], result["answer"], kwargs["mission_id"]))
+        return {"success": True, "telegram_message_id": "m-" + parsed["telegram_user_id"],
+                "telegram_sends": 1, "telegram_edits": 0}
+    outcome = run_morning_cycle(now=NOW, environ=_two_manager_env(), deliver=deliver,
+        store=store, herd_loader=herd, rootline_loader=lambda: _specialist("rootline"),
+        litter_loader=lambda: {"allocation_inputs": {"litter_rows": []}},
+        sales_loader=lambda: ({"success": True, "sales_transactions": []}, 200))
+    assert outcome["status"] == "morning_runtime_recipients_projected"
+    assert outcome["recipient_count"] == 2 and outcome["telegram_sends"] == 2
+    assert loads == ["herd", "herd"]
+    by_owner = {row[0]: row for row in deliveries}
+    assert "TODAY'S FARM PLAN" in by_owner["42"][1]
+    assert "VANDAG SE PLAASPLAN" in by_owner["77"][1]
+    assert by_owner["42"][2] != by_owner["77"][2]
+    assert all(":OWNER:" in row[2] for row in deliveries)
+
+
+def test_one_recipient_provider_failure_does_not_block_other_recipient():
+    events, attempted = {}, []
+    def store(action, identity, payload):
+        if action == "load_daily": return None
+        if action == "load_answered_questions": return ()
+        created = identity not in events; events.setdefault(identity, dict(payload or {}))
+        return {"success": True, "created": created}
+    def deliver(parsed, result, **kwargs):
+        attempted.append(parsed["telegram_user_id"])
+        if parsed["telegram_user_id"] == "77":
+            return {"success": False, "telegram_sends": 0, "telegram_edits": 0}
+        return {"success": True, "telegram_message_id": "charl-card", "telegram_sends": 1}
+    outcome = run_morning_cycle(now=NOW, environ=_two_manager_env(), deliver=deliver,
+        store=store, herd_loader=lambda: _specialist("herdmaster"),
+        rootline_loader=lambda: _specialist("rootline"),
+        litter_loader=lambda: {"allocation_inputs": {"litter_rows": []}},
+        sales_loader=lambda: ({"success": True, "sales_transactions": []}, 200))
+    assert attempted == ["42", "77"]
+    assert outcome["success"] is False and outcome["telegram_sends"] == 1
+    assert [row["status"] for row in outcome["recipient_results"]] == [
+        "daily_manager_presented", "daily_manager_delivery_ambiguous"]

@@ -214,7 +214,8 @@ def test_daily_projection_and_provider_claims_are_cross_owner_isolated():
             litter_rows=[],deliver=deliver,store=state,now=NOW)
         assert value["status"] == "daily_manager_presented"
     assert len(sends) == 2 and sends[0][1] != sends[1][1]
-    assert sends[0][2] == sends[1][2]
+    assert sends[0][2] != sends[1][2]
+    assert all(":OWNER:" in row[2] for row in sends)
 
 
 def test_herdmaster_reassesses_only_exact_current_question_from_owner_evidence():
@@ -228,3 +229,16 @@ def test_herdmaster_reassesses_only_exact_current_question_from_owner_evidence()
     assert reconciled.work_items[0].genuine_question==""
     assert reconciled.result_id==current.result_id
     assert stale == current and current.work_items[0].genuine_question=="Are they eating?"
+
+
+def test_prior_daily_receipt_retires_same_durable_welfare_question_without_closing_case():
+    current=result(name="herdmaster",items=[item("NEW-DIGEST:PRINCE","Prince welfare",
+        question="Is Prince standing and drinking now?",specialist="herdmaster")])
+    receipt={"task_id":"OLD-DIGEST:PRINCE","dedupe_key":"NEW-DIGEST:PRINCE",
+        "domain":"herd","owner_evidence":"Prince is standing and drinking.",
+        "accumulated_semantic_facts":{"observation":"Prince is standing and drinking."},
+        "durable_concern_receipt":True}
+    reconciled=reconcile_manager_question_answer(current,receipt)
+    assert reconciled.work_items[0].genuine_question==""
+    assert reconciled.work_items[0].state==current.work_items[0].state
+    assert reconciled.work_items[0].metadata==current.work_items[0].metadata
