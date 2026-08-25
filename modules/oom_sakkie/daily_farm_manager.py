@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 from modules.oom_sakkie.farm_manager_loop import (
-    Authority, Provenance, SpecialistAvailability, SpecialistResult,
+    Authority, PROTECTED_AUTHORITIES, Provenance, SpecialistAvailability, SpecialistResult,
     SpecialistWorkItem, WorkState,
 )
 
@@ -434,7 +434,7 @@ def _render(priorities, watch, question, now, language):
 def _owner_action_required(item):
     """Keep specialist-owned reconciliation out of the owner's action list."""
     return (bool(item.genuine_question.strip())
-            or item.authority is Authority.OWNER_DECISION
+            or item.authority in PROTECTED_AUTHORITIES
             or item.metadata.get("physical_work_ready") is True)
 
 

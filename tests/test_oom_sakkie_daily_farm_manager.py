@@ -6,7 +6,7 @@ from modules.oom_sakkie.daily_farm_manager import (
     build_daily_management_packet, build_litter_watch_result, build_sale_watch_result,
     run_daily_farm_manager)
 from modules.oom_sakkie.farm_manager_loop import (
-    Authority, Provenance, SpecialistAvailability, SpecialistResult,
+    Authority, PROTECTED_AUTHORITIES, Provenance, SpecialistAvailability, SpecialistResult,
     SpecialistWorkItem, WorkState)
 from modules.oom_sakkie.herdmaster_daily_manager_adapter import (
     reconcile_manager_question_answer)
@@ -158,6 +158,16 @@ def test_exact_owner_decision_is_the_only_action_section():
     assert "ACTION NEEDED" in answer
     assert "Review the protected preview." in answer
     assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
+    assert "No action required from you." not in answer
+
+
+@pytest.mark.parametrize("authority", sorted(PROTECTED_AUTHORITIES, key=lambda value: value.value))
+def test_every_protected_authority_remains_owner_visible(authority):
+    protected = replace(item("PROTECTED", "Governed action", WorkState.DUE_TODAY),
+                        authority=authority, next_action="Review the exact governed action.")
+    answer = build_daily_management_packet([result(items=[protected])], now=NOW)["answer"]
+    assert "ACTION NEEDED" in answer
+    assert "Review the exact governed action." in answer
     assert "No action required from you." not in answer
 
 
