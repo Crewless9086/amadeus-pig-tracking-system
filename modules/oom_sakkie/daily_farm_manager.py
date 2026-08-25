@@ -405,23 +405,37 @@ def _load_answered_questions(binding):
 
 def _render(priorities, watch, question, now, language):
     af = str(language).lower().startswith("af")
+    visible = list(priorities) + list(watch)
+    owner_work = [row for row in visible if _owner_action_required(row)]
+    automatic_work = [row for row in visible if not _owner_action_required(row)]
     lines = ["<b>VANDAG SE PLAASPLAN</b>" if af
              else "<b>TODAY'S FARM PLAN</b>"]
-    if priorities:
+    if owner_work:
+        lines.append("<b>AKSIE NODIG</b>" if af else "<b>ACTION NEEDED</b>")
         lines.extend(f"{index}. <b>{html.escape(_compact(row.title, 110))}</b> "
                      f"{html.escape(_compact(row.next_action, 170))}"
-                     for index, row in enumerate(priorities, 1))
-    else:
-        lines.append("1. Geen nuwe aksie nodig nie." if af else "1. No new action is required.")
+                     for index, row in enumerate(owner_work, 1))
+    if automatic_work:
+        lines.extend(("", "<b>OOM SAKKIE KONTROLEER OUTOMATIES</b>" if af
+                      else "<b>OOM SAKKIE IS CHECKING AUTOMATICALLY</b>"))
+        lines.extend(f"• <b>{html.escape(_compact(row.title, 110))}</b>"
+                     for row in automatic_work)
+    if not owner_work and not automatic_work:
+        lines.append("Geen nuwe werk nie." if af else "No new work.")
     if question:
         lines.extend(("", "<b>EEN VRAAG</b>" if af else "<b>ONE QUESTION</b>",
                       html.escape(question)))
-    else:
+    elif not owner_work:
         lines.extend(("", "Geen aksie word nou van jou benodig nie."
                       if af else "No action required from you."))
-    lines.extend(("", ("Volgende kontrole: binne 15 minute of wanneer kernbewyse verander."
-                       if af else "Next check: within 15 minutes or when material evidence changes.")))
     return "\n".join(lines)
+
+
+def _owner_action_required(item):
+    """Keep specialist-owned reconciliation out of the owner's action list."""
+    return (bool(item.genuine_question.strip())
+            or item.authority is Authority.OWNER_DECISION
+            or item.metadata.get("physical_work_ready") is True)
 
 
 def _task(item):

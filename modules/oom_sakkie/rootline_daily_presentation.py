@@ -212,6 +212,12 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
     if state == "Authorized":
         return "Gereed — begin veilig" if af else "Ready — starting safely"
     if state == "Eligible":
+        reason = str(recommendation.get("reason") or "").casefold()
+        if "insufficient" in reason or "not establish enough" in reason:
+            # Conflicting readiness and watering-need evidence is not a ready
+            # instruction. Keep it on ROOTLINE's automatic safe revalidation
+            # path until one coherent canonical result exists.
+            return "Kontroleer veiligheid" if af else "Checking safely"
         return ("Gereed na die finale veiligheidskontrole" if af else
                 "Ready after the final safety check")
     if state == "Revalidating":

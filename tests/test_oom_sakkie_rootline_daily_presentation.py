@@ -208,6 +208,22 @@ def test_live_backend_tokens_are_not_exposed_and_hold_never_claims_eligibility()
         assert internal not in text
 
 
+def test_eligible_conflicting_with_insufficient_deficit_is_revalidated_not_ready():
+    value = result(b="Hold", c="Hold",
+                   reason="Available evidence does not establish enough current deficit for irrigation.")
+    value["irrigation_lifecycle"] = {zone: {
+        "contract_version": "rootline_zone_lifecycle.v1", "zone_id": zone,
+        "state": "Eligible", "reason": "internal_ready_token",
+        "next_action_owner": "ROOTLINE", "next_action": "claim execution",
+    } for zone in ("B12345", "C12345")}
+    english = compose_daily_rootline_plan(value, language="en")
+    afrikaans = compose_daily_rootline_plan(value, language="af")
+    assert "B Camp:</b> Checking safely" in english
+    assert "C Camp:</b> Checking safely" in english
+    assert "B Kamp:</b> Kontroleer veiligheid" in afrikaans
+    assert "Ready after" not in english and "Gereed na" not in afrikaans
+
+
 def test_next_check_aware_and_naive_sast_are_not_shifted_twice():
     for timestamp in ("2026-08-23T22:45:15+02:00", "2026-08-23T22:45:15"):
         value = result()
