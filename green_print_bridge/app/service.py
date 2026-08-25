@@ -19,15 +19,13 @@ FIXED_OPTIONS={"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}
 ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"); DIGEST=re.compile(r"^[0-9a-f]{64}$")
 TERMINAL={"provider_completed","physically_confirmed","cancelled","ambiguous"}; MIN_FREE_BYTES=64*1024*1024
 CANCEL_READBACK_ATTEMPTS=3
-IMMUTABLE_ENVELOPE_KEYS=("job_id","farm_scope_id","document_id","document_version","document_revision",
-    "document_type","generator_id","pdf_sha256","retrieval_url","green_id","printer_id","cups_queue_id",
-    "registry_version","authorization_receipt_id","authorization_expires_at","options")
+MUTABLE_LEASE_ENVELOPE_KEYS=frozenset(("state","lease_owner","lease_token","lease_expires_at","updated_at"))
 
 class Hold(RuntimeError): pass
 def utcnow(): return datetime.now(timezone.utc)
 def iso(v): return v.astimezone(timezone.utc).isoformat()
 def canonical_json(v): return json.dumps(v,sort_keys=True,separators=(",",":"),default=str)
-def immutable_envelope(e): return {key:e.get(key) for key in IMMUTABLE_ENVELOPE_KEYS}
+def immutable_envelope(e): return {key:value for key,value in e.items() if key not in MUTABLE_LEASE_ENVELOPE_KEYS}
 def parse_time(v):
     parsed=datetime.fromisoformat(str(v).replace("Z","+00:00")) if v else None
     if parsed is not None and parsed.tzinfo is None: raise Hold("timestamp_timezone_required")
