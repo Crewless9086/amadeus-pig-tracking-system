@@ -71,7 +71,10 @@ def test_standing_authority_command_never_requires_physical_presence(text):
     value, status = handle_operational_specialist_message(
         message, issue_gateway_owner_authority("42", "42"), now=NOW,
         rootline_dispatcher=lambda _context: result())
-    assert status == 200 and value["dispatch_state"] == "specialist_accepted"
+    assert status == 200 and value["status"] == "specialist_accepted"
+    assert value["dispatch_state"] == "specialist_accepted"
+    assert value["ready_for_supervised_proof"] is True
+    assert value["next_specialist_step"] == "supervised_fertilizer_mixer_proof"
     assert "PRESENCE" not in value["answer"] and value["hardware_commands"] == 0
 
 
@@ -273,7 +276,7 @@ def test_exact_live_stale_projection_remains_actor_mission_age_and_digest_bound(
 @patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message")
 @patch("modules.oom_sakkie.telegram_gateway.handle_owner_operational_continuation")
 @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
-def test_exact_mixer_presence_precedes_stale_generic_operational_context(
+def test_exact_mixer_command_reaches_standing_execution_before_stale_generic_context(
         owner_task, continuation, operational, manager_question, deliver):
     owner_task.return_value=({"handled":False},200)
     continuation.return_value=({"handled":True,"success":False,
@@ -293,7 +296,7 @@ def test_exact_mixer_presence_precedes_stale_generic_operational_context(
          "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
          "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
     payload={"message":{"message_id":4001,"date":1787585194,
-        "text":"I am at the fertilizer valves and ready for the five-minute Mixer CH2 commissioning test.",
+        "text":"Run the governed five-minute Mixer CH2 commissioning now.",
         "from":{"id":42},"chat":{"id":42,"type":"private"}}}
     protected={"handled":True,"success":True,"status":"auxiliary_started",
         "answer":"<b>MIXER CH2 — SUPERVISED TEST</b>\n\nNothing has started yet. Confirm / Cancel.",

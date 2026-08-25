@@ -257,8 +257,10 @@ def handle_operational_specialist_message(
         return result, 503
     digest = _digest(evidence)
     mission = _mission(parsed)
-    return ({"handled": True, "success": True, "status": "working",
+    return ({"handled": True, "success": True, "status": "specialist_accepted",
         "dispatch_state": "specialist_accepted", "specialist_identity": "ROOTLINE",
+        "ready_for_supervised_proof": True,
+        "next_specialist_step": "supervised_fertilizer_mixer_proof",
         "mission_id": mission, "card_mission_id": mission,
         "provider_message_id": provider_id, "provider_timestamp": provider_at.isoformat(),
         "evidence_generation": str(evidence.get("evidence_cutoff") or evidence.get("observed_at") or ""),
