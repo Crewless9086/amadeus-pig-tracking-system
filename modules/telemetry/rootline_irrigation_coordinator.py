@@ -308,7 +308,7 @@ def _recover_auxiliary(active,store,transport,now):
         physical_verified = (active.get("auxiliary_device_id") ==
             "FERTILIZER-MIXER-CH2" and active.get("device_id") == "100204d497"
             and active.get("channel") == 2
-            and active.get("maximum_duration_seconds") == 300
+            and 1 <= int(active.get("maximum_duration_seconds") or 0) <= 1800
             and start.get("authoritative") is True and start.get("state") == "ON"
             and shutdown.get("authoritative") is True and shutdown.get("state") == "OFF")
     completed={**active,"state":"Completed","shutdown_verified":True,

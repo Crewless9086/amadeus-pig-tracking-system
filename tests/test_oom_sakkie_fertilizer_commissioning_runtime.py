@@ -47,7 +47,7 @@ def parsed(text="Yes, I'm at the fertilizer valve"):
 def safety():
     return {"authoritative": True, "response_digest": "READ-1",
         "device_id": "100204d497", "channel": 2, "output_state": "OFF",
-        "native_inching_enabled": True, "native_inching_seconds": 300,
+        "native_inching_enabled": True, "native_inching_seconds": 1800,
         "power_restoration_state": "OFF", "schedules_enabled": False,
         "timers_enabled": False, "scenes_enabled": False, "interlock_enabled": False,
         "controller_safety_generation": "BASELINE-1",
@@ -132,7 +132,7 @@ def test_scheduler_recovers_after_native_deadline_and_never_retries_on():
         acceptance_loader=lambda *_args: True)
     assert started["status"] == "auxiliary_started"
     transport.state = "OFF"  # native provider auto-OFF
-    completed = recover_fertilizer_commissioning(now=NOW + timedelta(seconds=301),
+    completed = recover_fertilizer_commissioning(now=NOW + timedelta(seconds=1801),
         store=store, transport=transport)
     assert completed["status"] == "auxiliary_completed"
     assert [row[0] for row in transport.commands] == ["ON", "OFF"]
@@ -157,7 +157,7 @@ def test_natural_physical_followup_is_retained_and_enables_only_mixing_after_shu
         acceptance_loader=lambda *_args: True)
     assert retained["requires_visible_notification"] is True
     transport.state = "OFF"
-    completed = recover_fertilizer_commissioning(now=NOW + timedelta(seconds=301),
+    completed = recover_fertilizer_commissioning(now=NOW + timedelta(seconds=1801),
         store=store, transport=transport)
     assert completed["mixing_enabled"] is True
     assert completed["injection_enabled"] is False
@@ -246,7 +246,7 @@ def test_transport_override_is_exactly_scoped_and_does_not_enable_other_auxiliar
 def test_protected_mixer_never_recovers_an_unrelated_active_auxiliary():
     store = Store(); transport = Transport()
     eligibility = build_auxiliary_eligibility(
-        task={"auxiliary_device_id": "FERTILIZER-MIXER-CH2"}, safety=safety(),
+        task={"auxiliary_device_id": "FERTILIZER-MIXER-CH2", "planned_seconds": 1800}, safety=safety(),
         context={"plan_generation": "PLAN", "injection_active": False,
             "verified_mixing_minutes_today": 0, "verified_mixing_sessions_today": 0,
             "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True,
@@ -265,7 +265,7 @@ def test_protected_mixer_never_recovers_an_unrelated_active_auxiliary():
 def test_protected_callback_recovers_durable_completion_after_claim_write_crash():
     store = Store(); transport = Transport()
     eligibility = build_auxiliary_eligibility(
-        task={"auxiliary_device_id": "FERTILIZER-MIXER-CH2"}, safety=safety(),
+        task={"auxiliary_device_id": "FERTILIZER-MIXER-CH2", "planned_seconds": 1800}, safety=safety(),
         context={"plan_generation": "PLAN", "injection_active": False,
             "verified_mixing_minutes_today": 0, "verified_mixing_sessions_today": 0,
             "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True,
@@ -275,7 +275,7 @@ def test_protected_callback_recovers_durable_completion_after_claim_write_crash(
         "execution_id": eligibility["execution_id"],
         "consumption_key": eligibility["consumption_key"],
         "auxiliary_device_id": "FERTILIZER-MIXER-CH2", "device_id": "100204d497",
-        "channel": 2, "maximum_duration_seconds": 300,
+        "channel": 2, "maximum_duration_seconds": 1800,
         "physical_outcome_verified": False}
     original = store.__call__
     def terminal_store(action, payload):
@@ -307,7 +307,7 @@ def test_default_transport_reads_the_exact_registered_fertilizer_controller(monk
             "device_id": device_id,
             "channels": [{"channel": number, "output_state": "OFF",
                 "native_auto_off_enabled": True,
-                "native_auto_off_seconds": 300 if number == 2 else 120,
+                "native_auto_off_seconds": 1800 if number == 2 else 120,
                 "power_restoration_state": "OFF"} for number in (1, 2, 3, 4)],
             "timers_enabled": False, "interlock_enabled": False, "scenes_enabled": False,
             "commissioned_baseline_id": "FERTILIZER-BASELINE",

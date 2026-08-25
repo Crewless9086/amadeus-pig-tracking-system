@@ -96,7 +96,7 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
     def test_fertilizer_events_are_exact_and_separately_disabled_by_default(self):
         fertilizer=snapshot(device_id="100204d497")
         fertilizer["channels"][0]["native_auto_off_seconds"]=120
-        fertilizer["channels"][1]["native_auto_off_seconds"]=300
+        fertilizer["channels"][1]["native_auto_off_seconds"]=1800
         disabled,calls=self.transport(fertilizer,environ={"ROOTLINE_IFTTT_MAKER_KEY":"secret"})
         result=disabled.set_state(device_id="100204d497",channel=1,state="ON",
             idempotency_key="AUX-1:ON")
@@ -123,14 +123,14 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         now=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
         fertilizer=snapshot(device_id="100204d497",commissioned_supervised_channels=[2])
         fertilizer["channels"][0]["native_auto_off_seconds"]=120
-        fertilizer["channels"][1]["native_auto_off_seconds"]=300
+        fertilizer["channels"][1]["native_auto_off_seconds"]=1800
         transport,_calls=self.transport(fertilizer)
         safety_value=transport.read_safety_configuration(device_id="100204d497",channel=2)
         context={"plan_generation":"PLAN-EDGE","injection_active":False,
             "verified_mixing_minutes_today":0,"verified_mixing_sessions_today":0,
             "mixing_history_complete_through":now.isoformat(),"power_suitable":True}
         artifact=build_auxiliary_eligibility(task={
-            "auxiliary_device_id":"FERTILIZER-MIXER-CH2"},safety=safety_value,
+            "auxiliary_device_id":"FERTILIZER-MIXER-CH2","planned_seconds":1800},safety=safety_value,
             context=context,flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED":True},now=now)
         self.assertTrue(artifact["eligible"])
         second_snapshot=dict(fertilizer,response_digest="READ-2",
@@ -148,7 +148,7 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
     def fertilizer_snapshot(self):
         value=snapshot(device_id="100204d497",commissioned_supervised_channels=[2])
         value["channels"][0].update(native_auto_off_seconds=120)
-        value["channels"][1].update(native_auto_off_seconds=300)
+        value["channels"][1].update(native_auto_off_seconds=1800)
         for row in value["channels"][2:]:
             row.update(native_auto_off_enabled=False,native_auto_off_seconds=None)
         value["actuation_configuration_safe"]=False
@@ -178,7 +178,7 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
             device_id="100204d497",channel=2)["authoritative"])
 
     def test_mixer_boundary_blocks_missing_or_wrong_target_auto_off(self):
-        for enabled,seconds in ((False,300),(True,299),(True,None)):
+        for enabled,seconds in ((False,1800),(True,1799),(True,None)):
             value=self.fertilizer_snapshot()
             value["channels"][1].update(native_auto_off_enabled=enabled,
                 native_auto_off_seconds=seconds)

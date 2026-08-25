@@ -82,7 +82,7 @@ def execute_protected_fertilizer_commissioning(*, eligibility, parsed, now=None,
     artifact = validate_auxiliary_eligibility(eligibility, now=now)
     if (not artifact or artifact.get("auxiliary_device_id") != MIXER_ID
             or artifact.get("device_id") != DEVICE_ID or artifact.get("channel") != 2
-            or artifact.get("maximum_duration_seconds") != 300):
+            or artifact.get("maximum_duration_seconds") != 1800):
         return _result("commissioning_protected_binding_mismatch")
     source = environ if environ is not None else os.environ
     token_store = token_store or PostgresOAuthTokenStore()
@@ -141,7 +141,7 @@ def _exact_completed_execution(eligibility, history):
         and row.get("consumption_key") == eligibility.get("consumption_key")
         and row.get("auxiliary_device_id") == MIXER_ID
         and row.get("device_id") == DEVICE_ID and row.get("channel") == 2
-        and row.get("maximum_duration_seconds") == 300]
+        and row.get("maximum_duration_seconds") == 1800]
     return matches[0] if len(matches) == 1 else None
 
 
@@ -188,7 +188,7 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
                 "auxiliary_active", "auxiliary_claim_in_progress"}:
             presented.update({"answer": ("<b>FERTILIZER MIXER — OBSERVATION RECORDED</b>\n\n"
                 "I retained the recirculation, pump and output observation. The controller still owns "
-                "the five-minute auto-OFF; ROOTLINE will verify shutdown automatically."),
+                "the 30-minute auto-OFF; ROOTLINE will verify shutdown automatically."),
                 "requires_visible_notification": True, "question_count": 0})
         return presented
 
@@ -226,7 +226,9 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
         "power_suitable": power.get("suitable") is True,
         "prior_shutdown_unverified": False}
     eligibility = build_auxiliary_eligibility(
-        task={"auxiliary_device_id": MIXER_ID}, safety=safety, context=context,
+        task={"auxiliary_device_id": MIXER_ID,
+            "planned_seconds": max(0, min(1800, int((30-minutes)*60)))},
+        safety=safety, context=context,
         flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED": True}, now=now)
     if eligibility.get("eligible") is not True:
         return _hold(eligibility.get("status"))
@@ -369,7 +371,10 @@ def _current_mixer_eligibility(*, parsed, now, store, transport, power_loader=No
         raise RuntimeError("commissioning_history_readback_unavailable")
     context = _mixer_context(parsed, now, safety, power, history)
     eligibility = build_auxiliary_eligibility(
-        task={"auxiliary_device_id": MIXER_ID}, safety=safety, context=context,
+        task={"auxiliary_device_id": MIXER_ID,
+            "planned_seconds": max(0, min(1800, int((30-float(
+                context.get("verified_mixing_minutes_today") or 0))*60)))},
+        safety=safety, context=context,
         flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED": True}, now=now)
     return eligibility, context
 
@@ -451,7 +456,7 @@ def _matches_exact_acceptance(rows, result, parsed):
 
 def _hold(reason):
     human = {
-        "low_power_mix_deferred": "Current energy conditions do not support the five-minute mixer test.",
+        "low_power_mix_deferred": "Current energy conditions do not support the bounded mixer run.",
         "auxiliary_safety_unproven": "The controller safety readback is not currently complete.",
         "auxiliary_device_contained": "The mixer control is safely contained pending a verified shutdown review.",
     }.get(str(reason), "A current mixer-specific safety condition is not yet proven.")
@@ -466,9 +471,9 @@ def _present(outcome):
     status = str(outcome.get("status") or "")
     if status == "auxiliary_started":
         answer = ("<b>🟢 FERTILIZER MIXER — STARTED</b>\n\n"
-                  "The bounded five-minute Kunsmis Meng run has started. CH1 and unrelated "
+                  "The bounded 30-minute Kunsmis Meng run has started. CH1 and unrelated "
                   "outputs remain outside this run. ROOTLINE will verify the provider ON-to-OFF "
-                  "sequence and the controller owns the 300-second auto-OFF.")
+                  "sequence and the controller owns the 1,800-second auto-OFF.")
     elif status == "auxiliary_completed":
         enabled = outcome.get("mixing_enabled") is True
         answer = ("<b>✅ FERTILIZER MIXER — COMPLETED</b>\n\n"
@@ -476,7 +481,7 @@ def _present(outcome):
                   "injection stays disabled until an eligible irrigation segment."
                   if enabled else
                   "<b>✅ FERTILIZER MIXER — STOPPED</b>\n\n"
-                  "Provider shutdown is verified and the five-minute test is closed. Mixing remains "
+                  "Provider shutdown is verified and the bounded run is closed. Mixing remains "
                   "pending the physical recirculation and pump observation; fertilizer injection stays disabled.")
     elif status in {"auxiliary_active", "auxiliary_claim_in_progress"}:
         answer = ""

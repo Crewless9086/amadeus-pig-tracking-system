@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 from modules.oom_sakkie.rootline_daily_presentation import (
     compose_daily_rootline_manager_item, compose_daily_rootline_plan,
-    present_daily_rootline_plan,
+    owner_notification_required, present_daily_rootline_plan,
 )
 
 SAST = ZoneInfo("Africa/Johannesburg")
@@ -41,13 +41,32 @@ def delivery(calls):
 
 def test_first_fresh_tick_after_0700_sends_one_daily_plan_and_replay_is_silent():
     rows, state = store(); calls = []; now = datetime(2026, 8, 9, 7, 1, tzinfo=SAST)
-    first = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+    actionable = lambda: {**result(), "owner_brief": {
+        "family_fact_needed": "Should ROOTLINE proceed?", "reassess": "At 07:15 SAST."}}
+    first = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=actionable,
         state_store=state, deliver=delivery(calls), now=now)
-    replay = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+    replay = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=actionable,
         state_store=state, deliver=delivery(calls), now=now)
     assert first["status"] == "rootline_daily_delivered" and first["telegram_sends"] == 1
     assert replay["status"] == "rootline_daily_replayed_noop" and replay["telegram_sends"] == 0
     assert len(calls) == 1 and len(rows) == 1
+
+
+def test_no_action_daily_plan_is_observed_silently_and_internal_tokens_never_render():
+    rows, state = store(); calls = []; now = datetime(2026, 8, 9, 7, 1, tzinfo=SAST)
+    quiet = result(b="Recommend", c="Hold", reason="durable parent objective")
+    quiet["irrigation_lifecycle"] = {
+        "B12345": {"state": "Eligible"}, "C12345": {"state": "Held"}}
+    quiet["recommendations"][0]["preferred_window"] = "now_after_fresh_execution_revalidation"
+    outcome = present_daily_rootline_plan(owner_user_id="42", chat_id="42",
+        specialist_loader=lambda: quiet, state_store=state, deliver=delivery(calls), now=now)
+    assert outcome["status"] == "rootline_daily_observed_silently"
+    assert outcome["notify_owner"] is False and outcome["telegram_sends"] == 0
+    assert calls == [] and rows == {}
+    rendered = compose_daily_rootline_plan(quiet)
+    assert "now_after_fresh_execution_revalidation" not in rendered
+    assert "durable parent objective" not in rendered
+    assert owner_notification_required(quiet) is False
 
 
 def test_delayed_refresh_waits_without_claim_then_sends_when_fresh():
