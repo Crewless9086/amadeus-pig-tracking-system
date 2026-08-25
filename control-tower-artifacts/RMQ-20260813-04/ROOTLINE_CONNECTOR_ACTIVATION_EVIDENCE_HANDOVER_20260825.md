@@ -41,3 +41,22 @@ commissioning reconciliation and every later automatic next step.
 
 No authority migration, Render configuration change, database write, provider
 control call or hardware command occurred.
+
+## Provider correction readback
+
+At `2026-08-25T20:48:04Z`, a fresh zero-control provider readback verified
+fertilizer controller `100204d497` online with CH2 OFF, native auto-OFF enabled
+at exactly 1,800 seconds and power-restoration state OFF. The read performed
+three provider reads and zero provider control calls. CH1 remained unchanged:
+OFF, native auto-OFF enabled at 120 seconds and power-restoration state OFF.
+
+This resolves the Mixer configuration mismatch in `RMQ-20260813-02`; it is
+commissioning evidence, not proof of a fresh Mixer execution or owner outcome.
+The current plan still says `Await batch`, both fertilizer flags remain disabled
+and zero fertilizer execution events exist. Injector `RMQ-20260813-03A/03B`
+therefore remains blocked only on the existing automatic supervised-evidence
+journey. ROOTLINE owns that next step without Telegram repetition, presence or
+another owner action. No authority migration or five-flag activation is allowed
+until the complete exact evidence contract is canonical and read back.
+
+**OWNER ACTION: NONE.**

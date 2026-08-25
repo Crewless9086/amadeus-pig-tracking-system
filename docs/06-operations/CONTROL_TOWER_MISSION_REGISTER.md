@@ -3314,3 +3314,22 @@ Post-attempt, expired-authority, inactive-binding and live-lease rows remain
 ineligible. Source, tests, PR, migration and worker execution are not an owner
 outcome; physical page proof remains separate. **DURABLY LOGGED - NOT YET AN OUTCOME.
 OWNER ACTION: NONE.**
+
+## 2026-08-25 - RMQ-20260813-02 Mixer 1,800-second provider correction readback
+
+At `2026-08-25T20:48:04Z`, fresh zero-control provider evidence verified
+fertilizer controller `100204d497` online with CH2 OFF, native auto-OFF enabled
+at exactly 1,800 seconds and power-restoration state OFF. CH1 remained OFF at
+its unchanged 120-second native auto-OFF with power-restoration OFF. The read
+used three provider reads and zero provider control calls.
+
+This resolves the Mixer configuration mismatch in existing `RMQ-20260813-02`;
+it does not prove a fresh Mixer execution or owner outcome. The current plan
+still reports `Await batch`, Mixer and Injector flags remain disabled and zero
+fertilizer execution events exist. Injector `RMQ-20260813-03A/03B` continues
+through the existing automatic supervised-evidence lane. ROOTLINE owns fresh
+need/pre-flow evidence, bounded execution, provider ON/OFF readback and canonical
+reconciliation without another Telegram message, presence statement or owner
+action. The append-only authority migration and five-flag activation remain
+blocked until the full exact evidence contract is satisfied. **DURABLY LOGGED —
+NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
