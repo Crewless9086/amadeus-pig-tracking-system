@@ -303,10 +303,14 @@ def _recover_auxiliary(active,store,transport,now):
     if injection:
         physical_verified = _injection_delivery_verified(active, physical, shutdown)
     else:
-        physical_verified = (isinstance(physical, dict)
-            and physical.get("mixer_recirculating") is True
-            and physical.get("pump_expected") is True
-            and physical.get("other_outputs_off") is True)
+        start = active.get("start_evidence") if isinstance(
+            active.get("start_evidence"), dict) else {}
+        physical_verified = (active.get("auxiliary_device_id") ==
+            "FERTILIZER-MIXER-CH2" and active.get("device_id") == "100204d497"
+            and active.get("channel") == 2
+            and active.get("maximum_duration_seconds") == 300
+            and start.get("authoritative") is True and start.get("state") == "ON"
+            and shutdown.get("authoritative") is True and shutdown.get("state") == "OFF")
     completed={**active,"state":"Completed","shutdown_verified":True,
         "shutdown_evidence":shutdown,"completed_at":now.isoformat(),
         "maximum_runtime_seconds":active["maximum_duration_seconds"],
@@ -314,7 +318,10 @@ def _recover_auxiliary(active,store,transport,now):
         "nutrient_dose":"Unknown","concentration":"Unknown",
         "delivered_volume":"Unavailable",
         "physical_outcome_verified":physical_verified,
-        "physical_outcome_evidence":physical if physical_verified else None}
+        "physical_outcome_evidence":({"proof":"provider_app_on_to_off",
+            "start_evidence":active.get("start_evidence"),
+            "shutdown_evidence":shutdown} if physical_verified and not injection
+            else physical if physical_verified else None)}
     # An authoritative OFF readback proves only that the bounded control pulse
     # stopped. It is not fertilizer-delivery evidence. Keep an unverified
     # injection out of completed history so pulse count, real-flow

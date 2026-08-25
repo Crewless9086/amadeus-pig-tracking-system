@@ -101,7 +101,7 @@ observed runtime, and measured delivery remain separate.
 
 Every device follows one typed loop: observe, decide need, rank, plan, validate
 authority, claim, execute deterministically, verify provider and required
-physical outcome, learn and notify only material change. B/C irrigation,
+device-class outcome, learn and notify only material change. B/C irrigation,
 fertiliser mixing, fertiliser injection and borehole pumping are separate
 device classes; no commissioning or authority transfers between them.
 
@@ -111,7 +111,8 @@ device classes; no commissioning or authority transfers between them.
 - Fertiliser mixing and injection require separate typed commissioning and
   deterministic OFF. Under the 2026-08-24 owner decision, authoritative
   application/provider ON then OFF readback is sufficient operational proof;
-  routine human physical observation is not required. Injection additionally
+  routine human physical observation and per-run confirmation are not required
+  for a fresh authenticated request or current eligible plan. Injection additionally
   requires exactly one eligible irrigation zone, at least ten minutes proven
   clean-water pre-flow, at most 120 seconds ON and at least ten minutes flush.
 - Borehole electrical state, motor operation, water movement and tank outcome

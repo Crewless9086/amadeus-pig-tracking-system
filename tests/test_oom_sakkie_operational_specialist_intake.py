@@ -5,11 +5,12 @@ import pytest
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.operational_specialist_intake import (
     handle_operational_specialist_message, recover_contextual_specialist_replay,
-    _project_pending_history)
+    _project_pending_history, is_exact_fertilizer_commissioning_request)
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie import operational_specialist_intake
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from modules.oom_sakkie.rootline_operational_adapter import _recovery_observations
+from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import _matches_exact_acceptance
 
 NOW = datetime(2026, 8, 2, 15, 0, tzinfo=timezone.utc)
 TEXT = "I am at the B and C valve area now, can observe both camps, and can intervene immediately for supervised commissioning."
@@ -60,12 +61,45 @@ def test_fresh_authenticated_presence_is_accepted_without_hardware_authority():
     assert value["hardware_commands"] == 0 and value["writes_farm_data"] is False
     assert len(value["result_digest"]) == 64
 
+
+@pytest.mark.parametrize("text", [
+    "Run the governed five-minute Mixer CH2 commissioning now.",
+    "Start die goedgekeurde vyf-minuut menger CH2 kommissie nou.",
+])
+def test_standing_authority_command_persists_exact_acceptance_without_physical_presence(
+        text, operation_store):
+    message = {**parsed(), "text": text}
+    assert is_exact_fertilizer_commissioning_request(message) is True
+    value, status = handle_operational_specialist_message(
+        message, issue_gateway_owner_authority("42", "42"), now=NOW,
+        rootline_dispatcher=lambda _context: result())
+    assert status == 200 and value["status"] == "specialist_accepted"
+    assert value["dispatch_state"] == "specialist_accepted"
+    assert value["ready_for_supervised_proof"] is True
+    assert value["next_specialist_step"] == "supervised_fertilizer_mixer_proof"
+    receipt = operation_store[value["acceptance_receipt_event_id"]]
+    assert receipt["state"] == "contextual_followup_completed"
+    assert receipt["context"]["provider_message_id"] == "3181"
+    assert receipt["context"]["contextual_task_kind"] == "fertilizer_commissioning"
+    assert receipt["outcome"]["response_contract_version"] == "contextual_specialist_response_v2"
+    assert _matches_exact_acceptance([receipt], value, message) is True
+    assert "PRESENCE" not in value["answer"] and value["hardware_commands"] == 0
+
+
+@pytest.mark.parametrize("text", [
+    "Run Mixer", "Please run the five-minute mixer", "Start CH1 now",
+    "Start die menger asseblief",
+])
+def test_nonexact_command_cannot_enter_standing_authority(text):
+    assert is_exact_fertilizer_commissioning_request({**parsed(), "text": text}) is False
+
 def test_stale_presence_is_preserved_but_never_dispatched_or_actuated():
     calls=[]
     value, status = handle_operational_specialist_message(parsed(NOW-timedelta(seconds=301)),
         issue_gateway_owner_authority("42", "42"), now=NOW,
         rootline_dispatcher=lambda _context: calls.append(True))
-    assert status == 200 and value["systemic_exception"] == "rootline_physical_presence_stale"
+    assert status == 200 and value["systemic_exception"] == "rootline_commissioning_request_stale"
+    assert "physical presence" not in value["answer"]
     assert calls == [] and value["hardware_commands"] == 0
 
 def test_missing_adapter_is_one_visible_typed_exception():
@@ -250,7 +284,7 @@ def test_exact_live_stale_projection_remains_actor_mission_age_and_digest_bound(
 @patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message")
 @patch("modules.oom_sakkie.telegram_gateway.handle_owner_operational_continuation")
 @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
-def test_exact_mixer_presence_precedes_stale_generic_operational_context(
+def test_exact_mixer_command_reaches_standing_execution_before_stale_generic_context(
         owner_task, continuation, operational, manager_question, deliver):
     owner_task.return_value=({"handled":False},200)
     continuation.return_value=({"handled":True,"success":False,
@@ -270,31 +304,33 @@ def test_exact_mixer_presence_precedes_stale_generic_operational_context(
          "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
          "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
     payload={"message":{"message_id":4001,"date":1787585194,
-        "text":"I am at the fertilizer valves and ready for the five-minute Mixer CH2 commissioning test.",
+        "text":"Run the governed five-minute Mixer CH2 commissioning now.",
         "from":{"id":42},"chat":{"id":42,"type":"private"}}}
-    protected={"handled":True,"success":True,"status":"mixer_protected_preview_created",
+    protected={"handled":True,"success":True,"status":"auxiliary_started",
         "answer":"<b>MIXER CH2 — SUPERVISED TEST</b>\n\nNothing has started yet. Confirm / Cancel.",
         "mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
-        "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809:PREVIEW:ABC",
+        "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
         "callback_token":"TOKEN","preview_digest":"DIGEST",
-        "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+        "hardware_commands":1,"provider_control_calls":1,"writes_farm_data":False}
+    protected.update({"answer":"<b>MIXER CH2 - STARTED</b> Bounded provider-monitored run started."})
     with patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",
                return_value=None), patch(
-               "modules.oom_sakkie.rootline_protected_mixer.create_mixer_preview",
-               return_value=protected) as create_preview, patch(
+               "modules.oom_sakkie.rootline_fertilizer_commissioning_runtime.execute_fertilizer_commissioning_under_standing_authority",
+               return_value=protected) as execute_standing, patch(
                "modules.oom_sakkie.telegram_gateway._bind_protected_preview_card",
                side_effect=lambda result, delivery: delivery) as bind_card:
         value,status=handle_telegram_gateway_message(payload,
             headers={"Authorization":"Bearer "+"x"*40},environ=env)
-    assert status==200 and value["message"]["status"]=="mixer_protected_preview_created"
-    assert value["message"]["card_mission_id"].endswith(":PREVIEW:ABC")
-    assert "Confirm / Cancel" in value["answer"]
-    create_preview.assert_called_once()
+    assert status==200 and value["message"]["status"]=="auxiliary_started"
+    assert value["message"]["card_mission_id"]=="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    assert "STARTED" in value["answer"] and "Confirm / Cancel" not in value["answer"]
+    assert "reply_markup" not in value["message"]
+    execute_standing.assert_called_once()
     bind_card.assert_called_once()
     continuation.assert_not_called()
     manager_question.assert_not_called()
     operational.assert_called_once()
-    assert value["message"]["hardware_commands"]==0
+    assert value["message"]["hardware_commands"]==1
 
 
 @patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message")

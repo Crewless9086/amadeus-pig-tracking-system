@@ -9,7 +9,7 @@ from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 from modules.oom_sakkie.herdmaster_farrowing_runtime import handle_farrowing_litter_message
 from modules.oom_sakkie.operational_specialist_intake import (
-    handle_operational_specialist_message, is_exact_fertilizer_commissioning_presence,
+    handle_operational_specialist_message, is_exact_fertilizer_commissioning_request,
     recover_contextual_specialist_replay)
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
@@ -402,8 +402,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             if (str(replay_result.get("status") or "") == "specialist_accepted"
                     and str(replay_result.get("next_specialist_step") or "") ==
                         "supervised_fertilizer_mixer_proof"):
-                from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
-                replay_result = create_mixer_preview(owner_result=replay_result,
+                from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                    execute_fertilizer_commissioning_under_standing_authority,
+                )
+                replay_result = execute_fertilizer_commissioning_under_standing_authority(owner_result=replay_result,
                     parsed=parsed, gateway_authority=gateway_authority)
                 delivery = deliver_family_result(parsed, replay_result,
                     specialist="ROOTLINE",
@@ -596,7 +598,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     # broad manager-question continuation while retaining every check inside
     # the operational specialist handler.
     operational_result, operational_status = ({"handled": False}, 200)
-    if is_exact_fertilizer_commissioning_presence(parsed):
+    if is_exact_fertilizer_commissioning_request(parsed):
         operational_result, operational_status = handle_operational_specialist_message(
             parsed, gateway_authority,
         )
@@ -608,8 +610,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             # not carry its accepted readback through the generic contextual
             # delivery path: turn it into the bound claim/card here, before an
             # old manager context can project a plain reply.
-            from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
-            preview = create_mixer_preview(
+            from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                execute_fertilizer_commissioning_under_standing_authority,
+            )
+            preview = execute_fertilizer_commissioning_under_standing_authority(
                 owner_result=operational_result, parsed=parsed,
                 gateway_authority=gateway_authority)
             operational_result = {**operational_result, **preview,
@@ -711,8 +715,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         if (str(operational_result.get("status") or "") == "specialist_accepted"
                 and str(operational_result.get("next_specialist_step") or "") ==
                     "supervised_fertilizer_mixer_proof"):
-            from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
-            continued = create_mixer_preview(
+            from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                execute_fertilizer_commissioning_under_standing_authority,
+            )
+            continued = execute_fertilizer_commissioning_under_standing_authority(
                 owner_result=operational_result, parsed=parsed,
                 gateway_authority=gateway_authority)
             operational_result = {**operational_result, **continued,
