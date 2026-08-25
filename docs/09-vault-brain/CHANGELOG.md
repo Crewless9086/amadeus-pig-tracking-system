@@ -1904,3 +1904,13 @@
 - Recorded the fresh deployed Pig 126 failure as evidence in the existing
   HERDMASTER natural health/loss mission; no provider or canonical data was
   replayed or changed.
+## 2026-08-25 - Borehole 1 connector standing-authority source prepared
+
+- Bound the existing RMQ-20260813-06 device to its exact owner-supplied eWeLink
+  identity and IFTTT event names without storing or exposing the Maker secret.
+- Replaced the obsolete supervised 30-second physical-presence contract with
+  provider/app ON-to-OFF operational proof under standing authority and the
+  native four-hour fail-stop.
+- Added one-ON, deterministic claim, bounded OFF, final readback and restart
+  recovery source using the existing ROOTLINE transport and execution store.
+- No provider, configuration, canonical or farm effect occurred.
