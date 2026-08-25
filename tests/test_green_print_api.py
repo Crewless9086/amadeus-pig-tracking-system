@@ -53,7 +53,8 @@ def test_browser_roles_and_wrong_worker_identity_are_denied(client):
 
 def test_claim_uses_authenticated_boundary_and_minimized_response(client):
     row = {"job_id": "JOB-1", "document_id": "DOC-1", "document_version": "VER-1",
-           "lease_token": "LEASE-1", "lease_expires_at": "2026-08-21T12:00:00Z",
+           "lease_token": "LEASE-1", "lease_expires_at": datetime(
+               2026, 8, 21, 12, 0, tzinfo=timezone.utc),
            "pdf_bytes": b"secret", "authenticated_principal_id": "owner"}
     with patch.object(green_print_api, "_call", return_value=[row]) as call:
         response = client.post("/api/documents/print-jobs/claims", headers=headers(),
@@ -62,6 +63,8 @@ def test_claim_uses_authenticated_boundary_and_minimized_response(client):
     assert call.call_args.args[1] == ("farm-amadeus", "green-registered", "green-worker-epoch", 300)
     assert "pdf_bytes" not in response.get_json()["job"]
     assert "authenticated_principal_id" not in response.get_json()["job"]
+    assert response.get_json()["lease_expires_at"] == "2026-08-21T12:00:00+00:00"
+    assert response.get_json()["job"]["lease_expires_at"] == "2026-08-21T12:00:00+00:00"
 
 
 def test_client_supplied_principal_and_oversize_are_rejected_before_database(client):
