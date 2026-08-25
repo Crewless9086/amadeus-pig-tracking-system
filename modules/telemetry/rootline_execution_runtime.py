@@ -24,6 +24,131 @@ from modules.telemetry.rootline_water_energy_plan import (
 )
 
 
+def run_rootline_managed_device_reassessment(*, environ=None, now=None,
+        database_url=None, store=rootline_irrigation_execution_store,
+        token_store=None, transport=None,
+        evidence_loader=read_current_water_energy_evidence):
+    """Advance one need-driven Mixer, Injector, or Borehole task, if proven.
+
+    This composes existing planners, canonical device records and coordinators.
+    Missing fertilizer-batch, active-irrigation, water-need or interlock evidence
+    produces a no-command result local to the managed device.
+    """
+    source = environ if environ is not None else os.environ
+    now = _aware(now or datetime.now(timezone.utc))
+    database_url = str(database_url or source.get("DATABASE_URL") or "").strip()
+    token_store = token_store or PostgresOAuthTokenStore(database_url)
+    transport = transport or RootlineIFTTTTransport(
+        token_store=token_store, environ=source, readback=read_current_device)
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_borehole_commissioning import (
+        build_borehole_runtime_eligibility, load_registered_borehole_baseline,
+    )
+    from modules.telemetry.rootline_managed_devices_runtime import (
+        run_rootline_managed_device_cycle,
+    )
+    def connect_factory():
+        return connect_bounded_rootline_postgres(
+            database_url=database_url, read_only=True)
+    try:
+        evidence, selected, planned_at = evidence_loader(
+            operating_date=now.date().isoformat(), database_url=database_url, now=now)
+        evidence = _refresh_active_irrigation_readback(evidence, transport, now)
+        plan = build_water_energy_plan(evidence, selected, now=planned_at)
+    except Exception:
+        return {**_safe("managed_device_evidence_unavailable"), "blocks_bc": False}
+    packet = {"irrigation_auxiliary_tasks": plan.get("irrigation_auxiliary_tasks") or [],
+        "auxiliary_safety": {}, "auxiliary_contexts": {}}
+    for task in packet["irrigation_auxiliary_tasks"]:
+        identity = str(task.get("auxiliary_device_id") or "")
+        if identity not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
+            continue
+        contract = rootline_device_registry()[identity]
+        try:
+            packet["auxiliary_safety"][identity] = transport.read_safety_configuration(
+                device_id=contract["device_id"], channel=contract["channel"])
+        except Exception:
+            continue
+    executions = [row for row in evidence.get("fertilizer_executions") or []
+                  if isinstance(row, dict)]
+    packet["auxiliary_contexts"]["FERTILIZER-MIXER-CH2"] = {
+        "plan_generation": str(plan.get("generation") or plan.get("evidence_generation") or ""),
+        "injection_active": any(row.get("device_type") == "fertilizer_injection_valve"
+            and row.get("state") == "Active" for row in executions),
+        "verified_mixing_minutes_today": sum(float(row.get("verified_runtime_minutes") or 0)
+            for row in executions if row.get("device_type") == "fertilizer_mixer"
+            and str(row.get("completed_at") or "")[:10] == now.date().isoformat()),
+        "verified_mixing_sessions_today": sum(1 for row in executions
+            if row.get("device_type") == "fertilizer_mixer"
+            and str(row.get("completed_at") or "")[:10] == now.date().isoformat()
+            and row.get("shutdown_verified") is True),
+        "mixing_history_complete_through": evidence.get("fertilizer_history_complete_through"),
+        "power_suitable": _managed_power_suitable(evidence.get("power")),
+    }
+    active_irrigation = evidence.get("active_irrigation_context")
+    if isinstance(active_irrigation, dict):
+        packet["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"] = active_irrigation
+    borehole_task = next((row for row in plan.get("candidate_tasks") or []
+        if row.get("task_id") == "borehole"), {})
+    interlocks = evidence.get("borehole_interlocks")
+    if (borehole_task.get("recommendation") == "Recommend"
+            and isinstance(interlocks, dict)):
+        try:
+            baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
+            provider = transport.read_output_state(device_id="1002851416", channel=1)
+            if baseline:
+                packet["borehole_execution"] = build_borehole_runtime_eligibility(
+                    need={"eligible": True, "task_id": "borehole",
+                        "reason": borehole_task.get("reason")}, baseline=baseline,
+                    authority={"inside_standing_authority": True}, provider=provider,
+                    interlocks=interlocks,
+                    energy={"eligible": _managed_power_suitable(evidence.get("power"))},
+                    requested_seconds=min(14400,
+                        int(baseline["maximum_routine_runtime_seconds"])), now=now)
+        except Exception:
+            pass
+    return run_rootline_managed_device_cycle(evidence=packet, transport=transport,
+        environ=source, store=store, connect_factory=connect_factory, now=now)
+
+
+def _managed_power_suitable(power):
+    value = power if isinstance(power, dict) else {}
+    fields = ("battery_soc_pct", "solar_power_w", "grid_power_w")
+    if any(value.get(field) is None for field in fields):
+        return False
+    return (float(value["battery_soc_pct"]) >= 50
+        or float(value["solar_power_w"]) >= 1200
+        or float(value["grid_power_w"]) > 0)
+
+
+def _refresh_active_irrigation_readback(evidence, transport, now):
+    """Refresh only the exact canonical active B/C execution's ON evidence."""
+    if not isinstance(evidence, dict):
+        return evidence
+    context = evidence.get("active_irrigation_context")
+    if not isinstance(context, dict):
+        return evidence
+    device_id = str(context.get("zone_device_id") or "")
+    channel = context.get("zone_channel")
+    if not device_id or type(channel) is not int:
+        return evidence
+    try:
+        current = transport.read_output_state(device_id=device_id, channel=channel)
+    except Exception:
+        return evidence
+    if (not isinstance(current, dict) or current.get("authoritative") is not True
+            or current.get("state") != "ON" or not (current.get("evidence_id")
+                or current.get("response_digest"))):
+        return evidence
+    refreshed = dict(evidence); updated = dict(context)
+    updated["zone_output_evidence"] = {**current,
+        "evidence_id": str(current.get("evidence_id") or current.get("response_digest")),
+        "zone_execution_id": str(context.get("zone_execution_id") or ""),
+        "observed_at": now.isoformat()}
+    refreshed["active_irrigation_context"] = updated
+    return refreshed
+
+
 def prepare_rootline_borehole_cycle(*, need, provider, interlocks, energy,
         requested_seconds, connect_factory, authority, now=None,
         store=rootline_irrigation_execution_store, environ=None, transport=None,

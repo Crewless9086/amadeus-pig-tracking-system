@@ -42,13 +42,29 @@ def test_changed_reassessment_uses_family_rail_then_replay_is_zero_send():
     def deliver(parsed,result,**kwargs):
         calls.append((parsed,result,kwargs)); return {"success":True,"status":"family_message_delivered",
             "telegram_message_id":"8001","telegram_sends":1,"telegram_edits":0}
+    actionable = lambda: {**current("Run later"), "owner_brief": {
+        "family_fact_needed": "Should ROOTLINE proceed?", "reassess": "At 10:00."}}
     first,status=handle_rootline_reassessment_trigger(payload(),HEADERS,ENV,
-        specialist_loader=lambda:current("Run later"),state_store=store,family_delivery=deliver)
+        specialist_loader=actionable,state_store=store,family_delivery=deliver)
     replay,replay_status=handle_rootline_reassessment_trigger(payload(),HEADERS,ENV,
-        specialist_loader=lambda:current("Run later"),state_store=store,family_delivery=deliver)
+        specialist_loader=actionable,state_store=store,family_delivery=deliver)
     assert status==200 and first["telegram_sends"]==1 and first["delivery_record"]["success"] is True
     assert replay_status==200 and replay["notify_owner"] is False and replay["telegram_sends"]==0
     assert len(calls)==1 and first["hardware_commands"]==0 and first["writes_farm_data"] is False
+
+
+def test_no_action_reassessment_records_observation_without_telegram_delivery():
+    rows, store = memory_store(); calls = []
+    quiet = {**current(), "irrigation_lifecycle": {
+        "B12345": {"state": "Eligible"}, "C12345": {"state": "Held"}}}
+    outcome, status = handle_rootline_reassessment_trigger(payload(), HEADERS, ENV,
+        specialist_loader=lambda: quiet, state_store=store,
+        family_delivery=lambda *_args, **_kwargs: calls.append(1))
+    assert status == 200
+    assert outcome["status"] == "rootline_reassessment_observed_silently"
+    assert outcome["notify_owner"] is False and outcome["telegram_sends"] == 0
+    assert calls == []
+    assert any(row.get("delivery_state") == "observation_only" for row in rows.values())
 
 def test_ambiguous_delivery_is_contained_and_never_blind_retried():
     rows,store=memory_store(); calls=[]
@@ -126,7 +142,7 @@ def test_production_shaped_3986_to_3987_clock_only_change_is_silent():
             "irrigation_lifecycle": {
                 "B12345": {"state": "Eligible", "reason": reason_b,
                     "zone_id": "B12345"},
-                "C12345": {"state": "Eligible", "reason": reason_c,
+                    "C12345": {"state": "Started", "reason": reason_c,
                     "zone_id": "C12345"}},
             "owner_brief": {"family_fact_needed": "", "reassess": ""},
             # This production trigger retained its moving clock in the old
@@ -182,7 +198,7 @@ def test_production_shaped_3997_to_4000_refresh_clock_only_change_is_silent():
                  "planned_duration_minutes": 60}],
             "irrigation_lifecycle": {
                 "B12345": {"state": "Eligible", "reason": reason_b, "zone_id": "B12345"},
-                "C12345": {"state": "Eligible", "reason": reason_c, "zone_id": "C12345"}},
+                    "C12345": {"state": "Started", "reason": reason_c, "zone_id": "C12345"}},
             "owner_brief": {"family_fact_needed": "", "reassess": ""},
             "next_reassessment": {"trigger": "refresh_missing_or_stale_evidence",
                 "reason": reason, "also_on": ["material_power_change",
@@ -251,7 +267,7 @@ def test_production_shaped_4000_to_4003_hidden_reason_churn_is_silent():
                  "preferred_window": "now_after_fresh_execution_revalidation",
                  "planned_duration_minutes": 60}],
             "irrigation_lifecycle": {"B12345": {"state": "Eligible"},
-                                     "C12345": {"state": "Eligible"}},
+                                         "C12345": {"state": "Started"}},
             "owner_brief": {"family_fact_needed": "", "reassess": ""},
             "next_reassessment": {"trigger": "refresh_missing_or_stale_evidence",
                 "reason": reason, "also_on": ["material_power_change",

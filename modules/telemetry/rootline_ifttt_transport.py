@@ -35,7 +35,8 @@ class RootlineIFTTTTransport:
         snapshot = self._snapshot(device_id, channel)
         row = self._channel(snapshot, channel)
         supervised_channels = snapshot.get("commissioned_supervised_channels") or []
-        channel_commissioning = (contract["identity"] == "FERTILIZER-MIXER-CH2"
+        channel_commissioning = (contract["identity"] in {
+            "FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}
             and channel in supervised_channels)
         if contract["collection"] == "irrigation_zones":
             channel_commissioning = bool(snapshot.get("commissioned_baseline_id"))

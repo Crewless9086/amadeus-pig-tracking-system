@@ -35,7 +35,7 @@ def safety(device="injection",**changes):
     channel=1 if device=="injection" else 2
     value={"authoritative":True,"response_digest":"READ-SAFETY-1",
         "device_id":"100204d497","channel":channel,"output_state":"OFF",
-        "native_inching_enabled":True,"native_inching_seconds":120 if channel==1 else 300,
+        "native_inching_enabled":True,"native_inching_seconds":120 if channel==1 else 1800,
         "power_restoration_state":"OFF","schedules_enabled":False,"timers_enabled":False,
         "scenes_enabled":False,"interlock_enabled":False,
         "controller_safety_generation":"SAFETY-1",
@@ -46,6 +46,7 @@ def safety(device="injection",**changes):
 
 def injection_context(**changes):
     value={"plan_generation":"PLAN-1","batch_generation":"BATCH-1",
+        "fertilizer_needed":True,
         "job_id":"ROOTLINE-IRRIGATION-JOB-"+"A"*24,"job_sha256":"a"*64,
         "segment_identity":"ROOTLINE-JOB-SEGMENT-"+"B"*24,
         "active_zone_ids":["B12345"],"zone_execution_id":"ZONE-EXEC-1",
@@ -71,7 +72,8 @@ def mixer_eligibility(**context_changes):
         "verified_mixing_minutes_today":0,"verified_mixing_sessions_today":0,
         "mixing_history_complete_through":NOW.isoformat(),"power_suitable":True}
     context.update(context_changes)
-    return build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-MIXER-CH2"},
+    return build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-MIXER-CH2",
+        "planned_seconds":int((30-float(context.get("verified_mixing_minutes_today") or 0))*60)},
         safety=safety("mixer"),context=context,
         flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED":True},now=NOW)
 
@@ -105,9 +107,9 @@ def test_registry_rejects_event_and_provider_binding_collisions():
     with pytest.raises(ValueError,match="binding_collision"):validate_device_registry(rows)
 
 
-def test_mixer_preview_is_five_minutes_and_never_applies_configuration():
+def test_mixer_preview_is_thirty_minutes_and_never_applies_configuration():
     preview=mixer_configuration_preview()
-    assert preview["after"]["native_inching_seconds"]==300
+    assert preview["after"]["native_inching_seconds"]==1800
     assert preview["apply_configuration"] is False
     assert preview["configuration_authority"] is False
 
@@ -173,10 +175,12 @@ def test_unverified_reported_inching_and_disabled_flag_fail_closed():
         assert value["status"]=="auxiliary_safety_unproven"
 
 
-def test_mixing_five_minute_fail_stop_daily_cap_and_low_power_deferral():
-    assert mixer_eligibility()["maximum_duration_seconds"]==300
-    assert mixer_eligibility(verified_mixing_minutes_today=25)["eligible"]
-    assert mixer_eligibility(verified_mixing_minutes_today=26)["status"]=="daily_mixing_cap_reached"
+def test_mixing_thirty_minute_fail_stop_daily_cap_and_low_power_deferral():
+    assert mixer_eligibility()["maximum_duration_seconds"]==1800
+    assert mixer_eligibility(verified_mixing_minutes_today=0)["eligible"]
+    split=mixer_eligibility(verified_mixing_minutes_today=25)
+    assert split["eligible"] and split["maximum_duration_seconds"]==300
+    assert mixer_eligibility(verified_mixing_minutes_today=30)["status"]=="planned_mixing_runtime_invalid"
     assert mixer_eligibility(verified_mixing_sessions_today=6)["status"]=="daily_mixing_session_cap_reached"
     assert mixer_eligibility(power_suitable=False)["status"]=="low_power_mix_deferred"
     assert mixer_eligibility(injection_active=True)["status"]=="injection_must_be_off"
@@ -215,7 +219,9 @@ def test_batch_lifecycle_rejects_future_malformed_and_prior_week_evidence():
 
 
 def test_auxiliary_tasks_never_become_zones_and_power_only_defers_mixing():
-    batch=build_fertilizer_batch_lifecycle(now=NOW)
+    batch=build_fertilizer_batch_lifecycle(observations=[{
+        "event_type":"fertilizer_batch_prepared",
+        "observed_at":"2026-08-09T09:30:00+02:00"}],now=NOW)
     incomplete=build_auxiliary_tasks(batch=batch,power={"battery_soc_pct":90,
         "solar_power_w":2000,"grid_power_w":0},now=NOW)
     assert incomplete["irrigation_auxiliary_tasks"][0]["decision"]=="Needs Data"
@@ -237,6 +243,24 @@ def test_auxiliary_tasks_never_become_zones_and_power_only_defers_mixing():
     mixer=next(row for row in capped["irrigation_auxiliary_tasks"]
                if row["device_type"]=="fertilizer_mixer")
     assert mixer["decision"]=="Completed" and mixer["planned_seconds"]==0
+
+
+def test_injector_task_promotes_only_from_exact_need_active_preflow_and_flush():
+    batch=build_fertilizer_batch_lifecycle(observations=[{
+        "event_type":"fertilizer_batch_prepared",
+        "observed_at":"2026-08-09T09:30:00+02:00"}],now=NOW)
+    ready=build_auxiliary_tasks(batch=batch,active_irrigation_context=injection_context(),now=NOW)
+    task=next(row for row in ready["irrigation_auxiliary_tasks"]
+        if row["device_type"]=="fertilizer_injection_valve")
+    assert task["decision"]=="Run now"
+    for change in ({"fertilizer_needed":False},
+            {"zone_start_evidence":{}},
+            {"irrigation_stop_deadline":(NOW+timedelta(minutes=5)).isoformat()}):
+        held=build_auxiliary_tasks(batch=batch,
+            active_irrigation_context=injection_context(**change),now=NOW)
+        injection=next(row for row in held["irrigation_auxiliary_tasks"]
+            if row["device_type"]=="fertilizer_injection_valve")
+        assert injection["decision"]=="Await eligible irrigation"
 
 
 class Store:

@@ -37,6 +37,21 @@ def owner_window(value: Any) -> str:
     return _human_window(value)
 
 
+def owner_notification_required(result: Mapping[str, Any]) -> bool:
+    """Notify only for an owner decision or a material execution transition."""
+    brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
+    if _owner_question(brief.get("family_fact_needed")):
+        return True
+    lifecycle = result.get("irrigation_lifecycle")
+    if not isinstance(lifecycle, Mapping):
+        # Legacy callers without typed lifecycle keep their existing delivery
+        # contract. The production planner always supplies typed lifecycle.
+        return True
+    return any(str((lifecycle.get(zone) or {}).get("state") or "") in {
+        "Started", "Completed", "Failed"
+    } for zone in ZONES if isinstance(lifecycle.get(zone), Mapping))
+
+
 def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
                                 specialist_loader: Callable[[], Mapping[str, Any]],
                                 state_store: Callable[[str, str, Any], Any],
@@ -74,6 +89,9 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
         if not _fresh_result(result, now):
             return {**_safe("rootline_daily_waiting_for_fresh_evidence"),
                     "daily_identity": identity, "retry_on_next_scheduler_tick": True}
+        if not owner_notification_required(result):
+            return {**_safe("rootline_daily_observed_silently"),
+                    "daily_identity": identity, "notify_owner": False}
         material = rootline_material_digest(result)
         packet = {"contract_version": CONTRACT_VERSION, "identity": identity,
             "owner_user_id": owner_user_id, "chat_id": chat_id,
@@ -254,6 +272,9 @@ def _verified_completion(lifecycle: Mapping[str, Any], zone: str) -> bool:
 
 def _short_reason(value: str, af: bool) -> str:
     text = " ".join(str(value or "").split())
+    if "durable parent objective" in text.casefold() or "_" in text:
+        return ("ROOTLINE heroorweeg die plan outomaties." if af else
+                "ROOTLINE is reassessing the plan automatically.")
     if owner_reason_material(text) == "canonical_decision_reason":
         return ("Vars kanonieke bewyse bepaal die huidige besluit." if af else
                 "Fresh canonical evidence determines the current decision.")
@@ -281,7 +302,9 @@ def _next_reassessment(result: Mapping[str, Any]) -> str:
 
 def _human_window(value):
     text = " ".join(str(value or "").split())
-    if not text or text.casefold() in {"unavailable", "unknown", "on_material_evidence_change"}:
+    folded = text.casefold()
+    if (not text or folded in {"unavailable", "unknown", "on_material_evidence_change"}
+            or "_" in text or "durable parent objective" in folded):
         return ""
     return text
 

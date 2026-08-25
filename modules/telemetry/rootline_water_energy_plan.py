@@ -168,7 +168,8 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     auxiliary = build_auxiliary_tasks(batch=fertilizer_batch, power=power,
         verified_mixing=evidence.get("fertilizer_executions"),
         mixing_history_complete_through=evidence.get(
-            "fertilizer_history_complete_through"), now=now)
+            "fertilizer_history_complete_through"),
+        active_irrigation_context=evidence.get("active_irrigation_context"), now=now)
     status = _overall_status(tasks)
     evidence_observed_at = _latest_observed_at(power, weather, forecast, tanks, now)
     canonical_evidence = {
@@ -388,6 +389,7 @@ def read_current_water_energy_evidence(
         "irrigation_history": lambda: _read_recent_irrigation_history(database_url, now),
         "tanks": lambda: _read_latest_tank_observation(database_url),
         "owner_zone_need": lambda: _read_latest_owner_zone_need(database_url, now),
+        "managed_devices": lambda: _read_managed_device_evidence(database_url, now),
     }
     # The advisor is itself a bounded aggregate of canonical reads and can
     # legitimately consume most of its 18-second inner deadline. Give that
@@ -419,6 +421,8 @@ def read_current_water_energy_evidence(
     history = loaded["history"]
     tanks = loaded["tanks"]
     owner_zone_need = loaded["owner_zone_need"]
+    managed = loaded["managed_devices"] if isinstance(
+        loaded.get("managed_devices"), dict) else {}
     if isinstance(owner_zone_need, dict) and owner_zone_need.get("status") == "Available":
         matching = next((zone for zone in advisor_zones
                          if zone.get("zone_id") == owner_zone_need.get("zone_id")), None)
@@ -464,6 +468,13 @@ def read_current_water_energy_evidence(
         },
         "water_balance":balances,
         "water_credits":water_credits,
+        "fertilizer_batch_observations": managed.get(
+            "fertilizer_batch_observations") or [],
+        "fertilizer_executions": managed.get("fertilizer_executions") or [],
+        "fertilizer_history_complete_through": managed.get(
+            "fertilizer_history_complete_through"),
+        "active_irrigation_context": managed.get("active_irrigation_context"),
+        "borehole_interlocks": managed.get("borehole_interlocks"),
     }
     return evidence, selected, now
 
@@ -802,6 +813,137 @@ def _read_historical_context(database_url):
 def _read_recent_irrigation_history(database_url, now):
     from modules.telemetry.rootline_irrigation_history import read_canonical_irrigation_history
     return read_canonical_irrigation_history(database_url, now=now)
+
+
+def _read_managed_device_evidence(database_url, now):
+    """Compose managed-device facts from existing append-only ROOTLINE rails."""
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"status": UNAVAILABLE}
+    try:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+        with connect_bounded_read(database_url=database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='rootline_irrigation_execution'
+                    order by created_at,review_event_id""")
+                executions = [_json_object(row[0]) for row in cursor.fetchall()]
+                cursor.execute("""select review_json->'rootline_operational_intake'->'outcome'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='oom_sakkie_rootline_operational_intake'
+                      and review_json->'rootline_operational_intake'->>'state'
+                          in ('completed','contextual_followup_completed')
+                    order by created_at,review_event_id""")
+                outcomes = [_json_object(row[0]) for row in cursor.fetchall()]
+    except Exception as exc:
+        return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
+    executions = [row for row in executions if isinstance(row, dict)]
+    outcomes = [row for row in outcomes if isinstance(row, dict)]
+    auxiliary = [row for row in executions if row.get("action") ==
+        "record_auxiliary_completed" and row.get("shutdown_verified") is True]
+    active = _latest_open_irrigation_execution(executions)
+    batch_observations = []
+    fertilizer_needed = None
+    borehole_interlocks = None
+    for outcome in outcomes:
+        observation = outcome.get("fertilizer_batch_observation")
+        if _valid_fertilizer_batch_observation(observation):
+            batch_observations.append(dict(observation))
+        need_at = _managed_time(outcome.get("fertilizer_need_observed_at"))
+        if (type(outcome.get("fertilizer_needed")) is bool and need_at is not None
+                and timedelta(0) <= _as_za(now).astimezone(timezone.utc)-need_at
+                    <= timedelta(hours=24)):
+            fertilizer_needed = outcome["fertilizer_needed"]
+        candidate = outcome.get("borehole_interlocks")
+        if _valid_borehole_interlocks(candidate, now):
+            borehole_interlocks = dict(candidate)
+    batch = build_fertilizer_batch_lifecycle(observations=batch_observations,
+        executions=auxiliary, now=_as_za(now))
+    context = _active_irrigation_context(active, auxiliary, fertilizer_needed,
+        batch.get("batch_generation"))
+    return {"status": "Available", "fertilizer_batch_observations": batch_observations,
+        "fertilizer_executions": auxiliary,
+        "fertilizer_history_complete_through": _as_za(now).isoformat(),
+        "active_irrigation_context": context,
+        "borehole_interlocks": borehole_interlocks}
+
+
+def _latest_open_irrigation_execution(events):
+    terminal = set()
+    candidates = {}
+    for row in events:
+        identity = str(row.get("execution_id") or "")
+        if not identity:
+            continue
+        if row.get("action") in {"record_completed", "record_ambiguous_shutdown",
+                "record_claim_recovery"} or (row.get("action") == "contain_zone"
+                and row.get("shutdown_verified") is True):
+            terminal.add(identity)
+        elif row.get("action") == "mark_active" and row.get("state") == "Active":
+            candidates[identity] = row
+    return next((row for identity, row in reversed(list(candidates.items()))
+        if identity not in terminal), None)
+
+
+def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_generation):
+    if not isinstance(active, dict):
+        return None
+    start = active.get("start_evidence") if isinstance(active.get("start_evidence"), dict) else {}
+    zone = str(active.get("zone_id") or "")
+    execution_id = str(active.get("execution_id") or "")
+    if (zone not in {"B12345", "C12345"} or start.get("authoritative") is not True
+            or start.get("state") != "ON" or not start.get("evidence_id")):
+        return None
+    pulses = [row for row in auxiliary
+        if row.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
+        and row.get("zone_execution_id") == execution_id]
+    prior = pulses[-1].get("shutdown_evidence") if pulses else None
+    return {"plan_generation": str(active.get("evidence_generation") or ""),
+        "batch_generation": str(batch_generation or ""),
+        "fertilizer_needed": fertilizer_needed is True,
+        "job_id": active.get("job_id"), "job_sha256": active.get("job_sha256"),
+        "segment_identity": active.get("segment_identity"),
+        "active_zone_ids": [zone], "zone_execution_id": execution_id,
+        "zone_device_id": active.get("device_id"), "zone_channel": active.get("channel"),
+        "zone_start_evidence": {**start, "zone_execution_id": execution_id},
+        "zone_output_evidence": {**start, "zone_execution_id": execution_id},
+        "irrigation_stop_deadline": active.get("primary_stop_deadline"),
+        "completed_pulses": len(pulses), "prior_pulse_shutdown_evidence": prior,
+        "mixer_active": False, "prior_shutdown_unverified": False}
+
+
+def _valid_fertilizer_batch_observation(value):
+    return (isinstance(value, dict) and value.get("event_type") in {
+        "fertilizer_batch_prepared", "water_only_refill"}
+        and _managed_time(value.get("observed_at")) is not None)
+
+
+def _valid_borehole_interlocks(value, now):
+    observed = _managed_time(value.get("observed_at")) if isinstance(value, dict) else None
+    current = _as_za(now).astimezone(timezone.utc)
+    return (isinstance(value, dict) and observed is not None
+        and timedelta(0) <= current-observed <= timedelta(minutes=15)
+        and all(type(value.get(key)) is bool for key in (
+            "dry_run_safe", "low_water_clear", "supply_pressure_safe",
+            "full_tank_not_blocking")))
+
+
+def _json_object(value):
+    if isinstance(value, dict):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _managed_time(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        return parsed.astimezone(timezone.utc) if parsed.tzinfo else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _read_latest_tank_observation(database_url):
