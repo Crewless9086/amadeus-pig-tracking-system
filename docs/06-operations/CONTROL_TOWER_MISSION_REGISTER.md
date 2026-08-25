@@ -2760,6 +2760,62 @@ implemented and tested. No job was synthesized or sent by this source change.
 **NO BUSINESS OUTCOME. OWNER ACTION: NONE** until integration/deployment and a
 later genuine request prove canonical/provider/physical readback.
 
+## 2026-08-25 - PR1251 ROOTLINE standing-authority evidence reconciliation
+
+This append-only entry restores evidence accidentally removed while reconciling
+the GREEN standing-print branch. It belongs to the existing ROOTLINE missions
+and changes neither priority nor current authority. At the time of the event,
+Charl had removed routine commissioning confirmations and human-presence
+requirements for already governed ROOTLINE connectors. Fresh authenticated
+requests and eligible plans could execute only when exact device, current need,
+provider safety, deterministic claim, replay/concurrency and native fail-stop
+contracts passed; authoritative application/provider ON then OFF readback was
+sufficient operational proof.
+
+Fresh Telegram message `4023` entered GateKeeper execution `66616` at
+`2026-08-25T04:49:34Z`; child relay execution `66617` completed before the
+parent at `04:50:15Z`, proving the reviewed `waitForSubWorkflow=true` receipt
+repair. The backend returned `commissioning_specific_hold` because its first
+controller read was incomplete. It created no claim, card or execution and made
+no hardware/provider-control call. The automatic collector passed at
+`04:50:10.625293Z` with readiness digest
+`3da21131194f782aaefe4b393a8405f99958f7f2a739330a57bdc8c74eaf985b`,
+unknowns `[]`, exact CH2 OFF, the then-current 300-second fail-stop, no active
+execution and zero control calls. This proved a bounded fresh-read timing race,
+not an unsafe device state.
+
+Independent review of PR #1251 also proved that its first direct-command head
+reached the standing-authority executor without the durable acceptance receipt
+required by production and would stop at
+`commissioning_acceptance_receipt_unproven`, with zero device effect. The merged
+repair records one deterministic, idempotent `contextual_followup_completed`
+receipt on the existing ROOTLINE operational-intake rail before execution and
+validates mission, owner/chat, provider message/time, text digest, task kind,
+zero-effect authority and response contract. Persistence failure remains
+fail-closed. Later Mixer commissioning/native-limit and Borehole connector
+decisions remain authoritative over the historical readiness envelope recorded
+here; this reconciliation does not roll them back. **OWNER ACTION: NONE.**
+
+## 2026-08-25 - Anton mortality GateKeeper dependency failure
+
+Fresh Telegram message `4028` entered the existing HERDMASTER/Oom Sakkie
+lineage at `2026-08-25T07:03:14Z`, but GateKeeper execution `66636` stopped at
+the pre-routing Google Sheets `Get User Info` authorization lookup with HTTP
+503. The live node had no retry. The backend therefore received no message and
+created no semantic result, claim, delivery, observation, welfare or lifecycle
+effect. This is an ingress/auth dependency failure, not a safe semantic hold or
+canonical writer failure. The old provider update must not be replayed.
+
+The bounded repair performs one initial authorization read and at most four
+retries, two seconds apart, only for HTTP 429, HTTP 5xx and transport failures.
+HTTP 401/403 and all other deterministic 4xx failures stop after the first read.
+The maximum envelope is five reads and approximately eight seconds of retry
+wait. Exhaustion remains fail-closed, and only one successful authorization
+result may reach the backend route, so retries cannot duplicate a backend
+message or farm effect. **NO BUSINESS OUTCOME. OWNER ACTION: NONE** until the
+reviewed workflow is deployed and a later genuine provider interaction proves
+the full actor-bound mortality journey and terminal-independent continuity.
+
 ## 2026-08-25 - RMQ-20260813-06 Borehole 1 exact connector and standing authority
 
 Charl supplied the existing Borehole 1 connector binding: eWeLink device

@@ -44,12 +44,40 @@
                       "id":  "ca5600f9-53c8-4b19-bd34-0e14a8ef2238",
                       "name":  "Get User Info",
                       "alwaysOutputData":  true,
+                      "onError":  "continueErrorOutput",
                       "credentials":  {
                                           "googleSheetsOAuth2Api":  {
                                                                         "id":  "DbtelWXdvwe4DuHc",
                                                                         "name":  "Google Sheets - Sales"
                                                                     }
                                       }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const failure = $json.error || $json || {};\nconst status = Number(failure.httpCode || failure.statusCode || failure.status || 0);\nconst message = String(failure.message || failure.description || '').toLowerCase();\nconst transient = status === 429 || status >= 500 || (!status && /timeout|timed out|econn|socket|network|temporar|unavailable/.test(message));\nconst attempt = Number($json.auth_retry_attempt || 0);\nif (!transient) throw new Error(`authorization_lookup_non_transient_${status || 'unknown'}`);\nif (attempt >= 4) throw new Error(`authorization_lookup_transient_exhausted_${status || 'transport'}`);\nconst original = $items('Code - Normalize Telegram Update')?.[0]?.json || {};\nreturn [{json: {...original, auth_retry_attempt: attempt + 1}}];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -560,
+                                       176
+                                   ],
+                      "id":  "84dd16c0-8a7b-46dd-9db8-706cb93bd250",
+                      "name":  "Classify Auth Lookup Failure"
+                  },
+                  {
+                      "parameters":  {
+                                         "amount":  2,
+                                         "unit":  "seconds"
+                                     },
+                      "type":  "n8n-nodes-base.wait",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       -336,
+                                       176
+                                   ],
+                      "id":  "462969a4-c848-46eb-a24a-3ddf88e7ff73",
+                      "name":  "Wait Before Auth Retry"
                   },
                   {
                       "parameters":  {
@@ -951,9 +979,38 @@
                                                                    "type":  "main",
                                                                    "index":  1
                                                                }
+                                                           ],
+                                                           [
+                                                               {
+                                                                   "node":  "Classify Auth Lookup Failure",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
                                                            ]
                                                        ]
                                           },
+                        "Classify Auth Lookup Failure":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Wait Before Auth Retry",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "Wait Before Auth Retry":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Get User Info",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
                         "Merge":  {
                                       "main":  [
                                                    [
@@ -1235,12 +1292,40 @@
                                             "id":  "ca5600f9-53c8-4b19-bd34-0e14a8ef2238",
                                             "name":  "Get User Info",
                                             "alwaysOutputData":  true,
+                                            "onError":  "continueErrorOutput",
                                             "credentials":  {
                                                                 "googleSheetsOAuth2Api":  {
                                                                                               "id":  "DbtelWXdvwe4DuHc",
                                                                                               "name":  "Google Sheets - Sales"
                                                                                           }
                                                             }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const failure = $json.error || $json || {};\nconst status = Number(failure.httpCode || failure.statusCode || failure.status || 0);\nconst message = String(failure.message || failure.description || '').toLowerCase();\nconst transient = status === 429 || status >= 500 || (!status && /timeout|timed out|econn|socket|network|temporar|unavailable/.test(message));\nconst attempt = Number($json.auth_retry_attempt || 0);\nif (!transient) throw new Error(`authorization_lookup_non_transient_${status || 'unknown'}`);\nif (attempt >= 4) throw new Error(`authorization_lookup_transient_exhausted_${status || 'transport'}`);\nconst original = $items('Code - Normalize Telegram Update')?.[0]?.json || {};\nreturn [{json: {...original, auth_retry_attempt: attempt + 1}}];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -560,
+                                                             176
+                                                         ],
+                                            "id":  "84dd16c0-8a7b-46dd-9db8-706cb93bd250",
+                                            "name":  "Classify Auth Lookup Failure"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "amount":  2,
+                                                               "unit":  "seconds"
+                                                           },
+                                            "type":  "n8n-nodes-base.wait",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             -336,
+                                                             176
+                                                         ],
+                                            "id":  "462969a4-c848-46eb-a24a-3ddf88e7ff73",
+                                            "name":  "Wait Before Auth Retry"
                                         },
                                         {
                                             "parameters":  {
@@ -1880,9 +1965,38 @@
                                                                                          "type":  "main",
                                                                                          "index":  1
                                                                                      }
+                                                                                 ],
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Classify Auth Lookup Failure",
+                                                                                         "type":  "main",
+                                                                                         "index":  0
+                                                                                     }
                                                                                  ]
                                                                              ]
                                                                 },
+                                              "Classify Auth Lookup Failure":  {
+                                                                                   "main":  [
+                                                                                                [
+                                                                                                    {
+                                                                                                        "node":  "Wait Before Auth Retry",
+                                                                                                        "type":  "main",
+                                                                                                        "index":  0
+                                                                                                    }
+                                                                                                ]
+                                                                                            ]
+                                                                               },
+                                              "Wait Before Auth Retry":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "Get User Info",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
                                               "Merge":  {
                                                             "main":  [
                                                                          [
