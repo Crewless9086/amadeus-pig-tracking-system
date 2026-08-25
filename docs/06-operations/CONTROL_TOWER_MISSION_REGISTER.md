@@ -2658,46 +2658,6 @@ stored message may be recovered exactly once only after reviewed provider
 deployment/readback; no direct backend POST, manufactured card or pre-confirm
 actuation is permitted.
 
-## 2026-08-25 - ROOTLINE standing-authority and fresh Mixer ingress correction
-
-Charl removed routine commissioning confirmations and human-presence
-requirements for all already governed ROOTLINE valves/connectors. Fresh
-authenticated owner requests and current eligible plans may execute under
-ROOTLINE standing authority when the exact registered device, current need,
-provider safety, deterministic claim, replay/concurrency and native fail-stop
-contracts pass. Authoritative application/provider ON then OFF readback is
-sufficient operational proof. Mixer remains exact CH2/`100204d497`/300 seconds;
-Injection retains exactly-one-zone, ten-minute pre-flow, 120-second maximum and
-ten-minute flush requirements. Borehole remains uncommandable until tomorrow's
-exact binding and bounded fail-OFF are proven.
-
-Fresh Telegram message `4023` entered GateKeeper execution `66616` at
-`2026-08-25T04:49:34Z`; child relay execution `66617` completed before the
-parent at `04:50:15Z`, proving the reviewed `waitForSubWorkflow=true` receipt
-repair. The backend returned `commissioning_specific_hold` because its first
-controller read was incomplete. It created no claim/card/execution and made no
-hardware/provider-control call. The automatic collector then passed at
-`04:50:10.625293Z` with readiness digest
-`3da21131194f782aaefe4b393a8405f99958f7f2a739330a57bdc8c74eaf985b`,
-unknowns `[]`, exact CH2 OFF/300-second fail-stop/no active execution and zero
-control calls. This is a bounded fresh-read timing race, not an unsafe device
-state. Same-lineage repair removes the confirmation-card detour, permits one
-bounded readiness recheck only after a zero-effect transient safety hold, and
-uses the existing claimed execution spine for ON, native deadline, OFF and
-provider verification. **NO BUSINESS OUTCOME YET. OWNER ACTION: NONE.**
-
-Independent review of PR #1251 then found that the first direct-command repair
-reached the standing-authority executor without persisting the exact durable
-acceptance receipt required by its production authorization check. That head
-would therefore stop at `commissioning_acceptance_receipt_unproven`, with zero
-device effect. The correction now records one deterministic, idempotent
-`contextual_followup_completed` receipt on the existing ROOTLINE operational
-intake rail before execution. Its mission, owner/chat, provider message/time,
-text digest, task kind, zero-effect authority and response contract are checked
-by the same production validator. Persistence failure remains fail-closed; no
-presence, preview or confirmation step is restored. This is technical repair
-only, not a Mixer commissioning outcome.
-
 ## 2026-08-24 - GREEN farm-house printer risk acceptance addendum
 
 Charl accepts the confidentiality and local-network risk of practical
@@ -2737,6 +2697,69 @@ projection/delivery must exclude the legacy heat window while the historical
 milestone remains available for audit. Source repair is active; **NO BUSINESS
 OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
 questions, tasks and reminders on a later natural cycle.
+
+## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.8 device commissioning receipt
+
+The existing GREEN/DOCUMENTS mission advanced through release and real-device
+commissioning without creating another mission, document, queue or print
+workflow. PR #1250 merged as exact revision
+`844d3a10944e07a5341602ea18b337fca16b0dbd`; PR #1194 was closed as
+superseded. Guarded workflow run `32810759240` published the one-time
+`linux/arm64` 0.3.8 package and verified its Cosign signature, provenance,
+SPDX SBOM, OCI source/version/platform bindings and tag equality at immutable
+index digest
+`sha256:587e0a21237d5706d42122161a5ec71ae75be54f4cf5db283ee26e5d922ee9bd`.
+
+Charl installed the released package through Home Assistant. Control Tower
+corrected the existing saved transport fields to the reviewed bounded profile:
+`local_ipp_fixed` and the exact fixed queue endpoint
+`ipp://192.168.0.118:631/printers/weekly-a4`. After a stability wait, Home
+Assistant reported `Current version 0.3.8` and `Running`. This proves the bridge
+is installed and active on the intended device. It does not prove a document
+printed: no canonical print job or CUPS submission was created during
+commissioning, and no physical page or later continuity readback exists yet.
+Lifecycle is `WORKING / BRIDGE_ACTIVE / GENUINE_PRINT_ACCEPTANCE_WAITING`.
+
+The smallest existing governed acceptance path remains the shared DOCUMENTS
+weekly-sheet rail already bound to this mission. A genuine private Oom Sakkie
+request with semantic intent `weekly_weighing_sheet_print` builds the canonical
+`farm.weekly_weight_sheet.v1` revision from current active pigs and creates one
+actor-bound `documents_green_print` protected preview. Nothing prints until the
+same actor confirms. Confirmation atomically creates the one digest-bound job;
+the installed Green worker then claims it, retrieves the exact canonical PDF,
+submits only to the fixed `weekly-a4` queue and records CUPS/canonical outcome.
+The separate protected physical-page follow-up records printed/incorrect/
+uncertain truth and never auto-reprints. Do not manufacture a request, document,
+confirmation or job merely for commissioning. **OWNER ACTION: NONE:** the next
+automatic action is for Green to remain in its zero-job polling/heartbeat cycle
+until a genuine farm need produces the existing protected weekly-sheet request;
+Control Tower then follows that single journey through confirmation, provider/
+canonical readback and a later terminal-independent continuity cycle.
+
+## 2026-08-25 - DMQ-20260816-01 standing print authority addendum
+
+Charl's authenticated private request to print an allowlisted farm document is
+the authority for one bounded GREEN job on the commissioned fixed local queue.
+This supersedes the commissioning receipt's preview/Confirm wording: that loop
+is a systemic owner-burden defect and must not remain in the natural request
+path. Oom Sakkie must create the exact immutable revision, persist a
+deterministic digest-bound standing-authority receipt, create/recover the one
+canonical job idempotently, follow provider and canonical truth through
+completion, and ask Charl only about a genuine exception or physical page
+result. One A4 monochrome copy, registry-bound printer and queue, bounded
+retry/reconciliation and no automatic reprint remain invariant.
+
+This remains the existing `DMQ-20260816-01` mission and the existing GREEN job,
+worker, queue and physical-follow-up rail. The document catalogue is the sole
+extension inventory: current governed PDF generators may gain small immutable
+revision adapters one at a time, but may not create a second print API, worker,
+queue, ledger or confirmation system. Loading sheet, removal/transport, health
+declaration and quote are catalogued extension candidates; their direct-print
+authority remains fail-closed until each adapter and its evidence binding are
+implemented and tested. No job was synthesized or sent by this source change.
+**NO BUSINESS OUTCOME. OWNER ACTION: NONE** until integration/deployment and a
+later genuine request prove canonical/provider/physical readback.
+
 ## 2026-08-25 - RMQ-20260813-06 Borehole 1 exact connector and standing authority
 
 Charl supplied the existing Borehole 1 connector binding: eWeLink device

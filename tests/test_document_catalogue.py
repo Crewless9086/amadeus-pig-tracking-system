@@ -3,7 +3,8 @@ from dataclasses import FrozenInstanceError
 
 from modules.documents.catalogue import (
     CATALOGUE, Requester, RequesterRole, Support, get_document,
-    require_delivery_support, require_generator, require_requester,
+    governed_print_extension_candidates, require_delivery_support,
+    require_generator, require_requester,
 )
 
 
@@ -40,6 +41,13 @@ class DocumentCatalogueTests(unittest.TestCase):
             require_delivery_support("sales.loading_sheet.v1", "direct_print")
         with self.assertRaises(PermissionError):
             require_delivery_support("sales.loading_sheet.v1", "carrier_pigeon")
+
+    def test_green_weekly_print_is_supported_and_other_pdfs_reuse_extension_inventory(self):
+        require_delivery_support("farm.weekly_weight_sheet.v1", "direct_print")
+        candidates={document.document_id for document in governed_print_extension_candidates()}
+        self.assertEqual(candidates,{"sales.loading_sheet.v1",
+            "sales.removal_transport.v1","sales.health_declaration.v1",
+            "sales.quote.v1"})
 
     def test_catalogue_has_no_effect_capability(self):
         forbidden = {"generate", "send", "deliver", "print", "write", "execute"}
