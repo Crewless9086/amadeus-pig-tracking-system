@@ -221,13 +221,14 @@ def test_unproven_acceptance_cannot_mint_auxiliary_on_authority():
     assert transport.commands==[]
 
 
-def test_stale_but_proven_acceptance_asks_only_fresh_presence_and_never_starts():
+def test_stale_but_proven_request_fails_anti_replay_without_presence_prompt_or_start():
     transport=Transport()
     result=continue_fertilizer_commissioning(owner_result=owner_result(),parsed=parsed(),
         gateway_authority=authority(),now=NOW+timedelta(minutes=6),store=Store(),transport=transport,
         acceptance_loader=lambda *_args:True)
-    assert result["status"]=="waiting_for_input" and result["question_count"]==1
-    assert "Are you at the fertilizer valves now" in result["answer"]
+    assert result["status"]=="commissioning_request_expired"
+    assert result["question_count"]==0
+    assert "presence" not in result["answer"].lower()
     assert transport.commands==[]
 
 

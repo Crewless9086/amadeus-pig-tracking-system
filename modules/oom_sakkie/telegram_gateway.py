@@ -9,7 +9,7 @@ from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 from modules.oom_sakkie.herdmaster_farrowing_runtime import handle_farrowing_litter_message
 from modules.oom_sakkie.operational_specialist_intake import (
-    handle_operational_specialist_message, is_exact_fertilizer_commissioning_presence,
+    handle_operational_specialist_message, is_exact_fertilizer_commissioning_request,
     recover_contextual_specialist_replay)
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
@@ -598,7 +598,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     # broad manager-question continuation while retaining every check inside
     # the operational specialist handler.
     operational_result, operational_status = ({"handled": False}, 200)
-    if is_exact_fertilizer_commissioning_presence(parsed):
+    if is_exact_fertilizer_commissioning_request(parsed):
         operational_result, operational_status = handle_operational_specialist_message(
             parsed, gateway_authority,
         )

@@ -38,7 +38,7 @@ def prepare_fertilizer_commissioning(*, owner_result, parsed, gateway_authority=
         return _result("commissioning_acceptance_receipt_unproven")
     observed = _time(parsed.get("provider_timestamp"))
     if observed is None or not 0 <= (now - observed).total_seconds() <= 300:
-        return _result("commissioning_presence_expired")
+        return _result("commissioning_request_expired")
     if owner_result.get("ready_for_supervised_proof") is not True:
         return dict(owner_result)
     source = environ if environ is not None else os.environ
@@ -149,7 +149,7 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
                                       environ=None, store=None, token_store=None,
                                       transport=None, power_loader=None,
                                       acceptance_loader=None):
-    """Advance only a fresh, exactly bound supervised mixer acceptance."""
+    """Advance only a fresh, exactly bound standing-authority Mixer request."""
     deterministic_now = now is not None
     now = _aware(now or datetime.now(timezone.utc))
     source = environ if environ is not None else os.environ
@@ -160,10 +160,10 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
         return _result("commissioning_acceptance_receipt_unproven")
     observed = _time(parsed.get("provider_timestamp"))
     if observed is None or not 0 <= (now - observed).total_seconds() <= 300:
-        return _result("waiting_for_input",
-            answer=("<b>FERTILIZER MIXER — READY WHEN YOU ARE</b>\n\n"
-                    "Are you at the fertilizer valves now for the five-minute mixer test?"),
-            next_reassessment="fresh_owner_presence")
+        return _result("commissioning_request_expired",
+            answer=("<b>FERTILIZER MIXER — REQUEST EXPIRED</b>\n\n"
+                    "The authenticated command is outside the five-minute anti-replay window. No command was issued."),
+            next_reassessment="fresh_authenticated_request")
     if owner_result.get("ready_for_supervised_proof") is not True:
         return dict(owner_result)
     token_store = token_store or PostgresOAuthTokenStore()

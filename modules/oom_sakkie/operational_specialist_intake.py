@@ -138,6 +138,13 @@ _FERTILIZER_COMMISSIONING_PRESENCE = re.compile(
     r"(?=.*\b(?:mixer|CH2)\b)(?=.*\bcommissioning(?:\s+test)?\b)",
     re.I,
 )
+_FERTILIZER_COMMISSIONING_COMMAND = re.compile(
+    r"^(?:run|start)\s+the\s+governed\s+(?:five[- ]minute|5[- ]minute|300[- ]second)\s+"
+    r"(?:mixer(?:\s+CH2)?|CH2)(?:\s+commissioning)?(?:\s+(?:run|test))?\s*(?:now)?[.!]?$|"
+    r"^(?:begin|start)\s+die\s+goedgekeurde\s+(?:vyf[- ]minuut|5[- ]minuut|300[- ]sekonde)\s+"
+    r"(?:menger(?:\s+CH2)?|CH2)(?:\s+kommissie)?(?:\s+(?:lopie|toets))?\s*(?:nou)?[.!]?$",
+    re.I,
+)
 _ROOTLINE_OPERATIONAL = re.compile(
     r"\b(reservoir|storage tanks?|water level|[BC]\s*camps?|irrigat(?:e|ion)|needs?\s+(?:water|irrigation))\b",
     re.I,
@@ -149,10 +156,15 @@ ZERO_AUTHORITY = {"writes_farm_data": False, "hardware_commands": 0,
                   "protected_actions_performed": False, "sends_telegram": False}
 
 
-def is_exact_fertilizer_commissioning_presence(parsed: Mapping[str, Any]) -> bool:
-    """Identify only the governed, explicit Mixer commissioning presence phrase."""
-    return bool(_FERTILIZER_COMMISSIONING_PRESENCE.search(
-        str((parsed or {}).get("text") or "").strip()))
+def is_exact_fertilizer_commissioning_request(parsed: Mapping[str, Any]) -> bool:
+    """Identify an exact governed Mixer request; physical presence is not required."""
+    text = str((parsed or {}).get("text") or "").strip()
+    return bool(_FERTILIZER_COMMISSIONING_COMMAND.fullmatch(text)
+                or _FERTILIZER_COMMISSIONING_PRESENCE.search(text))
+
+
+# Compatibility for callers deployed before standing authority.
+is_exact_fertilizer_commissioning_presence = is_exact_fertilizer_commissioning_request
 
 
 def handle_operational_specialist_message(
@@ -170,7 +182,8 @@ def handle_operational_specialist_message(
     semantic_rootline_observation = (semantic.get("domain") == "rootline"
         and semantic.get("message_kind") in {"observation", "correction"}
         and not semantic.get("needs_clarification"))
-    commissioning_presence = is_exact_fertilizer_commissioning_presence(parsed)
+    commissioning_request = is_exact_fertilizer_commissioning_request(parsed)
+    commissioning_command = bool(_FERTILIZER_COMMISSIONING_COMMAND.fullmatch(text))
     pending = _pending_specialist_context(
         parsed, pending_specialist_loader or _load_pending_specialist_context)
     if pending and pending.get("binding_error"):
@@ -186,21 +199,21 @@ def handle_operational_specialist_message(
             parsed, gateway_authority, pending,
             contextual_specialist_dispatcher or assess_fertilizer_commissioning_reply,
             now, operation_store or _operation_event_store)
-    if commissioning_presence:
+    if commissioning_request and not commissioning_command:
         result = _contained(parsed, "fertilizer_commissioning_context_not_current",
                             (now or datetime.now(timezone.utc)).astimezone(timezone.utc))
         result.update({"handled": True, "success": True, "status": "waiting_for_input",
             "answer": ("<b>FERTILIZER COMMISSIONING RETAINED</b>\n\n"
-                       "I recognized your Mixer commissioning readiness, but no single current protected "
-                       "commissioning context was available. No generic ROOTLINE plan consumed it and no "
-                       "hardware action was taken."), "question_count": 0})
+                       "I retained the legacy readiness message, but no exact current protected context was available. "
+                       "No generic ROOTLINE plan consumed it and no hardware action was taken."),
+            "question_count": 0})
         return result, 200
     legacy_rootline_observation = not semantic_present and _ROOTLINE_OPERATIONAL.search(text)
     if (semantic_rootline_observation or legacy_rootline_observation) and not _ROOTLINE_PRESENCE.search(text):
         return _handle_rootline_operation(parsed, gateway_authority, rootline_operations_dispatcher,
                                           rootline_observation_writer or persist_rootline_observations, now,
                                           operation_store or _operation_event_store)
-    if not _ROOTLINE_PRESENCE.search(text):
+    if not (_ROOTLINE_PRESENCE.search(text) or commissioning_request):
         return {"handled": False, "status": "operational_specialist_intake_not_applicable"}, 200
     provider_id = str(parsed.get("provider_message_id") or "").strip()
     provider_at = _time(parsed.get("provider_timestamp"))
@@ -212,16 +225,16 @@ def handle_operational_specialist_message(
         return _contained(parsed, "operational_specialist_auth_or_chronology_invalid", now), 409
     age = (now - provider_at).total_seconds()
     if age < 0 or age > ROOTLINE_PRESENCE_MAX_AGE_SECONDS:
-        result = _contained(parsed, "rootline_physical_presence_stale", now)
-        result["answer"] = ("⚠️ <b>ROOTLINE PRESENCE EXPIRED</b>\n\n"
-            "I retained your earlier B/C valve-area message, but physical presence is valid for only five minutes. "
-            "No hardware action was taken. I will ask again only when ROOTLINE is immediately ready to commission.")
+        result = _contained(parsed, "rootline_commissioning_request_stale", now)
+        result["answer"] = ("⚠️ <b>ROOTLINE REQUEST EXPIRED</b>\n\n"
+            "The authenticated Mixer request is older than the five-minute anti-replay window. "
+            "No hardware action was taken.")
         result["dispatch_state"] = "contained"
         return result, 200
     if rootline_dispatcher is None:
         result = _contained(parsed, "rootline_deployed_adapter_unavailable", now)
         result["answer"] = ("⚠️ <b>ROOTLINE CONTINUATION UNAVAILABLE</b>\n\n"
-            "I received and retained your current presence confirmation, but the deployed ROOTLINE adapter did not accept it. "
+            "I received and retained your current Mixer request, but the deployed ROOTLINE adapter did not accept it. "
             "No hardware action was taken; one technical exception is being tracked.")
         return result, 503
     try:
@@ -240,7 +253,7 @@ def handle_operational_specialist_message(
             or evidence.get("specialist_acceptance") is not True):
         result = _contained(parsed, "rootline_deployed_adapter_result_invalid", now)
         result["answer"] = ("⚠️ <b>ROOTLINE CONTINUATION CONTAINED</b>\n\n"
-            "Your presence confirmation is retained, but safe ROOTLINE acceptance was not proven. No hardware action was taken.")
+            "Your Mixer request is retained, but safe ROOTLINE acceptance was not proven. No hardware action was taken.")
         return result, 503
     digest = _digest(evidence)
     mission = _mission(parsed)
@@ -250,9 +263,9 @@ def handle_operational_specialist_message(
         "provider_message_id": provider_id, "provider_timestamp": provider_at.isoformat(),
         "evidence_generation": str(evidence.get("evidence_cutoff") or evidence.get("observed_at") or ""),
         "adapter_version": CONTRACT_VERSION, "result_digest": digest,
-        "answer": ("✅ <b>ROOTLINE PRESENCE RECEIVED</b>\n\n"
-            "I retained your current B/C valve-area confirmation and ROOTLINE accepted the read-only continuation. "
-            "No hardware command has been issued. ROOTLINE must still preserve every governed safety boundary during the supervised continuation."),
+        "answer": ("✅ <b>ROOTLINE REQUEST ACCEPTED</b>\n\n"
+            "ROOTLINE accepted the authenticated Mixer request under standing authority. "
+            "Every registered-device safety boundary remains mandatory."),
         **ZERO_AUTHORITY}, 200)
 
 

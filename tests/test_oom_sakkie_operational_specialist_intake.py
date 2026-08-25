@@ -5,7 +5,7 @@ import pytest
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.operational_specialist_intake import (
     handle_operational_specialist_message, recover_contextual_specialist_replay,
-    _project_pending_history)
+    _project_pending_history, is_exact_fertilizer_commissioning_request)
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie import operational_specialist_intake
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
@@ -60,12 +60,35 @@ def test_fresh_authenticated_presence_is_accepted_without_hardware_authority():
     assert value["hardware_commands"] == 0 and value["writes_farm_data"] is False
     assert len(value["result_digest"]) == 64
 
+
+@pytest.mark.parametrize("text", [
+    "Run the governed five-minute Mixer CH2 commissioning now.",
+    "Start die goedgekeurde vyf-minuut menger CH2 kommissie nou.",
+])
+def test_standing_authority_command_never_requires_physical_presence(text):
+    message = {**parsed(), "text": text}
+    assert is_exact_fertilizer_commissioning_request(message) is True
+    value, status = handle_operational_specialist_message(
+        message, issue_gateway_owner_authority("42", "42"), now=NOW,
+        rootline_dispatcher=lambda _context: result())
+    assert status == 200 and value["dispatch_state"] == "specialist_accepted"
+    assert "PRESENCE" not in value["answer"] and value["hardware_commands"] == 0
+
+
+@pytest.mark.parametrize("text", [
+    "Run Mixer", "Please run the five-minute mixer", "Start CH1 now",
+    "Start die menger asseblief",
+])
+def test_nonexact_command_cannot_enter_standing_authority(text):
+    assert is_exact_fertilizer_commissioning_request({**parsed(), "text": text}) is False
+
 def test_stale_presence_is_preserved_but_never_dispatched_or_actuated():
     calls=[]
     value, status = handle_operational_specialist_message(parsed(NOW-timedelta(seconds=301)),
         issue_gateway_owner_authority("42", "42"), now=NOW,
         rootline_dispatcher=lambda _context: calls.append(True))
-    assert status == 200 and value["systemic_exception"] == "rootline_physical_presence_stale"
+    assert status == 200 and value["systemic_exception"] == "rootline_commissioning_request_stale"
+    assert "physical presence" not in value["answer"]
     assert calls == [] and value["hardware_commands"] == 0
 
 def test_missing_adapter_is_one_visible_typed_exception():
