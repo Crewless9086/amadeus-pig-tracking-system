@@ -26,13 +26,15 @@ from modules.telemetry.rootline_water_energy_plan import (
 
 def prepare_rootline_borehole_cycle(*, need, provider, interlocks, energy,
         requested_seconds, connect_factory, authority, now=None,
-        store=rootline_irrigation_execution_store, environ=None):
-    """Persist inert Borehole 1 eligibility on the existing ROOTLINE rail."""
+        store=rootline_irrigation_execution_store, environ=None, transport=None,
+        token_store=None):
+    """Advance Borehole 1 only through its exact standing-authority rail."""
     source = environ if environ is not None else os.environ
     if str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() != "true":
         return {**_safe("borehole_authority_disabled"), "eligible": False}
     from modules.telemetry.rootline_borehole_commissioning import (
-        build_borehole_runtime_eligibility, load_registered_borehole_baseline,
+        advance_borehole_execution, build_borehole_runtime_eligibility,
+        load_registered_borehole_baseline,
     )
     try:
         baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
@@ -53,11 +55,10 @@ def prepare_rootline_borehole_cycle(*, need, provider, interlocks, energy,
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         return {**_safe("borehole_eligibility_persistence_unproven"),
             "success": False, "eligible": False}
-    # Commissioning/configuration release remains a separate immutable boundary.
-    # No claim and no provider adapter are reachable from this source stage.
-    return {**_safe("borehole_eligibility_persisted_claim_disabled"),
-        "execution_eligibility": artifact, "eligible": True,
-        "claim_created": False, "autonomous_on_enabled": False}
+    transport = transport or RootlineIFTTTTransport(
+        token_store=token_store or PostgresOAuthTokenStore(), environ=source)
+    return advance_borehole_execution(eligibility=artifact, store=store,
+        transport=transport, now=now)
 
 
 def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url=None,

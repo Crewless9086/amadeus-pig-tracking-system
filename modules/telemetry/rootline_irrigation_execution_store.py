@@ -283,14 +283,15 @@ def _normalize_evidence_id(value):
 
 
 def _verified_borehole_completion(item):
-    """Require distinct canonical, provider and physical final-state evidence."""
+    """Require execution-bound canonical and authoritative provider final OFF."""
     if not isinstance(item, dict) or item.get("action") != "record_borehole_completed":
         return False
     execution_id = str(item.get("execution_id") or "")
     canonical = item.get("canonical_completion_evidence") or {}
     provider = item.get("provider_final_off_evidence") or {}
     physical = item.get("physical_completion_evidence") or {}
-    evidence = (canonical, provider, physical)
+    provider_mode = item.get("operational_proof") == "provider_app_on_to_off"
+    evidence = (canonical, provider) if provider_mode else (canonical, provider, physical)
     evidence_ids = tuple(_normalize_evidence_id(row.get("evidence_id"))
         for row in evidence)
     identities_match = bool(execution_id) and all(
@@ -302,8 +303,11 @@ def _verified_borehole_completion(item):
         and evidence_domains_distinct
         and canonical.get("final_state") == "OFF"
         and provider.get("authoritative") is True and provider.get("state") == "OFF"
-        and physical.get("pump_stopped") is True
-        and physical.get("water_flow_stopped") is True)
+        and ((provider_mode
+              and (item.get("provider_start_evidence") or {}).get("authoritative") is True
+              and (item.get("provider_start_evidence") or {}).get("state") == "ON")
+             or (not provider_mode and physical.get("pump_stopped") is True
+                 and physical.get("water_flow_stopped") is True)))
 
 
 def _is_active_candidate(item, active_action, claim_action):
@@ -652,17 +656,20 @@ def _claim_borehole_material_load(body):
                     t.review_json->'rootline_execution'->>'execution_id' and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true' and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF' and
-                  length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
-                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
-                    t.review_json->'rootline_execution'->>'execution_id' and
                   btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
                     btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
-                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                  btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
-                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
-                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true'))) limit 1""",
+                  ((t.review_json->'rootline_execution'->>'operational_proof'='provider_app_on_to_off' and
+                    t.review_json->'rootline_execution'->'provider_start_evidence'->>'authoritative'='true' and
+                    t.review_json->'rootline_execution'->'provider_start_evidence'->>'state'='ON') or
+                   (length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
+                      t.review_json->'rootline_execution'->>'execution_id' and
+                    btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                      btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
+                    btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                      btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true'))))) limit 1""",
           (EVENT_SOURCE,EVENT_SOURCE))
         if cursor.fetchone():
             return {"success":True,"created":False,"status":"material_load_active"}

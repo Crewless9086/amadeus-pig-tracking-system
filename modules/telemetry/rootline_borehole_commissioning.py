@@ -13,7 +13,7 @@ from modules.telemetry.rootline_device_spine import load_device_record
 VERSION = "rootline_borehole_commissioning_readiness.v2"
 IDENTITY = "BOREHOLE-1-MINI-R4-CH1"
 READBACK_MAX_AGE = timedelta(minutes=5)
-COMMISSIONING_TEST_MAX_SECONDS = 30
+COMMISSIONING_TEST_MAX_SECONDS = 4 * 60 * 60
 DEVICE_KEY = "ewelink:ewelink_owner_account:1002851416:1"
 
 
@@ -38,7 +38,6 @@ def assess_borehole_commissioning_readiness(readback, *, canonical=None, physica
                  and readback.get("interlock_enabled") is False
                  and readback.get("power_restoration_state") == "OFF")
     canonical_ok = _canonical_baseline_valid(canonical, device)
-    physical_ok = _physical_baseline_valid(physical)
     blockers = []
     if not exact: blockers.append("exact_provider_device_channel_off_identity_unproven")
     if readback.get("online") is not True or not current: blockers.append("fresh_online_readback_unproven")
@@ -46,7 +45,6 @@ def assess_borehole_commissioning_readiness(readback, *, canonical=None, physica
     if not conflicts: blockers.append("conflicting_paths_not_proven_disabled")
     if not canonical_ok: blockers.append("canonical_commissioned_baseline_absent")
     else: blockers.append("canonical_baseline_candidate_requires_registered_validator")
-    if not physical_ok: blockers.append("supervised_physical_baseline_absent")
     fields = ("manual_isolation_location", "dry_run_protection_identity_and_test",
               "full_tank_cutoff_identity_and_test", "supply_pressure_or_flow_observation",
               "pump_current_or_motor_observation", "electrical_supply_identity",
@@ -58,18 +56,18 @@ def assess_borehole_commissioning_readiness(readback, *, canonical=None, physica
         "maximum_test_seconds": COMMISSIONING_TEST_MAX_SECONDS,
         "native_fail_off_required": True, "all_other_channels_off_required": True,
         "no_on_retry": True, "safe_repeated_off": True,
-        "provider_off_verification_required": True, "physical_final_off_required": True,
+        "provider_off_verification_required": True, "physical_final_off_required": False,
+        "provider_on_then_off_is_operational_proof": True,
         "commissioning_fields": {key: physical.get(key) or "Unknown" for key in fields},
-        "required_physical_sequence": ["initial_pump_off", "initial_water_flow_stopped",
-            "one_bounded_start", "pump_started", "water_flow_observed", "native_auto_off_observed",
-            "pump_stopped", "water_flow_stopped", "manual_off_and_isolation_proven"],
+        "required_provider_sequence": ["initial_off", "one_bounded_start", "authoritative_on",
+            "native_or_primary_deadline", "state_setting_off", "authoritative_final_off"],
         "blockers": blockers, "commissioned": False,
         "authority_flag_enabled": False, "standing_authority": False}
     provider_ready = not any(item for item in blockers if item not in {
-        "canonical_commissioned_baseline_absent", "supervised_physical_baseline_absent"})
+        "canonical_commissioned_baseline_absent"})
     return {**material, "readiness_sha256": _digest(material),
         "status": "Hold",
-        "eligible_for_protected_commissioning": provider_ready and not (canonical_ok or physical_ok),
+        "eligible_for_protected_commissioning": provider_ready and not canonical_ok,
         "eligible_for_routine_execution": False, "hardware_commands": 0,
         "provider_control_calls": 0, "writes_farm_data": False}
 
@@ -111,7 +109,8 @@ def prepare_borehole_execution_plan(*, need, commissioned_baseline, authority, p
         "on_retry_allowed": False, "maximum_off_attempts": 3,
         "provider_receipts_required": ["on_acceptance", "on_readback", "each_off_acceptance", "final_off_readback"],
         "canonical_receipts_required": ["claim_before_on", "command_attempts", "outcome", "follow_up_trigger"],
-        "physical_receipts_required": ["pump_started", "water_flow_observed", "pump_stopped", "water_flow_stopped"],
+        "physical_receipts_required": [],
+        "operational_proof": "authoritative_provider_on_then_off",
         "recovery": {"on_ambiguous": "no_on_retry_then_bounded_off_and_contain",
             "restart": "load_active_claim_then_observe_or_bounded_off_never_new_on",
             "final_off_unproven": "repeat_safe_off_up_to_three_then_contain_and_manual_isolate",
@@ -181,6 +180,129 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
         "consumption_key": "borehole:" + digest,
         "eligible": not blockers and all(plan["gates"].values()),
         "command_authority": False, "hardware_commands": 0}
+
+
+def advance_borehole_execution(*, eligibility, store, transport, now=None):
+    """Advance one exact Borehole execution with one ON and bounded OFF recovery."""
+    from modules.telemetry.rootline_irrigation_execution_store import _valid_borehole_eligibility
+    now = _aware(now or datetime.now(timezone.utc))
+    active = store("load_active_borehole", None)
+    if isinstance(active, dict):
+        start = active.get("provider_start_evidence") or {}
+        if start.get("authoritative") is not True or start.get("state") != "ON":
+            return _contain_failed_borehole_start(
+                {**active, "reason": "restart_without_verified_start"}, store, transport)
+        deadline = _time(active.get("primary_stop_deadline"))
+        if active.get("state") == "Active" and deadline is not None and now < deadline:
+            return _borehole_result("borehole_active", execution=active)
+        return _finish_borehole(active, store, transport, now)
+    if not _valid_borehole_eligibility(eligibility):
+        return _borehole_result("borehole_eligibility_invalid", success=False)
+    execution = {**eligibility, "state": "claimed", "claimed_at": now.isoformat(),
+        "primary_stop_deadline": (now + timedelta(seconds=eligibility["requested_seconds"])).isoformat(),
+        "native_fail_stop_deadline": (now + timedelta(seconds=14400)).isoformat(),
+        "on_attempts": 0, "off_attempts": 0}
+    claim = store("claim_borehole_before_on", execution)
+    if not isinstance(claim, dict) or claim.get("created") is not True:
+        return _borehole_result("borehole_claim_conflict")
+    on = transport.set_state(device_id="1002851416", channel=1, state="ON",
+        idempotency_key=execution["execution_id"] + ":ON")
+    store("record_borehole_on_outcome", {**execution, "on_attempts": 1, "on_outcome": on})
+    if on.get("accepted_unambiguous") is not True:
+        return _contain_failed_borehole_start(
+            {**execution, "reason": "ambiguous_on"}, store, transport)
+    started = _read_borehole(transport)
+    if started.get("authoritative") is not True or started.get("state") != "ON":
+        return _contain_failed_borehole_start(
+            {**execution, "reason": "start_unverified"}, store, transport)
+    active = {**execution, "state": "Active", "on_attempts": 1,
+        "provider_start_evidence": started}
+    store("mark_borehole_active", active)
+    return _borehole_result("borehole_started", commands=1, execution=active)
+
+
+def _finish_borehole(active, store, transport, now):
+    commands = 0
+    prior = store("load_borehole_off_attempts", active["execution_id"]) or []
+    used = {int(row.get("attempt") or 0) for row in prior if isinstance(row, dict)}
+    for attempt in range(1, 4):
+        if attempt in used:
+            continue
+        claim = store("claim_borehole_off_attempt", {"execution_id": active["execution_id"],
+            "attempt": attempt})
+        if not isinstance(claim, dict) or claim.get("created") is not True:
+            continue
+        outcome = transport.set_state(device_id="1002851416", channel=1, state="OFF",
+            idempotency_key=f"{active['execution_id']}:OFF:{attempt}")
+        commands += 1
+        store("record_borehole_off_outcome", {"execution_id": active["execution_id"],
+            "attempt": attempt, "outcome": outcome})
+        if outcome.get("accepted_unambiguous") is True:
+            break
+    final = _read_borehole(transport)
+    if final.get("authoritative") is not True or final.get("state") != "OFF":
+        store("contain_borehole", {**active, "shutdown_verified": False,
+            "provider_final_off_evidence": final})
+        return _borehole_result("borehole_shutdown_unverified", commands=commands,
+            success=False, execution=active)
+    canonical = {"execution_id": active["execution_id"], "final_state": "OFF",
+        "evidence_id": "CANONICAL-" + _digest({"execution": active["execution_id"],
+            "final": final})[:24].upper()}
+    provider = {**final, "execution_id": active["execution_id"],
+        "evidence_id": str(final.get("evidence_id") or final.get("response_digest") or "")}
+    completed = {**active, "action": "record_borehole_completed", "state": "Completed",
+        "completed_at": now.isoformat(), "shutdown_verified": True,
+        "operational_proof": "provider_app_on_to_off",
+        "canonical_completion_evidence": canonical,
+        "provider_final_off_evidence": provider}
+    recorded = store("record_borehole_completed", completed)
+    if not isinstance(recorded, dict) or recorded.get("success") is not True:
+        return _borehole_result("borehole_completion_persistence_unproven",
+            commands=commands, success=False, execution=completed)
+    return _borehole_result("borehole_completed", commands=commands, execution=completed)
+
+
+def _contain_failed_borehole_start(execution, store, transport):
+    """A failed ON edge may drive OFF but can never create completion truth."""
+    commands = 0
+    prior = store("load_borehole_off_attempts", execution["execution_id"]) or []
+    used = {int(row.get("attempt") or 0) for row in prior if isinstance(row, dict)}
+    for attempt in range(1, 4):
+        if attempt in used:
+            continue
+        claim = store("claim_borehole_off_attempt", {"execution_id": execution["execution_id"],
+            "attempt": attempt})
+        if not isinstance(claim, dict) or claim.get("created") is not True:
+            continue
+        outcome = transport.set_state(device_id="1002851416", channel=1, state="OFF",
+            idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")
+        commands += 1
+        store("record_borehole_off_outcome", {"execution_id": execution["execution_id"],
+            "attempt": attempt, "outcome": outcome})
+        if outcome.get("accepted_unambiguous") is True:
+            break
+    final = _read_borehole(transport)
+    verified = final.get("authoritative") is True and final.get("state") == "OFF"
+    contained = {**execution, "shutdown_verified": verified,
+        "provider_final_off_evidence": final}
+    store("contain_borehole", contained)
+    return _borehole_result("borehole_start_failure_contained" if verified
+        else "borehole_shutdown_unverified", commands=commands, success=False,
+        execution=contained)
+
+
+def _read_borehole(transport):
+    try:
+        return transport.read_output_state(device_id="1002851416", channel=1)
+    except Exception:
+        return {"authoritative": False, "state": "Unknown"}
+
+
+def _borehole_result(status, *, commands=0, success=True, **extra):
+    return {"success": success, "status": status, "hardware_commands": commands,
+        "automatic_on_retry": False, "maximum_off_attempts": 3,
+        "physical_presence_required": False, "preview_confirmation_required": False,
+        **extra}
 
 
 def _canonical_baseline_valid(value, device):

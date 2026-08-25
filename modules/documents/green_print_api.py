@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from contextlib import nullcontext
 from datetime import datetime, timezone
 import hmac
 import hashlib
@@ -97,7 +98,8 @@ def _call(function, args=(), *, many=False):
 
 def create_authorized_job_from_claim(claim, revision, *, authenticated_principal_id,
                                      request_channel, farm_scope_id,
-                                     canonical_api_origin, connect_factory=None):
+                                     canonical_api_origin, connect_factory=None,
+                                     manage_transaction=True):
     """Persist one server-generated revision after the existing protected claim.
 
     This is an application service callable, not a public/browser route.  The
@@ -136,7 +138,7 @@ def create_authorized_job_from_claim(claim, revision, *, authenticated_principal
     # The bounded retry horizon is authority-derived, never supplied by Green.
     job = {**job, "retry_deadline": job["authorization_expires_at"]}
     db = (connect_factory or _connect_api)()
-    with db:
+    with (db if manage_transaction else nullcontext(db)):
         with db.cursor() as cursor:
             from psycopg.types.json import Jsonb
             cursor.execute("select * from app_private.create_authorized_document_print_job(%s,%s,%s,%s,%s)",
@@ -241,7 +243,7 @@ def authorize_standing_weekly_print(preview, revision, parsed, *, connect_factor
             authenticated_principal_id=principal, request_channel="telegram",
             farm_scope_id=os.getenv("DOCUMENTS_FARM_SCOPE_ID", "").strip(),
             canonical_api_origin=os.getenv("DOCUMENTS_CANONICAL_API_ORIGIN", "").strip(),
-            connect_factory=lambda: db)
+            connect_factory=lambda: db, manage_transaction=False)
         with db.cursor() as cursor:
             from psycopg.types.json import Jsonb
             cursor.execute("""update app_private.oom_protected_action_claims
