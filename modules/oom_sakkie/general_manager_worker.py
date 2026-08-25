@@ -419,8 +419,15 @@ class PostgresManagerCaseStore:
         supplied_next = outcome.get("next_reassessment_at")
         parsed_next = (_time(supplied_next, "next_reassessment_at")
                        if supplied_next else None)
+        refresh_unavailable = (
+            failed and outcome.get("status") == "manager_delivery_refresh_unavailable")
         if parsed_next and parsed_next > now:
             next_at = parsed_next
+        elif refresh_unavailable:
+            # A temporarily absent specialist candidate is an exception, but
+            # an overdue retry must leave the fixed claim window so it cannot
+            # consume one queue slot on every natural cycle.
+            next_at = now + CADENCE
         elif outcome.get("success") is True and not confirmed:
             # A silent success must leave the fixed claim window so later
             # cases receive a fair turn on the next natural cycle.
