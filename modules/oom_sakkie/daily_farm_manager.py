@@ -448,10 +448,12 @@ def _task(item):
 
 
 def _material(item):
-    return {"dedupe_key": item.dedupe_key, "title": item.title, "why": item.why,
-        "next_action": item.next_action, "state": item.state.value,
-        "authority": item.authority.value,
-        "due_at": item.due_at.isoformat() if item.due_at else None}
+    material = {"dedupe_key": item.dedupe_key, "title": item.title, "why": item.why,
+        "state": item.state.value, "authority": item.authority.value}
+    if _owner_action_required(item):
+        material.update({"next_action": item.next_action,
+            "due_at": item.due_at.isoformat() if item.due_at else None})
+    return material
 
 
 def _owner_projection_identity(daily_identity, owner_user_id, chat_id):

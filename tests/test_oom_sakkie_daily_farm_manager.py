@@ -170,6 +170,24 @@ def test_exact_ready_physical_work_remains_owner_visible():
     assert "No action required from you." not in answer
 
 
+def test_automatic_reassessment_clock_does_not_create_a_new_owner_brief():
+    first = item("ROOTLINE", "Irrigation: Checking safely")
+    later = replace(first, next_action="ROOTLINE will reassess automatically around 10:46")
+    earlier = replace(first, next_action="ROOTLINE will reassess automatically around 09:47")
+    assert build_daily_management_packet([result(items=[earlier])], now=NOW)[
+        "material_digest"] == build_daily_management_packet([result(items=[later])], now=NOW)[
+            "material_digest"]
+
+
+def test_changed_owner_action_remains_material():
+    first = replace(item("SALE", "Payment", WorkState.DUE_TODAY),
+                    authority=Authority.OWNER_DECISION, next_action="Review preview A")
+    second = replace(first, next_action="Review preview B")
+    assert build_daily_management_packet([result(items=[first])], now=NOW)[
+        "material_digest"] != build_daily_management_packet([result(items=[second])], now=NOW)[
+            "material_digest"]
+
+
 def test_scheduler_daily_delivery_and_unchanged_replay_are_exact_once():
     state=store(); deliveries=[]
     def deliver(parsed,outcome,**kwargs):
