@@ -41,6 +41,8 @@ def test_corrected_linda_report_creates_dedicated_litter_claim_without_write():
     assert captured["action_kind"] == "herdmaster_record_farrowing_litter"
     assert captured["preview_payload"]["counts"]["arithmetic"] == "9=8+0+1"
     assert captured["preview_payload"]["mating_id"] is None
+    assert captured["preview_payload"]["sow_display_name"] == "Linda"
+    assert "Linda (PIG-2026-5AA8)" in result["answer"]
     assert result["writes_farm_data"] is False
 
 
@@ -59,6 +61,18 @@ def test_non_litter_semantic_intent_is_not_claimed():
     result, status = handle_farrowing_litter_message(message,
         issue_gateway_owner_authority("42", "42"))
     assert status == 200 and result["handled"] is False
+
+
+def test_ambiguous_name_never_selects_an_arbitrary_sow():
+    animals = evidence()["animals"] + [{"pig_id": "PIG-OTHER", "tag_number": "77",
+        "name": "Linda", "status": "Active", "on_farm": True, "sex": "Female"}]
+    result, status = handle_farrowing_litter_message(parsed(),
+        issue_gateway_owner_authority("42", "42"),
+        evidence_loader=lambda **_: evidence(animals=animals),
+        claim_creator=lambda **_: (_ for _ in ()).throw(AssertionError("claim forbidden")))
+    assert status == 409
+    assert result["status"] == "sow_identity_required"
+    assert result["writes_farm_data"] is False
 
 
 def _execute(monkeypatch, facts, canonical):
@@ -86,6 +100,35 @@ def test_execute_preserves_correction_metadata_through_digest_refresh(monkeypatc
         "correction_of_litter_id": "LIT-OLD", "correction_reason": "Corrected birth counts"}
     result, status = _execute(monkeypatch, facts, canonical)
     assert status == 201 and result["success"] is True
+    assert result["answer"].startswith("Litter recorded for Linda (PIG-2026-5AA8)")
+
+
+def test_preview_and_completion_use_escaped_name_in_afrikaans(monkeypatch):
+    canonical = evidence(animals=[{"pig_id": "PIG-2026-5AA8", "tag_number": "Linda",
+        "name": "Linda <Hoof>", "status": "Active", "on_farm": True, "sex": "Female"}])
+    facts = parsed()["semantic"]["farrowing_litter"] | {"sow_ref": "PIG-2026-5AA8"}
+    af_message = parsed(facts)
+    af_message["semantic"]["language"] = "af"
+    preview_result, preview_status = handle_farrowing_litter_message(af_message,
+        issue_gateway_owner_authority("42", "42"), evidence_loader=lambda **_: canonical,
+        claim_creator=lambda **_: {"callback_token": "opaque", "preview_digest": "digest"})
+    assert preview_status == 200
+    assert "Linda &lt;Hoof&gt; (PIG-2026-5AA8)" in preview_result["answer"]
+    assert "Bevestig die presiese beskermde rekord" in preview_result["answer"]
+    prepared = prepare_farrowing_litter_preview({"authenticated": True,
+        "authenticated_principal_id": "42", "provider_message_id": "TG-AF",
+        "language": "af", "farrowing_litter": facts}, canonical)
+    preview = prepared["preview"]
+    monkeypatch.setattr(litter_runtime, "load_canonical_farrowing_evidence", lambda **_: canonical)
+    monkeypatch.setattr(litter_runtime, "create_governed_farrowing_litter",
+        lambda preview, **_: {"success": True, "litter_id": "LIT-NEW", "writes_farm_data": True})
+    monkeypatch.setattr(litter_runtime, "load_litter_readback",
+        lambda *_args, **_kwargs: {"litter_id": "LIT-NEW", "total_born": 9})
+    claimed = {"preview_payload": preview,
+        "preview_digest": canonical_preview_digest(ACTION_KIND, preview)}
+    result, status = execute_claimed_farrowing_litter(claimed, {"telegram_user_id": "42"})
+    assert status == 201
+    assert result["answer"].startswith("Linda &lt;Hoof&gt; (PIG-2026-5AA8) se werpsel")
 
 
 def test_execute_resolves_matching_father_uuid_tag_and_name(monkeypatch):

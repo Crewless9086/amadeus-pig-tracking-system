@@ -3070,6 +3070,24 @@ the protected migration rail, verify exact loaded revision and duplicate-safe
 readback, then request one fresh owner report only when the deployed path is
 ready. **NO BUSINESS OUTCOME. OWNER ACTION: NONE; DO NOT RESEND YET.**
 
+Fresh terminal-independent acceptance on 2026-08-25 supersedes that readiness
+state. A new genuine Telegram report created protected claim mission
+`OOM-HERD-LITTER-E71867CF692725B072D0D50C`; provider-confirmed preview `4048`
+was authorised and completed at `19:20:10.620365Z`. Canonical readback proves
+Linda (`PIG-2026-5AA8`) now has active litter
+`LIT-OOM-D7F1943733BEDCE0` dated 2026-08-22 with 9 total, 8 born alive, 0
+stillborn and 1 mummified. HERDMASTER follow-up case
+`OOM-MANAGER-HERD-LITTER-D7F1943733BEDCE0A1C82B0C` is open for the next litter
+care cycle at `2026-09-01T19:20:05.623678Z`. The canonical farrowing and
+automatic follow-up owner outcome is **PROVEN**; it must not be replayed.
+
+The same genuine journey exposed a presentation defect: preview and completion
+led with internal ID `PIG-2026-5AA8` rather than Linda. This is a bounded
+addendum in the same lineage, without priority change. Shared rendering must
+lead with the escaped canonical animal name, show the ID only as secondary
+context, fall back to ID when no name exists, and preserve English/Afrikaans
+channel output without changing canonical truth. **OWNER ACTION: NONE.**
+
 ## 2026-08-25 - HMQ-20260813-05 automatic batch-to-management owner outcome
 
 The existing `HMQ-20260813-05` lineage has advanced from source-ready to a
