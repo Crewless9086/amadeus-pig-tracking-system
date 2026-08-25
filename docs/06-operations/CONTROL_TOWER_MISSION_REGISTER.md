@@ -2737,3 +2737,88 @@ projection/delivery must exclude the legacy heat window while the historical
 milestone remains available for audit. Source repair is active; **NO BUSINESS
 OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
 questions, tasks and reminders on a later natural cycle.
+
+## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.8 device commissioning receipt
+
+The existing GREEN/DOCUMENTS mission advanced through release and real-device
+commissioning without creating another mission, document, queue or print
+workflow. PR #1250 merged as exact revision
+`844d3a10944e07a5341602ea18b337fca16b0dbd`; PR #1194 was closed as
+superseded. Guarded workflow run `32810759240` published the one-time
+`linux/arm64` 0.3.8 package and verified its Cosign signature, provenance,
+SPDX SBOM, OCI source/version/platform bindings and tag equality at immutable
+index digest
+`sha256:587e0a21237d5706d42122161a5ec71ae75be54f4cf5db283ee26e5d922ee9bd`.
+
+Charl installed the released package through Home Assistant. Control Tower
+corrected the existing saved transport fields to the reviewed bounded profile:
+`local_ipp_fixed` and the exact fixed queue endpoint
+`ipp://192.168.0.118:631/printers/weekly-a4`. After a stability wait, Home
+Assistant reported `Current version 0.3.8` and `Running`. This proves the bridge
+is installed and active on the intended device. It does not prove a document
+printed: no canonical print job or CUPS submission was created during
+commissioning, and no physical page or later continuity readback exists yet.
+Lifecycle is `WORKING / BRIDGE_ACTIVE / GENUINE_PRINT_ACCEPTANCE_WAITING`.
+
+The smallest existing governed acceptance path remains the shared DOCUMENTS
+weekly-sheet rail already bound to this mission. A genuine private Oom Sakkie
+request with semantic intent `weekly_weighing_sheet_print` builds the canonical
+`farm.weekly_weight_sheet.v1` revision from current active pigs and creates one
+actor-bound `documents_green_print` protected preview. Nothing prints until the
+same actor confirms. Confirmation atomically creates the one digest-bound job;
+the installed Green worker then claims it, retrieves the exact canonical PDF,
+submits only to the fixed `weekly-a4` queue and records CUPS/canonical outcome.
+The separate protected physical-page follow-up records printed/incorrect/
+uncertain truth and never auto-reprints. Do not manufacture a request, document,
+confirmation or job merely for commissioning. **OWNER ACTION: NONE:** the next
+automatic action is for Green to remain in its zero-job polling/heartbeat cycle
+until a genuine farm need produces the existing protected weekly-sheet request;
+Control Tower then follows that single journey through confirmation, provider/
+canonical readback and a later terminal-independent continuity cycle.
+
+## 2026-08-25 - ROOTLINE segmented auxiliary-load authority and Mixer evidence
+
+This owner decision and commissioning evidence consolidate into existing
+`RMQ-20260813-02`, `RMQ-20260813-03`, `RMQ-20260813-04` and
+`RMQ-20260813-06`; they create no mission and do not change priority. The
+owner accepts yesterday's genuine Mixer CH2 provider run followed by its native
+five-minute automatic OFF as commissioning evidence for the exact installed CH2
+command/readback path. The bounded CH2 start-to-native-OFF commissioning outcome
+is achieved. It does not yet prove today's intended 30-minute configuration,
+the complete daily mixing objective or terminal-independent segmented operation.
+
+The owner is changing the Mixer's native maximum to 30 minutes per segment and
+authorizes ROOTLINE to divide the daily mixing objective into power-aware
+segments. This expanded limit is not operative until fresh application/provider
+readback proves the exact configured maximum. Every segment remains bound to the
+exact commissioned device, one canonical plan and execution identity, bounded
+claim/retry/replay rules, current power and safety eligibility, and authoritative
+final OFF. ROOTLINE must not infer the setting from this instruction or command
+the device during source/governance work.
+
+The Injector's native maximum is two minutes per segment. Its established
+single-active-zone, pre-flow, injection and flush safeguards remain authoritative;
+segmentation does not bypass them. The Borehole's native maximum is four hours
+per segment and ROOTLINE may repeat bounded segments through the night only when
+the current power/no-rain plan remains eligible. The tanks' own full cutoff
+remains an independent authoritative stop. Approximate inverter draw of 1.2 kW
+during an intended run is supporting indication only: it must never start, stop,
+gate or extend Mixer, Injector or Borehole operation.
+
+**Owner outcome classification.** Mixer CH2's exact five-minute commissioning
+journey is accepted. Mixer 30-minute segmented daily operation remains
+`WORKING / CONFIG_READBACK_AND_AUTOMATIC_CONTINUITY_REQUIRED`. Injector remains
+`WORKING` until its exact connector/activation and a governed provider ON-to-OFF
+journey are proven under its two-minute and irrigation safeguards. Borehole
+remains fail-closed and uncommandable until exact connector/device binding,
+four-hour bounded fail-OFF, activation and a governed provider ON-to-OFF journey
+are proven; later automatic continuity is still required. Provider/application
+readback is sufficient under the standing owner authority, while physical
+observation is optional supporting evidence. **OWNER ACTION: NONE.** No device
+was actuated or configured by Control Tower in recording this decision.
+
+The same existing `RMQ-20260813-04` conversational presentation defect remains
+source work: direct ROOTLINE replies must project validated lifecycle truth in
+the recipient's language and must not expose backend reason tokens, internal
+claim instructions or contradictory recommendation/readiness labels. This is a
+presentation correction only and grants no new device authority.
