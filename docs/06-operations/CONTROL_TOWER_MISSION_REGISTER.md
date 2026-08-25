@@ -3333,3 +3333,18 @@ reconciliation without another Telegram message, presence statement or owner
 action. The append-only authority migration and five-flag activation remain
 blocked until the full exact evidence contract is satisfied. **DURABLY LOGGED —
 NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
+### 2026-08-25 post-adoption immutable-envelope repair
+
+Production readback proved the lost-ledger migration adopted the sole existing
+job twice under valid authority and its exact active device binding, but GREEN
+never requested the PDF or created an attempt. The worker's local ledger hashed
+the complete canonical claim row, including rotating lease owner, token and
+expiry. A valid recovered lease therefore appeared to be an identity conflict
+before local persistence. This is an existing `DMQ-20260816-01` defect; priority
+is unchanged. The bounded 0.3.11 repair compares only an explicit immutable
+job envelope, refreshes the stored canonical row and lease when that identity
+is equal, rejects every immutable drift, and emits only a credential-free hold
+reason. It creates no job, authorization, replay, recovery call or print.
+Source completion is not the owner outcome. **DURABLY LOGGED - NOT YET AN
+OUTCOME. OWNER ACTION: NONE.**

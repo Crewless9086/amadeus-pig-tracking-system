@@ -201,7 +201,7 @@ def test_queue_rejects_any_nonexact_endpoint_without_queue(tmp_path,capsys,overr
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.10"
+    assert cfg["version"]=="0.3.11"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -732,6 +732,56 @@ def test_contract_and_authorization_fail_closed(tmp_path):
     cfg=config(tmp_path); S.validate(envelope(),cfg,NOW)
     for change in ({"cups_queue_id":"other"},{"options":{**S.FIXED_OPTIONS,"copies":2}},{"authorization_expires_at":NOW.isoformat()},{"retrieval_url":envelope()["retrieval_url"]+"?x=1"}):
         with pytest.raises(S.Hold): S.validate(envelope(**change),cfg,NOW)
+
+def test_lost_ledger_adoption_rotates_mutable_lease_without_identity_conflict(tmp_path):
+    ledger=S.Ledger(str(tmp_path/"lost-ledger.db")); job=envelope()
+    first={**job,"state":"claimed","lease_owner":"old-worker","lease_token":"old-token",
+           "lease_expires_at":(NOW-timedelta(minutes=1)).isoformat(),"updated_at":NOW.isoformat()}
+    ledger.put_claim(first,"old-token",first["lease_expires_at"],NOW-timedelta(minutes=6))
+    recovered={**job,"state":"claimed","lease_owner":"new-worker","lease_token":"new-token",
+               "lease_expires_at":(NOW+timedelta(minutes=5)).isoformat(),
+               "updated_at":(NOW+timedelta(seconds=1)).isoformat()}
+    ledger.put_claim(recovered,"new-token",recovered["lease_expires_at"],NOW)
+    local=ledger.get(job["job_id"])
+    assert local["lease_token"]=="new-token" and json.loads(local["envelope_json"])["lease_owner"]=="new-worker"
+    assert local["envelope_sha256"]==sha256(S.canonical_json(recovered).encode()).hexdigest()
+    ledger.put_claim({**recovered,"lease_token":"third-token","lease_expires_at":(NOW+timedelta(minutes=10)).isoformat()},
+                     "third-token",(NOW+timedelta(minutes=10)).isoformat(),NOW+timedelta(seconds=1))
+    with ledger.connect() as db:
+        assert db.execute("select count(*) from jobs where job_id=?",(job["job_id"],)).fetchone()[0]==1
+
+def test_lost_ledger_adoption_rejects_any_nonlease_envelope_drift(tmp_path):
+    ledger=S.Ledger(str(tmp_path/"drift.db")); job={**envelope(),
+        "canonical_input_sha256":"1"*64,"retry_deadline":(NOW+timedelta(hours=1)).isoformat(),
+        "created_at":(NOW-timedelta(hours=1)).isoformat(),"attempt_id":None,"cups_job_id":None,
+        "provider_id":None,"command_kind":None,"command_receipt_id":None}
+    ledger.put_claim(job,"old-token",(NOW-timedelta(seconds=1)).isoformat(),NOW-timedelta(minutes=6))
+    changes=({key:("changed" if value is None else (value+"-changed" if isinstance(value,str) else value+1
+              if isinstance(value,int) else {**value,"copies":2}))} for key,value in job.items()
+             if key not in S.MUTABLE_LEASE_ENVELOPE_KEYS and key!="job_id")
+    for change in changes:
+        with pytest.raises(S.Hold,match="job_identity_envelope_conflict"):
+            ledger.put_claim({**job,**change},"new-token",(NOW+timedelta(minutes=5)).isoformat(),NOW)
+
+def test_0310_full_row_digest_ledger_upgrades_only_after_complete_nonlease_equality(tmp_path):
+    ledger=S.Ledger(str(tmp_path/"legacy.db")); old={**envelope(),"state":"claimed",
+        "lease_token":"old-token","lease_expires_at":(NOW-timedelta(seconds=1)).isoformat()}
+    material=S.canonical_json(old); digest=sha256(material.encode()).hexdigest()
+    with ledger.connect() as db:
+        db.execute("insert into jobs values(?,?,?,?,?,?,?,?,?,?)",
+                   (old["job_id"],material,digest,"claimed","old-token",old["lease_expires_at"],None,None, NOW.isoformat(),"pre_attempt_job_identity_envelope_conflict"))
+    recovered={**old,"lease_token":"new-token","lease_expires_at":(NOW+timedelta(minutes=5)).isoformat()}
+    ledger.put_claim(recovered,"new-token",recovered["lease_expires_at"],NOW)
+    local=ledger.get(old["job_id"])
+    assert local["lease_token"]=="new-token" and local["last_error"] is None
+    with pytest.raises(S.Hold,match="job_identity_envelope_conflict"):
+        ledger.put_claim({**recovered,"retry_deadline":(NOW+timedelta(hours=2)).isoformat()},
+                         "other-token",(NOW+timedelta(minutes=5)).isoformat(),NOW)
+
+def test_cycle_hold_observability_is_bounded_and_credential_free():
+    source=(APP/"app"/"service.py").read_text(encoding="utf-8")
+    assert 'print("green_cycle_held reason="+reason,flush=True)' in source
+    assert "canonical_bearer_token" not in source[source.index('print("green_cycle_held'):source.index('print("green_cycle_held')+100]
 
 def test_config_preserves_private_canonical_pin_and_rejects_printer_hostname(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"
