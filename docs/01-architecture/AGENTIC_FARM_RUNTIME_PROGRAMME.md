@@ -361,3 +361,38 @@ This proves technical containment only. ROOTLINE later natural schedule and
 owner-visible lifecycle continuity remain the acceptance gate. GateKeeper,
 Telegram/outbound connectors, weather delivery and uncertain SAM/order
 workflows were not changed.
+
+### Deferred Control Tower mission
+
+Canonical Mission Control identity `AFRP-N8N-DECOMMISSION-1` owns the remaining
+retirement work. It is `paused`, P3 owner-work, non-runnable and has lifecycle
+`DEFERRED / REGISTERED / NOT BUSINESS COMPLETE`. This explicitly places it
+behind real agent closed-loop outcomes without changing any existing priority.
+Supabase/backend agents are sole operational authority; Google Sheets carries
+no operational-state authority.
+
+The current 15 active workflows are:
+
+- temporary thin ingress/backend/provider adapters: `s8QaxmqT69Z5mhvE`,
+  `TlKy9kUgJJE0msU4`, `MuEyz3dNaJFTSg7t`, `QTWhdK6i8DirCPCZ`,
+  `DoTVVGjcSsCZOyF1`, `jIRPu33UOFCbk2Gx`, `kd5wrJEgBfUNNxnb`,
+  `leo7eCFlo2Ilbvk7`, `8b14lAqmyrD0LYZz` and `T8LLCAtYDLNRPoRx`;
+- unresolved mixed-authority/caller candidates: `1VNdetSbgP0ffNyH`,
+  `YDRs6fwde7MzPYn7`, `4RTDP1ZlBWDdo6Jh`, `dAz5VSX9VZaXVTN8` and
+  `3gUUnTs94kXvq2Xl`.
+
+Remaining sequence is: repair the active weather delivery blocker; prove the
+Email Gatekeeper caller/orphan state; replace SAM media/escalation journeys with
+terminal-independent backend/provider adapters; replace order lookup/steward and
+protected callback journeys without losing authority; move power, weather,
+attention and order-summary schedules into their owning backend agents; finally
+remove n8n reasoning and schedules so only temporary thin provider adapters
+remain, then retire those after equivalent provider transport exists.
+
+Each workflow requires exact active-caller absence or replacement binding,
+canonical state/output parity for its owned journey, later stable execution
+continuity, zero duplicate provider effect, preserved export/history SHA and a
+tested bounded reactivation packet before deactivation. Automatic revisit occurs
+only when an agent/provider adapter replacement proves terminal-independent or
+an active n8n failure blocks an agent outcome. Otherwise this mission remains
+deferred and creates no owner work.

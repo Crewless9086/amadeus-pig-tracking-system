@@ -2853,6 +2853,25 @@ claim a ROOTLINE owner outcome: a later natural backend schedule/lifecycle
 cycle must prove continuity. Thin Telegram/outbound connectors, weather
 delivery and uncertain SAM/order workflows remain active and untouched.
 
+Deferred continuation is now registered once in canonical Mission Control as
+`AFRP-N8N-DECOMMISSION-1`. Before intake the exact identity was absent; governed
+`record_mission(..., exact_identity=True)` created one `paused` P3 non-runnable
+owner-work row, and exact replay returned `duplicate_exact_mission` without a
+second row. Lifecycle is `DEFERRED / REGISTERED / NOT BUSINESS COMPLETE`.
+Current active count is 15: ten temporary thin ingress/backend/provider adapters
+and five unresolved SAM/order/email caller candidates, all listed exactly in the
+programme register. Supabase/backend is sole operational authority and Google
+Sheets is not operational state.
+
+The backlog is deliberately deferred behind genuine agent closed-loop outcomes.
+It resumes automatically only when an agent/provider replacement proves
+terminal-independent or an active n8n failure blocks an owner outcome. Every
+workflow then requires caller/replacement proof, exact journey acceptance,
+provider replay safety, preserved export/history and bounded rollback. Final
+programme acceptance is zero n8n reasoning and schedules, with only temporary
+thin adapters until equivalent provider transport is proven. **OWNER ACTION:
+NONE.**
+
 ## 2026-08-25 - RMQ-20260813-06 Borehole 1 exact connector and standing authority
 
 Charl supplied the existing Borehole 1 connector binding: eWeLink device
