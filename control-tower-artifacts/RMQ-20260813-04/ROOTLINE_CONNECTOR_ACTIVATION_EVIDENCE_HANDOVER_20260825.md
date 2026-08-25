@@ -3,10 +3,10 @@
 Status: **DURABLY LOGGED — NOT YET AN OWNER OUTCOME** in the reviewable commit
 carrying this handover.
 
-Classification: evidence and activation blocker within existing
-`RMQ-20260813-03A`, `RMQ-20260813-04` and `RMQ-20260813-06` lineages. Priority
-is unchanged. No new mission, device store, scheduler or authority rail is
-created.
+Classification: evidence and activation blocker within existing Mixer
+`RMQ-20260813-02`, Injector `RMQ-20260813-03A/03B` and Borehole
+`RMQ-20260813-06` lineages. Priority is unchanged. No new mission, device
+store, scheduler or authority rail is created.
 
 Fresh zero-control provider readback established:
 
@@ -34,8 +34,10 @@ Only canonical evidence may then be bound by a reviewed append-only authority
 migration. Render configuration and natural need-driven operation remain
 separate later gates.
 
-Owner action requested separately: set Mixer CH2 native auto-OFF to 30 minutes.
-No additional owner action is requested by this receipt.
+**ACTION REQUIRED NOW: Set Mixer CH2 native auto-OFF to 30 minutes (1,800
+seconds).** Do not repeat a Telegram message or presence statement, and do not
+perform any Injector or Borehole action now. ROOTLINE owns fresh readback,
+commissioning reconciliation and every later automatic next step.
 
 No authority migration, Render configuration change, database write, provider
 control call or hardware command occurred.

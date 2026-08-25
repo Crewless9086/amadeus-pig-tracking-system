@@ -3246,9 +3246,10 @@ or print recovery occurred. **DURABLY LOGGED - NOT YET AN OUTCOME. OWNER ACTION:
 
 ## 2026-08-25 - ROOTLINE connector activation evidence reconciliation
 
-Fresh zero-control provider readback is consolidated into existing
-`RMQ-20260813-03A`, `RMQ-20260813-04` and `RMQ-20260813-06`; priority is
-unchanged. Fertilizer controller `100204d497` CH2 was online/OFF but retained a
+Fresh zero-control provider readback is consolidated into existing Mixer
+`RMQ-20260813-02`, Injector `RMQ-20260813-03A/03B` and Borehole
+`RMQ-20260813-06`; priority is unchanged. Fertilizer controller `100204d497`
+CH2 was online/OFF but retained a
 300-second native auto-OFF rather than the intended 1,800 seconds. CH1 was
 online/OFF with a 120-second native auto-OFF and power-restoration OFF, but no
 canonical supervised Injector execution event exists. The current plan remains
@@ -3265,5 +3266,8 @@ The existing governed journey must first obtain corrected CH2 provider readback
 and canonical Injector supervised evidence, then bind exact evidence through a
 reviewed append-only authority migration before any five-flag configuration.
 No database, Render, provider or hardware mutation occurred. **DURABLY LOGGED
-— NOT YET AN OWNER OUTCOME. Owner action requested separately: set Mixer CH2
-native auto-OFF to 30 minutes; no additional owner action is requested here.**
+— NOT YET AN OWNER OUTCOME. ACTION REQUIRED NOW: Set Mixer CH2 native auto-OFF
+to 30 minutes (1,800 seconds).** Do not repeat a Telegram message or presence
+statement, and do not perform any Injector or Borehole action now. ROOTLINE owns
+fresh readback, commissioning reconciliation and every later automatic next
+step.
