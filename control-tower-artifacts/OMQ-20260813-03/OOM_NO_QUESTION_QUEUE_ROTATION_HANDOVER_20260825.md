@@ -22,6 +22,16 @@
   canonical `_finish_claim` path persists that fresh time. Tests cover the
   exact timestamp and 21 due cases rotating through a 20-case claim cap across
   two cycles without provider delivery.
+- Follow-up production finding: the first exact `e983221e` natural cycle at
+  `2026-08-25T15:05:30.297550Z` still claimed and suppressed 20 cases. Event
+  readback showed 19 `non_farm_case_delivery_suppressed` outcomes and one
+  `manager_delivery_duplicate_suppressed`; neither older path supplied a fresh
+  time, so the repaired HERDMASTER branch could not enter the capped queue.
+- Invariant repair: `_finish_claim` now advances every successful unconfirmed
+  outcome without an explicit future reassessment to `now + CADENCE`. Explicit
+  future schedules remain authoritative; confirmed and failed outcomes retain
+  existing behavior. The 21-case regression mixes all three observed
+  suppression statuses and proves zero provider calls and complete rotation.
 - Collision: PR `#1275` also edits the canonical mission register but does not
   edit this runtime or its focused tests. Register reconciliation must retain
   both receipts; no priority change.
