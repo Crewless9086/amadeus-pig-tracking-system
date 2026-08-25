@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import os
 from typing import Mapping
 
@@ -29,6 +30,7 @@ def handle_farrowing_litter_message(parsed: Mapping, authority, *, connect_facto
         result = prepare_farrowing_litter_preview({
             "authenticated": True, "authenticated_principal_id": owner,
             "provider_message_id": str(parsed.get("provider_message_id") or ""),
+            "language": str(semantic.get("language") or parsed.get("output_language") or "en"),
             "farrowing_litter": facts,
         }, canonical)
     except (FarrowingEvidenceError, RuntimeError, OSError, ValueError):
@@ -66,6 +68,7 @@ def execute_claimed_farrowing_litter(claimed, parsed, *, connect_factory=None):
     report = {"authenticated": True,
               "authenticated_principal_id": str(parsed.get("telegram_user_id") or ""),
               "provider_message_id": str(preview.get("provider_message_id") or ""),
+              "language": str(preview.get("language") or "en"),
               "farrowing_litter": {"sow_ref": preview.get("sow_pig_id"),
                   "farrowing_date": preview.get("farrowing_date"), **dict(preview.get("counts") or {}),
                   "mating_ref": preview.get("requested_mating_ref"),
@@ -83,10 +86,18 @@ def execute_claimed_farrowing_litter(claimed, parsed, *, connect_factory=None):
     if not readback or int(readback.get("total_born") or -1) != int(preview["counts"]["total_born"]):
         return {**result, "success": False, "status": "farrowing_readback_recovery_required",
                 "recovery_required": True}, 503
-    answer = (f"Litter recorded for {preview['sow_pig_id']}: {preview['counts']['born_alive']} born alive, "
-              f"{preview['counts']['mummified']} mummified on {preview['farrowing_date']}. "
-              + ("Mating and father remain Unknown. " if not preview.get("mating_id") else "The attributable mating was marked Farrowed. ")
-              + "HERDMASTER now owns the normal litter-care, tagging, weighing and weaning follow-up.")
+    label = _sow_label(preview)
+    af = str(preview.get("language") or "").startswith("af")
+    if af:
+        answer = (f"{label} se werpsel is aangeteken: {preview['counts']['born_alive']} lewend gebore, "
+                  f"{preview['counts']['mummified']} gemummifiseer op {preview['farrowing_date']}. "
+                  + ("Paring en vader bly Onbekend. " if not preview.get("mating_id") else "Die toepaslike paring is as Gekry gemerk. ")
+                  + "HERDMASTER volg nou die gewone werpselsorg, merk, weeg en speen op.")
+    else:
+        answer = (f"Litter recorded for {label}: {preview['counts']['born_alive']} born alive, "
+                  f"{preview['counts']['mummified']} mummified on {preview['farrowing_date']}. "
+                  + ("Mating and father remain Unknown. " if not preview.get("mating_id") else "The attributable mating was marked Farrowed. ")
+                  + "HERDMASTER now owns the normal litter-care, tagging, weighing and weaning follow-up.")
     return {**result, "answer": answer, "canonical_readback": readback,
             "follow_up_owner": "HERDMASTER", "reply_markup": {"inline_keyboard": []}}, 201
 
@@ -141,8 +152,22 @@ def _hold_answer(result):
 
 def _preview_answer(result):
     p, c = result["preview"], result["counts"]
+    label = _sow_label(p)
+    af = str(p.get("language") or "").startswith("af")
     linkage = (f"Mating {p['mating_id']} and father {p['father_pig_id']} will be linked."
                if p.get("mating_id") else "Mating and father will remain Unknown; neither will be invented.")
-    return (f"HERDMASTER litter preview: {p['sow_pig_id']}, {p['farrowing_date']}; "
+    if af:
+        linkage = (f"Paring {p['mating_id']} en vader {p['father_pig_id']} sal gekoppel word."
+                   if p.get("mating_id") else "Paring en vader bly Onbekend; niks word uitgedink nie.")
+        return (f"HERDMASTER werpselvoorskou: {label}, {p['farrowing_date']}; "
+                f"totaal {c['total_born']}, lewend gebore {c['born_alive']}, doodgebore {c['stillborn']}, "
+                f"gemummifiseer {c['mummified']}. {linkage} Bevestig die presiese beskermde rekord.")
+    return (f"HERDMASTER litter preview: {label}, {p['farrowing_date']}; "
             f"total {c['total_born']}, born alive {c['born_alive']}, stillborn {c['stillborn']}, "
             f"mummified {c['mummified']}. {linkage} Confirm the exact protected record.")
+
+
+def _sow_label(preview):
+    pig_id = html.escape(str(preview.get("sow_pig_id") or "").strip())
+    name = html.escape(str(preview.get("sow_display_name") or "").strip())
+    return f"{name} ({pig_id})" if name and name.casefold() != pig_id.casefold() else pig_id

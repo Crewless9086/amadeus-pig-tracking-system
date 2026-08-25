@@ -73,6 +73,8 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
         "principal": principal,
         "evidence_generation": generation,
         "sow_pig_id": sow["pig_id"],
+        "sow_display_name": sow.get("name") or "",
+        "language": _text(report.get("language") or "en").casefold(),
         "farrowing_date": farrowing_date.isoformat(),
         "counts": counts,
         "mating": mating,
