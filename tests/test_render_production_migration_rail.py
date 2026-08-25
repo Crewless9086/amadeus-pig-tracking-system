@@ -146,6 +146,11 @@ def _reset_disposable_database(*, unexpected_litter_reason=False):
             (Path("supabase/migrations") /
              "202608210001_create_green_print_jobs.sql").read_text(encoding="utf-8")
         )
+        for role in ("documents_api_executor", "documents_green_worker_executor"):
+            db.execute(
+                f"alter role {role} NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB "
+                "NOCREATEROLE NOREPLICATION NOBYPASSRLS"
+            )
 
 
 def _install_exact_legacy_production_shape():
@@ -233,7 +238,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             )
             self.assertEqual(set(readback), set(migration_rail.GREEN_DEVICE_FUNCTIONS))
             db.execute("grant execute on function app_private.green_print_job_device_active(app_private.document_print_jobs) to authenticated")
-        with self.assertRaisesRegex(RuntimeError, "migration_catalog_checkpoint_conflict"):
+        with self.assertRaisesRegex(RuntimeError, "migration_catalog_drift"):
             run(DATABASE_URL, ENV)
         with psycopg.connect(DATABASE_URL) as db:
             self.assertEqual(db.execute(
@@ -333,7 +338,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         with psycopg.connect(DATABASE_URL) as db:
             self.assertEqual(dict(db.execute("select migration_id,ordinal from app_private.production_migration_receipts where migration_id=any(%s)", (list(item.migration_id for item in ALLOWLIST[:3]),)).fetchall()), {
               ALLOWLIST[0].migration_id: 1, ALLOWLIST[1].migration_id: 1, ALLOWLIST[2].migration_id: 2})
-            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 4)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 5)
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_baselines").fetchone()[0], 1)
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_catalog_checkpoints").fetchone()[0], 1)
 
@@ -631,15 +636,15 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             self.assertTrue(applied["receipt_identity"]["render_instance_id"])
             self.assertEqual(applied["receipt_guard"], replayed["receipt_guard"])
         self.assertEqual(
-            first["migrations"][-2]["readback"]["reason_values"],
+            first["migrations"][-3]["readback"]["reason_values"],
             list(EXPECTED_LITTER_SUPERSESSION_REASONS),
         )
         self.assertEqual(
-            first["migrations"][-1]["readback"]["action_kinds"],
+            first["migrations"][-2]["readback"]["action_kinds"],
             list(EXPECTED_PROTECTED_ACTION_KINDS),
         )
         self.assertEqual(
-            first["migrations"][-2]["readback"]["validator_trigger"]["enabled"],
+            first["migrations"][-3]["readback"]["validator_trigger"]["enabled"],
             "O",
         )
         self.assertEqual(
