@@ -957,6 +957,46 @@ def test_expired_submitted_lease_recovers_without_resubmission(tmp_path,monkeypa
     assert S.cycle(ledger,canonical,cups,config(tmp_path),"worker-2")=="provider_completed"
     assert canonical.recoveries==1 and cups.submissions==0 and canonical.events[-1][1]["cups_job_id"]=="weekly-a4-42"
 
+@pytest.mark.parametrize("first_failure",["retrieval","validation"])
+def test_pre_attempt_failure_is_durable_then_same_claim_recovers_once(tmp_path,monkeypatch,first_failure):
+    job=envelope(); ledger=S.Ledger(str(tmp_path/f"pre-{first_failure}.db")); canonical=Canonical(); cups=Cups()
+    calls=0
+    def flaky_pdf(_url):
+        nonlocal calls
+        calls+=1
+        if calls==1:
+            if first_failure=="retrieval": raise S.Hold("pdf_response_invalid")
+            return b"%PDF-1.4\nwrong"
+        return PDF
+    canonical.pdf=flaky_pdf
+    moments=iter([NOW,NOW+timedelta(minutes=6)])
+    def recover(_job,_worker):
+        canonical.recoveries+=1; canonical.token=f"lease-recovered-{canonical.recoveries}"
+        return {"lease_token":canonical.token,"lease_expires_at":(NOW+timedelta(minutes=11)).isoformat()}
+    canonical.recover=recover
+    monkeypatch.setattr(S,"utcnow",lambda:next(moments)); monkeypatch.setattr(S,"ensure_space",lambda *_a:None)
+    with pytest.raises(S.Hold,match="pdf_response_invalid|pdf_digest_mismatch"):
+        S.cycle(ledger,canonical,cups,config(tmp_path),"worker-1")
+    held=ledger.get(job["job_id"])
+    assert held["state"]=="claimed" and held["attempt_id"] is None and held["cups_job_id"] is None
+    assert held["last_error"].startswith("pre_attempt_pdf_") and cups.submissions==0
+    canonical.state_value="claimed"
+    assert S.cycle(ledger,canonical,cups,config(tmp_path),"worker-2")=="submitted"
+    recovered=ledger.get(job["job_id"])
+    assert canonical.recoveries==1 and calls==2 and cups.submissions==1
+    assert recovered["attempt_id"].startswith("ATTEMPT-") and recovered["cups_job_id"]=="weekly-a4-42"
+    assert [state for state,_ in canonical.events]==["submitting","submitted"]
+
+def test_ambiguous_provider_state_never_enters_pre_attempt_retry(tmp_path,monkeypatch):
+    job=envelope(); ledger=S.Ledger(str(tmp_path/"ambiguous-no-reprint.db"))
+    ledger.put_claim(job,"lease-token-1",(NOW-timedelta(seconds=1)).isoformat(),NOW-timedelta(minutes=6))
+    ledger.update(job["job_id"],"ambiguous",NOW-timedelta(minutes=6),attempt_id="ATTEMPT-1",error="cups_submission_exception")
+    canonical=Canonical(); canonical.state_value="ambiguous"; cups=Cups()
+    canonical.claim=lambda _worker:None
+    monkeypatch.setattr(S,"utcnow",lambda:NOW); monkeypatch.setattr(S,"ensure_space",lambda *_a:None)
+    assert S.cycle(ledger,canonical,cups,config(tmp_path),"worker-2")=="event_waiting"
+    assert cups.submissions==0 and canonical.recoveries==0
+
 @pytest.mark.parametrize("observations",[["pending","pending","pending"],["completed"],["unavailable"]])
 def test_zero_exit_cancel_nonclosure_is_ambiguous_and_restart_safe(tmp_path,observations):
     job=envelope(); ledger=S.Ledger(str(tmp_path/"cancel.db")); ledger.put_claim(job,"lease-token-1",(NOW+timedelta(minutes=5)).isoformat(),NOW); ledger.update(job["job_id"],"submitted",NOW,attempt_id="ATTEMPT-1",cups_job_id="weekly-a4-42")
