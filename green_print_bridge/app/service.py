@@ -58,7 +58,7 @@ class Ledger:
         except sqlite3.DatabaseError as exc: raise Hold("local_ledger_corrupt") from exc
     def recoverable(self):
         try:
-            with self.connect() as db: return [dict(x) for x in db.execute("select * from jobs where attempt_id is not null and state in ('submitting','submitted') order by updated_at")]
+            with self.connect() as db: return [dict(x) for x in db.execute("select * from jobs where (state='claimed' and attempt_id is null and cups_job_id is null) or (attempt_id is not null and state in ('submitting','submitted')) order by updated_at")]
         except sqlite3.DatabaseError as exc: raise Hold("local_ledger_corrupt") from exc
     def update(self,job_id,state,now,attempt_id=None,cups_job_id=None,error=None):
         with self.connect() as db:
@@ -264,6 +264,10 @@ def cycle(ledger,client,cups,config,worker_id):
         canonical=client.state(local["job_id"],token)
         if canonical.get("state") in TERMINAL: ledger.clear(local["job_id"]); return canonical["state"]
         if canonical.get("lease_token")!=token: raise Hold("restore_lease_conflict")
+        if local["state"]=="claimed" and not local["attempt_id"] and not local["cups_job_id"]:
+            if canonical.get("state")!="claimed": raise Hold("pre_attempt_recovery_state_conflict")
+            validate(job,config,now)
+            return submit_claimed(job,token,ledger,client,cups,spool,now)
         if not local["cups_job_id"]:
             client.transition(job,token,"ambiguous",reason="submission_outcome_unknown"); ledger.update(local["job_id"],"ambiguous",now,error="submission_outcome_unknown"); return "ambiguous"
         observed=cups.observe(local["cups_job_id"])
@@ -273,6 +277,10 @@ def cycle(ledger,client,cups,config,worker_id):
     claim=client.claim(worker_id)
     if not claim: return "event_waiting"
     job=claim["job"]; token=claim["lease_token"]; validate(job,config,now); ledger.put_claim(job,token,claim["lease_expires_at"],now)
+    return submit_claimed(job,token,ledger,client,cups,spool,now)
+
+def submit_claimed(job,token,ledger,client,cups,spool,now):
+    """Retry only work that is durably proven to be before any provider attempt."""
     path=Path(spool)/(job["job_id"]+"."+uuid.uuid4().hex+".pdf")
     try:
         pdf=client.pdf(job["retrieval_url"])
@@ -280,10 +288,13 @@ def cycle(ledger,client,cups,config,worker_id):
         path.write_bytes(pdf); attempt="ATTEMPT-"+uuid.uuid4().hex
         client.transition(job,token,"submitting",attempt_id=attempt,observed_at=iso(now)); ledger.update(job["job_id"],"submitting",now,attempt_id=attempt)
         cups_id=cups.submit(str(path)); client.transition(job,token,"submitted",attempt_id=attempt,cups_job_id=cups_id,provider_id=cups.provider,observed_at=iso(now)); ledger.update(job["job_id"],"submitted",now,cups_job_id=cups_id); return "submitted"
-    except Exception:
+    except Exception as exc:
         local=ledger.get(job["job_id"])
         if local and local.get("attempt_id"):
             client.transition(job,token,"ambiguous",attempt_id=local["attempt_id"],reason="cups_submission_exception"); ledger.update(job["job_id"],"ambiguous",now,error="cups_submission_exception")
+        elif local:
+            reason=str(exc.args[0] if isinstance(exc,Hold) and exc.args else type(exc).__name__)[:120]
+            ledger.update(job["job_id"],"claimed",now,error="pre_attempt_"+reason)
         raise
     finally: path.unlink(missing_ok=True)
 
