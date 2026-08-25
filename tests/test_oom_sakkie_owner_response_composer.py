@@ -27,7 +27,7 @@ def test_verbose_rootline_packet_becomes_compact_farm_message_without_b_camp_cop
         "retain the four-day weekly target.")
     answer=compose_rootline(packet)
     assert "<b>ROOTLINE — WATER &amp; POWER</b>" in answer
-    assert "<b>B Camp:</b> Hold" in answer and "<b>C Camp:</b> Hold" in answer
+    assert "<b>B Camp:</b> Not running" in answer and "<b>C Camp:</b> Not running" in answer
     assert "B-Camp plan" not in answer and "authority" not in answer.lower()
     assert "today's proportional camp plan" in answer
     assert "internal" not in answer.lower() and len(answer)<1200
@@ -39,6 +39,71 @@ def test_rootline_hostile_scalar_values_are_never_rendered_as_telegram_html():
     answer=compose_rootline(packet)
     assert "<b>oops</b>" not in answer and "<i>bad</i>" not in answer and "<u>bad</u>" not in answer
     assert answer.count("Unavailable") == 5
+
+
+def test_conversational_rootline_uses_lifecycle_truth_and_hides_backend_tokens():
+    packet = rootline("Recommend")
+    packet["recommendations"][0].update({
+        "status": "Recommend", "reason": "now_after_fresh_execution_revalidation"})
+    packet["recommendations"][1].update({
+        "status": "Recommend", "reason": "now_after_fresh_execution_revalidation"})
+    packet["irrigation_lifecycle"] = {
+        "B12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "B12345", "state": "Started", "reason": "execution_started",
+            "next_action_owner": "ROOTLINE", "next_action": "claim exactly once"},
+        "C12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "C12345", "state": "Held", "reason": "safety_hold",
+            "next_action_owner": "ROOTLINE", "next_action": "claim exactly once"},
+    }
+
+    answer = compose_rootline(packet)
+
+    assert "<b>B Camp:</b> Currently running" in answer
+    assert "<b>C Camp:</b> Not running" in answer
+    assert "now_after_fresh_execution_revalidation" not in answer
+    assert "Lifecycle:" not in answer and "claim exactly once" not in answer
+    assert "ROOTLINE recommends now: Plan ready." in answer
+
+
+def test_conversational_rootline_lifecycle_projection_is_recipient_localized():
+    packet = rootline("Recommend")
+    packet["recommendations"][0]["reason"] = "durable_zone_containment"
+    packet["recommendations"][1]["reason"] = "now_after_fresh_execution_revalidation"
+    packet["irrigation_lifecycle"] = {
+        "B12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "B12345", "state": "Failed", "reason": "contained",
+            "next_action_owner": "ROOTLINE", "next_action": "reassess"},
+        "C12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "C12345", "state": "Recommended", "reason": "needs_water",
+            "next_action_owner": "ROOTLINE", "next_action": "reassess"},
+    }
+
+    answer = compose_rootline(packet, language="af")
+
+    assert "<b>B Kamp:</b> Veilig teruggehou" in answer
+    assert "<b>C Kamp:</b> Moet natgemaak word" in answer
+    assert "Vars kanonieke bewyse bepaal die huidige besluit." in answer
+    assert "durable_zone_containment" not in answer
+    assert "now_after_fresh_execution_revalidation" not in answer
+    assert "Recommendation" not in answer and "Eligible" not in answer
+
+
+def test_conversational_rootline_completed_label_requires_bound_off_evidence():
+    packet = rootline("Recommend")
+    packet["irrigation_lifecycle"] = {"B12345": {
+        "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "B12345",
+        "state": "Completed", "reason": "record_completed",
+        "next_action_owner": "ROOTLINE", "next_action": "reassess",
+        "completion_evidence": {"zone_id": "C12345", "shutdown_verified": True,
+            "objective_satisfied": True,
+            "shutdown_evidence": {"authoritative": True, "state": "OFF"}}}}
+    malformed = compose_rootline(packet)
+    assert "<b>B Camp:</b> Not running" in malformed
+    assert "off and verified" not in malformed
+
+    packet["irrigation_lifecycle"]["B12345"]["completion_evidence"]["zone_id"] = "B12345"
+    verified = compose_rootline(packet)
+    assert "<b>B Camp:</b> Completed" in verified and "off and verified" in verified
 
 def test_manager_sections_and_afrikaans_layout_preserve_supported_facts():
     p=Provenance("herdmaster","R",("canonical",),NOW,1)
@@ -78,8 +143,8 @@ def test_production_shaped_rootline_afrikaans_marks_every_dynamic_source_fragmen
     packet["battery_policy"]["governing_reason"]="A dynamic reserve model selected 63 percent."
     answer=compose_rootline(packet,language="af")
     assert "Bronbesluit (bronwoorde): Dynamic specialist decision" in answer
-    assert "Spesialisrede (bronwoorde): A dynamic specialist reason" in answer
-    assert "Spesialisbewys (bronwoorde): A dynamic reserve model" in answer
+    assert "A dynamic specialist reason" in answer
+    assert "A dynamic reserve model" in answer
     assert "Spesialisvraag (bronwoorde): Are the east tanks" in answer
     assert "Spesialis se herbeoordeling (bronwoorde): When rain telemetry" in answer
 

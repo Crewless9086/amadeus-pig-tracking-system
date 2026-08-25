@@ -18,6 +18,25 @@ CONTRACT_VERSION = "oom_sakkie_rootline_daily_presentation.v1"
 ZONES = ("B12345", "C12345")
 
 
+def owner_zone_decision(result: Mapping[str, Any], recommendation: Mapping[str, Any],
+                        *, zone: str, language: str = "en") -> str:
+    """Project one zone from validated lifecycle truth for any owner surface."""
+    af = str(language).casefold().startswith("af")
+    lifecycle = (validate_zone_lifecycle(
+        (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
+        or project_zone_lifecycle(zone_id=zone, recommendation=recommendation))
+    return _lifecycle_decision(lifecycle, recommendation, af, zone=zone)
+
+
+def owner_reason(value: Any, *, language: str = "en") -> str:
+    """Collapse internal reason tokens to the bounded owner presentation."""
+    return _short_reason(str(value or ""), str(language).casefold().startswith("af"))
+
+
+def owner_window(value: Any) -> str:
+    return _human_window(value)
+
+
 def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
                                 specialist_loader: Callable[[], Mapping[str, Any]],
                                 state_store: Callable[[str, str, Any], Any],
@@ -113,10 +132,7 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     for zone, label in (("B12345", "B Kamp" if af else "B Camp"),
                         ("C12345", "C Kamp" if af else "C Camp")):
         row = recommendations.get(zone, {})
-        lifecycle = (validate_zone_lifecycle(
-            (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
-            or project_zone_lifecycle(zone_id=zone, recommendation=row))
-        decision = _lifecycle_decision(lifecycle, row, af, zone=zone)
+        decision = owner_zone_decision(result, row, zone=zone, language=language)
         window = _human_window(row.get("preferred_window"))
         suffix = f" · {html.escape(window)}" if window and window.lower() not in {"unavailable", "unknown"} else ""
         lines.append(f"• <b>{label}:</b> {decision}{suffix}")
@@ -148,10 +164,7 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
     for zone, label in (("B12345", "B Kamp" if af else "B Camp"),
                         ("C12345", "C Kamp" if af else "C Camp")):
         row = recommendations.get(zone, {})
-        lifecycle = (validate_zone_lifecycle(
-            (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
-            or project_zone_lifecycle(zone_id=zone, recommendation=row))
-        decisions.append(f"{label}: {_lifecycle_decision(lifecycle, row, af, zone=zone)}")
+        decisions.append(f"{label}: {owner_zone_decision(result, row, zone=zone, language=language)}")
         reason = str(row.get("reason") or "").strip()
         if reason and reason not in reasons:
             reasons.append(reason)
