@@ -274,6 +274,36 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                 (migration_rail.GREEN_DEVICE_FENCE_MIGRATION_ID,),
             ).fetchone()[0], 0)
 
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_green_lost_ledger_readback_failure_rolls_back_function_and_receipt(self):
+        import psycopg
+
+        authorization = _install_exact_legacy_production_shape()
+        original = migration_rail._verify_migration_readback
+
+        def fail_target(connection, item):
+            if item.migration_id == migration_rail.GREEN_LOST_LEDGER_MIGRATION_ID:
+                raise RuntimeError("expected_green_lost_ledger_readback_failure")
+            return original(connection, item)
+
+        with patch.object(migration_rail, "_verify_migration_readback", side_effect=fail_target):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "migration_failed_and_rolled_back:202608250002_adopt_green_lost_pre_attempt_claim",
+            ):
+                run(DATABASE_URL, {**ENV, **_compact_authorization_env(authorization)})
+        with psycopg.connect(DATABASE_URL) as db:
+            predecessor = _verify_green_device_functions(
+                db,
+                "202608210001_create_green_print_jobs.sql",
+                migration_rail.GREEN_CLAIM_FUNCTION,
+            )
+            self.assertEqual(set(predecessor), {"claim_document_print_job"})
+            self.assertEqual(db.execute(
+                "select count(*) from app_private.production_migration_receipts where migration_id=%s",
+                (migration_rail.GREEN_LOST_LEDGER_MIGRATION_ID,),
+            ).fetchone()[0], 0)
+
     def test_protected_claim_acl_allows_only_named_managed_select_roles(self):
         class Result:
             def __init__(self, *, row=None, rows=None):
@@ -332,13 +362,15 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(report["migrations"][3]["outcome"], "baseline_verified")
         self.assertEqual(report["migrations"][4]["outcome"], "applied")
         self.assertEqual(report["migrations"][5]["outcome"], "applied")
+        self.assertEqual(report["migrations"][6]["outcome"], "applied")
         replay = run(DATABASE_URL, ENV)
         self.assertEqual(replay["migrations"][4]["outcome"], "already_applied")
         self.assertEqual(replay["migrations"][5]["outcome"], "already_applied")
+        self.assertEqual(replay["migrations"][6]["outcome"], "already_applied")
         with psycopg.connect(DATABASE_URL) as db:
             self.assertEqual(dict(db.execute("select migration_id,ordinal from app_private.production_migration_receipts where migration_id=any(%s)", (list(item.migration_id for item in ALLOWLIST[:3]),)).fetchall()), {
               ALLOWLIST[0].migration_id: 1, ALLOWLIST[1].migration_id: 1, ALLOWLIST[2].migration_id: 2})
-            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 5)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 6)
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_baselines").fetchone()[0], 1)
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_catalog_checkpoints").fetchone()[0], 1)
 
@@ -459,7 +491,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(sum(isinstance(value, dict) for value in outcomes), 1)
         self.assertTrue(any("migration_legacy_adoption_already_initialized" in value for value in outcomes if isinstance(value, str)))
         with psycopg.connect(DATABASE_URL) as db:
-            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 5)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 6)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_legacy_authorization_order_is_irrelevant_but_set_and_identities_are_exact(self):
@@ -508,6 +540,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             "202608220001_extend_litter_supersession_for_fact_corrections.sql",
             "202608220002_allow_herdmaster_farrowing_protected_claims.sql",
             "202608250001_fence_green_print_lease_device_binding.sql",
+            "202608250002_adopt_green_lost_pre_attempt_claim.sql",
         ])
         self.assertEqual(list(ALLOWLIST), sorted(ALLOWLIST, key=lambda row: row.migration_id))
         for row in ALLOWLIST:
@@ -636,19 +669,19 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             self.assertTrue(applied["receipt_identity"]["render_instance_id"])
             self.assertEqual(applied["receipt_guard"], replayed["receipt_guard"])
         self.assertEqual(
-            first["migrations"][-3]["readback"]["reason_values"],
+            first["migrations"][-4]["readback"]["reason_values"],
             list(EXPECTED_LITTER_SUPERSESSION_REASONS),
         )
         self.assertEqual(
-            first["migrations"][-2]["readback"]["action_kinds"],
+            first["migrations"][-3]["readback"]["action_kinds"],
             list(EXPECTED_PROTECTED_ACTION_KINDS),
         )
         self.assertEqual(
-            first["migrations"][-3]["readback"]["validator_trigger"]["enabled"],
+            first["migrations"][-4]["readback"]["validator_trigger"]["enabled"],
             "O",
         )
         self.assertEqual(
-            first["migrations"][-2]["readback"]["protected_claim_acl"],
+            first["migrations"][-3]["readback"]["protected_claim_acl"],
             {
                 "unauthorized_privilege_count": 0,
                 "managed_read_roles": [
@@ -659,14 +692,14 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             },
         )
         self.assertTrue(
-            first["migrations"][-3]["readback"]["migration_log_description_sha256"]
+            first["migrations"][-4]["readback"]["migration_log_description_sha256"]
         )
         self.assertTrue(
-            first["migrations"][-2]["readback"]["migration_log_description_sha256"]
+            first["migrations"][-3]["readback"]["migration_log_description_sha256"]
         )
         self.assertEqual(
-            second["migrations"][-2]["readback"],
-            first["migrations"][-2]["readback"],
+            second["migrations"][-3]["readback"],
+            first["migrations"][-3]["readback"],
         )
         self.assertEqual(
             second["migrations"][-1]["readback"],
@@ -1548,12 +1581,12 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         applied = run(DATABASE_URL, baseline_env)
         self.assertEqual(
             [item["outcome"] for item in applied["migrations"]],
-            ["baseline_verified"] * 3 + ["applied"] * 3,
+            ["baseline_verified"] * 3 + ["applied"] * 4,
         )
         replay = run(DATABASE_URL, ENV)
         self.assertEqual(
             [item["outcome"] for item in replay["migrations"]],
-            ["baseline_verified"] * 3 + ["already_applied"] * 3,
+            ["baseline_verified"] * 3 + ["already_applied"] * 4,
         )
         with psycopg.connect(DATABASE_URL) as db:
             self.assertEqual(
@@ -1563,7 +1596,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                        (select count(*) from app_private.production_migration_receipts),
                        (select count(*) from app_private.production_migration_catalog_checkpoints)"""
                 ).fetchone(),
-                (1, 3, 1),
+                (1, 4, 1),
             )
             with self.assertRaisesRegex(psycopg.errors.RaiseException, "append-only"):
                 db.execute(

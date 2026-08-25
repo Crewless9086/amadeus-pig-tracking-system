@@ -3271,3 +3271,24 @@ to 30 minutes (1,800 seconds).** Do not repeat a Telegram message or presence
 statement, and do not perform any Injector or Borehole action now. ROOTLINE owns
 fresh readback, commissioning reconciliation and every later automatic next
 step.
+
+### 2026-08-25 lost-local-ledger pre-attempt adoption defect
+
+After migration `202608250001` was governed and read back, GREEN 0.3.10 could
+not discover the sole canonical job
+`GREEN-WWS-WWS-20260825.r1.a79d4a6effa6`: its canonical lease was expired and
+pre-attempt, while a fresh local SQLite ledger had no retained row from which
+to request lease recovery. This is an existing `DMQ-20260816-01` defect and an
+addendum to the retained-local-ledger recovery lineage; it does not change
+priority and creates no mission, job, replay, queue or workflow.
+
+The bounded repair lets the existing canonical claim function prefer exactly
+one expired `claimed` row only while its immutable device binding is active,
+authorization and retry deadline remain current, and attempt, CUPS and provider
+identities are all absent. It renews that same row under a locked transaction,
+records a `lease_recovered` adoption event, and returns it to the ordinary GREEN
+worker so the existing local ledger and submission path continue normally.
+Post-attempt, expired-authority, inactive-binding and live-lease rows remain
+ineligible. Source, tests, PR, migration and worker execution are not an owner
+outcome; physical page proof remains separate. **DURABLY LOGGED - NOT YET AN OUTCOME.
+OWNER ACTION: NONE.**
