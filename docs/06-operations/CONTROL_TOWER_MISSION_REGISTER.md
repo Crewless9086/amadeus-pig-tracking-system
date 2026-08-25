@@ -3243,3 +3243,27 @@ migration run. This is an existing `DMQ-20260816-01` rail defect, not authority
 to reuse a legacy packet. Those inputs are optional at dispatch while runtime
 validation still permits exactly zero or two strictly valid values. No migration
 or print recovery occurred. **DURABLY LOGGED - NOT YET AN OUTCOME. OWNER ACTION: NONE.**
+
+## 2026-08-25 - ROOTLINE connector activation evidence reconciliation
+
+Fresh zero-control provider readback is consolidated into existing
+`RMQ-20260813-03A`, `RMQ-20260813-04` and `RMQ-20260813-06`; priority is
+unchanged. Fertilizer controller `100204d497` CH2 was online/OFF but retained a
+300-second native auto-OFF rather than the intended 1,800 seconds. CH1 was
+online/OFF with a 120-second native auto-OFF and power-restoration OFF, but no
+canonical supervised Injector execution event exists. The current plan remains
+`Await batch` / `Await eligible irrigation`, zero fertilizer executions are
+recorded and both fertilizer flags remain disabled. A standing-authority
+migration or flag activation would therefore manufacture missing evidence.
+
+Borehole `1002851416` CH1 separately reported ON while native auto-OFF,
+power-restoration and conflicting-path evidence were incomplete. No current
+evidence attributes that ON state to a ROOTLINE flag, scheduler claim or
+command. It is evidence only, not a ROOTLINE execution or owner outcome.
+
+The existing governed journey must first obtain corrected CH2 provider readback
+and canonical Injector supervised evidence, then bind exact evidence through a
+reviewed append-only authority migration before any five-flag configuration.
+No database, Render, provider or hardware mutation occurred. **DURABLY LOGGED
+— NOT YET AN OWNER OUTCOME. Owner action requested separately: set Mixer CH2
+native auto-OFF to 30 minutes; no additional owner action is requested here.**
