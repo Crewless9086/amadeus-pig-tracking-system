@@ -7,6 +7,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from modules.oom_sakkie.manager_case_sources import _completed_bulk_batch_findings
 from modules.oom_sakkie.general_manager_worker import (
     PostgresManagerCaseStore, normalize_candidate,
 )
@@ -123,6 +124,80 @@ def test_latest_batch_candidate_is_stable_across_repeated_and_concurrent_cycles(
             (dedupe,)).fetchone()[0]
     assert row == ("completed", 2, normalize_candidate(latest, now=now)["evidence_digest"])
     assert count == 2
+
+
+def test_two_completed_batches_query_and_repeated_cycles_use_only_latest_exact_pig_evidence():
+    """Exercise the production collector, not a hand-built candidate sequence."""
+    now = datetime.now(timezone.utc)
+    suffix = now.strftime("%Y%m%d%H%M%S%f")
+    pig_id = f"PG-MULTI-{suffix}"
+    older_batch = f"10000000-0000-4000-8000-{suffix[-12:]}"
+    latest_batch = f"20000000-0000-4000-8000-{suffix[-12:]}"
+    older_draft = f"DRAFT-OLDER-{suffix}"
+    latest_draft = f"DRAFT-LATEST-{suffix}"
+    with connect() as db:
+        db.execute("""insert into public.pigs(pig_id,tag_number,pig_name,status,on_farm)
+            values(%s,%s,'Latest Evidence Pig','Active',true)""",
+            (pig_id, f"TAG-{suffix}"))
+        db.execute("""insert into public.bulk_weight_batches(
+            batch_id,client_draft_id,weight_date,status,updated_at,completed_at)
+            values(%s,%s,%s,'complete',%s,%s),(%s,%s,%s,'complete',%s,%s)""",
+            (older_batch, older_draft, (now - timedelta(days=7)).date(),
+             now - timedelta(days=7), now - timedelta(days=7),
+             latest_batch, latest_draft, now.date(), now, now))
+        db.execute("""insert into public.pig_weight_events(
+            weight_event_id,pig_id,weight_date,weight_kg,source,source_sheet_row,
+            bulk_batch_id,created_at) values
+            (%s,%s,%s,40,'app_bulk_weight',1,%s,%s),
+            (%s,%s,%s,50,'app_bulk_weight',2,%s,%s)""",
+            (f"WEIGHT-OLDER-{suffix}", pig_id, (now - timedelta(days=7)).date(),
+             older_batch, now - timedelta(days=7),
+             f"WEIGHT-LATEST-{suffix}", pig_id, now.date(), latest_batch, now))
+        db.execute("""insert into public.pig_observation_events(
+            observation_event_id,pig_id,observed_at,recorded_at,observer_reference,
+            observation_category,severity,factual_note,measurements_json,source_system,
+            source_reference,idempotency_key) values
+            (%s,%s,%s,%s,'test','body_condition','attention','older low BCS',
+             '{"body_condition_score":2}'::jsonb,'owner','test',%s),
+            (%s,%s,%s,%s,'test','body_condition','attention','latest low BCS',
+             '{"body_condition_score":2}'::jsonb,'owner','test',%s)""",
+            (f"OBS-OLDER-{suffix}", pig_id, now - timedelta(days=7),
+             now - timedelta(days=7), f"bulk-bcs:{older_draft}:{pig_id}",
+             f"OBS-LATEST-{suffix}", pig_id, now, now,
+             f"bulk-bcs:{latest_draft}:{pig_id}"))
+
+    findings = [row for row in _completed_bulk_batch_findings(now, connect=connect)
+                if f"pig:{pig_id}" in row["evidence_refs"]]
+    assert len(findings) == 2
+    by_key = {row["dedupe_key"]: row for row in findings}
+    condition = by_key[f"herdmaster:bulk-condition:{pig_id}"]
+    weight = by_key[f"herdmaster:bulk-weight-change:{pig_id}"]
+    assert f"observation:OBS-LATEST-{suffix}" in condition["evidence_refs"]
+    assert f"observation:OBS-OLDER-{suffix}" not in condition["evidence_refs"]
+    assert condition.get("terminal_state") is None
+    assert f"weight_event:WEIGHT-LATEST-{suffix}" in weight["evidence_refs"]
+    assert weight.get("terminal_state") is None
+
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    first = store.run_cycle(findings, now=now, source_revision="test")
+    second_findings = [row for row in _completed_bulk_batch_findings(
+        now + timedelta(minutes=5), connect=connect)
+        if f"pig:{pig_id}" in row["evidence_refs"]]
+    second = store.run_cycle(second_findings, now=now + timedelta(minutes=5),
+                             source_revision="test")
+    assert first["candidates_created"] == 2
+    assert second["candidate_replays"] == 2
+    with connect() as db:
+        rows = db.execute("""select dedupe_key,status,generation from app_private.oom_manager_cases
+            where dedupe_key in (%s,%s) order by dedupe_key""",
+            (condition["dedupe_key"], weight["dedupe_key"])).fetchall()
+        event_count = db.execute("""select count(*) from app_private.oom_manager_case_events
+            where case_id in (select case_id from app_private.oom_manager_cases
+                where dedupe_key in (%s,%s))""",
+            (condition["dedupe_key"], weight["dedupe_key"])).fetchone()[0]
+    assert rows == [(condition["dedupe_key"], "waiting_reassessment", 1),
+                    (weight["dedupe_key"], "waiting_reassessment", 1)]
+    assert event_count == 2
 
 
 @pytest.mark.parametrize("material_kind", ["target-page", "enquiry-policy"])
