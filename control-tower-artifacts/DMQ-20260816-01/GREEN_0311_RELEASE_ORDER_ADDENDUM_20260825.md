@@ -37,7 +37,10 @@ merging or otherwise exposing the repository manifest version. The repair must
 retain immutable tags and exact source/digest evidence; it must not introduce a
 mutable latest tag or a second publication route.
 
-GREEN 0.3.11 is installed but stopped. Starting the installed add-on is a
-separate live-system action. Printing and physical paper remain unproven.
+GREEN 0.3.11 was subsequently installed and started by the owner. Its natural
+same-job claim exposed the separately registered timestamp-contract defect and
+remained pre-attempt. The next automatic action is reviewed API repair, normal
+deployment and natural same-job recovery. Printing and physical paper remain
+unproven.
 
-ACTION REQUIRED NOW: start the installed GREEN 0.3.11 add-on once.
+OWNER ACTION: NONE.

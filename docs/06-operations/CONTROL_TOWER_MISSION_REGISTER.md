@@ -3271,10 +3271,12 @@ This is provider-visible evidence of a release-order defect in existing
 `DMQ-20260816-01`, not a new mission and not a print failure. Future releases
 must make the immutable image and its verified evidence available before the
 repository manifest advertises the version, so Home Assistant cannot expose an
-uninstallable update. Priority is unchanged. GREEN remains stopped pending the
-single exact start action, and no job, replay, lease recovery or print was
-created by this release observation. **DURABLY LOGGED - NOT YET AN OWNER
-OUTCOME. ACTION REQUIRED NOW: start the installed GREEN 0.3.11 add-on once.**
+uninstallable update. Priority is unchanged. GREEN 0.3.11 was subsequently
+installed and started by the owner. Its natural same-job claim then exposed the
+separately registered timestamp-contract defect; no attempt, CUPS job, provider
+identity or owner outcome exists. The next automatic action is the reviewed API
+timestamp repair, normal deployment and natural recovery of the same job.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
 ### 2026-08-25 normal governed migration dispatch addendum
 
