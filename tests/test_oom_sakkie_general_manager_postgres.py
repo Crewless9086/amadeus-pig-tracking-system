@@ -120,6 +120,57 @@ def test_mixed_suppressions_advance_cadence_and_rotate_beyond_claim_limit(monkey
     assert provider_sends == []
 
 
+def test_faulty_specialist_refresh_is_contained_without_starving_later_pig(monkeypatch):
+    now = datetime(2025, 2, 3, 4, 5, tzinfo=timezone.utc)
+    prefix = "specialist-containment:" + now.strftime("%Y%m%d%H%M%S")
+    faulty = candidate("provider:mixer", now, dedupe_key=prefix + ":rootline",
+        specialist="ROOTLINE", urgency="critical",
+        unknowns=["current_provider_mixer_readiness"],
+        summary="Mixer registry evidence needs a bounded retry.")
+    pig = candidate("pig:PIG-2026-3EE5", now + timedelta(seconds=1),
+        dedupe_key=prefix + ":pig", specialist="HERDMASTER", urgency="critical",
+        unknowns=[], summary="Mortality follow-up has no owner question.")
+    by_key = {row["dedupe_key"]: row for row in (faulty, pig)}
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "5721652188")
+    sends = []
+    def refresh(case):
+        if case["dedupe_key"] == faulty["dedupe_key"]:
+            raise ValueError("rootline_mixer_registry_binding_invalid")
+        return by_key[case["dedupe_key"]]
+    result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
+        [faulty, pig], now=now + timedelta(seconds=2), source_revision="test",
+        refresh=refresh, deliver=lambda case: deliver_farm_manager_case(
+            case, now=now, deliver=lambda *_a, **_k: sends.append("unexpected")))
+    assert result["success"] is True and result["status"] == "general_manager_cycle_completed"
+    assert result["cases_claimed"] == 2 and result["exceptions"] == 1
+    statuses = {row["case_id"]: row["outcome_status"] for row in result["case_results"]}
+    with connect() as db:
+        rows = db.execute("""select case_id,dedupe_key,status,next_reassessment_at,
+            assigned_worker_id,lease_until from app_private.oom_manager_cases
+            where dedupe_key like %s order by dedupe_key""", (prefix + ":%",)).fetchall()
+        events = db.execute("""select c.dedupe_key,e.event_type,e.event_payload
+            from app_private.oom_manager_case_events e
+            join app_private.oom_manager_cases c using(case_id)
+            where c.dedupe_key like %s and e.event_type in ('exception','delivery_suppressed')
+            order by c.dedupe_key,e.occurred_at""", (prefix + ":%",)).fetchall()
+    assert len(rows) == 2
+    assert all(row[2] == "waiting_reassessment" for row in rows)
+    assert all(row[3] > now + timedelta(seconds=2) for row in rows)
+    assert all(row[4:] == (None, None) for row in rows)
+    assert set(statuses.values()) == {
+        "manager_specialist_processing_exception_contained",
+        "no_owner_question_delivery_suppressed"}
+    assert any(row[0] == faulty["dedupe_key"] and row[1] == "exception"
+        and row[2]["outcome_status"] == "manager_specialist_processing_exception_contained"
+        and row[2]["failure_kind"] == "ValueError"
+        for row in events)
+    assert sends == []
+    repeat = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
+        [faulty, pig], now=now + timedelta(seconds=3), source_revision="test",
+        refresh=refresh, deliver=lambda case: sends.append("unexpected"))
+    assert repeat["cases_claimed"] == 0 and sends == []
+
+
 def test_exact_pig_terminal_evidence_completes_case_once_without_delivery():
     now = datetime.now(timezone.utc) + timedelta(seconds=30)
     dedupe = "herdmaster:bulk-condition:PG-TERMINAL"

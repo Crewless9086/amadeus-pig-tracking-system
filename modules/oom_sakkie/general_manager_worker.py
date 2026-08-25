@@ -169,12 +169,25 @@ class PostgresManagerCaseStore:
             case_results = []
             for case in claimed:
                 current_case = case
+                specialist_failure = None
                 refresh_eligible = case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
                 if (deliver and refresh_eligible
                         and case.get("last_delivery_digest") != case["evidence_digest"]):
-                    current_case = (self._refresh_claim(case, refresh(case),
-                        _aware(datetime.now(timezone.utc)), cycle_id) if refresh else None)
-                if current_case is None:
+                    try:
+                        current_case = (self._refresh_claim(case, refresh(case),
+                            _aware(datetime.now(timezone.utc)), cycle_id) if refresh else None)
+                    except (ValueError, RuntimeError, OSError) as exc:
+                        if isinstance(exc, ManagerCaseError):
+                            raise
+                        specialist_failure = exc
+                        current_case = case
+                if specialist_failure is not None:
+                    outcome = {"success": False,
+                        "status": "manager_specialist_processing_exception_contained",
+                        "failure_kind": specialist_failure.__class__.__name__,
+                        "delivery_confirmed": False, "telegram_sends": 0,
+                        "next_reassessment_at": (now + CADENCE).isoformat()}
+                elif current_case is None:
                     current_case = case
                     outcome = {"success": False,
                         "status": "manager_delivery_refresh_unavailable",
@@ -185,7 +198,16 @@ class PostgresManagerCaseStore:
                         "delivery_confirmed": False, "telegram_sends": 0}
                 elif (deliver and current_case.get("last_delivery_digest")
                         != current_case["evidence_digest"]):
-                    outcome = dict(deliver(current_case) or {})
+                    try:
+                        outcome = dict(deliver(current_case) or {})
+                    except (ValueError, RuntimeError, OSError) as exc:
+                        if isinstance(exc, ManagerCaseError):
+                            raise
+                        outcome = {"success": False,
+                            "status": "manager_specialist_processing_exception_contained",
+                            "failure_kind": exc.__class__.__name__,
+                            "delivery_confirmed": False, "telegram_sends": 0,
+                            "next_reassessment_at": (now + CADENCE).isoformat()}
                 else:
                     duplicate = (current_case.get("last_delivery_digest")
                                  == current_case["evidence_digest"])
@@ -376,8 +398,13 @@ class PostgresManagerCaseStore:
             failed
             and outcome.get("provider_outcome_ambiguous") is True
             and outcome.get("do_not_retry_provider_effect") is True)
+        specialist_exception_contained = bool(
+            failed
+            and outcome.get("status")
+                == "manager_specialist_processing_exception_contained")
         state = "contained" if provider_ambiguity_contained else (
-            "exception" if failed else "waiting_reassessment")
+            "waiting_reassessment" if specialist_exception_contained else (
+                "exception" if failed else "waiting_reassessment"))
         event_type = "contained" if provider_ambiguity_contained else (
             "exception" if failed else ("delivery_confirmed" if confirmed else "delivery_suppressed"))
         supplied_next = outcome.get("next_reassessment_at")
@@ -436,6 +463,7 @@ class PostgresManagerCaseStore:
                     where case_id=%s""", (state, next_at, now, delivery_digest, confirmed, now, now, case["case_id"]))
                 self._event(cur, case, event_type, now, cycle_id=cycle_id,
                             outcome_status=str(outcome.get("status") or ""),
+                            failure_kind=str(outcome.get("failure_kind") or ""),
                             provider_ambiguity_contained=provider_ambiguity_contained)
                 self._event(cur, case, "reassessment_scheduled", now,
                             next_reassessment_at=next_at.isoformat())
