@@ -10,6 +10,25 @@ from modules.documents.weekly_weight_sheet import (
 )
 
 
+def test_public_job_serializes_canonical_timestamps_as_utc_iso8601():
+    row = {
+        "job_id": "JOB-1",
+        "authorization_expires_at": datetime(2026, 8, 25, 22, 0,
+                                                tzinfo=timezone.utc),
+        "lease_expires_at": datetime(2026, 8, 25, 21, 35,
+                                      tzinfo=timezone(timedelta(hours=2))),
+    }
+    public = green_print_api._public_job(row)
+    assert public["authorization_expires_at"] == "2026-08-25T22:00:00+00:00"
+    assert public["lease_expires_at"] == "2026-08-25T19:35:00+00:00"
+
+
+def test_public_job_rejects_timezone_naive_canonical_timestamp():
+    with pytest.raises(ValueError, match="green_print_timestamp_timezone_required"):
+        green_print_api._public_job(
+            {"job_id": "JOB-1", "lease_expires_at": datetime(2026, 8, 25)})
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("DOCUMENTS_GREEN_WORKER_TOKEN", "exact-secret")

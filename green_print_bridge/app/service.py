@@ -27,7 +27,8 @@ def iso(v): return v.astimezone(timezone.utc).isoformat()
 def canonical_json(v): return json.dumps(v,sort_keys=True,separators=(",",":"),default=str)
 def immutable_envelope(e): return {key:value for key,value in e.items() if key not in MUTABLE_LEASE_ENVELOPE_KEYS}
 def parse_time(v):
-    parsed=datetime.fromisoformat(str(v).replace("Z","+00:00")) if v else None
+    try: parsed=datetime.fromisoformat(str(v).replace("Z","+00:00")) if v else None
+    except (TypeError,ValueError) as exc: raise Hold("canonical_timestamp_format_invalid") from exc
     if parsed is not None and parsed.tzinfo is None: raise Hold("timestamp_timezone_required")
     return parsed
 

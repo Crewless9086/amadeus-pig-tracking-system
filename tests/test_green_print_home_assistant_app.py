@@ -201,7 +201,7 @@ def test_queue_rejects_any_nonexact_endpoint_without_queue(tmp_path,capsys,overr
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.11"
+    assert cfg["version"]=="0.3.12"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -225,7 +225,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.11-verified-release-packet" in workflow
+    assert "green-print-0.3.12-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
@@ -253,14 +253,14 @@ def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.11"
+    assert parsed["env"]["VERSION"]=="0.3.12"
     assert parsed["jobs"]["recover_partial_publication"]["env"]=={"VERSION":"0.3.10"}
     assert "VERSION" not in parsed["jobs"]["verify"].get("env",{})
     assert "VERSION" not in parsed["jobs"]["publish"].get("env",{})
     normal=json.dumps({key:parsed["jobs"][key] for key in ("verify","publish","recover")})
     partial=json.dumps(parsed["jobs"]["recover_partial_publication"])
-    assert "green-print-0.3.10" not in normal and "0.3.11" not in partial
-    assert "green-print-0.3.11" in normal and "green-print-0.3.10" in partial
+    assert "green-print-0.3.10" not in normal and "0.3.12" not in partial
+    assert "green-print-0.3.12" in normal and "green-print-0.3.10" in partial
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -789,6 +789,10 @@ def test_cycle_hold_observability_is_bounded_and_credential_free():
     source=(APP/"app"/"service.py").read_text(encoding="utf-8")
     assert 'print("green_cycle_held reason="+reason,flush=True)' in source
     assert "canonical_bearer_token" not in source[source.index('print("green_cycle_held'):source.index('print("green_cycle_held')+100]
+
+def test_canonical_http_date_is_classified_before_any_attempt():
+    with pytest.raises(S.Hold,match="canonical_timestamp_format_invalid"):
+        S.parse_time("Tue, 25 Aug 2026 21:35:10 GMT")
 
 def test_config_preserves_private_canonical_pin_and_rejects_printer_hostname(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"

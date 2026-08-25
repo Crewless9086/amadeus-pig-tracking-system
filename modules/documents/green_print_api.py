@@ -381,7 +381,14 @@ def _public_job(row):
                "authorization_receipt_id", "authorization_expires_at", "lease_token",
                "lease_expires_at", "attempt_id", "cups_job_id", "provider_id", "state",
                "command_kind", "command_receipt_id", "command_status", "command_outcome")
-    result = {key: row[key] for key in allowed if key in row and row[key] is not None}
+    def public_value(value):
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                raise ValueError("green_print_timestamp_timezone_required")
+            return value.astimezone(timezone.utc).isoformat()
+        return value
+    result = {key: public_value(row[key]) for key in allowed
+              if key in row and row[key] is not None}
     if row.get("options_json") is not None:
         result["options"] = row["options_json"]
     return result
