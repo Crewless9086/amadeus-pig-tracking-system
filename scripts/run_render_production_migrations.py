@@ -120,6 +120,11 @@ AUTHORIZED_PRIVATE_SCHEMA_ACL = (
     ("documents_api_executor", "USAGE", False),
     ("documents_green_worker_executor", "USAGE", False),
 )
+AUTHORIZED_MANAGED_PROTECTED_CLAIM_READ_ROLES = (
+    "pg_read_all_data",
+    "supabase_etl_admin",
+    "supabase_read_only_user",
+)
 
 # The drift gate deliberately inventories complete catalog state for the bounded
 # objects governed by this closed rail.  Adding a migration means adding only its
@@ -829,9 +834,37 @@ def _verify_protected_claim_acl(connection) -> dict:
              )
              select role_name,privilege_type from forbidden order by 1,2"""
     ).fetchall()
-    if rows:
-        raise RuntimeError(f"migration_readback_protected_claim_acl_mismatch:{rows}")
-    return {"unauthorized_privilege_count": 0}
+    managed_read_roles = sorted(
+        {
+            role_name
+            for role_name, privilege_type in rows
+            if role_name in AUTHORIZED_MANAGED_PROTECTED_CLAIM_READ_ROLES
+            and (
+                privilege_type == "SELECT"
+                or privilege_type.startswith("COLUMN:")
+                and privilege_type.endswith(":SELECT")
+            )
+        }
+    )
+    unauthorized = [
+        row
+        for row in rows
+        if not (
+            row[0] in AUTHORIZED_MANAGED_PROTECTED_CLAIM_READ_ROLES
+            and (
+                row[1] == "SELECT"
+                or row[1].startswith("COLUMN:") and row[1].endswith(":SELECT")
+            )
+        )
+    ]
+    if unauthorized:
+        raise RuntimeError(
+            f"migration_readback_protected_claim_acl_mismatch:{unauthorized}"
+        )
+    return {
+        "unauthorized_privilege_count": 0,
+        "managed_read_roles": managed_read_roles,
+    }
 
 
 def _verify_receipt_guard(connection, *, require_anchor: bool = True) -> dict:
