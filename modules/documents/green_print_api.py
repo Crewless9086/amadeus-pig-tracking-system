@@ -189,6 +189,15 @@ def authorize_standing_weekly_print(preview, revision, parsed, *, connect_factor
             or parsed.get("telegram_chat_type") != "private"):
         raise ValueError("authenticated_owner_principal_required")
     provider_id = _bounded_id(parsed.get("provider_message_id"), "provider_message_id")
+    request_text = str(parsed.get("text") or "").strip()
+    request_text_sha256 = str(parsed.get("request_text_sha256") or "").strip()
+    if request_text:
+        calculated_text_sha256 = hashlib.sha256(request_text.encode("utf-8")).hexdigest()
+        if request_text_sha256 and request_text_sha256 != calculated_text_sha256:
+            raise ValueError("standing_print_request_text_digest_mismatch")
+        request_text_sha256 = calculated_text_sha256
+    if not re.fullmatch(r"[0-9a-f]{64}", request_text_sha256):
+        raise ValueError("standing_print_request_text_required")
     payload = {key: value for key, value in preview.items() if key != "preview_digest"}
     digest = canonical_preview_digest(PRINT_ACTION_KIND, payload)
     if preview.get("preview_digest") != digest:
@@ -197,26 +206,37 @@ def authorize_standing_weekly_print(preview, revision, parsed, *, connect_factor
         (principal + ":" + digest).encode()).hexdigest()[:32].upper()
     mission = "DMQ-20260816-01:" + str(preview["document_version"])
     db = (connect_factory or _connect_api)()
+    # Commit the authenticated request receipt before attempting job creation.
+    # A transient commissioning/provider precondition may roll back the job
+    # transaction, but must not erase the owner's work or require message replay.
+    with db.cursor() as cursor:
+        from psycopg.types.json import Jsonb
+        cursor.execute("""insert into app_private.oom_protected_action_claims(
+          callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
+          provider_message_id,preview_digest,evidence_generation,preview_payload,
+          status,expires_at,result_payload)
+          values(%s,%s,%s,%s,%s,%s,%s,%s,%s,'active',%s,%s)
+          on conflict do nothing""",
+          (receipt, PRINT_ACTION_KIND, principal, principal, mission, provider_id,
+           digest, preview["canonical_input_sha256"], Jsonb(payload),
+           preview["authorization_expires_at"], Jsonb({
+             "status":"standing_print_request_held",
+             "request_text_sha256":request_text_sha256,
+             "provider_message_id":provider_id})))
+    db.commit()
     with db:
         with db.cursor() as cursor:
             from psycopg.types.json import Jsonb
-            cursor.execute("""insert into app_private.oom_protected_action_claims(
-              callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
-              provider_message_id,preview_digest,evidence_generation,preview_payload,
-              status,expires_at,result_payload)
-              values(%s,%s,%s,%s,%s,%s,%s,%s,%s,'executing',%s,
-                '{"status":"standing_print_request_claimed"}'::jsonb)
-              on conflict do nothing""",
-              (receipt, PRINT_ACTION_KIND, principal, principal, mission, provider_id,
-               digest, preview["canonical_input_sha256"], Jsonb(payload),
-               preview["authorization_expires_at"]))
             cursor.execute("""update app_private.oom_protected_action_claims
               set status='executing',provider_message_id=%s,
-                  result_payload='{"status":"standing_print_request_claimed"}'::jsonb
+                  result_payload=%s
               where action_kind=%s and mission_id=%s and preview_digest=%s
                 and status='active' and owner_user_id=%s and private_chat_id=%s
-                and preview_payload=%s""", (provider_id, PRINT_ACTION_KIND,
-              mission, digest, principal, principal, Jsonb(payload)))
+                and preview_payload=%s""", (provider_id,
+              Jsonb({"status":"standing_print_request_claimed",
+                "request_text_sha256":request_text_sha256,
+                "provider_message_id":provider_id}), PRINT_ACTION_KIND, mission, digest, principal,
+              principal, Jsonb(payload)))
             cursor.execute("""select callback_token,status,owner_user_id,preview_payload
               from app_private.oom_protected_action_claims
               where action_kind=%s and mission_id=%s and preview_digest=%s for update""",
@@ -254,6 +274,50 @@ def authorize_standing_weekly_print(preview, revision, parsed, *, connect_factor
             if cursor.rowcount != 1:
                 raise ValueError("standing_print_receipt_completion_conflict")
         return result
+
+
+def recover_held_standing_weekly_print(*, connect_factory=None):
+    """Reassess one retained owner request without replaying provider ingress."""
+    from datetime import date
+    from modules.documents.weekly_weight_sheet import (
+        build_weekly_sheet_revision, canonical_preview_digest, PRINT_ACTION_KIND)
+    db = (connect_factory or _connect_api)()
+    with db:
+        with db.cursor() as cursor:
+            cursor.execute("""select c.owner_user_id,c.private_chat_id,c.provider_message_id,
+              c.preview_digest,c.preview_payload,c.result_payload
+              from app_private.oom_protected_action_claims c
+              join app_private.document_print_device_registry r
+                on r.farm_scope_id=c.preview_payload->>'farm_scope_id'
+               and r.green_id=c.preview_payload->>'green_id'
+               and r.printer_id=c.preview_payload->>'printer_id'
+               and r.cups_queue_id=c.preview_payload->>'cups_queue_id'
+               and r.registry_version=c.preview_payload->>'registry_version'
+               and r.active and r.commissioned_at is not null
+              where c.action_kind=%s and c.status='active'
+                and c.expires_at>clock_timestamp()
+                and c.result_payload->>'status'='standing_print_request_held'
+              order by c.created_at asc limit 1""", (PRINT_ACTION_KIND,))
+            row = cursor.fetchone()
+    if row is None:
+        return {"success":True,"status":"documents_green_recovery_idle",
+            "canonical_job_created":False,"printer_calls":0}
+    owner, chat, provider_id, digest, payload, result_payload = row
+    if owner != chat or canonical_preview_digest(PRINT_ACTION_KIND, payload) != digest:
+        raise ValueError("standing_print_recovery_binding_invalid")
+    revision = build_weekly_sheet_revision(authenticated_principal_id=owner,
+        requester="oom_sakkie", sheet_date=date.fromisoformat(payload["sheet_date"]),
+        rows=payload["canonical_rows"], revision=int(payload["document_revision"]),
+        document_id=payload["document_id"])
+    preview = {**payload, "preview_digest":digest}
+    job = authorize_standing_weekly_print(preview, revision, {
+        "telegram_user_id":owner,"telegram_chat_id":chat,
+        "telegram_chat_type":"private","provider_message_id":provider_id,
+        "request_text_sha256":result_payload.get("request_text_sha256")},
+        connect_factory=connect_factory)
+    return {"success":True,"status":"documents_green_recovery_authorized",
+        "job_id":job.get("job_id"),"canonical_job_created":True,
+        "printer_calls":0,"provider_message_replays":0,"automatic_reprint":False}
 
 
 def execute_claimed_physical_page_acceptance(claim, parsed, *, connect_factory=None):

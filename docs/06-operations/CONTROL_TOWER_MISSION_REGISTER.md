@@ -2838,3 +2838,23 @@ bounded OFF recovery, authoritative final OFF and restart recovery. No live
 configuration or actuation occurred. **NO BUSINESS OUTCOME. OWNER ACTION: NONE**
 until reviewed source is deployed and the protected secret/configuration and
 canonical standing-active baseline are proven loaded.
+## 2026-08-25 - DMQ-20260816-01 held print-request recovery repair
+
+GREEN now retains an authenticated private weekly-print request in the existing
+protected-action table before attempting job authorization. The receipt binds
+owner, private chat, provider message, exact request-text SHA-256, preview
+digest, document revision and fixed device registry. A transient commissioning
+precondition rolls back the job but leaves that receipt `active` for the
+authenticated morning scheduler to reassess. Recovery never replays Telegram;
+it advances the same receipt through `executing` to `completed`, and completed
+replay resolves the same deterministic job. One A4 monochrome copy, fixed
+`weekly-a4`, and no automatic reprint remain invariant.
+
+The historical genuine request is Telegram message `4031`, update `549158359`,
+text SHA-256 `cd2252a44d92a29cc7ae94a0885a3a7d3ed0f527276f696f124871f9c45ddb4c`,
+and n8n executions `66641`/`66642`. It may be adopted only after this reviewed
+revision deploys, after readback proves the activated canonical registry and
+zero prior jobs/claims/events for that request. Adoption must use those exact
+provider facts, record an audit receipt, and then allow the scheduler rail to
+continue it; it must not synthesize or replay a Telegram update. No adoption or
+print job was performed by this source change.

@@ -137,10 +137,11 @@ def test_standing_owner_request_creates_executing_digest_receipt_without_card(mo
     monkeypatch.setattr(green_print_api,"create_authorized_job_from_claim",persist)
     result=green_print_api.authorize_standing_weekly_print(preview,revision,{
         "telegram_user_id":"owner-1","telegram_chat_id":"owner-1",
-        "telegram_chat_type":"private","provider_message_id":"MSG-25"},
+        "telegram_chat_type":"private","provider_message_id":"MSG-25",
+        "text":"Print the current weekly weighing sheet."},
         connect_factory=lambda:connection)
     insert_sql=cursor.execute.call_args_list[0].args[0]
-    assert "'executing'" in insert_sql and "preview_card_message_id" not in insert_sql
+    assert "'active'" in insert_sql and "preview_card_message_id" not in insert_sql
     assert captured[0][0]["preview_digest"]==preview["preview_digest"]
     assert captured[0][0]["preview_payload"]==payload
     assert result["job_id"]=="GREEN-JOB-1"
