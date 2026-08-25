@@ -12,6 +12,10 @@ import math
 from numbers import Real
 from typing import Any, Iterable, Mapping
 
+from modules.oom_sakkie.rootline_daily_presentation import (
+    owner_reason, owner_window, owner_zone_decision,
+)
+
 MAX_TELEGRAM_CHARS = 3900
 
 
@@ -53,14 +57,17 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
         subject = str(item.get("subject") or item.get("task_id") or "")
         if subject not in labels:
             continue
-        decision = str(item.get("status") or item.get("recommendation") or "Needs Data")
+        raw_decision = str(item.get("status") or item.get("recommendation") or "Needs Data")
+        decision = (owner_zone_decision(result, item, zone=subject, language=language)
+                    if subject in {"B12345", "C12345"}
+                    else _local_decision(raw_decision, af))
         reason = str(item.get("reason") or "").strip()
         if subject == "C12345":
             reason = reason.replace("B-Camp plan", "camp plan").replace("B Camp plan", "camp plan")
-        rendered_reason = _local_text(reason, af)
-        if af and reason and rendered_reason == reason:
-            rendered_reason = "Spesialisrede (bronwoorde): " + reason
-        decisions.append(f"{_icon(decision)} <b>{labels[subject]}:</b> {_safe(_local_decision(decision, af))}" +
+        rendered_reason = owner_reason(reason, language=language)
+        window = owner_window(item.get("preferred_window"))
+        decisions.append(f"{_icon(decision)} <b>{labels[subject]}:</b> {_safe(decision)}" +
+                         (f" · {_safe(window)}" if window else "") +
                          (f" — {_safe(rendered_reason)}" if reason else ""))
     soc = _value(power.get("battery_soc_pct"), "%", af=af)
     solar = _value(power.get("solar_power_w"), " W", af=af)
@@ -71,10 +78,8 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
     question = _genuine_question(brief.get("family_fact_needed"))
     if af and question:
         question = "Spesialisvraag (bronwoorde): " + question
-    current_decision = str(brief.get("recommend_now") or result.get("overall_status") or "Needs Data")
-    rendered_current = _local_decision(current_decision, af)
-    if af and rendered_current == current_decision:
-        rendered_current = "Bronbesluit (bronwoorde): " + current_decision
+    rendered_current = ("Sien die geverifieerde plaasbesluite hieronder" if af else
+                        "See the verified farm decisions below")
     reserve_floor = policy.get("absolute_floor_soc_pct")
     reserve_floor = reserve_floor if _is_number(reserve_floor) else None
     reserve_line = ((f"Reserweteiken: {reserve}" if af else f"Reserve target: {reserve}") +
@@ -88,8 +93,7 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
           (f"🔋 SOC {soc} · ☀️ {'Sonkrag' if af else 'Solar'} {solar} · {'Las' if af else 'Load'} {load} · {'Netwerk' if af else 'Grid'} {grid}",
            reserve_line,
            (("Reserwerede: " if af else "Reserve reason: ") +
-            _safe(("Spesialisbewys (bronwoorde): " + reserve_reason)
-                  if af and _local_text(reserve_reason, af) == reserve_reason else _local_text(reserve_reason, af))) if reserve_reason else "")),
+            _safe(owner_reason(reserve_reason, language=language))) if reserve_reason else "")),
          (("Plaasbesluite" if af else "Farm decisions"), tuple(decisions) or
           (("Geen ondersteunde fisiese taak is nou nodig nie." if af else "No supported physical task is due now."),))),
         owner_action=question,
