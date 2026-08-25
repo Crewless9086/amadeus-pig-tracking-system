@@ -254,6 +254,13 @@ def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
     assert parsed["env"]["VERSION"]=="0.3.11"
+    assert parsed["jobs"]["recover_partial_publication"]["env"]=={"VERSION":"0.3.10"}
+    assert "VERSION" not in parsed["jobs"]["verify"].get("env",{})
+    assert "VERSION" not in parsed["jobs"]["publish"].get("env",{})
+    normal=json.dumps({key:parsed["jobs"][key] for key in ("verify","publish","recover")})
+    partial=json.dumps(parsed["jobs"]["recover_partial_publication"])
+    assert "green-print-0.3.10" not in normal and "0.3.11" not in partial
+    assert "green-print-0.3.11" in normal and "green-print-0.3.10" in partial
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")

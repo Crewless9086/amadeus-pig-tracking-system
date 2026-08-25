@@ -407,6 +407,10 @@ jobs:
   recover_partial_publication:
     name: Verify exact completed partial publication without evidence effects
     if: github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication
+    env:
+      # This is a quarantined historical 0.3.10 evidence-only lane. It must
+      # never inherit the current normal publication version.
+      VERSION: 0.3.10
     runs-on: ubuntu-24.04
     permissions:
       contents: read
