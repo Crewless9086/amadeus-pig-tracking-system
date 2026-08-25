@@ -201,7 +201,7 @@ def test_queue_rejects_any_nonexact_endpoint_without_queue(tmp_path,capsys,overr
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.10"
+    assert cfg["version"]=="0.3.11"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -732,6 +732,33 @@ def test_contract_and_authorization_fail_closed(tmp_path):
     cfg=config(tmp_path); S.validate(envelope(),cfg,NOW)
     for change in ({"cups_queue_id":"other"},{"options":{**S.FIXED_OPTIONS,"copies":2}},{"authorization_expires_at":NOW.isoformat()},{"retrieval_url":envelope()["retrieval_url"]+"?x=1"}):
         with pytest.raises(S.Hold): S.validate(envelope(**change),cfg,NOW)
+
+def test_lost_ledger_adoption_rotates_mutable_lease_without_identity_conflict(tmp_path):
+    ledger=S.Ledger(str(tmp_path/"lost-ledger.db")); job=envelope()
+    first={**job,"state":"claimed","lease_owner":"old-worker","lease_token":"old-token",
+           "lease_expires_at":(NOW-timedelta(minutes=1)).isoformat(),"updated_at":NOW.isoformat()}
+    ledger.put_claim(first,"old-token",first["lease_expires_at"],NOW-timedelta(minutes=6))
+    recovered={**job,"state":"claimed","lease_owner":"new-worker","lease_token":"new-token",
+               "lease_expires_at":(NOW+timedelta(minutes=5)).isoformat(),
+               "updated_at":(NOW+timedelta(seconds=1)).isoformat()}
+    ledger.put_claim(recovered,"new-token",recovered["lease_expires_at"],NOW)
+    local=ledger.get(job["job_id"])
+    assert local["lease_token"]=="new-token" and json.loads(local["envelope_json"])["lease_owner"]=="new-worker"
+    assert local["envelope_sha256"]==sha256(S.canonical_json(recovered).encode()).hexdigest()
+
+def test_lost_ledger_adoption_rejects_any_immutable_envelope_drift(tmp_path):
+    ledger=S.Ledger(str(tmp_path/"drift.db")); job=envelope()
+    ledger.put_claim(job,"old-token",(NOW-timedelta(seconds=1)).isoformat(),NOW-timedelta(minutes=6))
+    for change in ({"document_version":"WWS-SYNTHETIC.r2.changed"},{"pdf_sha256":"0"*64},
+                   {"registry_version":"other-registry"},{"options":{**S.FIXED_OPTIONS,"copies":2}},
+                   {"authorization_receipt_id":"AUTH-OTHER"}):
+        with pytest.raises(S.Hold,match="job_identity_envelope_conflict"):
+            ledger.put_claim({**job,**change},"new-token",(NOW+timedelta(minutes=5)).isoformat(),NOW)
+
+def test_cycle_hold_observability_is_bounded_and_credential_free():
+    source=(APP/"app"/"service.py").read_text(encoding="utf-8")
+    assert 'print("green_cycle_held reason="+reason,flush=True)' in source
+    assert "canonical_bearer_token" not in source[source.index('print("green_cycle_held'):source.index('print("green_cycle_held')+100]
 
 def test_config_preserves_private_canonical_pin_and_rejects_printer_hostname(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"

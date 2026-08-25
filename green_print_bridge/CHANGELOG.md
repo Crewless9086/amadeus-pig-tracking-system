@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.11
+
+- Preserve immutable job identity while accepting canonical lease rotation during exact lost-ledger adoption.
+- Emit a bounded, credential-free cycle hold reason for operational diagnosis.
+
 ## 0.3.10
 
 - Persist bounded PDF retrieval and digest-validation failures before any

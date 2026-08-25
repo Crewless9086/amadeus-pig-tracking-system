@@ -19,11 +19,15 @@ FIXED_OPTIONS={"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}
 ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"); DIGEST=re.compile(r"^[0-9a-f]{64}$")
 TERMINAL={"provider_completed","physically_confirmed","cancelled","ambiguous"}; MIN_FREE_BYTES=64*1024*1024
 CANCEL_READBACK_ATTEMPTS=3
+IMMUTABLE_ENVELOPE_KEYS=("job_id","farm_scope_id","document_id","document_version","document_revision",
+    "document_type","generator_id","pdf_sha256","retrieval_url","green_id","printer_id","cups_queue_id",
+    "registry_version","authorization_receipt_id","authorization_expires_at","options")
 
 class Hold(RuntimeError): pass
 def utcnow(): return datetime.now(timezone.utc)
 def iso(v): return v.astimezone(timezone.utc).isoformat()
 def canonical_json(v): return json.dumps(v,sort_keys=True,separators=(",",":"),default=str)
+def immutable_envelope(e): return {key:e.get(key) for key in IMMUTABLE_ENVELOPE_KEYS}
 def parse_time(v):
     parsed=datetime.fromisoformat(str(v).replace("Z","+00:00")) if v else None
     if parsed is not None and parsed.tzinfo is None: raise Hold("timestamp_timezone_required")
@@ -44,9 +48,13 @@ class Ledger:
     def put_claim(self,envelope,token,lease_until,now):
         material=canonical_json(envelope); digest=sha256(material.encode()).hexdigest()
         with self.connect() as db:
-            db.execute("begin immediate"); row=db.execute("select envelope_sha256 from jobs where job_id=?",(envelope["job_id"],)).fetchone()
-            if row and row[0]!=digest: raise Hold("job_identity_envelope_conflict")
-            db.execute("insert into jobs values(?,?,?,?,?,?,?,?,?,?) on conflict(job_id) do update set lease_token=excluded.lease_token,lease_until=excluded.lease_until,updated_at=excluded.updated_at",(envelope["job_id"],material,digest,"claimed",token,lease_until,None,None,iso(now),None))
+            db.execute("begin immediate"); row=db.execute("select envelope_json from jobs where job_id=?",(envelope["job_id"],)).fetchone()
+            if row:
+                try: prior=json.loads(row[0])
+                except (TypeError,ValueError,json.JSONDecodeError) as exc: raise Hold("local_ledger_corrupt") from exc
+                if canonical_json(immutable_envelope(prior))!=canonical_json(immutable_envelope(envelope)):
+                    raise Hold("job_identity_envelope_conflict")
+            db.execute("insert into jobs values(?,?,?,?,?,?,?,?,?,?) on conflict(job_id) do update set envelope_json=excluded.envelope_json,envelope_sha256=excluded.envelope_sha256,lease_token=excluded.lease_token,lease_until=excluded.lease_until,updated_at=excluded.updated_at,last_error=null",(envelope["job_id"],material,digest,"claimed",token,lease_until,None,None,iso(now),None))
     def renew(self,job_id,token,lease_until,now):
         with self.connect() as db:
             db.execute("begin immediate")
@@ -347,6 +355,8 @@ def main():
     while True:
         next_poll=utcnow()+timedelta(seconds=int(config["poll_seconds"]))
         try: result=cycle(ledger,client,cups,config,worker_id); write_health(result,worker_id,result,next_poll)
-        except Exception as exc: write_health("held",worker_id,str(exc.args[0] if isinstance(exc,Hold) and exc.args else type(exc).__name__)[:120],next_poll)
+        except Exception as exc:
+            reason=str(exc.args[0] if isinstance(exc,Hold) and exc.args else type(exc).__name__)[:120]
+            print("green_cycle_held reason="+reason,flush=True); write_health("held",worker_id,reason,next_poll)
         time.sleep(max(1,int(config["poll_seconds"])))
 if __name__=="__main__": main()
