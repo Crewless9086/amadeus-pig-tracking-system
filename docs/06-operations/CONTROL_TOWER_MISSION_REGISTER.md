@@ -3119,3 +3119,17 @@ movement, welfare, weight and lifecycle evidence. **OWNER ACTION: NONE.**
   question is concise and actionable.
 - Owner action: none. Do not ask Charl to interpret or close the current backend
   card and do not manufacture a reply to it.
+
+### 2026-08-25 no-question queue rotation addendum
+
+**DURABLY LOGGED — NOT YET AN OWNER OUTCOME.** Natural exact-production cycles
+after the no-question suppression deployment exposed a blocking defect: the
+suppression result did not advance `next_reassessment_at`, so the same first 20
+already-due cases could be reclaimed every five minutes and starve later work.
+This remains within `OMQ-20260813-03`; priority is unchanged. The bounded repair
+returns a fresh five-minute cadence through the existing finish-claim path and
+adds a 21-case/two-cycle rotation regression. PR `#1275` also touches this
+register but not the runtime/test files; both receipts must survive integration.
+Source completion is not the owner outcome. Natural fair rotation, silence for
+no-question work, later genuine-question delivery and terminal-independent
+repetition remain required. **OWNER ACTION: NONE.**
