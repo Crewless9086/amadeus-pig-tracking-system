@@ -2961,3 +2961,36 @@ progress, so owner-visible presentation remains **FAIL / PRESENTATION DEFECT**;
 it does not negate the proven canonical capture. No new mission or priority was
 created, no production write/replay was performed by Control Tower, and
 **OWNER ACTION: NONE**. The accepted batch must not be resubmitted.
+
+## 2026-08-25 - Existing HERDMASTER natural-litter journey Linda intake
+
+The owner's 2026-08-22 Telegram report — `Morning, Linda gave birth to 9
+piglets. 8 alive, 1 mummified, Date 2026-08-22` — is consolidated into the
+existing PR `#1161` / PR `#1167` natural-litter acceptance lineage. No new
+mission or priority was created. Retained provider evidence proves the genuine
+report at `07:20Z` followed by an incorrect clarification at `07:21Z`; exact
+historical provider message IDs were not retained and remain Unknown. The
+message must not be replayed or requested again while the production authority
+gate remains unresolved.
+
+Fresh read-only canonical evidence identifies Linda as `PIG-2026-5AA8`, Active
+and on farm. Her only canonical litter is historical `LIT-2026-MNB9`, dated
+2026-01-30 and Weaned; there is no 2026-08-22 litter, mating row, Linda-bound
+manager case, farrowing protected claim or preview card. The missing litter is
+therefore a genuine end-to-end acceptance failure, not a UI-only visibility
+defect.
+
+Current source contains the reviewed semantic `record_farrowing_litter` route,
+dedicated `herdmaster_record_farrowing_litter` protected claim/runtime and
+exactly-once canonical writer; the focused current-source family passes. PR
+`#1161` merged as `a6b3112fe3a3008af763685e5b1ca31ab814963f` and DB release
+PR `#1167` merged as `61a8d196736a2153e87e12b910445967a9ba6ed6`.
+Production readback nevertheless shows migration
+`202608220001_extend_litter_supersession_for_fact_corrections` applied but not
+`202608220002_allow_herdmaster_farrowing_protected_claims`; the loaded Render
+revision could not be reached from this read-only terminal and remains Unknown.
+The route is source/test-ready but not proven production-ready. Next automatic
+work is to reconcile and apply the already governed missing migration through
+the protected migration rail, verify exact loaded revision and duplicate-safe
+readback, then request one fresh owner report only when the deployed path is
+ready. **NO BUSINESS OUTCOME. OWNER ACTION: NONE; DO NOT RESEND YET.**
