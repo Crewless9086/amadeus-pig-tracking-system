@@ -60,6 +60,11 @@ ALLOWLIST = (
         filename="202608220002_allow_herdmaster_farrowing_protected_claims.sql",
         sha256="762825c57d9b6fd95a0e7197fb0cfb965f31988eabb059abc47fafbd6152ca62",
     ),
+    AllowedMigration(
+        migration_id="202608250001_fence_green_print_lease_device_binding",
+        filename="202608250001_fence_green_print_lease_device_binding.sql",
+        sha256="7607ddc4f7fb3c6cd77d638525854929545026af0e9160eb751633b29f51459b",
+    ),
 )
 
 
@@ -146,8 +151,11 @@ CATALOG_RELATIONS = (
     "public.litter_supersessions",
 )
 CATALOG_FUNCTIONS = (
+    "app_private.green_print_job_device_active",
     "app_private.guard_charitable_sales_evidence",
     "app_private.guard_production_migration_receipts",
+    "app_private.recover_document_print_job_lease",
+    "app_private.renew_document_print_job_lease",
     "public.pig_welfare_case_validate_insert",
     "public.pig_welfare_case_event_validate_insert",
     "public.pig_welfare_case_fact_link_validate_insert",
@@ -155,6 +163,42 @@ CATALOG_FUNCTIONS = (
     "public.pig_welfare_case_block_mutation",
     "public.validate_litter_supersession",
 )
+
+GREEN_DEVICE_FENCE_MIGRATION_ID = (
+    "202608250001_fence_green_print_lease_device_binding"
+)
+GREEN_DEVICE_FUNCTIONS = {
+    "green_print_job_device_active": {
+        "arguments": "p_job app_private.document_print_jobs",
+        "language": "sql", "return_type": "boolean", "volatility": "s",
+        "acl": (),
+    },
+    "renew_document_print_job_lease": {
+        "arguments": (
+            "p_job_id text, p_lease_token text, p_worker_id text, "
+            "p_lease_seconds integer, p_document_version text, p_pdf_sha256 text, "
+            "p_authorization_receipt_id text, p_farm_scope_id text, p_green_id text"
+        ),
+        "language": "plpgsql", "return_type": "app_private.document_print_jobs",
+        "volatility": "v", "acl": (("documents_green_worker_executor", "EXECUTE"),),
+    },
+    "recover_document_print_job_lease": {
+        "arguments": (
+            "p_job_id text, p_worker_id text, p_lease_seconds integer, "
+            "p_document_version text, p_pdf_sha256 text, p_authorization_receipt_id text, "
+            "p_farm_scope_id text, p_green_id text"
+        ),
+        "language": "plpgsql", "return_type": "app_private.document_print_jobs",
+        "volatility": "v", "acl": (("documents_green_worker_executor", "EXECUTE"),),
+    },
+}
+GREEN_DEVICE_PREDECESSOR_FUNCTIONS = {
+    name: GREEN_DEVICE_FUNCTIONS[name]
+    for name in (
+        "renew_document_print_job_lease",
+        "recover_document_print_job_lease",
+    )
+}
 
 
 BOOTSTRAP_SQL = """
@@ -328,11 +372,11 @@ def _verify_private_schema(connection, *, required: bool) -> dict | None:
             "unauthorized_privilege_count": 0}
 
 
-def _catalog_manifest(connection) -> dict:
+def _catalog_manifest(connection, *, relations=None, functions=None) -> dict:
     """Return deterministic catalog state for this rail's bounded object set."""
 
-    relations = list(CATALOG_RELATIONS)
-    functions = list(CATALOG_FUNCTIONS)
+    relations = list(relations if relations is not None else CATALOG_RELATIONS)
+    functions = list(functions if functions is not None else CATALOG_FUNCTIONS)
 
     def rows(sql: str, params=()):
         return [list(row) for row in connection.execute(sql, params).fetchall()]
@@ -576,8 +620,8 @@ def _catalog_manifest(connection) -> dict:
     return manifest
 
 
-def _catalog_snapshot(connection) -> tuple[dict, str]:
-    manifest = _catalog_manifest(connection)
+def _catalog_snapshot(connection, *, relations=None, functions=None) -> tuple[dict, str]:
+    manifest = _catalog_manifest(connection, relations=relations, functions=functions)
     return manifest, _json_sha256(manifest)
 
 
@@ -706,6 +750,99 @@ def _function_readback(connection, expected_filename: str) -> tuple[str, str]:
         raise RuntimeError("migration_readback_validate_litter_supersession_mismatch")
     normalized_definition = str(definition).replace("\r\n", "\n").replace("\r", "\n")
     return normalized_body, normalized_definition
+
+
+def _green_device_function_bodies(
+    filename: str, expected_functions: dict | None = None
+) -> dict[str, str]:
+    path = (REPO_ROOT / "supabase" / "migrations" / filename).resolve()
+    expected_parent = (REPO_ROOT / "supabase" / "migrations").resolve()
+    if path.parent != expected_parent or path.name != filename:
+        raise RuntimeError("migration_green_function_source_path_invalid")
+    sql = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    bodies = {}
+    for name in (expected_functions or GREEN_DEVICE_FUNCTIONS):
+        matches = re.findall(
+            rf"create\s+or\s+replace\s+function\s+app_private\.{name}\s*\(.*?\)"
+            rf"\s*returns\s+.*?\s+language\s+(?:sql|plpgsql).*?\s+as\s+\$\$(.*?)\$\$;",
+            sql,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if len(matches) != 1:
+            raise RuntimeError(f"migration_green_function_source_mismatch:{filename}:{name}")
+        bodies[name] = matches[0].strip()
+    return bodies
+
+
+def _verify_green_device_functions(
+    connection, filename: str, expected_functions: dict | None = None
+) -> dict:
+    expected_functions = expected_functions or GREEN_DEVICE_FUNCTIONS
+    expected_bodies = _green_device_function_bodies(filename, expected_functions)
+    readback = {}
+    for name, expected in expected_functions.items():
+        rows = connection.execute(
+            """select p.prosrc,pg_catalog.pg_get_functiondef(p.oid),
+                      pg_catalog.pg_get_function_identity_arguments(p.oid),l.lanname,
+                      pg_catalog.format_type(p.prorettype,null),p.prosecdef,
+                      p.proleakproof,p.provolatile,p.proparallel,p.proconfig,
+                      pg_catalog.pg_get_userbyid(p.proowner),current_user,p.oid
+                 from pg_catalog.pg_proc p
+                 join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+                 join pg_catalog.pg_language l on l.oid=p.prolang
+                where n.nspname='app_private' and p.proname=%s""",
+            (name,),
+        ).fetchall()
+        if len(rows) != 1:
+            raise RuntimeError(f"migration_green_function_missing_or_ambiguous:{name}")
+        (body, definition, arguments, language, return_type, security_definer,
+         leakproof, volatility, parallel, config, owner, current_role, oid) = rows[0]
+        normalized_body = str(body).replace("\r\n", "\n").replace("\r", "\n").strip()
+        expected_config = ["search_path=pg_catalog, app_private"]
+        if (
+            normalized_body != expected_bodies[name]
+            or arguments != expected["arguments"]
+            or (language, return_type, security_definer, leakproof, volatility, parallel)
+            != (expected["language"], expected["return_type"], True, False,
+                expected["volatility"], "u")
+            or config != expected_config
+            or owner != current_role
+        ):
+            raise RuntimeError(f"migration_green_function_definition_mismatch:{name}")
+        acl = connection.execute(
+            """select coalesce(r.rolname,'PUBLIC'),x.privilege_type
+                 from pg_catalog.pg_proc p
+                 cross join lateral pg_catalog.aclexplode(
+                   coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) x
+                 left join pg_catalog.pg_roles r on r.oid=x.grantee
+                where p.oid=%s and x.grantee<>p.proowner order by 1,2""",
+            (oid,),
+        ).fetchall()
+        if tuple(acl) != expected["acl"]:
+            raise RuntimeError(f"migration_green_function_acl_mismatch:{name}:{acl}")
+        readback[name] = {
+            "body_sha256": hashlib.sha256(normalized_body.encode("utf-8")).hexdigest(),
+            "definition_sha256": hashlib.sha256(
+                str(definition).replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+            ).hexdigest(),
+            "acl": [list(row) for row in acl],
+        }
+    return readback
+
+
+def _verify_green_device_predecessor(connection) -> dict:
+    readback = _verify_green_device_functions(
+        connection,
+        "202608210001_create_green_print_jobs.sql",
+        GREEN_DEVICE_PREDECESSOR_FUNCTIONS,
+    )
+    target_only = connection.execute(
+        "select pg_catalog.to_regprocedure(%s)",
+        ("app_private.green_print_job_device_active(app_private.document_print_jobs)",),
+    ).fetchone()[0]
+    if target_only is not None:
+        raise RuntimeError("migration_green_predecessor_has_target_function")
+    return readback
 
 
 def _mating_id_nullable(connection) -> bool:
@@ -1424,7 +1561,24 @@ def _verify_catalog_checkpoint(connection) -> dict:
             raise RuntimeError("migration_catalog_checkpoint_identity_mismatch")
         validated.append(row)
     latest = validated[0]
-    manifest, digest = _catalog_snapshot(connection)
+    expected_functions = list(CATALOG_FUNCTIONS)
+    if len(latest[1]) < len(current_payload):
+        expected_functions = [name for name in expected_functions
+            if name not in {
+                "app_private.green_print_job_device_active",
+                "app_private.recover_document_print_job_lease",
+                "app_private.renew_document_print_job_lease",
+            }]
+    expected_scope = {
+        "relations": list(CATALOG_RELATIONS),
+        "functions": expected_functions,
+        "schemas": ["app_private"],
+    }
+    if latest[4].get("scope") != expected_scope:
+        raise RuntimeError("migration_catalog_checkpoint_scope_mismatch")
+    manifest, digest = _catalog_snapshot(
+        connection, relations=CATALOG_RELATIONS, functions=expected_functions
+    )
     if digest != latest[3] or manifest != latest[4]:
         raise RuntimeError(
             f"migration_catalog_drift:checkpoint={latest[3]}:current={digest}"
@@ -1512,6 +1666,25 @@ def _verify_migration_precondition(
     *,
     already_applied: bool,
 ) -> str:
+    if item.migration_id == GREEN_DEVICE_FENCE_MIGRATION_ID:
+        target_error = None
+        try:
+            _verify_green_device_functions(connection, item.filename)
+        except RuntimeError as exc:
+            target_error = exc
+        if target_error is None:
+            if not already_applied:
+                raise RuntimeError("migration_precondition_green_target_without_receipt")
+            return "target"
+        try:
+            _verify_green_device_predecessor(connection)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"migration_precondition_green_function_drift:{exc}"
+            ) from exc
+        if already_applied:
+            raise RuntimeError("migration_precondition_green_predecessor_with_receipt")
+        return "predecessor"
     historical_relations = HISTORICAL_CREATED_RELATIONS.get(item.migration_id, ())
     if historical_relations and not already_applied:
         existing = [name for name in historical_relations if connection.execute(
@@ -1575,6 +1748,13 @@ def _verify_migration_precondition(
 
 
 def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
+    if item.migration_id == GREEN_DEVICE_FENCE_MIGRATION_ID:
+        functions = _verify_green_device_functions(connection, item.filename)
+        return {
+            "migration_receipt_required": True,
+            "device_fence_function_count": len(functions),
+            "functions": functions,
+        }
     if item.migration_id == "202608220001_extend_litter_supersession_for_fact_corrections":
         trigger = _verify_litter_validator_trigger(connection)
         constraint, reasons = _constraint_readback(

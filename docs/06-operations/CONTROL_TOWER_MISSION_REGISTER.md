@@ -3192,3 +3192,16 @@ for every successful unconfirmed outcome lacking an explicit future schedule,
 while preserving explicit future schedules and existing confirmed/failed
 behavior. Mixed-status fair rotation remains under review; no owner outcome is
 claimed. **OWNER ACTION: NONE.**
+
+## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.10 migration-rail defect
+
+Governed Render run `32860700895` succeeded at exact source but the closed
+allowlist ended before existing migration `202608250001`; the GREEN lease/device
+fence was therefore not applied. This is an addendum to existing mission
+`DMQ-20260816-01`, not a new mission or print request. The bounded source repair
+adds that unchanged migration to the existing closed rail with exact
+predecessor/target function and ACL readback, catalog inventory and disposable
+PostgreSQL apply/replay/drift/rollback proof. It does not run the migration or
+touch production. Existing job `GREEN-WWS-WWS-20260825.r1.a79d4a6effa6`
+remains the sole pre-attempt job; it must not be recreated or replayed.
+**DURABLY LOGGED - NOT YET AN OUTCOME. OWNER ACTION: NONE.**
