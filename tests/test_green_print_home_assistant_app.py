@@ -26,11 +26,17 @@ def envelope(**changes):
 
 def test_recovered_job_requires_exact_canonical_envelope_and_device_binding(tmp_path):
     cfg=config(tmp_path); job=envelope(); canonical={**job,"state":"claimed","lease_token":"LEASE-1"}
-    S.validate_canonical_readback(job,canonical,cfg,NOW)
+    S.validate_canonical_readback(job,canonical,cfg,NOW,True)
     for change in ({"printer_id":"other-printer"},{"cups_queue_id":"other-queue"},
                    {"registry_version":"revoked-version"},{"options":{**S.FIXED_OPTIONS,"copies":2}},
                    {"retrieval_url":job["retrieval_url"]+"?drift=1"}):
-        with pytest.raises(S.Hold): S.validate_canonical_readback(job,{**canonical,**change},cfg,NOW)
+        with pytest.raises(S.Hold): S.validate_canonical_readback(job,{**canonical,**change},cfg,NOW,True)
+
+def test_expired_authority_blocks_new_attempt_but_not_submitted_reconciliation(tmp_path):
+    cfg=config(tmp_path); expired=envelope(authorization_expires_at=(NOW-timedelta(seconds=1)).isoformat())
+    canonical={**expired,"state":"submitted","lease_token":"LEASE-1","attempt_id":"ATTEMPT-1","cups_job_id":"weekly-a4-42"}
+    with pytest.raises(S.Hold): S.validate_canonical_readback(expired,canonical,cfg,NOW,True)
+    S.validate_canonical_readback(expired,canonical,cfg,NOW,False)
 
 def test_0310_migration_fences_lease_recovery_and_renewal_to_active_device():
     sql=(ROOT/"supabase"/"migrations"/"202608250001_fence_green_print_lease_device_binding.sql").read_text(encoding="utf-8")
@@ -1002,6 +1008,21 @@ def test_pre_attempt_failure_is_durable_then_same_claim_recovers_once(tmp_path,m
     assert canonical.recoveries==1 and calls==2 and cups.submissions==1
     assert recovered["attempt_id"].startswith("ATTEMPT-") and recovered["cups_job_id"]=="weekly-a4-42"
     assert [state for state,_ in canonical.events]==["submitting","submitted"]
+
+@pytest.mark.parametrize("drift",[
+    {"printer_id":"other-printer"},{"cups_queue_id":"other-queue"},
+    {"registry_version":"revoked-version"},{"options":{**S.FIXED_OPTIONS,"copies":2}},
+])
+def test_pre_attempt_canonical_drift_never_reaches_cups(tmp_path,monkeypatch,drift):
+    job=envelope(); ledger=S.Ledger(str(tmp_path/"binding-drift.db"))
+    ledger.put_claim(job,"lease-token-1",(NOW-timedelta(seconds=1)).isoformat(),NOW-timedelta(minutes=6))
+    canonical=Canonical(); canonical.state_value="claimed"; cups=Cups()
+    original=canonical.state
+    canonical.state=lambda job_id,token:{**original(job_id,token),**drift}
+    monkeypatch.setattr(S,"utcnow",lambda:NOW); monkeypatch.setattr(S,"ensure_space",lambda *_a:None)
+    with pytest.raises(S.Hold,match="canonical_recovery_(binding|options)_conflict"):
+        S.cycle(ledger,canonical,cups,config(tmp_path),"worker-2")
+    assert cups.submissions==0 and canonical.events==[]
 
 def test_ambiguous_provider_state_never_enters_pre_attempt_retry(tmp_path,monkeypatch):
     job=envelope(); ledger=S.Ledger(str(tmp_path/"ambiguous-no-reprint.db"))

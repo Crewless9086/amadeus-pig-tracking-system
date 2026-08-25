@@ -20,6 +20,8 @@ from modules.documents.weekly_weight_sheet import (
 URL = os.getenv("GREEN_PRINT_DISPOSABLE_POSTGRES_URL", "").strip()
 MIGRATION = (Path(__file__).parents[1] / "supabase" / "migrations" /
              "202608210001_create_green_print_jobs.sql")
+DEVICE_FENCE_MIGRATION = (MIGRATION.parent /
+             "202608250001_fence_green_print_lease_device_binding.sql")
 PDF_SHA = "a" * 64
 EVENT = "00000000-0000-0000-0000-000000000001"
 
@@ -74,6 +76,7 @@ def db():
                     returns bytea language sql as 'select {}.gen_random_bytes($1)'""").format(
                         sql.Identifier(extension_schema)))
             cursor.execute(MIGRATION.read_text(encoding="utf-8"))
+            cursor.execute(DEVICE_FENCE_MIGRATION.read_text(encoding="utf-8"))
             cursor.execute("""insert into app_private.document_print_device_registry
                 (farm_scope_id,green_id,printer_id,cups_queue_id,registry_version,
                  canonical_api_origin,active,commissioned_at,evidence_sha256)
@@ -412,6 +415,34 @@ def test_transition_and_expired_recovery_reject_wrong_farm_or_green(db):
                 ("JOB-DB-1","recovered-worker",300,"DOC-DB-1.r1",PDF_SHA,"AUTH-DB-1",
                  "farm-amadeus","wrong-green"))
     with db.cursor() as cursor: cursor.execute("rollback to savepoint wrong_recovery_scope")
+
+
+@pytest.mark.parametrize("registry_change", [
+    "update app_private.document_print_device_registry set active=false",
+    "update app_private.document_print_jobs set registry_version='registry-drift'",
+    "update app_private.document_print_jobs set cups_queue_id='queue-drift'",
+])
+def test_lease_recovery_rejects_revoked_or_mismatched_device_binding(db,registry_change):
+    prepare_worker_job(db)
+    with db.cursor() as cursor:
+        cursor.execute("update app_private.document_print_jobs set lease_expires_at=clock_timestamp()-interval '1 second'")
+        cursor.execute(registry_change)
+        cursor.execute("savepoint rejected_device_recovery")
+    with pytest.raises(psycopg.errors.RaiseException,match="lease recovery invalid"):
+        with db.cursor() as cursor:
+            cursor.execute("select app_private.recover_document_print_job_lease(%s,%s,%s,%s,%s,%s,%s,%s)",
+                ("JOB-DB-1","recovered-worker",300,"DOC-DB-1.r1",PDF_SHA,"AUTH-DB-1","farm-amadeus","green"))
+    with db.cursor() as cursor: cursor.execute("rollback to savepoint rejected_device_recovery")
+
+
+def test_lease_recovery_accepts_exact_active_device_binding(db):
+    prepare_worker_job(db)
+    with db.cursor() as cursor:
+        cursor.execute("update app_private.document_print_jobs set lease_expires_at=clock_timestamp()-interval '1 second'")
+        cursor.execute("select app_private.recover_document_print_job_lease(%s,%s,%s,%s,%s,%s,%s,%s)",
+            ("JOB-DB-1","recovered-worker",300,"DOC-DB-1.r1",PDF_SHA,"AUTH-DB-1","farm-amadeus","green"))
+        recovered=cursor.fetchone()[0]
+    assert recovered is not None
 
 
 @pytest.mark.parametrize("state,target", [

@@ -68,7 +68,7 @@ class Ledger:
     def clear(self,job_id):
         with self.connect() as db: db.execute("delete from jobs where job_id=?",(job_id,))
 
-def validate(e,c,now):
+def validate(e,c,now,require_fresh_authorization=True):
     required=("job_id","farm_scope_id","document_id","document_version","document_revision","pdf_sha256","retrieval_url","green_id","printer_id","cups_queue_id","registry_version","authorization_receipt_id","authorization_expires_at")
     if any(e.get(k) in (None,"") for k in required): raise Hold("required_binding_missing")
     if e.get("document_type")!=PILOT_DOCUMENT or e.get("generator_id")!=PILOT_GENERATOR: raise Hold("document_or_generator_not_allowlisted")
@@ -78,11 +78,11 @@ def validate(e,c,now):
     for k in ("farm_scope_id","green_id","printer_id","cups_queue_id","registry_version"):
         if e[k]!=c[k]: raise Hold("registered_identity_pair_mismatch")
     if not DIGEST.fullmatch(str(e["pdf_sha256"]).lower()): raise Hold("invalid_pdf_digest")
-    if parse_time(e["authorization_expires_at"])<=now: raise Hold("authorization_expired")
+    if require_fresh_authorization and parse_time(e["authorization_expires_at"])<=now: raise Hold("authorization_expired")
     origin,url=urlparse(c["canonical_api_origin"]),urlparse(e["retrieval_url"]); expected=f"/api/documents/{e['document_id']}/versions/{e['document_version']}/pdf"
     if (url.scheme,url.hostname,url.port)!=("https",origin.hostname,origin.port) or url.username or url.password or url.query or url.fragment or unquote(url.path)!=expected: raise Hold("unsafe_or_unbound_retrieval_url")
 
-def validate_canonical_readback(local,canonical,config,now):
+def validate_canonical_readback(local,canonical,config,now,require_fresh_authorization):
     """Require a recovered canonical row to remain the exact claimed job."""
     if not isinstance(canonical,dict): raise Hold("canonical_readback_missing")
     immutable=("job_id","farm_scope_id","document_id","document_version","document_revision",
@@ -90,7 +90,7 @@ def validate_canonical_readback(local,canonical,config,now):
         "cups_queue_id","registry_version","authorization_receipt_id","authorization_expires_at")
     if any(canonical.get(key)!=local.get(key) for key in immutable): raise Hold("canonical_recovery_binding_conflict")
     if canonical.get("options")!=local.get("options"): raise Hold("canonical_recovery_options_conflict")
-    validate(canonical,config,now)
+    validate(canonical,config,now,require_fresh_authorization)
 
 def private_addresses(hostname):
     try: values={ipaddress.ip_address(x[4][0]) for x in socket.getaddrinfo(hostname,None,type=socket.SOCK_STREAM)}
@@ -274,8 +274,9 @@ def cycle(ledger,client,cups,config,worker_id):
         canonical=client.state(local["job_id"],token)
         if canonical.get("state") in TERMINAL: ledger.clear(local["job_id"]); return canonical["state"]
         if canonical.get("lease_token")!=token: raise Hold("restore_lease_conflict")
-        validate_canonical_readback(job,canonical,config,now)
-        if local["state"]=="claimed" and not local["attempt_id"] and not local["cups_job_id"]:
+        pre_attempt=local["state"]=="claimed" and not local["attempt_id"] and not local["cups_job_id"]
+        validate_canonical_readback(job,canonical,config,now,pre_attempt)
+        if pre_attempt:
             if canonical.get("state")!="claimed": raise Hold("pre_attempt_recovery_state_conflict")
             return submit_claimed(canonical,token,ledger,client,cups,spool,now)
         if not local["cups_job_id"]:
