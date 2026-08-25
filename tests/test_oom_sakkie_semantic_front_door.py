@@ -60,6 +60,7 @@ def _semantic(domain, intent, **extra):
         "confirmation_facts": extra.get("confirmation_facts"),
         "breeding_actions": extra.get("breeding_actions", []),
         "farrowing_litter": extra.get("farrowing_litter"),
+        "litter_first_treatment": extra.get("litter_first_treatment"),
         "protected_preview_required": extra.get("protected_preview_required", False),
         "recording_prohibited": extra.get("recording_prohibited", False),
         "requested_action": extra.get("requested_action", ""), "language": extra.get("language", "en"),
@@ -90,6 +91,23 @@ def test_farrowing_correction_contract_preserves_target_and_reason():
     result = parse_semantic_response(_response(value))
     assert result.farrowing_litter["correction_of_litter_id"] == "LIT-OLD"
     assert result.farrowing_litter["correction_reason"] == "Corrected birth counts"
+
+
+def test_first_treatment_is_typed_and_mutually_exclusive_from_farrowing():
+    treatment = {"sow_ref": "Molly", "action_date": "2026-08-25",
+        "male_count": 4, "female_count": 4, "total_count": 8,
+        "earmarked": True, "antiparasitic_product_ref": "Iron Plus",
+        "dose": "1 ml", "route": "injection", "batch_lot_number": "LOT-7"}
+    value = _semantic("herd_management", "record_litter_first_treatment",
+        message_kind="command", entity_refs=["Molly"], litter_first_treatment=treatment)
+    result = parse_semantic_response(_response(value))
+    assert result.intent == "record_litter_first_treatment"
+    assert result.litter_first_treatment["total_count"] == 8
+    assert result.farrowing_litter is None
+    value["farrowing_litter"] = {"sow_ref": "Molly", "farrowing_date": "2026-08-25",
+        "total_born": 8, "born_alive": 8, "stillborn": 0, "mummified": 0,
+        "died_after_live_birth": 0}
+    assert parse_semantic_response(_response(value)) is None
 
 
 @pytest.mark.parametrize("text,language", [
