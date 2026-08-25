@@ -380,6 +380,83 @@ def test_missing_refresh_contains_delivery_and_retains_case():
     assert result["case_results"][0]["outcome_status"] == "manager_delivery_refresh_unavailable"
 
 
+def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resend():
+    # Keep this isolated from later-dated shared-module fixtures while still
+    # exercising the real claim ordering and persistence rail.
+    now = datetime(2025, 1, 2, 3, 4, tzinfo=timezone.utc)
+    prefix = "confirmed-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
+    confirmed = candidate("event:confirmed", now, dedupe_key=prefix + ":confirmed",
+        specialist="HERDMASTER", urgency="critical", unknowns=[],
+        summary="Confirmed mortality follow-up.")
+    next_case = candidate("event:next", now, dedupe_key=prefix + ":next",
+        specialist="SAM", urgency="critical", unknowns=[], summary="Next silent case.")
+    sends = []
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    first = store.run_cycle([confirmed], now=now, source_revision="test",
+        refresh=lambda _case: confirmed,
+        deliver=lambda case: (sends.append(case["case_id"]) or {
+            "success": True, "status": "delivery_confirmed", "delivery_confirmed": True}))
+    assert first["deliveries_confirmed"] == 1
+    with connect() as db:
+        before = db.execute("""select evidence_digest,last_delivery_digest,last_delivery_at
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (confirmed["dedupe_key"],)).fetchone()
+        db.execute("""update app_private.oom_manager_cases set next_reassessment_at=%s,status='open'
+            where dedupe_key=%s""", (now + timedelta(seconds=1), confirmed["dedupe_key"]))
+    retry_at = now + timedelta(seconds=2)
+    retry = store.run_cycle([confirmed, next_case], now=retry_at, source_revision="test",
+        refresh=lambda case: None if case["dedupe_key"] == confirmed["dedupe_key"] else next_case,
+        deliver=lambda case: deliver_farm_manager_case(case, now=retry_at,
+            deliver=lambda *_a, **_k: sends.append("unexpected")))
+    assert retry["exceptions"] == 1
+    assert retry["deliveries_confirmed"] == 0
+    assert sends == [first["case_results"][0]["case_id"]]
+    with connect() as db:
+        after = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
+            next_reassessment_at,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (confirmed["dedupe_key"],)).fetchone()
+        event = db.execute("""select event_payload from app_private.oom_manager_case_events
+            where case_id=%s and event_type='reassessment_scheduled'
+            order by occurred_at desc limit 1""",
+            (first["case_results"][0]["case_id"],)).fetchone()
+    assert after[0] == "waiting_reassessment"
+    assert after[1:4] == before
+    assert after[4] > retry_at and after[5:] == (None, None)
+    assert event[0]["confirmed_generation_preserved"] is True
+    assert event[0]["outcome_status"] == "manager_delivery_refresh_unavailable"
+    later = store.run_cycle([confirmed, next_case], now=retry_at + timedelta(seconds=1),
+        source_revision="test", refresh=lambda _case: next_case,
+        deliver=lambda case: deliver_farm_manager_case(case, now=retry_at,
+            deliver=lambda *_a, **_k: sends.append("unexpected")))
+    assert later["cases_claimed"] == 0
+    assert sends == [first["case_results"][0]["case_id"]]
+    later_due_at = retry_at + timedelta(minutes=6)
+    later_due = store.run_cycle([confirmed, next_case], now=later_due_at,
+        source_revision="test",
+        refresh=lambda case: None if case["dedupe_key"] == confirmed["dedupe_key"] else next_case,
+        deliver=lambda case: deliver_farm_manager_case(case, now=later_due_at,
+            deliver=lambda *_a, **_k: sends.append("unexpected")))
+    exact_result = next(row for row in later_due["case_results"]
+        if row["case_id"] == first["case_results"][0]["case_id"])
+    assert exact_result["outcome_status"] == "manager_delivery_refresh_unavailable"
+    with connect() as db:
+        final = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
+            next_reassessment_at,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (confirmed["dedupe_key"],)).fetchone()
+        preservation_events = db.execute("""select count(*)
+            from app_private.oom_manager_case_events where case_id=%s
+              and event_type='reassessment_scheduled'
+              and event_payload->>'confirmed_generation_preserved'='true'""",
+            (first["case_results"][0]["case_id"],)).fetchone()[0]
+    assert final[0] == "waiting_reassessment"
+    assert final[1:4] == before
+    assert final[4] > later_due_at and final[5:] == (None, None)
+    assert preservation_events == 2
+    assert sends == [first["case_results"][0]["case_id"]]
+
+
 def test_delivery_without_refresh_callback_fails_closed():
     now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=30)
     delivered = []

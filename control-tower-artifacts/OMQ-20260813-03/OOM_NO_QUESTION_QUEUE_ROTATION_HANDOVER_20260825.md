@@ -39,3 +39,22 @@
   exact loaded revision, natural queue rotation, case-specific suppression,
   a later genuine-question delivery and terminal-independent repetition.
 - Owner action: none.
+
+## Natural acceptance and confirmed-generation exception
+
+- `9f2ba644d2263c3c8eec5892c6e3b48d96ec9988` was live at
+  `2026-08-25T15:25:04Z`. Its natural `15:25:14.264025Z` cycle advanced all
+  19 successfully suppressed cases to future reassessment with zero confirmed
+  provider deliveries. The next natural cycle at `15:30:32.913131Z`, on
+  descendant live revision `f8f7813510cccf19598073bf5b4d6cd6a1855e25`,
+  processed 19 different suppression-event case IDs, advanced all 19 and again
+  confirmed zero provider deliveries. Queue rotation is owner-outcome proven.
+- One separate existing-lineage defect remains: confirmed generation 11 for
+  `PIG-2026-3EE5` receives `manager_delivery_refresh_unavailable`. The monotonic
+  confirmed-delivery guard correctly prevents a downgrade or resend, but used
+  to return before releasing the lease or advancing reassessment. The case was
+  therefore reclaimed each cycle with its last confirmed delivery unchanged at
+  `12:18:07.967276Z` and its reassessment overdue from `14:25:25.463479Z`.
+- This bounded addendum preserves confirmed truth, clears only the worker lease,
+  schedules the next cadence and records that reassessment. It does not close
+  the mortality case, manufacture evidence or send Telegram.

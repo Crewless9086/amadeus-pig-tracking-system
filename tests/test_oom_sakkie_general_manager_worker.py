@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -278,7 +279,16 @@ def test_failed_reclaimed_worker_cannot_downgrade_confirmed_generation():
     case={"case_id":"OOM-CASE-ONE","generation":1,"evidence_digest":"d"*64,
           "next_reassessment_at":NOW.isoformat()}
     store._finish_claim(case,{"success":False,"status":"ambiguous"},NOW,"cycle-two")
-    assert len(cursor.commands) == 1
+    assert len(cursor.commands) == 3
+    update = next(params for sql,params in cursor.commands
+                  if "status='waiting_reassessment',next_reassessment_at=%s" in sql)
+    assert update[0] == NOW + timedelta(minutes=5)
+    assert update[3] == "OOM-CASE-ONE"
+    event = next(params for sql,params in cursor.commands
+                 if "oom_manager_case_events" in sql)
+    payload = json.loads(event[4])
+    assert payload["outcome_status"] == "ambiguous"
+    assert payload["confirmed_generation_preserved"] is True
 
 
 def test_confirmed_duplicate_releases_claim_and_reschedules_without_delivery():

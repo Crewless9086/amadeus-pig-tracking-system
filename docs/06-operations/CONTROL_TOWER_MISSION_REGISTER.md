@@ -3211,6 +3211,18 @@ while preserving explicit future schedules and existing confirmed/failed
 behavior. Mixed-status fair rotation remains under review; no owner outcome is
 claimed. **OWNER ACTION: NONE.**
 
+Natural production acceptance then proved the queue repair: the
+`15:25:14.264025Z` and `15:30:32.913131Z` cycles processed disjoint sets of 19
+successful suppression-event cases, advanced every one to a future cadence and
+confirmed zero provider deliveries. Fair silent rotation is therefore
+**OWNER OUTCOME PROVEN**. A separate existing-lineage defect remains for
+`PIG-2026-3EE5`: refresh-unavailable on an already confirmed immutable
+generation is correctly prevented from downgrading or resending, but the
+monotonic guard left its lease/timestamp overdue. The bounded addendum releases
+that technical lease and schedules the next cadence while preserving confirmed
+truth. It does not close the mortality case or manufacture farm evidence.
+**OWNER ACTION: NONE.**
+
 ## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.10 migration-rail defect
 
 Governed Render run `32860700895` succeeded at exact source but the closed
