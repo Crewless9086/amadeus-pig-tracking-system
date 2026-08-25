@@ -192,6 +192,13 @@ GREEN_DEVICE_FUNCTIONS = {
         "volatility": "v", "acl": (("documents_green_worker_executor", "EXECUTE"),),
     },
 }
+GREEN_DEVICE_PREDECESSOR_FUNCTIONS = {
+    name: GREEN_DEVICE_FUNCTIONS[name]
+    for name in (
+        "renew_document_print_job_lease",
+        "recover_document_print_job_lease",
+    )
+}
 
 
 BOOTSTRAP_SQL = """
@@ -745,14 +752,16 @@ def _function_readback(connection, expected_filename: str) -> tuple[str, str]:
     return normalized_body, normalized_definition
 
 
-def _green_device_function_bodies(filename: str) -> dict[str, str]:
+def _green_device_function_bodies(
+    filename: str, expected_functions: dict | None = None
+) -> dict[str, str]:
     path = (REPO_ROOT / "supabase" / "migrations" / filename).resolve()
     expected_parent = (REPO_ROOT / "supabase" / "migrations").resolve()
     if path.parent != expected_parent or path.name != filename:
         raise RuntimeError("migration_green_function_source_path_invalid")
     sql = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
     bodies = {}
-    for name in GREEN_DEVICE_FUNCTIONS:
+    for name in (expected_functions or GREEN_DEVICE_FUNCTIONS):
         matches = re.findall(
             rf"create\s+or\s+replace\s+function\s+app_private\.{name}\s*\(.*?\)"
             rf"\s*returns\s+.*?\s+language\s+(?:sql|plpgsql).*?\s+as\s+\$\$(.*?)\$\$;",
@@ -765,10 +774,13 @@ def _green_device_function_bodies(filename: str) -> dict[str, str]:
     return bodies
 
 
-def _verify_green_device_functions(connection, filename: str) -> dict:
-    expected_bodies = _green_device_function_bodies(filename)
+def _verify_green_device_functions(
+    connection, filename: str, expected_functions: dict | None = None
+) -> dict:
+    expected_functions = expected_functions or GREEN_DEVICE_FUNCTIONS
+    expected_bodies = _green_device_function_bodies(filename, expected_functions)
     readback = {}
-    for name, expected in GREEN_DEVICE_FUNCTIONS.items():
+    for name, expected in expected_functions.items():
         rows = connection.execute(
             """select p.prosrc,pg_catalog.pg_get_functiondef(p.oid),
                       pg_catalog.pg_get_function_identity_arguments(p.oid),l.lanname,
@@ -1651,7 +1663,9 @@ def _verify_migration_precondition(
             return "target"
         try:
             _verify_green_device_functions(
-                connection, "202608210001_create_green_print_jobs.sql"
+                connection,
+                "202608210001_create_green_print_jobs.sql",
+                GREEN_DEVICE_PREDECESSOR_FUNCTIONS,
             )
         except RuntimeError as exc:
             raise RuntimeError(
