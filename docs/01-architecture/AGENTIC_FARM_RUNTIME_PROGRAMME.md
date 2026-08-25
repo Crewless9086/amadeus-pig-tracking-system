@@ -276,3 +276,66 @@ outcome-verification evidence proves equivalent Control Tower behavior.
 
 No broad rewrite is authorized. Each slice must leave production safer and more
 understandable than before.
+
+## Active n8n workflow retirement register — 2026-08-25
+
+This is the Phase 0 retirement inventory for the existing programme, not a new
+mission or runtime. A live read-only API sweep found 20 active workflows. The
+classification controls investigation order only; it does not authorize
+deactivation.
+
+| ID | Active workflow | Trigger | Principal downstream dependency | Classification |
+| --- | --- | --- | --- | --- |
+| `s8QaxmqT69Z5mhvE` | `2 - The GateKeeper` | Telegram | authorization lookup, protected callbacks and backend relay | retain thin connector |
+| `TlKy9kUgJJE0msU4` | `2.0B - Oom Sakkie Backend Read-Only Relay` | subworkflow | Oom Sakkie backend gateway | retain thin connector |
+| `MuEyz3dNaJFTSg7t` | `1.4 - Outbound Order Notification` | webhook | Chatwoot message | retain thin connector |
+| `QTWhdK6i8DirCPCZ` | `1.5 - Outbound Document Delivery` | webhook | Chatwoot attachment | retain thin connector |
+| `DoTVVGjcSsCZOyF1` | `1.6 - Daily Order Summary` | daily schedule | backend summary and Telegram | retain thin connector |
+| `jIRPu33UOFCbk2Gx` | `ALERT - Power Backend Delivery` | 15-minute schedule | backend evaluation/reassessment and Telegram | retain thin connector; audit scheduler ownership |
+| `kd5wrJEgBfUNNxnb` | `ALERT - Farm Attention Digest` | schedule | backend summary and Telegram | retain thin connector |
+| `leo7eCFlo2Ilbvk7` | `ALERT - Weather Backend Delivery` | 15-minute schedule | backend evaluation and Telegram | retain but repair current delivery failure |
+| `6UscGE44eTfdLp1A` | `2.0 - OOM SAKKIE - Amadeus Assistant Agent` | subworkflow | embedded OpenAI and Telegram replay | backend-migrated candidate |
+| `UNwNmx0TwtFf8mjo` | `2.3.1 - Build Daily Irrigation Plan` | daily 00:05 schedule | Google Sheets plan/state/log writes | backend-migrated candidate; dual-planner audit first |
+| `L4c34rFmN0kUJvWc` | `2.1 - Amadeus Weather Sub-Agent` | subworkflow | backend weather read | wrapper-retirement candidate |
+| `tKVKoCcxhT7CAydT` | `2.2 - Amadeus Sunsynk Sub-Agent` | subworkflow | backend power read | wrapper-retirement candidate |
+| `oyGH9ynKZ38IQY48` | `2.3.3 - Irrigation Status Tool` | subworkflow | backend irrigation status | wrapper-retirement candidate |
+| `1VNdetSbgP0ffNyH` | `2.4.4 - Order Lookup Tool` | subworkflow | backend order/document reads and protected quote send | unknown; mixed authority |
+| `8b14lAqmyrD0LYZz` | `2.4.5 - Document Send Callback Handler` | subworkflow | backend confirmed send and Telegram callback | retain while GateKeeper references it |
+| `T8LLCAtYDLNRPoRx` | `2.4 - Amadeus Orders Sub Agent` | subworkflow | protected order decisions and Telegram | retain while GateKeeper references it |
+| `YDRs6fwde7MzPYn7` | `1.2 - Amadeus Order Steward` | subworkflow | backend order lifecycle APIs | unknown; broad authority audit required |
+| `4RTDP1ZlBWDdo6Jh` | `1.3 - SAM - Sales Agent - Media Tool` | subworkflow | Chatwoot conversation/media APIs | unknown pending SAM caller proof |
+| `dAz5VSX9VZaXVTN8` | `1.1 - SAM - Sales Agent – Escalation Telegram` | Telegram | Sheets ticket state, Chatwoot and OpenAI | migration candidate; replacement continuity required |
+| `3gUUnTs94kXvq2Xl` | `1. Email Gatekeeper` | caller unknown | inactive/missing SAM Auto subworkflow identity | orphan candidate; caller proof required |
+
+### First bounded retirement audit
+
+`UNwNmx0TwtFf8mjo` remains independently active at 00:05. It reads `ZONES`,
+`RULES`, forecast and the existing-day plan, then may append `DAILY_PLAN`, update
+`STATE` and append `LOG`. Executions `66129`, `66338` and `66561` succeeded on
+22–24 August. This is exact live writer evidence, while deployed ROOTLINE now
+owns canonical planning, claims, device execution and readback. The two paths
+therefore collide in planning/output truth even though this legacy workflow has
+no direct hardware node.
+
+Safe deactivation requires: immutable export/version/digest and last-success
+receipt; read-only preservation of relevant Sheets plan/state/log history;
+proof that no live caller or report consumes those tabs as current authority;
+proof across later natural due cycles that backend ROOTLINE alone produces the
+required plan and lifecycle outputs; confirmation that inactive controller
+workflow `2.3.2` remains inactive; and a bounded rollback/reactivation packet.
+Until those gates pass, deactivation is blocked.
+
+Weather workflow `leo7eCFlo2Ilbvk7` reached the backend evaluation successfully
+but its final `Telegram - Send Weather Alert` node failed HTTP 400 in executions
+`66643`, `66645` and `66647` at 07:45, 08:00 and 08:15 UTC. The backend owns
+weather evaluation; current evidence does not prove another deployed scheduler
+owns this Telegram delivery. It is therefore a thin connector with a delivery
+defect, not a safe retirement candidate. Diagnose the exact non-secret Telegram
+400 response and rendered payload before repair; do not replay old alerts or
+manually send them.
+
+Retirement sequence: preserve evidence and map callers; remove proven orphan
+wrappers; shadow and retire the legacy Sheets irrigation planner; consolidate
+SAM/order mixed-authority workflows one journey at a time; then review thin
+delivery connectors for further reduction. Every retirement requires later
+stable-cycle proof and rollback. No workflow was changed by this inventory.

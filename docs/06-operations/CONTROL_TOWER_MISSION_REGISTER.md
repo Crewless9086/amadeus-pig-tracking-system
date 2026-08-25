@@ -2816,6 +2816,30 @@ message or farm effect. **NO BUSINESS OUTCOME. OWNER ACTION: NONE** until the
 reviewed workflow is deployed and a later genuine provider interaction proves
 the full actor-bound mortality journey and terminal-independent continuity.
 
+## 2026-08-25 - AGENTIC FARM RUNTIME active n8n retirement audit
+
+The existing programme's read-only live inventory found 20 active n8n
+workflows and records their exact identities, triggers, dependencies and
+retirement classification in
+`docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`. This creates no new
+mission or priority.
+
+Legacy workflow `UNwNmx0TwtFf8mjo`, `2.3.1 - Build Daily Irrigation Plan`, is
+still independently scheduled at 00:05 and writes Google Sheets `DAILY_PLAN`,
+`STATE` and `LOG`; executions `66129`, `66338` and `66561` succeeded on the last
+three observed days. Backend ROOTLINE now owns canonical planning and lifecycle
+truth, so this is an active dual-planner/output collision. It cannot be disabled
+until caller/consumer absence, evidence preservation, backend-only natural
+cycles, inactive hardware controller `2.3.2` and rollback are proved.
+
+Weather delivery workflow `leo7eCFlo2Ilbvk7` remains the apparent thin delivery
+owner after backend evaluation. Its last three executions `66643`, `66645` and
+`66647` reached `Telegram - Send Weather Alert` and failed HTTP 400. No alternate
+backend Telegram scheduler is proven, so retirement would lose delivery. Exact
+payload/error diagnosis is required without replaying or manually sending old
+alerts. **NO BUSINESS OUTCOME. OWNER ACTION: NONE.** No workflow, provider,
+schedule, canonical row or farm state was changed by this audit.
+
 ## 2026-08-25 - RMQ-20260813-06 Borehole 1 exact connector and standing authority
 
 Charl supplied the existing Borehole 1 connector binding: eWeLink device
