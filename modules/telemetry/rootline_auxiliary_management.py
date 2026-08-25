@@ -19,7 +19,7 @@ SAST = ZoneInfo("Africa/Johannesburg")
 BATCH_CONTRACT = "rootline_fertilizer_batch.v1"
 TASK_CONTRACT = "rootline_irrigation_auxiliary_task.v1"
 ELIGIBILITY_CONTRACT = "rootline_auxiliary_eligibility.v1"
-MAX_MIX_SECONDS = 300
+MAX_MIX_SECONDS = 1800
 MAX_DAILY_MIX_MINUTES = 30
 INJECTION_SECONDS = 120
 MIN_PREFLOW_SECONDS = 600
@@ -82,7 +82,7 @@ def mixer_configuration_preview():
         "device_id":contract["device_id"],"channel":2,"physical_name":"Kunsmis Meng",
         "before":{"native_inching_enabled":"readback_required",
                   "native_inching_seconds":"readback_required"},
-        "after":{"native_inching_enabled":True,"native_inching_seconds":300,
+        "after":{"native_inching_enabled":True,"native_inching_seconds":1800,
                  "power_restoration_state":"OFF"},
         "required_preconditions":["authoritative_provider_readback",
             "no_conflicting_schedule_timer_scene_or_interlock",
@@ -94,7 +94,7 @@ def build_fertilized_irrigation_sequence(*, zone_id, irrigation_runtime_seconds=
     if zone_id not in {"B12345","C12345"} or not 1800 <= int(irrigation_runtime_seconds) <= 3599:
         raise ValueError("fertilized_irrigation_envelope_invalid")
     stages=[
-        {"stage":"pre_mix","device_type":"fertilizer_mixer","maximum_seconds":300,
+        {"stage":"pre_mix","device_type":"fertilizer_mixer","maximum_seconds":1800,
          "optional_when":"fresh_verified_mix_already_exists"},
         {"stage":"verify_mixer_off","required":True},
         {"stage":"start_irrigation","zone_id":zone_id,"via":"existing_bc_coordinator"},
@@ -120,7 +120,8 @@ def build_fertilized_irrigation_sequence(*, zone_id, irrigation_runtime_seconds=
 
 
 def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
-                          mixing_history_complete_through=None, now=None):
+                          mixing_history_complete_through=None,
+                          active_irrigation_context=None, now=None):
     now=_aware(now or datetime.now(timezone.utc)); power=power if isinstance(power,dict) else {}
     verified_mixing=[row for row in verified_mixing or [] if isinstance(row,dict)
                      and row.get("shutdown_verified") is True]
@@ -136,7 +137,9 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
     low_power=(has_power and float(power["battery_soc_pct"])<50
                and float(power["solar_power_w"])<1200
                and float(power["grid_power_w"])<=0)
-    mixer_status=("Needs Data" if not history_complete else "Completed" if remaining==0
+    batch_ready=batch.get("state")=="batch_reported_prepared"
+    mixer_status=("Await batch" if not batch_ready
+                  else "Needs Data" if not history_complete else "Completed" if remaining==0
                   else "Needs Data" if not has_power
                   else "Run later" if low_power else "Run now")
     mixer={"contract_version":TASK_CONTRACT,"auxiliary_task_id":
@@ -146,16 +149,22 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
             if history_complete else 0,
         "verified_minutes_today":used if history_complete else "Unknown",
         "remaining_verified_minutes_today":remaining if history_complete else "Unknown",
-        "reason":("mixing_history_incomplete" if not history_complete
+        "reason":("fertilizer_batch_not_reported_prepared" if not batch_ready
+                  else "mixing_history_incomplete" if not history_complete
                   else "daily_verified_mixing_cap_reached" if remaining==0
                   else "power_evidence_unavailable" if not has_power
                   else "prefer_solar_or_soc_window" if low_power
                   else "batch_support_mixing"),
         "does_not_block_bc_irrigation":True,"command_authority":False}
+    injection_context=(active_irrigation_context
+        if isinstance(active_irrigation_context,dict) else {})
+    injection_ready=(batch_ready and injection_context.get("fertilizer_needed") is True
+        and _injection_gate(injection_context,now) is None)
     injection={"contract_version":TASK_CONTRACT,"auxiliary_task_id":
         f"ROOTLINE-INJECTION-{today}","collection":"irrigation_auxiliary_tasks",
         "auxiliary_device_id":"FERTILIZER-INJECTION-CH1",
-        "device_type":"fertilizer_injection_valve","decision":"Await eligible irrigation",
+        "device_type":"fertilizer_injection_valve",
+        "decision":"Run now" if injection_ready else "Await eligible irrigation",
         "pulse_seconds":120,"maximum_pulses_per_segment":2,"nutrient_dose":"Unknown",
         "concentration":batch.get("concentration","Unknown"),
         "does_not_block_bc_irrigation":True,"command_authority":False}
@@ -196,8 +205,8 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None):
         reason=_injection_gate(context,now)
         runtime=INJECTION_SECONDS
     else:
-        reason=_mixing_gate(context,now)
-        runtime=MAX_MIX_SECONDS
+        runtime=int(task.get("planned_seconds") or 0)
+        reason=_mixing_gate(context,now,runtime=runtime)
     if reason: return _ineligible(reason)
     generation=str(context.get("plan_generation") or "")
     if not generation: return _ineligible("plan_generation_missing")
@@ -258,7 +267,8 @@ def validate_auxiliary_eligibility(value, *, now=None):
         "segment":value.get("segment_identity"),"device":value.get("auxiliary_device_id"),
         "pulse":value.get("pulse_number",1)})[:24].upper()
     expected_runtime=(INJECTION_SECONDS if value.get("device_type")==
-                      "fertilizer_injection_valve" else MAX_MIX_SECONDS)
+                      "fertilizer_injection_valve" else int(value.get(
+                          "maximum_duration_seconds") or 0))
     if (not contract or value.get("contract_version")!=ELIGIBILITY_CONTRACT
             or value.get("eligibility_sha256")!=digest
             or value.get("eligibility_id")!="ROOTLINE-AUX-ELIGIBILITY-"+digest[:24].upper()
@@ -273,6 +283,8 @@ def validate_auxiliary_eligibility(value, *, now=None):
             or value.get("channel")!=contract.get("channel")
             or value.get("on_event")!=contract.get("on_event")
             or value.get("off_event")!=contract.get("off_event")
+            or not 1 <= expected_runtime <= (INJECTION_SECONDS if value.get(
+                "device_type")=="fertilizer_injection_valve" else MAX_MIX_SECONDS)
             or value.get("maximum_duration_seconds")!=expected_runtime): return None
     decision=_time(value.get("decision_at")); expires=_time(value.get("expires_at"))
     return value if decision and expires and decision<=now<=expires else None
@@ -308,7 +320,8 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
             if prior.get("evidence_id")!=value.get("prior_pulse_shutdown_evidence_id"):
                 return False
         return _injection_gate(current_context,now) is None
-    return _mixing_gate(current_context,now) is None
+    return _mixing_gate(current_context,now,
+        runtime=int(value.get("maximum_duration_seconds") or 0)) is None
 
 
 def _injection_gate(context,now):
@@ -350,10 +363,14 @@ def _injection_gate(context,now):
         return "clean_water_flush_window_incomplete"
     if not context.get("batch_generation") and context.get("explicit_owner_time_programme") is not True:
         return "batch_or_owner_programme_required"
+    if context.get("fertilizer_needed") is not True:
+        return "current_fertilizer_need_unproven"
     return None
 
 
-def _mixing_gate(context,now):
+def _mixing_gate(context,now,*,runtime):
+    if not 1 <= int(runtime or 0) <= MAX_MIX_SECONDS:
+        return "planned_mixing_runtime_invalid"
     if context.get("injection_active") is True: return "injection_must_be_off"
     complete_at=_time(context.get("mixing_history_complete_through"))
     if complete_at is None or not timedelta(0)<=now-complete_at<=timedelta(minutes=5):
@@ -361,7 +378,7 @@ def _mixing_gate(context,now):
     used=float(context.get("verified_mixing_minutes_today") or 0)
     if int(context.get("verified_mixing_sessions_today") or 0)>=6:
         return "daily_mixing_session_cap_reached"
-    if used+MAX_MIX_SECONDS/60>MAX_DAILY_MIX_MINUTES: return "daily_mixing_cap_reached"
+    if used+int(runtime)/60>MAX_DAILY_MIX_MINUTES: return "daily_mixing_cap_reached"
     if context.get("power_suitable") is not True and context.get("mixing_urgent") is not True:
         return "low_power_mix_deferred"
     return None

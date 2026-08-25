@@ -982,7 +982,8 @@ def _rootline_irrigation_completion_summary(zone, execution):
 
 def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
                                          state_store=None, family_delivery=None, schedule_store=None,
-                                         scheduler_now=None, execution_cycle=None):
+                                         scheduler_now=None, execution_cycle=None,
+                                         managed_device_cycle=None):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
@@ -1238,6 +1239,34 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             plan_delivery_confirmed = plan_http_status == 200
             plan_delivery_status = ("delivered_current_irrigation_plan"
                 if plan_delivery_confirmed else "current_irrigation_plan_delivery_unconfirmed")
+            managed_enabled = any(str(source.get(flag) or "").lower() == "true" for flag in (
+                "ROOTLINE_FERTILIZER_MIXING_ENABLED",
+                "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED"))
+            managed_result = {"success": True, "status": "managed_devices_disabled",
+                "blocks_bc": False, "hardware_commands": 0, "writes_farm_data": False}
+            if managed_enabled and not mixer_owns_controller:
+                managed = managed_device_cycle
+                if managed is None:
+                    from modules.telemetry.rootline_execution_runtime import (
+                        run_rootline_managed_device_reassessment,
+                    )
+                    managed = run_rootline_managed_device_reassessment
+                managed_result = dict(managed(environ=source, now=scheduler_now) or {})
+                if managed_result.get("blocks_bc") is True:
+                    return {**plan_result,
+                        "success": plan_delivery_confirmed and managed_result.get("success") is True,
+                        "status": "scheduled_rootline_managed_device_advanced",
+                        "plan_delivery_status": plan_delivery_status,
+                        "plan_reassessment_status": plan_reassessment_status,
+                        "execution_status": str(managed_result.get("status") or ""),
+                        "hardware_commands": int(managed_result.get("hardware_commands") or 0),
+                        "writes_farm_data": bool(managed_result.get("writes_farm_data")),
+                        "fertilizer_commissioning_status": str(mixer_recovery.get("status") or ""),
+                        "daily_presentation_status": str(daily.get("status") or ""),
+                        "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                        "telegram_sends": int(daily.get("telegram_sends") or 0)
+                            + int(mixer_recovery.get("telegram_sends") or 0)
+                            + int(plan_result.get("telegram_sends") or 0)}
             if (str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() == "true"
                     and not mixer_owns_controller):
                 cycle = execution_cycle

@@ -97,7 +97,7 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
     return {**prepared, **claim, "status": "mixer_protected_preview_created",
         "action_kind": ACTION_KIND,
         "answer": ("<b>MIXER CH2 — SUPERVISED TEST</b>\n\n"
-            "Mixer CH2 is ready for one supervised five-minute test. "
+            "Mixer CH2 is ready for one bounded 30-minute run. "
             "Nothing has started yet.\n\nConfirm / Cancel."),
         "reply_markup": {"inline_keyboard": buttons},
         "requires_visible_notification": True, "question_count": 0,
@@ -183,7 +183,7 @@ def _existing_mixer_preview(prior, parsed):
     return {**prior, "success": True, "handled": True,
         "status": "mixer_protected_preview_created",
         "answer": ("<b>MIXER CH2 — SUPERVISED TEST</b>\n\n"
-            "Mixer CH2 is ready for one supervised five-minute test. "
+            "Mixer CH2 is ready for one bounded 30-minute run. "
             "Nothing has started yet.\n\nConfirm / Cancel."),
         "reply_markup": {"inline_keyboard": [[
             {"text": "Confirm", "callback_data": f"{CALLBACK_PREFIX}{token}:confirm"},
@@ -269,7 +269,7 @@ def execute_presence_refresh(claim, *, parsed, gateway_authority, connect_factor
             return _safe("mixer_presence_child_binding_mismatch"), 409
         return {**child, "handled": True, "status": "mixer_protected_preview_created",
             "answer": ("<b>MIXER CH2 — SUPERVISED TEST</b>\n\n"
-                "Mixer CH2 is ready for one supervised five-minute test. "
+                "Mixer CH2 is ready for one bounded 30-minute run. "
                 "Nothing has started yet.\n\nConfirm / Cancel."),
             "reply_markup": {"inline_keyboard": [[
                 {"text": "Confirm", "callback_data":
@@ -342,7 +342,7 @@ def build_preview_payload(artifact, parsed, *, device_loader=None):
         "auxiliary_device_id": artifact.get("auxiliary_device_id"),
         "device_id": artifact.get("device_id"), "channel": artifact.get("channel"),
         "maximum_duration_seconds": artifact.get("maximum_duration_seconds"),
-        "native_auto_off_seconds": 300, "emergency_off_required": True,
+        "native_auto_off_seconds": 1800, "emergency_off_required": True,
         "injection_enabled": False, "no_on_retry": True,
         "provider_off_verification_required": True,
         "physical_observations_required": ["normal_recirculation", "pump_stopped"],
@@ -359,7 +359,7 @@ def build_preview_payload(artifact, parsed, *, device_loader=None):
             or not payload["presence_provider_message_id"]
             or payload["auxiliary_device_id"] != MIXER_ID
             or payload["device_id"] != DEVICE_ID or payload["channel"] != 2
-            or payload["maximum_duration_seconds"] != 300
+            or payload["maximum_duration_seconds"] != 1800
             or payload["device_contract_version"] != DEVICE_CONTRACT
             or payload["injection_enabled"] is not False):
         raise ValueError("mixer_preview_binding_invalid")

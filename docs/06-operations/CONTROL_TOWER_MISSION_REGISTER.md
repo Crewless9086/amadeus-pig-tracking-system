@@ -2951,6 +2951,56 @@ closure, or a useful bounded exception for any listed work. The existing
 `OMQ-20260813-03` acceptance therefore remains **FAIL / NO BUSINESS OUTCOME**;
 priority is unchanged and **OWNER ACTION: NONE**.
 
+## 2026-08-25 - ROOTLINE standing-device activation and silent reassessment repair
+
+This finding is consolidated into existing ROOTLINE `RMQ-20260813-03A`,
+`RMQ-20260813-06` and Oom/ROOTLINE operating-spine lineage; it is not a new
+mission, scheduler, device store or notification rail. Owner-confirmed device
+baselines are Mixer CH2 / `100204d497` / 1,800-second native auto-OFF,
+Injector CH1 / the same controller / 120-second native auto-OFF, and Borehole 1
+/ `1002851416` / four-hour native auto-OFF. Standing authority removes routine
+presence and confirmation, but every real ON still requires an exact current
+need-driven task, canonical `standing_active` device record, enabled production
+flag, provider safety, deterministic claim and bounded final OFF/readback.
+
+Fresh owner evidence also proves an existing-mission Telegram defect: periodic
+no-action water-plan cards exposed `now_after_fresh_execution_revalidation`,
+`durable parent objective` and readiness wording while asking for nothing.
+The bounded repair preserves durable observations and automatic reassessment
+silently. Only a hardware start, verified completion/stop, failure, or one exact
+owner decision may notify; internal reason/window tokens never render. Source
+and tests are not an owner outcome. Completion requires reviewed merge,
+deployment, loaded revision, a genuine need-driven device execution with exact
+provider/canonical readback, and a later terminal-independent silent/no-duplicate
+cycle. **DURABLY LOGGED only after commit. OWNER ACTION: NONE.**
+
+Independent review blocked the first source head because the Injector task was
+not promoted by the planner, Mixer eligibility expanded every task to the full
+native limit, and scheduler-composition recovery coverage was incomplete. The
+same mission repair now promotes Injector only from exact active-zone,
+pre-flow, flush-window, batch and current-need evidence; binds Mixer execution
+to the task's remaining daily `planned_seconds` (including split sessions); and
+tests Injector start plus Mixer/Borehole active recovery to final OFF with no
+ON retry. This remains source/review evidence only. **NO BUSINESS OUTCOME.
+OWNER ACTION: NONE.**
+
+B/C start readback is retained as immutable pre-flow evidence; immediately
+before Injector planning the scheduler refreshes the exact canonical active
+zone's provider output and promotes only an authoritative fresh ON bound to the
+same execution. A stale start receipt cannot masquerade as current flow.
+No readback grants authority for a different zone or execution.
+
+The subsequent exact-head rereview found that injected tests had bypassed the
+production evidence loader. The default canonical loader now reads the existing
+append-only ROOTLINE execution and authenticated operational-intake rails for
+completed fertilizer executions, current-week batch observations, fresh
+explicit fertilizer need, one exact active irrigation execution and fresh
+Borehole interlocks. Missing, stale, malformed or database-unavailable fields
+remain absent and therefore command-inert. End-to-end default-loader tests now
+cross loader, planner and scheduler for both eligible and ineligible outcomes;
+they do not manufacture production evidence. **NO BUSINESS OUTCOME. OWNER
+ACTION: NONE.**
+
 ## 2026-08-25 - HMQ-20260813-05 selective Bulk BCS natural acceptance
 
 Read-only production evidence proves genuine canonical capture in the existing

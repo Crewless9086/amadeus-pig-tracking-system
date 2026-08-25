@@ -237,7 +237,8 @@ The safety objective is not "exactly one OFF request." The required physical out
   fertilizer or water moved, or waive exact device binding, current need,
   interlocks, idempotency, replay protection, deterministic maximum-runtime
   OFF, final verified OFF, or canonical lifecycle readback. Mixer remains bound
-  to the commissioned CH2 300-second fail-stop. Injector remains bound to
+  to the commissioned CH2 1,800-second fail-stop and may be split only by a
+  current governed plan. Injector remains bound to
   exactly one active irrigation zone, at least ten minutes pre-flow, at most
   120 seconds injection and at least ten minutes clean-water flush. Borehole
   may not be commanded until exact device/provider binding and bounded
@@ -247,7 +248,9 @@ The safety objective is not "exactly one OFF request." The required physical out
 
 For B/C autonomy, the owner-approved standing operating envelope is deliberately narrow: proven B and C irrigation valves only; no fertilizer or borehole actuation; no concurrent B/C run; each native fail-stop segment is at most 3,599 seconds; a nominal two-hour objective requires two distinct segments with verified shutdown and a fresh canonical decision before segment two. Source defaults fail closed and require the exact runtime authority flag to be explicitly enabled during a separately assigned production window. This documentation audit did not read production configuration and does not establish the current deployed flag value; it authorizes no enabling. When separately proven enabled, ROOTLINE may execute eligible B/C segments within this envelope without routine per-run permission. A genuine boundary exception, same-zone same-day duplicate, uncertain shutdown, unavailable fail-stop, conflicting evidence or proposed expansion requires containment and owner attention.
 
-Oom Sakkie must maintain one daily Telegram card per day's irrigation plan rather than producing notification clutter. Its lifecycle is:
+Oom Sakkie maintains the daily irrigation plan canonically. A routine plan or
+automatic reassessment with no owner decision and no material execution event
+is silent on Telegram. Its lifecycle is:
 
 - `Planned`: zones, intended window/runtime, reason, evidence cutoff, and next reassessment;
 - `Active`: exact zone(s), verified start time, and expected stop/reassessment;
@@ -257,7 +260,14 @@ Oom Sakkie must maintain one daily Telegram card per day's irrigation plan rathe
 
 The daily card should be edited for low-attention plan changes. Because edits do not reliably notify Charl, each actual hardware start and completion/stop must also produce one new, concise, human-friendly buttonless operational notification following `../07-standards/OOM_SAKKIE_TELEGRAM_MESSAGE_STANDARD.md`. After confirmed completion, a superseded temporary start notification may be deleted for presentation cleanup while the daily card and durable audit evidence remain. A command/provider receipt alone must not mark `Active` or `Completed`; physical or authoritative device outcome evidence is required. Buttons are reserved for genuine protected exceptions or authority decisions.
 
-Unchanged automatic reassessments are silent. ROOTLINE sends no repeated full technical packet merely because a timer fired. One unchanged missing fact is requested once and remains pending until answered, superseded, or no longer material. A new visible message is reserved for a material plan change, hardware start, verified stop/completion, failure, or required intervention. Detailed SOC, load, forecast provenance, scores, internal identities, and evidence gaps remain available on request or for a genuine exception rather than appearing in every routine family notification.
+Unchanged and no-action automatic reassessments are silent. ROOTLINE sends no
+periodic plan card merely because a timer fired. One unchanged missing fact is
+requested once and remains pending until answered, superseded, or no longer
+material. A new visible message is reserved for hardware start, verified
+stop/completion, failure, or one exact owner decision. Internal state/reason
+tokens, SOC, load, forecast provenance, scores, identities and evidence gaps
+remain in canonical evidence or on-request diagnostics, never routine family
+output.
 
 ### Device-class planning model
 
@@ -290,7 +300,12 @@ Confirmed initial classifications:
 
 The historical irrigation-app injection windows are 22:05-22:07, 22:35-22:37, and 23:05-23:07 SAST. They are baseline evidence only, do not prove fertilizer flowed, and must not become fixed ROOTLINE timing.
 
-The fertilizer injection valve and fertilizer mixing valve each still require exact IFTTT ON/OFF functions and physical identity/outcome proof before ROOTLINE control. After that, ROOTLINE chooses injection and mixing times from that day's irrigation plan, fertilizer need, required pre-flow/flush, weather, and energy. If energy is poor, non-urgent mixing may be deferred and recovered at a better window. Timer or relay state alone is not proof of mixing.
+The fertilizer injection and mixing valves use the governed exact provider
+bindings and canonical device baseline. ROOTLINE chooses execution from that
+day's prepared fertilizer batch, irrigation plan, fertilizer need, required
+pre-flow/flush, weather and energy. If energy is poor, non-urgent mixing may be
+deferred and recovered at a better window. Relay state proves the bounded
+electrical execution outcome, not fertilizer movement or concentration.
 
 The fertilizer controller facts currently supplied by the owner are:
 
@@ -311,6 +326,12 @@ Confirmed direction:
 - provisional minimum interval between injection pulses is 10 minutes;
 - injection must end early enough for clean-water irrigation to flush the line;
 - channel 2 currently mixes fertilizer for 30 minutes daily; a future reviewed plan may split this into two 15-minute periods;
+- the planner may split that daily Mixer allowance into bounded sessions, but
+  each execution must use the task's exact remaining `planned_seconds` and may
+  never silently expand a short remainder to the 1,800-second native limit;
+- Injector `Run now` exists only while one exact B/C execution is actively ON,
+  current fertilizer need is explicit, ten-minute clean-water pre-flow is
+  proven, and enough remaining segment time exists for the pulse and flush;
 - the stated injection-duration evidence conflicts: 60 seconds was supplied as a maximum while the owner also indicated longer than 60 seconds may be preferable.
 
 The historical app used two-minute injection windows. ROOTLINE must derive future pulse timing from the reviewed fertilizer structure and physical flow/concentration evidence rather than preserve those clock times blindly.
