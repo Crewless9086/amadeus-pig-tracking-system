@@ -78,8 +78,10 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
     question = _genuine_question(brief.get("family_fact_needed"))
     if af and question:
         question = "Spesialisvraag (bronwoorde): " + question
-    rendered_current = ("Sien die geverifieerde plaasbesluite hieronder" if af else
-                        "See the verified farm decisions below")
+    current_decision = str(brief.get("recommend_now") or result.get("overall_status") or "Needs Data")
+    rendered_current = _local_decision(current_decision, af)
+    if af and rendered_current == current_decision:
+        rendered_current = "Bronbesluit (bronwoorde): " + current_decision
     reserve_floor = policy.get("absolute_floor_soc_pct")
     reserve_floor = reserve_floor if _is_number(reserve_floor) else None
     reserve_line = ((f"Reserweteiken: {reserve}" if af else f"Reserve target: {reserve}") +

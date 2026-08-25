@@ -62,7 +62,7 @@ def test_conversational_rootline_uses_lifecycle_truth_and_hides_backend_tokens()
     assert "<b>C Camp:</b> Not running" in answer
     assert "now_after_fresh_execution_revalidation" not in answer
     assert "Lifecycle:" not in answer and "claim exactly once" not in answer
-    assert "ROOTLINE recommends now: See the verified farm decisions below." in answer
+    assert "ROOTLINE recommends now: Plan ready." in answer
 
 
 def test_conversational_rootline_lifecycle_projection_is_recipient_localized():
@@ -142,7 +142,7 @@ def test_production_shaped_rootline_afrikaans_marks_every_dynamic_source_fragmen
     packet["recommendations"][0]["reason"]="A dynamic specialist reason with 17 mm uncertainty."
     packet["battery_policy"]["governing_reason"]="A dynamic reserve model selected 63 percent."
     answer=compose_rootline(packet,language="af")
-    assert "Sien die geverifieerde plaasbesluite hieronder" in answer
+    assert "Bronbesluit (bronwoorde): Dynamic specialist decision" in answer
     assert "A dynamic specialist reason" in answer
     assert "A dynamic reserve model" in answer
     assert "Spesialisvraag (bronwoorde): Are the east tanks" in answer
