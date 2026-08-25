@@ -2698,6 +2698,20 @@ milestone remains available for audit. Source repair is active; **NO BUSINESS
 OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
 questions, tasks and reminders on a later natural cycle.
 
+## 2026-08-25 - HMQ-20260813-05 genuine selective-BCS acceptance addendum
+
+The first genuine selective-BCS upload completed canonically without replay:
+batch `df4c6197-4b2c-4253-b120-b07ad69305f4` recorded 79 weights and five
+separate body-condition observations for Bonnie, Teena, Waki, Ms Piggy and
+Zigay, with exact draft/pig idempotency and predecessor supersession. Zero
+rows failed or duplicated. The Draft Preview omitted the five selected BCS
+values; this is a same-mission owner-visible projection defect, not missing
+canonical data, and the batch must not be resubmitted. Exact-pig manager-case
+readback returned zero rows. The only downstream projection inspected was
+manually invoked and read-only (`writes_performed=false`), so automatic
+deployed-worker processing, the next follow-up and a later terminal-independent
+cycle remain unproven. Lifecycle stays `WORKING`; **OWNER ACTION: NONE**.
+
 ## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.8 device commissioning receipt
 
 The existing GREEN/DOCUMENTS mission advanced through release and real-device
