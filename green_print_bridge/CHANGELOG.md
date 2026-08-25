@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.10
+
+- Persist bounded PDF retrieval and digest-validation failures before any
+  provider attempt, then recover only the same fenced canonical claim.
+- Revalidate immutable job and device bindings before one later attempt, while
+  preserving the existing ambiguity barrier against automatic reprints.
+
 ## 0.3.9
 
 - Normalize an idle protected-command envelope so the worker continues to the
