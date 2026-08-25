@@ -1,4 +1,4 @@
-﻿name: Green Print immutable image
+name: Green Print immutable image
 
 on:
   pull_request:
@@ -16,12 +16,12 @@ on:
         required: true
         type: string
       publish:
-        description: Publish the immutable 0.3.9 package artifact
+        description: Publish the immutable 0.3.10 package artifact
         required: true
         default: false
         type: boolean
       recover_existing:
-        description: Verify an already-published immutable 0.3.9 digest without publishing
+        description: Verify an already-published immutable 0.3.10 digest without publishing
         required: true
         default: false
         type: boolean
@@ -30,7 +30,7 @@ on:
         required: false
         type: string
       complete_partial_publication:
-        description: Verify already-completed 0.3.9 recovery evidence and emit its packet without any evidence mutation
+        description: Verify already-completed 0.3.10 recovery evidence and emit its packet without any evidence mutation
         required: true
         default: false
         type: boolean
@@ -65,7 +65,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/crewless9086/amadeus-green-print-bridge
-  VERSION: 0.3.9
+  VERSION: 0.3.10
 
 jobs:
   verify:
@@ -139,7 +139,7 @@ jobs:
           test "${GITHUB_SHA}" = "${EXPECTED_SOURCE_COMMIT}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SOURCE_COMMIT}"
           test "${GITHUB_REF}" = "refs/heads/main"
-          grep -Fqx 'version: "0.3.9"' green_print_bridge/config.yaml
+          grep -Fqx 'version: "0.3.10"' green_print_bridge/config.yaml
           grep -Fqx 'image: ghcr.io/crewless9086/amadeus-green-print-bridge' green_print_bridge/config.yaml
       - name: Authenticate only for the bounded package publication
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
@@ -223,8 +223,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "${{ steps.syft.outputs.cmd }}" scan --platform linux/arm64 "registry:${IMAGE}@${{ steps.pushed.outputs.resolved_digest }}" --output "spdx-json=green-print-0.3.9.spdx.json"
-          jq -e '.spdxVersion == "SPDX-2.3"' green-print-0.3.9.spdx.json >/dev/null
+          "${{ steps.syft.outputs.cmd }}" scan --platform linux/arm64 "registry:${IMAGE}@${{ steps.pushed.outputs.resolved_digest }}" --output "spdx-json=green-print-0.3.10.spdx.json"
+          jq -e '.spdxVersion == "SPDX-2.3"' green-print-0.3.10.spdx.json >/dev/null
       - name: Attest build provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
@@ -236,7 +236,7 @@ jobs:
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.pushed.outputs.resolved_digest }}
-          sbom-path: green-print-0.3.9.spdx.json
+          sbom-path: green-print-0.3.10.spdx.json
           push-to-registry: true
       - name: Verify signature and digest-bound attestations
         id: verify
@@ -257,7 +257,7 @@ jobs:
           echo "cosign_sha256=$(sha256sum cosign-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "provenance_sha256=$(sha256sum provenance-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "sbom_attestation_sha256=$(sha256sum sbom-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
-          echo "sbom_sha256=$(sha256sum green-print-0.3.9.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_sha256=$(sha256sum green-print-0.3.10.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
       - name: Emit digest-bound non-secret release receipt
         shell: bash
         run: |
@@ -279,7 +279,7 @@ jobs:
       - name: Preserve non-secret verified release packet
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: green-print-0.3.9-verified-release-packet
+          name: green-print-0.3.10-verified-release-packet
           if-no-files-found: error
           retention-days: 90
           path: |
@@ -289,7 +289,7 @@ jobs:
             cosign-verification.json
             provenance-verification.json
             sbom-attestation-verification.json
-            green-print-0.3.9.spdx.json
+            green-print-0.3.10.spdx.json
 
   recover:
     name: Recover verification for existing immutable aarch64 package
@@ -393,7 +393,7 @@ jobs:
       - name: Preserve recovered non-secret verified release packet
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: green-print-0.3.9-recovered-verified-release-packet
+          name: green-print-0.3.10-recovered-verified-release-packet
           if-no-files-found: error
           retention-days: 90
           path: |
@@ -579,8 +579,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "${{ steps.recovery_syft.outputs.cmd }}" scan --platform linux/arm64 "registry:${IMAGE}@${{ inputs.expected_manifest_digest }}" --output "spdx-json=green-print-0.3.9.spdx.json"
-          jq -e '.spdxVersion == "SPDX-2.3"' green-print-0.3.9.spdx.json >/dev/null
+          "${{ steps.recovery_syft.outputs.cmd }}" scan --platform linux/arm64 "registry:${IMAGE}@${{ inputs.expected_manifest_digest }}" --output "spdx-json=green-print-0.3.10.spdx.json"
+          jq -e '.spdxVersion == "SPDX-2.3"' green-print-0.3.10.spdx.json >/dev/null
       - name: Inspect attestations and refuse foreign, duplicate or malformed state
         id: partial_attestations
         shell: bash
@@ -598,7 +598,7 @@ jobs:
           identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main"
           python scripts/green_print_attestation_inventory.py fetch "${GITHUB_REPOSITORY}" "${EXPECTED_DIGEST}" > existing-attestations.json
           python scripts/green_print_attestation_inventory.py canonical existing-attestations.json > canonical-existing-attestations.json
-          python scripts/green_print_attestation_inventory.py inspect canonical-existing-attestations.json "${IMAGE}" "${EXPECTED_DIGEST}" green-print-0.3.9.spdx.json "${EXPECTED_SOURCE_COMMIT}" "${{ inputs.expected_manifest_digest }}" "${{ inputs.original_publication_run_id }}" > attestation-inventory.env
+          python scripts/green_print_attestation_inventory.py inspect canonical-existing-attestations.json "${IMAGE}" "${EXPECTED_DIGEST}" green-print-0.3.10.spdx.json "${EXPECTED_SOURCE_COMMIT}" "${{ inputs.expected_manifest_digest }}" "${{ inputs.original_publication_run_id }}" > attestation-inventory.env
           source attestation-inventory.env
           test "${foreign_count}" = "0"
           test "${recovery_count}" = "1"
@@ -624,7 +624,7 @@ jobs:
             --arg index_digest "${{ inputs.expected_digest }}" \
             --arg manifest_digest "${{ inputs.expected_manifest_digest }}" \
             --arg original_run_id "${{ inputs.original_publication_run_id }}" \
-            '{recoveryKind:"post_build_release_evidence_completion",claimsBuildProvenance:false,originalPublication:{workflow:".github/workflows/green-print-image.yml",runId:$original_run_id,sourceCommit:$source_commit,verifyJob:"success",publishJob:"failed_after_tag_creation"},artifact:{indexDigest:$index_digest,soleLinuxArm64ManifestDigest:$manifest_digest},permittedEffects:["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],prohibitedEffects:["image_build","image_push","tag_create","retag","delete","install","print"]}' > green-print-0.3.9-recovery-predicate.json
+            '{recoveryKind:"post_build_release_evidence_completion",claimsBuildProvenance:false,originalPublication:{workflow:".github/workflows/green-print-image.yml",runId:$original_run_id,sourceCommit:$source_commit,verifyJob:"success",publishJob:"failed_after_tag_creation"},artifact:{indexDigest:$index_digest,soleLinuxArm64ManifestDigest:$manifest_digest},permittedEffects:["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],prohibitedEffects:["image_build","image_push","tag_create","retag","delete","install","print"]}' > green-print-0.3.10-recovery-predicate.json
       - name: Verify completed signature, attestations and immutable tag
         id: partial_verify
         shell: bash
@@ -681,7 +681,7 @@ jobs:
           python scripts/green_print_attestation_inventory.py fetch "${GITHUB_REPOSITORY}" "${EXPECTED_DIGEST}" > final-attestations.json
           python scripts/green_print_attestation_inventory.py canonical final-attestations.json > canonical-final-attestations.json
           mark_stage final_attestation_inventory
-          python scripts/green_print_attestation_inventory.py inspect canonical-final-attestations.json "${IMAGE}" "${EXPECTED_DIGEST}" green-print-0.3.9.spdx.json "${EXPECTED_SOURCE_COMMIT}" "${{ inputs.expected_manifest_digest }}" "${{ inputs.original_publication_run_id }}" > final-attestation-inventory.env
+          python scripts/green_print_attestation_inventory.py inspect canonical-final-attestations.json "${IMAGE}" "${EXPECTED_DIGEST}" green-print-0.3.10.spdx.json "${EXPECTED_SOURCE_COMMIT}" "${{ inputs.expected_manifest_digest }}" "${{ inputs.original_publication_run_id }}" > final-attestation-inventory.env
           source final-attestation-inventory.env
           test "${foreign_count}" = "0"
           test "${recovery_count}" = "1"
@@ -703,7 +703,7 @@ jobs:
           echo "cosign_deviation_sha256=$(sha256sum recovered-cosign-deviation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "recovery_attestation_sha256=$(sha256sum recovered-recovery-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "sbom_attestation_sha256=$(sha256sum recovered-sbom-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
-          echo "sbom_sha256=$(sha256sum green-print-0.3.9.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_sha256=$(sha256sum green-print-0.3.10.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
       - name: Emit partial-publication recovery receipt
         shell: bash
         run: |
@@ -725,7 +725,7 @@ jobs:
             "authority_deviation=run_32627304614_unexpected_signature_effect_contained_no_reconciliation" \
             "quarantined_packet_run_id=32627304614" \
             "quarantined_packet_artifact_id=9490047287" \
-            "quarantined_packet_name=green-print-0.3.9-partial-publication-recovery-packet" \
+            "quarantined_packet_name=green-print-0.3.10-partial-publication-recovery-packet" \
             "quarantined_packet_archive_sha256=1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548" \
             "quarantined_packet_size_bytes=1515741" \
             "quarantined_packet_expires=2026-11-21T08:05:08Z" \
@@ -749,7 +749,7 @@ jobs:
       - name: Preserve partial-publication verified release packet
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: green-print-0.3.9-partial-publication-recovery-packet
+          name: green-print-0.3.10-partial-publication-recovery-packet
           if-no-files-found: error
           retention-days: 90
           path: |
@@ -758,6 +758,6 @@ jobs:
             recovered-image-config.json
             recovered-cosign-verification.json
             recovered-recovery-attestation-verification.json
-            green-print-0.3.9-recovery-predicate.json
+            green-print-0.3.10-recovery-predicate.json
             recovered-sbom-attestation-verification.json
-            green-print-0.3.9.spdx.json
+            green-print-0.3.10.spdx.json

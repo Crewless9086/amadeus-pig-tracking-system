@@ -1,4 +1,4 @@
-﻿from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timedelta,timezone
 from hashlib import sha256
 import base64,importlib.util,json,sqlite3,subprocess,sys
@@ -23,6 +23,29 @@ def config(tmp_path):
 def envelope(**changes):
     value={"job_id":"JOB-SYNTHETIC-1","farm_scope_id":"farm-amadeus","document_id":"WWS-SYNTHETIC","document_version":"WWS-SYNTHETIC.r1.abcdef123456","document_revision":1,"document_type":S.PILOT_DOCUMENT,"generator_id":S.PILOT_GENERATOR,"pdf_sha256":sha256(PDF).hexdigest(),"retrieval_url":"https://documents.invalid/api/documents/WWS-SYNTHETIC/versions/WWS-SYNTHETIC.r1.abcdef123456/pdf","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","authorization_receipt_id":"AUTH-SYNTHETIC-1","authorization_expires_at":(NOW+timedelta(hours=1)).isoformat(),"options":dict(S.FIXED_OPTIONS)}
     value.update(changes); return value
+
+def test_recovered_job_requires_exact_canonical_envelope_and_device_binding(tmp_path):
+    cfg=config(tmp_path); job=envelope(); canonical={**job,"state":"claimed","lease_token":"LEASE-1"}
+    S.validate_canonical_readback(job,canonical,cfg,NOW,True)
+    for change in ({"printer_id":"other-printer"},{"cups_queue_id":"other-queue"},
+                   {"registry_version":"revoked-version"},{"options":{**S.FIXED_OPTIONS,"copies":2}},
+                   {"retrieval_url":job["retrieval_url"]+"?drift=1"}):
+        with pytest.raises(S.Hold): S.validate_canonical_readback(job,{**canonical,**change},cfg,NOW,True)
+
+def test_expired_authority_blocks_new_attempt_but_not_submitted_reconciliation(tmp_path):
+    cfg=config(tmp_path); expired=envelope(authorization_expires_at=(NOW-timedelta(seconds=1)).isoformat())
+    canonical={**expired,"state":"submitted","lease_token":"LEASE-1","attempt_id":"ATTEMPT-1","cups_job_id":"weekly-a4-42"}
+    with pytest.raises(S.Hold): S.validate_canonical_readback(expired,canonical,cfg,NOW,True)
+    S.validate_canonical_readback(expired,canonical,cfg,NOW,False)
+
+def test_0310_migration_fences_lease_recovery_and_renewal_to_active_device():
+    sql=(ROOT/"supabase"/"migrations"/"202608250001_fence_green_print_lease_device_binding.sql").read_text(encoding="utf-8")
+    assert "green_print_job_device_active" in sql
+    assert sql.count("not app_private.green_print_job_device_active(v_job)")==2
+    assert sql.count("v_job.attempt_id is null and v_job.cups_job_id is null")==2
+    for binding in ("farm_scope_id","green_id","printer_id","cups_queue_id","registry_version"):
+        assert f"r.{binding}=p_job.{binding}" in sql
+    assert "and r.active" in sql
 
 def test_package_is_bounded_and_privilege_split():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); run=(APP/"rootfs/run.sh").read_text(encoding="utf-8")
@@ -178,7 +201,7 @@ def test_queue_rejects_any_nonexact_endpoint_without_queue(tmp_path,capsys,overr
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.9"
+    assert cfg["version"]=="0.3.10"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -202,7 +225,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.9-verified-release-packet" in workflow
+    assert "green-print-0.3.10-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
@@ -230,7 +253,7 @@ def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.9"
+    assert parsed["env"]["VERSION"]=="0.3.10"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -352,8 +375,8 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert "canonical final-attestations.json" in final_verify
     assert "cmp -s canonical-existing-attestations.json canonical-final-attestations.json" in final_verify
     assert "attestation_inventory_post_sha256" in final_verify
-    assert "final-green-print-0.3.9.spdx.json" not in final_verify
-    assert final_verify.count("green-print-0.3.9.spdx.json")==2
+    assert "final-green-print-0.3.10.spdx.json" not in final_verify
+    assert final_verify.count("green-print-0.3.10.spdx.json")==2
     assert "cosign triangulate" not in final_verify and "signature_ref" not in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
@@ -374,7 +397,7 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     assert "attestation_inventory_post_sha256" in serialized
     for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
         assert forbidden not in serialized
-    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.9-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
+    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.10-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
         assert exact in serialized
 
 def test_036_final_readonly_verification_has_bounded_retry_and_attributable_failures():
@@ -986,6 +1009,21 @@ def test_pre_attempt_failure_is_durable_then_same_claim_recovers_once(tmp_path,m
     assert canonical.recoveries==1 and calls==2 and cups.submissions==1
     assert recovered["attempt_id"].startswith("ATTEMPT-") and recovered["cups_job_id"]=="weekly-a4-42"
     assert [state for state,_ in canonical.events]==["submitting","submitted"]
+
+@pytest.mark.parametrize("drift",[
+    {"printer_id":"other-printer"},{"cups_queue_id":"other-queue"},
+    {"registry_version":"revoked-version"},{"options":{**S.FIXED_OPTIONS,"copies":2}},
+])
+def test_pre_attempt_canonical_drift_never_reaches_cups(tmp_path,monkeypatch,drift):
+    job=envelope(); ledger=S.Ledger(str(tmp_path/"binding-drift.db"))
+    ledger.put_claim(job,"lease-token-1",(NOW-timedelta(seconds=1)).isoformat(),NOW-timedelta(minutes=6))
+    canonical=Canonical(); canonical.state_value="claimed"; cups=Cups()
+    original=canonical.state
+    canonical.state=lambda job_id,token:{**original(job_id,token),**drift}
+    monkeypatch.setattr(S,"utcnow",lambda:NOW); monkeypatch.setattr(S,"ensure_space",lambda *_a:None)
+    with pytest.raises(S.Hold,match="canonical_recovery_(binding|options)_conflict"):
+        S.cycle(ledger,canonical,cups,config(tmp_path),"worker-2")
+    assert cups.submissions==0 and canonical.events==[]
 
 def test_ambiguous_provider_state_never_enters_pre_attempt_retry(tmp_path,monkeypatch):
     job=envelope(); ledger=S.Ledger(str(tmp_path/"ambiguous-no-reprint.db"))
