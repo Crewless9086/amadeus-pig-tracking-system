@@ -2925,3 +2925,39 @@ end-to-end. It does not prove specialist dispatch, canonical advancement,
 closure, or a useful bounded exception for any listed work. The existing
 `OMQ-20260813-03` acceptance therefore remains **FAIL / NO BUSINESS OUTCOME**;
 priority is unchanged and **OWNER ACTION: NONE**.
+
+## 2026-08-25 - HMQ-20260813-05 selective Bulk BCS natural acceptance
+
+Read-only production evidence proves genuine canonical capture in the existing
+`HMQ-20260813-05` lane, supported by `HMQ-20260813-00`. Batch
+`df4c6197-4b2c-4253-b120-b07ad69305f4` was created at
+`09:59:29.645Z` and completed at `10:03:00.828Z`: 79 rows were visible and
+actionable, 79 weights and 7 moves succeeded, and the batch recorded 79 success,
+zero failed and zero duplicates. Draft
+`BULK-DRAFT-1787650403572-8e45ea` produced five separate canonical
+`pig_observation_events`, each bound to the bulk-BCS draft-plus-pig idempotency
+and append-only supersession contract:
+
+- Bonnie / `PIG-2026-5376`: BCS `3.5`, event
+  `HERD-OBS-5F9A52DC43BA509393A2A6A189231CDC`;
+- Teena / `PIG-2026-74FF`: BCS `2`, event
+  `HERD-OBS-22388C055CF15234B27AAEB757726210`;
+- Waki / `PIG-2026-7531`: BCS `2`, event
+  `HERD-OBS-C59CE145C1F257D5B996BBFD69D77A10`;
+- Ms Piggy / `PIG-2026-92F3`: BCS `3.5`, event
+  `HERD-OBS-E0CED0A5325E5D1F8D30854BE55ACDBD`; and
+- Zigay / `PIG-2026-EEAC`: BCS `3`, event
+  `HERD-OBS-BB5068789C07574EBBF0B571C5144CF3`.
+
+A manually invoked read-only heat-free management projection consumed these
+observations with `writes_performed=false` and produced zero heat-required
+tasks. It created or updated zero manager cases bound to the five exact pigs.
+That is diagnostic projection evidence only: an automatic deployed cycle, its
+next follow-up and later independent continuity proof remain unproven.
+
+This is a genuine canonical selective-BCS acceptance outcome, not a replay or
+manual correction. The owner nevertheless saw no BCS in Draft Preview Upload
+progress, so owner-visible presentation remains **FAIL / PRESENTATION DEFECT**;
+it does not negate the proven canonical capture. No new mission or priority was
+created, no production write/replay was performed by Control Tower, and
+**OWNER ACTION: NONE**. The accepted batch must not be resubmitted.
