@@ -3133,3 +3133,12 @@ register but not the runtime/test files; both receipts must survive integration.
 Source completion is not the owner outcome. Natural fair rotation, silence for
 no-question work, later genuine-question delivery and terminal-independent
 repetition remain required. **OWNER ACTION: NONE.**
+
+Natural acceptance at exact revision `e983221e` narrowed the defect further:
+the first cycle's 20 suppressed cases comprised 19 older non-farm suppressions
+and one duplicate suppression, which also retained overdue timestamps. The
+canonical follow-up therefore enforces cadence advancement in `_finish_claim`
+for every successful unconfirmed outcome lacking an explicit future schedule,
+while preserving explicit future schedules and existing confirmed/failed
+behavior. Mixed-status fair rotation remains under review; no owner outcome is
+claimed. **OWNER ACTION: NONE.**

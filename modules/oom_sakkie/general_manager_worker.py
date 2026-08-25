@@ -380,7 +380,18 @@ class PostgresManagerCaseStore:
             "exception" if failed else "waiting_reassessment")
         event_type = "contained" if provider_ambiguity_contained else (
             "exception" if failed else ("delivery_confirmed" if confirmed else "delivery_suppressed"))
-        next_at = _time(outcome.get("next_reassessment_at") or case["next_reassessment_at"], "next_reassessment_at")
+        supplied_next = outcome.get("next_reassessment_at")
+        parsed_next = (_time(supplied_next, "next_reassessment_at")
+                       if supplied_next else None)
+        if parsed_next and parsed_next > now:
+            next_at = parsed_next
+        elif outcome.get("success") is True and not confirmed:
+            # A silent success must leave the fixed claim window so later
+            # cases receive a fair turn on the next natural cycle.
+            next_at = now + CADENCE
+        else:
+            next_at = parsed_next or _time(
+                case["next_reassessment_at"], "next_reassessment_at")
         # Provider ambiguity is a terminal boundary for this immutable
         # generation.  The case stays visibly contained and unconfirmed, while
         # exact replay cannot repeatedly approach the provider.  Genuinely

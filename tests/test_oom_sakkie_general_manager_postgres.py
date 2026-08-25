@@ -68,39 +68,56 @@ def test_exact_replay_is_one_case_and_delivery_is_not_duplicated():
         assert db.execute("select count(*) from app_private.oom_manager_cases where dedupe_key='rootline:current-plan'").fetchone()[0] == 1
 
 
-def test_no_question_suppression_advances_cadence_and_rotates_beyond_claim_limit(monkeypatch):
+def test_mixed_suppressions_advance_cadence_and_rotate_beyond_claim_limit(monkeypatch):
     now = datetime.now(timezone.utc) + timedelta(hours=2)
     prefix = "rotation:" + now.strftime("%Y%m%d%H%M%S%f")
-    candidates = [candidate(
-        ref=f"event:{index}", due=now - timedelta(hours=1),
-        dedupe_key=f"{prefix}:{index:02d}", specialist="HERDMASTER",
-        urgency="critical", unknowns=[], summary=f"Silent case {index}",
-        next_action="HERDMASTER reassesses automatically.") for index in range(21)]
+    candidates = []
+    for index in range(21):
+        kind = "non_farm" if index < 7 else ("duplicate" if index < 14 else "no_question")
+        candidates.append(candidate(ref=f"event:{index}",
+            due=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            dedupe_key=f"{prefix}:{kind}:{index:02d}",
+            specialist="SAM" if kind == "non_farm" else "HERDMASTER",
+            urgency="critical", unknowns=[], summary=f"Silent {kind} case {index}",
+            next_action="The specialist reassesses automatically."))
     monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "5721652188")
     store = PostgresManagerCaseStore(connect_factory=connect)
     by_key = {item["dedupe_key"]: item for item in candidates}
+    duplicate_keys = [key for key in by_key if ":duplicate:" in key]
+    with connect() as db, db.cursor() as cur:
+        for item in candidates:
+            assert store._reconcile(cur, normalize_candidate(item, now=now), now) == "created"
+        cur.execute("""update app_private.oom_manager_cases
+            set last_delivery_digest=evidence_digest where dedupe_key=any(%s)""",
+            (duplicate_keys,))
+    provider_sends = []
+    provider = lambda *_a, **_k: provider_sends.append("unexpected")
     first = store.run_cycle(candidates, now=now, source_revision="test",
         deliver=lambda case: deliver_farm_manager_case(case, now=now,
-            deliver=lambda *_a, **_k: (_ for _ in ()).throw(AssertionError())),
+            deliver=provider),
         refresh=lambda claimed: by_key[claimed["dedupe_key"]])
     second_now = now + timedelta(seconds=1)
     second = store.run_cycle(candidates, now=second_now, source_revision="test",
         deliver=lambda case: deliver_farm_manager_case(case, now=second_now,
-            deliver=lambda *_a, **_k: (_ for _ in ()).throw(AssertionError())),
+            deliver=provider),
         refresh=lambda claimed: by_key[claimed["dedupe_key"]])
     assert first["deliveries_suppressed"] == 20
     assert second["deliveries_suppressed"] == 1
     with connect() as db:
         rows = db.execute("""select status,next_reassessment_at from app_private.oom_manager_cases
             where dedupe_key like %s order by dedupe_key""", (prefix + ":%",)).fetchall()
-        suppressed = db.execute("""select count(*) from app_private.oom_manager_case_events e
+        statuses = db.execute("""select e.event_payload->>'outcome_status',count(*)
+            from app_private.oom_manager_case_events e
             join app_private.oom_manager_cases c on c.case_id=e.case_id
             where c.dedupe_key like %s and e.event_type='delivery_suppressed'
-              and e.event_payload->>'outcome_status'='no_owner_question_delivery_suppressed'""",
-            (prefix + ":%",)).fetchone()[0]
+            group by e.event_payload->>'outcome_status'""",
+            (prefix + ":%",)).fetchall()
     assert len(rows) == 21 and all(row[0] == "waiting_reassessment" for row in rows)
     assert all(row[1] > second_now for row in rows)
-    assert suppressed == 21
+    assert dict(statuses) == {"manager_delivery_duplicate_suppressed": 7,
+        "no_owner_question_delivery_suppressed": 7,
+        "non_farm_case_delivery_suppressed": 7}
+    assert provider_sends == []
 
 
 def test_exact_pig_terminal_evidence_completes_case_once_without_delivery():
