@@ -521,7 +521,7 @@ def test_missing_refresh_contains_delivery_and_retains_case():
 def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resend():
     # Keep this isolated from later-dated shared-module fixtures while still
     # exercising the real claim ordering and persistence rail.
-    now = datetime(2025, 1, 2, 3, 4, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=10)
     prefix = "confirmed-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
     confirmed = candidate("event:confirmed", now, dedupe_key=prefix + ":confirmed",
         specialist="HERDMASTER", urgency="critical", unknowns=[],
@@ -563,12 +563,12 @@ def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resen
     assert after[4] > retry_at and after[5:] == (None, None)
     assert event[0]["confirmed_generation_preserved"] is True
     assert event[0]["outcome_status"] == "manager_delivery_refresh_unavailable"
-    later = store.run_cycle([confirmed, next_case], now=retry_at + timedelta(seconds=1),
-        source_revision="test", refresh=lambda _case: next_case,
+    immediate = store.run_cycle([confirmed, next_case],
+        now=retry_at + timedelta(seconds=1), source_revision="test",
+        refresh=lambda _case: next_case,
         deliver=lambda case: deliver_farm_manager_case(case, now=retry_at,
             deliver=lambda *_a, **_k: sends.append("unexpected")))
-    assert later["cases_claimed"] == 0
-    assert sends == [first["case_results"][0]["case_id"]]
+    assert immediate["cases_claimed"] == 0
     later_due_at = retry_at + timedelta(minutes=6)
     later_due = store.run_cycle([confirmed, next_case], now=later_due_at,
         source_revision="test",
@@ -593,6 +593,95 @@ def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resen
     assert final[4] > later_due_at and final[5:] == (None, None)
     assert preservation_events == 2
     assert sends == [first["case_results"][0]["case_id"]]
+
+
+def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence():
+    now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=20)
+    prefix = "orphan-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
+    old = candidate("event:old", now, dedupe_key=prefix + ":prince",
+        specialist="HERDMASTER", urgency="critical",
+        unknowns=["What exactly was observed about Prince?"])
+    changed = candidate("event:changed", now, dedupe_key=old["dedupe_key"],
+        specialist="HERDMASTER", urgency="critical",
+        unknowns=["What exactly was observed about Prince?"])
+    later = candidate("event:later", now, dedupe_key=prefix + ":later",
+        specialist="HERDMASTER", urgency="critical", unknowns=[])
+    sends = []
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    first = store.run_cycle([old], now=now, source_revision="test",
+        refresh=lambda _case: old,
+        deliver=lambda case: (sends.append(case["case_id"]) or {
+            "success": True, "status": "delivery_confirmed",
+            "delivery_confirmed": True}))
+    with connect() as db:
+        confirmed_digest = db.execute("""select last_delivery_digest
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (old["dedupe_key"],)).fetchone()[0]
+    before_send = sends[:]
+    retry_at = now + timedelta(minutes=6)
+    retry = store.run_cycle([changed, later], now=retry_at, source_revision="test",
+        refresh=lambda case: None if case["dedupe_key"] == changed["dedupe_key"] else later,
+        deliver=lambda case: deliver_farm_manager_case(case, now=retry_at,
+            deliver=lambda *_a, **_k: sends.append("unexpected")))
+    assert retry["success"] is True and retry["cases_claimed"] == 2
+    assert retry["exceptions"] == 1 and retry["deliveries_confirmed"] == 0
+    assert sends == before_send
+    with connect() as db:
+        row = db.execute("""select status,evidence_digest,last_delivery_digest,
+            last_delivery_at,next_reassessment_at,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (changed["dedupe_key"],)).fetchone()
+        event = db.execute("""select event_payload from app_private.oom_manager_case_events
+            where case_id=%s and event_type='reassessment_scheduled'
+            order by occurred_at desc limit 1""",
+            (first["case_results"][0]["case_id"],)).fetchone()[0]
+    assert row[0] == "exception"
+    assert row[1] != row[2] and row[2] == confirmed_digest
+    assert row[3] is not None and row[4] > retry_at
+    assert row[5:] == (None, None)
+    assert event["next_reassessment_at"] == row[4].isoformat()
+    immediate = store.run_cycle([changed, later], now=retry_at + timedelta(seconds=1),
+        source_revision="test", refresh=lambda _case: None,
+        deliver=lambda _case: sends.append("unexpected"))
+    assert immediate["cases_claimed"] == 0 and sends == before_send
+    later_due_at = retry_at + timedelta(minutes=6)
+    repeated = store.run_cycle([changed, later], now=later_due_at,
+        source_revision="test",
+        refresh=lambda case: None if case["dedupe_key"] == changed["dedupe_key"] else later,
+        deliver=lambda case: deliver_farm_manager_case(case, now=later_due_at,
+            deliver=lambda *_a, **_k: sends.append("unexpected")))
+    exact = next(item for item in repeated["case_results"]
+        if item["case_id"] == first["case_results"][0]["case_id"])
+    assert exact["outcome_status"] == "manager_delivery_refresh_unavailable"
+    assert sends == before_send
+    with connect() as db:
+        repeated_row = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
+            next_reassessment_at,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (changed["dedupe_key"],)).fetchone()
+    assert repeated_row[0] == "exception"
+    assert repeated_row[1] != repeated_row[2] == confirmed_digest
+    assert repeated_row[4] > later_due_at and repeated_row[5:] == (None, None)
+    successful_at = later_due_at + timedelta(minutes=6)
+    successful = store.run_cycle([changed, later], now=successful_at,
+        source_revision="test", refresh=lambda case: case,
+        deliver=lambda case: (sends.append(case["case_id"]) or {
+            "success": True, "status": "delivery_confirmed",
+            "delivery_confirmed": True}))
+    changed_result = next(item for item in successful["case_results"]
+        if item["case_id"] == first["case_results"][0]["case_id"])
+    assert changed_result["outcome_status"] == "delivery_confirmed"
+    assert successful["cases_claimed"] == 2
+    assert successful["deliveries_confirmed"] == 2
+    assert sends.count(first["case_results"][0]["case_id"]) == 2
+    with connect() as db:
+        final = db.execute("""select status,evidence_digest,last_delivery_digest,
+            last_delivery_at,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (changed["dedupe_key"],)).fetchone()
+    assert final[0] == "waiting_reassessment"
+    assert final[1] == final[2] and final[1] != confirmed_digest
+    assert final[3] == successful_at and final[4:] == (None, None)
 
 
 def test_delivery_without_refresh_callback_fails_closed():

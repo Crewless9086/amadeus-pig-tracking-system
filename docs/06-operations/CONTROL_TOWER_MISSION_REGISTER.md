@@ -3360,3 +3360,20 @@ normal publication, SBOM and release-packet names to 0.3.11 while preserving
 the separately quarantined historical 0.3.10 partial-publication recovery
 contract unchanged. No image, installation, recovery or print occurred.
 **DURABLY LOGGED - NOT YET AN OUTCOME. OWNER ACTION: NONE.**
+
+## 2026-08-25 - OMQ-20260813-03 changed-evidence refresh-unavailable cadence
+
+Natural exact-production cycles after `7edd0404` contained the ROOTLINE mixer
+exception and completed, but exposed one separate queue-health defect. Prince
+case `OOM-CASE-0F6334544590218757B7A013` generation 24 has current evidence
+different from its historical confirmed delivery and no current specialist
+candidate. `manager_delivery_refresh_unavailable` truthfully sent and closed
+nothing and released the lease, but retained overdue reassessment
+`2026-08-24T09:05:22Z`, reclaiming one of 20 slots every cycle. This is an
+addendum to existing `OMQ-20260813-03` / HERDMASTER continuity, not a new
+mission or priority change. The bounded repair preserves evidence, unresolved
+question and confirmed history while keeping exception state, scheduling a
+future cadence and allowing later cases to rotate. A later successful refresh
+still follows normal genuine-question delivery. Source/tests are not an owner
+outcome; natural post-deploy cadence and queue continuation remain required.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**

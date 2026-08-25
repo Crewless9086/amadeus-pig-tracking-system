@@ -100,3 +100,26 @@
   normalization are also proven cycle-fatal outside the domain containment
   boundary. PR `#1154` must rebase after this repair and preserve the
   current terminal/provider, cadence and monotonic-delivery invariants.
+
+## Changed-generation refresh-unavailable cadence addendum
+
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME**
+
+Natural exact-production cycles at `7edd0404` proved global exception
+containment, then exposed an older Prince case
+`OOM-CASE-0F6334544590218757B7A013` consuming one claim slot every cycle. Its
+generation-24 current evidence differs from the historically confirmed digest,
+while the current specialist collector returns no matching candidate. The
+truthful `manager_delivery_refresh_unavailable` result released its lease and
+sent nothing, but retained overdue reassessment `2026-08-24T09:05:22Z`.
+
+This is a queue-health defect/addendum in existing `OMQ-20260813-03` and the
+HERDMASTER continuous-follow-up lineage; priority is unchanged except that it
+blocks fair progress of the active PIG acceptance. The bounded invariant keeps
+the case as an exception, preserves its current evidence, unresolved question,
+confirmed historical delivery and no-close/no-resend truth, releases its lease
+and schedules the next five-minute cadence. If the specialist later returns
+fresh evidence or a genuine owner question, normal reconciliation and delivery
+remain active. Disposable PostgreSQL covers changed evidence, missing refresh,
+later-case continuation, immediate silence and repeated later-due retry.
+**OWNER ACTION: NONE.**
