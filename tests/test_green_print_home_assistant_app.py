@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+﻿from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timedelta,timezone
 from hashlib import sha256
 import base64,importlib.util,json,sqlite3,subprocess,sys
@@ -19,7 +19,7 @@ BUNDLE_SPEC=importlib.util.spec_from_file_location("green_bundle_inventory",ROOT
 NOW=datetime(2026,8,21,8,tzinfo=timezone.utc); PDF=b"%PDF-1.4\nsynthetic\n%%EOF"
 def config(tmp_path):
     cert=tmp_path/"private-ca.crt"; cert.write_text("synthetic",encoding="utf-8")
-    return {"canonical_transport_profile":"private_pinned","canonical_api_origin":"https://documents.invalid","canonical_endpoint_ip":"10.23.0.5","canonical_bearer_token":"synthetic-token","farm_scope_id":"farm-amadeus","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","printer_transport_profile":"private_ipps","printer_uri":"ipps://10.23.0.9/ipp/print","printer_endpoint_ip":"10.23.0.9","ca_certificate_path":str(cert),"poll_seconds":30,"spool_path":str(tmp_path),"data_path":str(tmp_path)}
+    return {"canonical_transport_profile":"private_pinned","canonical_api_origin":"https://documents.invalid","canonical_endpoint_ip":"10.23.0.5","canonical_bearer_token":"synthetic-token","farm_scope_id":"farm-amadeus","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","printer_transport_profile":"local_ipp_fixed","printer_uri":"ipp://10.23.0.9/printers/weekly-a4","printer_endpoint_ip":"10.23.0.9","ca_certificate_path":str(cert),"poll_seconds":30,"spool_path":str(tmp_path),"data_path":str(tmp_path)}
 def envelope(**changes):
     value={"job_id":"JOB-SYNTHETIC-1","farm_scope_id":"farm-amadeus","document_id":"WWS-SYNTHETIC","document_version":"WWS-SYNTHETIC.r1.abcdef123456","document_revision":1,"document_type":S.PILOT_DOCUMENT,"generator_id":S.PILOT_GENERATOR,"pdf_sha256":sha256(PDF).hexdigest(),"retrieval_url":"https://documents.invalid/api/documents/WWS-SYNTHETIC/versions/WWS-SYNTHETIC.r1.abcdef123456/pdf","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","authorization_receipt_id":"AUTH-SYNTHETIC-1","authorization_expires_at":(NOW+timedelta(hours=1)).isoformat(),"options":dict(S.FIXED_OPTIONS)}
     value.update(changes); return value
@@ -38,7 +38,7 @@ def test_package_is_bounded_and_privilege_split():
     assert 'green_startup_failed stage=$1 reason=$2' in init
     assert "green_startup_failed stage=bootstrap_exec reason=$1" in run and "fail_bootstrap init_script_unreadable" in run and "fail_bootstrap init_script_failed" in run
     assert "green_startup_failed stage=s6_exec reason=run_script_unreadable" in docker
-    for stage in ("mount_validation","runtime_directory","options_population","cups_directories","ca_install","queue_initializer","queue_ownership","cups_start","cups_readiness","service_exec"):
+    for stage in ("mount_validation","runtime_directory","options_population","cups_directories","queue_initializer","queue_ownership","cups_start","cups_readiness","service_exec"):
         assert f"step {stage} " in init or f"fail_startup {stage} " in init
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
@@ -51,14 +51,15 @@ def test_package_is_bounded_and_privilege_split():
     assert "/var/cache/cups" in docker
     assert "fail_startup cups_readiness cups_or_queue_not_ready" in init
 
-def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
+def test_local_ipp_is_fixed_without_broadening_container_or_canonical_transport():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
     policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8"); cupsd=(APP/"rootfs/etc/cups/cupsd.conf").read_text(encoding="utf-8")
-    assert 'path.open("a"' in queue and 'hosts.write(f"{pin} {hostname}\\n")' in queue
-    assert "printer_tls_preflight(uri.hostname,str(pin)" in queue and 'uri.scheme=="ipps"' in queue
-    assert "install_binding(Path(hosts_path),uri.hostname,pin)" in queue
-    assert queue.index("printer_tls_preflight(uri.hostname,str(pin)") < queue.index("install_binding(Path(hosts_path),uri.hostname,pin)")
-    assert "/homeassistant/private-ca.crt /etc/cups/ssl/site.crt" in init
+    assert 'uri.scheme=="ipp"' in queue and 'uri.path==expected_path' in queue
+    assert 'literal==pin' in queue and '(uri.port or 631)==631' in queue
+    assert "printer_tls_preflight" not in queue and "install_binding(" not in queue.split("def main",1)[1]
+    assert "/homeassistant/private-ca.crt /etc/cups/ssl/site.crt" not in init
+    assert cfg["options"]["printer_transport_profile"]=="local_ipp_fixed"
+    assert cfg["host_network"] is False and cfg["privileged"]==[]
     assert cfg["map"]==[{"type":"addon_config","read_only":True},{"type":"homeassistant_config","read_only":True}]
     apparmor=(APP/"apparmor.txt").read_text(encoding="utf-8")
     assert "/homeassistant/private-ca.crt r," in apparmor
@@ -78,11 +79,10 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
     expected=(
         ("mount_validation","data_mount_invalid"),("mount_validation","options_missing_or_empty"),
-        ("mount_validation","options_unreadable"),("mount_validation","ca_missing_or_empty"),
-        ("mount_validation","ca_unreadable"),
+        ("mount_validation","options_unreadable"),
         ("runtime_directory","data_runtime_prepare_failed"),("runtime_directory","spool_prepare_failed"),
         ("options_population","runtime_options_install_failed"),("cups_directories","cups_runtime_prepare_failed"),
-        ("cups_directories","cups_spool_prepare_failed"),("ca_install","ca_install_failed"),
+        ("cups_directories","cups_spool_prepare_failed"),
         ("queue_initializer","initializer_interpreter_missing"),("queue_initializer","queue_initializer_failed"),
         ("queue_ownership","queue_owner_failed"),
         ("queue_ownership","queue_mode_failed"),("cups_start","cups_process_start_failed"),
@@ -98,7 +98,7 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     assert "green_startup_failed stage=bootstrap_exec reason=$1" in run
     assert "fail_bootstrap init_script_unreadable" in run and "fail_bootstrap init_script_failed" in run
     assert "green_startup_failed stage=s6_exec reason=run_script_unreadable" in docker
-    for case in ("missing_options","empty_options","readonly_data","ownership_conflict","missing_cert","empty_cert","invalid_options","broken_interpreter","init_exec","run_exec","cups_start","service_exec"):
+    for case in ("missing_options","empty_options","readonly_data","ownership_conflict","invalid_options","broken_interpreter","init_exec","run_exec","cups_start","service_exec"):
         assert f'negative_case("{case}"' in probe
     assert "if markers != [expected]" in probe
     for forbidden in ("synthetic-startup-probe-token",'options.get("printer_uri")',"BEGIN CERTIFICATE","/data/options.json","/homeassistant/private-ca.crt"):
@@ -115,8 +115,6 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     assert '${child_bytes}' in init and '${#child_marker} + 1' in init
     assert init.index("rm -f /run/cups/queue-initializer-error") < init.index('case "${child_marker}" in')
     assert "2>/dev/null)\" || fail_startup queue_initializer" not in init
-    assert 'negative_case("wrong_root"' in probe
-    assert 'negative_case("wrong_san"' in probe
     assert 'negative_case("silent_initializer"' in probe
     assert 'negative_case("unrecognized_initializer"' in probe
     assert 'negative_case("multiline_unterminated_initializer"' in probe
@@ -154,64 +152,33 @@ def test_printer_tls_preflight_fails_closed_on_untrusted_or_wrong_san(monkeypatc
     assert raw.closed
 
 def queue_options():
-    return {"cups_queue_id":"weekly-a4","printer_transport_profile":"private_ipps","printer_uri":"ipps://AmadeusKantoor:8631/ipp/print","printer_endpoint_ip":"10.23.0.9"}
+    return {"cups_queue_id":"weekly-a4","printer_transport_profile":"local_ipp_fixed","printer_uri":"ipp://10.23.0.9/printers/weekly-a4","printer_endpoint_ip":"10.23.0.9"}
 
-def test_queue_startup_needs_no_ambient_printer_dns_and_verifies_fixed_binding(tmp_path,monkeypatch):
+def test_queue_startup_writes_only_exact_fixed_local_ipp_binding(tmp_path,monkeypatch):
     options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"; hosts=tmp_path/"hosts"
     options.write_text(json.dumps(queue_options()),encoding="utf-8"); hosts.write_text("127.0.0.1 localhost\n",encoding="ascii")
-    calls=[]
-    monkeypatch.setattr(Q,"printer_tls_preflight",lambda host,pin,port,ca:calls.append((host,pin,port,ca,hosts.read_text(encoding="ascii"))))
-    def resolve(host,*_a,**_k):
-        assert host=="amadeuskantoor" and "10.23.0.9 amadeuskantoor" in hosts.read_text(encoding="ascii")
-        return [(None,None,None,None,("10.23.0.9",0))]
-    monkeypatch.setattr(Q.socket,"getaddrinfo",resolve)
     Q.main(str(options),str(queue),str(hosts))
-    assert calls==[("amadeuskantoor","10.23.0.9",8631,"/homeassistant/private-ca.crt","127.0.0.1 localhost\n")]
-    assert hosts.read_text(encoding="ascii").count("10.23.0.9 amadeuskantoor")==1
-    assert "DeviceURI ipps://AmadeusKantoor:8631/ipp/print" in queue.read_text(encoding="utf-8")
+    assert hosts.read_text(encoding="ascii")=="127.0.0.1 localhost\n"
+    assert "DeviceURI ipp://10.23.0.9/printers/weekly-a4" in queue.read_text(encoding="utf-8")
 
-@pytest.mark.parametrize("failure",[S.ssl.SSLCertVerificationError("wrong SAN"),OSError("unreachable")])
-def test_queue_tls_failures_are_sanitized_and_do_not_bind(tmp_path,monkeypatch,capsys,failure):
-    options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"; hosts=tmp_path/"hosts"
-    options.write_text(json.dumps(queue_options()),encoding="utf-8"); hosts.write_text("127.0.0.1 localhost\n",encoding="ascii")
-    def reject(*_a): raise failure
-    monkeypatch.setattr(Q,"printer_tls_preflight",reject)
-    with pytest.raises(SystemExit): Q.main(str(options),str(queue),str(hosts))
-    assert capsys.readouterr().err=="green_startup_failed stage=printer_tls reason=identity_or_connection_failed\n"
-    assert "AmadeusKantoor" not in hosts.read_text(encoding="ascii") and not queue.exists()
-
-def test_queue_conflicting_binding_fails_before_queue_write(tmp_path,monkeypatch,capsys):
-    options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"; hosts=tmp_path/"hosts"
-    options.write_text(json.dumps(queue_options()),encoding="utf-8"); hosts.write_text("10.23.0.10 AmadeusKantoor\n",encoding="ascii")
-    monkeypatch.setattr(Q,"printer_tls_preflight",lambda *_a:None)
-    with pytest.raises(SystemExit): Q.main(str(options),str(queue),str(hosts))
-    assert capsys.readouterr().err=="green_startup_failed stage=printer_binding reason=hosts_binding_conflict\n"
-    assert not queue.exists()
-
-def test_queue_unwritable_binding_has_bounded_failure(tmp_path,monkeypatch,capsys):
-    options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"; hosts=tmp_path/"hosts"
-    options.write_text(json.dumps(queue_options()),encoding="utf-8"); hosts.write_text("127.0.0.1 localhost\n",encoding="ascii")
-    monkeypatch.setattr(Q,"printer_tls_preflight",lambda *_a:None); original=Q.Path.open
-    def guarded(path,mode="r",*args,**kwargs):
-        if path==hosts and "a" in mode: raise PermissionError("synthetic")
-        return original(path,mode,*args,**kwargs)
-    monkeypatch.setattr(Q.Path,"open",guarded)
-    with pytest.raises(SystemExit): Q.main(str(options),str(queue),str(hosts))
-    assert capsys.readouterr().err=="green_startup_failed stage=printer_binding reason=hosts_write_failed\n"
-    assert not queue.exists()
-
-def test_queue_wrong_literal_pin_fails_without_tls_or_queue(tmp_path,monkeypatch,capsys):
-    value={**queue_options(),"printer_uri":"ipps://10.23.0.10/ipp/print"}
+@pytest.mark.parametrize("override",[
+    {"printer_uri":"ipp://10.23.0.10/printers/weekly-a4"},
+    {"printer_uri":"ipp://10.23.0.9:8631/printers/weekly-a4"},
+    {"printer_uri":"ipp://printer.local/printers/weekly-a4"},
+    {"printer_uri":"ipp://10.23.0.9/printers/another"},
+    {"printer_uri":"ipp://10.23.0.9/printers/weekly-a4?unsafe=1"},
+])
+def test_queue_rejects_any_nonexact_endpoint_without_queue(tmp_path,capsys,override):
+    value={**queue_options(),**override}
     options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"
     options.write_text(json.dumps(value),encoding="utf-8")
-    monkeypatch.setattr(Q,"printer_tls_preflight",lambda *_a:pytest.fail("TLS must not run"))
     with pytest.raises(SystemExit): Q.main(str(options),str(queue),str(tmp_path/"hosts"))
-    assert capsys.readouterr().err=="green_startup_failed stage=configuration reason=private_ipps_endpoint_invalid\n"
+    assert capsys.readouterr().err=="green_startup_failed stage=configuration reason=local_ipp_fixed_endpoint_invalid\n"
     assert not queue.exists()
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.6"
+    assert cfg["version"]=="0.3.8"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -235,14 +202,16 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.6-verified-release-packet" in workflow
+    assert "green-print-0.3.8-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
     probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
     assert '"--add-host", f"printer.test:' not in probe
-    assert 'DNS:AmadeusKantoor' in probe and 'ipps://AmadeusKantoor:' in probe
-    assert '"printer_dns_preseeded": False' in probe and '"printer_fixed_binding_verified": True' in probe
+    assert '"printer_transport_profile": "local_ipp_fixed"' in probe
+    assert 'f"ipp://{gateway}/printers/weekly-a4"' in probe
+    assert '"printer_endpoint_exact_verified": True' in probe
+    assert 'device for weekly-a4: ipp://{gateway}/printers/weekly-a4' in probe
     assert '"pid,uid,gid,comm,args"' in probe
     for proof in ("docker\", \"top","cups_scheduler_identity","cups_worker_identity","green_runtime_identity","tcp_631_listener","tls_key_files","test ! -e /etc/printcap","test ! -e /etc/cups/ssl/*.key","unexpected AppArmor denials"):
         assert proof in probe
@@ -261,7 +230,7 @@ def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.6"
+    assert parsed["env"]["VERSION"]=="0.3.8"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -383,8 +352,8 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert "canonical final-attestations.json" in final_verify
     assert "cmp -s canonical-existing-attestations.json canonical-final-attestations.json" in final_verify
     assert "attestation_inventory_post_sha256" in final_verify
-    assert "final-green-print-0.3.6.spdx.json" not in final_verify
-    assert final_verify.count("green-print-0.3.6.spdx.json")==2
+    assert "final-green-print-0.3.8.spdx.json" not in final_verify
+    assert final_verify.count("green-print-0.3.8.spdx.json")==2
     assert "cosign triangulate" not in final_verify and "signature_ref" not in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
@@ -405,7 +374,7 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     assert "attestation_inventory_post_sha256" in serialized
     for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
         assert forbidden not in serialized
-    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.6-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
+    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.8-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
         assert exact in serialized
 
 def test_036_final_readonly_verification_has_bounded_retry_and_attributable_failures():
@@ -598,7 +567,7 @@ def test_canonical_final_inspect_executes_with_the_generated_exact_sbom_path(tmp
     helper=ROOT/"scripts"/"green_print_attestation_inventory.py"
     canonical_result=subprocess.run([sys.executable,str(helper),"canonical",str(fetched)],capture_output=True,text=True,check=True)
     canonical.write_text(canonical_result.stdout,encoding="utf-8")
-    generated_sbom=tmp_path/"green-print-0.3.6.spdx.json"
+    generated_sbom=tmp_path/"green-print-0.3.8.spdx.json"
     result=subprocess.run([sys.executable,str(helper),"inspect",str(canonical),image,digest,str(generated_sbom),"c"*40,"sha256:"+"b"*64,"32622312938"],capture_output=True,text=True,check=True)
     assert result.stdout.splitlines()==["recovery_count=1","sbom_count=1","foreign_count=0"]
     assert json.loads(generated_sbom.read_text(encoding="utf-8"))=={"spdxVersion":"SPDX-2.3"}
@@ -741,13 +710,13 @@ def test_contract_and_authorization_fail_closed(tmp_path):
     for change in ({"cups_queue_id":"other"},{"options":{**S.FIXED_OPTIONS,"copies":2}},{"authorization_expires_at":NOW.isoformat()},{"retrieval_url":envelope()["retrieval_url"]+"?x=1"}):
         with pytest.raises(S.Hold): S.validate(envelope(**change),cfg,NOW)
 
-def test_config_preserves_private_canonical_pin_and_ip_san_printer(tmp_path,monkeypatch):
+def test_config_preserves_private_canonical_pin_and_rejects_printer_hostname(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"
     monkeypatch.setattr(S.socket,"getaddrinfo",lambda *_a,**_k:[(None,None,None,None,("10.23.0.5",0))]); path.write_text(json.dumps(cfg),encoding="utf-8")
     assert S.load_config(str(path))["canonical_endpoint_ip"]=="10.23.0.5"
-    path.write_text(json.dumps({**cfg,"printer_uri":"ipps://printer.invalid/ipp/print"}),encoding="utf-8")
+    path.write_text(json.dumps({**cfg,"printer_uri":"ipp://printer.invalid/printers/weekly-a4"}),encoding="utf-8")
     monkeypatch.setattr(S.socket,"getaddrinfo",lambda host,*_a,**_k:[(None,None,None,None,(("10.23.0.5" if host=="documents.invalid" else "10.23.0.9"),0))])
-    assert S.load_config(str(path))["printer_endpoint_ip"]=="10.23.0.9"
+    with pytest.raises(S.Hold,match="printer_ip_literal_required"): S.load_config(str(path))
 
 def test_public_pki_profile_allows_only_exact_render_origin_without_pin(tmp_path,monkeypatch):
     cfg={**config(tmp_path),"canonical_transport_profile":"public_pki_exact_origin","canonical_api_origin":S.APPROVED_PUBLIC_CANONICAL_ORIGIN,"canonical_endpoint_ip":""}
@@ -772,14 +741,12 @@ def test_private_profile_still_requires_nonempty_exact_pin(tmp_path,monkeypatch)
         path.write_text(json.dumps(candidate),encoding="utf-8")
         with pytest.raises(S.Hold,match="commissioned_ip_literal_required"): S.load_config(str(path))
 
-def test_printer_hostname_dns_is_single_private_bound_address(tmp_path,monkeypatch):
-    cfg={**config(tmp_path),"printer_uri":"ipps://printer.internal/ipp/print"}; path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
+def test_printer_hostname_is_rejected_regardless_of_dns_answers(tmp_path,monkeypatch):
+    cfg={**config(tmp_path),"printer_uri":"ipp://printer.internal/printers/weekly-a4"}; path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
     monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"])
     for answers in (["10.23.0.9"],["10.23.0.9","10.23.0.10"],["8.8.8.8"]):
         monkeypatch.setattr(S.socket,"getaddrinfo",lambda host,*_a,_answers=answers,**_k:[(None,None,None,None,(x,0)) for x in (["10.23.0.5"] if host=="documents.invalid" else _answers)])
-        if answers==["10.23.0.9"]: assert S.load_config(str(path))["printer_endpoint_ip"]=="10.23.0.9"
-        else:
-            with pytest.raises(S.Hold): S.load_config(str(path))
+        with pytest.raises(S.Hold,match="printer_ip_literal_required"): S.load_config(str(path))
 
 def test_printer_dns_drift_holds_before_any_canonical_or_cups_effect(tmp_path,monkeypatch):
     cfg={**config(tmp_path),"printer_uri":"ipps://printer.internal/ipp/print"}

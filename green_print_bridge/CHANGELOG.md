@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.8
+
+- Adds the owner-authorized `local_ipp_fixed` printer transport for one exact
+  private IP literal, port 631, `/printers/<registered queue>` path, and fixed
+  CUPS queue. It does not enable DNS targets, credentials, query parameters,
+  arbitrary ports/paths, host networking, or general print submission.
+- Preserves canonical HTTPS, immutable job/document/PDF and authorization
+  bindings, leases, deterministic transitions, bounded recovery, replay
+  protection, and truthful provider completion/failure states.
+
 ## 0.3.6
 
 - Read the verified private CA from Home Assistant's distinct read-only `homeassistant_config` mount at `/homeassistant/private-ca.crt` while leaving the add-on private config and Supervisor options contract unchanged.
