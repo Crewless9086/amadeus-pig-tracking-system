@@ -22,6 +22,7 @@ from modules.telemetry.rootline_auxiliary_management import (
     build_auxiliary_tasks, build_fertilizer_batch_lifecycle,
 )
 from modules.telemetry.rootline_water_balance import read_latest_zone_water_balances
+from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -895,6 +896,16 @@ def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_gener
     if (zone not in {"B12345", "C12345"} or start.get("authoritative") is not True
             or start.get("state") != "ON" or not start.get("evidence_id")):
         return None
+    try:
+        zone_binding = commissioned_irrigation_contract(zone)
+    except ValueError:
+        return None
+    # Execution events are evidence about a run, not authority for which physical
+    # output represents a zone.  Require the event to agree with the immutable
+    # commissioned zone binding before its ON readback can unlock dependent work.
+    if (active.get("device_id") != zone_binding.get("device_id")
+            or active.get("channel") != zone_binding.get("channel")):
+        return None
     pulses = [row for row in auxiliary
         if row.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
         and row.get("zone_execution_id") == execution_id]
@@ -905,7 +916,8 @@ def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_gener
         "job_id": active.get("job_id"), "job_sha256": active.get("job_sha256"),
         "segment_identity": active.get("segment_identity"),
         "active_zone_ids": [zone], "zone_execution_id": execution_id,
-        "zone_device_id": active.get("device_id"), "zone_channel": active.get("channel"),
+        "zone_device_id": zone_binding["device_id"],
+        "zone_channel": zone_binding["channel"],
         "zone_start_evidence": {**start, "zone_execution_id": execution_id},
         "zone_output_evidence": {**start, "zone_execution_id": execution_id},
         "irrigation_stop_deadline": active.get("primary_stop_deadline"),

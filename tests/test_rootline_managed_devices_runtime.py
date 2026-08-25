@@ -247,7 +247,7 @@ def test_default_loader_to_planner_to_scheduler_starts_only_canonical_mixer(monk
 
 def test_default_loader_refreshes_active_zone_then_scheduler_starts_injector(monkeypatch):
     active = {"action": "mark_active", "state": "Active", "execution_id": "ZONE-EXEC-1",
-        "zone_id": "B12345", "device_id": "100204d497", "channel": 2,
+        "zone_id": "B12345", "device_id": "100204e9bc", "channel": 1,
         "job_id": "ROOTLINE-IRRIGATION-JOB-" + "A" * 24, "job_sha256": "a" * 64,
         "segment_identity": "ROOTLINE-JOB-SEGMENT-" + "B" * 24,
         "evidence_generation": "PLAN-1",
@@ -269,6 +269,30 @@ def test_default_loader_refreshes_active_zone_then_scheduler_starts_injector(mon
     assert [(row["channel"], row["state"]) for row in transport.calls] == [(1, "ON")]
 
 
+def test_mixer_output_cannot_impersonate_active_zone_and_unlock_injector(monkeypatch):
+    active = {"action": "mark_active", "state": "Active", "execution_id": "ZONE-EXEC-1",
+        "zone_id": "B12345", "device_id": "100204d497", "channel": 2,
+        "job_id": "ROOTLINE-IRRIGATION-JOB-" + "A" * 24, "job_sha256": "a" * 64,
+        "segment_identity": "ROOTLINE-JOB-SEGMENT-" + "B" * 24,
+        "evidence_generation": "PLAN-1",
+        "primary_stop_deadline": (NOW + timedelta(minutes=30)).isoformat(),
+        "start_evidence": {"authoritative": True, "state": "ON", "evidence_id": "START-1",
+            "observed_at": (NOW - timedelta(minutes=10)).isoformat()}}
+    outcome = {"fertilizer_batch_observation": {"event_type": "fertilizer_batch_prepared",
+            "observed_at": NOW.isoformat()}, "fertilizer_needed": True,
+        "fertilizer_need_observed_at": NOW.isoformat()}
+    patch_default_sources(monkeypatch, ManagedConnection([outcome], [active]))
+    monkeypatch.setattr("modules.telemetry.rootline_managed_devices_runtime.load_device_record",
+        lambda *_args, **_kwargs: canonical("ifttt_ewelink:ewelink_owner_account:100204d497:1"))
+    transport = Transport()
+    result = run_rootline_managed_device_reassessment(
+        environ={"ROOTLINE_FERTILIZER_INJECTION_ENABLED": "true"},
+        database_url="postgres://test", store=Store(), token_store=object(),
+        transport=transport, now=NOW)
+    assert result["status"] == "no_eligible_managed_device_task"
+    assert result["hardware_commands"] == 0 and transport.calls == []
+
+
 def test_default_loader_missing_managed_evidence_stays_command_inert(monkeypatch):
     monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
         lambda **_kwargs: ManagedConnection([]))
@@ -284,7 +308,8 @@ def test_default_loader_missing_managed_evidence_stays_command_inert(monkeypatch
 
 def test_canonical_managed_reader_composes_active_injector_and_fresh_borehole_facts(monkeypatch):
     active = {"action": "mark_active", "state": "Active", "execution_id": "ZONE-EXEC-1",
-        "zone_id": "B12345", "job_id": "ROOTLINE-IRRIGATION-JOB-" + "A" * 24,
+        "zone_id": "B12345", "device_id": "100204e9bc", "channel": 1,
+        "job_id": "ROOTLINE-IRRIGATION-JOB-" + "A" * 24,
         "job_sha256": "a" * 64, "segment_identity": "ROOTLINE-JOB-SEGMENT-" + "B" * 24,
         "evidence_generation": "PLAN-1",
         "primary_stop_deadline": (NOW + timedelta(minutes=30)).isoformat(),
@@ -302,5 +327,6 @@ def test_canonical_managed_reader_composes_active_injector_and_fresh_borehole_fa
     loaded = _read_managed_device_evidence("postgres://test", NOW)
     context = loaded["active_irrigation_context"]
     assert context["fertilizer_needed"] is True and context["active_zone_ids"] == ["B12345"]
+    assert (context["zone_device_id"], context["zone_channel"]) == ("100204e9bc", 1)
     assert context["batch_generation"].startswith("ROOTLINE-BATCH-")
     assert loaded["borehole_interlocks"]["supply_pressure_safe"] is True
