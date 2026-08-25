@@ -445,6 +445,35 @@ def test_lease_recovery_accepts_exact_active_device_binding(db):
     assert recovered is not None
 
 
+def test_submitted_job_with_revoked_device_can_recover_for_readback_only(db):
+    prepare_worker_job(db,"submitted","ATTEMPT-1","weekly-a4-42","ipps://printer/ipp/print")
+    with db.cursor() as cursor:
+        cursor.execute("update app_private.document_print_jobs set lease_expires_at=clock_timestamp()-interval '1 second'")
+        cursor.execute("update app_private.document_print_device_registry set active=false")
+        cursor.execute("select app_private.recover_document_print_job_lease(%s,%s,%s,%s,%s,%s,%s,%s)",
+            ("JOB-DB-1","recovered-worker",300,"DOC-DB-1.r1",PDF_SHA,"AUTH-DB-1","farm-amadeus","green"))
+        recovered=cursor.fetchone()[0]
+    assert recovered is not None
+
+
+def test_pre_attempt_renew_rejects_revoked_device_but_submitted_renew_allows_readback(db):
+    prepare_worker_job(db)
+    with db.cursor() as cursor:
+        cursor.execute("update app_private.document_print_device_registry set active=false")
+        cursor.execute("savepoint rejected_device_renew")
+    with pytest.raises(psycopg.errors.RaiseException,match="lease renewal invalid"):
+        with db.cursor() as cursor:
+            cursor.execute("select app_private.renew_document_print_job_lease(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                ("JOB-DB-1","worker-lease","green-worker",300,"DOC-DB-1.r1",PDF_SHA,"AUTH-DB-1","farm-amadeus","green"))
+    with db.cursor() as cursor:
+        cursor.execute("rollback to savepoint rejected_device_renew")
+        cursor.execute("update app_private.document_print_jobs set state='submitted',attempt_id='ATTEMPT-1',cups_job_id='weekly-a4-42'")
+        cursor.execute("select app_private.renew_document_print_job_lease(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            ("JOB-DB-1","worker-lease","green-worker",300,"DOC-DB-1.r1",PDF_SHA,"AUTH-DB-1","farm-amadeus","green"))
+        renewed=cursor.fetchone()[0]
+    assert renewed is not None
+
+
 @pytest.mark.parametrize("state,target", [
     ("submitting", "claimed"), ("submitted", "submitting"),
     ("provider_completed", "submitted"), ("held", "claimed"),

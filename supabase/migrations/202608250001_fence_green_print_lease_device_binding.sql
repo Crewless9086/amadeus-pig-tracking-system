@@ -22,7 +22,8 @@ begin
   or v_job.farm_scope_id is distinct from p_farm_scope_id or v_job.green_id is distinct from p_green_id
   or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
   or v_job.authorization_receipt_id<>p_authorization_receipt_id
-  or not app_private.green_print_job_device_active(v_job) then raise exception 'lease renewal invalid'; end if;
+  or (v_job.state='claimed' and v_job.attempt_id is null and v_job.cups_job_id is null
+      and not app_private.green_print_job_device_active(v_job)) then raise exception 'lease renewal invalid'; end if;
  update app_private.document_print_jobs set lease_expires_at=clock_timestamp()+make_interval(secs=>p_lease_seconds),updated_at=clock_timestamp()
   where job_id=p_job_id returning * into v_job; return v_job;
 end; $$;
@@ -40,7 +41,8 @@ begin
   or v_job.farm_scope_id is distinct from p_farm_scope_id or v_job.green_id is distinct from p_green_id
   or v_job.document_version<>p_document_version or v_job.pdf_sha256<>p_pdf_sha256
   or v_job.authorization_receipt_id<>p_authorization_receipt_id
-  or not app_private.green_print_job_device_active(v_job) then raise exception 'lease recovery invalid'; end if;
+  or (v_job.state='claimed' and v_job.attempt_id is null and v_job.cups_job_id is null
+      and not app_private.green_print_job_device_active(v_job)) then raise exception 'lease recovery invalid'; end if;
  update app_private.document_print_jobs set lease_owner=p_worker_id,lease_token=v_token,
   lease_expires_at=clock_timestamp()+make_interval(secs=>p_lease_seconds),updated_at=clock_timestamp()
   where job_id=p_job_id returning * into v_job;

@@ -42,6 +42,7 @@ def test_0310_migration_fences_lease_recovery_and_renewal_to_active_device():
     sql=(ROOT/"supabase"/"migrations"/"202608250001_fence_green_print_lease_device_binding.sql").read_text(encoding="utf-8")
     assert "green_print_job_device_active" in sql
     assert sql.count("not app_private.green_print_job_device_active(v_job)")==2
+    assert sql.count("v_job.attempt_id is null and v_job.cups_job_id is null")==2
     for binding in ("farm_scope_id","green_id","printer_id","cups_queue_id","registry_version"):
         assert f"r.{binding}=p_job.{binding}" in sql
     assert "and r.active" in sql
