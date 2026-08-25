@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.9
+
+- Normalize an idle protected-command envelope so the worker continues to the
+  ordinary authorized-job claim in the same poll cycle.
+- Preserve the commissioned fixed queue, printer, registry and one-copy policy.
+
 ## 0.3.8
 
 - Adds the owner-authorized `local_ipp_fixed` printer transport for one exact

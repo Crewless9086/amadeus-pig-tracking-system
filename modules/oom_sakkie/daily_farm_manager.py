@@ -91,6 +91,20 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
             return {"success": False, "status": "daily_manager_task_receipt_unavailable",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
+    if not packet["answer"]:
+        outcome = store("record_daily", claim_id + ":OUTCOME", {
+            "daily_identity": identity, "material_digest": digest,
+            "status": "unchanged", "observed_at": now.isoformat(),
+            "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+            "question": "", "question_binding": {}, "telegram_sends": 0,
+            "owner_visible_reason": "internal_work_only"})
+        if not isinstance(outcome, dict) or outcome.get("success") is not True:
+            return {"success": False, "status": "daily_manager_silent_receipt_unavailable",
+                    "telegram_sends": 0, "telegram_edits": 0, **ZERO}
+        return {"success": True, "status": "daily_manager_internal_work_silent",
+                "daily_identity": identity, "material_digest": digest,
+                "task_count": len(packet["all_tasks"]), "telegram_sends": 0,
+                "telegram_edits": 0, "next_due_at": _next_check(local), **ZERO}
     parsed = {"telegram_user_id": str(owner_user_id), "telegram_chat_id": str(chat_id),
         "telegram_chat_type": "private", "output_language": str(language),
         "provider_message_id": "scheduled:" + claim_id,
@@ -408,6 +422,11 @@ def _render(priorities, watch, question, now, language):
     visible = list(priorities) + list(watch)
     owner_work = [row for row in visible if _owner_action_required(row)]
     automatic_work = [row for row in visible if not _owner_action_required(row)]
+    if not owner_work and not question:
+        return ""
+    # Agent-owned reconciliation remains in the durable task lifecycle. It is
+    # not owner-visible until it produces an outcome or material exception.
+    automatic_work = []
     lines = ["<b>VANDAG SE PLAASPLAN</b>" if af
              else "<b>TODAY'S FARM PLAN</b>"]
     if owner_work:
@@ -425,7 +444,7 @@ def _render(priorities, watch, question, now, language):
     if question:
         lines.extend(("", "<b>EEN VRAAG</b>" if af else "<b>ONE QUESTION</b>",
                       html.escape(question)))
-    elif not owner_work:
+    elif not owner_work and not question:
         lines.extend(("", "Geen aksie word nou van jou benodig nie."
                       if af else "No action required from you."))
     return "\n".join(lines)
