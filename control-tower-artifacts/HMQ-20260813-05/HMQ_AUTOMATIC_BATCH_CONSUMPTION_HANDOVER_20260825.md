@@ -8,7 +8,8 @@
   `pig_weight_events`, and exact `pig_observation_events` keyed by the accepted
   draft/pig identity.
 - Output boundary: one stable BCS case and one stable material-weight case per
-  exact pig, with exact evidence references, generation/idempotency protection,
+  exact pig, using only the deterministic latest qualifying canonical event
+  across completed batches, with exact evidence references, generation/idempotency protection,
   bounded reassessment, and terminal completion only from newer qualifying
   canonical evidence.
 - Preserved safeguards: read-only collection, no heat inference, no diagnosis,

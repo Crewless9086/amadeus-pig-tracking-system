@@ -1,5 +1,6 @@
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -91,6 +92,37 @@ def test_exact_pig_terminal_evidence_completes_case_once_without_delivery():
             order by occurred_at""", (dedupe,)).fetchall()
     assert row == ("completed", 2, terminal["evidence_digest"], None, None)
     assert events.count(("completed",)) == 1
+
+
+def test_latest_batch_candidate_is_stable_across_repeated_and_concurrent_cycles():
+    now = datetime.now(timezone.utc) + timedelta(seconds=45)
+    dedupe = "herdmaster:bulk-condition:PG-MULTI-BATCH"
+    older = candidate("observation:PG-BATCH-OLDER", now, dedupe_key=dedupe,
+        specialist="HERDMASTER", summary="Older low BCS evidence.",
+        next_action="Retain recovery monitoring.", unknowns=[])
+    latest = candidate("observation:PG-BATCH-LATEST", now, dedupe_key=dedupe,
+        specialist="HERDMASTER", summary="Latest exact-pig BCS is in range.",
+        next_action="Complete the exact-pig follow-up.", unknowns=[],
+        terminal_state="completed")
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    with connect() as db, db.cursor() as cur:
+        assert store._reconcile(cur, normalize_candidate(older, now=now), now) == "created"
+        assert store._reconcile(cur, normalize_candidate(latest, now=now), now) == "changed"
+    # Every subsequent five-minute collector returns only the latest row. Two
+    # independent worker connections serialize on the same stable dedupe key.
+    def replay_latest(_worker):
+        with connect() as db, db.cursor() as cur:
+            return store._reconcile(cur, normalize_candidate(latest, now=now), now)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert list(pool.map(replay_latest, range(2))) == ["replayed", "replayed"]
+    with connect() as db:
+        row = db.execute("""select status,generation,evidence_digest
+            from app_private.oom_manager_cases where dedupe_key=%s""", (dedupe,)).fetchone()
+        count = db.execute("""select count(*) from app_private.oom_manager_case_events
+            where case_id=(select case_id from app_private.oom_manager_cases where dedupe_key=%s)""",
+            (dedupe,)).fetchone()[0]
+    assert row == ("completed", 2, normalize_candidate(latest, now=now)["evidence_digest"])
+    assert count == 2
 
 
 @pytest.mark.parametrize("material_kind", ["target-page", "enquiry-policy"])

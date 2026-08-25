@@ -41,6 +41,26 @@ def test_completed_batch_query_is_read_only_and_heat_free():
     source = __import__("inspect").getsource(_completed_bulk_batch_findings)
     assert "insert " not in source.casefold() and "update " not in source.casefold()
     assert "heat" not in source.casefold()
+    assert source.count("row_number() over(partition by") == 2
+    assert source.count("where position=1") == 2
+
+
+def test_completed_batch_queries_select_one_deterministic_latest_row_per_pig():
+    statements = []
+    class Cursor:
+        calls = 0
+        def execute(self, sql, _params): statements.append(sql); self.calls += 1
+        def fetchall(self): return []
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+    class Connection:
+        def cursor(self): return Cursor()
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+    assert _completed_bulk_batch_findings(NOW, connect=lambda: Connection()) == []
+    assert "observed_at desc,recorded_at desc,observation_event_id desc" in statements[0]
+    assert "weight_date desc,h.created_at desc,h.weight_event_id desc" in statements[1]
+    assert all("where position=1" in statement for statement in statements)
 
 
 def test_collectors_preserve_specialist_candidates():

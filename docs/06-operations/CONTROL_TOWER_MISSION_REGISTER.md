@@ -2902,7 +2902,9 @@ HERDMASTER manager cases. Read-only manual analysis was not an owner outcome.
 The bounded repair reuses the existing five-minute general-manager worker and
 `oom_manager_cases` lifecycle. It reads only completed canonical batches,
 binds every finding to the exact pig plus batch and weight/observation event,
-and uses stable pig-scoped dedupe identities. A material BCS or descriptive
+selects only the deterministic latest qualifying event per pig/case across the
+bounded completed-batch window, and uses stable pig-scoped dedupe identities.
+A material BCS or descriptive
 weight change retains a seven-day HERDMASTER reassessment; a newer exact
 in-range/non-material event completes that same case. Replay and concurrent
 cycles cannot create another case or terminal event. Heat is neither requested

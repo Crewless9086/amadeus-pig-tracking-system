@@ -312,22 +312,29 @@ def _completed_bulk_batch_findings(now, *, connect=None):
                     join public.pigs p on p.pig_id=o.pig_id
                     where not exists(select 1 from public.pig_observation_events newer
                         where newer.supersedes_observation_event_id=o.observation_event_id)
+                ), latest_bcs as (
+                    select current_bcs.*,row_number() over(partition by pig_id
+                        order by observed_at desc,recorded_at desc,observation_event_id desc) as position
+                    from current_bcs
                 ) select observation_event_id,pig_id,observed_at,recorded_at,
                     measurements_json,batch_id,client_draft_id,tag_number,pig_name
-                    from current_bcs order by recorded_at,observation_event_id""",
+                    from latest_bcs where position=1 order by pig_id""",
                 (_aware(now) - timedelta(days=35),))
             bcs_rows = cur.fetchall()
             cur.execute("""with history as (
-                    select w.weight_event_id,w.pig_id,w.weight_date,w.weight_kg,w.bulk_batch_id,
+                    select w.weight_event_id,w.pig_id,w.weight_date,w.weight_kg,w.bulk_batch_id,w.created_at,
                            lag(w.weight_kg) over(partition by w.pig_id order by w.weight_date,w.created_at,w.weight_event_id) prior_kg,
                            lag(w.weight_date) over(partition by w.pig_id order by w.weight_date,w.created_at,w.weight_event_id) prior_date
                     from public.pig_weight_events w
-                ) select h.weight_event_id,h.pig_id,h.weight_date,h.weight_kg,h.prior_kg,h.prior_date,
-                    h.bulk_batch_id,p.tag_number,p.pig_name
+                ), completed_history as (
+                    select h.*,p.tag_number,p.pig_name,row_number() over(partition by h.pig_id
+                        order by h.weight_date desc,h.created_at desc,h.weight_event_id desc) as position
                     from history h join public.bulk_weight_batches b on b.batch_id=h.bulk_batch_id
                     join public.pigs p on p.pig_id=h.pig_id
                     where b.status='complete' and b.updated_at >= %s and h.prior_kg is not null
-                    order by h.weight_date,h.weight_event_id""",
+                ) select weight_event_id,pig_id,weight_date,weight_kg,prior_kg,prior_date,
+                    h.bulk_batch_id,h.tag_number,h.pig_name
+                    from completed_history h where position=1 order by pig_id""",
                 (_aware(now) - timedelta(days=35),))
             weight_rows = cur.fetchall()
     findings = []
