@@ -96,5 +96,7 @@
   misclassified as domain failures. The corrected head splits the specialist
   call from canonical rebinding and adds all three refresh and delivery error
   families plus explicit `ManagerCaseError` and store `RuntimeError`/`OSError`
-  fatal regressions. PR `#1154` must rebase after this repair and preserve the
+  fatal regressions. Delivery `ManagerCaseError` and delivery-outcome
+  normalization are also proven cycle-fatal outside the domain containment
+  boundary. PR `#1154` must rebase after this repair and preserve the
   current terminal/provider, cadence and monotonic-delivery invariants.

@@ -231,6 +231,33 @@ def test_refresh_domain_manager_case_error_remains_cycle_fatal():
     assert result["failure"]["kind"] == "ManagerCaseError"
 
 
+def test_delivery_manager_case_error_remains_cycle_fatal():
+    now = datetime(2025, 2, 3, 8, 5, tzinfo=timezone.utc)
+    current = candidate("provider:delivery-manager-error", now,
+        dedupe_key="delivery-manager-case-error")
+    def deliver(_case):
+        raise ManagerCaseError("delivery_invariant_failed")
+    result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
+        [current], now=now + timedelta(seconds=2), source_revision="test",
+        refresh=lambda case: case, deliver=deliver)
+    assert result["success"] is False
+    assert result["failure"]["kind"] == "ManagerCaseError"
+
+
+def test_delivery_outcome_normalization_failure_remains_cycle_fatal():
+    now = datetime(2025, 2, 3, 9, 5, tzinfo=timezone.utc)
+    current = candidate("provider:invalid-delivery-outcome", now,
+        dedupe_key="delivery-outcome-normalization-error")
+    class InvalidOutcome:
+        def __iter__(self):
+            raise RuntimeError("delivery_outcome_normalization_failed")
+    result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
+        [current], now=now + timedelta(seconds=2), source_revision="test",
+        refresh=lambda case: case, deliver=lambda _case: InvalidOutcome())
+    assert result["success"] is False
+    assert result["failure"]["kind"] == "RuntimeError"
+
+
 def test_exact_pig_terminal_evidence_completes_case_once_without_delivery():
     now = datetime.now(timezone.utc) + timedelta(seconds=30)
     dedupe = "herdmaster:bulk-condition:PG-TERMINAL"
