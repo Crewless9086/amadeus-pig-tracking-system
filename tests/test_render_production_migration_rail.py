@@ -23,6 +23,7 @@ from scripts.run_render_production_migrations import (
     _function_readback,
     _migration_function_body,
     _metadata,
+    _verify_protected_claim_acl,
     run,
 )
 
@@ -69,7 +70,15 @@ def _reset_disposable_database(*, unexpected_litter_reason=False):
           if not exists (select 1 from pg_roles where rolname='authenticated') then
             create role authenticated;
           end if;
+          if not exists (select 1 from pg_roles where rolname='supabase_etl_admin') then
+            create role supabase_etl_admin login replication bypassrls;
+          end if;
+          if not exists (select 1 from pg_roles where rolname='supabase_read_only_user') then
+            create role supabase_read_only_user login bypassrls;
+          end if;
         end $$""")
+        db.execute("grant pg_read_all_data to supabase_etl_admin")
+        db.execute("grant pg_read_all_data to supabase_read_only_user")
         db.execute("drop schema if exists app_private cascade")
         db.execute("drop table if exists public.pig_welfare_cases cascade")
         db.execute("drop table if exists public.pig_welfare_case_events cascade")
@@ -201,6 +210,54 @@ def _compact_authorization_env(authorization):
 
 
 class RenderProductionMigrationRailTests(unittest.TestCase):
+    def test_protected_claim_acl_allows_only_named_managed_select_roles(self):
+        class Result:
+            def __init__(self, *, row=None, rows=None):
+                self.row = row
+                self.rows = rows
+
+            def fetchone(self):
+                return self.row
+
+            def fetchall(self):
+                return self.rows
+
+        class Connection:
+            def __init__(self, rows):
+                self.rows = rows
+                self.calls = 0
+
+            def execute(self, _query):
+                self.calls += 1
+                if self.calls == 1:
+                    return Result(row=("migration_owner", "migration_owner"))
+                return Result(rows=self.rows)
+
+        allowed = [
+            ("pg_read_all_data", "SELECT"),
+            ("supabase_etl_admin", "COLUMN:callback_token:SELECT"),
+            ("supabase_read_only_user", "SELECT"),
+        ]
+        self.assertEqual(
+            _verify_protected_claim_acl(Connection(allowed)),
+            {
+                "unauthorized_privilege_count": 0,
+                "managed_read_roles": [
+                    "pg_read_all_data",
+                    "supabase_etl_admin",
+                    "supabase_read_only_user",
+                ],
+            },
+        )
+        for rows in (
+            [("supabase_read_only_user", "UPDATE")],
+            [("unlisted_login", "SELECT")],
+        ):
+            with self.subTest(rows=rows), self.assertRaisesRegex(
+                RuntimeError, "migration_readback_protected_claim_acl_mismatch"
+            ):
+                _verify_protected_claim_acl(Connection(rows))
+
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_exact_legacy_production_shape_adopts_atomically_then_replays(self):
         import psycopg
@@ -525,7 +582,14 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         )
         self.assertEqual(
             first["migrations"][-1]["readback"]["protected_claim_acl"],
-            {"unauthorized_privilege_count": 0},
+            {
+                "unauthorized_privilege_count": 0,
+                "managed_read_roles": [
+                    "pg_read_all_data",
+                    "supabase_etl_admin",
+                    "supabase_read_only_user",
+                ],
+            },
         )
         self.assertTrue(
             first["migrations"][-2]["readback"]["migration_log_description_sha256"]
@@ -880,7 +944,8 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         import psycopg
 
         for role in (
-            "public", "anon", "authenticated", "anon_inherited", "unlisted_login"
+            "public", "anon", "authenticated", "anon_inherited", "unlisted_login",
+            "managed_mutation",
         ):
             with self.subTest(role=role):
                 _reset_disposable_database()
@@ -900,6 +965,11 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                             "exception when duplicate_object then null; end $$; "
                             "grant select on app_private.oom_protected_action_claims "
                             "to unlisted_claim_reader"
+                        )
+                    elif role == "managed_mutation":
+                        db.execute(
+                            "grant update on app_private.oom_protected_action_claims "
+                            "to supabase_read_only_user"
                         )
                     else:
                         db.execute(
