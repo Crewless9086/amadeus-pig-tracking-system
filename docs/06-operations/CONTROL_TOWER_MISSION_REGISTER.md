@@ -2775,3 +2775,50 @@ automatic action is for Green to remain in its zero-job polling/heartbeat cycle
 until a genuine farm need produces the existing protected weekly-sheet request;
 Control Tower then follows that single journey through confirmation, provider/
 canonical readback and a later terminal-independent continuity cycle.
+
+## 2026-08-25 - ROOTLINE segmented auxiliary-load authority and Mixer evidence
+
+This owner decision and commissioning evidence consolidate into existing
+`RMQ-20260813-02`, `RMQ-20260813-03`, `RMQ-20260813-04` and
+`RMQ-20260813-06`; they create no mission and do not change priority. The
+owner accepts yesterday's genuine Mixer CH2 provider run followed by its native
+five-minute automatic OFF as commissioning evidence for the exact installed CH2
+command/readback path. The bounded CH2 start-to-native-OFF commissioning outcome
+is achieved. It does not yet prove today's intended 30-minute configuration,
+the complete daily mixing objective or terminal-independent segmented operation.
+
+The owner is changing the Mixer's native maximum to 30 minutes per segment and
+authorizes ROOTLINE to divide the daily mixing objective into power-aware
+segments. This expanded limit is not operative until fresh application/provider
+readback proves the exact configured maximum. Every segment remains bound to the
+exact commissioned device, one canonical plan and execution identity, bounded
+claim/retry/replay rules, current power and safety eligibility, and authoritative
+final OFF. ROOTLINE must not infer the setting from this instruction or command
+the device during source/governance work.
+
+The Injector's native maximum is two minutes per segment. Its established
+single-active-zone, pre-flow, injection and flush safeguards remain authoritative;
+segmentation does not bypass them. The Borehole's native maximum is four hours
+per segment and ROOTLINE may repeat bounded segments through the night only when
+the current power/no-rain plan remains eligible. The tanks' own full cutoff
+remains an independent authoritative stop. Approximate inverter draw of 1.2 kW
+during an intended run is supporting indication only: it must never start, stop,
+gate or extend Mixer, Injector or Borehole operation.
+
+**Owner outcome classification.** Mixer CH2's exact five-minute commissioning
+journey is accepted. Mixer 30-minute segmented daily operation remains
+`WORKING / CONFIG_READBACK_AND_AUTOMATIC_CONTINUITY_REQUIRED`. Injector remains
+`WORKING` until its exact connector/activation and a governed provider ON-to-OFF
+journey are proven under its two-minute and irrigation safeguards. Borehole
+remains fail-closed and uncommandable until exact connector/device binding,
+four-hour bounded fail-OFF, activation and a governed provider ON-to-OFF journey
+are proven; later automatic continuity is still required. Provider/application
+readback is sufficient under the standing owner authority, while physical
+observation is optional supporting evidence. **OWNER ACTION: NONE.** No device
+was actuated or configured by Control Tower in recording this decision.
+
+The same existing `RMQ-20260813-04` conversational presentation defect remains
+source work: direct ROOTLINE replies must project validated lifecycle truth in
+the recipient's language and must not expose backend reason tokens, internal
+claim instructions or contradictory recommendation/readiness labels. This is a
+presentation correction only and grants no new device authority.
