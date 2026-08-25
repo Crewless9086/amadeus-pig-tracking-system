@@ -3223,6 +3223,28 @@ that technical lease and schedules the next cadence while preserving confirmed
 truth. It does not close the mortality case or manufacture farm evidence.
 **OWNER ACTION: NONE.**
 
+Natural post-`1aa4974d` acceptance exposed a separate global-loop blocker in
+the same lineage. Cycle
+`OOM-MANAGER-CYCLE-20260825T195518955722Z-2D05EA6CB69E4226B65044D88C45CFE1`
+finished Prince, then claimed ROOTLINE mixer case
+`OOM-CASE-C0C589F1A0970494C2BB730F` and failed with `ValueError`; bounded
+read-only reproduction established `rootline_mixer_registry_binding_invalid`.
+That single specialist refresh prevented later due work, including
+`PIG-2026-3EE5`, from being finished. This is a blocking defect/addendum in
+existing `OMQ-20260813-03`, not a new mission, and priority is unchanged except
+that it directly unblocks the existing acceptance. The bounded repair contains
+per-case specialist refresh/delivery domain exceptions into an attributable
+exception event, stable `waiting_reassessment`, future cadence and lease
+release, then continues the queue. Manager-case persistence and systemic
+invariants remain cycle-fatal. No provider delivery, closure or farm evidence
+is synthesized. PR `#1154` is a shared-runtime collision and must remain
+separate; it must rebase and preserve current terminal/provider, cadence and
+monotonic-delivery invariants. Independent review blocked initial head
+`177a9075` because its try-boundary included canonical `_refresh_claim` store
+work. The corrected boundary catches only the specialist invocation; canonical
+normalization, locking and persistence failures remain cycle-fatal.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.10 migration-rail defect
 
 Governed Render run `32860700895` succeeded at exact source but the closed

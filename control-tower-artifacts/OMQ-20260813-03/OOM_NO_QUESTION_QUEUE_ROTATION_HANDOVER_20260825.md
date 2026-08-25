@@ -58,3 +58,45 @@
 - This bounded addendum preserves confirmed truth, clears only the worker lease,
   schedules the next cadence and records that reassessment. It does not close
   the mortality case, manufacture evidence or send Telegram.
+
+## Natural global-loop failure and bounded containment
+
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME**
+
+- Finding: after the monotonic repair was live, natural cycle
+  `OOM-MANAGER-CYCLE-20260825T195518955722Z-2D05EA6CB69E4226B65044D88C45CFE1`
+  finished the first Prince case safely, then claimed ROOTLINE mixer case
+  `OOM-CASE-C0C589F1A0970494C2BB730F` and terminated with `ValueError` before
+  finishing it. Exact read-only source reproduction identified
+  `rootline_mixer_registry_binding_invalid` from the existing mixer-readiness
+  collector. This one specialist case stopped every later due case, including
+  `PIG-2026-3EE5`.
+- Classification: blocking defect/addendum in the existing
+  `OMQ-20260813-03` global manager loop. Priority is unchanged; it is being
+  repaired now only because it blocks the already-active PIG acceptance.
+- Collision result: retained PR `#1154` also touches
+  `general_manager_worker.py`; its changes must not be silently combined.
+  Register-only overlaps must retain both durable receipts.
+- Bounded repair: contain `ValueError`, `RuntimeError` and `OSError` raised by
+  one case's specialist refresh or delivery invocation only. Store
+  normalization, locking and persistence execute outside the containment
+  boundary, while `ManagerCaseError` and persistence/systemic invariants remain
+  cycle-fatal. The affected case receives
+  an attributable exception event, stable `waiting_reassessment`, a future
+  five-minute cadence and a released lease. The cycle continues to later
+  cases. No provider send, case close or farm-data mutation is manufactured.
+- Proof boundary: disposable PostgreSQL covers faulty ROOTLINE first and a
+  later silent HERDMASTER pig case, future cadence, lease release, exception
+  attribution, immediate replay silence and zero sends. Source/tests/PR are
+  not an owner outcome. Exact deployed revision plus natural mixed-case queue
+  continuation and later terminal-independent repetition remain required.
+- Owner action: none.
+- Independent review of initial head `177a9075` blocked its overly broad
+  refresh try-boundary because `_refresh_claim` store failures could have been
+  misclassified as domain failures. The corrected head splits the specialist
+  call from canonical rebinding and adds all three refresh and delivery error
+  families plus explicit `ManagerCaseError` and store `RuntimeError`/`OSError`
+  fatal regressions. Delivery `ManagerCaseError` and delivery-outcome
+  normalization are also proven cycle-fatal outside the domain containment
+  boundary. PR `#1154` must rebase after this repair and preserve the
+  current terminal/provider, cadence and monotonic-delivery invariants.
