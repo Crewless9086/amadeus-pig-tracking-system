@@ -2858,3 +2858,36 @@ zero prior jobs/claims/events for that request. Adoption must use those exact
 provider facts, record an audit receipt, and then allow the scheduler rail to
 continue it; it must not synthesize or replay a Telegram update. No adoption or
 print job was performed by this source change.
+
+## 2026-08-25 - HERDMASTER continuous-husbandry Molly first-treatment parity intake
+
+The new Molly Telegram finding is consolidated into the existing
+`HERDMASTER / HERDMASTER` continuous-husbandry operating loop recorded in the
+Continuous Agent Operations Reset; it is not a new HMQ mission, litter mission,
+Telegram queue, farrowing workflow or treatment database. That existing loop
+already names Molly's omitted due treatment as an acceptance blocker and owns
+continuous litter, treatment, medical and welfare work through the canonical
+HERDMASTER queue and Oom Sakkie follow-through.
+
+Current owner-visible parity is not proven. Canonically due-and-ready Molly
+litter first-treatment work may appear in the shared Owner Attention projection,
+but the genuine Telegram manager journey must carry the same current task and
+must follow it through the existing protected litter-treatment action to exact
+canonical readback, reassessment and retirement. Unknown, partial, already
+completed or durably skipped evidence must remain non-actionable. No product,
+dose, treatment fact or completion may be inferred, and a Telegram message or
+button alone is not a farm outcome. The owner must not be asked to rediscover,
+relay or repeatedly chase due work that HERDMASTER and Oom Sakkie already own.
+
+The current implementation owner is the isolated source worktree
+`C:/tmp/herdmaster-litter-treatment-telegram-parity-20260825`, branch
+`fix/herdmaster-litter-treatment-telegram-parity-20260825`, created from exact
+main `78b724fa487a9ceadfc4a52512e260bb89ea71e0`. Farrowing database authority,
+natural health/loss, welfare, weighing, breeding and historical litter PRs are
+collision evidence only; they do not authorize a second treatment writer or a
+Molly-specific bypass. Priority is unchanged. **NO BUSINESS OUTCOME. OWNER
+ACTION: NONE.** Automatic continuation is the same-lineage source repair,
+independent review, exact deployment, then one fresh genuine Telegram cycle
+proving names-first parity, one protected exact treatment journey when truly
+due, canonical completion/readback, replay containment and a later stable cycle
+without repeated work.
