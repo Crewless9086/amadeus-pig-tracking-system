@@ -178,7 +178,7 @@ def test_queue_rejects_any_nonexact_endpoint_without_queue(tmp_path,capsys,overr
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.8"
+    assert cfg["version"]=="0.3.9"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -202,7 +202,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.8-verified-release-packet" in workflow
+    assert "green-print-0.3.9-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
@@ -230,7 +230,7 @@ def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.8"
+    assert parsed["env"]["VERSION"]=="0.3.9"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -352,8 +352,8 @@ def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_
     assert "canonical final-attestations.json" in final_verify
     assert "cmp -s canonical-existing-attestations.json canonical-final-attestations.json" in final_verify
     assert "attestation_inventory_post_sha256" in final_verify
-    assert "final-green-print-0.3.8.spdx.json" not in final_verify
-    assert final_verify.count("green-print-0.3.8.spdx.json")==2
+    assert "final-green-print-0.3.9.spdx.json" not in final_verify
+    assert final_verify.count("green-print-0.3.9.spdx.json")==2
     assert "cosign triangulate" not in final_verify and "signature_ref" not in final_verify
     for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
         assert forbidden not in text
@@ -374,7 +374,7 @@ def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_com
     assert "attestation_inventory_post_sha256" in serialized
     for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
         assert forbidden not in serialized
-    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.8-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
+    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.9-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
         assert exact in serialized
 
 def test_036_final_readonly_verification_has_bounded_retry_and_attributable_failures():
