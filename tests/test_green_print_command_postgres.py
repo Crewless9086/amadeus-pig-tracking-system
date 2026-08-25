@@ -1,6 +1,7 @@
 """Disposable-Postgres contract tests for durable Green command outcomes."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+from threading import Barrier
 import os
 from hashlib import sha256
 from pathlib import Path
@@ -22,6 +23,8 @@ MIGRATION = (Path(__file__).parents[1] / "supabase" / "migrations" /
              "202608210001_create_green_print_jobs.sql")
 DEVICE_FENCE_MIGRATION = (MIGRATION.parent /
              "202608250001_fence_green_print_lease_device_binding.sql")
+LOST_LEDGER_MIGRATION = (MIGRATION.parent /
+             "202608250002_adopt_green_lost_pre_attempt_claim.sql")
 PDF_SHA = "a" * 64
 EVENT = "00000000-0000-0000-0000-000000000001"
 
@@ -42,6 +45,22 @@ def test_migration_has_schema_safe_pgcrypto_and_least_privilege_grants():
     assert "revoke all on app_private.document_print_jobs from public, anon, authenticated" in source
     assert "grant execute on function app_private.create_authorized_document_print_job" in source
     assert "grant select" not in source and "grant insert" not in source and "grant update" not in source
+
+
+def test_lost_ledger_migration_is_same_job_preattempt_only():
+    source = LOST_LEDGER_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "create or replace function app_private.claim_document_print_job" in source
+    assert "state='claimed' and lease_expires_at<=clock_timestamp()" in source
+    assert "attempt_id is null and cups_job_id is null and provider_id is null" in source
+    assert "authorization_expires_at > clock_timestamp()" in source
+    assert "retry_deadline > clock_timestamp()" in source
+    assert "green_print_job_device_active(document_print_jobs)" in source
+    assert "for update skip locked limit 1" in source
+    assert source.count("attempt_id is null and cups_job_id is null and provider_id is null") == 2
+    assert "returning job_id into v_job_id" in source
+    assert "if not found then return" in source
+    assert "insert into app_private.document_print_jobs" not in source
+    assert "lost_local_ledger_adoption" in source
 
 
 @pytest.fixture
@@ -77,6 +96,7 @@ def db():
                         sql.Identifier(extension_schema)))
             cursor.execute(MIGRATION.read_text(encoding="utf-8"))
             cursor.execute(DEVICE_FENCE_MIGRATION.read_text(encoding="utf-8"))
+            cursor.execute(LOST_LEDGER_MIGRATION.read_text(encoding="utf-8"))
             cursor.execute("""insert into app_private.document_print_device_registry
                 (farm_scope_id,green_id,printer_id,cups_queue_id,registry_version,
                  canonical_api_origin,active,commissioned_at,evidence_sha256)
@@ -136,6 +156,66 @@ def prepare_worker_job(db, state="claimed", attempt=None, cups=None, provider=No
             cups_job_id=%s,provider_id=%s,command_kind=null,command_receipt_id=null,
             command_status=null,command_outcome=null where job_id='JOB-DB-1'""",
                        (state, attempt, cups, provider))
+
+
+def test_fresh_ledger_adopts_same_expired_preattempt_claim_once(db):
+    with db.cursor() as cursor:
+        cursor.execute("""update app_private.document_print_jobs set
+            state='claimed', lease_owner='lost-worker', lease_token='lost-token',
+            lease_expires_at=clock_timestamp()-interval '1 second',
+            attempt_id=null,cups_job_id=null,provider_id=null,
+            authorization_expires_at=clock_timestamp()+interval '1 hour',
+            retry_deadline=clock_timestamp()+interval '1 hour'
+            where job_id='JOB-DB-1'""")
+        before = cursor.execute(
+            "select count(*) from app_private.document_print_jobs"
+        ).fetchone()[0]
+        adopted = cursor.execute(
+            "select job_id,lease_owner,state from app_private.claim_document_print_job(%s,%s,%s,%s)",
+            ("farm-amadeus", "green", "fresh-worker", 300),
+        ).fetchone()
+        assert adopted == ("JOB-DB-1", "fresh-worker", "claimed")
+        assert cursor.execute(
+            "select count(*) from app_private.document_print_jobs"
+        ).fetchone()[0] == before
+        assert cursor.execute(
+            "select count(*) from app_private.claim_document_print_job(%s,%s,%s,%s)",
+            ("farm-amadeus", "green", "other-worker", 300),
+        ).fetchone()[0] == 0
+        event = cursor.execute("""select event_type,metadata_json->>'lost_local_ledger_adoption'
+            from app_private.document_print_job_events where job_id='JOB-DB-1'
+            order by event_at desc,event_id desc limit 1""").fetchone()
+        assert event == ("lease_recovered", "true")
+
+
+@pytest.mark.parametrize("blocked", [
+    "attempt", "cups", "provider", "authorization", "retry", "device",
+])
+def test_fresh_ledger_refuses_ineligible_canonical_claim(db, blocked):
+    with db.cursor() as cursor:
+        cursor.execute("""update app_private.document_print_jobs set
+            state='claimed',lease_owner='lost-worker',lease_token='lost-token',
+            lease_expires_at=clock_timestamp()-interval '1 second',
+            attempt_id=null,cups_job_id=null,provider_id=null,
+            authorization_expires_at=clock_timestamp()+interval '1 hour',
+            retry_deadline=clock_timestamp()+interval '1 hour'
+            where job_id='JOB-DB-1'""")
+        if blocked == "attempt":
+            cursor.execute("update app_private.document_print_jobs set attempt_id='ATTEMPT-X'")
+        elif blocked == "cups":
+            cursor.execute("update app_private.document_print_jobs set cups_job_id='weekly-a4-99'")
+        elif blocked == "provider":
+            cursor.execute("update app_private.document_print_jobs set provider_id='ipps://printer'")
+        elif blocked == "authorization":
+            cursor.execute("update app_private.document_print_jobs set authorization_expires_at=clock_timestamp()-interval '1 second'")
+        elif blocked == "retry":
+            cursor.execute("update app_private.document_print_jobs set retry_deadline=clock_timestamp()-interval '1 second'")
+        else:
+            cursor.execute("update app_private.document_print_device_registry set active=false")
+        assert cursor.execute(
+            "select count(*) from app_private.claim_document_print_job(%s,%s,%s,%s)",
+            ("farm-amadeus", "green", "fresh-worker", 300),
+        ).fetchone()[0] == 0
 
 
 def producer_job(**changes):
@@ -599,3 +679,35 @@ def test_provider_completion_cannot_replace_established_identities(db):
 def test_worker_cannot_replace_or_forge_identity_metadata(db, metadata):
     prepare_worker_job(db, "submitting", "ATTEMPT-1")
     rejected_worker_transition(db, "submitted", metadata)
+
+
+def test_two_fresh_ledgers_concurrently_adopt_exactly_once(db):
+    with db.cursor() as cursor:
+        cursor.execute("""update app_private.document_print_jobs set state='held'
+            where job_id<>'JOB-DB-1' and state in ('authorized','claimed')""")
+        cursor.execute("""update app_private.document_print_jobs set
+            state='claimed',lease_owner='lost-worker',lease_token='lost-token',
+            lease_expires_at=clock_timestamp()-interval '1 second',
+            attempt_id=null,cups_job_id=null,provider_id=null,
+            authorization_expires_at=clock_timestamp()+interval '1 hour',
+            retry_deadline=clock_timestamp()+interval '1 hour'
+            where job_id='JOB-DB-1'""")
+    db.commit()
+    barrier = Barrier(2)
+
+    def claim(worker):
+        with psycopg.connect(URL, autocommit=True) as connection:
+            barrier.wait()
+            return connection.execute(
+                "select job_id from app_private.claim_document_print_job(%s,%s,%s,%s)",
+                ("farm-amadeus", "green", worker, 300),
+            ).fetchall()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(claim, ("fresh-a", "fresh-b")))
+    assert sorted(len(rows) for rows in results) == [0, 1]
+    assert [row[0] for rows in results for row in rows] == ["JOB-DB-1"]
+    with db.cursor() as cursor:
+        assert cursor.execute("""select count(*) from app_private.document_print_job_events
+            where job_id='JOB-DB-1'
+              and metadata_json->>'lost_local_ledger_adoption'='true'""").fetchone()[0] == 1

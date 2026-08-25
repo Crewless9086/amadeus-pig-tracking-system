@@ -65,6 +65,11 @@ ALLOWLIST = (
         filename="202608250001_fence_green_print_lease_device_binding.sql",
         sha256="7607ddc4f7fb3c6cd77d638525854929545026af0e9160eb751633b29f51459b",
     ),
+    AllowedMigration(
+        migration_id="202608250002_adopt_green_lost_pre_attempt_claim",
+        filename="202608250002_adopt_green_lost_pre_attempt_claim.sql",
+        sha256="977f45d6f935d3bf7b39b6bfbe9c696c52fd88db743f8c86c5b73719ff28475e",
+    ),
 )
 
 
@@ -97,6 +102,10 @@ PREDECESSOR_PROTECTED_ACTION_KINDS = tuple(
     if value != "herdmaster_record_farrowing_litter"
 )
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
+    "202608250002_adopt_green_lost_pre_attempt_claim": (
+        "Allow one exact active and authorized expired pre-attempt GREEN claim "
+        "to be adopted by a fresh local ledger"
+    ),
     "202608220001_extend_litter_supersession_for_fact_corrections": (
         "Reuse append-only litter supersession rail for protected factual corrections"
     ),
@@ -151,6 +160,7 @@ CATALOG_RELATIONS = (
     "public.litter_supersessions",
 )
 CATALOG_FUNCTIONS = (
+    "app_private.claim_document_print_job",
     "app_private.green_print_job_device_active",
     "app_private.guard_charitable_sales_evidence",
     "app_private.guard_production_migration_receipts",
@@ -167,6 +177,7 @@ CATALOG_FUNCTIONS = (
 GREEN_DEVICE_FENCE_MIGRATION_ID = (
     "202608250001_fence_green_print_lease_device_binding"
 )
+GREEN_LOST_LEDGER_MIGRATION_ID = "202608250002_adopt_green_lost_pre_attempt_claim"
 GREEN_DEVICE_FUNCTIONS = {
     "green_print_job_device_active": {
         "arguments": "p_job app_private.document_print_jobs",
@@ -198,6 +209,17 @@ GREEN_DEVICE_PREDECESSOR_FUNCTIONS = {
         "renew_document_print_job_lease",
         "recover_document_print_job_lease",
     )
+}
+GREEN_CLAIM_FUNCTION = {
+    "claim_document_print_job": {
+        "arguments": (
+            "p_farm_scope_id text, p_green_id text, p_worker_id text, "
+            "p_lease_seconds integer"
+        ),
+        "language": "plpgsql", "return_type": "app_private.document_print_jobs",
+        "returns_set": True,
+        "volatility": "v", "acl": (("documents_green_worker_executor", "EXECUTE"),),
+    }
 }
 
 
@@ -784,7 +806,7 @@ def _verify_green_device_functions(
         rows = connection.execute(
             """select p.prosrc,pg_catalog.pg_get_functiondef(p.oid),
                       pg_catalog.pg_get_function_identity_arguments(p.oid),l.lanname,
-                      pg_catalog.format_type(p.prorettype,null),p.prosecdef,
+                      pg_catalog.format_type(p.prorettype,null),p.proretset,p.prosecdef,
                       p.proleakproof,p.provolatile,p.proparallel,p.proconfig,
                       pg_catalog.pg_get_userbyid(p.proowner),current_user,p.oid
                  from pg_catalog.pg_proc p
@@ -795,15 +817,16 @@ def _verify_green_device_functions(
         ).fetchall()
         if len(rows) != 1:
             raise RuntimeError(f"migration_green_function_missing_or_ambiguous:{name}")
-        (body, definition, arguments, language, return_type, security_definer,
+        (body, definition, arguments, language, return_type, returns_set, security_definer,
          leakproof, volatility, parallel, config, owner, current_role, oid) = rows[0]
         normalized_body = str(body).replace("\r\n", "\n").replace("\r", "\n").strip()
         expected_config = ["search_path=pg_catalog, app_private"]
         if (
             normalized_body != expected_bodies[name]
             or arguments != expected["arguments"]
-            or (language, return_type, security_definer, leakproof, volatility, parallel)
-            != (expected["language"], expected["return_type"], True, False,
+            or (language, return_type, returns_set, security_definer, leakproof, volatility, parallel)
+            != (expected["language"], expected["return_type"],
+                expected.get("returns_set", False), True, False,
                 expected["volatility"], "u")
             or config != expected_config
             or owner != current_role
@@ -1563,12 +1586,15 @@ def _verify_catalog_checkpoint(connection) -> dict:
     latest = validated[0]
     expected_functions = list(CATALOG_FUNCTIONS)
     if len(latest[1]) < len(current_payload):
-        expected_functions = [name for name in expected_functions
-            if name not in {
+        newly_added_functions = {"app_private.claim_document_print_job"}
+        if len(latest[1]) < len(current_payload) - 1:
+            newly_added_functions.update({
                 "app_private.green_print_job_device_active",
                 "app_private.recover_document_print_job_lease",
                 "app_private.renew_document_print_job_lease",
-            }]
+            })
+        expected_functions = [name for name in expected_functions
+            if name not in newly_added_functions]
     expected_scope = {
         "relations": list(CATALOG_RELATIONS),
         "functions": expected_functions,
@@ -1666,6 +1692,29 @@ def _verify_migration_precondition(
     *,
     already_applied: bool,
 ) -> str:
+    if item.migration_id == GREEN_LOST_LEDGER_MIGRATION_ID:
+        target_error = None
+        try:
+            _verify_green_device_functions(connection, item.filename, GREEN_CLAIM_FUNCTION)
+        except RuntimeError as exc:
+            target_error = exc
+        if target_error is None:
+            if not already_applied:
+                raise RuntimeError("migration_precondition_green_claim_target_without_receipt")
+            return "target"
+        try:
+            _verify_green_device_functions(
+                connection,
+                "202608210001_create_green_print_jobs.sql",
+                GREEN_CLAIM_FUNCTION,
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"migration_precondition_green_claim_function_drift:{exc}"
+            ) from exc
+        if already_applied:
+            raise RuntimeError("migration_precondition_green_claim_predecessor_with_receipt")
+        return "predecessor"
     if item.migration_id == GREEN_DEVICE_FENCE_MIGRATION_ID:
         target_error = None
         try:
@@ -1748,6 +1797,19 @@ def _verify_migration_precondition(
 
 
 def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
+    if item.migration_id == GREEN_LOST_LEDGER_MIGRATION_ID:
+        functions = _verify_green_device_functions(
+            connection, item.filename, GREEN_CLAIM_FUNCTION
+        )
+        description = _verify_migration_log(connection, item.migration_id, required=True)
+        return {
+            "migration_receipt_required": True,
+            "lost_ledger_adoption_function_count": len(functions),
+            "migration_log_description_sha256": hashlib.sha256(
+                description.encode("utf-8")
+            ).hexdigest(),
+            "functions": functions,
+        }
     if item.migration_id == GREEN_DEVICE_FENCE_MIGRATION_ID:
         functions = _verify_green_device_functions(connection, item.filename)
         return {
