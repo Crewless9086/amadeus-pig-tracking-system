@@ -3238,7 +3238,12 @@ exception event, stable `waiting_reassessment`, future cadence and lease
 release, then continues the queue. Manager-case persistence and systemic
 invariants remain cycle-fatal. No provider delivery, closure or farm evidence
 is synthesized. PR `#1154` is a shared-runtime collision and must remain
-separate. **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+separate; it must rebase and preserve current terminal/provider, cadence and
+monotonic-delivery invariants. Independent review blocked initial head
+`177a9075` because its try-boundary included canonical `_refresh_claim` store
+work. The corrected boundary catches only the specialist invocation; canonical
+normalization, locking and persistence failures remain cycle-fatal.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
 ## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.10 migration-rail defect
 

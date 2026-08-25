@@ -78,8 +78,10 @@
   `general_manager_worker.py`; its changes must not be silently combined.
   Register-only overlaps must retain both durable receipts.
 - Bounded repair: contain `ValueError`, `RuntimeError` and `OSError` raised by
-  one case's specialist refresh or delivery, while keeping `ManagerCaseError`
-  and persistence/systemic invariants cycle-fatal. The affected case receives
+  one case's specialist refresh or delivery invocation only. Store
+  normalization, locking and persistence execute outside the containment
+  boundary, while `ManagerCaseError` and persistence/systemic invariants remain
+  cycle-fatal. The affected case receives
   an attributable exception event, stable `waiting_reassessment`, a future
   five-minute cadence and a released lease. The cycle continues to later
   cases. No provider send, case close or farm-data mutation is manufactured.
@@ -89,3 +91,10 @@
   not an owner outcome. Exact deployed revision plus natural mixed-case queue
   continuation and later terminal-independent repetition remain required.
 - Owner action: none.
+- Independent review of initial head `177a9075` blocked its overly broad
+  refresh try-boundary because `_refresh_claim` store failures could have been
+  misclassified as domain failures. The corrected head splits the specialist
+  call from canonical rebinding and adds all three refresh and delivery error
+  families plus explicit `ManagerCaseError` and store `RuntimeError`/`OSError`
+  fatal regressions. PR `#1154` must rebase after this repair and preserve the
+  current terminal/provider, cadence and monotonic-delivery invariants.

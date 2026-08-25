@@ -9,7 +9,8 @@ import pytest
 
 from modules.oom_sakkie.manager_case_sources import _completed_bulk_batch_findings
 from modules.oom_sakkie.general_manager_worker import (
-    PostgresManagerCaseStore, deliver_farm_manager_case, normalize_candidate,
+    ManagerCaseError, PostgresManagerCaseStore, deliver_farm_manager_case,
+    normalize_candidate,
 )
 
 
@@ -120,9 +121,12 @@ def test_mixed_suppressions_advance_cadence_and_rotate_beyond_claim_limit(monkey
     assert provider_sends == []
 
 
-def test_faulty_specialist_refresh_is_contained_without_starving_later_pig(monkeypatch):
+@pytest.mark.parametrize("exception_type", [ValueError, RuntimeError, OSError])
+def test_faulty_specialist_refresh_is_contained_without_starving_later_pig(
+        monkeypatch, exception_type):
     now = datetime(2025, 2, 3, 4, 5, tzinfo=timezone.utc)
-    prefix = "specialist-containment:" + now.strftime("%Y%m%d%H%M%S")
+    prefix = ("specialist-containment:" + now.strftime("%Y%m%d%H%M%S")
+              + ":" + exception_type.__name__.lower())
     faulty = candidate("provider:mixer", now, dedupe_key=prefix + ":rootline",
         specialist="ROOTLINE", urgency="critical",
         unknowns=["current_provider_mixer_readiness"],
@@ -135,7 +139,7 @@ def test_faulty_specialist_refresh_is_contained_without_starving_later_pig(monke
     sends = []
     def refresh(case):
         if case["dedupe_key"] == faulty["dedupe_key"]:
-            raise ValueError("rootline_mixer_registry_binding_invalid")
+            raise exception_type("rootline_mixer_registry_binding_invalid")
         return by_key[case["dedupe_key"]]
     result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
         [faulty, pig], now=now + timedelta(seconds=2), source_revision="test",
@@ -162,13 +166,69 @@ def test_faulty_specialist_refresh_is_contained_without_starving_later_pig(monke
         "no_owner_question_delivery_suppressed"}
     assert any(row[0] == faulty["dedupe_key"] and row[1] == "exception"
         and row[2]["outcome_status"] == "manager_specialist_processing_exception_contained"
-        and row[2]["failure_kind"] == "ValueError"
+        and row[2]["failure_kind"] == exception_type.__name__
         for row in events)
     assert sends == []
     repeat = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
         [faulty, pig], now=now + timedelta(seconds=3), source_revision="test",
         refresh=refresh, deliver=lambda case: sends.append("unexpected"))
     assert repeat["cases_claimed"] == 0 and sends == []
+
+
+@pytest.mark.parametrize("exception_type", [ValueError, RuntimeError, OSError])
+def test_faulty_specialist_delivery_is_contained_per_case(monkeypatch, exception_type):
+    now = datetime(2025, 2, 3, 5, 5, tzinfo=timezone.utc)
+    prefix = "delivery-containment:" + exception_type.__name__.lower()
+    faulty = candidate("provider:delivery", now, dedupe_key=prefix + ":rootline",
+        specialist="ROOTLINE", urgency="critical")
+    later = candidate("pig:PIG-LATER", now + timedelta(seconds=1),
+        dedupe_key=prefix + ":pig", specialist="HERDMASTER", urgency="critical",
+        unknowns=[])
+    def deliver(case):
+        if case["dedupe_key"] == faulty["dedupe_key"]:
+            raise exception_type("specialist_delivery_failed")
+        return {"success": True, "status": "no_owner_question_delivery_suppressed",
+            "delivery_confirmed": False, "telegram_sends": 0,
+            "next_reassessment_at": (now + timedelta(minutes=5)).isoformat()}
+    result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
+        [faulty, later], now=now + timedelta(seconds=2), source_revision="test",
+        refresh=lambda case: case, deliver=deliver)
+    assert result["success"] is True and result["cases_claimed"] == 2
+    assert result["exceptions"] == 1 and result["deliveries_confirmed"] == 0
+    assert {row["outcome_status"] for row in result["case_results"]} == {
+        "manager_specialist_processing_exception_contained",
+        "no_owner_question_delivery_suppressed"}
+
+
+@pytest.mark.parametrize("failure", [
+    ManagerCaseError("refreshed_dedupe_key_mismatch"),
+    RuntimeError("store_lock_failed"), OSError("store_connection_failed")])
+def test_refresh_claim_store_failures_remain_cycle_fatal(monkeypatch, failure):
+    now = datetime(2025, 2, 3, 6, 5, tzinfo=timezone.utc)
+    current = candidate("provider:store", now,
+        dedupe_key="store-fatal:" + failure.__class__.__name__.lower())
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    def fail_store(*_args, **_kwargs):
+        raise failure
+    monkeypatch.setattr(store, "_refresh_claim", fail_store)
+    result = store.run_cycle([current], now=now + timedelta(seconds=2),
+        source_revision="test", refresh=lambda case: case, deliver=lambda case: {})
+    assert result["success"] is False
+    assert result["status"] == "general_manager_cycle_failed"
+    assert result["failure"]["kind"] == failure.__class__.__name__
+
+
+def test_refresh_domain_manager_case_error_remains_cycle_fatal():
+    now = datetime(2025, 2, 3, 7, 5, tzinfo=timezone.utc)
+    current = candidate("provider:manager-error", now,
+        dedupe_key="domain-manager-case-error")
+    def refresh(_case):
+        raise ManagerCaseError("specialist_invariant_failed")
+    result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
+        [current], now=now + timedelta(seconds=2), source_revision="test",
+        refresh=refresh, deliver=lambda case: {})
+    assert result["success"] is False
+    assert result["failure"]["kind"] == "ManagerCaseError"
 
 
 def test_exact_pig_terminal_evidence_completes_case_once_without_delivery():

@@ -173,13 +173,20 @@ class PostgresManagerCaseStore:
                 refresh_eligible = case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
                 if (deliver and refresh_eligible
                         and case.get("last_delivery_digest") != case["evidence_digest"]):
-                    try:
-                        current_case = (self._refresh_claim(case, refresh(case),
-                            _aware(datetime.now(timezone.utc)), cycle_id) if refresh else None)
-                    except (ValueError, RuntimeError, OSError) as exc:
-                        if isinstance(exc, ManagerCaseError):
-                            raise
-                        specialist_failure = exc
+                    refreshed = None
+                    if refresh:
+                        try:
+                            refreshed = refresh(case)
+                        except (ValueError, RuntimeError, OSError) as exc:
+                            if isinstance(exc, ManagerCaseError):
+                                raise
+                            specialist_failure = exc
+                    if specialist_failure is None:
+                        # Store normalization, locking and persistence are not
+                        # specialist-domain work and must remain cycle-fatal.
+                        current_case = self._refresh_claim(case, refreshed,
+                            _aware(datetime.now(timezone.utc)), cycle_id)
+                    else:
                         current_case = case
                 if specialist_failure is not None:
                     outcome = {"success": False,
@@ -199,7 +206,7 @@ class PostgresManagerCaseStore:
                 elif (deliver and current_case.get("last_delivery_digest")
                         != current_case["evidence_digest"]):
                     try:
-                        outcome = dict(deliver(current_case) or {})
+                        delivered_outcome = deliver(current_case)
                     except (ValueError, RuntimeError, OSError) as exc:
                         if isinstance(exc, ManagerCaseError):
                             raise
@@ -208,6 +215,8 @@ class PostgresManagerCaseStore:
                             "failure_kind": exc.__class__.__name__,
                             "delivery_confirmed": False, "telegram_sends": 0,
                             "next_reassessment_at": (now + CADENCE).isoformat()}
+                    else:
+                        outcome = dict(delivered_outcome or {})
                 else:
                     duplicate = (current_case.get("last_delivery_digest")
                                  == current_case["evidence_digest"])
