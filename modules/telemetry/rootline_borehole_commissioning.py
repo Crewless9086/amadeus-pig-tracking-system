@@ -205,10 +205,12 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None):
         idempotency_key=execution["execution_id"] + ":ON")
     store("record_borehole_on_outcome", {**execution, "on_attempts": 1, "on_outcome": on})
     if on.get("accepted_unambiguous") is not True:
-        return _finish_borehole({**execution, "reason": "ambiguous_on"}, store, transport, now)
+        return _contain_failed_borehole_start(
+            {**execution, "reason": "ambiguous_on"}, store, transport)
     started = _read_borehole(transport)
     if started.get("authoritative") is not True or started.get("state") != "ON":
-        return _finish_borehole({**execution, "reason": "start_unverified"}, store, transport, now)
+        return _contain_failed_borehole_start(
+            {**execution, "reason": "start_unverified"}, store, transport)
     active = {**execution, "state": "Active", "on_attempts": 1,
         "provider_start_evidence": started}
     store("mark_borehole_active", active)
@@ -254,6 +256,35 @@ def _finish_borehole(active, store, transport, now):
         return _borehole_result("borehole_completion_persistence_unproven",
             commands=commands, success=False, execution=completed)
     return _borehole_result("borehole_completed", commands=commands, execution=completed)
+
+
+def _contain_failed_borehole_start(execution, store, transport):
+    """A failed ON edge may drive OFF but can never create completion truth."""
+    commands = 0
+    prior = store("load_borehole_off_attempts", execution["execution_id"]) or []
+    used = {int(row.get("attempt") or 0) for row in prior if isinstance(row, dict)}
+    for attempt in range(1, 4):
+        if attempt in used:
+            continue
+        claim = store("claim_borehole_off_attempt", {"execution_id": execution["execution_id"],
+            "attempt": attempt})
+        if not isinstance(claim, dict) or claim.get("created") is not True:
+            continue
+        outcome = transport.set_state(device_id="1002851416", channel=1, state="OFF",
+            idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")
+        commands += 1
+        store("record_borehole_off_outcome", {"execution_id": execution["execution_id"],
+            "attempt": attempt, "outcome": outcome})
+        if outcome.get("accepted_unambiguous") is True:
+            break
+    final = _read_borehole(transport)
+    verified = final.get("authoritative") is True and final.get("state") == "OFF"
+    contained = {**execution, "shutdown_verified": verified,
+        "provider_final_off_evidence": final}
+    store("contain_borehole", contained)
+    return _borehole_result("borehole_start_failure_contained" if verified
+        else "borehole_shutdown_unverified", commands=commands, success=False,
+        execution=contained)
 
 
 def _read_borehole(transport):

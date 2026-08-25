@@ -658,9 +658,18 @@ def _claim_borehole_material_load(body):
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF' and
                   btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
                     btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                  t.review_json->'rootline_execution'->>'operational_proof'='provider_app_on_to_off' and
-                  t.review_json->'rootline_execution'->'provider_start_evidence'->>'authoritative'='true' and
-                  t.review_json->'rootline_execution'->'provider_start_evidence'->>'state'='ON'))) limit 1""",
+                  ((t.review_json->'rootline_execution'->>'operational_proof'='provider_app_on_to_off' and
+                    t.review_json->'rootline_execution'->'provider_start_evidence'->>'authoritative'='true' and
+                    t.review_json->'rootline_execution'->'provider_start_evidence'->>'state'='ON') or
+                   (length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
+                      t.review_json->'rootline_execution'->>'execution_id' and
+                    btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                      btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
+                    btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                      btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true'))))) limit 1""",
           (EVENT_SOURCE,EVENT_SOURCE))
         if cursor.fetchone():
             return {"success":True,"created":False,"status":"material_load_active"}

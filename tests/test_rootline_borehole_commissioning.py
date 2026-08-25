@@ -93,10 +93,16 @@ class BoreholeStore:
 
 
 class BoreholeTransport:
-    def __init__(self): self.state="OFF"; self.commands=[]
+    def __init__(self, on_accepted=True, on_readback="ON"):
+        self.state="OFF"; self.commands=[]; self.on_accepted=on_accepted
+        self.on_readback=on_readback
     def set_state(self,**kwargs):
-        self.commands.append(kwargs); self.state=kwargs["state"]
-        return {"accepted_unambiguous":True,"status":"accepted"}
+        self.commands.append(kwargs)
+        if kwargs["state"]=="ON":
+            self.state=self.on_readback
+            return {"accepted_unambiguous":self.on_accepted,
+                "status":"accepted" if self.on_accepted else "provider_outcome_ambiguous"}
+        self.state="OFF"; return {"accepted_unambiguous":True,"status":"accepted"}
     def read_output_state(self,**_kwargs):
         return {"authoritative":True,"state":self.state,
             "evidence_id":"PROVIDER-"+self.state}
@@ -118,6 +124,23 @@ def test_one_on_then_bounded_off_and_restart_recovery_use_same_execution():
     assert completed["status"]=="borehole_completed"
     assert [row["state"] for row in transport.commands]==["ON","OFF"]
     assert completed["execution"]["operational_proof"]=="provider_app_on_to_off"
+
+
+def test_ambiguous_or_unverified_start_is_off_contained_never_completed():
+    baseline={**canonical(maximum_routine_runtime_seconds=14400),"registry_generation":2}
+    artifact=build_borehole_runtime_eligibility(need={"eligible":True},baseline=baseline,
+      authority={"inside_standing_authority":True},provider={"authoritative":True,"state":"OFF"},
+      interlocks={"dry_run_safe":True,"low_water_clear":True,"supply_pressure_safe":True,
+        "full_tank_not_blocking":True},energy={"eligible":True},requested_seconds=60,now=NOW)
+    for transport in (BoreholeTransport(on_accepted=False),
+                      BoreholeTransport(on_readback="Unknown")):
+        store=BoreholeStore()
+        result=advance_borehole_execution(eligibility=artifact,store=store,
+          transport=transport,now=NOW)
+        assert result["success"] is False
+        assert result["status"]=="borehole_start_failure_contained"
+        assert [row["state"] for row in transport.commands]==["ON","OFF"]
+        assert not any(action=="record_borehole_completed" for action,_ in store.events)
 
 def test_existing_runtime_is_disabled_then_advances_with_injected_transport(monkeypatch):
     common=dict(need={"eligible":True},provider={"authoritative":True,"state":"OFF"},
