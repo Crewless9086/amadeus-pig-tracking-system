@@ -830,6 +830,21 @@ def _verify_green_device_functions(
     return readback
 
 
+def _verify_green_device_predecessor(connection) -> dict:
+    readback = _verify_green_device_functions(
+        connection,
+        "202608210001_create_green_print_jobs.sql",
+        GREEN_DEVICE_PREDECESSOR_FUNCTIONS,
+    )
+    target_only = connection.execute(
+        "select pg_catalog.to_regprocedure(%s)",
+        ("app_private.green_print_job_device_active(app_private.document_print_jobs)",),
+    ).fetchone()[0]
+    if target_only is not None:
+        raise RuntimeError("migration_green_predecessor_has_target_function")
+    return readback
+
+
 def _mating_id_nullable(connection) -> bool:
     row = connection.execute(
         """select not a.attnotnull
@@ -1662,11 +1677,7 @@ def _verify_migration_precondition(
                 raise RuntimeError("migration_precondition_green_target_without_receipt")
             return "target"
         try:
-            _verify_green_device_functions(
-                connection,
-                "202608210001_create_green_print_jobs.sql",
-                GREEN_DEVICE_PREDECESSOR_FUNCTIONS,
-            )
+            _verify_green_device_predecessor(connection)
         except RuntimeError as exc:
             raise RuntimeError(
                 f"migration_precondition_green_function_drift:{exc}"

@@ -260,11 +260,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             ):
                 run(DATABASE_URL, {**ENV, **_compact_authorization_env(authorization)})
         with psycopg.connect(DATABASE_URL) as db:
-            readback = _verify_green_device_functions(
-                db,
-                "202608210001_create_green_print_jobs.sql",
-                migration_rail.GREEN_DEVICE_PREDECESSOR_FUNCTIONS,
-            )
+            readback = migration_rail._verify_green_device_predecessor(db)
             self.assertEqual(
                 set(readback), set(migration_rail.GREEN_DEVICE_PREDECESSOR_FUNCTIONS)
             )
