@@ -2840,6 +2840,19 @@ payload/error diagnosis is required without replaying or manually sending old
 alerts. **NO BUSINESS OUTCOME. OWNER ACTION: NONE.** No workflow, provider,
 schedule, canonical row or farm state was changed by this audit.
 
+Charl then confirmed Google Sheets is no longer authoritative and authorized
+retirement where the exact caller graph was empty. The active graph proved no
+active caller for `UNwNmx0TwtFf8mjo`, `6UscGE44eTfdLp1A`,
+`L4c34rFmN0kUJvWc`, `tKVKoCcxhT7CAydT` or `oyGH9ynKZ38IQY48`. Their exact
+exports and available execution identities were preserved, and each workflow
+was deactivated serially. Post-readback proved all five inactive and zero new
+executions; active inventory fell from 20 to 15. Backend health remained exact
+at live revision `82fa843d2142d417724005c20c617c8e4f8e3930`. This removes the
+legacy Sheets plan writer and four unused backend wrappers, but does not yet
+claim a ROOTLINE owner outcome: a later natural backend schedule/lifecycle
+cycle must prove continuity. Thin Telegram/outbound connectors, weather
+delivery and uncertain SAM/order workflows remain active and untouched.
+
 ## 2026-08-25 - RMQ-20260813-06 Borehole 1 exact connector and standing authority
 
 Charl supplied the existing Borehole 1 connector binding: eWeLink device

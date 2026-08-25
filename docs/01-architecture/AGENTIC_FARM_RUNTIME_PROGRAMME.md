@@ -339,3 +339,25 @@ wrappers; shadow and retire the legacy Sheets irrigation planner; consolidate
 SAM/order mixed-authority workflows one journey at a time; then review thin
 delivery connectors for further reduction. Every retirement requires later
 stable-cycle proof and rollback. No workflow was changed by this inventory.
+
+### Authorized first retirement receipt
+
+Charl confirmed that Google Sheets is no longer authoritative; Supabase and
+backend ROOTLINE are current truth. A fresh all-active-workflow caller graph
+found zero active callers for the legacy planner and four backend wrapper
+workflows. Exact exports were preserved before each serialized deactivation.
+
+| Workflow | Export SHA-256 | Preserved executions | Result |
+| --- | --- | --- | --- |
+| `UNwNmx0TwtFf8mjo` | `3a61bb88bdd0faead2154e17309c357f4ee113a07909419396d678ec82718eb4` | `66561`, `66338`, `66129`, `65922`, `65726`, `65528`, `65327`, `65131`, `64927`, `64693` | inactive; zero new execution on immediate readback |
+| `6UscGE44eTfdLp1A` | `447a2fc41d9dfc3d734f7d8cabd03dfdb7944037134bfb854fe76ae07acd623c` | none returned | inactive; zero new execution |
+| `L4c34rFmN0kUJvWc` | `bc4541ec74117a28da3ef6ff02bbf3df1858c74dd9f59b2a249ecb6c999618d1` | none returned | inactive; zero new execution |
+| `tKVKoCcxhT7CAydT` | `129a732340ebcc66abeda3495cb92d76d1289f386b64bb5186084b53e9c0d91f` | none returned | inactive; zero new execution |
+| `oyGH9ynKZ38IQY48` | `c0f62b3e56cf2b809d5b8619e01cf3209fdef3f0c00e72cc7bfadd30d2196bc5` | none returned | inactive; zero new execution |
+
+The active inventory reduced from 20 to 15. Exact backend revision
+`82fa843d2142d417724005c20c617c8e4f8e3930` remained healthy after retirement.
+This proves technical containment only. ROOTLINE later natural schedule and
+owner-visible lifecycle continuity remain the acceptance gate. GateKeeper,
+Telegram/outbound connectors, weather delivery and uncertain SAM/order
+workflows were not changed.
