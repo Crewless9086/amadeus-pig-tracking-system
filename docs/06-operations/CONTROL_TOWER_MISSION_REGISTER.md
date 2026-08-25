@@ -2912,3 +2912,16 @@ Source completion is not acceptance. Completion still requires merge/deploy,
 a later natural concise Brief, unchanged-cycle silence and proof that specialist
 work advances or reports a bounded exception without duplicate effects.
 **OWNER ACTION: NONE.**
+
+### First natural post-deploy acceptance — FAIL
+
+The first owner-supplied natural Morning Plan after exact deployed revision
+`f4c26fdc205f06dd0e20f3a2f0a1a5409348b6ef` read: `TODAY'S FARM PLAN`;
+`OOM SAKKIE IS CHECKING AUTOMATICALLY`; mortality follow-up
+`PIG-2026-3EE5`; irrigation B and C `Checking safely`; weighing `0/75` with
+75 tags needing status reconciliation; and `No action required`. This proves a
+shorter provider-visible presentation, but the owner found it not useful or
+end-to-end. It does not prove specialist dispatch, canonical advancement,
+closure, or a useful bounded exception for any listed work. The existing
+`OMQ-20260813-03` acceptance therefore remains **FAIL / NO BUSINESS OUTCOME**;
+priority is unchanged and **OWNER ACTION: NONE**.
