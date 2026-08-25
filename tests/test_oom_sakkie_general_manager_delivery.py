@@ -35,10 +35,11 @@ def test_non_farm_case_remains_silent():
 @patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
 def test_case_without_an_owner_question_remains_silent():
     case=_case(); case["unknowns"]=[]
-    value=deliver_farm_manager_case(case,
+    value=deliver_farm_manager_case(case,now=datetime(2026,8,17,12,tzinfo=timezone.utc),
         deliver=lambda *_a,**_k: (_ for _ in ()).throw(AssertionError()))
     assert value["status"] == "no_owner_question_delivery_suppressed"
     assert value["telegram_sends"] == 0 and value["writes_farm_data"] is False
+    assert value["next_reassessment_at"] == "2026-08-17T12:05:00+00:00"
 
 
 @patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
