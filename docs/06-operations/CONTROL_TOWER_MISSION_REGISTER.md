@@ -3087,3 +3087,35 @@ movement, welfare, weight and lifecycle evidence. **OWNER ACTION: NONE.**
   specialist receipt does not hold current state for unrelated terminals.
 - Dispatch: `CONTINUE - SEND NOTHING`; deployed HERDMASTER/Oom Sakkie worker
   owns reassessment automatically.
+
+## 2026-08-25 - OMQ-20260813-03 owner-useless mortality current-case card
+
+**INTAKE RECEIPT — DURABLY LOGGED, NOT YET AN OUTCOME**
+
+- Finding: Telegram delivered `OOM SAKKIE — HERDMASTER CURRENT CASE` for
+  `PIG-2026-3EE5` using internal terms (`canonical`, `attributable`), an ISO
+  reassessment timestamp and the vague instruction `Review this individual
+  once`, without stating a farm question or offering a usable decision.
+- Classification: existing-mission defect, consolidated into
+  `OMQ-20260813-03` and the existing HERDMASTER continuous-husbandry /
+  mortality-follow-up lineage. No new mission, queue, page or workflow.
+- Exact owner outcome: Oom Sakkie remains silent while HERDMASTER can continue
+  automatically. If one farm fact is genuinely missing, Telegram identifies
+  the pig in owner-recognizable terms and asks exactly that question; a simple
+  bounded choice uses buttons. Internal state codes, database language and raw
+  timestamps are never owner output.
+- Duplicate/collision result: this extends the existing Morning Farm Plan and
+  owner-attention projection defect; it does not change mission priority.
+- Canonical location: this register section plus the existing general-manager
+  case delivery and HERDMASTER daily-manager adapter. Canonical animal and
+  welfare lifecycles remain authoritative.
+- Current status: implementation under review. Cases with no owner question are
+  suppressed; owner-visible follow-up text no longer exposes canonical jargon
+  or raw reassessment timestamps. Existing automatic reassessment is retained.
+- Priority position: unchanged within active `OMQ-20260813-03`; the finding
+  unblocks the already-prioritized useful-manager outcome.
+- Next automatic action: reviewed release, exact loaded-revision proof, then a
+  natural cycle proving the no-question card remains silent and any genuine
+  question is concise and actionable.
+- Owner action: none. Do not ask Charl to interpret or close the current backend
+  card and do not manufacture a reply to it.

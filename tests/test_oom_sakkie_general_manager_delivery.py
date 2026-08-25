@@ -32,6 +32,26 @@ def test_non_farm_case_remains_silent():
     assert value["telegram_sends"] == 0
 
 
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
+def test_case_without_an_owner_question_remains_silent():
+    case=_case(); case["unknowns"]=[]
+    value=deliver_farm_manager_case(case,
+        deliver=lambda *_a,**_k: (_ for _ in ()).throw(AssertionError()))
+    assert value["status"] == "no_owner_question_delivery_suppressed"
+    assert value["telegram_sends"] == 0 and value["writes_farm_data"] is False
+
+
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
+def test_owner_case_hides_backend_timestamp_and_canonical_jargon():
+    captured={}; case=_case(); case["summary"]="Pig 126 needs one physical check."
+    deliver_farm_manager_case(case,deliver=lambda parsed,result,**kwargs:
+        (captured.update(result=result) or {"success":True,"provider_delivery_confirmed":True,
+         "telegram_message_id":"4003","telegram_sends":1}))
+    answer=captured["result"]["answer"]
+    assert "2026-08-17T13:00" not in answer and "canonical" not in answer.casefold()
+    assert "check this again automatically" in answer
+
+
 @patch("modules.oom_sakkie.beacon_request_runtime.build_scheduled_sale_ready_stock_result")
 @patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
 def test_beacon_case_uses_protected_oom_delivery_without_public_effects(build):
