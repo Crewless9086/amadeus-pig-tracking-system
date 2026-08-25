@@ -9,12 +9,12 @@ on:
         type: string
       legacy_adoption_authorization_id:
         description: Owner-approved UUID for one-time legacy adoption; blank for normal runs
-        required: true
+        required: false
         default: ""
         type: string
       legacy_adoption_packet_sha256:
         description: SHA-256 of the exact canonical legacy-adoption packet; contains no receipt identities
-        required: true
+        required: false
         default: ""
         type: string
 

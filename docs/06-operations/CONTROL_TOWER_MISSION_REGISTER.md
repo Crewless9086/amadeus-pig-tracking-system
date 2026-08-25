@@ -3205,3 +3205,11 @@ PostgreSQL apply/replay/drift/rollback proof. It does not run the migration or
 touch production. Existing job `GREEN-WWS-WWS-20260825.r1.a79d4a6effa6`
 remains the sole pre-attempt job; it must not be recreated or replayed.
 **DURABLY LOGGED - NOT YET AN OUTCOME. OWNER ACTION: NONE.**
+
+### 2026-08-25 normal governed migration dispatch addendum
+
+GitHub rejected blank legacy-adoption inputs before creating a normal governed
+migration run. This is an existing `DMQ-20260816-01` rail defect, not authority
+to reuse a legacy packet. Those inputs are optional at dispatch while runtime
+validation still permits exactly zero or two strictly valid values. No migration
+or print recovery occurred. **DURABLY LOGGED - NOT YET AN OUTCOME. OWNER ACTION: NONE.**

@@ -15,6 +15,11 @@ def test_legacy_adoption_public_inputs_contain_no_receipt_identities():
 
 
 def test_authorization_transport_is_complete_and_strictly_shaped():
+    dispatch = WORKFLOW.split("permissions:", 1)[0]
+    for name in ("legacy_adoption_authorization_id", "legacy_adoption_packet_sha256"):
+        block = dispatch.split(f"{name}:", 1)[1].split("type: string", 1)[0]
+        assert "required: false" in block
+        assert 'default: ""' in block
     assert '[[ "$supplied" == 0 || "$supplied" == 2 ]]' in WORKFLOW
     assert "legacy-adoption authorization transport is incomplete" in WORKFLOW
     assert "^[0-9a-f]{64}$" in WORKFLOW
