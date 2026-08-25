@@ -521,7 +521,7 @@ def test_missing_refresh_contains_delivery_and_retains_case():
 def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resend():
     # Keep this isolated from later-dated shared-module fixtures while still
     # exercising the real claim ordering and persistence rail.
-    now = datetime(2025, 1, 2, 3, 4, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=10)
     prefix = "confirmed-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
     confirmed = candidate("event:confirmed", now, dedupe_key=prefix + ":confirmed",
         specialist="HERDMASTER", urgency="critical", unknowns=[],
@@ -596,7 +596,7 @@ def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resen
 
 
 def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence():
-    now = datetime(2025, 1, 3, 3, 4, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=20)
     prefix = "orphan-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
     old = candidate("event:old", now, dedupe_key=prefix + ":prince",
         specialist="HERDMASTER", urgency="critical",
