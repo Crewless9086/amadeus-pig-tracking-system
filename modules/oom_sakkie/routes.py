@@ -128,6 +128,7 @@ from modules.oom_sakkie.morning_scheduler import (
     run_synthetic_acceptance,
 )
 from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_cycle
+from modules.documents.green_print_api import recover_held_standing_weekly_print
 from modules.oom_sakkie.general_manager_worker import (
     deliver_farm_manager_case, run_general_manager_cycle,
 )
@@ -309,6 +310,22 @@ def oom_sakkie_protected_payment_recovery():
     result = run_payment_recovery_cycle()
     status = 200 if result.get("success") else 503
     return jsonify(result), status
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/green-print-recovery", methods=["POST"])
+def oom_sakkie_green_print_recovery():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success":False,"status":"green_print_recovery_auth_denied",
+            "canonical_job_created":False,"printer_calls":0}),403
+    try:
+        result = recover_held_standing_weekly_print()
+    except Exception as exc:
+        result = {"success":False,"status":"documents_green_recovery_held",
+            "error_type":type(exc).__name__,"canonical_job_created":False,
+            "printer_calls":0,"provider_message_replays":0}
+    return jsonify(result), 200 if result.get("success") else 503
 
 
 @oom_sakkie_bp.route("/oom-sakkie/management/general-manager-cycle", methods=["POST"])

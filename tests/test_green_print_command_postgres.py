@@ -10,7 +10,8 @@ import pytest
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-from modules.documents.green_print_api import authorize_standing_weekly_print
+from modules.documents.green_print_api import (
+    authorize_standing_weekly_print, recover_held_standing_weekly_print)
 from modules.documents.weekly_weight_sheet import (
     build_weekly_sheet_revision, protected_print_preview,
 )
@@ -185,7 +186,8 @@ def standing_request_inputs(suffix="A"):
         registry_version="registry-v1",retrieval_url=url,
         authorization_expires_at=datetime.now(timezone.utc)+timedelta(hours=1))
     parsed={"telegram_user_id":owner,"telegram_chat_id":owner,
-        "telegram_chat_type":"private","provider_message_id":f"MSG-{suffix}"}
+        "telegram_chat_type":"private","provider_message_id":f"MSG-{suffix}",
+        "text":"Print the current weekly weighing sheet."}
     return preview,revision,parsed
 
 
@@ -199,7 +201,7 @@ def invoke_standing(preview,revision,parsed):
             connection.close()
 
 
-def test_standing_authority_is_atomic_and_rolls_back_receipt_when_job_fails(db,monkeypatch):
+def test_standing_authority_retains_receipt_when_job_fails(db,monkeypatch):
     monkeypatch.setenv("DOCUMENTS_FARM_SCOPE_ID","farm-amadeus")
     monkeypatch.setenv("DOCUMENTS_CANONICAL_API_ORIGIN","https://documents.internal")
     preview,revision,parsed=standing_request_inputs("ROLLBACK")
@@ -211,10 +213,44 @@ def test_standing_authority_is_atomic_and_rolls_back_receipt_when_job_fails(db,m
     with pytest.raises(psycopg.errors.RaiseException):
         invoke_standing(preview,revision,parsed)
     with psycopg.connect(URL) as verification, verification.cursor() as cursor:
-        cursor.execute("select count(*) from app_private.oom_protected_action_claims where mission_id like 'DMQ-20260816-01:WWS-STANDING-ROLLBACK%'")
-        assert cursor.fetchone()[0]==0
+        cursor.execute("""select status,result_payload->>'status',
+          result_payload->>'request_text_sha256' from app_private.oom_protected_action_claims
+          where mission_id like 'DMQ-20260816-01:WWS-STANDING-ROLLBACK%'""")
+        status,held,digest=cursor.fetchone()
+        assert status=="active" and held=="standing_print_request_held"
+        assert digest==sha256(b"Print the current weekly weighing sheet.").hexdigest()
         cursor.execute("select count(*) from app_private.document_print_jobs where job_id='GREEN-STANDING-ROLLBACK'")
         assert cursor.fetchone()[0]==0
+
+
+def test_held_request_resumes_after_registry_evidence_change_exactly_once(db,monkeypatch):
+    monkeypatch.setenv("DOCUMENTS_FARM_SCOPE_ID","farm-amadeus")
+    monkeypatch.setenv("DOCUMENTS_CANONICAL_API_ORIGIN","https://documents.internal")
+    preview,revision,parsed=standing_request_inputs("HELD-RESUME")
+    preview={**preview,"green_id":"held-green"}
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    payload={key:value for key,value in preview.items() if key!="preview_digest"}
+    preview["preview_digest"]=canonical_preview_digest("documents_green_print",payload)
+    db.commit()
+    with pytest.raises(psycopg.errors.RaiseException):
+        invoke_standing(preview,revision,parsed)
+    with psycopg.connect(URL) as activation, activation.cursor() as cursor:
+        cursor.execute("""insert into app_private.document_print_device_registry(
+          farm_scope_id,green_id,printer_id,cups_queue_id,registry_version,
+          canonical_api_origin,active,commissioned_at,evidence_sha256)
+          values('farm-amadeus','held-green','printer','weekly-a4','registry-v1',
+          'https://documents.internal',true,clock_timestamp(),%s)""",("b"*64,))
+    first=recover_held_standing_weekly_print(connect_factory=lambda:psycopg.connect(URL))
+    second=recover_held_standing_weekly_print(connect_factory=lambda:psycopg.connect(URL))
+    assert first["status"]=="documents_green_recovery_authorized"
+    assert first["job_id"]=="GREEN-STANDING-HELD-RESUME"
+    assert second["status"]=="documents_green_recovery_idle"
+    with psycopg.connect(URL) as verification, verification.cursor() as cursor:
+        cursor.execute("select count(*) from app_private.document_print_jobs where job_id=%s",
+            (first["job_id"],));assert cursor.fetchone()[0]==1
+        cursor.execute("""select status from app_private.oom_protected_action_claims
+          where mission_id like 'DMQ-20260816-01:WWS-STANDING-HELD-RESUME%'""")
+        assert cursor.fetchone()[0]=="completed"
 
 
 def test_standing_authority_completed_response_loss_retry_is_one_job_no_provider_effect(db,monkeypatch):
