@@ -115,6 +115,38 @@ def test_server_producer_binds_protected_claim_revision_scope_and_exact_url():
             connect_factory=lambda: connection)
 
 
+def test_standing_owner_request_creates_executing_digest_receipt_without_card(monkeypatch):
+    monkeypatch.setenv("DOCUMENTS_FARM_SCOPE_ID", "farm-amadeus")
+    monkeypatch.setenv("DOCUMENTS_CANONICAL_API_ORIGIN", "https://documents.internal")
+    revision = build_weekly_sheet_revision(authenticated_principal_id="owner-1",
+        requester="oom_sakkie", sheet_date=date(2026, 8, 25),
+        rows=[{"pig_id":"PIG-1","tag_number":"1","pen_id":"B1"}])
+    url = (f"https://documents.internal/api/documents/{revision.document_id}/versions/"
+           f"{revision.version_id}/pdf")
+    preview = protected_print_preview(revision=revision, job_id="GREEN-JOB-1",
+        farm_scope_id="farm-amadeus", green_id="green-1", printer_id="printer-1",
+        cups_queue_id="weekly-a4", registry_version="registry-v1", retrieval_url=url,
+        authorization_expires_at=datetime.now(timezone.utc)+timedelta(minutes=10))
+    payload={key:value for key,value in preview.items() if key!="preview_digest"}
+    connection=MagicMock();cursor=connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value=("GREEN-SA-RECEIPT","executing","owner-1",payload)
+    cursor.rowcount=1
+    captured=[]
+    def persist(claim, actual_revision, **kwargs):
+        captured.append((claim,actual_revision,kwargs));return {"job_id":"GREEN-JOB-1"}
+    monkeypatch.setattr(green_print_api,"create_authorized_job_from_claim",persist)
+    result=green_print_api.authorize_standing_weekly_print(preview,revision,{
+        "telegram_user_id":"owner-1","telegram_chat_id":"owner-1",
+        "telegram_chat_type":"private","provider_message_id":"MSG-25",
+        "text":"Print the current weekly weighing sheet."},
+        connect_factory=lambda:connection)
+    insert_sql=cursor.execute.call_args_list[0].args[0]
+    assert "'active'" in insert_sql and "preview_card_message_id" not in insert_sql
+    assert captured[0][0]["preview_digest"]==preview["preview_digest"]
+    assert captured[0][0]["preview_payload"]==payload
+    assert result["job_id"]=="GREEN-JOB-1"
+
+
 def test_physical_acceptance_is_owner_and_exact_job_bound_without_green_authority():
     preview={"contract_version":"documents_green_physical_acceptance_v1",
         "job_id":"JOB-1","document_version":"VER-1","pdf_sha256":"a"*64,

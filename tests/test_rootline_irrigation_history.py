@@ -3,8 +3,9 @@ from zoneinfo import ZoneInfo
 
 from modules.telemetry.rootline_irrigation_history import (
     CONTRACT, EPOCH_EVENT, project_canonical_irrigation_history, _event_digest,
-    _attach_parent_jobs,
+    _attach_parent_jobs, read_canonical_irrigation_history,
 )
+from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle
 from modules.telemetry.rootline_irrigation_job_contract import build_irrigation_job, project_next_segment
 
 ZA = ZoneInfo("Africa/Johannesburg")
@@ -192,6 +193,65 @@ def test_parent_projection_survives_segment_level_completed_today():
     assert parent["projection"]["status"]=="segment_ready"
 
 
+def test_late_midnight_completion_keeps_parent_date_and_bounded_segment_two_continuity():
+    cutoff = datetime(2026, 8, 24, 0, 16, tzinfo=ZA)
+    history = project_canonical_irrigation_history([
+        epoch("B12345"), completed(execution="EXEC-LATE",
+            at=datetime(2026, 8, 24, 0, 1, tzinfo=ZA))], snapshot_cutoff=cutoff)
+    job = build_irrigation_job(zone_id="B12345", operating_date="2026-08-23",
+        requested_total_seconds=7200, requested_total_minutes=120,
+        maximum_segment_seconds=3599, expected_segment_count=2, plan_identity="PLAN-LATE")
+    segment = project_next_segment(job, [])
+    eligibility = {"action": "record_eligibility", **job,
+        "requested_total_duration_seconds": 7200, "requested_total_duration_minutes": 120,
+        "governed_executable_duration_seconds": 7198, "plan_generation": "PLAN-LATE"}
+    completion = {"action": "record_completed", "job_id": job["job_id"],
+        "operating_date": "2026-08-23", "segment_number": 1,
+        "segment_identity": segment["segment_identity"], "execution_id": "EXEC-LATE",
+        "state": "Completed", "verified_runtime_seconds": 3599,
+        "shutdown_verified": True, "completed_at": datetime(
+            2026, 8, 24, 0, 1, tzinfo=ZA).isoformat()}
+    _attach_parent_jobs(history, [eligibility, completion])
+    zone = history["zones"]["B12345"]
+    assert zone["verified_completed_days"] == ["2026-08-23"]
+    parent = zone["incomplete_parent_job"]
+    assert parent["job"]["operating_date"] == "2026-08-23"
+    assert parent["cross_operating_date_continuation"] is True
+    assert parent["projection"]["status"] == "segment_ready"
+
+
+def test_expired_midnight_parent_terminal_defer_disappears_idempotently():
+    history = project_canonical_irrigation_history([epoch("B12345")],
+        snapshot_cutoff=datetime(2026, 8, 24, 1, 0, tzinfo=ZA))
+    job = build_irrigation_job(zone_id="B12345", operating_date="2026-08-23",
+        requested_total_seconds=7200, maximum_segment_seconds=3599,
+        expected_segment_count=2, plan_identity="PLAN-OLD")
+    segment = project_next_segment(job, [])
+    eligibility = {"action": "record_eligibility", **job,
+        "requested_total_duration_seconds": 7200, "requested_total_duration_minutes": 120,
+        "governed_executable_duration_seconds": 7198, "plan_generation": "PLAN-OLD"}
+    completion = {"action": "record_completed", "job_id": job["job_id"],
+        "operating_date": "2026-08-23", "segment_number": 1,
+        "segment_identity": segment["segment_identity"], "execution_id": "EXEC-OLD",
+        "state": "Completed", "verified_runtime_seconds": 3599,
+        "shutdown_verified": True, "completed_at": "2026-08-24T00:01:00+02:00"}
+    material = {"contract_version": "rootline_irrigation_job_resolution.v1",
+        "resolution": "Deferred", "terminal": True, "job_id": job["job_id"],
+        "job_sha256": job["job_sha256"], "zone_id": "B12345",
+        "operating_date": "2026-08-23", "current_segment": 2,
+        "expected_segment_count": 2, "cumulative_verified_runtime_seconds": 3599,
+        "remaining_seconds": 3599,
+        "reason": "parent_operating_date_elapsed_before_remaining_objective_completed"}
+    import hashlib, json
+    resolution = {**material, "resolution_sha256": hashlib.sha256(json.dumps(
+        material, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+        "action": "record_job_resolution"}
+    _attach_parent_jobs(history, [eligibility, completion, resolution, dict(resolution)])
+    zone = history["zones"]["B12345"]
+    assert "incomplete_parent_job" not in zone
+    assert not zone.get("stale_incomplete_parent_jobs")
+
+
 def test_eligibility_only_history_never_becomes_continuing_parent():
     history=project_canonical_irrigation_history([epoch("B12345")],snapshot_cutoff=NOW)
     job=build_irrigation_job(zone_id="B12345",operating_date="2026-08-05",
@@ -267,3 +327,87 @@ def test_second_segment_containment_preserves_first_runtime_and_defers_residual(
     assert parent["projection"]["current_segment"]==2
     assert parent["projection"]["cumulative_verified_runtime_seconds"]==3599
     assert parent["remaining_seconds"]==3599
+
+
+def test_latest_same_zone_execution_projects_active_then_exact_terminal():
+    history=project_canonical_irrigation_history(
+        [epoch("C12345"),completed(execution="HISTORICAL")],snapshot_cutoff=NOW)
+    active={"action":"mark_active","execution_id":"EXEC-CURRENT","zone_id":"C12345",
+        "state":"Active","claimed_at":"2026-08-05T08:17:30+00:00"}
+    _attach_parent_jobs(history,[active])
+    assert history["zones"]["C12345"]["latest_execution"]==active
+    closed={**active,"action":"record_completed","state":"Completed",
+        "shutdown_verified":True,"objective_satisfied":True}
+    _attach_parent_jobs(history,[active,closed])
+    assert history["zones"]["C12345"]["latest_execution"]==closed
+
+
+def test_multiple_same_zone_active_executions_fail_closed_without_cross_zone_leakage():
+    history=project_canonical_irrigation_history(
+        [epoch("B12345"),epoch("C12345")],snapshot_cutoff=NOW)
+    rows=[{"action":"mark_active","execution_id":"EXEC-B-1","zone_id":"B12345",
+           "state":"Active"},
+          {"action":"mark_active","execution_id":"EXEC-B-2","zone_id":"B12345",
+           "state":"Active"},
+          {"action":"mark_active","execution_id":"EXEC-C","zone_id":"C12345",
+           "state":"Active"}]
+    _attach_parent_jobs(history,rows)
+    b=history["zones"]["B12345"]
+    assert b["execution_projection_conflict"] is True
+    assert b["latest_execution"]["state"]=="ambiguous"
+    assert history["zones"]["C12345"]["latest_execution"]["execution_id"]=="EXEC-C"
+
+
+def test_production_loader_fetches_claim_recovery_and_preserves_verified_boundary():
+    irrigation_rows=[epoch("B12345"),completed(zone="B12345",execution="OLD-B"),
+                     epoch("C12345")]
+    active_b={"action":"mark_active","execution_id":"EXEC-B","zone_id":"B12345",
+              "state":"Active"}
+    recovered_b={"action":"record_claim_recovery","execution_id":"EXEC-B",
+                 "zone_id":"B12345","shutdown_verified":True,
+                 "reason":"provider_off_verified"}
+    active_c={"action":"mark_active","execution_id":"EXEC-C","zone_id":"C12345",
+              "state":"Active"}
+    class Cursor:
+        def __init__(self): self.query=""; self.queries=[]
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+        def execute(self,query,params=None): self.query=query; self.queries.append(query)
+        def fetchone(self): return (NOW,)
+        def fetchall(self):
+            if "irrigation_water_credit_events" in self.query: return []
+            if "from public.irrigation_events" in self.query: return irrigation_rows
+            if "sam_live_stock_conversation_review_events" in self.query:
+                return [(active_b,),(recovered_b,),(active_c,)]
+            raise AssertionError(self.query)
+    cursor=Cursor()
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+        def cursor(self): return cursor
+    history=read_canonical_irrigation_history(connect=lambda:Connection(),now=NOW)
+    assert any("record_claim_recovery" in query for query in cursor.queries)
+    b=project_zone_lifecycle(zone_id="B12345",recommendation={"status":"Hold"},
+        history=history["zones"]["B12345"],
+        execution=history["zones"]["B12345"].get("latest_execution"))
+    c=project_zone_lifecycle(zone_id="C12345",recommendation={"status":"Hold"},
+        history=history["zones"]["C12345"],
+        execution=history["zones"]["C12345"].get("latest_execution"))
+    assert b["state"] != "Started"
+    assert history["zones"]["B12345"]["latest_execution"] == recovered_b
+    assert c["state"] == "Started"
+
+
+def test_unverified_claim_recovery_cannot_close_active_projection():
+    history=project_canonical_irrigation_history([epoch("B12345")],snapshot_cutoff=NOW)
+    active={"action":"mark_active","execution_id":"EXEC-B","zone_id":"B12345",
+            "state":"Active"}
+    unverified={"action":"record_claim_recovery","execution_id":"EXEC-B",
+                "zone_id":"B12345","shutdown_verified":False}
+    _attach_parent_jobs(history,[active,unverified])
+    lifecycle=project_zone_lifecycle(zone_id="B12345",recommendation={"status":"Hold"},
+        history=history["zones"]["B12345"],
+        execution=history["zones"]["B12345"].get("latest_execution"))
+    assert history["zones"]["B12345"]["latest_execution"] == active
+    assert lifecycle["state"] == "Started"
+    assert lifecycle["next_action_owner"] == "ROOTLINE"

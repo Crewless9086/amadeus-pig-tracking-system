@@ -2108,3 +2108,889 @@ gates required before handover. Decision: `CONTINUE AUTOMATICALLY / NO OWNER
 OUTCOME YET`.
 
 OWNER ACTION: NONE
+
+## 2026-08-23 HERDMASTER / Anton fresh deployed failure
+
+At 19:09 SAST Anton sent `Vark 126 is dood, ons het hom verwyder en
+begrawe.` Production, loaded at exact revision
+`7777ee05b37b8ca6d3227bf112433d481066dbcb`, returned the legacy
+observation-only response requiring Charl's separate confirmation. Canonical
+read-only evidence still showed Pig 126 Active, on farm and in PEN-012, with no
+mortality claim. Pig 126 and the old provider event remain sealed from terminal
+mutation or replay.
+
+This is new evidence in existing mission
+`HERDMASTER-NATURAL-HEALTH-LOSS-1 / OOM-INTAKE-SLICE-1`, not a new mission. The
+semantic front door omitted Afrikaans `vark` identity and standalone `dood`, and
+the gateway diverted every non-owner through a reduced family lane before the
+shared Oom Sakkie specialist pipeline. Older capability policy also retained
+owner-only assumptions beyond mortality.
+
+The bounded repair gives FARM_MANAGER the same governed Oom Sakkie specialist
+messages and actor-bound approval journeys as OWNER, localized to the recipient,
+through explicit capabilities and action kinds. CORE and CHARLIE remain
+structurally unreachable; permission administration and unsafe hardware
+exceptions remain excluded. Replay, audit, canonical revalidation,
+confirmation and physical safety controls remain mandatory.
+
+Lifecycle: `WORKING / SOURCE_AND_TEST_IMPLEMENTATION_ACTIVE`; **NO BUSINESS
+OUTCOME**. Do not request another Anton test until exact-current tests, Brain
+Guard, independent review, merge, exact loaded revision and non-actuating
+production readiness prove the legacy farm-manager branch is unreachable. Only
+a new provider-origin report and Anton's own confirmation may then establish
+acceptance.
+
+OWNER ACTION: NONE
+
+## 2026-08-24 - HMQ stale heat-gating intake consolidation
+
+GENERAL's stale heat-gating finding is consolidated into existing mission
+`HMQ-20260813-05`, with `HMQ-20260813-00` supplying the already-integrated
+individual-observation contract. No mission, document, store, queue or priority
+was created. Prince's P0 incident remains first; this finding retains the
+existing combined weighing-to-management-and-breeding lane position. Current
+state is `BLOCK / IMPLEMENTATION_MISALIGNMENT`, with **NO OWNER OUTCOME**.
+
+Controlling invariant: absence of attributable heat evidence may never create
+or retain work at any point in the closed loop. Heat is not a prerequisite for
+weighing recovery, management recommendation, boar recommendation, protected
+placement, the governed 17-day exposure, removal, or later reproductive-outcome
+follow-up. If Charl or Anton voluntarily supplies an exact-pig heat observation,
+it may be retained once as append-only canonical history under HMQ-00; it must
+not become an inferred fact, repeated question, work-retention gate or blocker.
+
+Scope is the existing HMQ-05 weighing-to-breeding closed loop: recover a genuine
+completed weight batch; optionally capture selective body-condition scores in
+the existing Bulk Weight Entry; produce concise management and boar
+recommendations; prepare protected, actor-bound placement; verify the governed
+17-day exposure; remove safely; and follow the later attributable reproductive
+outcome. HMQ-00's shared fact-intake/history path is reused for volunteered
+observations. The repair must retire stale heat-dependent questions or work when
+no evidence exists, preserve missing facts as Unknown, and carry source,
+provider, canonical and physical acceptance evidence through every protected
+transition.
+
+The required owner contract is one upload with distinct canonical effects: each
+entered weight becomes a weight event, each changed location becomes a location
+event, and each entered BCS becomes a separate observation event consumed by the
+existing Herdmaster management lifecycle. Blank BCS means no observation and
+must create no event, question or retained work. A BCS-only row is actionable
+without requiring a weight or location change. BCS must not be hidden in weight
+notes. Corrections and supersessions remain append-only and attributable; they
+must never overwrite observation history silently.
+
+Non-scope includes a new intake system, mission, schema, store, page, queue or
+scheduler; asking the family to inspect heat; inferring negative heat from
+silence; unprotected breeding or mating action; terminal-proxy confirmation;
+manual provider traffic; and database, animal or physical mutation during this
+intake. Breeding remains in scope as an outcome journey, but placement, exposure
+and removal remain protected physical actions and cannot be claimed from source
+or provider text alone.
+
+Evidence remains separated. **Source evidence:** authoritative main
+`ce906bd1713be942c58beec4c1e85de545d3e80b` contains the current HMQ product
+surface, while legacy PR `#603` remains open at head
+`895e5052fcdaad782dce37beff9aaa6d08d8149b` on stale base
+`4774420f7db56740be13c0667a5469aa8f389627`; its two-file prototype independently
+models `weight` and optional `heat_observation`, so it is collision evidence to
+reconcile, not authority to revive or merge. **Provider evidence:** no new
+attributable weighing, heat, placement, exposure or removal message was
+inspected. **Canonical evidence:** no production row was written or changed,
+the required database migration, RLS and trigger truth for separate weight,
+location and observation events is Unknown and therefore an implementation gate,
+and a genuine completed HMQ-05 batch plus downstream lifecycle readback remain
+pending. **Physical evidence:** no weighing, BCS, heat observation, placement,
+exposure, removal or reproductive outcome was performed or inferred; absence of
+heat evidence is not evidence that an animal is or is not in heat.
+
+The measurable owner outcome remains one genuine closed loop: Charl or Anton
+uploads the batch once; receives separate exact-once weight, location and
+selective BCS canonical events plus concise language-localized Herdmaster
+management and boar guidance without being asked for absent heat; performs only
+the protected, confirmed placement/removal steps; and later receives
+canonical/provider proof of exposure and reproductive outcome with replay-safe
+automatic follow-up. Blank BCS produces zero observation effect, BCS-only input
+is accepted, and a corrected BCS supersedes append-only history. Any volunteered
+heat fact remains visible as history but never creates a field, question, task,
+reminder, blocker or retained work.
+After Prince P0 release, the next automatic step is a current-main collision
+review and the smallest repair to the existing shared observation, weight and
+breeding projection, followed by exact regression tests, reviewed release,
+genuine acceptance at every real-world gate and a later stable cycle. PR `#603`
+must not be merged or used as a parallel implementation. **OWNER ACTION: NONE.**
+
+Control Tower Check Receipt: this append-only intake classification records the
+invariant, full existing closed-loop scope, evidence boundaries, stale PR
+collision and acceptance contract without a technical-progress or owner-outcome
+claim. No provider, canonical, farm, animal, deployment or physical effect
+occurred.
+
+### Heat-gating source repair prepared on exact current main
+
+On authoritative main `a074ed18831f0695560ac8b9a310978aaffaaea6`, the
+remaining stale heat dependency was localized to owner questions, grouped
+management observations, one legacy heat-only task projection and its delay
+wording. The core classifiers already declared `heat_observation_required=false`
+and retained volunteered heat facts through the existing canonical observation
+rail. The bounded repair removes absent heat from questions and grouped required
+checks, retires a legacy heat-only task instead of projecting it, and replaces
+the not-pregnant fallback with a neutral reproductive-status review. Exact
+volunteered or ambiguous heat statements remain attributable history and may be
+clarified; silence creates no inferred fact or work.
+
+Selective Bulk Weight Entry BCS capture remains the next serial addendum in the
+same mission. It is deliberately excluded from this first PR because it crosses
+the weight upload, UI and canonical write boundary and requires separate
+append-only observation/supersession proof. This split does not change priority
+or create another mission. Lifecycle remains `WORKING / SOURCE_REPAIR_ACTIVE`;
+**NO BUSINESS OUTCOME** and **OWNER ACTION: NONE**. No provider, canonical,
+animal, farm or physical effect occurred.
+
+### Selective BCS source repair prepared on exact current main
+
+The serial HMQ-05 addendum reuses Bulk Weight Entry and HMQ-00's canonical
+`pig_observation_events` writer. A row is actionable when it contains only a
+valid BCS; blank BCS has zero observation effect. Each selected pig receives a
+separate append-only body-condition observation keyed by draft plus pig, with
+replay withheld and the latest effective BCS explicitly superseded on a
+correction. No heat input or derived heat work is introduced. The draft remains
+recoverable when either the BCS or weight/location rail fails. No schema, page,
+store, queue or scheduler is added. Lifecycle remains `WORKING /
+SOURCE_REPAIR_ACTIVE`; **NO BUSINESS OUTCOME** and **OWNER ACTION: NONE** until
+reviewed release and genuine canonical/provider acceptance.
+
+Independent review found that a response-loss retry could recalculate a newer
+supersession predecessor and conflict with its already committed event, and
+that a later pig failure hid earlier committed rows. The repaired batch first
+reads the exact draft-plus-pig idempotency event and reuses its original
+predecessor before invoking the canonical writer. A partial response now lists
+all committed/replayed events, the exact failed pig and status, and requires the
+draft to remain retained. Production-shaped PostgreSQL tests cover
+retry-after-commit, concurrent replay and a genuine multi-pig partial.
+The same-day observation timestamp is bound to the authenticated server's
+current SAST date at local day-start rather than a fixed noon, so a pre-noon
+upload cannot manufacture future evidence and concurrent retries remain byte
+stable. A committed retry reuses its exact stored timestamp. Past dates remain deterministic local noon and the canonical writer
+continues to reject any future date.
+
+## 2026-08-24 - Prince generic Telegram completion acceptance failure
+
+This owner finding is consolidated into existing mission
+`HERDMASTER-NATURAL-HEALTH-LOSS-1`; no mission, document, store, page or priority
+was created. A provider completion that says only that a HERDMASTER observation
+was recorded, or exposes only a backend pig ID, is not an owner outcome. The
+completion must name the canonical human pig identity, state the exact confirmed
+facts, report the welfare state and next action bound to the exact protected
+operation and attributable welfare case, and render every part in the
+recipient's language. Backend-only identifiers may remain audit evidence but
+may not replace the human identity.
+
+Current state is `BLOCK / OWNER_ACCEPTANCE_FAILURE`. Independent review of PR
+`#1232` at head `281057cf30a17dad693fd77e5290d91303f4aeeb` blocks the candidate:
+the query selects the latest welfare state for the pig rather than binding the
+state to the exact welfare case attributable to the confirmed operation. A
+later or unrelated case could therefore produce a plausible but false state or
+next action. The implementation must fail closed unless identity, confirmed
+facts, operation, claim, exact welfare case, case state and next action all bind
+to one canonical chain at immediate pre-delivery readback.
+
+Evidence remains separated. **Source evidence:** exact current main
+`db72542499cd76ab7ebb06c777c0a1877f6e2f58` and the blocked PR `#1232` diff/checks.
+**Provider evidence:** the generic completion card is genuine delivered text but
+does not prove its omitted identity/facts/case state. **Canonical evidence:**
+the existing mission remains active; no farm or welfare row was changed by this
+intake. **Physical evidence:** Prince's real welfare state cannot be inferred
+from generic provider wording or source code and remains governed by the exact
+attributable canonical case and family observations.
+
+The measurable owner outcome is one recipient-localized completion that tells
+Charl or Anton which canonical pig was observed, exactly what was confirmed,
+whether the exact operation-bound welfare case is open, monitoring, escalated or
+closed, and the truthful next action; replay produces no duplicate edit/message
+or state effect. Source repair, tests, merge or deployment alone are not this
+outcome. Priority is unchanged because this finding directly unblocks the
+existing health/loss mission. **OWNER ACTION: NONE.** No repeat observation,
+confirmation or provider action is requested while the technical binding repair
+remains blocked.
+
+Control Tower Check Receipt: one existing mission lineage receives one
+append-only acceptance failure. PR `#1232` remains unmerged. This register
+intake performed no provider, welfare, farm, animal or physical mutation.
+## 2026-08-24 - ROOTLINE unchanged-plan owner-noise intake and exact diagnosis
+
+This is an outcome-unblocking addendum to existing `RMQ-20260813-04`, not a
+new mission, notification rail, store, queue or scheduler. Owner evidence says
+the same standalone `ROOTLINE TODAY'S WATER PLAN` continued approximately every
+fifteen to thirty minutes: B remained ready after the final safety check, C
+remained ready with the internal revalidation reason, no owner action was
+needed, and only the next-check clock moved. The required owner outcome is one
+plan inside the daily Brief; standalone plan delivery only after a material
+owner-visible B/C plan or owner-question change; immediate start, stop and
+verified-completion messages preserved; a concise close summary; and silent
+unchanged reassessments. `OWNER ACTION: NONE`.
+
+Read-only production evidence on exact deployed/current-main revision
+`a2f2c7c90f8226654ffdb7fdd766bad676cf6c97` proves provider messages `3982`,
+`3983` and `3985` were each delivered with a different material digest although
+their persisted B/C owner projections were semantically unchanged. The shared
+digest included hidden borehole, fertilizer and overall specialist state that
+the standalone B/C presentation does not render. This is a projection/deduplication
+defect, not a scheduler, provider or irrigation-control failure.
+
+Lifecycle: `WORKING / IMPLEMENTATION_PR_1234 / REVIEW_AND_DEPLOY_PENDING / NO
+BUSINESS OUTCOME`. PR #1234 exact source commit `7923625d` restricts the existing
+notification material identity to rendered B/C semantics while retaining owner
+question and stable reassessment material. Fifty-two focused owner-response,
+daily-presentation and automatic-scheduler tests pass; no Telegram message,
+provider control, database farm write or irrigation command was issued by the
+terminal. The existing canonical Mission Control row received idempotent event
+`CORE-MISSION-CONTROL-C5514E2F5DB7985EA6E79182`; exact replay was a no-op,
+status remains `paused / event_waiting`, and owner action remains `NONE`.
+
+First missing acceptance gate: independent exact-head PASS and hosted CI,
+serialized merge/deployment, then a natural provider-origin material-change
+delivery followed by a later unchanged natural reassessment with zero standalone
+plan delivery. Immediate lifecycle notifications must remain unaffected. This
+directly unblocks the existing owner outcome but does not otherwise reprioritize
+the durable mission order.
+
+### Post-deployment digest-cutover acceptance failure and compatibility repair
+
+PR #1234 independently passed, merged as
+`6040d34a36030101cd65218c50d728505d4b8b48`, and loaded exactly on Render.
+The first natural post-deployment cycle recorded observation at
+`2026-08-24T11:46:51.913854Z`, then delivered provider message `3986` at
+`11:47:03.557070Z`. Its B/C owner semantics remained unchanged, but the newly
+corrected semantic digest could not equal the predecessor's legacy digest, so
+the version cutover emitted one false duplicate. Zero hardware/farm mutation
+occurred and the separate execution-lifecycle notification rail was untouched.
+
+Lifecycle remains `WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / SAME_LINEAGE_COMPATIBILITY_REPAIR`;
+**NO BUSINESS OUTCOME** and `OWNER ACTION: NONE`. The bounded continuation must
+bind the prior delivered and pending packet to the exact recipient, operating
+date and predecessor identity; compare stable rendered semantics only for the
+declared volatile canonical reassessment clock; and fail open to one legitimate
+delivery when predecessor evidence is absent, ambiguous or mismatched. Genuine
+zone/lifecycle/verified-completion/owner-question changes and fixed meaningful
+deadlines must still produce exactly one successor. Completion still requires
+reviewed deployment, a natural materially changed plan when one genuinely
+occurs, and a later natural unchanged zero-send cycle.
+
+### First compatibility deployment failed and existing fertilizer delay evidence
+
+PR #1235 independently passed and merged as
+`5c3ba98af02a8220adaf715d5b002988deb1d4c1`; Render loaded that exact revision.
+The first natural due cycle then recorded observation
+`OOM-ROOTLINE-OBS-DAE1CCE12878150024CB5914-RECORD_OBSERVATION` at
+`2026-08-24T12:17:01.610604Z` with the same visible B/C semantics as message
+`3986`, but claimed pending notification
+`OOM-ROOTLINE-REASSESS-245167D18F25A1595F1F9EFE` and delivered provider message
+`3987` at `12:17:13.522650Z`. Only the next-check time moved from 14:16 to 14:46
+SAST. Raw append-only packet readback proves exact predecessor owner/chat/date,
+identity, provider receipt and pending-answer enrichment; suppression failed
+because production's `durable_backend_schedule` trigger was excluded from the
+hard-coded volatile-trigger allowlist. This remains a notification-only
+acceptance failure with zero irrigation, fertilizer, borehole or farm effect.
+
+The same-lineage repair on exact current main replaces that brittle trigger
+allowlist with a versioned owner-plan semantic fingerprint stored in the
+existing pending/delivery packet. It normalizes only the visible next-check
+line and retains exact recipient, date, provider receipt and predecessor
+binding. Existing historical packet text supplies the transition fingerprint;
+missing or ambiguous predecessor evidence still permits the first legitimate
+plan, and a visible zone, lifecycle, verified-completion or owner-question
+change still produces one successor. Lifecycle notices remain separate.
+
+Owner evidence also states that no fertilizer has been used for three weeks and
+that further delay is unacceptable. This is consolidated into the existing
+`RMQ-20260813-02` Mixer and `RMQ-20260813-03A/03B` Injection lineage; it creates
+no new mission and does not change priority. Source and canonical readiness are
+not physical commissioning: Mixer CH2 is read-only observed and bounded for a
+future supervised five-minute proof, while Injection CH1 remains dependent on
+commissioned Mixer plus genuine active B/C preflow, pulse, flush and exact OFF
+evidence. The current absence of a dedicated canonical Mission Control row for
+these register-retained identities remains a visibility gap; no substitute row
+or direct database mutation was made here.
+
+Lifecycle: `WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / SEMANTIC_REPAIR_ACTIVE`.
+Measurable outcomes remain two natural unchanged cycles with zero standalone
+plan delivery, then one technically ready supervised Mixer proof and later
+separate Injection acceptance. **OWNER ACTION: NONE** until the notification
+repair is reviewed/deployed and the exact commissioning rail reports readiness;
+do not ask the owner to wait at equipment or repeat a presence statement.
+
+### BMQ-20260813-05 semantic adoption configuration recovery prepared
+
+The deployed semantic interpreter remains fail-closed unless all three existing
+Render keys are present: `OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED`,
+`OOM_SAKKIE_LLM_ROUTER_MODEL`, and secret `OPENAI_API_KEY`. The first approved
+legacy asset exhausted its bounded attempts while that runtime was not fully
+configured and is durably in terminal `exception`; merely adding configuration
+cannot make the existing eligibility predicate select it again. The bounded
+same-mission repair permits exactly one append-only reset only after the runtime
+is configured and only for the exact approved binary/hash whose terminal cause
+is `interpretation_unavailable`. The binary ID and SHA-256 must equal the
+explicit `BEACON_SEMANTIC_RECOVERY_BINARY_ASSET_ID` and
+`BEACON_SEMANTIC_RECOVERY_ASSET_SHA256` bindings. A global advisory lock and
+durable `bmq05-first-approved-asset-v1` ledger receipt prevent another asset
+from consuming a reset across later calls or configuration changes. Authority
+changes, foreign failures, tagged assets, digest mismatch and a second reset fail closed. The retry interprets
+authenticated owner context only; it performs no filename inference,
+publication, spend, customer send or provider mutation. Lifecycle remains
+`WORKING / CONFIG_REQUIRED / SOURCE_REPAIR_ACTIVE`; **NO BUSINESS OUTCOME**.
+
+#### Supervised Mixer physical commissioning evidence in progress
+
+On `2026-08-24` the owner first reported `CH2 OFF, pump stopped`; exact source
+wall-clock time was not supplied and remains Unknown. This is attributable
+physical preflight evidence for existing `RMQ-20260813-02`, not commissioning
+completion. At `2026-08-24T16:15:11+02:00` Control Tower received the owner's
+next physical observation: `CH2 ON, pump running, tank recirculating` for
+`Controller (1) Right` / device `100204d497` / CH2 `Kunsmis Meng`. The owner is
+now observing the existing 300-second native auto-OFF window. No Injection CH1
+or Borehole action is authorized or reported. Completion remains blocked on
+physical pump/recirculation stop at native timeout plus exact provider OFF and
+canonical execution/commissioning readback. **OWNER ACTION: observe only and
+report immediately when CH2, pump and recirculation stop; do not toggle another
+control or retry ON.**
+
+The owner subsequently reported `CH2 auto-OFF, pump stopped, recirculation
+stopped.` This is attributable physical mapping and native 300-second fail-stop
+proof, not a ROOTLINE outcome. The next deployed manager readback at
+`2026-08-24T14:20:22.769628Z` reached generation 8 with readiness digest
+`3da21131194f782aaefe4b393a8405f99958f7f2a739330a57bdc8c74eaf985b`,
+unknowns `[]`, and zero canonical auxiliary execution events. Under the
+readiness collector contract this proves fresh authoritative provider binding,
+CH2 current OFF, native auto-OFF exactly 300 seconds, no conflicting active
+auxiliary execution and zero provider control calls. It also proves the manual
+run did not become canonical commissioning.
+
+The exact existing governed continuation is one fresh owner Telegram presence
+statement bound to Mixer CH2, followed by the ROOTLINE protected preview and
+one actor-bound `Confirm` approval. The runtime must then own one exactly-once
+ON, native timeout/recovery, provider OFF, physical stopped-flow evidence,
+canonical completion and zero-ON replay. No manual repeat, Injection CH1 or
+Borehole action is part of this acceptance.
+
+### 2026-08-24 - Mission Control latency outcome and ROOTLINE current hold
+
+Existing `CMQ-20260813-05` achieved one bounded owner-visible outcome without
+closing the broader operating-spine mission. PR #1236 merged as exact main
+`c210c5295c37d0ca6424173207387ba24621d113`; Render loaded that exact revision.
+Two separate authenticated owner-page loads then displayed all six current
+canonical Control Tower missions with their counts, details, next steps and
+owner-action state inside the existing Mission Control page, with no timeout.
+This retires the page-critical query-latency acceptance gate only. CMQ remains
+`WORKING`: runner continuity, automatic governed mission progression and the
+broader operating-spine acceptance are not claimed complete. No mission, row,
+store, page, priority, provider or farm state was created or changed by this
+register receipt.
+
+ROOTLINE PR #1237 exact head
+`4444861d6be5f6af33f98e869b05e05369aff537` independently passed against its
+then-current base with 69 focused local tests, 32 independent focused tests,
+clean diff and all four hosted gates. It adds a production-shaped pre-upgrade
+message `3986` predecessor and proves the clock-only `3987` successor is silent,
+while fixed deadlines, changed B/C semantics, lifecycle/completion and owner
+questions remain material. Main subsequently advanced to the disjoint CMQ
+merge above, so #1237 is being reconciled and re-gated before any integration;
+no stale-base merge or deployment is authorized.
+
+The owner's fresh Mixer presence statement did not reach the deployed direct
+Telegram webhook: Render request evidence through
+`2026-08-24T14:42:47.051211Z` contains no corresponding POST, and canonical
+readback at `2026-08-24T14:40:05.648244Z` contains no new Mixer claim or card.
+The remaining `active` presence claim was created on 16 August, expired on 17
+August and has no preview-card binding. It is historical stale state, but it
+cannot have intercepted a new request that never reached Amadeus. Exact blocker
+is upstream Telegram/n8n relay ingestion; root cause below that boundary is
+still Unknown. Zero new claim, card, execution, provider call or hardware/farm
+effect occurred. `OWNER ACTION: NONE`: do not resend the message, press an old
+button or operate CH1, CH2 or Borehole until exact dedupe-safe relay recovery is
+proved and one fresh protected Mixer preview is visible.
+
+#### ROOTLINE message 4000 post-deploy silence failure
+
+The first natural reassessment after exact live revision
+`42d8708335e89b8a1977dd69d4c45e2d314c03bf` did not meet the unchanged-plan
+silence gate. Observation
+`OOM-ROOTLINE-OBS-CE14204919D0E97A5B5C1BDD-RECORD_OBSERVATION` at
+`2026-08-24T15:46:54.825893Z` produced result
+`ROOTLINE-RESULT-20260824-A700309E8F09AE5E`; pending notification
+`OOM-ROOTLINE-REASSESS-A0AE5380D99026A01B83AD12` was then provider-confirmed
+as Telegram message `4000` at `2026-08-24T15:47:06.599047Z`. Its visible B/C
+plan, question and owner action were unchanged from delivered message `3997`;
+only the approximate next-check clock moved from `17:46` to `18:16`. This is a
+notification acceptance failure, not an irrigation, fertilizer, borehole or
+farm effect and not an owner outcome.
+
+Exact readback identified two same-lineage predicates: the pre-v3 message
+`3997` packet had no semantic fingerprint, and the one-way legacy transition
+excluded current trigger `refresh_missing_or_stale_evidence`; the v3 packet for
+message `4000` also retained its moving `at` value inside the otherwise stable
+reassessment fingerprint. The bounded correction normalizes only that `at`
+value for this exact trigger and admits the trigger to the exact-bound one-way
+legacy transition. Trigger, reason, conditions, recipient, operating date,
+provider receipt, predecessor identity, fixed deadlines, visible B/C state,
+lifecycle, verified completion and owner questions remain material and
+fail-closed. No new mission, notification rail, store, queue, scheduler or
+priority is created. Lifecycle remains
+`WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / CLOCK_FINGERPRINT_REPAIR_ACTIVE`;
+acceptance still requires reviewed deployment followed by two natural
+unchanged cycles with zero standalone plan messages and one later genuine
+material change producing exactly one successor. **OWNER ACTION: NONE.**
+
+#### Mixer message 4001 misrouting and ROOTLINE message 4003 continuation
+
+At `2026-08-24T16:13:21Z` the owner sent the exact governed Mixer readiness
+phrase as Telegram message `4001`. The direct webhook reached exact live
+revision `829b161f7f396b7e8b013e9aa98a6b953e1fc18e` but returned HTTP `409` and
+incorrectly projected existing manager-question mission
+`OOM-FAMILY-396CC42918431530CA7C373E` with task state
+`manager_question_rootline_observation_ambiguous`. The unrelated clarification
+`Which is full: the reservoir or the storage tanks?` was provider-confirmed as
+message `4002` at `2026-08-24T16:13:40.976546Z`. No fresh Mixer claim or card
+was created; the only active row remains the expired, unbound 16 August claim.
+There was no confirmation, execution, provider-control call, irrigation,
+fertilizer, borehole or farm effect. The exact source defect is precedence:
+the broad manager-question continuation runs before the already exact-matched
+Mixer specialist path. The repair moves only that exact phrase ahead of the
+manager question while preserving actor, chat, chronology, specialist mission,
+card, digest, pending-context, replay and zero-authority checks. All non-exact
+manager replies retain their existing path. **OWNER ACTION: NONE; do not resend
+or press message 4002.**
+
+The first natural reassessment after revision `829b161f...` was claimed at
+`2026-08-24T16:16:12.988067Z`, retained unchanged visible B/C decisions,
+reasons and owner question, but delivered another standalone plan as message
+`4003`. Its internal structured scheduler reason shortened from
+`Refresh forecast, tanks.` to `Refresh tanks.`; that token does not appear in
+the delivered owner plan. This is continued failure of the same notification
+mission, not a new mission or priority change. The semantic fingerprint is
+therefore versioned to bind the rendered owner-visible plan only: visible B/C
+decision/reason, lifecycle or verified completion, fixed-deadline wording and
+owner-question changes remain material, while hidden trigger/reason/clock churn
+cannot manufacture an identical standalone plan. Lifecycle remains
+`WORKING / POSTDEPLOY_ACCEPTANCE_FAIL / OWNER_VISIBLE_FINGERPRINT_REPAIR_ACTIVE`.
+
+#### Mixer message 4005 protected-preview failure after revision 857c6125
+
+At `2026-08-24T17:27:55Z` the owner's confirmed exact governed Mixer phrase
+arrived as provider message `4005`; the n8n webhook completed HTTP `200` at
+`17:28:34Z` on exact live revision
+`857c612560a861a5f7dea5400c9b625109aa377c`. The specialist readback was safe
+and current (`all_outputs_off=true`, Mixer CH2 native auto-off `300s`), but the
+gateway persisted `contextual_followup_claimed` against stale parent Telegram
+message `3480` and delivered plain readiness message `4006` instead of creating
+the protected Mixer claim/card. The expired 16 August presence claim remained
+and was not atomically retired. This is a further acceptance BLOCK in existing
+`RMQ-20260813-02`, not a new mission or priority change. There were zero
+provider-control calls, hardware commands or farm writes and no confirmation
+or actuation. The bounded repair makes the exact commissioning phrase enter
+the protected claim/card delivery boundary immediately after specialist
+acceptance, before any generic contextual projection, while retaining actor,
+chat, age, mission, digest, concurrency, replay and confirmation safeguards.
+Lifecycle is `WORKING / PROTECTED_PREVIEW_ACCEPTANCE_FAIL / REPAIR_ACTIVE`.
+**OWNER ACTION: NONE; do not resend or confirm until a reviewed repair is live.**
+
+#### Mixer message 4007 cross-action stale-claim handoff failure
+
+After reviewed PR #1242 merged and exact revision
+`642af37cf77fec6bdb81d1bd1b5f322080a7bef3` was live, fresh manager readback
+again proved all outputs OFF and Mixer CH2 native auto-off `300s`. The owner's
+one exact post-deploy phrase arrived as message `4007` at
+`2026-08-24T17:43:01Z`; webhook HTTP `200` completed at `17:43:41Z`. The direct
+protected boundary was reached, but the old active-status, expired, unbound
+`rootline_fertilizer_mixer_presence_refresh` row is a different action kind
+from `rootline_fertilizer_mixer_commissioning`. The generic claim rail correctly
+refused to retire that foreign-action row, so no commissioning claim/card was
+created; the gateway then misleadingly retained the earlier plain readiness
+answer and delivered message `4008`. This is the same `RMQ-20260813-02`
+acceptance blocker, not a new mission or priority change. The repair adds one
+explicit atomic handoff: only the exact expired, unbound presence predecessor
+for the same mission, actor, chat and canonical payload digest may retire before
+the commissioning insert. Live, bound, malformed, mismatched and unrelated
+claims remain blockers. Claim failure produces an explicit contained/no-start
+answer and can never reuse plain readiness. There were zero provider-control
+calls, hardware commands or farm writes. Lifecycle is
+`WORKING / CROSS_ACTION_STALE_CLAIM_BLOCK / HANDOFF_REPAIR_ACTIVE`.
+**OWNER ACTION: NONE; do not resend or confirm during repair.**
+
+### BMQ-20260813-05 protected-delivery ambiguity follow-up containment — 2026-08-24
+
+- Consolidated OMQ-20260813-03 natural-cycle finding into this existing BEACON sale/media lineage without changing mission priority.
+- Production readback proved one immutable BEACON manager generation was reclaimed every five minutes after an exact protected card update became provider-ambiguous. The protected lifecycle correctly forbade a duplicate provider call, but the manager case retained an already-due reassessment timestamp and therefore recorded an exception forever.
+- The bounded repair keeps the generation visibly contained and unconfirmed, preserves every protected publication and actor/card/digest boundary, and makes explicit do-not-retry provider ambiguity terminal for that immutable generation. Unchanged cycles cannot reclaim it; genuinely changed canonical evidence still creates a successor generation normally.
+- No provider, publication, spend, customer, farm, hardware or production-data effect was performed. Business completion remains false until deployed natural cycles prove the reclaim loop stopped and later reconciliation remains safe.
+
+## 2026-08-24 - ROOTLINE provider-readback commissioning authority addendum
+
+Charl explicitly authorized the existing `RMQ-20260813-02`,
+`RMQ-20260813-03` and `RMQ-20260813-06` lineages to use fresh authoritative
+application/provider ON then OFF readback as sufficient operational start/stop
+proof for the governed Fertilizer mixer, Fertilizer injector and Borehole
+controller. Routine owner physical presence/observation is removed; Charl and
+Anton report exceptions later. No new mission or priority change results.
+Existing boundaries remain: Mixer is exact CH2 with a 300-second fail-stop;
+Injector requires exactly one active irrigation zone, at least ten minutes
+pre-flow, at most 120 seconds ON and at least ten minutes flush; Borehole cannot
+be commanded until exact binding and bounded fail-OFF are proven. Every path
+still requires idempotency, replay/concurrency containment, canonical lifecycle
+and final verified OFF. A command receipt alone proves no outcome.
+
+The same decision authorized exactly one retry of failed GateKeeper execution
+`66525`. Retry `66544` succeeded through the GateKeeper call node, but produced
+no fresh canonical Mixer commissioning claim/card on immediate readback and no
+pre-confirm hardware/provider-control effect. A second retry is prohibited;
+downstream transport diagnosis continues in the existing RMQ-02 lineage.
+**NO BUSINESS OUTCOME. OWNER ACTION: NONE.**
+
+Read-only diagnosis proved the live GateKeeper ordinary-message node calls
+backend relay `TlKy9kUgJJE0msU4` with `waitForSubWorkflow=false`. On retry,
+n8n marked that fire-and-forget call successful and returned unchanged input,
+while creating no child execution or durable relay receipt. The relay exposes
+only `Execute Workflow Trigger`, so no bounded public child-invocation API exists.
+The existing GateKeeper tracked definition is reconciled to the live 2.0B relay
+identity and now requires `waitForSubWorkflow=true`; the deployment contract
+forces the same receipt-bearing setting when reconciling live workflow state.
+Parent success can therefore no longer precede child completion/failure. The
+stored message may be recovered exactly once only after reviewed provider
+deployment/readback; no direct backend POST, manufactured card or pre-confirm
+actuation is permitted.
+
+## 2026-08-24 - GREEN farm-house printer risk acceptance addendum
+
+Charl accepts the confidentiality and local-network risk of practical
+farm-house printer operation by the farm team and removes private PKI,
+TLS/IPPS and certificate setup as blockers in the existing DMQ/GREEN lineage.
+No new mission or priority results. Minimum operational integrity remains:
+one fixed approved printer and queue, exact canonical job identity and digest,
+bounded retry, no duplicate/replay, and truthful printed-or-failed
+canonical/provider readback. No public arbitrary-print endpoint or
+caller-selected printer, queue, URL or payload is authorized. Existing jobs,
+documents and historical evidence are unchanged. **NO BUSINESS OUTCOME. OWNER
+ACTION: NONE** until reviewed source is integrated and one genuine exact job is
+read back without duplicate output.
+
+Current `green_print_bridge/DOCS.md` and app source still mandate
+`private_ipps`, private CA and TLS validation, and open PR #1194 further
+hardens that superseded policy. PR #1194 must not merge; this owner decision is
+not operative until a bounded reviewed source correction removes those gates
+while preserving the minimum job-integrity contract above.
+
+For `RMQ-20260813-06`, the owner will provide exact Borehole connector/binding
+details tomorrow. This is the existing external trigger; ask no further
+question tonight and do not command Borehole before exact binding plus bounded
+fail-OFF are proven.
+
+## 2026-08-24 - HMQ heat-reminder projection correction
+
+Post-deployment read-only acceptance of existing mission `HMQ-20260813-05`
+against exact live revision `2fdecec1444725d07e0b362dc95caaa3c6e99ea6`
+proved that the heat-only task and question gates were removed, but the current
+operating-loop projection still prepared 13 due `Return-to-heat observation
+window` reminders inside a 38-item reminder plan. No reminder was delivered
+(`delivery_operational=false`, `sent_count=0`), no canonical or physical effect
+occurred, and volunteered `standing_heat` facts remained append-only observation
+history. This is the same mission and priority: current and future reminder
+projection/delivery must exclude the legacy heat window while the historical
+milestone remains available for audit. Source repair is active; **NO BUSINESS
+OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
+questions, tasks and reminders on a later natural cycle.
+
+## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.8 device commissioning receipt
+
+The existing GREEN/DOCUMENTS mission advanced through release and real-device
+commissioning without creating another mission, document, queue or print
+workflow. PR #1250 merged as exact revision
+`844d3a10944e07a5341602ea18b337fca16b0dbd`; PR #1194 was closed as
+superseded. Guarded workflow run `32810759240` published the one-time
+`linux/arm64` 0.3.8 package and verified its Cosign signature, provenance,
+SPDX SBOM, OCI source/version/platform bindings and tag equality at immutable
+index digest
+`sha256:587e0a21237d5706d42122161a5ec71ae75be54f4cf5db283ee26e5d922ee9bd`.
+
+Charl installed the released package through Home Assistant. Control Tower
+corrected the existing saved transport fields to the reviewed bounded profile:
+`local_ipp_fixed` and the exact fixed queue endpoint
+`ipp://192.168.0.118:631/printers/weekly-a4`. After a stability wait, Home
+Assistant reported `Current version 0.3.8` and `Running`. This proves the bridge
+is installed and active on the intended device. It does not prove a document
+printed: no canonical print job or CUPS submission was created during
+commissioning, and no physical page or later continuity readback exists yet.
+Lifecycle is `WORKING / BRIDGE_ACTIVE / GENUINE_PRINT_ACCEPTANCE_WAITING`.
+
+The smallest existing governed acceptance path remains the shared DOCUMENTS
+weekly-sheet rail already bound to this mission. A genuine private Oom Sakkie
+request with semantic intent `weekly_weighing_sheet_print` builds the canonical
+`farm.weekly_weight_sheet.v1` revision from current active pigs and creates one
+actor-bound `documents_green_print` protected preview. Nothing prints until the
+same actor confirms. Confirmation atomically creates the one digest-bound job;
+the installed Green worker then claims it, retrieves the exact canonical PDF,
+submits only to the fixed `weekly-a4` queue and records CUPS/canonical outcome.
+The separate protected physical-page follow-up records printed/incorrect/
+uncertain truth and never auto-reprints. Do not manufacture a request, document,
+confirmation or job merely for commissioning. **OWNER ACTION: NONE:** the next
+automatic action is for Green to remain in its zero-job polling/heartbeat cycle
+until a genuine farm need produces the existing protected weekly-sheet request;
+Control Tower then follows that single journey through confirmation, provider/
+canonical readback and a later terminal-independent continuity cycle.
+
+## 2026-08-25 - DMQ-20260816-01 standing print authority addendum
+
+Charl's authenticated private request to print an allowlisted farm document is
+the authority for one bounded GREEN job on the commissioned fixed local queue.
+This supersedes the commissioning receipt's preview/Confirm wording: that loop
+is a systemic owner-burden defect and must not remain in the natural request
+path. Oom Sakkie must create the exact immutable revision, persist a
+deterministic digest-bound standing-authority receipt, create/recover the one
+canonical job idempotently, follow provider and canonical truth through
+completion, and ask Charl only about a genuine exception or physical page
+result. One A4 monochrome copy, registry-bound printer and queue, bounded
+retry/reconciliation and no automatic reprint remain invariant.
+
+This remains the existing `DMQ-20260816-01` mission and the existing GREEN job,
+worker, queue and physical-follow-up rail. The document catalogue is the sole
+extension inventory: current governed PDF generators may gain small immutable
+revision adapters one at a time, but may not create a second print API, worker,
+queue, ledger or confirmation system. Loading sheet, removal/transport, health
+declaration and quote are catalogued extension candidates; their direct-print
+authority remains fail-closed until each adapter and its evidence binding are
+implemented and tested. No job was synthesized or sent by this source change.
+**NO BUSINESS OUTCOME. OWNER ACTION: NONE** until integration/deployment and a
+later genuine request prove canonical/provider/physical readback.
+
+## 2026-08-25 - PR1251 ROOTLINE standing-authority evidence reconciliation
+
+This append-only entry restores evidence accidentally removed while reconciling
+the GREEN standing-print branch. It belongs to the existing ROOTLINE missions
+and changes neither priority nor current authority. At the time of the event,
+Charl had removed routine commissioning confirmations and human-presence
+requirements for already governed ROOTLINE connectors. Fresh authenticated
+requests and eligible plans could execute only when exact device, current need,
+provider safety, deterministic claim, replay/concurrency and native fail-stop
+contracts passed; authoritative application/provider ON then OFF readback was
+sufficient operational proof.
+
+Fresh Telegram message `4023` entered GateKeeper execution `66616` at
+`2026-08-25T04:49:34Z`; child relay execution `66617` completed before the
+parent at `04:50:15Z`, proving the reviewed `waitForSubWorkflow=true` receipt
+repair. The backend returned `commissioning_specific_hold` because its first
+controller read was incomplete. It created no claim, card or execution and made
+no hardware/provider-control call. The automatic collector passed at
+`04:50:10.625293Z` with readiness digest
+`3da21131194f782aaefe4b393a8405f99958f7f2a739330a57bdc8c74eaf985b`,
+unknowns `[]`, exact CH2 OFF, the then-current 300-second fail-stop, no active
+execution and zero control calls. This proved a bounded fresh-read timing race,
+not an unsafe device state.
+
+Independent review of PR #1251 also proved that its first direct-command head
+reached the standing-authority executor without the durable acceptance receipt
+required by production and would stop at
+`commissioning_acceptance_receipt_unproven`, with zero device effect. The merged
+repair records one deterministic, idempotent `contextual_followup_completed`
+receipt on the existing ROOTLINE operational-intake rail before execution and
+validates mission, owner/chat, provider message/time, text digest, task kind,
+zero-effect authority and response contract. Persistence failure remains
+fail-closed. Later Mixer commissioning/native-limit and Borehole connector
+decisions remain authoritative over the historical readiness envelope recorded
+here; this reconciliation does not roll them back. **OWNER ACTION: NONE.**
+
+## 2026-08-25 - Anton mortality GateKeeper dependency failure
+
+Fresh Telegram message `4028` entered the existing HERDMASTER/Oom Sakkie
+lineage at `2026-08-25T07:03:14Z`, but GateKeeper execution `66636` stopped at
+the pre-routing Google Sheets `Get User Info` authorization lookup with HTTP
+503. The live node had no retry. The backend therefore received no message and
+created no semantic result, claim, delivery, observation, welfare or lifecycle
+effect. This is an ingress/auth dependency failure, not a safe semantic hold or
+canonical writer failure. The old provider update must not be replayed.
+
+The bounded repair performs one initial authorization read and at most four
+retries, two seconds apart, only for HTTP 429, HTTP 5xx and transport failures.
+HTTP 401/403 and all other deterministic 4xx failures stop after the first read.
+The maximum envelope is five reads and approximately eight seconds of retry
+wait. Exhaustion remains fail-closed, and only one successful authorization
+result may reach the backend route, so retries cannot duplicate a backend
+message or farm effect. **NO BUSINESS OUTCOME. OWNER ACTION: NONE** until the
+reviewed workflow is deployed and a later genuine provider interaction proves
+the full actor-bound mortality journey and terminal-independent continuity.
+
+## 2026-08-25 - RMQ-20260813-06 Borehole 1 exact connector and standing authority
+
+Charl supplied the existing Borehole 1 connector binding: eWeLink device
+`1002851416`, display `Boorgat 1 Krag Toevoer`, SONOFF MINI R4 sole output
+(logical channel 1), exact IFTTT events `borehole_1_on` / `borehole_1_off`,
+power-restoration OFF and native four-hour auto-OFF. The supplied Maker key and
+URLs are secret and are intentionally absent from this register, repository,
+PR and evidence. They may be consumed only through the existing protected
+`ROOTLINE_IFTTT_MAKER_KEY` configuration rail.
+
+Owner standing authority removes routine presence and preview/confirmation.
+Fresh provider/app OFF -> ON -> OFF is sufficient operational proof for this
+governed power connector. The approximately 1.2 kW inverter load is supporting
+evidence only, never a gate or stop. The internal tank-full cutoff may stop the
+pump while the plug remains energized, so plug ON never proves pumped volume or
+storage gain. ROOTLINE may schedule repeat bounded overnight segments from
+canonical water need, power and no-rain evidence, but each segment requires an
+exclusive deterministic claim, exactly one ON attempt, native/primary deadline,
+bounded OFF recovery, authoritative final OFF and restart recovery. No live
+configuration or actuation occurred. **NO BUSINESS OUTCOME. OWNER ACTION: NONE**
+until reviewed source is deployed and the protected secret/configuration and
+canonical standing-active baseline are proven loaded.
+## 2026-08-25 - DMQ-20260816-01 held print-request recovery repair
+
+GREEN now retains an authenticated private weekly-print request in the existing
+protected-action table before attempting job authorization. The receipt binds
+owner, private chat, provider message, exact request-text SHA-256, preview
+digest, document revision and fixed device registry. A transient commissioning
+precondition rolls back the job but leaves that receipt `active` for the
+authenticated morning scheduler to reassess. Recovery never replays Telegram;
+it advances the same receipt through `executing` to `completed`, and completed
+replay resolves the same deterministic job. One A4 monochrome copy, fixed
+`weekly-a4`, and no automatic reprint remain invariant.
+
+The historical genuine request is Telegram message `4031`, update `549158359`,
+text SHA-256 `cd2252a44d92a29cc7ae94a0885a3a7d3ed0f527276f696f124871f9c45ddb4c`,
+and n8n executions `66641`/`66642`. It may be adopted only after this reviewed
+revision deploys, after readback proves the activated canonical registry and
+zero prior jobs/claims/events for that request. Adoption must use those exact
+provider facts, record an audit receipt, and then allow the scheduler rail to
+continue it; it must not synthesize or replay a Telegram update. No adoption or
+print job was performed by this source change.
+
+## 2026-08-25 - HERDMASTER continuous-husbandry Molly first-treatment parity intake
+
+The new Molly Telegram finding is consolidated into the existing
+`HERDMASTER / HERDMASTER` continuous-husbandry operating loop recorded in the
+Continuous Agent Operations Reset; it is not a new HMQ mission, litter mission,
+Telegram queue, farrowing workflow or treatment database. That existing loop
+already names Molly's omitted due treatment as an acceptance blocker and owns
+continuous litter, treatment, medical and welfare work through the canonical
+HERDMASTER queue and Oom Sakkie follow-through.
+
+Current owner-visible parity is not proven. Canonically due-and-ready Molly
+litter first-treatment work may appear in the shared Owner Attention projection,
+but the genuine Telegram manager journey must carry the same current task and
+must follow it through the existing protected litter-treatment action to exact
+canonical readback, reassessment and retirement. Unknown, partial, already
+completed or durably skipped evidence must remain non-actionable. No product,
+dose, treatment fact or completion may be inferred, and a Telegram message or
+button alone is not a farm outcome. The owner must not be asked to rediscover,
+relay or repeatedly chase due work that HERDMASTER and Oom Sakkie already own.
+
+The current implementation owner is the isolated source worktree
+`C:/tmp/herdmaster-litter-treatment-telegram-parity-20260825`, branch
+`fix/herdmaster-litter-treatment-telegram-parity-20260825`, created from exact
+main `78b724fa487a9ceadfc4a52512e260bb89ea71e0`. Farrowing database authority,
+natural health/loss, welfare, weighing, breeding and historical litter PRs are
+collision evidence only; they do not authorize a second treatment writer or a
+Molly-specific bypass. Priority is unchanged. **NO BUSINESS OUTCOME. OWNER
+ACTION: NONE.** Automatic continuation is the same-lineage source repair,
+independent review, exact deployment, then one fresh genuine Telegram cycle
+proving names-first parity, one protected exact treatment journey when truly
+due, canonical completion/readback, replay containment and a later stable cycle
+without repeated work.
+
+## 2026-08-25 - OMQ-20260813-03 Morning Farm Plan outcome projection defect
+
+Live Telegram card `4033` (observed `08:16:19Z`, presented `08:16:51Z`) repeated
+the same unresolved work seen on cards `4027` and `4029`: terminal Pig 126
+mortality appeared as a generic follow-up, ROOTLINE called B/C ready while its
+canonical reason said current deficit was insufficient, and weekly weighing
+dumped `0/75` plus 75 reconciliation tags. With no genuine question, the same
+message then said no action was required and exposed a 15-minute backend poll.
+This is consolidated into existing `OMQ-20260813-03`; no new mission, store or
+priority was created.
+
+The bounded source repair preserves the shared Daily Farm Manager and canonical
+specialist rails. It distinguishes exact owner-required work from Oom Sakkie's
+automatic reconciliation, removes raw polling and long reconciliation commands
+from owner output, preserves exact mortality lifecycle closure binding, and contains exact ROOTLINE
+Eligible-versus-insufficient-deficit conflicts as automatic safe checking.
+Source completion is not acceptance. Completion still requires merge/deploy,
+a later natural concise Brief, unchanged-cycle silence and proof that specialist
+work advances or reports a bounded exception without duplicate effects.
+**OWNER ACTION: NONE.**
+
+### First natural post-deploy acceptance — FAIL
+
+The first owner-supplied natural Morning Plan after exact deployed revision
+`f4c26fdc205f06dd0e20f3a2f0a1a5409348b6ef` read: `TODAY'S FARM PLAN`;
+`OOM SAKKIE IS CHECKING AUTOMATICALLY`; mortality follow-up
+`PIG-2026-3EE5`; irrigation B and C `Checking safely`; weighing `0/75` with
+75 tags needing status reconciliation; and `No action required`. This proves a
+shorter provider-visible presentation, but the owner found it not useful or
+end-to-end. It does not prove specialist dispatch, canonical advancement,
+closure, or a useful bounded exception for any listed work. The existing
+`OMQ-20260813-03` acceptance therefore remains **FAIL / NO BUSINESS OUTCOME**;
+priority is unchanged and **OWNER ACTION: NONE**.
+
+## 2026-08-25 - HMQ-20260813-05 selective Bulk BCS natural acceptance
+
+Read-only production evidence proves genuine canonical capture in the existing
+`HMQ-20260813-05` lane, supported by `HMQ-20260813-00`. Batch
+`df4c6197-4b2c-4253-b120-b07ad69305f4` was created at
+`09:59:29.645Z` and completed at `10:03:00.828Z`: 79 rows were visible and
+actionable, 79 weights and 7 moves succeeded, and the batch recorded 79 success,
+zero failed and zero duplicates. Draft
+`BULK-DRAFT-1787650403572-8e45ea` produced five separate canonical
+`pig_observation_events`, each bound to the bulk-BCS draft-plus-pig idempotency
+and append-only supersession contract:
+
+- Bonnie / `PIG-2026-5376`: BCS `3.5`, event
+  `HERD-OBS-5F9A52DC43BA509393A2A6A189231CDC`;
+- Teena / `PIG-2026-74FF`: BCS `2`, event
+  `HERD-OBS-22388C055CF15234B27AAEB757726210`;
+- Waki / `PIG-2026-7531`: BCS `2`, event
+  `HERD-OBS-C59CE145C1F257D5B996BBFD69D77A10`;
+- Ms Piggy / `PIG-2026-92F3`: BCS `3.5`, event
+  `HERD-OBS-E0CED0A5325E5D1F8D30854BE55ACDBD`; and
+- Zigay / `PIG-2026-EEAC`: BCS `3`, event
+  `HERD-OBS-BB5068789C07574EBBF0B571C5144CF3`.
+
+A manually invoked read-only heat-free management projection consumed these
+observations with `writes_performed=false` and produced zero heat-required
+tasks. It created or updated zero manager cases bound to the five exact pigs.
+That is diagnostic projection evidence only: an automatic deployed cycle, its
+next follow-up and later independent continuity proof remain unproven.
+
+This is a genuine canonical selective-BCS acceptance outcome, not a replay or
+manual correction. The owner nevertheless saw no BCS in Draft Preview Upload
+progress, so owner-visible presentation remains **FAIL / PRESENTATION DEFECT**;
+it does not negate the proven canonical capture. No new mission or priority was
+created, no production write/replay was performed by Control Tower, and
+**OWNER ACTION: NONE**. The accepted batch must not be resubmitted.
+
+## 2026-08-25 - Existing HERDMASTER natural-litter journey Linda intake
+
+The owner's 2026-08-22 Telegram report — `Morning, Linda gave birth to 9
+piglets. 8 alive, 1 mummified, Date 2026-08-22` — is consolidated into the
+existing PR `#1161` / PR `#1167` natural-litter acceptance lineage. No new
+mission or priority was created. Retained provider evidence proves the genuine
+report at `07:20Z` followed by an incorrect clarification at `07:21Z`; exact
+historical provider message IDs were not retained and remain Unknown. The
+message must not be replayed or requested again while the production authority
+gate remains unresolved.
+
+Fresh read-only canonical evidence identifies Linda as `PIG-2026-5AA8`, Active
+and on farm. Her only canonical litter is historical `LIT-2026-MNB9`, dated
+2026-01-30 and Weaned; there is no 2026-08-22 litter, mating row, Linda-bound
+manager case, farrowing protected claim or preview card. The missing litter is
+therefore a genuine end-to-end acceptance failure, not a UI-only visibility
+defect.
+
+Current source contains the reviewed semantic `record_farrowing_litter` route,
+dedicated `herdmaster_record_farrowing_litter` protected claim/runtime and
+exactly-once canonical writer; the focused current-source family passes. PR
+`#1161` merged as `a6b3112fe3a3008af763685e5b1ca31ab814963f` and DB release
+PR `#1167` merged as `61a8d196736a2153e87e12b910445967a9ba6ed6`.
+Production readback nevertheless shows migration
+`202608220001_extend_litter_supersession_for_fact_corrections` applied but not
+`202608220002_allow_herdmaster_farrowing_protected_claims`; the loaded Render
+revision could not be reached from this read-only terminal and remains Unknown.
+The route is source/test-ready but not proven production-ready. Next automatic
+work is to reconcile and apply the already governed missing migration through
+the protected migration rail, verify exact loaded revision and duplicate-safe
+readback, then request one fresh owner report only when the deployed path is
+ready. **NO BUSINESS OUTCOME. OWNER ACTION: NONE; DO NOT RESEND YET.**

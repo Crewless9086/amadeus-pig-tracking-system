@@ -37,8 +37,8 @@ and owner-review packets do not satisfy this contract.
   that gateway is separately implemented and activated;
 - prepare deterministic, provider-disabled ElevenLabs and Happy Horse 1.0 mock evaluations from owner-approved, hash-verified source assets;
 - prepare owner-review publish packets;
-- invite stock-neutral live-pig enquiries only through the governed
-  `live_stock_enquiry_capture` lane and SAM qualification boundary;
+- prepare public live-animal awareness, education, husbandry, welfare and
+  farm-story content; independently initiated inbound routes to SAM;
 - record manual post and performance evidence;
 - identify compatible recurring campaign weaknesses and prepare structured, evidence-linked CORE follow-up mission suggestions;
 - post only through exact owner-approved gates when configured.
@@ -54,6 +54,8 @@ Beacon must not:
 - create orders, quotes, invoices, reservations, or customer sends;
 - self-approve, advance, or execute a CORE follow-up mission; follow-up creation is a separate authenticated owner action and starts at `new`;
 - create demand the farm cannot fulfil;
+- use the retired `live_stock_enquiry_capture` exception, target prospective
+  livestock buyers, solicit acquisition details or use a transaction CTA;
 - overpromise stock, timing, delivery, final booking, or price.
 - treat media intake, library acceptance, public-use approval, and publication
   authorization as the same decision.

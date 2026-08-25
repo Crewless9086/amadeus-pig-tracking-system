@@ -143,7 +143,10 @@ class CanonicalClient:
         event_id=str(uuid.uuid5(uuid.NAMESPACE_URL,event_material))
         body={"event_id":event_id,"lease_token":token,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"target_state":state,**evidence}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/transition",body)
-    def command(self,worker_id): self.worker_id=worker_id; return self.request("POST",COMMAND_PATH,{"worker_id":worker_id})
+    def command(self,worker_id):
+        self.worker_id=worker_id
+        value=self.request("POST",COMMAND_PATH,{"worker_id":worker_id}) or {}
+        return value if value.get("job") else None
     def transition_command(self,command,target_state):
         job=command["job"]
         body={"lease_token":command["lease_token"],"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"command_receipt_id":command["command_receipt_id"],"command_kind":command["command"],"target_state":target_state}
@@ -294,22 +297,23 @@ def load_config(path="/data/green-runtime/options.json"):
         try: endpoint=ipaddress.ip_address(value.get("canonical_endpoint_ip",""))
         except ValueError as exc: raise Hold("commissioned_ip_literal_required") from exc
         if not endpoint.is_private or value["canonical_endpoint_ip"] not in private_addresses(origin.hostname): raise Hold("canonical_pin_not_in_resolution_set")
+        if not Path(CA_CERTIFICATE_PATH).is_file(): raise Hold("private_canonical_ca_missing")
     elif profile==PUBLIC_PKI_EXACT_ORIGIN:
         if value["canonical_api_origin"]!=APPROVED_PUBLIC_CANONICAL_ORIGIN or value.get("canonical_endpoint_ip") not in (None,""): raise Hold("public_canonical_origin_not_approved")
         # Home Assistant renders a blank string for this profile. Normalize it
         # away so the runtime contract contains no endpoint pin at all.
         value["canonical_endpoint_ip"]=None
     else: raise Hold("canonical_transport_profile_invalid")
-    if value["printer_transport_profile"]!="private_ipps" or printer.scheme!="ipps" or printer.username or printer.password or printer.query or printer.fragment: raise Hold("private_ipps_profile_required")
+    if value["printer_transport_profile"]!="local_ipp_fixed" or printer.scheme!="ipp" or printer.username or printer.password or printer.query or printer.fragment: raise Hold("local_ipp_fixed_profile_required")
     try: printer_pin=ipaddress.ip_address(value["printer_endpoint_ip"])
     except ValueError as exc: raise Hold("printer_endpoint_pin_invalid") from exc
     if not printer_pin.is_private: raise Hold("private_printer_endpoint_required")
     try: printer_literal=ipaddress.ip_address(printer.hostname)
-    except ValueError: printer_literal=None
-    answers=(str(printer_literal),) if printer_literal else private_addresses(printer.hostname)
-    if len(answers)!=1 or answers[0]!=str(printer_pin): raise Hold("printer_dns_binding_ambiguous_or_drifted")
+    except ValueError as exc: raise Hold("printer_ip_literal_required") from exc
+    expected_path=f"/printers/{value['cups_queue_id']}"
+    if (printer_literal!=printer_pin or (printer.port or 631)!=631
+            or printer.path!=expected_path): raise Hold("fixed_printer_binding_mismatch")
     value["ca_certificate_path"]=CA_CERTIFICATE_PATH; value["canonical_intake_path"]=CLAIM_PATH
-    if not Path(value["ca_certificate_path"]).is_file(): raise Hold("private_printer_ca_missing")
     if not all(ID.fullmatch(str(value[k])) for k in ("farm_scope_id","green_id","printer_id","cups_queue_id","registry_version")): raise Hold("invalid_registered_option")
     return value
 

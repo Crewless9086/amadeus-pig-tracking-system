@@ -1,4 +1,6 @@
 """Disposable-Postgres contract tests for durable Green command outcomes."""
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta, timezone
 import os
 from hashlib import sha256
 from pathlib import Path
@@ -7,6 +9,12 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.types.json import Jsonb
+
+from modules.documents.green_print_api import (
+    authorize_standing_weekly_print, recover_held_standing_weekly_print)
+from modules.documents.weekly_weight_sheet import (
+    build_weekly_sheet_revision, protected_print_preview,
+)
 
 
 URL = os.getenv("GREEN_PRINT_DISPOSABLE_POSTGRES_URL", "").strip()
@@ -55,7 +63,8 @@ def db():
                 status text not null, expires_at timestamptz not null,
                 confirmation_provider_message_id text,
                 confirmation_provider_timestamp timestamptz,result_payload jsonb,
-                created_at timestamptz default now(),completed_at timestamptz)""")
+                created_at timestamptz default now(),completed_at timestamptz,
+                unique(action_kind,mission_id,preview_digest))""")
             cursor.execute("create extension if not exists pgcrypto with schema app_private")
             cursor.execute("""select n.nspname from pg_extension e join pg_namespace n
                 on n.oid=e.extnamespace where e.extname='pgcrypto'""")
@@ -69,7 +78,8 @@ def db():
                 (farm_scope_id,green_id,printer_id,cups_queue_id,registry_version,
                  canonical_api_origin,active,commissioned_at,evidence_sha256)
                 values('farm-amadeus','green','printer','weekly-a4','registry-v1',
-                 'https://documents.internal',true,clock_timestamp(),%s)""", ("c" * 64,))
+                 'https://documents.internal',true,clock_timestamp(),%s)
+                on conflict do nothing""", ("c" * 64,))
             cursor.execute("""insert into app_private.document_print_jobs
                 (job_id,farm_scope_id,document_id,document_version,document_revision,document_type,
                  generator_id,pdf_sha256,canonical_input_sha256,pdf_bytes,retrieval_url,options_json,authenticated_principal_id,
@@ -87,10 +97,12 @@ def db():
                  clock_timestamp()-interval '1 second','ATTEMPT-DB-1','weekly-a4-42','ipps://printer',
                  'continue','COMMAND-DB-1',clock_timestamp()-interval '2 minutes','completed',
                  'continued',clock_timestamp()-interval '2 minutes',clock_timestamp()-interval '1 minute',
-                 'claimed',clock_timestamp()+interval '1 hour')""", (PDF_SHA, "b" * 64, b"%PDF-" + b"x" * 80))
+                 'claimed',clock_timestamp()+interval '1 hour')
+                on conflict do nothing""", (PDF_SHA, "b" * 64, b"%PDF-" + b"x" * 80))
         yield connection
     finally:
-        connection.rollback()
+        if not connection.closed:
+            connection.rollback()
         connection.close()
 
 
@@ -160,6 +172,128 @@ def call_producer(db,job,pdf):
         return cursor.fetchone()[0]
 
 
+def standing_request_inputs(suffix="A"):
+    owner=f"owner-standing-{suffix}"
+    revision=build_weekly_sheet_revision(authenticated_principal_id=owner,
+        requester="oom_sakkie",sheet_date=date(2026,8,25),
+        rows=[{"pig_id":f"PIG-{suffix}","tag_number":suffix,"pen_id":"B1"}],
+        document_id=f"WWS-STANDING-{suffix}")
+    url=(f"https://documents.internal/api/documents/{revision.document_id}/versions/"
+         f"{revision.version_id}/pdf")
+    preview=protected_print_preview(revision=revision,
+        job_id=f"GREEN-STANDING-{suffix}",farm_scope_id="farm-amadeus",
+        green_id="green",printer_id="printer",cups_queue_id="weekly-a4",
+        registry_version="registry-v1",retrieval_url=url,
+        authorization_expires_at=datetime.now(timezone.utc)+timedelta(hours=1))
+    parsed={"telegram_user_id":owner,"telegram_chat_id":owner,
+        "telegram_chat_type":"private","provider_message_id":f"MSG-{suffix}",
+        "text":"Print the current weekly weighing sheet."}
+    return preview,revision,parsed
+
+
+def invoke_standing(preview,revision,parsed):
+    connection=psycopg.connect(URL)
+    try:
+        return authorize_standing_weekly_print(preview,revision,parsed,
+            connect_factory=lambda:connection)
+    finally:
+        if not connection.closed:
+            connection.close()
+
+
+def test_standing_authority_retains_receipt_when_job_fails(db,monkeypatch):
+    monkeypatch.setenv("DOCUMENTS_FARM_SCOPE_ID","farm-amadeus")
+    monkeypatch.setenv("DOCUMENTS_CANONICAL_API_ORIGIN","https://documents.internal")
+    preview,revision,parsed=standing_request_inputs("ROLLBACK")
+    preview={**preview,"green_id":"unregistered-green"}
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    payload={key:value for key,value in preview.items() if key!="preview_digest"}
+    preview["preview_digest"]=canonical_preview_digest("documents_green_print",payload)
+    db.commit()
+    with pytest.raises(psycopg.errors.RaiseException):
+        invoke_standing(preview,revision,parsed)
+    with psycopg.connect(URL) as verification, verification.cursor() as cursor:
+        cursor.execute("""select status,result_payload->>'status',
+          result_payload->>'request_text_sha256' from app_private.oom_protected_action_claims
+          where mission_id like 'DMQ-20260816-01:WWS-STANDING-ROLLBACK%'""")
+        status,held,digest=cursor.fetchone()
+        assert status=="active" and held=="standing_print_request_held"
+        assert digest==sha256(b"Print the current weekly weighing sheet.").hexdigest()
+        cursor.execute("select count(*) from app_private.document_print_jobs where job_id='GREEN-STANDING-ROLLBACK'")
+        assert cursor.fetchone()[0]==0
+
+
+def test_held_request_resumes_after_registry_evidence_change_exactly_once(db,monkeypatch):
+    monkeypatch.setenv("DOCUMENTS_FARM_SCOPE_ID","farm-amadeus")
+    monkeypatch.setenv("DOCUMENTS_CANONICAL_API_ORIGIN","https://documents.internal")
+    preview,revision,parsed=standing_request_inputs("HELD-RESUME")
+    preview={**preview,"green_id":"held-green"}
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    payload={key:value for key,value in preview.items() if key!="preview_digest"}
+    preview["preview_digest"]=canonical_preview_digest("documents_green_print",payload)
+    db.commit()
+    with pytest.raises(psycopg.errors.RaiseException):
+        invoke_standing(preview,revision,parsed)
+    with psycopg.connect(URL) as activation, activation.cursor() as cursor:
+        cursor.execute("""insert into app_private.document_print_device_registry(
+          farm_scope_id,green_id,printer_id,cups_queue_id,registry_version,
+          canonical_api_origin,active,commissioned_at,evidence_sha256)
+          values('farm-amadeus','held-green','printer','weekly-a4','registry-v1',
+          'https://documents.internal',true,clock_timestamp(),%s)""",("b"*64,))
+    first=recover_held_standing_weekly_print(connect_factory=lambda:psycopg.connect(URL))
+    second=recover_held_standing_weekly_print(connect_factory=lambda:psycopg.connect(URL))
+    assert first["status"]=="documents_green_recovery_authorized"
+    assert first["job_id"]=="GREEN-STANDING-HELD-RESUME"
+    assert second["status"]=="documents_green_recovery_idle"
+    with psycopg.connect(URL) as verification, verification.cursor() as cursor:
+        cursor.execute("select count(*) from app_private.document_print_jobs where job_id=%s",
+            (first["job_id"],));assert cursor.fetchone()[0]==1
+        cursor.execute("""select status from app_private.oom_protected_action_claims
+          where mission_id like 'DMQ-20260816-01:WWS-STANDING-HELD-RESUME%'""")
+        assert cursor.fetchone()[0]=="completed"
+
+
+def test_standing_authority_completed_response_loss_retry_is_one_job_no_provider_effect(db,monkeypatch):
+    monkeypatch.setenv("DOCUMENTS_FARM_SCOPE_ID","farm-amadeus")
+    monkeypatch.setenv("DOCUMENTS_CANONICAL_API_ORIGIN","https://documents.internal")
+    preview,revision,parsed=standing_request_inputs("REPLAY")
+    db.commit()
+    first=invoke_standing(preview,revision,parsed)
+    second=invoke_standing(preview,revision,
+        {**parsed,"provider_message_id":"MSG-REPLAY-AFTER-LOSS"})
+    assert first["job_id"]==second["job_id"]=="GREEN-STANDING-REPLAY"
+    with psycopg.connect(URL) as verification, verification.cursor() as cursor:
+        cursor.execute("""select cups_job_id,attempt_id,options_json,cups_queue_id,state
+          from app_private.document_print_jobs where job_id=%s""",(first["job_id"],))
+        rows=cursor.fetchall();assert len(rows)==1
+        cups,attempt,options,queue,state=rows[0]
+        assert (cups,attempt,queue,state)==(None,None,"weekly-a4","authorized")
+        assert options=={"media":"A4","copies":1,"color":"monochrome","sides":"one-sided"}
+        cursor.execute("select count(*) from app_private.document_print_job_events where job_id=%s",
+            (first["job_id"],))
+        assert cursor.fetchone()[0]==1
+
+
+def test_concurrent_identical_standing_requests_converge_on_one_job(db,monkeypatch):
+    monkeypatch.setenv("DOCUMENTS_FARM_SCOPE_ID","farm-amadeus")
+    monkeypatch.setenv("DOCUMENTS_CANONICAL_API_ORIGIN","https://documents.internal")
+    preview,revision,parsed=standing_request_inputs("CONCURRENT")
+    # Registry/setup from the fixture must be visible to independent contenders.
+    db.commit()
+    def invoke(index):
+        return invoke_standing(preview,revision,
+            {**parsed,"provider_message_id":f"MSG-CONCURRENT-{index}"})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(invoke,(1,2)))
+    assert [item["job_id"] for item in results]==[
+        "GREEN-STANDING-CONCURRENT","GREEN-STANDING-CONCURRENT"]
+    with db.cursor() as cursor:
+        cursor.execute("select count(*),count(cups_job_id),count(attempt_id) from app_private.document_print_jobs where job_id='GREEN-STANDING-CONCURRENT'")
+        assert cursor.fetchone()==(1,0,0)
+        cursor.execute("select count(*) from app_private.document_print_job_events where job_id='GREEN-STANDING-CONCURRENT'")
+        assert cursor.fetchone()[0]==1
+
+
 def test_producer_requires_claim_registered_pair_exact_origin_and_is_replay_stable(db):
     job,pdf=producer_job();install_producer_claim(db,job)
     assert call_producer(db,job,pdf)==job["job_id"]
@@ -215,7 +349,8 @@ def test_completed_outcome_rejects_stale_lease_and_every_wrong_binding(db, field
         transition(db, **kwargs)
     with db.cursor() as cursor:
         cursor.execute("rollback to savepoint rejected_replay")
-        cursor.execute("select command_status,command_outcome,count(*) over() from app_private.document_print_jobs")
+        cursor.execute("""select command_status,command_outcome,count(*) over()
+          from app_private.document_print_jobs where job_id='JOB-DB-1'""")
         assert cursor.fetchone() == ("completed", "continued", 1)
         cursor.execute("select count(*) from app_private.document_print_job_events")
         assert cursor.fetchone()[0] == before

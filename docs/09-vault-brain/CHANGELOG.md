@@ -1,5 +1,67 @@
 # Vault Brain Changelog
 
+## 2026-08-24 - ROOTLINE provider-readback commissioning authority
+
+- Recorded Charl's standing decision that authoritative application/provider
+  ON then OFF readback is sufficient start/stop proof for the governed
+  Fertilizer mixer, Fertilizer injector and Borehole controller; routine human
+  physical presence/observation is no longer required.
+- Preserved exact device binding, current-need and interlock checks, replay and
+  concurrency safety, bounded fail-OFF, canonical lifecycle and final verified
+  OFF. Mixer CH2 remains 300 seconds; injector remains one active zone, ten
+  minutes pre-flow, 120 seconds maximum and ten minutes flush; Borehole remains
+  uncommandable until exact binding and bounded fail-OFF are proven.
+
+## 2026-08-24 - GREEN farm-house printer risk acceptance
+
+- Recorded Charl's acceptance of confidentiality and local-network risk for
+  the farm-house printer used only by the farm team. Private PKI, TLS/IPPS and
+  certificate setup are no longer commissioning or operational gates.
+- Preserved minimum integrity: fixed approved printer and queue, exact canonical
+  job identity and digest, bounded retry, no duplicate/replay, and truthful
+  printed-or-failed canonical/provider readback. No public arbitrary-print
+  endpoint or caller-selected printer, queue, URL or payload is authorized.
+- Recorded that the current app/DOCS and open PR #1194 still mandate the now-
+  superseded private-IPPS/CA/TLS policy. The decision remains non-operative
+  until reviewed source removes those gates without weakening job integrity.
+
+## 2026-08-23 - ROOTLINE B commissioning and adaptive timing reconciled
+
+- Reconciled the daily-advisor projection with the existing immutable B/C
+  commissioned controller baseline. B/channel 1 commissioning
+  `ROOTLINE-COMMISSION-D248A120ECE1961DB81B6C2E` remains durable and must not be
+  replaced by another owner-supervised proof merely because an older advisory
+  projection said `not_canary_proven`.
+- Reaffirmed the active B/C business rule that clock time is selected
+  adaptively from current crop need, weather, water and safe commissioned-device
+  evidence. A fixed daylight-only window is not an irrigation eligibility gate;
+  summer may favour evening or night execution.
+- This correction does not authorize duplicate watering, simultaneous B/C,
+  fertilizer or borehole operation. ROOTLINE must still verify current need,
+  same-day consumption, independent fail-stop, sequential execution and safe
+  shutdown before continuing to the next zone.
+
+## 2026-08-23 - Anton farm-manager mortality authority reconciled
+
+- Recorded the owner's bounded decision that Anton may perform and confirm his
+  own governed farm and irrigation management actions while CORE, CHARLIE,
+  permission administration, payments, publication and unrelated business
+  authority remain excluded.
+- Reconciled the shared HERDMASTER health/loss path to capability-based,
+  same-actor mortality confirmation, Afrikaans and English semantic intake and
+  recipient-language rendering. Confirmed mortality now coordinates canonical
+  lifecycle and attributable welfare closure atomically with replay-safe
+  readback while preserving distinct disposal, biosecurity and mortality work.
+- This is source/prepared evidence only. Pig 126, historical provider events,
+  production configuration and canonical data remain untouched pending a
+  separately authorized release and genuine post-deployment Anton journey.
+- Independent review repair now allocates mandatory positive welfare event
+  sequences under the schema lock, discovers and closes the existing
+  episode-bound welfare case rather than creating a parallel death case,
+  releases canonical active outlets atomically, and verifies pen occupancy and
+  availability from their canonical projections. A disposable-PostgreSQL gate
+  proves concurrency, replay and transaction rollback.
+
 ## 2026-08-20 - BEACON stock-neutral livestock-enquiry capture
 
 - Added the distinct BEACON stock-neutral livestock-enquiry capture boundary.
@@ -1831,3 +1893,24 @@
 - Projected one stable litter/cohort identity through weighing, protected purpose decision, deferment/reassessment and resolution using the existing Oom Sakkie manager-case lifecycle and shared owner-attention projection.
 - Made Pig Allocation the unified workspace while preserving `/purpose-review` as a compatibility deep link; no allocation, reservation, sale, customer, Telegram or farm-write authority was added.
 - Corrected HERDMASTER's stale purpose/data doctrine references to the authoritative Vault paths.
+## 2026-08-23 - Oom Sakkie farm-manager specialist parity clarified
+
+- Recorded the owner's binding rule that Anton and Charl receive the same
+  governed Oom Sakkie specialist routes and approval journeys, localized by
+  recipient language.
+- Kept CORE, CHARLIE, permission administration and unsafe hardware exceptions
+  outside the farm-manager envelope while preserving actor binding, replay,
+  audit, canonical revalidation and physical safety.
+- Recorded the fresh deployed Pig 126 failure as evidence in the existing
+  HERDMASTER natural health/loss mission; no provider or canonical data was
+  replayed or changed.
+## 2026-08-25 - Borehole 1 connector standing-authority source prepared
+
+- Bound the existing RMQ-20260813-06 device to its exact owner-supplied eWeLink
+  identity and IFTTT event names without storing or exposing the Maker secret.
+- Replaced the obsolete supervised 30-second physical-presence contract with
+  provider/app ON-to-OFF operational proof under standing authority and the
+  native four-hour fail-stop.
+- Added one-ON, deterministic claim, bounded OFF, final readback and restart
+  recovery source using the existing ROOTLINE transport and execution store.
+- No provider, configuration, canonical or farm effect occurred.

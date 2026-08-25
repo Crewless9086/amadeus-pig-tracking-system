@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 CONTRACT_VERSION = "herdmaster_natural_health_loss_intake_v1"
 RESULT_FAMILIES = {
     "sick", "injured", "found_dead", "farrowing_complication",
-    "piglet_loss", "compound_event",
+    "piglet_loss", "compound_event", "welfare_update",
 }
 AUTHORITY = {
     "zero_io": True,
@@ -193,17 +193,27 @@ def _provider_time(report):
 def _identity_matches(text, animals):
     lower = text.casefold()
     exact_ids = set(re.findall(r"\bPIG-\d{4}-[A-Z0-9]{4}\b", text.upper()))
-    tag_matches = set(re.findall(r"\b(?:tag|pig)\s*#?([A-Za-z0-9-]+)\b", text, re.I))
+    tag_matches = set(re.findall(
+        r"\b(?:tag|pig|vark)\b(?:\s+(?:nr|no|number))?\s*#?\s*([A-Za-z0-9-]+)\b",
+        text, re.I))
+    marked_tokens = {value.casefold() for value in tag_matches}
+    explicit_identity = bool(exact_ids or tag_matches)
     matches = []
     for animal in animals:
         pig_id = _clean(animal.get("pig_id"), 80)
         tag = _clean(animal.get("tag_number"), 120)
         name = _clean(animal.get("name") or tag, 120)
         selected = pig_id in exact_ids
-        selected = selected or bool(tag and tag.casefold() in {x.casefold() for x in tag_matches})
-        selected = selected or bool(
-            name and re.search(rf"(?<!\w){re.escape(name.casefold())}(?!\w)", lower)
-        )
+        selected = selected or bool(tag and tag.casefold() in marked_tokens)
+        selected = selected or bool(name and name.casefold() in marked_tokens)
+        # Numeric tag/name values must be explicitly marked as animal
+        # identities. Otherwise date days, months, years, counts and weights
+        # can silently become pig candidates. Named animals remain available
+        # only when no explicit Pig ID/tag marker already supplied the typed
+        # identity boundary.
+        selected = selected or bool(not explicit_identity and name
+            and not name.replace("-", "").isdigit()
+            and re.search(rf"(?<!\w){re.escape(name.casefold())}(?!\w)", lower))
         if selected:
             matches.append(animal)
     return sorted(matches, key=lambda row: _clean(row.get("pig_id"), 80))
@@ -232,13 +242,16 @@ def _identity_result(matches):
 def _parse_report(text, provider_time):
     lower = text.casefold()
     reported_died = bool(re.search(
-        r"\bdied\b|\b(?:is|was) dead(?=\s*(?:[.!?,;:]|$)|\s+(?:and\s+)?"
-        r"(?:(?:was\s+)?buried|(?:was\s+)?removed|gone|no longer alive)\b)",
+        r"\bdied\b|\bgesterf\b|\b(?:is|was) dead(?=\s*(?:[.!?,;:]|$)|\s+(?:and\s+)?"
+        r"(?:(?:was\s+)?buried|(?:was\s+)?removed|gone|no longer alive)\b)|"
+        r"\bis dood(?=\s*(?:[.!?,;:]|$)|\s+(?:en\s+)?(?:verwyder|begrawe)\b)|"
+        r"\bvark\b(?:\s+(?:nr|no|nommer))?\s*#?\s*[a-z0-9-]+\s+(?:is\s+)?dood\b",
         lower,
     ))
     found_dead = bool(
         re.search(r"\bfound(?:\s+.+?)?\s+dead\b", lower)
         or re.search(r"\bwas dead(?:\s+when|\s+in|\s+at|[.!?]|$)", lower)
+        or re.search(r"\bdood gevind\b|\bwas dood(?:\s+toe|\s+in|\s+by|[.!?]|$)", lower)
     )
     dead = reported_died or found_dead
     farrowing = bool(re.search(r"\b(farrow|farrowing|gave birth)\b", lower))
@@ -298,6 +311,21 @@ def _parse_report(text, provider_time):
     drinking_positive = r"\bdrinking(?: water)?\b"
     drinking_negative = r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\bdrinking no water\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) drink(?:ing)?\b"
     not_eating = latest_negative(eating_positive, eating_negative, lower)
+    eating = latest_positive(eating_positive, eating_negative, lower)
+    standing_positive = r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b|\bstanding\b"
+    standing_negative = (r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+"
+        r"(?:being\s+|able to\s+)?(?:stand|standing)\b|"
+        r"\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b")
+    moving_positive = r"\b(?:moving(?: around)?|walking)\b"
+    moving_negative = (r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+"
+        r"(?:(?:standing|moving)\s+(?:or|and)\s+)?(?:moving|walking)\b|"
+        r"\b(?:unable to|stopped|barely|hardly|scarcely)\s+(?:move|moving|walk|walking)\b")
+    normal_positive = r"\b(?:back to normal|acting normal(?:ly)?)\b"
+    normal_negative = (r"\b(?:not|no longer|isn't|wasn't)\s+(?:back to normal|acting normal(?:ly)?)\b|"
+        r"\b(?:not|no longer)\s+acting\s+normal(?:ly)?\b")
+    standing_now = latest_positive(standing_positive, standing_negative, lower)
+    moving_now = latest_positive(moving_positive, moving_negative, lower)
+    normal_now = latest_positive(normal_positive, normal_negative, lower)
     not_drinking = latest_negative(drinking_positive, drinking_negative, lower)
     other_sick = current_sign(r"sick|ill|vomit|diarrh|cough|fever")
     sick = not_eating or not_drinking or other_sick
@@ -314,9 +342,12 @@ def _parse_report(text, provider_time):
         families.append("injured")
     if sick:
         families.append("sick")
-    family = families[0] if len(set(families)) == 1 else "compound_event" if families else "unknown"
-    explicit_dates = sorted(set(re.findall(r"\b20\d{2}-\d{2}-\d{2}\b", lower)))
-    event_date = datetime.fromisoformat(explicit_dates[0]).date() if len(explicit_dates) == 1 else provider_time.date()
+    positive_welfare_update = bool(eating or standing_now or moving_now or normal_now)
+    family = (families[0] if len(set(families)) == 1 else
+              "compound_event" if families else
+              "welfare_update" if positive_welfare_update else "unknown")
+    explicit_dates = _explicit_event_dates(lower)
+    event_date = explicit_dates[0] if len(explicit_dates) == 1 else provider_time.date()
     if not explicit_dates and "yesterday" in lower:
         event_date -= timedelta(days=1)
     observed = []
@@ -351,6 +382,9 @@ def _parse_report(text, provider_time):
         observed.append({"fact": "not_eating", "value": True})
     if not_drinking:
         observed.append({"fact": "not_drinking", "value": True})
+    if eating:
+        observed.append({"fact": "eating_reported", "value": True,
+                         "attribution": "owner_reported_observation"})
     lying_down = latest_positive(
         r"\b(?:is|was|appears? to be)\s+(?:lying|laying) down\b",
         r"\b(?:is|was)\s+(?:not|no longer)\s+(?:lying|laying) down\b|"
@@ -399,13 +433,11 @@ def _parse_report(text, provider_time):
         observed.append({"fact": "bleeding", "value": True})
     welfare_checks = {
         "standing": latest_positive(
-            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
-            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b",
+            standing_positive, standing_negative,
             lower,
         ),
         "moving": latest_positive(
-            r"\bmoving(?: around)?\b",
-            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b",
+            moving_positive, moving_negative,
             lower,
         ),
         "breathing": latest_positive(
@@ -421,10 +453,9 @@ def _parse_report(text, provider_time):
     }
     welfare_check_evidence = {
         "standing": welfare_evidence(
-            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
-            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b|\bnot able to do anything\b"),
-        "moving": welfare_evidence(r"\bmoving(?: around)?\b",
-            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b|\bnot able to do anything\b"),
+            standing_positive, standing_negative + r"|\bnot able to do anything\b"),
+        "moving": welfare_evidence(moving_positive,
+            moving_negative + r"|\bnot able to do anything\b"),
         "breathing": welfare_evidence(r"\bbreath(?:ing|es) normal(?:ly)?\b",
             r"\b(?:not|no longer|isn't|wasn't|without) breathing normal(?:ly)?\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) breath(?:e|ing)(?: normal(?:ly)?)?\b|\b(?:breathing abnormally|struggling to breathe)\b"),
         "drinking": welfare_evidence(drinking_positive,
@@ -442,6 +473,9 @@ def _parse_report(text, provider_time):
     for fact, supplied in welfare_checks.items():
         if supplied:
             observed.append({"fact": f"{fact}_reported", "value": True})
+    if normal_now:
+        observed.append({"fact": "normal_behaviour_reported", "value": True,
+                         "attribution": "owner_general_impression_not_welfare_clearance"})
     time_context = r"(?:today|yesterday|(?:this\s+)?morning|(?:this\s+)?afternoon|(?:this\s+)?evening|(?:last\s+)?night|\d{1,2}[:.]\d{2})"
     last_seen = re.search(rf"\b(?:last\s+)?seen alive(?:\s+(?P<when>{time_context}))?\b", lower)
     found_words = list(re.finditer(r"\bfound\b", lower))
@@ -454,10 +488,10 @@ def _parse_report(text, provider_time):
     )
     last_seen_supplied = bool(last_seen)
     found_time_supplied = bool(found_time)
-    removal_supplied = bool(re.search(r"\b(?:removed from (?:the )?pen|buried|disposed|cremated)\b", lower))
+    removal_supplied = bool(re.search(r"\b(?:removed from (?:the )?pen|buried|disposed|cremated|verwyder|begrawe|weggedoen)\b", lower))
     removal_outcome = (
-        "removed and buried" if re.search(r"\bremoved\b.{0,40}\bburied\b", lower)
-        else "buried" if re.search(r"\bburied\b", lower)
+        "removed and buried" if re.search(r"\b(?:removed|verwyder)\b.{0,40}\b(?:buried|begrawe)\b", lower)
+        else "buried" if re.search(r"\b(?:buried|begrawe)\b", lower)
         else "cremated" if re.search(r"\bcremated\b", lower)
         else "disposed" if re.search(r"\bdisposed\b", lower)
         else "removed from pen" if removal_supplied else ""
@@ -511,6 +545,37 @@ def _parse_report(text, provider_time):
         "current_signs": sick or injured,
         "severe_signs": injured or severe_sick or complications,
     }
+
+
+def _explicit_event_dates(text):
+    values = set()
+    for raw in re.findall(r"\b20\d{2}-\d{2}-\d{2}\b", text):
+        try:
+            values.add(datetime.fromisoformat(raw).date())
+        except ValueError:
+            pass
+    months = {
+        "jan": 1, "january": 1, "januarie": 1, "feb": 2, "february": 2,
+        "februarie": 2, "mar": 3, "march": 3, "maart": 3, "apr": 4,
+        "april": 4, "may": 5, "mei": 5, "jun": 6, "june": 6, "juni": 6,
+        "jul": 7, "july": 7, "juli": 7, "aug": 8, "august": 8,
+        "augustus": 8, "sep": 9, "september": 9, "oct": 10, "october": 10,
+        "okt": 10, "oktober": 10, "nov": 11, "november": 11, "dec": 12,
+        "december": 12, "des": 12, "desember": 12,
+    }
+    for day, month, year in re.findall(
+            r"\b(\d{1,2})\s+([a-z]+)\s+(20\d{2})\b", text, re.I):
+        try:
+            if month.casefold() in months:
+                values.add(datetime(int(year), months[month.casefold()], int(day)).date())
+        except ValueError:
+            pass
+    for day, month, year in re.findall(r"\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b", text):
+        try:
+            values.add(datetime(int(year), int(month), int(day)).date())
+        except ValueError:
+            pass
+    return sorted(values)
 
 
 def _chronology(animal, parsed, canonical):
@@ -611,7 +676,8 @@ def _effects(animal, parsed, canonical, chronology):
         else:
             add("litter", "no_count_change_until_birth_outcomes_known", {}, "", supported=False)
             missing.append("piglet birth outcome counts")
-    if parsed["current_signs"] or parsed["suspected"] or parsed["veterinary"] or parsed["farrowing"]:
+    if (parsed["current_signs"] or parsed["suspected"] or parsed["veterinary"]
+            or parsed["farrowing"] or parsed["family"] == "welfare_update"):
         add("medical_observation", "record_reported_observation_context", {
             "observed": parsed["observed"], "owner_suspected": parsed["suspected"],
             "veterinary_evidence": parsed["veterinary"], "diagnosis_inferred": False,
@@ -649,6 +715,8 @@ def _welfare(parsed):
         return {"level": "monitor_closely", "action": "The immediate standing, breathing and drinking checks are reassuring; keep monitoring appetite and seek experienced or veterinary help if signs worsen or eating does not resume."}
     if parsed["current_signs"]:
         return {"level": "urgent_assessment", "action": "Physically assess breathing, standing, water intake, bleeding and distress now; seek veterinary help for serious signs."}
+    if parsed["family"] == "welfare_update":
+        return {"level": "monitor_closely", "action": "The reported recovery signs are reassuring; keep monitoring and report any renewed concern."}
     return {"level": "review", "action": "Verify the animal and observable welfare state."}
 
 

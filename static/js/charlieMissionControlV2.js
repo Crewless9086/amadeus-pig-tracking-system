@@ -11,7 +11,7 @@
   };
 
   const tabs = [
-    { id: "active", label: "Active", statuses: ["in_progress", "release_in_progress"] },
+    { id: "active", label: "Working", statuses: ["in_progress", "release_in_progress", "paused"] },
     { id: "new", label: "New", statuses: ["new"] },
     { id: "approved", label: "Approved", statuses: ["approved"] },
     { id: "review", label: "Review", statuses: ["pr_ready", "release_approved"] },
@@ -30,6 +30,7 @@
     polling: true,
     loading: false,
     initialized: false,
+    loadError: "",
   };
 
   const el = {
@@ -157,6 +158,32 @@
     return metadata.owner_action_guidance && typeof metadata.owner_action_guidance === "object" ? metadata.owner_action_guidance : {};
   }
 
+  function ownerProjection(mission) {
+    return mission && mission.owner_projection && typeof mission.owner_projection === "object"
+      ? mission.owner_projection : {};
+  }
+
+  function isOwnerWork(mission) {
+    return text(mission && mission.queue_class, "owner_work") === "owner_work";
+  }
+
+  function ownerActionRequired(mission) {
+    const action = text(ownerProjection(mission).owner_action);
+    return !action || action.toUpperCase() !== "NONE";
+  }
+
+  function ownerOperatingState(mission) {
+    if (!isOwnerWork(mission) || ownerActionRequired(mission)) return ownerDisplayStatus(mission);
+    return text(mission && mission.status).toLowerCase() === "paused" ? "EVENT WAITING" : "WORKING";
+  }
+
+  function ownerOperatingChipClass(mission) {
+    const stateLabel = ownerOperatingState(mission);
+    if (stateLabel === "WORKING") return "green";
+    if (stateLabel === "EVENT WAITING") return "amber";
+    return chipClass(mission && mission.status);
+  }
+
   function formatDuration(seconds) {
     const value = Math.max(0, Number(seconds || 0));
     if (!value) return "--";
@@ -186,6 +213,10 @@
   function stageLabel(mission) {
     const review = missionReviewPacket(mission);
     const status = text(mission.status).toLowerCase();
+    const owner = ownerProjection(mission);
+    if (isOwnerWork(mission) && !ownerActionRequired(mission) && text(owner.current_worker)) {
+      return text(owner.current_worker);
+    }
     const metadata = mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
     const dependencies = Array.isArray(metadata.depends_on_mission_ids) ? metadata.depends_on_mission_ids : [];
     const coordinator = metadata.mission_coordinator && typeof metadata.mission_coordinator === "object" ? metadata.mission_coordinator : {};
@@ -243,6 +274,9 @@
     }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if ([401, 403].includes(response.status) && text(data.status).includes("owner_")) {
+        window.location.assign(`/owner/login?next=${encodeURIComponent(window.location.pathname)}`);
+      }
       const error = new Error(data.status || `HTTP ${response.status}`);
       error.data = data;
       error.status = response.status;
@@ -257,18 +291,27 @@
     try {
       el.refreshBtn.disabled = true;
       el.queueRefreshBtn.disabled = true;
-      const runnerPromise = fetchJson(API.runner, { timeoutMs: 18000 }).then((runner) => {
+      if (!state.initialized) {
+        state.initialized = true;
+        state.lastUpdated = new Date();
+        render();
+      }
+      const runnerPromise = fetchJson(API.runner, { timeoutMs: 4000 }).then((runner) => {
         state.runner = runner;
-        if (state.initialized) {
-          renderHeader();
-          renderActionPanel();
-          renderStrip();
-        }
+        renderHeader();
+        renderActionPanel();
+        renderStrip();
       }).catch(() => null);
       const [snapshot, policy] = await Promise.all([
-        fetchJson(API.missionControl, { timeoutMs: 18000 }).catch(() => null),
-        fetchJson(API.policy, { timeoutMs: 18000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
+        fetchJson(API.missionControl, { timeoutMs: 4000 }).catch((error) => {
+          state.loadError = error.name === "AbortError"
+            ? "Mission data is taking too long. Refresh to retry; the page remains usable."
+            : "Mission data is temporarily unavailable. Refresh to retry.";
+          return null;
+        }),
+        fetchJson(API.policy, { timeoutMs: 4000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
       ]);
+      if (snapshot) state.loadError = "";
       if (snapshot && snapshot.counts) state.counts = snapshot.counts;
       if (snapshot && snapshot.buckets) state.buckets = mergeBuckets(state.buckets, snapshot.buckets);
       state.policy = policy.charlie_build_relay || {};
@@ -280,7 +323,6 @@
       }
       state.lastUpdated = new Date();
       ensureSelection();
-      state.initialized = true;
       render();
       void runnerPromise;
     } catch (error) {
@@ -294,7 +336,7 @@
 
   async function loadMissionBuckets() {
     const plan = {
-      active: ["in_progress", "release_in_progress"],
+      active: ["in_progress", "release_in_progress", "paused"],
       new: ["new"],
       approved: ["approved"],
       review: ["pr_ready", "release_approved"],
@@ -396,13 +438,13 @@
 
   function renderMissionSummary() {
     const mission = selectedMission();
-    const activeCount = Number(state.counts.in_progress || 0) + Number(state.counts.release_in_progress || 0);
+    const activeCount = Number(state.counts.in_progress || 0) + Number(state.counts.release_in_progress || 0) + Number(state.counts.paused || 0);
     const reviewCount = Number(state.counts.pr_ready || 0) + Number(state.counts.release_approved || 0);
     const blockedCount = Number(state.counts.blocked || 0);
     const approvedCount = Number(state.counts.approved || 0);
     const currentAgent = mission ? stageLabel(mission) : (activeCount ? "Loading active mission" : "None");
     const items = [
-      ["Active", activeCount, currentAgent],
+      ["Working", activeCount, currentAgent],
       ["Approved queue", approvedCount, approvedCount ? "waiting for runner" : "queue clear"],
       ["Owner review", reviewCount, reviewCount ? "decision required" : "no review backlog"],
       ["Blocked", blockedCount, blockedCount ? "attention required" : "no blocked missions"],
@@ -413,7 +455,7 @@
     </div>`).join("");
     el.queueHealthChip.className = `chip ${blockedCount ? "red" : reviewCount ? "purple" : "green"}`;
     el.queueHealthChip.textContent = blockedCount ? `${blockedCount} blocked` : reviewCount ? `${reviewCount} review` : "Queue healthy";
-    el.activeAgentChip.className = `chip ${mission && ["blocked"].includes(text(mission.status).toLowerCase()) ? "red" : mission ? "green" : ""}`;
+    el.activeAgentChip.className = `chip ${mission ? ownerOperatingChipClass(mission) : ""}`;
     el.activeAgentChip.textContent = mission ? cleanAgentName(stageLabel(mission)) : "No agent";
   }
 
@@ -465,7 +507,7 @@
   function renderQueue() {
     const missions = familyOrdered(dedupe(state.buckets[state.activeTab] || []));
     if (!missions.length) {
-      el.queueList.innerHTML = `<div class="notice">No ${escapeHtml(state.activeTab)} missions are visible. Use another tab or create a mission.</div>`;
+      el.queueList.innerHTML = `<div class="notice${state.loadError ? " danger" : ""}">${escapeHtml(state.loadError || `No ${state.activeTab} missions are visible. Use another tab or create a mission.`)}</div>`;
       return;
     }
     el.queueList.innerHTML = missions.map((mission) => {
@@ -475,13 +517,14 @@
       const family = missionFamily(mission);
       const telemetry = missionTelemetry(mission);
       const executionWarning = missionExecutionWarning(mission);
+      const owner = ownerProjection(mission);
       const matrixCounts = governance.acceptance_counts || {};
       const familyLabel = family.parent_mission_id ? `Follow-up ${family.sequence || ""}` : "";
       return `<button class="mission-card ${statusClass(status)} ${mission.mission_id === state.selectedId ? "selected" : ""}" data-select="${escapeAttr(mission.mission_id)}">
         <div class="mission-card-title">${familyLabel ? `<span class="family-tag">${escapeHtml(familyLabel)}</span>` : ""}${escapeHtml(titleOf(mission))}</div>
         <div class="mission-card-meta">
           <span>${escapeHtml(shortId(mission))} | ${escapeHtml(text(mission.approval_level, "LEVEL ?"))}</span>
-          <span class="chip ${chipClass(status)}">${escapeHtml(ownerDisplayStatus(mission))}</span>
+          <span class="chip ${ownerOperatingChipClass(mission)}">${escapeHtml(ownerOperatingState(mission))}</span>
         </div>
         <div class="bar"><span style="width:${pct}%"></span></div>
         <div class="mission-card-meta">
@@ -491,6 +534,8 @@
         <div class="mission-card-runs">Matrix ${Number(matrixCounts.passed || 0)}/${Number(matrixCounts.passed || 0) + Number(matrixCounts.failed || 0) + Number(matrixCounts.pending || 0)} · ${Number(governance.fix_count || 0)} fixes · ${Number(governance.review_runs || 0)} reviews${governance.cycling ? " · CYCLING" : ""}</div>
         <div class="mission-card-runs">${Number(telemetry.attempt_count || 0)} attempts | ${Number(telemetry.recovery_count || 0)} recoveries | ${Number(telemetry.backflow_count || 0)} backflows${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? ` | repeat x${Number(telemetry.highest_blocker_repeat)}` : ""}</div>
         <div class="reason">${escapeHtml(executionWarning || headlineReason(mission) || "No reason recorded yet.")}</div>
+        <div class="mission-card-runs">${escapeHtml(text(owner.real_life_state, "unknown"))} | ${escapeHtml(text(owner.current_worker, "no worker"))}</div>
+        <div class="reason">${escapeHtml(text(owner.outcome, "Outcome not yet reconciled."))}</div>
       </button>`;
     }).join("");
   }
@@ -506,8 +551,8 @@
     }
     const status = text(mission.status, "unknown");
     const pct = progressPct(mission);
-    el.selectedStatusChip.className = `chip ${chipClass(status)}`;
-    el.selectedStatusChip.textContent = ownerDisplayStatus(mission);
+    el.selectedStatusChip.className = `chip ${ownerOperatingChipClass(mission)}`;
+    el.selectedStatusChip.textContent = ownerOperatingState(mission);
     el.workflowSub.textContent = `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")} | ${pct}%`;
     const review = missionReviewPacket(mission);
     const governance = missionGovernance(mission);
@@ -516,13 +561,14 @@
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const stages = workflow.length ? workflow : placeholderStages(mission);
     const executionWarning = missionExecutionWarning(mission);
+    const owner = ownerProjection(mission);
     el.workflowPanel.innerHTML = `
       <div class="mission-hero">
         <div>
           <h2>${escapeHtml(titleOf(mission))}</h2>
           <p class="muted">${escapeHtml(text(mission.mission_type, "mission"))} | ${escapeHtml(text(mission.urgency, "P?"))}</p>
         </div>
-        <span class="chip ${chipClass(status)}">${escapeHtml(ownerDisplayStatus(mission))}</span>
+        <span class="chip ${ownerOperatingChipClass(mission)}">${escapeHtml(ownerOperatingState(mission))}</span>
       </div>
       <div class="mission-stats">
         ${metric("Acceptance", `${Number(governance.acceptance_percent || 0)}%`)}
@@ -540,6 +586,13 @@
       ${renderGovernanceSummary(governance, missionFamily(mission))}
       <div class="timeline">${stages.map((stage) => renderStage(stage, mission)).join("")}</div>
       <div class="evidence">
+        ${evidenceRow("Owner outcome", text(owner.outcome, "Outcome not yet reconciled."))}
+        ${evidenceRow("Real-life state", text(owner.real_life_state, "unknown"))}
+        ${evidenceRow("First missing acceptance gate", text(owner.first_missing_acceptance_gate, "Not yet recorded."))}
+        ${evidenceRow("Current worker", text(owner.current_worker, "No current worker recorded."))}
+        ${evidenceRow("Latest finding", text(owner.latest_finding, "No finding recorded."))}
+        ${evidenceRow("Next automatic step", text(owner.next_automatic_step, "No automatic step recorded."))}
+        ${evidenceRow("Exact owner action", text(owner.owner_action, "NONE"))}
         ${evidenceRow("Why this matters", text(review.summary, text(mission.raw_text, "No mission detail loaded.")))}
         ${evidenceRow("Next action", text(review.recommended_next_action, nextActionText(mission)))}
         ${renderTestEvidence(review)}
@@ -548,6 +601,9 @@
 
   function missionExecutionWarning(mission) {
     if (!mission || text(mission.status).toLowerCase() !== "in_progress") return "";
+    const owner = ownerProjection(mission);
+    if (isOwnerWork(mission) && !ownerActionRequired(mission)
+        && ["working", "event_waiting"].includes(text(owner.real_life_state).toLowerCase())) return "";
     const updated = Date.parse(text(mission.updated_at));
     if (!Number.isFinite(updated)) return "";
     const idleMinutes = Math.max(0, Math.floor((Date.now() - updated) / 60000));
@@ -576,9 +632,12 @@
     const sameMission = text(local.last_mission_id) === text(mission.mission_id);
     const cloudOnly = text(runner.local_runner_scope) === "render_cannot_see_laptop_runner";
     const agent = sameMission ? text(local.current_agent, text(latest.agent, stageLabel(mission))) : stageLabel(mission);
+    const owner = ownerProjection(mission);
+    const externallyManaged = isOwnerWork(mission) && !ownerActionRequired(mission)
+      && ["working", "event_waiting"].includes(text(owner.real_life_state).toLowerCase());
     const action = sameMission
       ? text(local.current_action, text(latest.current_action, text(local.last_result_status, "Agent stage running")))
-      : nextActionText(mission);
+      : externallyManaged ? text(owner.next_automatic_step, "Automatic work continues safely.") : nextActionText(mission);
     const runtime = sameMission ? formatDuration(local.elapsed_seconds) : "--";
     const heartbeat = sameMission && local.last_seen
       ? `${text(local.age_seconds, "--")}s ago`
@@ -586,7 +645,9 @@
     const attempts = sameMission ? Number(latest.attempt || 0) : Number(missionTelemetry(mission).attempt_count || 0);
     const files = sameMission ? Number(local.changed_files_count || (latest.changed_files || []).length || 0) : 0;
     const commands = Array.isArray(latest.commands_run) ? latest.commands_run : [];
-    const stateLabel = cloudOnly
+    const stateLabel = externallyManaged
+      ? ownerOperatingState(mission)
+      : cloudOnly
       ? "Cloud snapshot"
       : sameMission ? operatingStateLabel(local.operating_state) : statusLabel(mission.status);
     return `<section class="live-activity ${sameMission && local.active ? "live" : cloudOnly ? "snapshot" : ""}">
@@ -598,7 +659,7 @@
         ${metric("Files changed", files ? String(files) : "--")}
       </div>
       ${commands.length ? `<div class="live-command"><strong>Latest check</strong><span>${escapeHtml(text(commands[commands.length - 1]))}</span></div>` : ""}
-      ${cloudOnly ? '<p>Render shows persisted Supabase progress. Open the local dashboard for second-by-second laptop heartbeat and commands.</p>' : ""}
+      ${externallyManaged ? '<p>Control Tower progress is shown from the canonical owner-work projection; it does not create a CORE runner lease.</p>' : cloudOnly ? '<p>Render shows persisted Supabase progress. Open the local dashboard for second-by-second laptop heartbeat and commands.</p>' : ""}
     </section>`;
   }
 
@@ -720,6 +781,9 @@
 
   function actionButtons(mission) {
     const status = text(mission.status).toLowerCase();
+    if (isOwnerWork(mission) && !ownerActionRequired(mission)) {
+      return `<div class="notice">Automatic work continues safely. No owner action is needed.</div>`;
+    }
     if (status === "new") {
       return `<div class="button-grid">
         <button class="primary ok" data-decision="approved">Approve</button>

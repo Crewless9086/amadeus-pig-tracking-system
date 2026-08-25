@@ -99,7 +99,9 @@ def test_readiness_probe_reads_schema_only_and_zero_business_rows():
     assert body["business_rows_read"] == body["business_rows_written"] == 0
 
 
-def test_runtime_requires_explicit_post_migration_activation():
+def test_migrated_runtime_defaults_active_with_exact_kill_switch():
     assert welfare_case_runtime_enabled({}) is False
+    assert welfare_case_runtime_enabled({"DATABASE_URL": "postgresql://configured"}) is True
     assert welfare_case_runtime_enabled({"PIG_WELFARE_CASE_RUNTIME_ENABLED": "true"}) is True
     assert welfare_case_runtime_enabled({"PIG_WELFARE_CASE_RUNTIME_ENABLED": "1"}) is False
+    assert welfare_case_runtime_enabled({"PIG_WELFARE_CASE_RUNTIME_ENABLED": "false"}) is False

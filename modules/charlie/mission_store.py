@@ -26,6 +26,9 @@ from modules.charlie.evidence_reconciliation import (
     targeted_workflow_return,
 )
 from modules.charlie.adaptive_orchestration import validate_orchestration_binding
+from modules.charlie.mission_control import (
+    apply_event_to_projection, build_mission_control_event, canonical_event_equal,
+)
 
 
 MISSION_STATUSES = {
@@ -169,6 +172,7 @@ OWNER_QUEUE_FILTERS = {"owner_queue", "owner", "active_owner", "actionable"}
 OWNER_QUEUE_STATUSES = (
     "in_progress",
     "release_in_progress",
+    "paused",
     "pr_ready",
     "blocked",
     "release_approved",
@@ -745,6 +749,71 @@ def get_mission(mission_id, database_url=None, connect_factory=None):
     if not rows:
         return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
     return {"success": True, "configured": True, "status": "ok", "mission": _mission_row(rows[0])}, 200
+
+
+def append_mission_control_event(mission_id, payload, *, recorded_by,
+                                 database_url=None, connect_factory=None):
+    """Append one governed event and atomically refresh its derived owner projection."""
+    mission_id = _clean_text(mission_id, 90)
+    try:
+        event = build_mission_control_event(mission_id, payload, recorded_by=recorded_by)
+    except ValueError as exc:
+        return {"success": False, "status": str(exc)}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id,status,source,telegram_user_id,telegram_chat_id,
+                    raw_text,title,urgency,mission_type,approval_level,selected_next_step,
+                    owner_decision,codex_chat_write_status,metadata_json,created_at,updated_at
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                mission = _mission_row(row)
+                if event["event_type"] == "owner_correction_recorded":
+                    cursor.execute("""select metadata_json from public.charlie_mission_events
+                        where event_id=%(event_id)s and mission_id=%(mission_id)s limit 1""", {
+                        "event_id": event["corrects_event_id"], "mission_id": mission_id})
+                    if cursor.fetchone() is None:
+                        return {"success": False, "status": "correction_target_not_found_on_mission",
+                                "mission_id": mission_id}, 409
+                cursor.execute("""insert into public.charlie_mission_events
+                    (event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at)
+                    values (%(event_id)s,%(mission_id)s,%(event_type)s,%(notes)s,%(recorded_by)s,%(metadata)s::jsonb,%(created_at)s)
+                    on conflict (event_id) do nothing returning event_id""", {
+                    "event_id": event["event_id"], "mission_id": mission_id,
+                    "event_type": event["event_type"], "notes": event["summary"],
+                    "recorded_by": recorded_by, "metadata": json.dumps(event, sort_keys=True),
+                    "created_at": event["recorded_at"],
+                })
+                created = cursor.fetchone() is not None
+                if created:
+                    projection = apply_event_to_projection(mission, event)
+                    metadata = dict(mission.get("metadata") or {})
+                    metadata["mission_control_projection"] = projection
+                    cursor.execute("""update public.charlie_missions
+                        set metadata_json=%(metadata)s::jsonb,updated_at=now()
+                        where mission_id=%(mission_id)s""", {
+                        "metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                else:
+                    cursor.execute("""select metadata_json from public.charlie_mission_events
+                        where event_id=%(event_id)s and mission_id=%(mission_id)s limit 1""", {
+                        "event_id": event["event_id"], "mission_id": mission_id})
+                    stored_row = cursor.fetchone()
+                    stored = stored_row[0] if stored_row and isinstance(stored_row[0], dict) else {}
+                    if not canonical_event_equal(stored, event):
+                        return {"success": False, "status": "mission_control_event_idempotency_conflict",
+                                "mission_id": mission_id, "event_id": event["event_id"]}, 409
+                    projection = mission.get("owner_projection") or {}
+        return {"success": True, "status": "recorded" if created else "exact_replay",
+                "created": created, "event": event, "owner_projection": projection}, 201 if created else 200
+    except Exception as exc:
+        return {"success": False, "status": "mission_control_event_write_failed",
+                "error_type": exc.__class__.__name__}, 503
 
 
 def update_mission_status(
@@ -2591,6 +2660,68 @@ def mission_status_summary(database_url=None, connect_factory=None):
     }, 200
 
 
+def mission_control_snapshot(limit=100, database_url=None, connect_factory=None):
+    """Read the owner queue and its counts over one canonical DB connection."""
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured", "counts": {}, "missions": []}, 503
+
+    parsed_limit = _bounded_limit(limit)
+    params = {"owner_queue_statuses": list(OWNER_QUEUE_STATUSES), "limit": parsed_limit}
+    metadata_select = _mission_metadata_select(compact=True)
+    owner_filter = """
+        status = any(%(owner_queue_statuses)s)
+        and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+    """
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    with eligible_mission_ids as materialized (
+                        select mission_id
+                        from public.charlie_missions
+                        where {owner_filter}
+                          and jsonb_typeof(metadata_json->'mission_control_projection') = 'object'
+                          and metadata_json->'mission_control_projection' ? 'latest_event_id'
+                        {_mission_order_clause("owner_queue")}
+                        limit %(limit)s
+                    )
+                    select mission_id, status, source, telegram_user_id, telegram_chat_id,
+                           raw_text, title, urgency, mission_type, approval_level,
+                           selected_next_step, owner_decision, codex_chat_write_status,
+                           {metadata_select}, created_at, updated_at
+                    from public.charlie_missions
+                    join eligible_mission_ids using (mission_id)
+                    {_mission_order_clause("owner_queue")}
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_control_snapshot_failed",
+            "error_type": exc.__class__.__name__,
+            "counts": {},
+            "missions": [],
+        }, 503
+
+    missions = [_mission_row(row) for row in rows]
+    counts = {}
+    for mission in missions:
+        status = str(mission.get("status") or "")
+        counts[status] = counts.get(status, 0) + 1
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "counts": counts,
+        "missions": missions,
+    }, 200
+
+
 def _orchestration_throughput_rows(rows):
     """Derive owner-visible durable metrics from the existing mission ledger."""
     missions = []
@@ -2865,6 +2996,8 @@ def _mission_row(row):
     }
     result["technical_status"] = result["status"]
     result["mission_lifecycle"] = mission_lifecycle_projection(result)
+    from modules.charlie.mission_control import owner_projection
+    result["owner_projection"] = owner_projection(result)
     return result
 
 
@@ -3257,12 +3390,13 @@ def _mission_order_clause(status):
                         case status
                             when 'in_progress' then 0
                             when 'release_in_progress' then 1
-                            when 'pr_ready' then 2
-                            when 'blocked' then 3
-                            when 'release_approved' then 4
-                            when 'approved' then 5
-                            when 'new' then 6
-                            else 7
+                            when 'paused' then 2
+                            when 'pr_ready' then 3
+                            when 'blocked' then 4
+                            when 'release_approved' then 5
+                            when 'approved' then 6
+                            when 'new' then 7
+                            else 8
                         end asc,
                         case
                             when (metadata_json->'queue'->>'priority') ~ '^[0-9]+$'
@@ -3355,6 +3489,7 @@ def _mission_metadata_select(compact=False):
             'queue', metadata_json->'queue',
             'mission_governance', metadata_json->'mission_governance',
             'mission_family', metadata_json->'mission_family',
+            'mission_control_projection', metadata_json->'mission_control_projection',
             'outcome_closure', metadata_json->'outcome_closure',
             'unfinished_business', metadata_json->'unfinished_business',
             'outcome_closure_tracking', metadata_json->'outcome_closure_tracking',

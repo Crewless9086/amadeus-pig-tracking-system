@@ -1,4 +1,5 @@
 import threading
+import os
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -13,6 +14,10 @@ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.telegram_gateway import (
     _delivery_disabled_internal_proof, handle_telegram_gateway_message)
 from modules.oom_sakkie.semantic_front_door import SemanticInterpretation
+from modules.oom_sakkie.semantic_front_door import MediaSemanticUnderstanding
+from modules.beacon.media_intake import enrich_approved_media_semantics
+
+os.environ.setdefault("BEACON_FACEBOOK_PAGE_ID", "PAGE-1")
 
 
 def opportunity(ready=True):
@@ -54,6 +59,149 @@ def public_awareness_media(trusted=True):
             "source": "Charl Telegram intake"}}]}
 
 
+def approved_legacy_media(owner_context, *, confidence="evidence_supported"):
+    payload = public_awareness_media()
+    payload["items"][0]["observation"] = {
+        "classification": "private_farm_photo", "owner_context": owner_context}
+    payload["items"][0]["owner_explanation"] = owner_context
+    payload["items"][0]["observation_confidence"] = confidence
+    return payload
+
+
+def test_deployed_enrichment_appends_then_projects_only_governed_semantics():
+    class Store:
+        def append_semantic_understanding(self, binary_id, digest, meaning):
+            assert binary_id == "BEACON-BINARY-1" and digest == "b" * 64
+            return {"created_count": 1, "observation_event_id": "UNDERSTANDING-1",
+                "observation": {"subject_tags": list(meaning.subject_tags)}}, 201
+    meaning = MediaSemanticUnderstanding(("live_stock", "piglets"), .95,
+        "semantic-test", "c" * 64)
+    result, evidence = enrich_approved_media_semantics(
+        approved_legacy_media("Bella newborn litter"), store=Store(),
+        interpreter=lambda *_args, **_kwargs: meaning)
+    assert evidence["created_count"] == 1
+    assert result["items"][0]["observation"]["subject_tags"] == ["live_stock", "piglets"]
+    assert result["items"][0]["understanding_event_id"] == "UNDERSTANDING-1"
+
+
+def test_deployed_enrichment_is_bounded_and_records_retry_state():
+    class Store:
+        calls = []
+        def append_semantic_adoption_state(self, binary_id, digest, status):
+            self.calls.append((binary_id, digest, status))
+            return {"created_count": 1, "status": "media_semantic_adoption_state_recorded"}, 201
+    payload = {"success": True, "items": [{**approved_legacy_media("unknown")["items"][0],
+        "binary_asset_id": f"BEACON-BINARY-{index}", "intake_at": f"2026-08-24T00:0{index}:00Z"}
+        for index in range(7)]}
+    store = Store()
+    _result, evidence = enrich_approved_media_semantics(payload, store=store,
+        interpreter=lambda *_args, **_kwargs: None)
+    assert evidence["attempted_count"] == 1
+    assert [call[0] for call in store.calls] == ["BEACON-BINARY-0"]
+
+
+def test_deployed_enrichment_surfaces_append_conflict_fail_closed():
+    class Store:
+        def append_semantic_understanding(self, *_args):
+            return {"success": False, "status": "media_semantic_authority_changed"}, 409
+    meaning = MediaSemanticUnderstanding(("live_stock", "piglets"), .95,
+        "semantic-test", "c" * 64)
+    _result, evidence = enrich_approved_media_semantics(
+        approved_legacy_media("Bella newborn litter"), store=Store(),
+        interpreter=lambda *_args, **_kwargs: meaning)
+    assert evidence["status"] == "media_semantic_authority_changed"
+    assert evidence["http_status"] == 409
+
+
+def test_configured_runtime_resets_one_exact_terminal_exception_then_interprets():
+    class Store:
+        resets = []
+        def reset_semantic_adoption_exception(self, binary_id, digest):
+            self.resets.append((binary_id, digest))
+            return {"observation": {"semantic_adoption": {"state": "retry_pending",
+                "attempt_count": 0, "config_recovery_count": 1}}}, 201
+        def append_semantic_understanding(self, binary_id, digest, meaning):
+            return {"created_count": 1, "observation_event_id": "UNDERSTANDING-RESET",
+                "observation": {"subject_tags": list(meaning.subject_tags)}}, 201
+    payload = approved_legacy_media("Bella has a new litter")
+    payload["items"][0]["observation"]["semantic_adoption"] = {
+        "state": "exception", "attempt_count": 3,
+        "last_status": "interpretation_unavailable"}
+    store = Store()
+    meaning = MediaSemanticUnderstanding(("live_stock", "piglets"), .95, "test", "c" * 64)
+    result, evidence = enrich_approved_media_semantics(payload, store=store,
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret",
+            "BEACON_SEMANTIC_RECOVERY_BINARY_ASSET_ID": "BEACON-BINARY-1",
+            "BEACON_SEMANTIC_RECOVERY_ASSET_SHA256": "b" * 64},
+        interpreter=lambda *_args, **_kwargs: meaning)
+    assert store.resets == [("BEACON-BINARY-1", "b" * 64)]
+    assert evidence["created_count"] == 1
+    assert result["items"][0]["understanding_event_id"] == "UNDERSTANDING-RESET"
+
+
+def test_exception_reset_is_not_available_without_config_or_for_foreign_failure():
+    class Store:
+        def reset_semantic_adoption_exception(self, *_args):
+            raise AssertionError("reset must remain unreachable")
+    for last_status, environ in [
+        ("interpretation_unavailable", {}),
+        ("media_semantic_authority_changed", {"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"}),
+    ]:
+        payload = approved_legacy_media("Bella has a new litter")
+        payload["items"][0]["observation"]["semantic_adoption"] = {
+            "state": "exception", "attempt_count": 3, "last_status": last_status}
+        _result, evidence = enrich_approved_media_semantics(payload, store=Store(),
+            environ=environ, interpreter=lambda *_args, **_kwargs: None)
+        assert evidence["attempted_count"] == 0
+
+
+def test_malformed_exception_recovery_count_fails_closed_without_reset():
+    class Store:
+        def reset_semantic_adoption_exception(self, *_args):
+            raise AssertionError("reset must remain unreachable")
+    payload = approved_legacy_media("Bella has a new litter")
+    payload["items"][0]["observation"]["semantic_adoption"] = {
+        "state": "exception", "attempt_count": 3,
+        "last_status": "interpretation_unavailable", "config_recovery_count": "broken"}
+    _result, evidence = enrich_approved_media_semantics(payload, store=Store(),
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+        interpreter=lambda *_args, **_kwargs: None)
+    assert evidence["attempted_count"] == 0
+
+
+def test_exact_recovery_binding_never_resets_foreign_asset_across_calls():
+    class Store:
+        resets = []
+        def reset_semantic_adoption_exception(self, binary_id, digest):
+            self.resets.append((binary_id, digest))
+            return {"observation": {"semantic_adoption": {"state": "retry_pending",
+                "attempt_count": 0, "config_recovery_count": 1}}}, 201
+        def append_semantic_adoption_state(self, *_args):
+            return {"status": "media_semantic_adoption_state_recorded"}, 201
+    def exception(binary_id, digest):
+        row = approved_legacy_media("unknown")["items"][0]
+        row["binary_asset_id"], row["content_sha256"] = binary_id, digest
+        row["observation"]["semantic_adoption"] = {"state": "exception",
+            "attempt_count": 3, "last_status": "interpretation_unavailable"}
+        return row
+    env = {"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret",
+        "BEACON_SEMANTIC_RECOVERY_BINARY_ASSET_ID": "TARGET",
+        "BEACON_SEMANTIC_RECOVERY_ASSET_SHA256": "1" * 64}
+    store = Store()
+    payload = {"success": True, "items": [exception("TARGET", "1" * 64),
+        exception("FOREIGN", "2" * 64)]}
+    enrich_approved_media_semantics(payload, store=store, environ=env,
+        interpreter=lambda *_args, **_kwargs: None)
+    foreign_only = {"success": True, "items": [exception("FOREIGN", "2" * 64)]}
+    enrich_approved_media_semantics(foreign_only, store=store, environ=env,
+        interpreter=lambda *_args, **_kwargs: None)
+    assert store.resets == [("TARGET", "1" * 64)]
+
+
 def parsed(text="Please prepare the current marketing proposal", language="en"):
     return {"telegram_user_id": "42", "telegram_chat_id": "42", "provider_message_id": "9001",
         "provider_timestamp": "2026-08-14T08:01:00+00:00", "text": text,
@@ -71,7 +219,7 @@ def awareness_candidate(media_status="media_gap"):
         "draft_copy": ("A small moment from life at Amadeus Farm. Patient daily care matters.\n\n"
             "Follow the farm journey for more honest moments from behind the scenes."),
         "media": media_value, "public_livestock_policy": {
-            "policy_version": "beacon_public_livestock_awareness_only_v1"}}}
+            "policy_version": "beacon_public_livestock_awareness_only_v2"}}}
 
 
 def memory_store():
@@ -110,7 +258,7 @@ def test_missing_media_is_precise_and_afrikaans_rendered():
     assert "Aanbevole kanaal/kopie:" in answer and "Meet later:" in answer
 
 
-def test_scheduled_enquiry_result_is_stable_across_unclaimed_stock_and_media_changes():
+def test_scheduled_enquiry_result_binds_approved_media_and_ignores_unclaimed_stock_changes():
     fixed = {"content_evidence_loader": lambda **kwargs: kwargs,
         "content_candidate_builder": lambda evidence, **kwargs: awareness_candidate(),
         "litter_loader": litter_evidence,
@@ -121,30 +269,13 @@ def test_scheduled_enquiry_result_is_stable_across_unclaimed_stock_and_media_cha
     changed["cards"][0]["story_context"]["event_id"] = "EVENT-8"
     changed_stock = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: changed, media_loader=lambda: public_awareness_media(), **fixed)
-    changed_media = build_scheduled_sale_ready_stock_result(
-        opportunity_loader=lambda: opportunity(),
-        media_loader=lambda: public_awareness_media(trusted=False), **fixed)
     assert first["proposal"]["packet_id"]
     assert first["result_digest"] == changed_stock["result_digest"]
-    assert first["result_digest"] == changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
-    package = first["proposal"]["protected_campaign_package"]
-    assert first["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
-    assert "Message Amadeus Farm" in package["call_to_action"]
-    assert "no stock, price, availability, delivery or reservation is promised" in package["exact_post_copy"]
-    assert package["sale_stock_evidence"]["sale_availability_inferred"] is False
-    assert package["sam_response_contract"]["lane"] == "live_stock_sales"
-    assert package["sam_response_contract"]["inbound_only"] is True
-    assert package["sam_response_contract"]["campaign_attribution_id"] == package["attribution_identity"]
-    assert package["delivery_due_policy"] == "same_cycle_on_new_or_changed_evidence"
-    assert package["publication_time"] == "2026-08-18T18:00:00+02:00"
-    assert package["approval_expires_at"] == package["publication_time"]
-    assert package["budget_cap"] == {"currency": "ZAR", "total": "0.00", "daily": "0.00"}
-    assert package["duration"] == {"days": 0}
-    assert package["authority"]["publication_authorized"] is False
-    assert package["authority"]["boost_authorized"] is False
-    assert package["attribution_identity"].startswith("BEACON-CAMPAIGN-")
-    assert "LIVESTOCK ENQUIRY" in first["answer"]
+    assert first["proposal"]["packet_type"] == "live_stock_awareness_proposal"
+    assert first["proposal"]["media"]["status"] == "approved_public_media_selected"
+    assert first["proposal"]["protected_campaign_package"]["selected_approved_media"][0]["asset_id"] == "BEACON-ASSET-1"
+    assert first["proposal"]["protected_campaign_package"]["campaign_objective"] == "farm_awareness"
 
 
 def test_scheduled_enquiry_capture_is_explicitly_text_only():
@@ -155,9 +286,93 @@ def test_scheduled_enquiry_capture_is_explicitly_text_only():
         content_evidence_loader=lambda **kwargs: kwargs,
         content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
         now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
-    assert result["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
+    assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
+    assert result["proposal"]["media"]["status"] == "text_only"
     assert result["proposal"]["authority"]["publishes"] is False
     assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
+
+
+def test_scheduled_generation_rejects_media_without_current_public_use_authority():
+    for payload in (
+        public_awareness_media(trusted=False),
+        media(accepted=False),
+        {"success": False, "items": public_awareness_media()["items"]},
+    ):
+        result = build_scheduled_sale_ready_stock_result(
+            opportunity_loader=opportunity,
+            media_loader=lambda payload=payload: payload,
+            content_evidence_loader=lambda **kwargs: kwargs,
+            content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
+            now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc),
+            target_page_id="PAGE-ONE")
+        assert result["proposal"]["media"]["status"] == "text_only"
+        assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
+        assert result["publishes"] is False
+        assert result["spends_money"] is False
+
+
+def test_scheduled_approved_media_selection_is_deterministic_and_copy_neutral():
+    approved = public_awareness_media()
+    duplicate = dict(approved["items"][0])
+    duplicate.update({"binary_asset_id": "BIN-2", "content_sha256": "b" * 64})
+    approved["items"].append(duplicate)
+    fixed = dict(
+        opportunity_loader=opportunity,
+        media_loader=lambda: approved,
+        content_evidence_loader=lambda **kwargs: kwargs,
+        content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
+        now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc),
+        target_page_id="PAGE-ONE")
+    first = build_scheduled_sale_ready_stock_result(**fixed)
+    replay = build_scheduled_sale_ready_stock_result(**fixed)
+
+    assert first["result_digest"] == replay["result_digest"]
+    assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
+    assert first["proposal"]["media"]["asset_id"] == "BEACON-ASSET-1"
+    copy = first["proposal"]["draft_caption"].casefold()
+    assert "available" not in copy and "for sale" not in copy and "price" not in copy
+    assert first["proposal"]["call_to_action"] == ""
+    assert first["proposal"]["protected_campaign_package"]["budget_cap"] == {
+        "currency": "ZAR", "total": "0.00", "daily": "0.00"}
+
+
+def test_scheduled_generation_uses_affirmative_structured_semantics_without_mutation():
+    for tags in (["live_stock", "piglets"], ["live_stock", "litter"], ["live_stock", "weaner"]):
+        payload = approved_legacy_media("Structured semantics are authoritative")
+        payload["items"][0]["observation"]["tags"] = tags
+        result = build_scheduled_sale_ready_stock_result(
+            opportunity_loader=opportunity, media_loader=lambda: payload,
+            content_evidence_loader=lambda **kwargs: kwargs,
+            content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
+            now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc), target_page_id="PAGE-ONE")
+        selected = result["proposal"]["protected_campaign_package"]["selected_approved_media"]
+        assert selected[0]["asset_id"] == "BEACON-ASSET-1"
+        assert set(selected[0]["subject_tags"]).intersection({"piglets", "litter", "live_stock"})
+        assert payload["items"][0]["observation"]["tags"] == tags
+
+
+def test_scheduled_generation_does_not_reinterpret_raw_legacy_owner_language():
+    for context in (
+        "Bella - just delivered 13 little piglets",
+        "Bella and her newborn pigs",
+        "No piglets are shown; this is an empty barn",
+        "This photo was taken before the piglets arrived",
+        "Bella het geen varkies nie",
+        "Bella met haar pasgebore varkies",
+        "Bella with chickens and a new litter",
+        "Correction: that is not Bella's litter",
+    ):
+        payload = approved_legacy_media(context)
+        result = build_scheduled_sale_ready_stock_result(
+            opportunity_loader=opportunity, media_loader=lambda payload=payload: payload,
+            media_enricher=lambda value: (value, {"created_count": 0,
+                "status": "media_semantic_understanding_unchanged"}),
+            content_evidence_loader=lambda **kwargs: kwargs,
+            content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
+            now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc), target_page_id="PAGE-ONE")
+        assert result["proposal"]["media"]["status"] == "text_only"
+        assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {
+            "mode": "text_only"}
 
 
 def test_supported_offering_read_rejects_fallback_or_partial_config_evidence():
@@ -220,9 +435,27 @@ def test_missing_sale_stock_does_not_block_supported_enquiry_service_copy():
         media_loader=lambda: public_awareness_media(),
         litter_loader=litter_evidence,
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
-    assert result["status"] == "beacon_livestock_enquiry_capture_ready"
-    assert result["proposal"]["packet_type"] == "livestock_enquiry_capture_proposal"
+    assert result["status"] == "beacon_livestock_awareness_ready"
+    assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
     assert result["publishes"] is False and result["spends_money"] is False
+
+
+def test_semantic_append_conflict_prevents_owner_prompt_and_package_build():
+    called = {"candidate": 0}
+    def candidate_builder(*_args, **_kwargs):
+        called["candidate"] += 1
+        return awareness_candidate()
+    result = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: opportunity(False),
+        media_loader=lambda: approved_legacy_media("current piglets"),
+        media_enricher=lambda payload: (payload, {"status":
+            "media_semantic_authority_changed", "http_status": 409, "created_count": 0}),
+        content_candidate_builder=candidate_builder, litter_loader=litter_evidence,
+        now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
+    assert result["status"] == "media_semantic_authority_changed"
+    assert result["decision"] == "Hold" and result["publishes"] is False
+    assert called["candidate"] == 1
+    assert "proposal" not in result
 
 
 def test_stock_claim_and_material_generation_bind_to_canonical_card():
@@ -299,8 +532,7 @@ def test_unchanged_evidence_is_stable_across_scheduler_day_rollover():
         now=datetime(2026, 8, 19, 12, tzinfo=timezone.utc))
     assert first["proposal"]["packet_id"] == later["proposal"]["packet_id"]
     assert first["result_digest"] == later["result_digest"]
-    assert first["proposal"]["protected_campaign_package"]["publication_time"] == \
-        "2026-08-18T18:00:00+02:00"
+    assert first["proposal"]["protected_campaign_package"]["campaign_lane"] == "live_stock_awareness"
 
 
 def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time():
@@ -337,11 +569,9 @@ def test_stock_neutral_packet_ignores_production_allocation_observation_churn():
         now=datetime(2026, 8, 22, 18, 11, 17, tzinfo=timezone.utc),
         target_page_id="PAGE-ONE")
 
-    assert "observed_at" not in first["proposal"]["business_offering_evidence"]
     assert first["proposal"]["packet_id"] == refreshed["proposal"]["packet_id"]
     assert first["result_digest"] == refreshed["result_digest"]
-    assert first["proposal"]["protected_campaign_package"] == \
-        refreshed["proposal"]["protected_campaign_package"]
+    assert first["proposal"]["protected_campaign_package"]["campaign_lane"] == "live_stock_awareness"
 
 
 def test_scheduled_generation_binds_configured_facebook_page_identity():
@@ -355,39 +585,31 @@ def test_scheduled_generation_binds_configured_facebook_page_identity():
     with patch.dict("os.environ", {"BEACON_FACEBOOK_PAGE_ID": "PAGE-TWO"}):
         successor = build_scheduled_sale_ready_stock_result(**fixed)
 
-    assert first["proposal"]["target_page_id"] == "PAGE-ONE"
-    assert first["proposal"]["protected_campaign_package"]["target_page_id"] == "PAGE-ONE"
     assert first["result_digest"] == replay["result_digest"]
     assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
     assert first["result_digest"] != successor["result_digest"]
-    assert first["proposal"]["packet_id"] != successor["proposal"]["packet_id"]
+    assert first["proposal"]["target_page_id"] == "PAGE-ONE"
+    assert successor["proposal"]["target_page_id"] == "PAGE-TWO"
 
 
-def test_scheduled_generation_binds_explicit_enquiry_policy_version():
+def test_scheduled_generation_cannot_restore_retired_enquiry_policy_by_patch():
     fixed = {"opportunity_loader": opportunity,
         "media_loader": public_awareness_media,
         "litter_loader": litter_evidence,
         "now": datetime(2026, 8, 17, 12, tzinfo=timezone.utc),
         "target_page_id": "PAGE-ONE"}
-    with patch("modules.oom_sakkie.beacon_request_runtime."
-            "assess_public_livestock_enquiry_capture",
-            return_value={"allowed": True, "policy_version": "policy-v1", "reasons": []}):
-        first = build_scheduled_sale_ready_stock_result(**fixed)
-        replay = build_scheduled_sale_ready_stock_result(**fixed)
-    with patch("modules.oom_sakkie.beacon_request_runtime."
-            "assess_public_livestock_enquiry_capture",
-            return_value={"allowed": True, "policy_version": "policy-v2", "reasons": []}):
-        successor = build_scheduled_sale_ready_stock_result(**fixed)
+    first = build_scheduled_sale_ready_stock_result(**fixed)
+    replay = build_scheduled_sale_ready_stock_result(**fixed)
+    successor = build_scheduled_sale_ready_stock_result(**fixed)
 
-    assert first["proposal"]["public_content_policy"] == {
-        "policy_id": "beacon_public_livestock_enquiry_capture",
-        "policy_version": "policy-v1"}
-    assert first["proposal"]["protected_campaign_package"]["public_content_policy"] == \
-        first["proposal"]["public_content_policy"]
+    assert first["proposal"]["status"] == "ready_for_owner_review"
+    assert first["proposal"]["campaign_objective"] == "farm_awareness"
+    assert first["proposal"]["campaign_lane"] == "live_stock_awareness"
+    assert first["proposal"]["call_to_action"] == ""
+    assert first["proposal"]["protected_campaign_package"]["campaign_objective"] == "farm_awareness"
     assert first["result_digest"] == replay["result_digest"]
     assert first["proposal"]["packet_id"] == replay["proposal"]["packet_id"]
-    assert first["result_digest"] != successor["result_digest"]
-    assert first["proposal"]["packet_id"] != successor["proposal"]["packet_id"]
+    assert first["result_digest"] == successor["result_digest"]
 
 
 def test_content_packet_identity_does_not_treat_observation_time_as_new_campaign():

@@ -94,6 +94,9 @@ def _event_id(action, body):
             and body.get("contract_version") == "rootline_parent_job_terminal_resolution.v1"
             and body.get("resolution") == "Cancelled"):
         material = f"{body.get('job_id')}:{body.get('job_sha256')}:CANCELLED"
+    elif (action == "record_job_resolution" and body.get("resolution") == "Deferred"
+            and body.get("terminal") is True):
+        material = f"{body.get('job_id')}:{body.get('job_sha256')}:DEFERRED"
     elif action in {"claim_off_attempt", "claim_auxiliary_off_attempt",
                     "claim_borehole_off_attempt"}:
         material = f"{execution}:OFF:{int(body.get('attempt') or 0)}"
@@ -192,7 +195,7 @@ def _load(action, payload):
                     order by created_at desc limit 1""", (EVENT_SOURCE, str(payload or "")))
                 row = cursor.fetchone()
                 return row[0] if row and isinstance(row[0], dict) else json.loads(row[0]) if row else None
-            cursor.execute("""select review_json->'rootline_execution'
+            cursor.execute("""select created_at,review_json->'rootline_execution'
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
                   and review_json->'rootline_execution'->>'zone_id'=%s
@@ -200,19 +203,23 @@ def _load(action, payload):
                       in ('contain_zone','release_zone_containment')
                 order by created_at desc limit 1""", (EVENT_SOURCE, str(payload or "")))
             row = cursor.fetchone()
-            if not row or row[0].get("action") == "release_zone_containment":
+            if not row or row[1].get("action") == "release_zone_containment":
                 return {"contained": False}
-            evidence = row[0]
+            contained_at, evidence = row
             execution_id = str(evidence.get("execution_id") or "")
             cursor.execute("""select review_json->'rootline_execution'
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
                   and review_json->'rootline_execution'->>'execution_id'=%s
                   and review_json->'rootline_execution'->>'action'
-                      in ('record_on_outcome','record_ambiguous_shutdown')
-                order by created_at""", (EVENT_SOURCE, execution_id))
+                      in ('record_on_outcome','record_ambiguous_shutdown',
+                          'record_completed','record_claim_recovery')
+                  and created_at>%s
+                order by created_at""", (EVENT_SOURCE, execution_id, contained_at))
             for detail_row in cursor.fetchall():
                 detail = detail_row[0]
+                if _verified_terminal_containment_resolution(evidence, detail):
+                    return {"contained": False, "resolution_evidence": detail}
                 if detail.get("action") == "record_on_outcome":
                     evidence["transport_status"] = (detail.get("on_outcome") or {}).get("status")
                 elif detail.get("action") == "record_ambiguous_shutdown":
@@ -223,6 +230,21 @@ def _load(action, payload):
       if is_database_unavailable(exc):
         raise RootlineExecutionStoreUnavailable(action) from exc
       raise
+
+
+def _verified_terminal_containment_resolution(containment, terminal):
+    """Accept only later canonical OFF proof for the exact contained execution."""
+    if not isinstance(containment, dict) or not isinstance(terminal, dict):
+        return False
+    if (terminal.get("action") not in {"record_completed", "record_claim_recovery"}
+            or terminal.get("execution_id") != containment.get("execution_id")
+            or terminal.get("zone_id") != containment.get("zone_id")
+            or terminal.get("shutdown_verified") is not True):
+        return False
+    shutdown = terminal.get("shutdown_evidence")
+    return (isinstance(shutdown, dict)
+            and shutdown.get("authoritative") is True
+            and shutdown.get("state") == "OFF")
 
 
 def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
@@ -261,14 +283,15 @@ def _normalize_evidence_id(value):
 
 
 def _verified_borehole_completion(item):
-    """Require distinct canonical, provider and physical final-state evidence."""
+    """Require execution-bound canonical and authoritative provider final OFF."""
     if not isinstance(item, dict) or item.get("action") != "record_borehole_completed":
         return False
     execution_id = str(item.get("execution_id") or "")
     canonical = item.get("canonical_completion_evidence") or {}
     provider = item.get("provider_final_off_evidence") or {}
     physical = item.get("physical_completion_evidence") or {}
-    evidence = (canonical, provider, physical)
+    provider_mode = item.get("operational_proof") == "provider_app_on_to_off"
+    evidence = (canonical, provider) if provider_mode else (canonical, provider, physical)
     evidence_ids = tuple(_normalize_evidence_id(row.get("evidence_id"))
         for row in evidence)
     identities_match = bool(execution_id) and all(
@@ -280,8 +303,11 @@ def _verified_borehole_completion(item):
         and evidence_domains_distinct
         and canonical.get("final_state") == "OFF"
         and provider.get("authoritative") is True and provider.get("state") == "OFF"
-        and physical.get("pump_stopped") is True
-        and physical.get("water_flow_stopped") is True)
+        and ((provider_mode
+              and (item.get("provider_start_evidence") or {}).get("authoritative") is True
+              and (item.get("provider_start_evidence") or {}).get("state") == "ON")
+             or (not provider_mode and physical.get("pump_stopped") is True
+                 and physical.get("water_flow_stopped") is True)))
 
 
 def _is_active_candidate(item, active_action, claim_action):
@@ -630,17 +656,20 @@ def _claim_borehole_material_load(body):
                     t.review_json->'rootline_execution'->>'execution_id' and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true' and
                   t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF' and
-                  length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
-                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
-                    t.review_json->'rootline_execution'->>'execution_id' and
                   btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
                     btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
-                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                  btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
-                    btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
-                  t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true'))) limit 1""",
+                  ((t.review_json->'rootline_execution'->>'operational_proof'='provider_app_on_to_off' and
+                    t.review_json->'rootline_execution'->'provider_start_evidence'->>'authoritative'='true' and
+                    t.review_json->'rootline_execution'->'provider_start_evidence'->>'state'='ON') or
+                   (length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
+                      t.review_json->'rootline_execution'->>'execution_id' and
+                    btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                      btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
+                    btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
+                      btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
+                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true'))))) limit 1""",
           (EVENT_SOURCE,EVENT_SOURCE))
         if cursor.fetchone():
             return {"success":True,"created":False,"status":"material_load_active"}
@@ -721,6 +750,7 @@ def _append_history(action, body):
     event_at = _time(body.get("completed_at") or body.get("claimed_at")) or datetime.now(timezone.utc)
     actual = _verified_runtime(body)
     details = {"execution_id": body.get("execution_id"),
+        "operating_date": body.get("operating_date"),
         "start_evidence_id": (body.get("start_evidence") or {}).get("evidence_id") or "Unavailable",
         "maximum_runtime_minutes": body.get("planned_runtime_minutes"),
         "verified_runtime_minutes": actual,

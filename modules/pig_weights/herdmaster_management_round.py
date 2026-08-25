@@ -278,7 +278,7 @@ def _pregnancy_planning(result, observation, known, generated_at):
             "operational_status": "Not Pregnant",
             "clinical_confirmation": "Separate evidence field if available",
             "monitoring_phase": "reproductive_status_review",
-            "smallest_next_visual_observation": "Current heat signs, body condition and welfare state.",
+            "smallest_next_visual_observation": "Current body condition and welfare state.",
             "change_triggers": ["return to heat", "new governed mating", "new contradictory evidence"],
             "prohibited_without_further_evidence": ["create a mating", "infer fertility or readiness"],
         }

@@ -28,6 +28,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     tasks = [item for item in plan.get("candidate_tasks") or [] if isinstance(item, dict)]
     zones = _zone_contracts()
     candidates = []
+    zone_eligibility_reasons = {}
     for task in tasks:
         task_id = str(task.get("task_id") or "")
         zone = task_id.removeprefix("irrigation_")
@@ -35,18 +36,17 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             task.get("incomplete_parent_job"), dict) else {}
         parent_job = parent.get("job") if isinstance(parent.get("job"), dict) else {}
         parent_date_current = (not parent_job or parent_job.get("operating_date") ==
-            str(plan.get("operating_date") or "")[:10])
+            str(plan.get("operating_date") or "")[:10]
+            or parent.get("cross_operating_date_continuation") is True)
         contained = task.get("contained_parent_jobs") if isinstance(
             task.get("contained_parent_jobs"), list) else []
         durable_containment = (zone_containment_reader(zone) or {}
             if zone in zones else {})
-        if (zone in zones and not contained
-                and not (isinstance(durable_containment, dict)
-                    and durable_containment.get("contained") is True)
-                and parent_date_current
-                and task.get("zone_decision") == "Run now"
-                and task.get("recommendation") == "Recommend"
-                and int(task.get("planned_duration_minutes") or 0) in range(1, 61)):
+        exclusion = _candidate_exclusion(task=task, zone=zone, zones=zones,
+            contained=contained, durable_containment=durable_containment,
+            parent_date_current=parent_date_current)
+        zone_eligibility_reasons[zone] = exclusion or "eligible_candidate"
+        if not exclusion:
             candidates.append((int(task.get("rank") or 999), zone, task))
     if not candidates:
         unresolved = [task for task in tasks
@@ -67,6 +67,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             digest = _digest(material)
             return {"success": True, "status": "durable_parent_job_deferred",
                 "eligible": False, "command_authority": False, "hardware_control": False,
+                "zone_eligibility_reasons": zone_eligibility_reasons,
                 "job_resolution": {**material, "resolution_sha256": digest,
                     "execution_id": "ROOTLINE-JOB-RESOLUTION-" + digest[:24].upper()}}
         return _none("planner_hold_or_no_dispatchable_zone")
@@ -222,6 +223,31 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             "execution_id": execution, **material,
             "command_authority": True, "hardware_control": True,
             "authority_scope": "single_bounded_irrigation_segment"}
+
+
+def _candidate_exclusion(*, task, zone, zones, contained, durable_containment,
+                         parent_date_current):
+    """Return the first exact fail-closed reason before execution eligibility."""
+    if zone not in zones:
+        return "zone_not_commissioned"
+    if contained:
+        return "contained_parent_job"
+    if (isinstance(durable_containment, dict)
+            and durable_containment.get("contained") is True):
+        return "durable_zone_containment"
+    if not parent_date_current:
+        return "parent_operating_date_mismatch"
+    if task.get("zone_decision") != "Run now":
+        return "zone_decision_not_run_now"
+    if task.get("recommendation") != "Recommend":
+        return "recommendation_not_recommend"
+    try:
+        duration = int(task.get("planned_duration_minutes") or 0)
+    except (TypeError, ValueError):
+        duration = 0
+    if duration not in range(1, 61):
+        return "planned_duration_not_bounded_segment"
+    return ""
 
 
 def validate_execution_eligibility(value, *, now=None):

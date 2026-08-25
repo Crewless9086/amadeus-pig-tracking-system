@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import unittest
+from types import SimpleNamespace
 
 import psycopg
 
@@ -582,6 +583,93 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
                 (finalized["binary_asset_id"],),
             )
             self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_concurrent_semantic_adoption_serializes_on_binary_and_replays(self):
+        store = IntakeStore(DATABASE_URL)
+        envelope, identity = self.envelope(), self.identity()
+        store.prepare(envelope, identity)
+        finalized, status = store.finalize(envelope, identity, {
+            "binary_asset_id": "BEACON-BINARY-SEMANTIC-RACE",
+            "content_sha256": "8" * 64, "observed_mime_type": "image/jpeg",
+            "byte_size": 100, "width": 10, "height": 10,
+            "storage_path": "telegram/semantic/one.jpg",
+            "thumbnail_storage_path": "telegram-thumbnails/semantic/one.jpg",
+            "thumbnail_sha256": "9" * 64,
+        })
+        self.assertEqual(status, 201, finalized)
+        accepted, accepted_status = store.review(finalized["binary_asset_id"], {
+            "event_type": "library_accepted", "owner_action_id": "semantic-library",
+            "expected_predecessor_event_id": ""}, "owner-admin:semantic")
+        self.assertEqual(accepted_status, 201, accepted)
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("""insert into public.beacon_media_asset_events
+                (event_id,asset_id,event_type,recorded_by,approval_status,public_use_approved)
+                values('SEMANTIC-PUBLIC-EVENT',%s,'approved_public_use',
+                       'legacy-reviewed-authority','approved',true)""",
+                (finalized["beacon_asset_id"],))
+        meaning = SimpleNamespace(subject_tags=("live_stock", "piglets"), confidence=.95,
+            model="semantic-test", observer_version="oom_semantic_media_v1",
+            semantic_digest="a" * 64)
+
+        def adopt(_value):
+            return IntakeStore(DATABASE_URL).append_semantic_understanding(
+                finalized["binary_asset_id"], "8" * 64, meaning)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(adopt, range(2)))
+        self.assertEqual(sorted(status for _result, status in results), [200, 201], results)
+        self.assertEqual(sorted(result["created_count"] for result, _status in results), [0, 1])
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("""select count(*) from public.beacon_media_understanding_events
+                where binary_asset_id=%s and observer_identity='beacon-deployed-runtime'
+                  and observation_json ? 'semantic_digest'""", (finalized["binary_asset_id"],))
+            self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_terminal_semantic_exception_has_one_atomic_configured_retry(self):
+        store = IntakeStore(DATABASE_URL)
+        envelope, identity = self.envelope(), self.identity()
+        store.prepare(envelope, identity)
+        finalized, status = store.finalize(envelope, identity, {
+            "binary_asset_id": "BEACON-BINARY-SEMANTIC-RESET",
+            "content_sha256": "d" * 64, "observed_mime_type": "image/jpeg",
+            "byte_size": 100, "width": 10, "height": 10,
+            "storage_path": "telegram/semantic/reset.jpg",
+            "thumbnail_storage_path": "telegram-thumbnails/semantic/reset.jpg",
+            "thumbnail_sha256": "e" * 64,
+        })
+        self.assertEqual(status, 201, finalized)
+        accepted, status = store.review(finalized["binary_asset_id"], {
+            "event_type": "library_accepted", "owner_action_id": "semantic-reset-library",
+            "expected_predecessor_event_id": ""}, "owner-admin:semantic")
+        self.assertEqual(status, 201, accepted)
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("""insert into public.beacon_media_asset_events
+                (event_id,asset_id,event_type,recorded_by,approval_status,public_use_approved)
+                values('SEMANTIC-RESET-PUBLIC',%s,'approved_public_use',
+                       'legacy-reviewed-authority','approved',true)""",
+                (finalized["beacon_asset_id"],))
+        for _index in range(3):
+            result, status = store.append_semantic_adoption_state(
+                finalized["binary_asset_id"], "d" * 64, "interpretation_unavailable")
+            self.assertIn(status, (200, 201), result)
+
+        def reset(_value):
+            return IntakeStore(DATABASE_URL).reset_semantic_adoption_exception(
+                finalized["binary_asset_id"], "d" * 64)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(reset, range(2)))
+        self.assertEqual(sorted(status for _result, status in results), [201, 409], results)
+        successful = next(result for result, status in results if status == 201)
+        self.assertEqual(successful["observation"]["semantic_adoption"], {
+            "state": "retry_pending", "attempt_count": 0,
+            "last_status": "configured_runtime_retry", "automatic_retry": True,
+            "config_recovery_count": 1,
+            "config_recovery_receipt": "bmq05-first-approved-asset-v1",
+            "recovery_binding_digest": successful["observation"]["semantic_adoption"][
+                "recovery_binding_digest"]})
+        again, status = store.reset_semantic_adoption_exception(
+            finalized["binary_asset_id"], "d" * 64)
+        self.assertEqual(status, 409, again)
 
 
 if __name__ == "__main__":

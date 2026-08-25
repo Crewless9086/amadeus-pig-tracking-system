@@ -225,13 +225,15 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         source=environ if environ is not None else os.environ
         principal=resolve_family_principal({"telegram_user_id":callback["telegram_user_id"],
           "telegram_chat_id":callback["telegram_chat_id"],"telegram_chat_type":"private"},source)
-        if principal.role is not FamilyRole.OWNER:
-            return _direct_result(False,"telegram_protected_action_owner_required",policy,403)
+        if principal.role not in {FamilyRole.OWNER, FamilyRole.FARM_MANAGER}:
+            return _direct_result(False,"telegram_protected_action_authority_required",policy,403)
         parsed={"telegram_user_id":callback["telegram_user_id"],"telegram_chat_id":callback["telegram_chat_id"],
           "telegram_chat_type":"private","provider_message_id":callback["callback_query_id"],
           "provider_timestamp":datetime.now(timezone.utc).isoformat(),"reply_to_message_id":callback["telegram_message_id"],
-          "callback_query_id":callback["callback_query_id"],"callback_data":callback["callback_data"],"text":""}
-        authority=issue_gateway_owner_authority(callback["telegram_user_id"],callback["telegram_chat_id"])
+          "callback_query_id":callback["callback_query_id"],"callback_data":callback["callback_data"],"text":"",
+          "output_language":principal.language}
+        authority=issue_gateway_owner_authority(callback["telegram_user_id"],callback["telegram_chat_id"],
+          principal_role=principal.role.value,capabilities=principal.effective_permissions)
         action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
           if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else

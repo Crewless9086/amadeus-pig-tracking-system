@@ -2630,6 +2630,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         js = Path("static/js/bulkWeights.js").read_text(encoding="utf-8")
 
         self.assertIn("Bulk Weight Entry", template)
+        self.assertIn("BCS (optional)", template)
+        self.assertIn("data-bulk-bcs", js)
+        self.assertIn("/api/pig-weights/bulk-body-condition", js)
+        self.assertNotIn("data-bulk-heat", js)
         self.assertIn("Save Draft", template)
         self.assertIn("Download Draft", template)
         self.assertIn("Import Draft", template)

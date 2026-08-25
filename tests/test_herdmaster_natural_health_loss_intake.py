@@ -57,6 +57,51 @@ def maya_packet():
     return maya, evidence(maya, matings=[mating])
 
 
+def test_prince_recovery_observation_produces_protected_preview_without_repeat_question():
+    prince = animal("PIG-2026-E057", "Prince", "Prince")
+    result = evaluate_health_loss_intake(report(
+        "Prince is back to normal now from today. He is eating standing walking and acting normal again."),
+        evidence(prince))
+    assert result["status"] == "preview_ready"
+    assert result["event_family"] == "welfare_update"
+    assert result["smallest_missing_follow_up_question"] == ""
+    facts = {row["fact"]: row["value"] for row in result["observed_facts"]}
+    assert facts["eating_reported"] is True
+    assert facts["standing_reported"] is True
+    assert facts["moving_reported"] is True
+    assert facts["normal_behaviour_reported"] is True
+    effects = {row["area"]: row for row in result["canonical_effects"]}
+    assert effects["medical_observation"]["supported"] is True
+    assert result["writes_performed"] is False
+
+
+def test_negated_recovery_words_never_become_reassuring_welfare_update():
+    prince = animal("PIG-2026-E057", "Prince", "Prince")
+    result = evaluate_health_loss_intake(report(
+        "Prince is not back to normal and is not standing or walking."), evidence(prince))
+    assert result["event_family"] != "welfare_update"
+    facts = {row["fact"]: row["value"] for row in result["observed_facts"]}
+    assert "normal_behaviour_reported" not in facts
+    assert "standing_reported" not in facts
+    assert "moving_reported" not in facts
+
+
+def test_latest_corrected_welfare_state_wins_over_earlier_clause():
+    prince = animal("PIG-2026-E057", "Prince", "Prince")
+    recovered = evaluate_health_loss_intake(report(
+        "Prince was not standing or walking earlier, but he is standing and walking normally now."),
+        evidence(prince))
+    worsened = evaluate_health_loss_intake(report(
+        "Prince was standing and walking earlier, but is not standing or walking now."),
+        evidence(prince))
+    recovered_facts = {row["fact"] for row in recovered["observed_facts"]}
+    worsened_facts = {row["fact"] for row in worsened["observed_facts"]}
+    assert recovered["event_family"] == "welfare_update"
+    assert {"standing_reported", "moving_reported"} <= recovered_facts
+    assert "standing_reported" not in worsened_facts
+    assert "moving_reported" not in worsened_facts
+
+
 def test_maya_compound_preview_preserves_counts_and_suspicion_boundary():
     maya, canonical = maya_packet()
     result = evaluate_health_loss_intake(report(MAYA_REPORT), canonical)
@@ -223,6 +268,63 @@ def test_ordinary_journeys(text, tag, family, observed):
     assert result["event_family"] == family
     assert observed in {row["fact"] for row in result["observed_facts"]}
     assert result["zero_io"] is True
+
+
+@pytest.mark.parametrize("text", [
+    "Vark nr 146 dood op 23 Aug 2026",
+    "Vark no 146 is dood op 23 Augustus 2026",
+    "Pig number 146 died on 23 August 2026",
+    "Pig #146 died on 23/08/2026",
+])
+def test_explicit_pig_marker_wins_and_date_numbers_never_become_candidates(text):
+    target=animal("PIG-2026-0146","146","146")
+    day_number=animal("PIG-2026-0023","23","23")
+    result=evaluate_health_loss_intake({**report(text),
+        "provider_timestamp":"2026-08-23T20:30:00+02:00"},
+        {**evidence(target,day_number),"as_of_timestamp":"2026-08-23T20:31:00+02:00"})
+    assert result["identity"]["resolved"] is True
+    assert result["identity"]["pig_id"] == "PIG-2026-0146"
+    assert result["preview"]["event_date"] == "2026-08-23"
+    assert "candidate_pig_ids" not in result["identity"]
+
+
+def test_unmarked_date_numerals_do_not_resolve_numeric_animal_identity():
+    result=evaluate_health_loss_intake(report("Found dead on 23 August 2026"),
+        evidence(animal("PIG-2026-0023","23","23")))
+    assert result["status"] == "identity_required"
+    assert result["identity"]["candidate_pig_ids"] == []
+
+
+def test_two_explicit_pig_markers_preserve_real_multi_animal_ambiguity():
+    result=evaluate_health_loss_intake(report("Pig 146 and vark nr 23 are dead"),evidence(
+        animal("PIG-2026-0146","146","146"),animal("PIG-2026-0023","23","23")))
+    assert result["status"] == "identity_required"
+    assert result["identity"]["candidate_pig_ids"] == ["PIG-2026-0023","PIG-2026-0146"]
+
+
+@pytest.mark.parametrize("text", ["Pig Maya died on 23 August 2026",
+                                   "Vark Maya is dood op 23 Augustus 2026"])
+def test_marked_nonnumeric_name_resolves_exact_canonical_name_not_only_tag(text):
+    maya=animal("PIG-2026-MAYA","Maya","999")
+    day=animal("PIG-2026-0023","23","23")
+    result=evaluate_health_loss_intake({**report(text),
+        "provider_timestamp":"2026-08-23T20:30:00+02:00"},
+        {**evidence(maya,day),"as_of_timestamp":"2026-08-23T20:31:00+02:00"})
+    assert result["identity"]["resolved"] is True
+    assert result["identity"]["pig_id"] == "PIG-2026-MAYA"
+    assert result["preview"]["event_date"] == "2026-08-23"
+
+
+def test_marked_duplicate_name_remains_ambiguous_and_bare_numeric_noise_matches_none():
+    first=animal("PIG-2026-MAYA1","Maya","998")
+    second=animal("PIG-2026-MAYA2","Maya","999")
+    ambiguous=evaluate_health_loss_intake(report("Vark Maya is dood"),evidence(first,second))
+    assert ambiguous["status"] == "identity_required"
+    assert ambiguous["identity"]["candidate_pig_ids"] == ["PIG-2026-MAYA1","PIG-2026-MAYA2"]
+    noisy=evaluate_health_loss_intake(report("Dead on day 23, weight 146 kg, 2 animals"),evidence(
+        animal("PIG-2026-0023","23","23"),animal("PIG-2026-0146","146","146")))
+    assert noisy["status"] == "identity_required"
+    assert noisy["identity"]["candidate_pig_ids"] == []
 
 
 def test_ambiguous_name_asks_one_precise_identity_question_and_no_effects():

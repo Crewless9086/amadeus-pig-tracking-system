@@ -11,9 +11,6 @@ from modules.beacon.weekly_owner_review_decisions import (
 from modules.beacon.organic_publication_binding import (
     create_organic_publication_binding,
 )
-from modules.beacon.organic_publication_authorization import (
-    append_authorization_event,
-)
 from modules.sales.beacon_campaign import build_beacon_campaign_publish_packet
 from tests.test_beacon_weekly_owner_review_decisions import (
     eligible_assets,
@@ -28,7 +25,7 @@ FUNCTION = "public.prevent_beacon_weekly_review_decision_mutation()"
 
 @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL is required")
 class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
-    def test_z_publication_binding_is_one_to_one_append_only_and_server_only(self):
+    def test_z_retired_weekly_packet_creates_no_decision_or_publication_binding(self):
         migration = Path(
             "supabase/migrations/"
             "202607260003_create_beacon_publication_bindings.sql"
@@ -37,31 +34,24 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
             with connection.cursor() as cursor:
                 cursor.execute(migration)
 
-        with psycopg.connect(DATABASE_URL) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    f"select count(*) from {TABLE} where packet_id=%s",
-                    (exact_payload()["packet_id"],),
-                )
-                decision_exists = cursor.fetchone()[0] == 1
-        if not decision_exists:
-            patches = (
-                patch(
-                    "modules.beacon.weekly_owner_review_decisions.list_beacon_media_assets",
-                    return_value=({"assets": eligible_assets()}, 200),
-                ),
-                patch(
-                    "modules.beacon.weekly_owner_review_decisions.load_post_one_thumbnail",
-                    return_value=({"success": True}, 200),
-                ),
+        patches = (
+            patch(
+                "modules.beacon.weekly_owner_review_decisions.list_beacon_media_assets",
+                return_value=({"assets": eligible_assets()}, 200),
+            ),
+            patch(
+                "modules.beacon.weekly_owner_review_decisions.load_post_one_thumbnail",
+                return_value=({"success": True}, 200),
+            ),
+        )
+        with patches[0], patches[1]:
+            rejected, status = record_weekly_owner_review_decision(
+                exact_payload(),
+                owner_identity="owner-admin:binding-postgres-proof",
+                database_url=DATABASE_URL,
             )
-            with patches[0], patches[1]:
-                approved, status = record_weekly_owner_review_decision(
-                    exact_payload(),
-                    owner_identity="owner-admin:binding-postgres-proof",
-                    database_url=DATABASE_URL,
-                )
-            self.assertEqual(status, 201)
+        self.assertEqual((status, rejected["status"]), (
+            409, "weekly_owner_review_packet_not_reviewable"))
         order = exact_payload()["ordered_media_ids"]
         execution = build_beacon_campaign_publish_packet(
             {
@@ -83,22 +73,8 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
                 target_page_id="page-postgres-proof",
                 database_url=DATABASE_URL,
             )
-            replay, replay_status = create_organic_publication_binding(
-                execution,
-                target_page_id="page-postgres-proof",
-                database_url=DATABASE_URL,
-            )
-            conflict, conflict_status = create_organic_publication_binding(
-                {**execution, "publish_packet_id": "CONFLICT"},
-                target_page_id="page-postgres-proof",
-                database_url=DATABASE_URL,
-            )
-        self.assertEqual((status, created["created_count"]), (201, 1))
-        self.assertEqual((replay_status, replay["created_count"]), (200, 0))
-        self.assertEqual(
-            (conflict_status, conflict["status"]),
-            (409, "publication_binding_conflict"),
-        )
+        self.assertEqual((status, created["status"]), (
+            409, "publication_binding_weekly_packet_not_reviewable"))
         for flag in ("publish", "upload", "scheduled", "meta_call", "boost", "advert", "spend"):
             self.assertFalse(created[flag])
 
@@ -107,9 +83,9 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
         with psycopg.connect(DATABASE_URL) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(f"select count(*) from {binding_table}")
-                self.assertEqual(cursor.fetchone()[0], 1)
+                self.assertEqual(cursor.fetchone()[0], 0)
                 cursor.execute(f"select count(*) from {TABLE}")
-                self.assertEqual(cursor.fetchone()[0], 1)
+                self.assertEqual(cursor.fetchone()[0], 0)
                 for role in ("anon", "authenticated"):
                     for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"):
                         cursor.execute(
@@ -122,62 +98,6 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
                         (role, binding_function),
                     )
                     self.assertFalse(cursor.fetchone()[0])
-                cursor.execute("savepoint update_binding")
-                with self.assertRaises(psycopg.errors.RaiseException):
-                    cursor.execute(
-                        f"update {binding_table} set channel='changed'"
-                    )
-                cursor.execute("rollback to savepoint update_binding")
-                cursor.execute("savepoint delete_binding")
-                with self.assertRaises(psycopg.errors.RaiseException):
-                    cursor.execute(f"delete from {binding_table}")
-                cursor.execute("rollback to savepoint delete_binding")
-            connection.rollback()
-
-        authorization_migration = Path(
-            "supabase/migrations/"
-            "202607260005_create_beacon_publication_authorizations.sql"
-        ).read_text(encoding="utf-8")
-        with psycopg.connect(DATABASE_URL) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(authorization_migration)
-        authorization = {
-            "authorization_event_id": "BEACON-AUTH-EVENT-POSTGRES",
-            "authorization_generation_id": "BEACON-AUTH-GEN-POSTGRES",
-            "binding_id": created["binding"]["binding_id"],
-            "event_status": "awaiting_owner_authorization",
-            "transport_sha256": "c" * 64,
-            "payload_sha256": "d" * 64,
-            "expected_attempt_identity": "BEACON-FB-POST-POSTGRES",
-            "predecessor_generation_id": "",
-            "reason": "postgres_proof",
-        }
-        prepared, status = append_authorization_event(
-            authorization, database_url=DATABASE_URL
-        )
-        replay, replay_status = append_authorization_event(
-            authorization, database_url=DATABASE_URL
-        )
-        self.assertEqual((status, prepared["created_count"]), (201, 1))
-        self.assertEqual((replay_status, replay["created_count"]), (200, 0))
-        authorization_table = (
-            "public.beacon_organic_publication_authorization_events"
-        )
-        with psycopg.connect(DATABASE_URL) as connection:
-            with connection.cursor() as cursor:
-                for role in ("anon", "authenticated"):
-                    for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
-                        cursor.execute(
-                            "select has_table_privilege(%s,%s,%s)",
-                            (role, authorization_table, privilege),
-                        )
-                        self.assertFalse(cursor.fetchone()[0])
-                cursor.execute("savepoint update_authorization")
-                with self.assertRaises(psycopg.errors.RaiseException):
-                    cursor.execute(
-                        f"update {authorization_table} set reason='changed'"
-                    )
-                cursor.execute("rollback to savepoint update_authorization")
             connection.rollback()
 
     def test_supabase_roles_and_server_boundary_are_fail_closed(self):
@@ -252,7 +172,7 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
         self._assert_direct_client_insert_denied("anon")
         self._assert_direct_client_insert_denied("authenticated")
         self._assert_service_role_append_only()
-        self._assert_application_boundary_idempotency()
+        self._assert_unsafe_historical_packet_rejected()
 
     def _assert_direct_client_insert_denied(self, role):
         with psycopg.connect(DATABASE_URL) as connection:
@@ -331,7 +251,7 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
                 cursor.execute("rollback to savepoint delete_proof")
             connection.rollback()
 
-    def _assert_application_boundary_idempotency(self):
+    def _assert_unsafe_historical_packet_rejected(self):
         patches = (
             patch(
                 "modules.beacon.weekly_owner_review_decisions.list_beacon_media_assets",
@@ -343,27 +263,20 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
             ),
         )
         with patches[0], patches[1]:
-            approved, status = record_weekly_owner_review_decision(
+            rejected, status = record_weekly_owner_review_decision(
                 exact_payload(),
                 owner_identity="owner-admin:postgres-proof",
                 database_url=DATABASE_URL,
             )
-            self.assertEqual(status, 201)
-            replay, status = record_weekly_owner_review_decision(
+            self.assertEqual((status, rejected["status"]), (
+                409, "weekly_owner_review_packet_not_reviewable"))
+            replay, replay_status = record_weekly_owner_review_decision(
                 exact_payload(),
                 owner_identity="owner-admin:postgres-proof",
                 database_url=DATABASE_URL,
             )
-            self.assertEqual(status, 200)
-            self.assertTrue(replay["duplicate_withheld"])
-            changed = exact_payload("reject")
-            conflict, status = record_weekly_owner_review_decision(
-                changed,
-                owner_identity="owner-admin:postgres-proof",
-                database_url=DATABASE_URL,
-            )
-            self.assertEqual(status, 409)
-            self.assertEqual(conflict["status"], "conflicting_owner_decision_exists")
+            self.assertEqual((replay_status, replay["status"]), (
+                409, "weekly_owner_review_packet_not_reviewable"))
             for key in (
                 "publish",
                 "meta_call",
@@ -373,7 +286,11 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
                 "spend",
                 "business_data_mutation",
             ):
-                self.assertFalse(approved[key])
+                self.assertFalse(rejected[key])
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(f"select count(*) from {TABLE}")
+                self.assertEqual(cursor.fetchone()[0], 0)
 
 
 if __name__ == "__main__":

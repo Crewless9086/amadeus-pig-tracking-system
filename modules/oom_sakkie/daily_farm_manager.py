@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 from modules.oom_sakkie.farm_manager_loop import (
-    Authority, Provenance, SpecialistAvailability, SpecialistResult,
+    Authority, PROTECTED_AUTHORITIES, Provenance, SpecialistAvailability, SpecialistResult,
     SpecialistWorkItem, WorkState,
 )
 
@@ -67,6 +67,9 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                        and str(prior.get("telegram_message_id") or ""))
     claim_id = (projection_identity + ":GENERATION:" + digest[:20].upper()
                 if replacement else projection_identity + ":DELIVERY")
+    retry_proven = bool(prior.get("status") == "provider_ambiguous"
+                        and prior.get("delivery_definitely_not_sent") is True
+                        and prior.get("material_digest") == digest)
     claim = store("claim_daily", claim_id, {"daily_identity": identity,
         "material_digest": digest, "status": "detected", "observed_at": now.isoformat(),
         "task_identities": [row["task_id"] for row in packet["all_tasks"]],
@@ -77,7 +80,7 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     # A duplicate claim may be a restart before the provider attempt. Continue
     # into the family lifecycle: its attempt claim safely sends when no attempt
     # exists and fails ambiguous without retry after any possible provider call.
-    if claim.get("created") is False and store is not daily_farm_manager_store:
+    if claim.get("created") is False and store is not daily_farm_manager_store and not retry_proven:
         return {"success": True, "status": "daily_manager_replay_suppressed",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
@@ -88,31 +91,58 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
             return {"success": False, "status": "daily_manager_task_receipt_unavailable",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
+    if not packet["answer"]:
+        outcome = store("record_daily", claim_id + ":OUTCOME", {
+            "daily_identity": identity, "material_digest": digest,
+            "status": "unchanged", "observed_at": now.isoformat(),
+            "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+            "question": "", "question_binding": {}, "telegram_sends": 0,
+            "owner_visible_reason": "internal_work_only"})
+        if not isinstance(outcome, dict) or outcome.get("success") is not True:
+            return {"success": False, "status": "daily_manager_silent_receipt_unavailable",
+                    "telegram_sends": 0, "telegram_edits": 0, **ZERO}
+        return {"success": True, "status": "daily_manager_internal_work_silent",
+                "daily_identity": identity, "material_digest": digest,
+                "task_count": len(packet["all_tasks"]), "telegram_sends": 0,
+                "telegram_edits": 0, "next_due_at": _next_check(local), **ZERO}
     parsed = {"telegram_user_id": str(owner_user_id), "telegram_chat_id": str(chat_id),
+        "telegram_chat_type": "private", "output_language": str(language),
         "provider_message_id": "scheduled:" + claim_id,
         "provider_timestamp": now.isoformat(), "text": "Daily Farm Manager"}
     result = {"success": True, "status": "daily_farm_manager_ready",
         "answer": packet["answer"], "result_digest": digest,
+        "recipient_render_contract": "specialist_structured_recipient_v1",
+        "recipient_language": str(language),
         "rolling_brief_replacement": replacement,
         "hardware_commands": 0, "writes_farm_data": False}
+    retry_authority = None
+    if retry_proven:
+        from modules.oom_sakkie.delivery_retry_authority import issue_delivery_retry_authority
+        retry_authority = issue_delivery_retry_authority(mission_id=claim_id,
+            card_mission_id=projection_identity, text=packet["answer"],
+            proof_identity=projection_identity + ":PROVIDER-DEFINITELY-NOT-SENT")
     if replacement:
         if replace_brief is None:
             from modules.oom_sakkie.family_message_lifecycle import replace_current_brief
             replace_brief = replace_current_brief
         delivery = replace_brief(parsed, result, mission_id=claim_id,
-            card_mission_id=identity,
+            card_mission_id=projection_identity,
             previous_message_id=str(prior.get("telegram_message_id") or ""),
             generation_digest=digest)
     else:
         delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
-            mission_id=claim_id, card_mission_id=identity)
+            mission_id=claim_id, card_mission_id=projection_identity,
+            delivery_retry_authority=retry_authority)
     message_id = str((delivery or {}).get("telegram_message_id") or "")
     provider_confirmed = bool(message_id and ((delivery or {}).get("success") is True
         or (delivery or {}).get("provider_delivery_confirmed") is True))
     if not provider_confirmed:
         store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
             "material_digest": digest, "status": "provider_ambiguous",
-            "observed_at": now.isoformat(), "telegram_sends": 0})
+            "observed_at": now.isoformat(), "telegram_sends": 0,
+            "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+            "delivery_definitely_not_sent":
+                (delivery or {}).get("delivery_definitely_not_sent") is True})
         return {"success": False, "status": "daily_manager_delivery_ambiguous",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
@@ -241,7 +271,7 @@ def build_sale_watch_result(rows, *, now=None, language="en"):
         sale_status = _text(row, "sale_status").casefold()
         payment = _text(row, "payment_status").casefold()
         if sale_status == "cancelled" or (sale_status == "completed"
-                and payment in {"paid", "settled"}):
+                and payment in {"paid", "settled", "not_applicable", "not applicable"}):
             continue
         missing = []
         if sale_status != "completed" and int(row.get("item_count") or 0) <= 0:
@@ -308,9 +338,15 @@ def build_daily_management_packet(results, *, now=None, language="en",
     digest = sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     question_item = next((item for item in ordered
                           if item.genuine_question.strip() == question), None)
+    pig_refs = ([str(value).removeprefix("pig:")
+                 for value in question_item.provenance.source_refs
+                 if str(value).startswith("pig:") and str(value).removeprefix("pig:")]
+                if question_item else [])
     question_binding = ({"task_id": question_item.item_id,
         "dedupe_key": question_item.dedupe_key, "domain": question_item.domain,
-        "question": question} if question_item else {})
+        "question": question,
+        **({"pig_id": pig_refs[0]} if len(set(pig_refs)) == 1 else {})}
+        if question_item else {})
     return {"contract_version": CONTRACT_VERSION, "material_digest": digest,
         "priorities": priorities, "watch": watch, "all_tasks": tasks,
         "question": question, "question_binding": question_binding,
@@ -348,7 +384,7 @@ def _load_daily(identity, binding):
                   and review_json->'daily_farm_manager'->>'owner_user_id'=%s
                   and review_json->'daily_farm_manager'->>'chat_id'=%s
                   and review_json->'daily_farm_manager'->>'status' in
-                      ('presented','unchanged')
+                      ('presented','unchanged','provider_ambiguous')
                 order by created_at desc, review_event_id desc limit 1""",
                 (EVENT_SOURCE, identity, str(binding.get("owner_user_id") or ""),
                  str(binding.get("chat_id") or "")))
@@ -365,35 +401,60 @@ def _load_answered_questions(binding):
                 where event_source='oom_sakkie_manager_question_reply'
                   and review_json->'manager_question_reply'->>'owner_user_id'=%s
                   and review_json->'manager_question_reply'->>'chat_id'=%s
-                  and review_json->'manager_question_reply'->>'daily_identity'=%s
                   and review_json->'manager_question_reply'->>'status'='recorded'
                 order by created_at, review_event_id""",
                 (str(binding.get("owner_user_id") or ""),
-                 str(binding.get("chat_id") or ""),
-                 str(binding.get("daily_identity") or "")))
-            return tuple(dict(row[0]) for row in cursor.fetchall()
-                         if row and isinstance(row[0], dict))
+                 str(binding.get("chat_id") or "")))
+            values = []
+            current_identity = str(binding.get("daily_identity") or "")
+            for row in cursor.fetchall():
+                if not row or not isinstance(row[0], dict):
+                    continue
+                value = dict(row[0])
+                value["durable_concern_receipt"] = bool(
+                    current_identity and str(value.get("daily_identity") or "") != current_identity)
+                values.append(value)
+            return tuple(values)
 
 
 def _render(priorities, watch, question, now, language):
     af = str(language).lower().startswith("af")
-    lines = ["<b>GOEIE MORE - PLAASPRIORITEITE</b>" if af
-             else "<b>GOOD MORNING - FARM PRIORITIES</b>"]
-    if priorities:
+    visible = list(priorities) + list(watch)
+    owner_work = [row for row in visible if _owner_action_required(row)]
+    automatic_work = [row for row in visible if not _owner_action_required(row)]
+    if not owner_work and not question:
+        return ""
+    # Agent-owned reconciliation remains in the durable task lifecycle. It is
+    # not owner-visible until it produces an outcome or material exception.
+    automatic_work = []
+    lines = ["<b>VANDAG SE PLAASPLAN</b>" if af
+             else "<b>TODAY'S FARM PLAN</b>"]
+    if owner_work:
+        lines.append("<b>AKSIE NODIG</b>" if af else "<b>ACTION NEEDED</b>")
         lines.extend(f"{index}. <b>{html.escape(_compact(row.title, 110))}</b> "
                      f"{html.escape(_compact(row.next_action, 170))}"
-                     for index, row in enumerate(priorities, 1))
-    else:
-        lines.append("1. Geen nuwe aksie nodig nie." if af else "1. No new action is required.")
+                     for index, row in enumerate(owner_work, 1))
+    if automatic_work:
+        lines.extend(("", "<b>OOM SAKKIE KONTROLEER OUTOMATIES</b>" if af
+                      else "<b>OOM SAKKIE IS CHECKING AUTOMATICALLY</b>"))
+        lines.extend(f"• <b>{html.escape(_compact(row.title, 110))}</b>"
+                     for row in automatic_work)
+    if not owner_work and not automatic_work:
+        lines.append("Geen nuwe werk nie." if af else "No new work.")
     if question:
         lines.extend(("", "<b>EEN VRAAG</b>" if af else "<b>ONE QUESTION</b>",
                       html.escape(question)))
-    else:
+    elif not owner_work and not question:
         lines.extend(("", "Geen aksie word nou van jou benodig nie."
                       if af else "No action required from you."))
-    lines.extend(("", ("Volgende kontrole: binne 15 minute of wanneer kernbewyse verander."
-                       if af else "Next check: within 15 minutes or when material evidence changes.")))
     return "\n".join(lines)
+
+
+def _owner_action_required(item):
+    """Keep specialist-owned reconciliation out of the owner's action list."""
+    return (bool(item.genuine_question.strip())
+            or item.authority in PROTECTED_AUTHORITIES
+            or item.metadata.get("physical_work_ready") is True)
 
 
 def _task(item):
@@ -406,10 +467,12 @@ def _task(item):
 
 
 def _material(item):
-    return {"dedupe_key": item.dedupe_key, "title": item.title, "why": item.why,
-        "next_action": item.next_action, "state": item.state.value,
-        "authority": item.authority.value,
-        "due_at": item.due_at.isoformat() if item.due_at else None}
+    material = {"dedupe_key": item.dedupe_key, "title": item.title, "why": item.why,
+        "state": item.state.value, "authority": item.authority.value}
+    if _owner_action_required(item):
+        material.update({"next_action": item.next_action,
+            "due_at": item.due_at.isoformat() if item.due_at else None})
+    return material
 
 
 def _owner_projection_identity(daily_identity, owner_user_id, chat_id):

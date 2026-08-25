@@ -56,16 +56,37 @@ class PigWelfareCasePostgresTests(unittest.TestCase):
               responsible_owner,next_check_at,escalation_reason,closure_kind,closure_reason,
               occurred_at,recorded_at,actor_reference,source_system,source_reference,
               provenance_json,idempotency_key)
-            values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'owner:1','owner','telegram:1','{}',%s)
+            values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'owner:1','owner','telegram:1',%s::jsonb,%s)
             """,
             (
                 f"event:{case_id}:{suffix}", case_id, event_type, state,
                 values.get("urgency", "due"), values.get("owner", "HERDMASTER"),
                 values.get("next_check"), values.get("escalation_reason"),
                 values.get("closure_kind"), values.get("closure_reason"), occurred, occurred,
+                values.get("provenance", "{}"),
                 f"event-key:{case_id}:{suffix}",
             ),
         )
+
+    def test_completion_state_binds_exact_operation_not_latest_unrelated_case(self):
+        import json
+        bound=f"WELFARE-{self.run_id}-BOUND"; unrelated=f"WELFARE-{self.run_id}-OTHER"
+        operation=f"HERD-HEALTH-{self.run_id}"
+        with psycopg.connect(self.database_url) as connection:
+            self._case(connection,bound,"episode-bound","recovery")
+            self._case(connection,unrelated,"episode-other","injury")
+            self._event(connection,bound,"1","evidence_added","monitoring","2026-08-24 09:42+00",
+                provenance=json.dumps({"intake_context":{"operation_id":operation}}))
+            self._event(connection,unrelated,"1","closed","closed","2026-08-24 10:00+00",
+                provenance=json.dumps({"intake_context":{"operation_id":"OTHER"}}))
+            state=connection.execute("""select event.case_state
+              from public.pig_welfare_case_events event
+              join public.pig_welfare_cases welfare using(welfare_case_id)
+             where welfare.pig_id=%s
+               and event.provenance_json->'intake_context'->>'operation_id'=%s
+             order by event.sequence_no desc,event.recorded_at desc limit 1""",
+                (self.pig_id,operation)).fetchone()[0]
+            self.assertEqual(state,"monitoring")
 
     def test_episode_uniqueness_concurrency_and_recurrence(self):
         first = f"WELFARE-{self.run_id}-A"

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 import re
@@ -20,6 +21,7 @@ from modules.oom_sakkie.llm_router import API_KEY_ENV, API_URL_ENV, DEFAULT_API_
 ENABLED_ENV = "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED"
 DOMAINS = frozenset({"herd_health", "herd_management", "rootline", "manager_round", "sam", "beacon", "documents", "general"})
 MESSAGE_KINDS = frozenset({"observation", "question", "request", "command", "confirmation", "correction", "general"})
+MEDIA_SUBJECT_TAGS = frozenset({"live_stock", "piglets", "litter", "weaner", "sow", "farm_life"})
 MAX_CONTEXT_ITEMS = 8
 CONTEXT_MAX_AGE_SECONDS = 6 * 60 * 60
 ACTIVE_SPECIALIST_CONTEXT_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
@@ -49,6 +51,70 @@ class SemanticInterpretation:
 
     def as_hint(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class MediaSemanticUnderstanding:
+    subject_tags: tuple[str, ...]
+    confidence: float
+    model: str
+    semantic_digest: str
+    observer_version: str = "oom_semantic_media_v1"
+
+
+def interpret_media_owner_context(owner_context: str, asset_sha256: str, *, environ=None,
+                                  http_open=None) -> MediaSemanticUnderstanding | None:
+    """Classify bounded media context; never grants approval or publication authority."""
+    source = environ if environ is not None else os.environ
+    policy = semantic_front_door_policy(source)
+    context = str(owner_context or "").strip()[:2000]
+    digest = str(asset_sha256 or "").strip().lower()
+    if (not policy["enabled"] or not policy["configured"] or not context
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+        return None
+    request = urllib_request.Request(
+        str(source.get(API_URL_ENV) or DEFAULT_API_URL).strip() or DEFAULT_API_URL,
+        data=json.dumps(_media_payload(context, digest, source), separators=(",", ":")).encode(),
+        headers={"Authorization": f"Bearer {str(source.get(API_KEY_ENV) or '').strip()}",
+                 "Content-Type": "application/json"}, method="POST")
+    try:
+        opener = http_open or urllib_request.urlopen
+        with opener(request, timeout=_timeout(source)) as response:
+            body = response.read().decode("utf-8")
+        envelope = json.loads(body or "{}")
+        value = json.loads(_strip_fence(str(envelope["choices"][0]["message"]["content"] or "")))
+        tags = tuple(sorted(set(str(tag).strip().casefold() for tag in
+            (value.get("subject_tags") or []) if str(tag).strip() in MEDIA_SUBJECT_TAGS)))
+        confidence = float(value.get("confidence") or 0)
+        if (value.get("affirmative_current_subject") is not True
+                or value.get("negated_or_absent") is not False
+                or value.get("historical_or_future_only") is not False
+                or value.get("conflicting_subject") is not False
+                or value.get("needs_clarification") is not False
+                or confidence < 0.8 or not tags or "live_stock" not in tags):
+            return None
+        semantic_digest = hashlib.sha256(json.dumps({"asset_sha256": digest,
+            "owner_context": context, "subject_tags": tags, "confidence": confidence,
+            "model": str(source.get(MODEL_ENV) or "")}, sort_keys=True).encode()).hexdigest()
+        return MediaSemanticUnderstanding(tags, confidence,
+            str(source.get(MODEL_ENV) or ""), semantic_digest)
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError,
+            urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
+        return None
+
+
+def _media_payload(owner_context, asset_sha256, source):
+    system = ("Classify only the current visible subject asserted by the authenticated owner's media context. "
+        "Do not infer from a name. Handle English, Afrikaans, mixed language, negation, correction and time. "
+        "Allowed subject_tags are live_stock,piglets,litter,weaner,sow,farm_life. "
+        "If the subject is absent, negated, historical/future-only, conflicting or ambiguous, set the matching "
+        "flag and needs_clarification true where appropriate; return no tags. Return JSON only with subject_tags, "
+        "affirmative_current_subject,negated_or_absent,historical_or_future_only,conflicting_subject,"
+        "needs_clarification,confidence. This classifies meaning only and grants no media, publication or sales authority.")
+    return {"model": str(source.get(MODEL_ENV) or ""), "temperature": 0,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content":
+            json.dumps({"owner_context": owner_context, "asset_sha256": asset_sha256}, separators=(",", ":"))}],
+        "response_format": {"type": "json_object"}}
 
 
 def semantic_front_door_policy(environ: Mapping[str, str] | None = None) -> dict[str, Any]:

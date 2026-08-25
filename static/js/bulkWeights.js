@@ -23,7 +23,7 @@ const uploadOverlay = document.getElementById("bulk_upload_overlay");
 const uploadOverlayTitle = document.getElementById("bulk_upload_overlay_title");
 const uploadOverlayText = document.getElementById("bulk_upload_overlay_text");
 
-const DRAFT_VERSION = 3;
+const DRAFT_VERSION = 4;
 let allPigs = [];
 let allPens = [];
 let draftRows = {};
@@ -111,7 +111,7 @@ function setUploadLocked(isLocked) {
   ].forEach((element) => {
     if (element) element.disabled = Boolean(isLocked);
   });
-  document.querySelectorAll("[data-bulk-weight], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
+  document.querySelectorAll("[data-bulk-weight], [data-bulk-bcs], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
     input.disabled = Boolean(isLocked);
   });
 }
@@ -173,7 +173,8 @@ function draftRowValues() {
 function actionableDraftRows() {
   return draftRowValues().filter((row) =>
     String(row.weight_kg || "").trim() !== "" ||
-    String(row.moved_to_pen_id || "").trim() !== ""
+    String(row.moved_to_pen_id || "").trim() !== "" ||
+    String(row.body_condition_score || "").trim() !== ""
   );
 }
 
@@ -188,7 +189,8 @@ function buildDraftPayload(options = {}) {
   const enteredRows = rowValues.filter((row) => String(row.weight_kg || "").trim() !== "");
   const actionableRows = rowValues.filter((row) =>
     String(row.weight_kg || "").trim() !== "" ||
-    String(row.moved_to_pen_id || "").trim() !== ""
+    String(row.moved_to_pen_id || "").trim() !== "" ||
+    String(row.body_condition_score || "").trim() !== ""
   );
   return {
     draft_id: options.draft_id || activeDraftId || createDraftId(),
@@ -310,6 +312,7 @@ function draftCountsForFailure() {
   const rows = rowsPayload();
   const fallbackRows = Object.values(draftRows || {}).map((row) => ({
     weight_kg: row.weight_kg || "",
+    body_condition_score: row.body_condition_score || "",
     moved_to_pen_id: row.moved_to_pen_id || "",
     condition_notes: row.condition_notes || "",
   }));
@@ -317,7 +320,8 @@ function draftCountsForFailure() {
   const submittedCount = rows.length || Number(visibleCount.textContent || 0) || fallbackRows.length;
   const actionableCount = countRows.filter((row) =>
     String(row.weight_kg || "").trim() !== "" ||
-    String(row.moved_to_pen_id || "").trim() !== ""
+    String(row.moved_to_pen_id || "").trim() !== "" ||
+    String(row.body_condition_score || "").trim() !== ""
   ).length;
   return { rows, submittedCount, actionableCount };
 }
@@ -435,6 +439,7 @@ function collectDraftFromDom() {
     if (!pigId) return;
     draftRows[pigId] = {
       weight_kg: row.querySelector("[data-bulk-weight]")?.value || "",
+      body_condition_score: row.querySelector("[data-bulk-bcs]")?.value || "",
       moved_to_pen_id: row.querySelector("[data-bulk-pen]")?.value || "",
       condition_notes: row.querySelector("[data-bulk-notes]")?.value || "",
     };
@@ -450,7 +455,7 @@ function updateSummary(options = {}) {
   if (options.collectExistingInputs !== false) collectDraftFromDom();
   const visibleRows = filteredRows();
   const actedPigIds = new Set(Object.entries(draftRows || {})
-    .filter(([, row]) => String(row.weight_kg || "").trim() !== "" || String(row.moved_to_pen_id || "").trim() !== "")
+    .filter(([, row]) => String(row.weight_kg || "").trim() !== "" || String(row.moved_to_pen_id || "").trim() !== "" || String(row.body_condition_score || "").trim() !== "")
     .map(([pigId]) => pigId));
   visibleCount.textContent = String(visibleRows.length);
   enteredCount.textContent = String(countEnteredRows({ collectExistingInputs: false }));
@@ -466,7 +471,7 @@ function renderTable(options = {}) {
   visibleCount.textContent = String(rows.length);
 
   if (!rows.length) {
-    bulkWeightBody.innerHTML = `<tr><td colspan="7" class="table-empty">No active pigs found for this selection.</td></tr>`;
+    bulkWeightBody.innerHTML = `<tr><td colspan="8" class="table-empty">No active pigs found for this selection.</td></tr>`;
     updateSummary(options);
     return;
   }
@@ -482,6 +487,7 @@ function renderTable(options = {}) {
         <td>
           <input data-bulk-weight type="number" step="0.01" inputmode="decimal" class="bulk-weight-input no-spinner" value="${escapeHtml(draft.weight_kg || "")}" />
         </td>
+        <td><input data-bulk-bcs type="number" min="1" max="5" step="0.5" inputmode="decimal" class="bulk-weight-input no-spinner" value="${escapeHtml(draft.body_condition_score || "")}" aria-label="Body condition score for pig ${escapeHtml(formatTagNumber(pig.tag_number || pig.pig_id || ""))}" /></td>
         <td>${escapeHtml(penLabelForPig(pig))}</td>
         <td>
           <div class="bulk-move-control">
@@ -520,7 +526,7 @@ function renderTable(options = {}) {
       scheduleAutosave();
     });
   });
-  document.querySelectorAll("[data-bulk-weight], [data-bulk-move-toggle], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
+  document.querySelectorAll("[data-bulk-weight], [data-bulk-bcs], [data-bulk-move-toggle], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
     input.addEventListener("input", () => {
       updateSummary();
       scheduleAutosave();
@@ -578,13 +584,31 @@ function rowsPayload() {
       pig_id: pig.pig_id,
       tag_number: pig.tag_number,
       weight_kg: draft.weight_kg || "",
+      body_condition_score: draft.body_condition_score || "",
       moved_to_pen_id: draft.moved_to_pen_id || "",
       condition_notes: draft.condition_notes || "",
     };
   }).filter((row) =>
     String(row.weight_kg || "").trim() !== "" ||
-    String(row.moved_to_pen_id || "").trim() !== ""
+    String(row.moved_to_pen_id || "").trim() !== "" ||
+    String(row.body_condition_score || "").trim() !== ""
   );
+}
+
+async function uploadBodyConditionRows() {
+  const rows = rowsPayload().filter((row) => String(row.body_condition_score || "").trim() !== "");
+  if (!rows.length) return { success: true, recorded_count: 0 };
+  const endpoint = "/api/pig-weights/bulk-body-condition";
+  const response = await fetch(endpoint, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft_id: activeDraftId, observed_date: bulkDateInput.value, rows }),
+  });
+  const data = await parseBulkJsonResponse(response, endpoint);
+  if (!response.ok || !data.success) {
+    const completed = Array.isArray(data.events) ? data.events.length : 0;
+    throw new Error(`Body-condition upload paused on one selected pig after ${completed} completed row${completed === 1 ? "" : "s"}. Your draft is saved.`);
+  }
+  return data;
 }
 
 function importDraftPayload(payload) {
@@ -861,6 +885,16 @@ async function uploadBatch() {
       await processActiveBatch();
       return;
     }
+    const bcsResult = await uploadBodyConditionRows();
+    const hasWeightOrMove = rowsPayload().some((row) => String(row.weight_kg || "").trim() !== "" || String(row.moved_to_pen_id || "").trim() !== "");
+    if (!hasWeightOrMove) {
+      removeStoredDraftsMatching();
+      draftRows = {};
+      renderTable({ collectExistingInputs: false });
+      setMessage(`Upload complete: ${Number(bcsResult.recorded_count || 0)} body-condition observation${Number(bcsResult.recorded_count || 0) === 1 ? "" : "s"} recorded.`, "success");
+      setUploadOverlay("", "");
+      return;
+    }
     setUploadOverlay("Uploading weights", "Preparing batch. Please keep this page open.");
     const { response, data } = await stageBulkBatch();
     if (!response.ok || !data.ok) {
@@ -890,7 +924,9 @@ async function uploadBatch() {
     console.error("bulk upload error:", error);
     persistDraft({ statusLabel: "Upload error - draft kept", validation_status: "upload_exception" });
     if (continueButton) continueButton.classList.add("hidden");
-    setMessage("Upload paused because the server could not finish this step. Your draft is saved. Press Upload Weights to resume.", "error");
+    setMessage(String(error.message || "").startsWith("Body-condition upload paused")
+      ? error.message
+      : "Upload paused because the server could not finish this step. Your draft is saved. Press Upload Weights to resume.", "error");
     setUploadOverlay("", "");
   } finally {
     setUploadLocked(false);

@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.family_access import (
     FamilyRole, authorize_family_message, bound_family_manager_result, family_access_policy,
-    resolve_family_principal,
+    resolve_family_principal, configured_farm_manager_principals,
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 
@@ -38,6 +38,15 @@ def test_current_configuration_is_charl_only_when_no_family_bindings_exist():
     assert policy["authorized_identity_count"] == 1
     assert policy["family_bindings_count"] == 0
     assert resolve_family_principal(_parsed(OWNER), _env()).role is FamilyRole.OWNER
+
+
+def test_daily_recipients_include_only_owner_and_farm_manager_not_other_family_or_agents():
+    env = _env([_binding(role="farm_manager"),
+                _binding("1003", family="mum", role="trusted_family_reporter")])
+    recipients = configured_farm_manager_principals(env)
+    assert [(row.telegram_user_id, row.role, row.language) for row in recipients] == [
+        (OWNER, FamilyRole.OWNER, "en"), ("1002", FamilyRole.FARM_MANAGER, "af")]
+    assert all(row.family_key not in {"core", "charlie"} for row in recipients)
 
 
 def test_afrikaans_and_mixed_observations_preserve_exact_reporter_provenance():
@@ -92,7 +101,7 @@ def test_family_cannot_confirm_or_escalate_protected_authority():
         assert decision.may_confirm_protected_action is False
 
 
-def test_farm_manager_is_delegated_not_owner_and_cannot_cross_charl_only_boundary():
+def test_farm_manager_has_explicit_oom_specialist_parity_without_admin_escape_hatches():
     permissions = ["farm_observation", "active_follow_up", "explicit_summary",
         "welfare_hold", "welfare_escalation", "found_dead_observation",
         "herdmaster_management_input", "herdmaster_reassessment",
@@ -101,13 +110,37 @@ def test_farm_manager_is_delegated_not_owner_and_cannot_cross_charl_only_boundar
     principal = resolve_family_principal(_parsed("1002"), _env([binding]))
     assert principal.role is FamilyRole.FARM_MANAGER and not principal.is_owner
     assert principal.language == "af"
+    assert "mortality_confirmation" in principal.effective_permissions
     for capability in permissions:
         assert authorize_family_message(principal, _parsed("1002"),
             capability=capability, summary_domain="herd").allowed
-    for capability in ("mortality_confirmation", "treatment", "mating_execution",
-                       "hardware_exception", "permission_change", "payment"):
+    mortality = authorize_family_message(principal, _parsed("1002"),
+        capability="mortality_confirmation")
+    assert mortality.allowed and mortality.may_confirm_protected_action
+    for capability in ("treatment", "mating_execution", "sales_decision", "reservation",
+                       "payment", "publication", "customer_send"):
+        decision = authorize_family_message(principal, _parsed("1002"), capability=capability)
+        assert decision.allowed and decision.may_confirm_protected_action
+    for capability in ("hardware_exception", "permission_change"):
         decision = authorize_family_message(principal, _parsed("1002"), capability=capability)
         assert not decision.allowed and not decision.may_confirm_protected_action
+
+
+def test_stale_farm_manager_binding_cannot_remove_role_granted_mortality_authority():
+    binding = _binding(role="farm_manager", permissions=[
+        "farm_observation", "active_follow_up", "found_dead_observation",
+        "herdmaster_management_input", "herdmaster_reassessment",
+        "welfare_hold", "welfare_escalation", "irrigation_start", "irrigation_continue"])
+    principal = resolve_family_principal(_parsed("1002"), _env([binding]))
+
+    assert principal.role is FamilyRole.FARM_MANAGER
+    assert "mortality_confirmation" not in principal.permissions
+    assert "mortality_confirmation" in principal.effective_permissions
+    decision = authorize_family_message(principal, _parsed("1002"),
+        capability="mortality_confirmation")
+    assert decision.allowed and decision.may_confirm_protected_action
+    for capability in ("hardware_exception", "permission_change"):
+        assert capability not in principal.effective_permissions
 
 
 def test_permanent_afrikaans_binding_is_required_and_revocation_fails_closed():

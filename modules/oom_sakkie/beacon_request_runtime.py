@@ -11,10 +11,12 @@ from zoneinfo import ZoneInfo
 from typing import Any, Callable, Mapping
 
 from modules.beacon.marketing_proposal import prepare_marketing_proposal
-from modules.beacon.media_intake import list_media_intakes
+from modules.beacon.media_intake import enrich_approved_media_semantics, list_media_intakes
 from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
 from modules.beacon.public_livestock_content_policy import (
-    assess_public_livestock_content, assess_public_livestock_enquiry_capture,
+    POLICY_VERSION,
+    assess_public_livestock_content,
+    public_livestock_policy_binding, public_livestock_policy_binding_matches,
 )
 from modules.beacon.content_operations import (
     build_beacon_content_candidate,
@@ -34,30 +36,42 @@ ZERO = {"writes_farm_data": False, "writes_media": False, "publishes": False,
         "spends_money": False, "customer_sends": False,
         "protected_actions_performed": False}
 CAMPAIGN_REVIEW_ACTION = "beacon_campaign_review"
-ENQUIRY_CAPTURE_POLICY_ID = "beacon_public_livestock_enquiry_capture"
 
 
 def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_opportunity_cards,
-        media_loader=list_media_intakes, content_evidence_loader=gather_beacon_content_evidence,
+        media_loader=list_media_intakes, media_enricher=enrich_approved_media_semantics,
+        content_evidence_loader=gather_beacon_content_evidence,
         content_candidate_builder=build_beacon_content_candidate,
         litter_loader=list_litter_overview, business_evidence_loader=load_sam_farm_knowledge,
         now=None, target_page_id=None):
     """Compose one governed, stock-neutral livestock enquiry result."""
     opportunities = opportunity_loader()
+    evidence_time = _stable_opportunity_time(opportunities, fallback=now)
+    # Public livestock acquisition solicitation is fail-closed by META policy.
+    # The autonomous public lane therefore prepares an allowed farm-awareness
+    # story; genuine independently initiated replies are attributed and routed
+    # privately to SAM.  Do not turn this into an availability or sales claim.
+    content_evidence = content_evidence_loader(opportunity_result=opportunities)
+    candidate = content_candidate_builder(content_evidence)
+    # Reuse only the canonical media projection.  The proposal builder rejects
+    # anything without current Library acceptance, public-use approval, binary
+    # readback evidence and a stable content hash.  If no such relevant asset is
+    # available, the existing text-only boundary remains in force.
     media_result = media_loader()
     media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
-    evidence_time = _stable_opportunity_time(opportunities, fallback=now)
-    # Keep the legacy awareness dependencies injectable for caller compatibility,
-    # but a scheduled revenue case must use the sale-ready demand contract.  An
-    # awareness/follow packet is never silently upgraded into a messages campaign.
-    packet = build_supported_livestock_enquiry_proposal(
-        opportunities, business_evidence_loader(), observed_at=evidence_time,
-        target_page_id=target_page_id)
+    media_payload, enrichment = media_enricher(media_payload)
+    if int(enrichment.get("http_status") or 0) in {409, 503}:
+        return {"success": False, "status": enrichment.get("status") or
+            "media_semantic_enrichment_failed_closed", "decision": "Hold",
+            "reason": "Approved media semantic adoption could not be safely reconciled.",
+            "semantic_enrichment": enrichment, **ZERO}
+    packet = build_live_stock_awareness_proposal(
+        opportunities, candidate, media_payload, target_page_id=target_page_id)
     if packet.get("status") == "ready_for_owner_review":
         packet = build_protected_campaign_package(packet, now=evidence_time)
     return {
         "success": True,
-        "status": ("beacon_livestock_enquiry_capture_ready" if
+        "status": ("beacon_livestock_awareness_ready" if
             packet.get("protected_campaign_package") else
             "beacon_livestock_offering_evidence_exception"),
         "answer": render_beacon_packet(packet, language="en"),
@@ -65,7 +79,8 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
         "result_digest": _digest(packet),
         "follow_up_owner": "BEACON",
         "next_trigger": "material canonical offering, policy or owner-decision change",
-        **ZERO,
+        **ZERO, "writes_media": bool(enrichment.get("created_count")),
+        "semantic_enrichment": enrichment,
     }
 
 
@@ -101,15 +116,17 @@ def build_supported_livestock_enquiry_proposal(opportunities, knowledge_result, 
         "growers and finishers. Message us with the type, number needed, intended use and your area. "
         "SAM will check current farm records before discussing any option; no stock, price, "
         "availability, delivery or reservation is promised.")
-    policy = assess_public_livestock_enquiry_capture(
-        caption, campaign_lane="live_stock_enquiry_capture")
+    policy = assess_public_livestock_content(caption,
+        objective="qualified_livestock_enquiries",
+        campaign_lane="live_stock_enquiry_capture")
     policy_version = str(policy.get("policy_version") or "").strip()
     if not policy.get("allowed") or not policy_version:
-        raise ValueError("livestock_enquiry_capture_policy_failed")
+        return _supported_offering_exception(
+            "Public live-animal acquisition solicitation is not authorized; "
+            "only awareness, education, husbandry, welfare or farm-story content is eligible.")
     page_id = str(target_page_id if target_page_id is not None
         else os.getenv("BEACON_FACEBOOK_PAGE_ID") or "").strip()
-    policy_binding = {"policy_id": ENQUIRY_CAPTURE_POLICY_ID,
-        "policy_version": policy_version}
+    policy_binding = public_livestock_policy_binding(policy)
     evidence = {"source": "sam_farm_knowledge", "version": version,
         "source_path": str(knowledge_result.get("path") or ""),
         "source_content_sha256": str(knowledge_result["source_content_sha256"]),
@@ -221,9 +238,10 @@ def build_protected_campaign_package(packet, *, now=None):
             "capture_date", "source", "litter_id", "pig_ids", "event_id",
             "public_use_authority")} for item in litter_media]
     else:
-        exact_media = ({key: media.get(key) for key in (
+        exact_media = ([{key: media.get(key) for key in (
             "asset_id", "media_type", "content_sha256", "storage_readback_proof_id",
-            "library_accept_event_id", "public_use_event_id")}
+            "library_accept_event_id", "public_use_event_id", "public_use_authority",
+            "subject_tags")}]
             if media.get("status") == "approved_public_media_selected" else {"mode": "text_only"})
     exact_copy = str(packet.get("draft_caption") or packet.get("recommended_copy") or "").strip()
     if not exact_copy:
@@ -242,21 +260,31 @@ def build_protected_campaign_package(packet, *, now=None):
         (objective == "farm_awareness" and campaign_lane == "live_stock_awareness"))
     if not valid_objective:
         raise ValueError("beacon_campaign_awareness_objective_required")
+    page_id = str(packet.get("target_page_id") or "").strip()
+    current_policy = assess_public_livestock_content(exact_copy,
+        objective=objective, campaign_lane=campaign_lane,
+        media=[] if text_only else exact_media)
+    bound_policy = packet.get("public_content_policy") if isinstance(
+        packet.get("public_content_policy"), Mapping) else {}
+    if (not page_id or current_policy.get("allowed") is not True
+            or not public_livestock_policy_binding_matches(bound_policy,
+                current_policy, target_page_id=page_id, now=now)):
+        raise ValueError("beacon_campaign_public_policy_binding_required")
     if not enquiry_capture and cta:
         raise ValueError("beacon_campaign_awareness_cta_prohibited")
     if enquiry_capture:
-        current_policy = assess_public_livestock_enquiry_capture(
-            exact_copy, campaign_lane=campaign_lane)
-        bound_policy = packet.get("public_content_policy") if isinstance(
-            packet.get("public_content_policy"), Mapping) else {}
         if (not cta or current_policy.get("allowed") is not True
-                or bound_policy.get("policy_id") != ENQUIRY_CAPTURE_POLICY_ID
-                or not str(bound_policy.get("policy_version") or "").strip()
-                or str(bound_policy.get("policy_version")) != str(
-                    current_policy.get("policy_version") or "")):
+                or not public_livestock_policy_binding_matches(
+                    bound_policy, current_policy, target_page_id=page_id, now=now)):
             raise ValueError("beacon_campaign_enquiry_capture_policy_required")
-    if not litter_media and not text_only:
+    if packet.get("packet_type") == "litter_awareness_story" and not litter_media:
         raise ValueError("beacon_campaign_exact_litter_media_required")
+    if not litter_media and not text_only:
+        selected = exact_media[0] if isinstance(exact_media, list) and len(exact_media) == 1 else {}
+        if (selected.get("public_use_authority") != "approved"
+                or not set(selected.get("subject_tags") or []).intersection(
+                    {"live_stock", "livestock", "piglet", "piglets", "litter", "weaner", "farm_life"})):
+            raise ValueError("beacon_campaign_public_awareness_media_required")
     if text_only:
         capacity_source = (packet.get("business_offering_evidence") if enquiry_capture
             else packet.get("capacity_context"))
@@ -276,7 +304,7 @@ def build_protected_campaign_package(packet, *, now=None):
                 raise ValueError("beacon_campaign_sam_response_contract_required")
             sam = {"lane": "live_stock_sales", "campaign_attribution_required": True,
                 "inbound_only": True, "authority_boundary": str(packet["sam_routing"])}
-    else:
+    elif litter_media:
         story = stock.get("story_context") if isinstance(stock.get("story_context"), Mapping) else {}
         sow_name = str(story.get("sow_name") or "").strip()
         if not sow_name or str(story.get("litter_id") or "") in exact_copy:
@@ -290,11 +318,23 @@ def build_protected_campaign_package(packet, *, now=None):
                 or not sam.get("campaign_attribution_required")
                 or sam.get("inbound_only") is not True):
             raise ValueError("beacon_campaign_sam_response_contract_required")
+    else:
+        capacity = packet.get("capacity_context") if isinstance(
+            packet.get("capacity_context"), Mapping) else {}
+        if capacity.get("sale_availability_inferred") is not False:
+            raise ValueError("beacon_campaign_media_non_availability_required")
+        stock = {"source": "beacon_opportunity_scanner", **dict(capacity),
+            "claim_boundary": str(capacity.get("claim_boundary") or
+                "Awareness only; no stock, availability, price or fulfilment claim.")}
+        if not str(packet.get("sam_routing") or "").strip():
+            raise ValueError("beacon_campaign_sam_response_contract_required")
+        sam = {"lane": "live_stock_sales", "campaign_attribution_required": True,
+            "inbound_only": True, "authority_boundary": str(packet["sam_routing"])}
     envelope = {
         "contract_version": "beacon_protected_facebook_campaign_package_v1",
         "delivery_due_policy": "same_cycle_on_new_or_changed_evidence",
         "source_packet_id": packet["packet_id"], "exact_post_copy": exact_copy,
-        "target_page_id": str(packet.get("target_page_id") or "").strip(),
+        "target_page_id": page_id,
         "public_content_policy": dict(packet.get("public_content_policy") or {}),
         "selected_approved_media": exact_media,
         "media_evidence_exception": ("Explicit text-only publication; no media is selected or implied."
@@ -472,7 +512,7 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
 
 
 def build_litter_awareness_story_proposal(opportunities, litter_result, media_payload,
-        *, observed_at=None):
+        *, observed_at=None, target_page_id=None):
     """Build one non-commercial sow/litter story with exact governed media."""
     if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
         raise ValueError("canonical_opportunity_evidence_required")
@@ -501,8 +541,11 @@ def build_litter_awareness_story_proposal(opportunities, litter_result, media_pa
     caption = (f"{sow_name} has settled into the steady rhythm of caring for her piglets. "
         "Between feeds, clean bedding and quiet checks, the little family is finding its feet "
         "one ordinary farm day at a time.")
-    if not assess_public_livestock_content(caption, objective="farm_awareness",
-            campaign_lane="live_stock_awareness", media=choice["selected"])["allowed"]:
+    policy = assess_public_livestock_content(caption, objective="farm_awareness",
+        campaign_lane="live_stock_awareness", media=choice["selected"])
+    page_id = str(target_page_id if target_page_id is not None
+        else os.getenv("BEACON_FACEBOOK_PAGE_ID") or "").strip()
+    if not policy["allowed"] or not page_id:
         raise ValueError("awareness_copy_policy_failed")
     packet = {
         "contract_version": "beacon_litter_awareness_story_v1",
@@ -513,6 +556,9 @@ def build_litter_awareness_story_proposal(opportunities, litter_result, media_pa
         "story_subject": f"{sow_name} and her piglets", "story_context": story,
         "audience": "People who enjoy honest farm-life stories",
         "intended_channel": "Facebook Page organic", "draft_caption": caption,
+        "target_page_id": page_id,
+        "public_content_policy": public_livestock_policy_binding(
+            policy, target_page_id=page_id),
         "call_to_action": "", "litter_media_selection": choice["selected"],
         "precise_media_request": "" if choice["selected"] else choice["request"],
         "media": ({"status": "exact_litter_public_media_selected"}
@@ -633,7 +679,8 @@ def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
     return output, 200
 
 
-def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=None, *, language="en"):
+def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=None, *, language="en",
+        target_page_id=None):
     """Normalize the existing awareness builder for the Oom Sakkie owner lane."""
     if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
         raise ValueError("canonical_opportunity_evidence_required")
@@ -641,7 +688,7 @@ def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=
         raise ValueError("awareness_candidate_required")
     review = candidate.get("owner_review_packet") or {}
     policy = review.get("public_livestock_policy") or {}
-    if not review.get("draft_copy") or policy.get("policy_version") != "beacon_public_livestock_awareness_only_v1":
+    if not review.get("draft_copy") or policy.get("policy_version") != POLICY_VERSION:
         raise ValueError("awareness_policy_proof_required")
     media_plan = _public_awareness_media(media_payload)
     if not media_plan:
@@ -653,18 +700,27 @@ def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=
     if str(language).casefold().startswith("af"):
         caption = ("'n Klein oomblik uit die lewe op Amadeus Farm. Geduldige daaglikse versorging "
             "vorm die alledaagse plaaslewe.\n\nVolg die plaas se reis vir meer eerlike oomblikke agter die skerms.")
-    if not assess_public_livestock_content(caption, objective="farm_awareness",
-            campaign_lane="live_stock_awareness")["allowed"]:
+    policy = assess_public_livestock_content(caption, objective="farm_awareness",
+        campaign_lane="live_stock_awareness", media=([] if media_plan.get("status") == "text_only"
+            else media_plan))
+    page_id = str(target_page_id if target_page_id is not None
+        else os.getenv("BEACON_FACEBOOK_PAGE_ID") or "").strip()
+    if not policy["allowed"] or not page_id:
         raise ValueError("awareness_copy_policy_failed")
     af = str(language).casefold().startswith("af")
     packet = {"contract_version": "beacon_live_stock_awareness_proposal_v1",
         "packet_type": "live_stock_awareness_proposal", "status": "ready_for_owner_review",
+        "campaign_objective": "farm_awareness", "campaign_lane": "live_stock_awareness",
         "objective": "Build familiarity and trust through a non-availability Amadeus Farm story",
         "audience": ("Mense wat belangstel in verantwoordelike plaaslike veeboerdery en plaaslewe" if af else
             str(review.get("audience") or "People interested in responsible local livestock and farm life")),
         "awareness_angle": ("Geduldige daaglikse versorging en eerlike plaaslewe agter die skerms" if af else
             "Patient daily care and honest behind-the-scenes farm life"),
         "intended_channel": "Facebook Page organic", "draft_caption": caption,
+        "call_to_action": "",
+        "target_page_id": page_id,
+        "public_content_policy": public_livestock_policy_binding(
+            policy, target_page_id=page_id),
         "media": media_plan, "capacity_context": capacity,
         "sam_routing": ("Skryf antwoorde aan hierdie veldtog toe en roeteer koopnavrae as nuwe navrae na SAM Lewendehawe. SAM moet vraag, verkoopsbevoegdheid en lewering onafhanklik verifieer voor enige aanbod of verbintenis." if af else
             "Attribute replies to this campaign packet; route buying enquiries to SAM Live Stock as new enquiries. SAM must independently verify demand, sale eligibility and fulfilment before any offer or commitment."),
@@ -701,8 +757,7 @@ def _public_awareness_media(payload, *, required_tags=None):
     for row in rows or []:
         digest = str(row.get("content_sha256") or "").lower()
         observation = row.get("observation") if isinstance(row.get("observation"), Mapping) else {}
-        tags = {str(tag).casefold() for tag in
-            (observation.get("tags") or observation.get("subject_tags") or [])}
+        tags = _governed_awareness_tags(row, observation)
         relevant = (bool(tags.intersection({str(tag).casefold() for tag in required_tags}))
             if required_tags else bool(tags.intersection(
                 {"live_stock", "livestock", "piglet", "piglets", "litter", "weaner", "farm_life"})))
@@ -720,8 +775,17 @@ def _public_awareness_media(payload, *, required_tags=None):
                 "content_sha256": digest,
                 "storage_readback_proof_id": str(row["private_storage_proof_id"]),
                 "library_accept_event_id": str(row["current_library_accept_event_id"]),
-                "public_use_event_id": str(row["current_public_use_event_id"])}
+                "public_use_event_id": str(row["current_public_use_event_id"]),
+                "public_use_authority": "approved",
+                "subject_tags": sorted(tags)}
     return None
+
+
+def _governed_awareness_tags(row, observation):
+    """Return only affirmative structured semantics from governed understanding."""
+    return {str(tag).strip().casefold() for tag in
+        (observation.get("tags") or observation.get("subject_tags") or [])
+        if str(tag).strip()}
 
 
 def select_litter_story_media(payload, *, litter_id, pig_ids, event_id):
@@ -786,6 +850,7 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
         "exact_post_copy": str(campaign.get("exact_post_copy") or ""),
         "campaign_lane": str(campaign.get("campaign_lane") or ""),
         "campaign_objective": str(campaign.get("campaign_objective") or ""),
+        "public_content_policy": dict(campaign.get("public_content_policy") or {}),
         "selected_media": media,
         "media_evidence_exception": str(campaign.get("media_evidence_exception") or ""),
         "audience": str(campaign.get("audience") or ""),
@@ -806,6 +871,13 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
         raise ValueError("beacon_campaign_packet_generation_required")
     if not preview["target_page_id"]:
         raise ValueError("beacon_campaign_target_page_required")
+    policy = assess_public_livestock_content(preview["exact_post_copy"],
+        objective=preview["campaign_objective"], campaign_lane=preview["campaign_lane"],
+        media=[] if media == {"mode": "text_only"} else media)
+    if (not policy.get("allowed") or not public_livestock_policy_binding_matches(
+            preview["public_content_policy"], policy,
+            target_page_id=preview["target_page_id"])):
+        raise ValueError("beacon_campaign_public_policy_binding_required")
     preview["campaign_digest"] = canonical_preview_digest(CAMPAIGN_REVIEW_ACTION, preview)
     claim = claim_creator(action_kind=CAMPAIGN_REVIEW_ACTION,
         owner_user_id=str(owner_user_id), private_chat_id=str(private_chat_id),

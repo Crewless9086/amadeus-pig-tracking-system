@@ -107,6 +107,9 @@ def confirm_health_loss_preview(lifecycle: Mapping[str, Any], confirmation_text:
 
 def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, actor_id,
                                  *, evidence_loader, connect_factory=None):
+    from modules.pig_weights.pig_welfare_case_runtime import welfare_case_runtime_enabled
+    if not welfare_case_runtime_enabled():
+        return _result(False, "welfare_case_runtime_required_for_atomic_mortality"), 503
     identity = evaluator.get("identity") if isinstance(evaluator.get("identity"), Mapping) else {}
     pig_id = str(identity.get("pig_id") or "")
     lifecycle_effect = next((row for row in evaluator.get("canonical_effects") or []
@@ -148,9 +151,33 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
                     if (str(existing[1]) != pig_id
                             or str(payload.get("source_digest") or "") != source_digest):
                         return _result(False, "mortality_lifecycle_idempotency_conflict"), 409
+                    cursor.execute("""select current.welfare_case_id
+                        from public.pig_welfare_case_current current
+                        join public.pig_welfare_cases c using(welfare_case_id)
+                        where current.pig_id=%s and c.episode_key=%s
+                          and current.case_state='closed'
+                          and current.closure_kind='death'
+                        order by current.state_occurred_at desc,current.welfare_case_id
+                        limit 1""", (pig_id, str(lifecycle.get("mission_id") or operation_id)))
+                    replay_case = cursor.fetchone()
+                    if not replay_case:
+                        return _result(False, "mortality_lifecycle_replay_welfare_case_missing"), 409
+                    replay_case_id = str(replay_case[0])
+                    readback = _readback_mortality_welfare(
+                        cursor, pig_id=pig_id, event_id=str(existing[0]),
+                        welfare_case_id=replay_case_id)
+                    if not readback["canonical_readback_verified"]:
+                        return _result(False, "mortality_lifecycle_replay_readback_mismatch"), 409
                     return _result(True, "mortality_lifecycle_replayed_withheld",
                         rows_created=0, operation_id=operation_id, pig_id=pig_id,
-                        lifecycle_event_id=str(existing[0]), replay=True), 200
+                        lifecycle_event_id=str(existing[0]), replay=True,
+                        lifecycle_status="Dead", on_farm=False,
+                        event_date=str(facts["date"]), exact_time_of_death="Unknown",
+                        historical_records_preserved=True,
+                        welfare_case_id=replay_case_id, welfare_case_closed=True,
+                        living_checks_reconciled=0,
+                        preserved_distinct_work=readback["preserved_distinct_work"],
+                        canonical_readback=readback), 200
                 current = evidence_loader()
                 if str(current.get("evidence_generation") or "") != evidence_generation:
                     return _result(False, "canonical_evidence_changed_repreview_required"), 409
@@ -177,14 +204,179 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
                     "; ".join(note_parts), json.dumps({**canonical,
                         "source_digest": source_digest, "resulting_status": "Dead",
                         "resulting_on_farm": False}, sort_keys=True), operation_id))
-    except Exception:
-        return _result(False, "mortality_lifecycle_recording_unavailable"), 503
+                cursor.execute("""update public.pig_active_outlets
+                    set active=false,released_at=now()
+                    where pig_id=%s and active""", (pig_id,))
+                coordinated = _coordinate_mortality_welfare(
+                    cursor, lifecycle=lifecycle, pig_id=pig_id, event_id=event_id,
+                    operation_id=operation_id, actor_id=actor_id,
+                    occurred=str(lifecycle.get("provider_timestamp") or ""),
+                    source_digest=source_digest)
+                readback = _readback_mortality_welfare(
+                    cursor, pig_id=pig_id, event_id=event_id,
+                    welfare_case_id=coordinated["welfare_case_id"])
+                if not readback["canonical_readback_verified"]:
+                    raise RuntimeError("mortality_welfare_readback_mismatch")
+    except Exception as exc:
+        return _result(False, "mortality_lifecycle_recording_unavailable",
+                       error_type=type(exc).__name__), 503
     return _result(True, "mortality_lifecycle_recorded", rows_created=1,
                    operation_id=operation_id, pig_id=pig_id,
                    lifecycle_event_id=event_id, lifecycle_status="Dead", on_farm=False,
                    event_date=str(facts["date"]),
                    exact_time_of_death="Unknown", historical_records_preserved=True,
+                   welfare_case_id=coordinated["welfare_case_id"],
+                   welfare_case_closed=True,
+                   living_checks_reconciled=coordinated["living_checks_reconciled"],
+                   preserved_distinct_work=readback["preserved_distinct_work"],
+                   canonical_readback=readback,
                    recommendation_refresh_required=True), 201
+
+
+def _coordinate_mortality_welfare(cursor, *, lifecycle, pig_id, event_id,
+                                  operation_id, actor_id, occurred, source_digest):
+    mission_id = str(lifecycle.get("mission_id") or operation_id)
+    derived_case_id = _welfare_case_id(lifecycle, operation_id)
+    cursor.execute("""select c.welfare_case_id,latest.urgency,latest.sequence_no
+        from public.pig_welfare_cases c
+        join lateral (
+          select e.urgency,e.sequence_no,e.case_state
+          from public.pig_welfare_case_events e
+          where e.welfare_case_id=c.welfare_case_id
+          order by e.sequence_no desc limit 1
+        ) latest on true
+        where c.pig_id=%s and c.episode_key=%s
+          and latest.case_state=any(%s)
+        order by c.episode_started_at desc,c.welfare_case_id
+        for update of c""",
+        (pig_id, mission_id, ["open", "monitoring", "escalated"]))
+    current = cursor.fetchone()
+    case_id = str(current[0]) if current else derived_case_id
+    provenance = json.dumps({"contract_version": "herdmaster_mortality_welfare_v1",
+        "operation_id": operation_id, "mission_id": mission_id,
+        "source_digest": source_digest}, sort_keys=True)
+    if not current:
+        cursor.execute("""select welfare_case_id from public.pig_welfare_cases
+            where welfare_case_id=%s for update""", (case_id,))
+        existing = cursor.fetchone()
+        if existing:
+            raise RuntimeError("attributable_welfare_case_not_open")
+        cursor.execute("""insert into public.pig_welfare_cases(
+            welfare_case_id,pig_id,episode_key,concern_key,episode_started_at,
+            first_reported_at,created_by,source_system,source_reference,
+            provenance_json,idempotency_key)
+            values(%s,%s,%s,'reported-death',%s::timestamptz,%s::timestamptz,
+                   %s,'oom_sakkie',%s,%s::jsonb,%s)""",
+            (case_id,pig_id,mission_id,occurred,occurred,"owner:"+actor_id,
+             str(lifecycle.get("provider_message_id") or ""),provenance,"case:"+mission_id))
+        opened_id = "WELFARE-EVENT-" + hashlib.sha256((operation_id+":opened").encode()).hexdigest()[:24].upper()
+        cursor.execute("""insert into public.pig_welfare_case_events(
+            welfare_case_event_id,welfare_case_id,sequence_no,event_type,case_state,urgency,
+            responsible_owner,occurred_at,actor_reference,source_system,
+            source_reference,provenance_json,idempotency_key)
+            values(%s,%s,1,'opened','open','urgent','HERDMASTER',%s::timestamptz,
+                   %s,'oom_sakkie',%s,%s::jsonb,%s)""",
+            (opened_id,case_id,occurred,"owner:"+actor_id,source_digest,provenance,
+             operation_id+":welfare-opened"))
+        urgency, next_sequence = "urgent", 2
+    else:
+        urgency, next_sequence = str(current[1]), int(current[2]) + 1
+    closed_id = "WELFARE-EVENT-" + hashlib.sha256((operation_id+":death-closed").encode()).hexdigest()[:24].upper()
+    cursor.execute("""insert into public.pig_welfare_case_events(
+        welfare_case_event_id,welfare_case_id,sequence_no,event_type,case_state,urgency,
+        responsible_owner,closure_kind,closure_reason,occurred_at,actor_reference,
+        source_system,source_reference,provenance_json,idempotency_key)
+        values(%s,%s,%s,'closed','closed',%s,'HERDMASTER','death',
+               'Canonical death closes this living-welfare concern',%s::timestamptz,
+               %s,'herdmaster',%s,%s::jsonb,%s)""",
+        (closed_id,case_id,next_sequence,urgency,occurred,"owner:"+actor_id,source_digest,
+         provenance,operation_id+":welfare-death-closed"))
+    link_id = "WELFARE-LINK-" + hashlib.sha256((operation_id+":death-link").encode()).hexdigest()[:24].upper()
+    cursor.execute("""insert into public.pig_welfare_case_fact_links(
+        welfare_case_fact_link_id,welfare_case_id,welfare_case_event_id,fact_domain,
+        fact_id,relationship,linked_at,actor_reference,source_reference,
+        provenance_json,idempotency_key)
+        values(%s,%s,%s,'pig_lifecycle',%s,'closes_living_welfare_question',
+               %s::timestamptz,%s,%s,%s::jsonb,%s)""",
+        (link_id,case_id,closed_id,event_id,occurred,"owner:"+actor_id,
+         source_digest,provenance,operation_id+":welfare-death-link"))
+    cursor.execute("""update app_private.oom_manager_cases set status='completed',
+        next_action='Closed because the pig is deceased',updated_at=now()
+        where specialist='HERDMASTER' and status=any(%s)
+          and evidence_refs @> %s::jsonb
+          and (lower(summary) like '%%welfare%%' or lower(summary) like '%%health%%'
+               or lower(next_action) like '%%check%%')
+          and lower(summary) not like '%%mortality%%'
+          and lower(summary) not like '%%disposal%%'
+          and lower(summary) not like '%%biosecurity%%'
+        returning case_id,generation""",
+        (["open","delegated","waiting_reassessment","exception"],
+         json.dumps(["pig:" + pig_id])))
+    reconciled = list(cursor.fetchall())
+    for manager_case_id, generation in reconciled:
+        material = {"case_id": str(manager_case_id), "generation": int(generation),
+            "event_type": "completed", "operation_id": operation_id,
+            "reason": "canonical_pig_death"}
+        manager_event_id = "OOM-MANAGER-EVENT-" + hashlib.sha256(
+            json.dumps(material, sort_keys=True).encode()).hexdigest()[:32].upper()
+        cursor.execute("""insert into app_private.oom_manager_case_events(
+            event_id,case_id,generation,event_type,event_payload,occurred_at)
+            values(%s,%s,%s,'completed',%s::jsonb,now())
+            on conflict(event_id) do nothing""",
+            (manager_event_id,str(manager_case_id),int(generation),
+             json.dumps(material, sort_keys=True)))
+    return {"welfare_case_id": case_id,
+            "living_checks_reconciled": len(reconciled)}
+
+
+def _welfare_case_id(lifecycle, operation_id):
+    mission_id = str(lifecycle.get("mission_id") or operation_id)
+    return "WELFARE-" + hashlib.sha256(mission_id.encode()).hexdigest()[:24].upper()
+
+
+def _readback_mortality_welfare(cursor, *, pig_id, event_id, welfare_case_id):
+    cursor.execute("""select p.status,p.on_farm,p.exit_reason,e.lifecycle_event_id,
+        current.case_state,current.closure_kind,
+        exists(select 1 from public.pig_welfare_case_fact_links l
+          where l.welfare_case_id=current.welfare_case_id
+            and l.fact_id=e.lifecycle_event_id
+            and l.relationship='closes_living_welfare_question')
+        from public.pigs p
+        join public.pig_lifecycle_events e on e.pig_id=p.pig_id and e.lifecycle_event_id=%s
+        join public.pig_welfare_case_current current on current.welfare_case_id=%s
+        where p.pig_id=%s""", (event_id,welfare_case_id,pig_id))
+    row = cursor.fetchone()
+    cursor.execute("""select count(*) from public.pig_current_state
+        where pig_id=%s and status='Active' and on_farm is true
+          and current_pen_id is not null""", (pig_id,))
+    pen_membership = int((cursor.fetchone() or [0])[0] or 0)
+    cursor.execute("""select count(*) from public.pig_active_outlets
+        where pig_id=%s and active""", (pig_id,))
+    active_outlets = int((cursor.fetchone() or [0])[0] or 0)
+    cursor.execute("""select count(*) from app_private.oom_manager_cases
+        where specialist='HERDMASTER' and status=any(%s)
+          and evidence_refs @> %s::jsonb
+          and (lower(summary) like '%%mortality%%' or lower(summary) like '%%disposal%%'
+               or lower(summary) like '%%biosecurity%%')""",
+        (["open","delegated","waiting_reassessment","exception"],
+         json.dumps(["pig:" + pig_id])))
+    distinct = cursor.fetchone()
+    verified = bool(row and str(row[0]).casefold()=="dead" and row[1] is False
+                    and str(row[2]).casefold()=="died" and str(row[3])==event_id
+                    and str(row[4])=="closed" and str(row[5])=="death" and row[6] is True
+                    and pen_membership == 0 and active_outlets == 0)
+    return {"canonical_readback_verified": verified,
+            "pig_status": str(row[0]) if row else "Unknown",
+            "on_farm": row[1] if row else "Unknown",
+            "lifecycle_event_id": str(row[3]) if row else "",
+            "welfare_case_id": welfare_case_id,
+            "welfare_case_state": str(row[4]) if row else "Unknown",
+            "welfare_closure_kind": str(row[5]) if row else "Unknown",
+            "active_pen_occupancy_membership_count": pen_membership,
+            "active_availability_outlet_count": active_outlets,
+            "excluded_from_active_pen_and_availability_projections": bool(
+                pen_membership == 0 and active_outlets == 0),
+            "preserved_distinct_work": int((distinct or [0])[0] or 0)}
 
 
 def _factual_note(facts):

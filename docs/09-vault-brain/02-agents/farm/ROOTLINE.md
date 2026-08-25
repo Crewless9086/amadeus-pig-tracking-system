@@ -101,21 +101,27 @@ observed runtime, and measured delivery remain separate.
 
 Every device follows one typed loop: observe, decide need, rank, plan, validate
 authority, claim, execute deterministically, verify provider and required
-physical outcome, learn and notify only material change. B/C irrigation,
+device-class outcome, learn and notify only material change. B/C irrigation,
 fertiliser mixing, fertiliser injection and borehole pumping are separate
 device classes; no commissioning or authority transfers between them.
 
 - B/C segments are sequential, independently claimed, bounded by the native
   fail-stop and same-zone/day guard, and require verified shutdown before any
   fresh second-segment decision.
-- Fertiliser mixing and injection require separate typed commissioning,
-  deterministic OFF and physical recirculation/flow/flush evidence. Injection
-  additionally requires exactly one eligible irrigation zone with proven
-  clean-water pre-flow.
+- Fertiliser mixing and injection require separate typed commissioning and
+  deterministic OFF. Under the 2026-08-24 owner decision, authoritative
+  application/provider ON then OFF readback is sufficient operational proof;
+  routine human physical observation and per-run confirmation are not required
+  for a fresh authenticated request or current eligible plan. Injection additionally
+  requires exactly one eligible irrigation zone, at least ten minutes proven
+  clean-water pre-flow, at most 120 seconds ON and at least ten minutes flush.
 - Borehole electrical state, motor operation, water movement and tank outcome
   are separate facts. Its strict profile requires exact provider identity,
   tank-full, dry-run, pump protection, manual isolation, power-restoration OFF
-  and physical start/flow/stop proof.
+  and bounded fail-OFF. It remains uncommandable until exact binding and that
+  fail-OFF are proven. Thereafter authoritative application/provider ON then
+  OFF readback is sufficient operational proof; routine physical observation
+  is not required.
 - Provider acceptance never proves movement, flow, delivery or completion.
   Ambiguous ON is never retried automatically; safe OFF may be repeated only
   within the bounded recovery contract while shutdown remains unverified.

@@ -352,9 +352,19 @@ class PostgresManagerCaseStore:
         confirmed = bool(outcome.get("success") is True
                          and outcome.get("delivery_confirmed") is True)
         failed = outcome.get("success") is False
-        state = "exception" if failed else "waiting_reassessment"
-        event_type = "exception" if failed else ("delivery_confirmed" if confirmed else "delivery_suppressed")
+        provider_ambiguity_contained = bool(
+            failed
+            and outcome.get("provider_outcome_ambiguous") is True
+            and outcome.get("do_not_retry_provider_effect") is True)
+        state = "contained" if provider_ambiguity_contained else (
+            "exception" if failed else "waiting_reassessment")
+        event_type = "contained" if provider_ambiguity_contained else (
+            "exception" if failed else ("delivery_confirmed" if confirmed else "delivery_suppressed"))
         next_at = _time(outcome.get("next_reassessment_at") or case["next_reassessment_at"], "next_reassessment_at")
+        # Provider ambiguity is a terminal boundary for this immutable
+        # generation.  The case stays visibly contained and unconfirmed, while
+        # exact replay cannot repeatedly approach the provider.  Genuinely
+        # changed canonical evidence still reopens a successor in _reconcile.
         with self.connect_factory() as connection:
             with connection.cursor() as cur:
                 cur.execute("""select generation,evidence_digest,last_delivery_digest,status,
@@ -381,7 +391,8 @@ class PostgresManagerCaseStore:
                     last_delivery_at=case when %s then %s else last_delivery_at end,updated_at=%s
                     where case_id=%s""", (state, next_at, now, delivery_digest, confirmed, now, now, case["case_id"]))
                 self._event(cur, case, event_type, now, cycle_id=cycle_id,
-                            outcome_status=str(outcome.get("status") or ""))
+                            outcome_status=str(outcome.get("status") or ""),
+                            provider_ambiguity_contained=provider_ambiguity_contained)
                 self._event(cur, case, "reassessment_scheduled", now,
                             next_reassessment_at=next_at.isoformat())
         return True

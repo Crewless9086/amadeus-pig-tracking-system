@@ -18,18 +18,26 @@ from typing import Any, Mapping
 
 FAMILY_BINDINGS_ENV = "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON"
 OWNER_USER_ID_ENV = "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID"
+OWNER_LANGUAGE_ENV = "OOM_SAKKIE_TELEGRAM_OWNER_LANGUAGE"
+SUPPORTED_OUTPUT_LANGUAGES = frozenset({"en", "af"})
 PROTECTED_CAPABILITIES = frozenset({
     "mortality_confirmation", "sales_decision", "reservation", "payment",
     "mating_execution", "treatment", "hardware_exception",
     "permission_change", "publication", "customer_send",
 })
+OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES = PROTECTED_CAPABILITIES - {
+    # These are platform/owner-administration escape hatches, not governed
+    # Oom Sakkie specialist work.
+    "hardware_exception", "permission_change",
+}
 REPORTER_CAPABILITIES = frozenset({"farm_observation", "active_follow_up"})
 READ_ONLY_CAPABILITY = "explicit_summary"
 FARM_MANAGER_CAPABILITIES = frozenset({
     *REPORTER_CAPABILITIES,
     "welfare_hold", "welfare_escalation", "herdmaster_management_input",
-    "herdmaster_reassessment", "found_dead_observation",
+    "herdmaster_reassessment", "found_dead_observation", "mortality_confirmation",
     "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
+    *OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES,
 })
 DELEGATED_ROOTLINE_CAPABILITIES = frozenset({
     "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
@@ -56,7 +64,20 @@ class FamilyPrincipal:
     authorized_by_user_id: str
     authorized_at: str
     binding_digest: str
-    language: str = "af"
+    language: str = "en"
+
+    @property
+    def effective_permissions(self) -> frozenset[str]:
+        """Return the durable capability envelope granted by the bound role.
+
+        Historic deployment bindings listed capabilities individually.  A
+        farm-manager role is now itself the owner's durable delegation for the
+        governed Oom Sakkie farm-specialist envelope, so stale lists must not
+        silently remove one of those role capabilities at callback time.
+        """
+        if self.role is FamilyRole.FARM_MANAGER:
+            return self.permissions | FARM_MANAGER_CAPABILITIES
+        return self.permissions
 
     @property
     def authenticated(self) -> bool:
@@ -104,9 +125,11 @@ def resolve_family_principal(parsed: Mapping[str, Any], environ: Mapping[str, st
     if not user_id or user_id != chat_id or chat_type != "private":
         return _unknown(user_id, chat_id)
     if owner_id and user_id == owner_id:
+        language = _output_language(environ.get(OWNER_LANGUAGE_ENV), default="en")
         return FamilyPrincipal(user_id, chat_id, FamilyRole.OWNER, "charl",
             frozenset({"*"}), frozenset({"*"}), "configured-owner",
-            owner_id, "configured", _digest({"owner_user_id": owner_id}))
+            owner_id, "configured", _digest({"owner_user_id": owner_id,
+                "language": language}), language)
     if not family_access_policy(environ)["configuration_valid"]:
         return _unknown(user_id, chat_id)
     rows = _bindings(environ)
@@ -117,6 +140,25 @@ def resolve_family_principal(parsed: Mapping[str, Any], environ: Mapping[str, st
         principal = _principal_from_record(matching[0], owner_id, chat_id)
         return principal if principal is not None else _unknown(user_id, chat_id)
     return _unknown(user_id, chat_id)
+
+
+def configured_farm_manager_principals(environ: Mapping[str, str]) -> tuple[FamilyPrincipal, ...]:
+    """Return the fail-closed private recipients for the shared farm brief.
+
+    This is a presentation projection only.  It does not grant a capability or
+    include trusted reporters/read-only family members.  CORE and CHARLIE are
+    outside this typed family-role set by construction.
+    """
+    owner_id = _owner_id(environ)
+    if not owner_id or not family_access_policy(environ)["configuration_valid"]:
+        return ()
+    owner = resolve_family_principal({"telegram_user_id": owner_id,
+        "telegram_chat_id": owner_id, "telegram_chat_type": "private"}, environ)
+    managers = [_principal_from_record(row, owner_id, _clean(row.get("telegram_user_id")))
+                for row in _bindings(environ)]
+    managers = [row for row in managers if row is not None
+                and row.role is FamilyRole.FARM_MANAGER]
+    return tuple([owner, *sorted(managers, key=lambda row: row.telegram_user_id)])
 
 
 def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, Any], *,
@@ -154,13 +196,15 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
                                     replay_identity=replay_identity)
     capability = _clean(capability)
     if capability in PROTECTED_CAPABILITIES:
-        allowed = principal.is_owner
+        allowed = (principal.is_owner or
+            (principal.role is FamilyRole.FARM_MANAGER
+             and capability in OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES))
         return FamilyAccessDecision(allowed,
-            "owner_protected_authority" if allowed else "owner_authority_required",
+            "governed_farm_lifecycle_authority" if allowed else "owner_authority_required",
             principal, attribution, may_read_private_context=allowed,
             may_confirm_protected_action=allowed, replay_identity=replay_identity)
     if capability in REPORTER_CAPABILITIES:
-        allowed = principal.is_owner or capability in principal.permissions
+        allowed = principal.is_owner or capability in principal.effective_permissions
         if capability == "active_follow_up" and context_owner_user_id:
             allowed = allowed and principal.telegram_user_id == _clean(context_owner_user_id)
         return FamilyAccessDecision(allowed,
@@ -169,14 +213,15 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
                                     replay_identity=replay_identity)
     if capability in FARM_MANAGER_CAPABILITIES:
         allowed = (principal.is_owner or
-            (principal.role is FamilyRole.FARM_MANAGER and capability in principal.permissions))
+            (principal.role is FamilyRole.FARM_MANAGER
+             and capability in principal.effective_permissions))
         return FamilyAccessDecision(allowed,
             "delegated_family_authority" if allowed else "family_authority_not_delegated",
             principal, attribution, may_read_private_context=allowed,
             replay_identity=replay_identity)
     if capability == READ_ONLY_CAPABILITY:
         domain = _clean(summary_domain).lower()
-        allowed = principal.is_owner or (capability in principal.permissions and
+        allowed = principal.is_owner or (capability in principal.effective_permissions and
             (domain in principal.summary_domains or "*" in principal.summary_domains))
         return FamilyAccessDecision(allowed,
             "family_summary_permitted" if allowed else "family_summary_not_permitted",
@@ -203,7 +248,9 @@ def family_access_policy(environ: Mapping[str, str]) -> dict[str, Any]:
         "authorized_identity_count": (1 if owner_id else 0) + len(principals) if valid else 0,
         "family_bindings_count": len(principals) if valid else 0,
         "roles": [role.value for role in FamilyRole],
-        "protected_actions_owner_only": True,
+        "protected_actions_owner_only": False,
+        "farm_manager_oom_specialist_protected_capabilities": sorted(
+            OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES),
         "display_names_are_authority": False,
         "language_is_authority": False,
     }
@@ -232,7 +279,7 @@ def _principal_from_record(record: Mapping[str, Any], owner_id: str, chat_id: st
     allowed_permissions = FARM_MANAGER_CAPABILITIES | {READ_ONLY_CAPABILITY}
     if not permissions <= allowed_permissions:
         return None
-    if language != "af":
+    if language not in SUPPORTED_OUTPUT_LANGUAGES:
         return None
     if role is FamilyRole.READ_ONLY_FAMILY_MEMBER and permissions - {READ_ONLY_CAPABILITY}:
         return None
@@ -291,3 +338,8 @@ def _digest(value: Mapping[str, Any]) -> str:
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()[:200]
+
+
+def _output_language(value: Any, *, default: str = "en") -> str:
+    language = _clean(value).lower()
+    return language if language in SUPPORTED_OUTPUT_LANGUAGES else default

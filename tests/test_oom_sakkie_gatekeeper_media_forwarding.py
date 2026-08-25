@@ -67,9 +67,11 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
             }
         ]
         for node in live["nodes"]:
-            if node["name"] == old_name:
+            if node["name"] in {old_name, new_name}:
                 node["name"] = new_name
-                node["parameters"]["url"] = "https://example.invalid/2.0b"
+                node["parameters"].setdefault("options", {})[
+                    "waitForSubWorkflow"
+                ] = False
         live["connections"].pop("Code - Gate BEACON Single Photo")
         live["connections"].pop("Switch - BEACON Media Intake")
         live["connections"].pop(MEDIA_NODE)
@@ -112,6 +114,9 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         switch = self.workflow["connections"]["Switch - BEACON Media Intake"]["main"]
         self.assertEqual(switch[1][0]["node"], "Switch - Telegram Update Type")
         self.assertIn(TEXT_NODE, self.nodes)
+        self.assertTrue(
+            self.nodes[TEXT_NODE]["parameters"]["options"]["waitForSubWorkflow"]
+        )
 
     def test_sam_callback_route_and_payload_are_preserved_as_json(self):
         callback_switch = self.workflow["connections"][
@@ -286,14 +291,16 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         by_name = {node["name"]: node for node in payload["nodes"]}
         self.assertIn("Call '2.0B - Oom Sakkie Backend Read-Only Relay'", by_name)
         self.assertNotIn("Call '2.0 - OOM SAKKIE - Amadeus Assistant Agent'", by_name)
+        live_relay = copy.deepcopy(next(
+            node
+            for node in live["nodes"]
+            if node["name"]
+            == "Call '2.0B - Oom Sakkie Backend Read-Only Relay'"
+        ))
+        live_relay["parameters"]["options"]["waitForSubWorkflow"] = True
         self.assertEqual(
             by_name["Call '2.0B - Oom Sakkie Backend Read-Only Relay'"],
-            next(
-                node
-                for node in live["nodes"]
-                if node["name"]
-                == "Call '2.0B - Oom Sakkie Backend Read-Only Relay'"
-            ),
+            live_relay,
         )
         self.assertEqual(
             payload["connections"]["Security Check"]["main"][0],

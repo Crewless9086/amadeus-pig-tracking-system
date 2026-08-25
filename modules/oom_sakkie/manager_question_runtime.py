@@ -86,7 +86,7 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
 
 def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                                   question_loader=None, event_store=None,
-                                  event_loader=None):
+                                  event_loader=None, health_handler=None):
     if authority is None:
         return {"handled": False, **ZERO}, 200
     active = question or load_active_manager_question(parsed, loader=question_loader)
@@ -97,14 +97,14 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     if (presented is None or provider_at_value is None
             or not 0 <= (provider_at_value - presented).total_seconds() <= MAX_AGE_SECONDS):
         return {"handled": False, **ZERO}, 200
+    reply_to = str(parsed.get("reply_to_message_id") or "").strip()
+    exact_reply = bool(reply_to and reply_to == str(active.get("telegram_message_id") or ""))
     # A protected specialist packet owns its own preview/confirmation lifecycle.
     # Broad manager context must never consume it merely because it is conversational.
     if semantic is not None and (getattr(semantic, "protected_preview_required", False)
             or getattr(semantic, "recording_prohibited", False)
             or bool(getattr(semantic, "breeding_actions", ()) )):
         return {"handled": False, **ZERO}, 200
-    reply_to = str(parsed.get("reply_to_message_id") or "").strip()
-    exact_reply = bool(reply_to and reply_to == str(active.get("telegram_message_id") or ""))
     expected_domain = str((active.get("question_binding") or {}).get("domain") or "")
     rootline_question = expected_domain in {"rootline", "water_energy"}
     if rootline_question and semantic is not None:
@@ -239,6 +239,35 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "content_sha256": binding["content_sha256"]}
     downstream = None
     downstream_status = 200
+    pig_id, pig_binding_state = _bound_question_pig_id(active)
+    herd_question = expected_domain in {"herd", "herd_health", "herd_management"}
+    dedupe_is_animal_specific = (dedupe_key.startswith("herdmaster:")
+        and dedupe_key != "herdmaster:mortality-current-assessment")
+    if herd_question and not partial and pig_binding_state != "resolved" \
+            and (pig_binding_state == "ambiguous" or dedupe_is_animal_specific):
+        return {"handled": True, "success": False,
+            "status": "manager_question_welfare_identity_unavailable",
+            "answer": ("I kept the welfare question open because its canonical animal binding "
+                       "is not exactly one pig. Nothing was recorded or closed."),
+            "requires_visible_notification": True, **ZERO}, 409
+    if herd_question and pig_id and not partial:
+        if health_handler is None:
+            from modules.oom_sakkie.herdmaster_health_loss_runtime import (
+                handle_authenticated_health_loss_message)
+            health_handler = handle_authenticated_health_loss_message
+        forwarded = {**parsed, "text": f"Pig {pig_id}: {text}",
+            "semantic": {"domain": "herd_health", "continuation": True,
+                "entity_refs": [f"pig:{pig_id}"], "observation": text}}
+        downstream, downstream_status = health_handler(forwarded, authority)
+        if (not isinstance(downstream, dict) or downstream.get("handled") is not True
+                or downstream.get("success") is not True):
+            return ({**(downstream or {}), "handled": True,
+                "status": str((downstream or {}).get("status") or
+                              "manager_question_welfare_intake_unavailable")},
+                int(downstream_status or 503))
+        record.update({"downstream_result": dict(downstream),
+                       "downstream_status": int(downstream_status),
+                       "canonical_welfare_intake": True, "pig_id": pig_id})
     if rootline_question and semantic_domain == "rootline":
         store = event_store or manager_question_event_store
         if existing and existing.get("status") != "dispatch_claimed":
@@ -402,6 +431,11 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "status": "manager_question_concurrent_reply_conflict",
             "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
             "requires_visible_notification": True, **ZERO}, 409
+    if downstream is not None:
+        return {**downstream, "handled": True,
+            "manager_question_status": "manager_question_reply_recorded",
+            "manager_question_event_id": event_id,
+            "records_audit_trace": True}, downstream_status
     if partial:
         answer = clarification
         status = "manager_question_partial_reply_recorded"
@@ -473,8 +507,6 @@ def _load_questions(owner, chat):
                           and answered.review_json->'manager_question_reply'->>'chat_id'=%s
                            and answered.review_json->'manager_question_reply'->>'task_id'=
                                daily.review_json->'daily_farm_manager'->'question_binding'->>'task_id'
-                           and answered.review_json->'manager_question_reply'->>'daily_identity'=
-                               daily.review_json->'daily_farm_manager'->>'daily_identity'
                            and answered.review_json->'manager_question_reply'->>'dedupe_key'=
                                daily.review_json->'daily_farm_manager'->'question_binding'->>'dedupe_key')
                     order by created_at desc, review_event_id desc limit 8) q
@@ -548,6 +580,28 @@ def _compatible(expected, actual):
     groups = ({"herd", "herd_health", "herd_management"},
               {"sales", "sam"}, {"water_energy", "rootline"})
     return expected == actual or any(expected in group and actual in group for group in groups)
+
+
+def _bound_question_pig_id(question):
+    """Recover only canonical typed bindings; never infer from display prose."""
+    binding = question.get("question_binding") if isinstance(
+        question.get("question_binding"), dict) else {}
+    candidates = []
+    for value in (binding.get("pig_id"), *(binding.get("pig_ids") or ())):
+        value = str(value or "").strip()
+        if re.fullmatch(r"PIG-[A-Z0-9-]{4,64}", value):
+            candidates.append(value)
+    for value in binding.get("source_refs") or ():
+        match = re.fullmatch(r"pig:(PIG-[A-Z0-9-]{4,64})", str(value or "").strip())
+        if match:
+            candidates.append(match.group(1))
+    match = re.fullmatch(r"herdmaster:(PIG-[A-Z0-9-]{4,64})",
+                         str(binding.get("dedupe_key") or "").strip())
+    if match:
+        candidates.append(match.group(1))
+    values = sorted(set(candidates))
+    return (values[0], "resolved") if len(values) == 1 else \
+        ("", "ambiguous" if len(values) > 1 else "unavailable")
 
 
 _LITERAL_TANK_STATE = re.compile(

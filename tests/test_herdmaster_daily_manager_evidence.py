@@ -1,7 +1,8 @@
 from datetime import date, datetime, timezone
 
 from modules.pig_weights.herdmaster_daily_manager_evidence import (
-    PACKET_TYPE, build_daily_manager_evidence, load_daily_manager_evidence)
+    PACKET_TYPE, _shared_mortality_history, build_daily_manager_evidence,
+    load_daily_manager_evidence)
 from modules.oom_sakkie.herdmaster_daily_manager_adapter import consume_daily_manager_evidence
 
 NOW = datetime(2026, 8, 14, 4, 45, tzinfo=timezone.utc)
@@ -362,6 +363,9 @@ def test_loader_uses_bounded_read_only_queries_and_latest_prior_day_only():
             elif "from public.pig_lifecycle_events" in normalized:
                 self.description = [Column(value) for value in ("pig_id", "event_type", "effective_at")]
                 self.current = []
+            elif "select owner_hash,consumption,created_at" in normalized:
+                self.current = [(params[1][0], {"evidence_digest": "D",
+                    "canonical_death_event_fingerprints": {}}, datetime(2026, 8, 13))]
             else:
                 self.current = []; self.one = ({"evidence_digest": "D"},)
             return self
@@ -377,7 +381,8 @@ def test_loader_uses_bounded_read_only_queries_and_latest_prior_day_only():
     packet = load_daily_manager_evidence(analysis_date=date(2026, 8, 14),
         database_url="postgres://example", connect=connect,
         mortality_evidence_loader=lambda **kwargs: {},
-        mortality_packet_builder=lambda evidence, **kwargs: mortality_packet)
+        mortality_packet_builder=lambda evidence, **kwargs: mortality_packet,
+        owner_user_id="42")
     assert "default_transaction_read_only=on" in calls["kwargs"]["options"]
     assert calls["kwargs"]["connect_timeout"] == 3
     assert any("weight_date between" in sql for sql, _ in calls["queries"])
@@ -385,3 +390,34 @@ def test_loader_uses_bounded_read_only_queries_and_latest_prior_day_only():
     assert all(sql.lstrip().casefold().startswith(("select", "with")) for sql, _ in calls["queries"])
     assert packet["weight"]["current_snapshot"]["status"] == "complete"
     assert packet["mortality"]["digest_changed"] is False
+
+
+def test_shared_mortality_history_requires_every_manager_to_have_consumed_fact():
+    at = datetime(2026, 8, 13)
+    charl = ("CHARL", {"evidence_digest": "D", "canonical_death_event_fingerprints":
+              {"LIFE-1": "FP-1", "LIFE-2": "FP-2"}}, at)
+    anton = ("ANTON", {"evidence_digest": "D", "canonical_death_event_fingerprints":
+              {"LIFE-1": "FP-1"}}, at)
+    fingerprints, digest, consumed_at = _shared_mortality_history(
+        [charl, anton], [], 2)
+    assert fingerprints == {"LIFE-1": "FP-1"}
+    assert digest == "D" and consumed_at == at
+    # A missing Anton history makes the prior state non-shared, so current
+    # canonical facts are projected identically to both recipients.
+    fingerprints, digest, _ = _shared_mortality_history([charl], [], 2)
+    assert fingerprints == {} and digest == ""
+
+
+def test_shared_mortality_history_merges_newer_round_for_same_actor_only():
+    older = datetime(2026, 8, 13, 6)
+    newer = datetime(2026, 8, 13, 7)
+    consumptions = [
+        ("CHARL", {"evidence_digest": "D", "canonical_death_event_fingerprints":
+                    {"LIFE-1": "OLD", "LIFE-2": "FP-2"}}, older),
+        ("ANTON", {"evidence_digest": "D", "canonical_death_event_fingerprints":
+                    {"LIFE-1": "NEW", "LIFE-2": "FP-2"}}, older),
+    ]
+    manager_rows = [("CHARL", {"LIFE-1": "NEW"}, newer)]
+    fingerprints, digest, _ = _shared_mortality_history(consumptions, manager_rows, 2)
+    assert fingerprints == {"LIFE-1": "NEW", "LIFE-2": "FP-2"}
+    assert digest == "D"

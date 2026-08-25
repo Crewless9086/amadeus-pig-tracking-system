@@ -74,6 +74,16 @@ class RootlineIFTTTTransport:
         """Project exact supervised safety without weakening full-device evidence."""
         assignments = device_channel_assignments(contract["device_id"])
         rows = {int(row["channel"]): row for row in snapshot["channels"]}
+        if contract["identity"] == "BOREHOLE-1-MINI-R4-CH1":
+            return (set(assignments) == {1} and set(rows) == {1}
+                and snapshot.get("current_outputs_authoritative") is True
+                and snapshot.get("timers_enabled") is False
+                and snapshot.get("scenes_enabled") is False
+                and snapshot.get("interlock_enabled") is False
+                and target.get("output_state") == "OFF"
+                and target.get("power_restoration_state") == "OFF"
+                and target.get("native_auto_off_enabled") is True
+                and int(target.get("native_auto_off_seconds") or 0) == 14400)
         if (snapshot.get("actuation_safety_complete") is not True
                 or snapshot.get("current_outputs_authoritative") is not True
                 or snapshot.get("timers_enabled") is not False
@@ -151,7 +161,7 @@ class RootlineIFTTTTransport:
                 "event": event, "provider_status": code}
 
     def _snapshot(self, device_id, channel):
-        self._binding(device_id, channel)
+        contract = self._binding(device_id, channel)
         if self.readback is None:
             from modules.telemetry.rootline_ewelink_readback import read_registered_device
             value = read_registered_device(device_id, token_store=self.token_store,
@@ -160,8 +170,10 @@ class RootlineIFTTTTransport:
             value = self.readback(token_store=self.token_store, environ=self.environ)
         rows = value.get("channels") if isinstance(value, dict) else None
         identities = [row.get("channel") for row in rows or () if isinstance(row, dict)]
+        expected = ([1] if contract.get("identity") == "BOREHOLE-1-MINI-R4-CH1"
+                    else [1, 2, 3, 4])
         if (not isinstance(value, dict) or value.get("device_id") != device_id
-                or len(rows or ()) != 4 or sorted(identities) != [1, 2, 3, 4]
+                or sorted(identities) != expected
                 or value.get("provider_control_calls") != 0):
             raise RuntimeError("ewelink_safety_readback_invalid")
         return value

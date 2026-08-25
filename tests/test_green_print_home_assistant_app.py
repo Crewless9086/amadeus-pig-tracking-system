@@ -1,18 +1,25 @@
-from concurrent.futures import ThreadPoolExecutor
+﻿from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timedelta,timezone
 from hashlib import sha256
-import importlib.util,json,sqlite3,sys
+import base64,importlib.util,json,sqlite3,subprocess,sys
 from pathlib import Path
+from types import SimpleNamespace
 import pytest,yaml
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 
 ROOT=Path(__file__).parents[1]; APP=ROOT/"green_print_bridge"
 SPEC=importlib.util.spec_from_file_location("green_app",APP/"app"/"service.py"); S=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(S)
 sys.modules["service"]=S
 QUEUE_SPEC=importlib.util.spec_from_file_location("green_init_queue",APP/"app"/"init_queue.py"); Q=importlib.util.module_from_spec(QUEUE_SPEC); QUEUE_SPEC.loader.exec_module(Q)
+INVENTORY_SPEC=importlib.util.spec_from_file_location("green_attestation_inventory",ROOT/"scripts"/"green_print_attestation_inventory.py"); I=importlib.util.module_from_spec(INVENTORY_SPEC); INVENTORY_SPEC.loader.exec_module(I)
+BUNDLE_SPEC=importlib.util.spec_from_file_location("green_bundle_inventory",ROOT/"scripts"/"green_print_sigstore_bundle_inventory.py"); B=importlib.util.module_from_spec(BUNDLE_SPEC); BUNDLE_SPEC.loader.exec_module(B)
 NOW=datetime(2026,8,21,8,tzinfo=timezone.utc); PDF=b"%PDF-1.4\nsynthetic\n%%EOF"
 def config(tmp_path):
     cert=tmp_path/"private-ca.crt"; cert.write_text("synthetic",encoding="utf-8")
-    return {"canonical_transport_profile":"private_pinned","canonical_api_origin":"https://documents.invalid","canonical_endpoint_ip":"10.23.0.5","canonical_bearer_token":"synthetic-token","farm_scope_id":"farm-amadeus","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","printer_transport_profile":"private_ipps","printer_uri":"ipps://10.23.0.9/ipp/print","printer_endpoint_ip":"10.23.0.9","ca_certificate_path":str(cert),"poll_seconds":30,"spool_path":str(tmp_path),"data_path":str(tmp_path)}
+    return {"canonical_transport_profile":"private_pinned","canonical_api_origin":"https://documents.invalid","canonical_endpoint_ip":"10.23.0.5","canonical_bearer_token":"synthetic-token","farm_scope_id":"farm-amadeus","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","printer_transport_profile":"local_ipp_fixed","printer_uri":"ipp://10.23.0.9/printers/weekly-a4","printer_endpoint_ip":"10.23.0.9","ca_certificate_path":str(cert),"poll_seconds":30,"spool_path":str(tmp_path),"data_path":str(tmp_path)}
 def envelope(**changes):
     value={"job_id":"JOB-SYNTHETIC-1","farm_scope_id":"farm-amadeus","document_id":"WWS-SYNTHETIC","document_version":"WWS-SYNTHETIC.r1.abcdef123456","document_revision":1,"document_type":S.PILOT_DOCUMENT,"generator_id":S.PILOT_GENERATOR,"pdf_sha256":sha256(PDF).hexdigest(),"retrieval_url":"https://documents.invalid/api/documents/WWS-SYNTHETIC/versions/WWS-SYNTHETIC.r1.abcdef123456/pdf","green_id":"green-synthetic","printer_id":"printer-synthetic","cups_queue_id":"weekly-a4","registry_version":"registry-synthetic-v1","authorization_receipt_id":"AUTH-SYNTHETIC-1","authorization_expires_at":(NOW+timedelta(hours=1)).isoformat(),"options":dict(S.FIXED_OPTIONS)}
     value.update(changes); return value
@@ -31,7 +38,7 @@ def test_package_is_bounded_and_privilege_split():
     assert 'green_startup_failed stage=$1 reason=$2' in init
     assert "green_startup_failed stage=bootstrap_exec reason=$1" in run and "fail_bootstrap init_script_unreadable" in run and "fail_bootstrap init_script_failed" in run
     assert "green_startup_failed stage=s6_exec reason=run_script_unreadable" in docker
-    for stage in ("mount_validation","runtime_directory","options_population","cups_directories","ca_install","queue_initializer","queue_ownership","cups_start","cups_readiness","service_exec"):
+    for stage in ("mount_validation","runtime_directory","options_population","cups_directories","queue_initializer","queue_ownership","cups_start","cups_readiness","service_exec"):
         assert f"step {stage} " in init or f"fail_startup {stage} " in init
     assert b"\r" not in (APP/"rootfs/init-green.sh").read_bytes() and b"\r" not in (APP/"rootfs/run.sh").read_bytes()
     assert docker.startswith("FROM --platform=linux/arm64 ghcr.io/home-assistant/aarch64-base:3.22@sha256:0f19d1a4b031b3d141945a906e7c0d09fc98c796c18e2ea9072bce8e0b67578a")
@@ -44,14 +51,15 @@ def test_package_is_bounded_and_privilege_split():
     assert "/var/cache/cups" in docker
     assert "fail_startup cups_readiness cups_or_queue_not_ready" in init
 
-def test_private_ipps_has_pinned_resolution_and_strict_certificate_policy():
+def test_local_ipp_is_fixed_without_broadening_container_or_canonical_transport():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); queue=(APP/"app/init_queue.py").read_text(encoding="utf-8"); init=(APP/"rootfs/init-green.sh").read_text(encoding="utf-8"); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
     policy=(APP/"rootfs/etc/cups/client.conf").read_text(encoding="utf-8"); cupsd=(APP/"rootfs/etc/cups/cupsd.conf").read_text(encoding="utf-8")
-    assert 'path.open("a"' in queue and 'hosts.write(f"{pin} {hostname}\\n")' in queue
-    assert "printer_tls_preflight(uri.hostname,str(pin)" in queue and 'uri.scheme=="ipps"' in queue
-    assert "install_binding(Path(hosts_path),uri.hostname,pin)" in queue
-    assert queue.index("printer_tls_preflight(uri.hostname,str(pin)") < queue.index("install_binding(Path(hosts_path),uri.hostname,pin)")
-    assert "/homeassistant/private-ca.crt /etc/cups/ssl/site.crt" in init
+    assert 'uri.scheme=="ipp"' in queue and 'uri.path==expected_path' in queue
+    assert 'literal==pin' in queue and '(uri.port or 631)==631' in queue
+    assert "printer_tls_preflight" not in queue and "install_binding(" not in queue.split("def main",1)[1]
+    assert "/homeassistant/private-ca.crt /etc/cups/ssl/site.crt" not in init
+    assert cfg["options"]["printer_transport_profile"]=="local_ipp_fixed"
+    assert cfg["host_network"] is False and cfg["privileged"]==[]
     assert cfg["map"]==[{"type":"addon_config","read_only":True},{"type":"homeassistant_config","read_only":True}]
     apparmor=(APP/"apparmor.txt").read_text(encoding="utf-8")
     assert "/homeassistant/private-ca.crt r," in apparmor
@@ -71,11 +79,10 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
     expected=(
         ("mount_validation","data_mount_invalid"),("mount_validation","options_missing_or_empty"),
-        ("mount_validation","options_unreadable"),("mount_validation","ca_missing_or_empty"),
-        ("mount_validation","ca_unreadable"),
+        ("mount_validation","options_unreadable"),
         ("runtime_directory","data_runtime_prepare_failed"),("runtime_directory","spool_prepare_failed"),
         ("options_population","runtime_options_install_failed"),("cups_directories","cups_runtime_prepare_failed"),
-        ("cups_directories","cups_spool_prepare_failed"),("ca_install","ca_install_failed"),
+        ("cups_directories","cups_spool_prepare_failed"),
         ("queue_initializer","initializer_interpreter_missing"),("queue_initializer","queue_initializer_failed"),
         ("queue_ownership","queue_owner_failed"),
         ("queue_ownership","queue_mode_failed"),("cups_start","cups_process_start_failed"),
@@ -91,7 +98,7 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     assert "green_startup_failed stage=bootstrap_exec reason=$1" in run
     assert "fail_bootstrap init_script_unreadable" in run and "fail_bootstrap init_script_failed" in run
     assert "green_startup_failed stage=s6_exec reason=run_script_unreadable" in docker
-    for case in ("missing_options","empty_options","readonly_data","ownership_conflict","missing_cert","empty_cert","invalid_options","broken_interpreter","init_exec","run_exec","cups_start","service_exec"):
+    for case in ("missing_options","empty_options","readonly_data","ownership_conflict","invalid_options","broken_interpreter","init_exec","run_exec","cups_start","service_exec"):
         assert f'negative_case("{case}"' in probe
     assert "if markers != [expected]" in probe
     for forbidden in ("synthetic-startup-probe-token",'options.get("printer_uri")',"BEGIN CERTIFICATE","/data/options.json","/homeassistant/private-ca.crt"):
@@ -108,8 +115,6 @@ def test_every_shell_bootstrap_failure_has_fixed_non_secret_stage_and_reason():
     assert '${child_bytes}' in init and '${#child_marker} + 1' in init
     assert init.index("rm -f /run/cups/queue-initializer-error") < init.index('case "${child_marker}" in')
     assert "2>/dev/null)\" || fail_startup queue_initializer" not in init
-    assert 'negative_case("wrong_root"' in probe
-    assert 'negative_case("wrong_san"' in probe
     assert 'negative_case("silent_initializer"' in probe
     assert 'negative_case("unrecognized_initializer"' in probe
     assert 'negative_case("multiline_unterminated_initializer"' in probe
@@ -147,64 +152,33 @@ def test_printer_tls_preflight_fails_closed_on_untrusted_or_wrong_san(monkeypatc
     assert raw.closed
 
 def queue_options():
-    return {"cups_queue_id":"weekly-a4","printer_transport_profile":"private_ipps","printer_uri":"ipps://AmadeusKantoor:8631/ipp/print","printer_endpoint_ip":"10.23.0.9"}
+    return {"cups_queue_id":"weekly-a4","printer_transport_profile":"local_ipp_fixed","printer_uri":"ipp://10.23.0.9/printers/weekly-a4","printer_endpoint_ip":"10.23.0.9"}
 
-def test_queue_startup_needs_no_ambient_printer_dns_and_verifies_fixed_binding(tmp_path,monkeypatch):
+def test_queue_startup_writes_only_exact_fixed_local_ipp_binding(tmp_path,monkeypatch):
     options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"; hosts=tmp_path/"hosts"
     options.write_text(json.dumps(queue_options()),encoding="utf-8"); hosts.write_text("127.0.0.1 localhost\n",encoding="ascii")
-    calls=[]
-    monkeypatch.setattr(Q,"printer_tls_preflight",lambda host,pin,port,ca:calls.append((host,pin,port,ca,hosts.read_text(encoding="ascii"))))
-    def resolve(host,*_a,**_k):
-        assert host=="amadeuskantoor" and "10.23.0.9 amadeuskantoor" in hosts.read_text(encoding="ascii")
-        return [(None,None,None,None,("10.23.0.9",0))]
-    monkeypatch.setattr(Q.socket,"getaddrinfo",resolve)
     Q.main(str(options),str(queue),str(hosts))
-    assert calls==[("amadeuskantoor","10.23.0.9",8631,"/homeassistant/private-ca.crt","127.0.0.1 localhost\n")]
-    assert hosts.read_text(encoding="ascii").count("10.23.0.9 amadeuskantoor")==1
-    assert "DeviceURI ipps://AmadeusKantoor:8631/ipp/print" in queue.read_text(encoding="utf-8")
+    assert hosts.read_text(encoding="ascii")=="127.0.0.1 localhost\n"
+    assert "DeviceURI ipp://10.23.0.9/printers/weekly-a4" in queue.read_text(encoding="utf-8")
 
-@pytest.mark.parametrize("failure",[S.ssl.SSLCertVerificationError("wrong SAN"),OSError("unreachable")])
-def test_queue_tls_failures_are_sanitized_and_do_not_bind(tmp_path,monkeypatch,capsys,failure):
-    options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"; hosts=tmp_path/"hosts"
-    options.write_text(json.dumps(queue_options()),encoding="utf-8"); hosts.write_text("127.0.0.1 localhost\n",encoding="ascii")
-    def reject(*_a): raise failure
-    monkeypatch.setattr(Q,"printer_tls_preflight",reject)
-    with pytest.raises(SystemExit): Q.main(str(options),str(queue),str(hosts))
-    assert capsys.readouterr().err=="green_startup_failed stage=printer_tls reason=identity_or_connection_failed\n"
-    assert "AmadeusKantoor" not in hosts.read_text(encoding="ascii") and not queue.exists()
-
-def test_queue_conflicting_binding_fails_before_queue_write(tmp_path,monkeypatch,capsys):
-    options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"; hosts=tmp_path/"hosts"
-    options.write_text(json.dumps(queue_options()),encoding="utf-8"); hosts.write_text("10.23.0.10 AmadeusKantoor\n",encoding="ascii")
-    monkeypatch.setattr(Q,"printer_tls_preflight",lambda *_a:None)
-    with pytest.raises(SystemExit): Q.main(str(options),str(queue),str(hosts))
-    assert capsys.readouterr().err=="green_startup_failed stage=printer_binding reason=hosts_binding_conflict\n"
-    assert not queue.exists()
-
-def test_queue_unwritable_binding_has_bounded_failure(tmp_path,monkeypatch,capsys):
-    options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"; hosts=tmp_path/"hosts"
-    options.write_text(json.dumps(queue_options()),encoding="utf-8"); hosts.write_text("127.0.0.1 localhost\n",encoding="ascii")
-    monkeypatch.setattr(Q,"printer_tls_preflight",lambda *_a:None); original=Q.Path.open
-    def guarded(path,mode="r",*args,**kwargs):
-        if path==hosts and "a" in mode: raise PermissionError("synthetic")
-        return original(path,mode,*args,**kwargs)
-    monkeypatch.setattr(Q.Path,"open",guarded)
-    with pytest.raises(SystemExit): Q.main(str(options),str(queue),str(hosts))
-    assert capsys.readouterr().err=="green_startup_failed stage=printer_binding reason=hosts_write_failed\n"
-    assert not queue.exists()
-
-def test_queue_wrong_literal_pin_fails_without_tls_or_queue(tmp_path,monkeypatch,capsys):
-    value={**queue_options(),"printer_uri":"ipps://10.23.0.10/ipp/print"}
+@pytest.mark.parametrize("override",[
+    {"printer_uri":"ipp://10.23.0.10/printers/weekly-a4"},
+    {"printer_uri":"ipp://10.23.0.9:8631/printers/weekly-a4"},
+    {"printer_uri":"ipp://printer.local/printers/weekly-a4"},
+    {"printer_uri":"ipp://10.23.0.9/printers/another"},
+    {"printer_uri":"ipp://10.23.0.9/printers/weekly-a4?unsafe=1"},
+])
+def test_queue_rejects_any_nonexact_endpoint_without_queue(tmp_path,capsys,override):
+    value={**queue_options(),**override}
     options=tmp_path/"options.json"; queue=tmp_path/"printers.conf"
     options.write_text(json.dumps(value),encoding="utf-8")
-    monkeypatch.setattr(Q,"printer_tls_preflight",lambda *_a:pytest.fail("TLS must not run"))
     with pytest.raises(SystemExit): Q.main(str(options),str(queue),str(tmp_path/"hosts"))
-    assert capsys.readouterr().err=="green_startup_failed stage=configuration reason=private_ipps_endpoint_invalid\n"
+    assert capsys.readouterr().err=="green_startup_failed stage=configuration reason=local_ipp_fixed_endpoint_invalid\n"
     assert not queue.exists()
 
 def test_package_uses_unique_prebuilt_image_and_requires_source_revision():
     cfg=yaml.safe_load((APP/"config.yaml").read_text(encoding="utf-8")); docker=(APP/"Dockerfile").read_text(encoding="utf-8")
-    assert cfg["version"]=="0.3.6"
+    assert cfg["version"]=="0.3.9"
     assert cfg["image"]=="ghcr.io/crewless9086/amadeus-green-print-bridge"
     assert not (APP/"build.yaml").exists()
     assert "ARG SOURCE_COMMIT\n" in docker and "SOURCE_COMMIT=unknown" not in docker
@@ -228,14 +202,16 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.6-verified-release-packet" in workflow
+    assert "green-print-0.3.9-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
     probe=(ROOT/"scripts/green_print_startup_apparmor_probe.py").read_text(encoding="utf-8")
     assert '"--add-host", f"printer.test:' not in probe
-    assert 'DNS:AmadeusKantoor' in probe and 'ipps://AmadeusKantoor:' in probe
-    assert '"printer_dns_preseeded": False' in probe and '"printer_fixed_binding_verified": True' in probe
+    assert '"printer_transport_profile": "local_ipp_fixed"' in probe
+    assert 'f"ipp://{gateway}/printers/weekly-a4"' in probe
+    assert '"printer_endpoint_exact_verified": True' in probe
+    assert 'device for weekly-a4: ipp://{gateway}/printers/weekly-a4' in probe
     assert '"pid,uid,gid,comm,args"' in probe
     for proof in ("docker\", \"top","cups_scheduler_identity","cups_worker_identity","green_runtime_identity","tcp_631_listener","tls_key_files","test ! -e /etc/printcap","test ! -e /etc/cups/ssl/*.key","unexpected AppArmor denials"):
         assert proof in probe
@@ -254,7 +230,7 @@ def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.6"
+    assert parsed["env"]["VERSION"]=="0.3.9"
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
@@ -278,7 +254,7 @@ def test_private_attestation_token_is_step_scoped_and_failure_blocks_packet():
     names=[step.get("name") for step in steps]
     verify=steps[names.index("Verify signature and digest-bound attestations")]
     assert verify["env"]["GH_TOKEN"]=="${{ github.token }}"
-    assert workflow.count("GH_TOKEN: ${{ github.token }}")==2
+    assert workflow.count("GH_TOKEN: ${{ github.token }}")==5
     assert "gh attestation verify" in verify["run"] and "|| true" not in verify["run"]
     assert names.index("Verify signature and digest-bound attestations") < names.index("Emit digest-bound non-secret release receipt") < names.index("Preserve non-secret verified release packet")
 
@@ -310,6 +286,402 @@ def test_035_recovery_is_verification_only_exact_bound_and_replay_safe():
     recovery_text=json.dumps(recovery)
     assert not any(token in recovery_text for token in forbidden)
 
+def test_036_partial_publication_recovery_is_exact_bound_and_never_pushes_image_or_tag():
+    workflow=(ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8")
+    parsed=yaml.safe_load(workflow); inputs=parsed.get("on",parsed[True])["workflow_dispatch"]["inputs"]
+    assert inputs["complete_partial_publication"]["default"] is False
+    assert inputs["expected_manifest_digest"]["required"] is False
+    assert inputs["original_publication_run_id"]["required"] is False
+    assert inputs["existing_recovery_source_commit"]["required"] is False
+    assert inputs["existing_recovery_run_id"]["required"] is False
+    assert inputs["deviation_signature_source_commit"]["required"] is False
+    assert inputs["deviation_signature_run_id"]["required"] is False
+    recovery=parsed["jobs"]["recover_partial_publication"]
+    text=json.dumps(recovery)
+    assert recovery["if"]=="github.event_name == 'workflow_dispatch' && inputs.complete_partial_publication"
+    assert recovery["permissions"]=={"contents":"read","packages":"read","attestations":"read"}
+    steps=recovery["steps"]; names=[step.get("name") for step in steps]
+    assert "Install exact native-bundle inspection dependency" in names
+    assert names.index("Install exact native-bundle inspection dependency") < names.index("Inspect existing signature and refuse foreign or ambiguous state")
+    assert "cryptography==45.0.7" in steps[names.index("Install exact native-bundle inspection dependency")]["run"]
+    assert "Install exact native-bundle inspection dependency" not in [step.get("name") for step in parsed["jobs"]["recover"]["steps"]]
+    binding=steps[names.index("Bind partial recovery to exact source, index, manifest and main")]["run"]
+    assert 'test "${PUBLISH_REQUESTED}" = "false"' in binding
+    assert 'test "${VERIFY_ONLY_REQUESTED}" = "false"' in binding
+    assert 'ORIGINAL_PUBLICATION_RUN_ID' in binding
+    assert 'test "${EXISTING_RECOVERY_SOURCE_COMMIT}" != "${EXPECTED_SOURCE_COMMIT}"' in binding
+    assert binding.count('^sha256:[0-9a-f]{64}$')==2 and '^[0-9a-f]{40}$' in binding
+    original=steps[names.index("Verify truthful original publication run identity")]["run"]
+    for stage,outcome in (("Build and push untagged exact linux arm64 manifest","success"),("Create the unique version tag as an arm64 index","success"),("Verify pushed index descriptor, config and OCI bindings","failure"),("Install pinned Cosign signer and verifier","skipped"),("Keylessly sign verified arm64 index","skipped"),("Generate SPDX SBOM from exact linux arm64 digest","skipped"),("Attest build provenance","skipped"),("Attest SBOM","skipped"),("Verify signature and digest-bound attestations","skipped")):
+        assert f'exact("{stage}"; "{outcome}")' in original
+    assert 'def number($name)' in original
+    existing=steps[names.index("Verify stable existing tag, index, sole manifest and OCI config")]["run"]
+    assert "for attempt in 1 2 3 4 5 6 7 8" in existing and "sleep 3" in existing
+    assert 'test "${tag_digest}" = "${EXPECTED_DIGEST}"' in existing
+    assert '.manifests[0].digest == $manifest' in existing
+    assert '"${IMAGE}@${EXPECTED_MANIFEST_DIGEST}" --format' in existing
+    assert 'tag-recheck.txt' in existing and 'org.opencontainers.image.revision' in existing
+    signature=steps[names.index("Inspect existing signature and refuse foreign or ambiguous state")]["run"]
+    assert "cosign download signature" in signature and "validate-cosign" in signature
+    assert "cosign triangulate" not in signature and "signature_ref" not in signature
+    assert "recovered-cosign-original-verification.json" in signature
+    assert "recovered-cosign-deviation-verification.json" in signature
+    for flag in ("--certificate-github-workflow-sha","--certificate-github-workflow-name","--certificate-github-workflow-repository","--certificate-github-workflow-ref","--certificate-github-workflow-trigger"):
+        assert flag in signature
+    attestations=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
+    assert "green_print_attestation_inventory.py" in attestations
+    assert "canonical existing-attestations.json" in attestations
+    assert "attestation_inventory_pre_sha256" in attestations
+    assert 'test "${foreign_count}" = "0"' in attestations
+    assert 'test "${recovery_count}" = "1"' in attestations and 'test "${sbom_count}" = "1"' in attestations
+    assert "validate-recovery-run" in attestations
+    assert "validate-deviation-run" in attestations
+    assert attestations.count("validate-verification-run")==2
+    assert attestations.count('--source-digest "${EXISTING_RECOVERY_SOURCE_COMMIT}"')==2
+    assert "https://amadeus.farm/attestations/green-partial-publication-recovery/v1" in text
+    assert "actions/attest-build-provenance" not in text
+    assert "claimsBuildProvenance:false" in text and "original_publication_run_id" in text
+    assert names.index("Verify completed signature, attestations and immutable tag") < names.index("Emit partial-publication recovery receipt")
+    final_verify=steps[names.index("Verify completed signature, attestations and immutable tag")]["run"]
+    assert 'attestation_source_commit="${EXISTING_RECOVERY_SOURCE_COMMIT:-${GITHUB_SHA}}"' in final_verify
+    assert final_verify.count('--source-digest "${attestation_source_commit}"')==2
+    assert final_verify.count("validate-verification-run")==2
+    assert "validate-cosign" in final_verify
+    assert "cosign download signature" in final_verify
+    assert "cmp -s native-signature-inventory.json final-native-signature-inventory.json" in final_verify
+    assert "canonical final-attestations.json" in final_verify
+    assert "cmp -s canonical-existing-attestations.json canonical-final-attestations.json" in final_verify
+    assert "attestation_inventory_post_sha256" in final_verify
+    assert "final-green-print-0.3.9.spdx.json" not in final_verify
+    assert final_verify.count("green-print-0.3.9.spdx.json")==2
+    assert "cosign triangulate" not in final_verify and "signature_ref" not in final_verify
+    for forbidden in ("docker/build-push-action","imagetools create","--tag","push-by-digest","name-canonical"):
+        assert forbidden not in text
+
+def test_036_stale_or_missed_signature_presence_probe_cannot_reach_an_effect_command():
+    parsed=yaml.safe_load((ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8"))
+    recovery=parsed["jobs"]["recover_partial_publication"]
+    names=[step.get("name","") for step in recovery["steps"]]
+    stale_registry_probe={"signature_present":False,"sign_required":"true"}
+    assert stale_registry_probe["sign_required"]=="true"
+    assert not any(name.startswith("Keylessly sign") or name.startswith("Attest ") for name in names)
+    serialized=json.dumps(recovery)
+    assert "cosign triangulate" not in serialized
+    assert "signature_ref" not in serialized
+    assert "native_signature_inventory_pre_sha256" in serialized
+    assert "native_signature_inventory_post_sha256" in serialized
+    assert "attestation_inventory_pre_sha256" in serialized
+    assert "attestation_inventory_post_sha256" in serialized
+    for forbidden in ("cosign sign","actions/attest@","actions/attest-sbom@","sign_required","recovery_attestation_required","sbom_required","id-token","packages\": \"write","attestations\": \"write"):
+        assert forbidden not in serialized
+    for exact in ("17c64f86e3b74827c6e9073ab1636f629bb3cfb6991b20da5bbd44d8a264bf25","d4f8c9498c019bcd7cad002692331f12f9b0fd5a8865fc3d5a930f638c87c437","32625792776/attempts/1","32627304614/attempts/1","9490047287","green-print-0.3.9-partial-publication-recovery-packet","1f70f4e6780ba38f14f36da94fdaa3a3ebc769749a3508afe0afb57ebf0cc548","2026-11-21T08:05:08Z","non_authoritative_incident_evidence"):
+        assert exact in serialized
+
+def test_036_final_readonly_verification_has_bounded_retry_and_attributable_failures():
+    parsed=yaml.safe_load((ROOT/".github/workflows/green-print-image.yml").read_text(encoding="utf-8"))
+    job=parsed["jobs"]["recover_partial_publication"]
+    assert job["permissions"]=={"contents":"read","packages":"read","attestations":"read"}
+    steps=job["steps"]; names=[step.get("name") for step in steps]
+    final=steps[names.index("Verify completed signature, attestations and immutable tag")]["run"]
+    assert "set -Eeuo pipefail" in final
+    assert 'green_recovery_verify_failed stage=%s reason=assertion_failed' in final
+    assert "for attempt in 1 2 3 4" in final and 'if test "${attempt}" -lt 4; then sleep 3; fi' in final
+    assert 'test -s "${output}.tmp"' in final
+    assert final.count("verify_attestation_retry recovered-")==2
+    assert final.count("gh attestation verify")==2
+    assert "|| true" not in final
+    ordered=("cosign_original_verify","cosign_original_identity","cosign_deviation_verify","cosign_deviation_identity","recovery_attestation_verify","sbom_attestation_verify","attestation_run_identity","final_attestation_fetch","final_attestation_inventory","attestation_pre_post_equality","immutable_tag_equality","final_native_signature_fetch","final_native_signature_inventory","native_signature_pre_post_equality","receipt_hash_outputs")
+    positions=[final.index(f"mark_stage {stage}") for stage in ordered]
+    assert positions==sorted(positions)
+    unrelated=steps[names.index("Inspect attestations and refuse foreign, duplicate or malformed state")]["run"]
+    assert "verify_attestation_retry" not in unrelated
+
+BUNDLE_IMAGE="ghcr.io/crewless9086/amadeus-green-print-bridge"
+BUNDLE_DIGEST="sha256:"+"a"*64
+
+def _certificate(run_uri):
+    key=ec.generate_private_key(ec.SECP256R1()); subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,"synthetic")])
+    encoded=run_uri.encode(); extension=b"\x0c"+bytes([len(encoded)])+encoded
+    cert=(x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key()).serial_number(1).not_valid_before(datetime(2026,8,23,tzinfo=timezone.utc)).not_valid_after(datetime(2026,8,24,tzinfo=timezone.utc)).add_extension(x509.UnrecognizedExtension(B.RUN_INVOCATION_OID,extension),critical=False).sign(key,hashes.SHA256()))
+    raw=cert.public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.DER)
+    return cert,raw
+
+def _sigstore_bundle(predicate_type,run_uri):
+    cert,raw=_certificate(run_uri); algorithm,value=BUNDLE_DIGEST.split(":",1)
+    subject={"annotations":{},"digest":{algorithm:value}} if predicate_type==B.NATIVE else {"name":BUNDLE_IMAGE,"digest":{algorithm:value}}
+    payload=base64.b64encode(json.dumps({"_type":B.STATEMENT_TYPE,"predicate":{},"predicateType":predicate_type,"subject":[subject]}).encode()).decode()
+    proof={"checkpoint":{"envelope":"synthetic checkpoint"},"hashes":["c3ludGhldGlj"],"logIndex":"0","rootHash":"c3ludGhldGlj","treeSize":"2"}
+    tlog={"canonicalizedBody":"c3ludGhldGlj","inclusionPromise":{"signedEntryTimestamp":"c3ludGhldGlj"},"inclusionProof":proof,"integratedTime":"1787472000","kindVersion":{"kind":"dsse","version":"0.0.1"},"logId":{"keyId":"c3ludGhldGlj"},"logIndex":"1"}
+    timestamp_data={"rfc3161Timestamps":[{"signedTimestamp":"c3ludGhldGlj"}]} if predicate_type==B.NATIVE else {}
+    bundle={"mediaType":B.MEDIA_TYPE,"dsseEnvelope":{"payload":payload,"payloadType":B.PAYLOAD_TYPE,"signatures":[{"sig":"c3ludGhldGlj"}]},"verificationMaterial":{"certificate":{"rawBytes":base64.b64encode(raw).decode()},"timestampVerificationData":timestamp_data,"tlogEntries":[tlog]}}
+    return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
+
+def _native_bundle(run_uri):
+    cert,raw=_certificate(run_uri)
+    bundle={"critical":{"type":B.SIMPLE_SIGNING,"identity":{"docker-reference":BUNDLE_IMAGE},"image":{"docker-manifest-digest":BUNDLE_DIGEST}},"optional":{"runInvocationURI":"https://attacker.invalid/untrusted"},"signature":"c3ludGhldGlj","cert":cert.public_bytes(__import__("cryptography").hazmat.primitives.serialization.Encoding.PEM).decode(),"bundle":{"SignedEntryTimestamp":"c3ludGhldGlj","Payload":{"body":"c3ludGhldGlj","integratedTime":1787472000,"logIndex":1,"logID":"synthetic-log-id"}}}
+    return json.dumps(bundle),{"certificate_sha256":sha256(raw).hexdigest(),"runInvocationURI":run_uri}
+
+def test_native_bundle_inventory_accepts_exact_two_certificate_fingerprints_and_run_uris():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    assert B.inspect([first[0],second[0]],[first[1],second[1]],BUNDLE_IMAGE,BUNDLE_DIGEST)==sorted([first[1],second[1]],key=lambda row:row["certificate_sha256"])
+
+def test_native_bundle_inventory_accepts_exact_live_cosign_v3_mixed_four_bundle_schema():
+    first=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    spdx=_sigstore_bundle(I.SBOM,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    recovery=_sigstore_bundle(I.RECOVERY,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    lines=[first[0],spdx[0],recovery[0],second[0]]
+    expected=[first[1],second[1]]
+    for native in (first,second):
+        live=json.loads(native[0]); entry=live["verificationMaterial"]["tlogEntries"][0]
+        assert len(live["verificationMaterial"]["timestampVerificationData"]["rfc3161Timestamps"])==1
+        assert entry["logIndex"]=="1" and entry["inclusionProof"]["logIndex"]=="0"
+    for non_native in (spdx,recovery):
+        live=json.loads(non_native[0])
+        assert live["verificationMaterial"]["timestampVerificationData"]=={}
+    assert B.inspect(lines,expected,BUNDLE_IMAGE,BUNDLE_DIGEST)==sorted(expected,key=lambda row:row["certificate_sha256"])
+
+def test_native_bundle_inventory_rejects_substitution_missing_multiple_and_malformed():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]
+    adversaries=[([first[0]],expected),([first[0],second[0],second[0]],expected),([first[0],second[0]],[first[1],{**second[1],"certificate_sha256":"0"*64}]),([first[0],second[0]],[first[1],{**second[1],"runInvocationURI":second[1]["runInvocationURI"]+"0"}]),([first[0],"{}"],expected)]
+    for lines,wanted in adversaries:
+        with pytest.raises(ValueError): B.inspect(lines,wanted,BUNDLE_IMAGE,BUNDLE_DIGEST)
+
+def test_native_bundle_inventory_rejects_signed_image_digest_or_type_substitution_and_ignores_optional_identity():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]
+    assert B.inspect([first[0],second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)==sorted(expected,key=lambda row:row["certificate_sha256"])
+    for key,value in (("type","foreign"),("identity",{"docker-reference":"ghcr.io/foreign/image"}),("image",{"docker-manifest-digest":"sha256:"+"0"*64})):
+        changed=json.loads(first[0]); changed["critical"][key]=value
+        with pytest.raises(ValueError): B.inspect([json.dumps(changed),second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
+
+def test_native_bundle_inventory_rejects_legacy_shape_signature_transparency_and_hybrid_ambiguity():
+    first=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_native_bundle("https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]; base=json.loads(first[0])
+    adversaries=[]
+    for key,value in (("signature","not-base64!"),("bundle",{}),("bundle",{"wrong":"shape"})):
+        changed={**base,key:value}; adversaries.append(changed)
+    extra={**base,"unexpected":True}; adversaries.append(extra)
+    hybrid={**base,"dsseEnvelope":{"payload":"c3ludGhldGlj"}}; adversaries.append(hybrid)
+    empty_transparency=json.loads(first[0]); empty_transparency["bundle"]["Payload"]["logID"]=""; adversaries.append(empty_transparency)
+    for changed in adversaries:
+        with pytest.raises(ValueError): B.inspect([json.dumps(changed),second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
+
+def test_native_bundle_inventory_rejects_dsse_extra_empty_wrong_and_hybrid_nested_shapes():
+    first=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    expected=[first[1],second[1]]; base=json.loads(first[0]); adversaries=[]
+    extra={**base,"unexpected":True}; adversaries.append(extra)
+    hybrid={**base,"critical":{"type":B.SIMPLE_SIGNING}}; adversaries.append(hybrid)
+    bad_signature=json.loads(first[0]); bad_signature["dsseEnvelope"]["signatures"][0]["sig"]="not-base64!"; adversaries.append(bad_signature)
+    empty_tlog=json.loads(first[0]); empty_tlog["verificationMaterial"]["tlogEntries"]=[]; adversaries.append(empty_tlog)
+    extra_cert=json.loads(first[0]); extra_cert["verificationMaterial"]["certificate"]["extra"]=True; adversaries.append(extra_cert)
+    extra_proof=json.loads(first[0]); extra_proof["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["extra"]=True; adversaries.append(extra_proof)
+    wrong_kind=json.loads(first[0]); wrong_kind["verificationMaterial"]["tlogEntries"][0]["kindVersion"]["kind"]="intoto"; adversaries.append(wrong_kind)
+    empty_hashes=json.loads(first[0]); empty_hashes["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["hashes"]=[]; adversaries.append(empty_hashes)
+    missing_native_timestamp=json.loads(first[0]); missing_native_timestamp["verificationMaterial"]["timestampVerificationData"]={}; adversaries.append(missing_native_timestamp)
+    leading_zero_entry=json.loads(first[0]); leading_zero_entry["verificationMaterial"]["tlogEntries"][0]["logIndex"]="01"; adversaries.append(leading_zero_entry)
+    leading_zero_proof=json.loads(first[0]); leading_zero_proof["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["logIndex"]="00"; adversaries.append(leading_zero_proof)
+    for changed in adversaries:
+        with pytest.raises(ValueError): B.inspect([json.dumps(changed),second[0]],expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
+
+def test_native_bundle_inventory_rejects_per_predicate_subject_and_timestamp_shape_substitution():
+    first=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    second=_sigstore_bundle(B.NATIVE,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32627304614/attempts/1")
+    spdx=_sigstore_bundle(I.SBOM,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    recovery=_sigstore_bundle(I.RECOVERY,"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/1")
+    expected=[first[1],second[1]]
+    native_named=json.loads(first[0]); native_payload=json.loads(base64.b64decode(native_named["dsseEnvelope"]["payload"])); native_payload["subject"]=[{"name":BUNDLE_IMAGE,"digest":{"sha256":"a"*64}}]; native_named["dsseEnvelope"]["payload"]=base64.b64encode(json.dumps(native_payload).encode()).decode()
+    nonnative_timestamp=json.loads(spdx[0]); nonnative_timestamp["verificationMaterial"]["timestampVerificationData"]={"rfc3161Timestamps":[]}
+    foreign_predicate=json.loads(recovery[0]); foreign_payload=json.loads(base64.b64decode(foreign_predicate["dsseEnvelope"]["payload"])); foreign_payload["predicateType"]="https://foreign.invalid/predicate"; foreign_predicate["dsseEnvelope"]["payload"]=base64.b64encode(json.dumps(foreign_payload).encode()).decode()
+    for records in ([json.dumps(native_named),spdx[0],recovery[0],second[0]],[first[0],json.dumps(nonnative_timestamp),recovery[0],second[0]],[first[0],spdx[0],json.dumps(foreign_predicate),second[0]]):
+        with pytest.raises(ValueError): B.inspect(records,expected,BUNDLE_IMAGE,BUNDLE_DIGEST)
+
+def _recovery_predicate(index="sha256:"+"a"*64,manifest="sha256:"+"b"*64,source="c"*40,run_id="32622312938"):
+    return {"recoveryKind":"post_build_release_evidence_completion","claimsBuildProvenance":False,"originalPublication":{"workflow":".github/workflows/green-print-image.yml","runId":run_id,"sourceCommit":source,"verifyJob":"success","publishJob":"failed_after_tag_creation"},"artifact":{"indexDigest":index,"soleLinuxArm64ManifestDigest":manifest},"permittedEffects":["signature_if_absent","sbom_attestation_if_absent","recovery_attestation_if_absent"],"prohibitedEffects":["image_build","image_push","tag_create","retag","delete","install","print"]}
+
+def _attestation(predicate, image="ghcr.io/crewless9086/amadeus-green-print-bridge", digest="a"*64,payload=None):
+    statement={"subject":[{"name":image,"digest":{"sha256":digest}}],"predicateType":predicate,"predicate":payload if payload is not None else {}}
+    payload=base64.urlsafe_b64encode(json.dumps(statement).encode()).decode().rstrip("=")
+    return {"bundle":{"dsseEnvelope":{"payload":payload}}}
+
+def test_partial_recovery_attestation_inventory_accepts_only_one_exact_pair():
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64; manifest="sha256:"+"b"*64; source="c"*40; run_id="32622312938"
+    document={"attestations":[_attestation(I.RECOVERY,payload=_recovery_predicate()),_attestation(I.SBOM)]}
+    recovery,sbom,foreign,statements=I.inventory(document,image,digest,expected_source=source,expected_manifest=manifest,expected_run_id=run_id)
+    assert (recovery,sbom,foreign)==(1,1,0) and len(statements)==2
+
+@pytest.mark.parametrize("records,expected",[
+    ([_attestation(I.RECOVERY,payload=_recovery_predicate()),_attestation(I.RECOVERY,payload=_recovery_predicate())],(2,0,0)),
+    ([_attestation("https://foreign.invalid/predicate")],(0,0,1)),
+    ([_attestation(I.RECOVERY,image="ghcr.io/foreign/image",payload=_recovery_predicate())],(0,0,1)),
+    ([{"bundle":{"dsseEnvelope":{"payload":"not-base64"}}}],(0,0,1)),
+])
+def test_partial_recovery_attestation_inventory_exposes_duplicate_foreign_and_malformed(records,expected):
+    actual=I.inventory({"attestations":records},"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64,expected_source="c"*40,expected_manifest="sha256:"+"b"*64,expected_run_id="32622312938")
+    assert actual[:3]==expected
+
+def _provider_attestation_record(attestation,record_id,stamp="10%3A16%3A04Z"):
+    return {"repository_id":1184162702,"bundle_url":f"https://tmaproduction.blob.core.windows.net/attestations/1184162702/2026/08/23/{record_id}.json.sn?se=2026-08-23T11%3A16%3A04Z&sig=synthetic-{stamp}&st=2026-08-23T{stamp}","initiator":"user","bundle":attestation["bundle"]}
+
+def test_complete_canonical_attestation_inventory_is_order_stable_and_detects_intervening_drift():
+    recovery=_provider_attestation_record(_attestation(I.RECOVERY,payload=_recovery_predicate()),42399664)
+    sbom=_provider_attestation_record(_attestation(I.SBOM),42399668)
+    foreign=_provider_attestation_record(_attestation("https://foreign.invalid/predicate"),42399999)
+    before=I.canonical_inventory({"attestations":[sbom,recovery]})
+    reordered=I.canonical_inventory({"attestations":[recovery,sbom]})
+    assert before==reordered
+    duplicate=I.canonical_inventory({"attestations":[recovery,sbom,recovery]})
+    foreign_drift=I.canonical_inventory({"attestations":[recovery,sbom,foreign]})
+    assert duplicate!=before
+    assert foreign_drift!=before
+    assert len(duplicate["attestations"])==3
+    assert len(foreign_drift["attestations"])==3
+
+def test_canonical_attestation_equality_ignores_only_proven_live_sas_query_volatility():
+    recovery=_provider_attestation_record(_attestation(I.RECOVERY,payload=_recovery_predicate()),42399664)
+    sbom=_provider_attestation_record(_attestation(I.SBOM),42399668)
+    first={"attestations":[sbom,recovery]}
+    second=json.loads(json.dumps(first))
+    for record in second["attestations"]:
+        record["bundle_url"]=record["bundle_url"].replace("10%3A16%3A04Z","10%3A16%3A10Z").replace("11%3A16%3A04Z","11%3A16%3A10Z")
+    canonical_first=I.canonical_inventory(first)
+    assert canonical_first==I.canonical_inventory(second)
+    removed={"attestations":second["attestations"][:-1]}
+    added={"attestations":second["attestations"]+[json.loads(json.dumps(recovery))]}
+    modified=json.loads(json.dumps(second)); modified["attestations"][0]["bundle"]["dsseEnvelope"]["payload"]="c3Vic3RpdHV0ZWQ="
+    moved=json.loads(json.dumps(second)); moved["attestations"][0]["bundle_url"]=moved["attestations"][0]["bundle_url"].replace("42399668","42399669")
+    for changed in (removed,added,modified,moved):
+        assert I.canonical_inventory(changed)!=canonical_first
+
+def test_canonical_final_inspect_executes_with_the_generated_exact_sbom_path(tmp_path):
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64
+    document={"attestations":[_provider_attestation_record(_attestation(I.RECOVERY,payload=_recovery_predicate()),42399664),_provider_attestation_record(_attestation(I.SBOM,payload={"spdxVersion":"SPDX-2.3"}),42399668)]}
+    fetched=tmp_path/"final-attestations.json"; fetched.write_text(json.dumps(document),encoding="utf-8")
+    canonical=tmp_path/"canonical-final-attestations.json"
+    helper=ROOT/"scripts"/"green_print_attestation_inventory.py"
+    canonical_result=subprocess.run([sys.executable,str(helper),"canonical",str(fetched)],capture_output=True,text=True,check=True)
+    canonical.write_text(canonical_result.stdout,encoding="utf-8")
+    generated_sbom=tmp_path/"green-print-0.3.8.spdx.json"
+    result=subprocess.run([sys.executable,str(helper),"inspect",str(canonical),image,digest,str(generated_sbom),"c"*40,"sha256:"+"b"*64,"32622312938"],capture_output=True,text=True,check=True)
+    assert result.stdout.splitlines()==["recovery_count=1","sbom_count=1","foreign_count=0"]
+    assert json.loads(generated_sbom.read_text(encoding="utf-8"))=={"spdxVersion":"SPDX-2.3"}
+
+def test_attestation_fetch_maps_only_exact_github_not_found_to_empty():
+    def runner(*_args,**_kwargs):
+        return SimpleNamespace(returncode=1,stdout=json.dumps({"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404"})+"\n",stderr="gh: Not Found (HTTP 404)\n")
+    assert I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,runner)=={"attestations":[]}
+
+@pytest.mark.parametrize("result",[
+    SimpleNamespace(returncode=1,stdout="",stderr="gh: Forbidden (HTTP 403)\n"),
+    SimpleNamespace(returncode=1,stdout="",stderr="network unavailable\n"),
+    SimpleNamespace(returncode=1,stdout="",stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":404}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404","extra":true}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Forbidden","documentation_url":"https://docs.github.com/rest/repos/attestations#list-attestations","status":"404"}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout='{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/repos#list-attestations","status":"404"}',stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=1,stdout="partial",stderr="gh: Not Found (HTTP 404)\n"),
+    SimpleNamespace(returncode=2,stdout="",stderr="gh: Not Found (HTTP 404)\n"),
+])
+def test_attestation_fetch_keeps_nonexact_not_found_and_every_other_failure_fatal(result):
+    with pytest.raises(RuntimeError,match="attestation_inventory_fetch_failed"):
+        I.fetch("Crewless9086/amadeus-pig-tracking-system","sha256:"+"a"*64,lambda *_a,**_k:result)
+
+def _failed_recovery_run(source="0bd8069fc63a71fee9923d131eb60bc378d6a22d",run_id=32625792776):
+    return {"id":run_id,"run_attempt":1,"name":"Green Print immutable image","event":"workflow_dispatch","head_sha":source,"status":"completed","conclusion":"failure","html_url":f"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/{run_id}"}
+
+def _failed_recovery_jobs():
+    steps=[{"name":name,"conclusion":conclusion,"number":number} for number,(name,conclusion) in enumerate(I.RECOVERY_STEP_TRUTH,start=11)]
+    return {"total_count":2,"jobs":[{"id":97100000001,"name":"Verify aarch64 package","conclusion":"success","steps":[]},{"id":97100000002,"name":I.RECOVERY_JOB,"conclusion":"failure","steps":steps}]}
+
+def test_existing_recovery_run_accepts_exact_production_shaped_two_revision_chronology():
+    source="0bd8069fc63a71fee9923d131eb60bc378d6a22d"; run_id="32625792776"
+    assert I.validate_recovery_run(_failed_recovery_run(source,int(run_id)),_failed_recovery_jobs(),source,run_id) is None
+
+@pytest.mark.parametrize("mutate",[
+    lambda run,jobs: run.update(head_sha="7d4c2d7ffa552223440967acbedda2659c3b0c0c"),
+    lambda run,jobs: run.update(id=32625792777),
+    lambda run,jobs: run.update(run_attempt=2),
+    lambda run,jobs: run.update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][1].update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][1]["steps"][2].update(conclusion="failure"),
+    lambda run,jobs: jobs["jobs"][1]["steps"][3].update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][1]["steps"][4].update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][1]["steps"][5].update(number=10),
+    lambda run,jobs: jobs["jobs"].append(dict(jobs["jobs"][1])),
+])
+def test_existing_recovery_run_rejects_identity_effect_failure_skip_order_and_duplicates(mutate):
+    source="0bd8069fc63a71fee9923d131eb60bc378d6a22d"; run_id="32625792776"
+    run=_failed_recovery_run(); jobs=_failed_recovery_jobs(); mutate(run,jobs)
+    with pytest.raises(ValueError): I.validate_recovery_run(run,jobs,source,run_id)
+
+def _contained_deviation_run(source="7286b2b3adcc721941760da7052615b89cdaa614",run_id=32627304614):
+    return {"id":run_id,"run_attempt":1,"name":"Green Print immutable image","event":"workflow_dispatch","head_sha":source,"status":"completed","conclusion":"success"}
+
+def _contained_deviation_jobs():
+    steps=[{"name":name,"conclusion":conclusion,"number":number} for number,(name,conclusion) in enumerate(I.DEVIATION_STEP_TRUTH,start=14)]
+    return {"total_count":1,"jobs":[{"id":97164485100,"name":I.DEVIATION_JOB,"conclusion":"success","steps":steps}]}
+
+def test_contained_signature_deviation_accepts_exact_production_run_chronology_only():
+    source="7286b2b3adcc721941760da7052615b89cdaa614"; run_id="32627304614"
+    assert I.validate_deviation_run(_contained_deviation_run(),_contained_deviation_jobs(),source,run_id) is None
+
+@pytest.mark.parametrize("mutate",[
+    lambda run,jobs: run.update(head_sha="0bd8069fc63a71fee9923d131eb60bc378d6a22d"),
+    lambda run,jobs: run.update(run_attempt=2),
+    lambda run,jobs: run.update(conclusion="failure"),
+    lambda run,jobs: jobs["jobs"][0]["steps"][0].update(conclusion="skipped"),
+    lambda run,jobs: jobs["jobs"][0]["steps"][1].update(conclusion="success"),
+    lambda run,jobs: jobs["jobs"][0]["steps"][3].update(conclusion="failure"),
+    lambda run,jobs: jobs["jobs"].append(dict(jobs["jobs"][0])),
+])
+def test_contained_signature_deviation_rejects_wrong_source_attempt_effects_and_duplicates(mutate):
+    source="7286b2b3adcc721941760da7052615b89cdaa614"; run_id="32627304614"
+    run=_contained_deviation_run(); jobs=_contained_deviation_jobs(); mutate(run,jobs)
+    with pytest.raises(ValueError): I.validate_deviation_run(run,jobs,source,run_id)
+
+def _attestation_verification(run_id="32625792776",uri=None):
+    invocation=uri or f"https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/{run_id}/attempts/1"
+    return [{"attestation":{"bundle":{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}},"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"0bd8069fc63a71fee9923d131eb60bc378d6a22d","runInvocationURI":invocation}}}}]
+
+def test_attestation_verification_accepts_exact_single_first_attempt_run_uri():
+    assert I.validate_verification_run(_attestation_verification(),"Crewless9086/amadeus-pig-tracking-system","32625792776","1") is None
+
+@pytest.mark.parametrize("document,run_id,attempt",[
+    ([],"32625792776","1"),
+    (_attestation_verification()+_attestation_verification(),"32625792776","1"),
+    ([{"verificationResult":{"signature":{"certificate":{}}}}],"32625792776","1"),
+    (_attestation_verification(uri="https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792777/attempts/1"),"32625792776","1"),
+    (_attestation_verification(uri="https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32625792776/attempts/10"),"32625792776","1"),
+    (_attestation_verification(),"32625792776","2"),
+])
+def test_attestation_verification_rejects_missing_multiple_different_run_near_match_and_attempt(document,run_id,attempt):
+    with pytest.raises(ValueError): I.validate_verification_run(document,"Crewless9086/amadeus-pig-tracking-system",run_id,attempt)
+
+def _cosign_verification():
+    image="ghcr.io/crewless9086/amadeus-green-print-bridge"; digest="sha256:"+"a"*64
+    native={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://sigstore.dev/cosign/sign/v1"},"optional":{}}
+    recovery={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://in-toto.io/Statement/v0.1"},"optional":{}}
+    sbom={"critical":{"identity":{"docker-reference":f"{image}@{digest}"},"image":{"docker-manifest-digest":digest},"type":"https://in-toto.io/Statement/v1"},"optional":{}}
+    return [native,recovery,sbom]
+
+def test_cosign_verification_binds_exact_single_image_digest_workflow_repository_and_source():
+    assert I.validate_cosign_verification(_cosign_verification(),"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64) is None
+
+@pytest.mark.parametrize("document",[
+    [],
+    _cosign_verification()+[_cosign_verification()[0]],
+    [{**_cosign_verification()[0],"critical":{**_cosign_verification()[0]["critical"],"identity":{"docker-reference":"ghcr.io/foreign/image@sha256:"+"a"*64}}}]+_cosign_verification()[1:],
+    [{"critical":{},"optional":{}}],
+])
+def test_cosign_verification_rejects_missing_multiple_wrong_source_and_malformed(document):
+    with pytest.raises(ValueError): I.validate_cosign_verification(document,"ghcr.io/crewless9086/amadeus-green-print-bridge","sha256:"+"a"*64)
+
 def test_apparmor_denies_admin_and_broad_writes():
     policy=(APP/"apparmor.txt").read_text(encoding="utf-8")
     assert "deny /usr/sbin/lpadmin x" in policy and "/etc/cups/** rwk" not in policy and "/tmp/** rwk" not in policy
@@ -338,13 +710,13 @@ def test_contract_and_authorization_fail_closed(tmp_path):
     for change in ({"cups_queue_id":"other"},{"options":{**S.FIXED_OPTIONS,"copies":2}},{"authorization_expires_at":NOW.isoformat()},{"retrieval_url":envelope()["retrieval_url"]+"?x=1"}):
         with pytest.raises(S.Hold): S.validate(envelope(**change),cfg,NOW)
 
-def test_config_preserves_private_canonical_pin_and_ip_san_printer(tmp_path,monkeypatch):
+def test_config_preserves_private_canonical_pin_and_rejects_printer_hostname(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"
     monkeypatch.setattr(S.socket,"getaddrinfo",lambda *_a,**_k:[(None,None,None,None,("10.23.0.5",0))]); path.write_text(json.dumps(cfg),encoding="utf-8")
     assert S.load_config(str(path))["canonical_endpoint_ip"]=="10.23.0.5"
-    path.write_text(json.dumps({**cfg,"printer_uri":"ipps://printer.invalid/ipp/print"}),encoding="utf-8")
+    path.write_text(json.dumps({**cfg,"printer_uri":"ipp://printer.invalid/printers/weekly-a4"}),encoding="utf-8")
     monkeypatch.setattr(S.socket,"getaddrinfo",lambda host,*_a,**_k:[(None,None,None,None,(("10.23.0.5" if host=="documents.invalid" else "10.23.0.9"),0))])
-    assert S.load_config(str(path))["printer_endpoint_ip"]=="10.23.0.9"
+    with pytest.raises(S.Hold,match="printer_ip_literal_required"): S.load_config(str(path))
 
 def test_public_pki_profile_allows_only_exact_render_origin_without_pin(tmp_path,monkeypatch):
     cfg={**config(tmp_path),"canonical_transport_profile":"public_pki_exact_origin","canonical_api_origin":S.APPROVED_PUBLIC_CANONICAL_ORIGIN,"canonical_endpoint_ip":""}
@@ -369,14 +741,12 @@ def test_private_profile_still_requires_nonempty_exact_pin(tmp_path,monkeypatch)
         path.write_text(json.dumps(candidate),encoding="utf-8")
         with pytest.raises(S.Hold,match="commissioned_ip_literal_required"): S.load_config(str(path))
 
-def test_printer_hostname_dns_is_single_private_bound_address(tmp_path,monkeypatch):
-    cfg={**config(tmp_path),"printer_uri":"ipps://printer.internal/ipp/print"}; path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
+def test_printer_hostname_is_rejected_regardless_of_dns_answers(tmp_path,monkeypatch):
+    cfg={**config(tmp_path),"printer_uri":"ipp://printer.internal/printers/weekly-a4"}; path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
     monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"])
     for answers in (["10.23.0.9"],["10.23.0.9","10.23.0.10"],["8.8.8.8"]):
         monkeypatch.setattr(S.socket,"getaddrinfo",lambda host,*_a,_answers=answers,**_k:[(None,None,None,None,(x,0)) for x in (["10.23.0.5"] if host=="documents.invalid" else _answers)])
-        if answers==["10.23.0.9"]: assert S.load_config(str(path))["printer_endpoint_ip"]=="10.23.0.9"
-        else:
-            with pytest.raises(S.Hold): S.load_config(str(path))
+        with pytest.raises(S.Hold,match="printer_ip_literal_required"): S.load_config(str(path))
 
 def test_printer_dns_drift_holds_before_any_canonical_or_cups_effect(tmp_path,monkeypatch):
     cfg={**config(tmp_path),"printer_uri":"ipps://printer.internal/ipp/print"}
@@ -406,6 +776,14 @@ def test_public_client_rejects_redirect_and_binds_auth_farm_green_and_host(tmp_p
     headers=connection.sent[1]["headers"]
     assert headers["Authorization"]=="Bearer synthetic-token" and headers["X-Amadeus-Farm-Scope-Id"]=="farm-amadeus"
     assert headers["X-Amadeus-Green-Id"]=="green-synthetic" and headers["Host"]=="amadeus-pig-tracking-system.onrender.com" and connection.closed
+
+def test_idle_command_envelope_does_not_block_ordinary_job_claim():
+    client=object.__new__(S.CanonicalClient);client.worker_id=None
+    calls=[]
+    client.request=lambda method,path,body:(calls.append((method,path,body)) or
+        {"job":None,"lease_token":None,"command_receipt_id":None,"command":None})
+    assert client.command("green-worker-1") is None
+    assert calls==[("POST",S.COMMAND_PATH,{"worker_id":"green-worker-1"})]
 
 def test_dns_rebinding_cannot_change_transport_target(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")

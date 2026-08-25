@@ -8,6 +8,7 @@ import pytest
 from modules.oom_sakkie.family_message_lifecycle import (_visible_notification_events,
     bind_existing_card,bind_legacy_provider_request,deliver_family_result,
     replace_current_brief)
+from modules.oom_sakkie.herdmaster_health_loss_runtime import mortality_completion_recovery_result
 
 
 def test_brief_replacement_confirms_supersession_before_optional_cleanup():
@@ -207,6 +208,35 @@ def test_delivery_and_duplicate_update_are_exact_once():
     assert first["telegram_sends"]==1 and replay["telegram_sends"]==0
     assert len(memory.sent)==1 and memory.edited==[]
 
+
+def test_structured_mortality_completion_survives_actual_en_and_af_delivery_boundary():
+    stored={"success":True,"status":"completed","answer":"old stored prose",
+        "lifecycle_event_id":"LIFE-1","welfare_case_closed":True}
+    preview={"identity":{"tag_number":"126"}}
+    for language,heading in (("af","<b>VARK 126 AANGETEKEN</b>"),
+                             ("en","<b>126 - DEATH RECORDED</b>")):
+        memory=Memory()
+        result=mortality_completion_recovery_result(stored,preview,language)
+        delivered=deliver_family_result({**PARSED,"output_language":language},result,
+            specialist="HERDMASTER",event_store=memory.store,
+            sender=memory.send,editor=memory.edit)
+        assert delivered["success"] is True and delivered["telegram_sends"]==1
+        assert memory.sent[0][1].startswith(heading)
+        assert "kanonieke resultaat" not in memory.sent[0][1]
+
+
+def test_invalid_structured_af_contract_falls_back_to_safe_localization():
+    memory=Memory()
+    result={"success":True,"status":"completed","answer":"Completed internally.",
+        "recipient_render_contract":"specialist_structured_recipient_v1",
+        "recipient_language":"af"}
+    delivered=deliver_family_result({**PARSED,"output_language":"af"},result,
+        specialist="HERDMASTER",event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    assert delivered["success"] is True
+    assert "Completed internally" not in memory.sent[0][1]
+    assert "VOLTOOI" in memory.sent[0][1]
+
 def test_protected_preview_owns_durable_attempt_before_provider_send():
     memory=Memory(); order=[]
     protected={**RESULT,"callback_token":"TOKEN","preview_digest":"DIGEST",
@@ -366,6 +396,30 @@ def test_later_natural_result_edits_same_card_and_replay_is_silent():
     replay=deliver_family_result({**PARSED,"provider_message_id":"501"},follow,specialist="HERDMASTER",mission_id=mission,card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
     assert changed["telegram_edits"]==1 and changed["telegram_message_id"]=="700"
     assert replay["telegram_edits"]==0 and len(memory.edited)==1
+
+
+def test_claim_bound_recovery_restores_earlier_truth_after_false_latest_edit_once():
+    memory=Memory(); mission="OOM-HERDMASTER-PRINCE"
+    deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    callback={**PARSED,"provider_message_id":"6127564953733558272",
+        "provider_timestamp":"2026-08-24T09:42:31.178208+00:00"}
+    truth={**RESULT,"status":"completed","answer":"<b>HERDMASTER OBSERVATION RECORDED</b>",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    first=deliver_family_result(callback,truth,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    false={**truth,"answer":"<b>Prince - DEATH RECORDED</b>"}
+    deliver_family_result({**callback,"provider_message_id":"wrong-recovery"},false,
+        specialist="HERDMASTER",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    restored=deliver_family_result(callback,truth,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(callback,truth,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert first["telegram_edits"]==1 and restored["telegram_edits"]==1
+    assert restored["status"]=="family_message_completion_card_updated"
+    assert memory.edited[-1][2]=="<b>HERDMASTER OBSERVATION RECORDED</b>"
+    assert replay["telegram_edits"]==0 and len(memory.sent)==1 and len(memory.edited)==3
 
 
 def test_orphaned_exclusive_completion_edit_claim_gets_one_idempotent_recovery():

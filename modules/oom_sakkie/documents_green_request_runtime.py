@@ -1,4 +1,4 @@
-"""Bounded Oom Sakkie intake for the fixed weekly weighing-sheet pilot."""
+"""Bounded Oom Sakkie intake for governed local document printing."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -8,25 +8,30 @@ from zoneinfo import ZoneInfo
 from modules.documents.weekly_weight_sheet import (
     PRINT_ACTION_KIND, build_weekly_sheet_revision, protected_print_preview,
 )
-from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
 
 MISSION_ID = "DMQ-20260816-01"
 OPERATING_TZ = ZoneInfo("Africa/Johannesburg")
 
 
 def handle_documents_green_request(parsed, *, environ=None, pig_loader=None,
-                                   claim_creator=create_claim, now=None):
-    """Create one exact protected preview from a genuine private owner request."""
+                                   standing_authorizer=None, now=None):
+    """Authorize one exact job from a genuine private owner print request.
+
+    The authenticated request is the authority.  It is not converted into a
+    second preview/confirmation ceremony.
+    """
     semantic=parsed.get("semantic") if isinstance(parsed.get("semantic"),dict) else {}
     if (semantic.get("domain")!="documents"
             or semantic.get("intent")!="weekly_weighing_sheet_print"):
         return {"handled":False,"status":"documents_green_request_not_applicable"},200
     if semantic.get("needs_clarification") is True:
         question=str(semantic.get("clarification_question") or "").strip()
+        afrikaans=str(parsed.get("output_language") or semantic.get("language") or "").casefold().startswith("af")
         return {"handled":True,"success":False,
             "status":"documents_green_request_clarification_required",
             "specialist":"DOCUMENTS","mission_id":MISSION_ID,
-            "answer":question or "Do you want me to prepare the weekly weighing sheet for printing?",
+            "answer":question or ("Wil jy hê ek moet die weeklikse weegblad vir drukwerk voorberei?"
+                if afrikaans else "Do you want me to prepare the weekly weighing sheet for printing?"),
             "canonical_job_created":False,"printer_calls":0,
             "writes_farm_data":False},200
     owner=str(parsed.get("telegram_user_id") or "")
@@ -60,26 +65,27 @@ def handle_documents_green_request(parsed, *, environ=None, pig_loader=None,
             authorization_expires_at=expires,**{
                 key:required[key] for key in ("farm_scope_id","green_id","printer_id",
                     "cups_queue_id","registry_version")})
-        claim=claim_creator(action_kind=PRINT_ACTION_KIND,owner_user_id=owner,
-            private_chat_id=chat,mission_id=MISSION_ID+":"+revision.version_id,
-            provider_message_id=str(parsed.get("provider_message_id") or ""),
-            evidence_generation=revision.canonical_input_sha256,
-            preview_payload=preview,expires_at=expires.isoformat(),
-            reuse_active_provider_identity=True)
+        if standing_authorizer is None:
+            from modules.documents.green_print_api import authorize_standing_weekly_print
+            standing_authorizer=authorize_standing_weekly_print
+        job=standing_authorizer(preview,revision,parsed)
     except Exception as exc:
         return {**_hold("documents_green_preview_contained"),
             "error_type":type(exc).__name__},503
-    return {"handled":True,"success":True,"status":"documents_green_preview_ready",
+    return {"handled":True,"success":True,"status":"documents_green_print_authorized",
         "specialist":"DOCUMENTS","mission_id":MISSION_ID,
         "card_mission_id":MISSION_ID+":"+revision.version_id,
-        "callback_token":claim["callback_token"],"preview_digest":preview["preview_digest"],
-        "action_kind":PRINT_ACTION_KIND,
-        "answer":("Print the weekly weighing sheet?\n\n"
+        "preview_digest":preview["preview_digest"],"action_kind":PRINT_ACTION_KIND,
+        "document_preview":{"effective_date":revision.sheet_date.isoformat(),
+            "row_count":len(revision.canonical_rows),"printer_id":required["printer_id"],
+            "copies":1,"paper":"A4","colour":"monochrome"},
+        "answer":("The weekly weighing sheet is authorized for the Green private printer.\n\n"
             f"Date: {revision.sheet_date.isoformat()}\nPigs: {len(revision.canonical_rows)}\n"
-            "Printer: Green private printer\nCopies: 1, A4, monochrome\n\n"
-            "Nothing will print until you confirm."),
-        "reply_markup":build_buttons(claim["callback_token"]),
-        "canonical_job_created":False,"printer_calls":0,"writes_farm_data":False},200
+            "Copies: 1, A4, monochrome. I will follow it through and only ask about "
+            "the physical page or a genuine exception."),
+        "reply_markup":{"inline_keyboard":[]},
+        "canonical_job_created":bool(job),"job_id":job.get("job_id") if job else None,
+        "printer_calls":0,"writes_farm_data":False,"automatic_reprint":False},200
 
 
 def _active_pigs():

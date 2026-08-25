@@ -2,6 +2,8 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_health_loss_runtime import (
+    _health_loss_message,
+    _mortality_completion_message,
     _record_lifecycle_event,
     handle_authenticated_health_loss_message,
     load_canonical_health_loss_evidence,
@@ -18,6 +20,24 @@ def parsed(text, message_id="3169"):
         "provider_message_id": message_id,
         "provider_timestamp": "2026-08-02T07:07:57+00:00",
     }
+
+
+def test_all_runtime_status_fragments_follow_recipient_language_and_are_html_safe():
+    keys = ("active_context_unavailable", "stale_confirmation", "pending_ambiguous",
+            "identity_required", "provider_identity_required", "chronology_conflict",
+            "binding_mismatch", "observation_recorded", "recording_contained",
+            "completion_recovery", "cancelled", "claim_unavailable")
+    english = " ".join(_health_loss_message("en", key) for key in keys)
+    afrikaans = " ".join(_health_loss_message("af", key) for key in keys)
+    assert "Nothing" in english and "Niks" not in english
+    assert "Niks" in afrikaans and "Nothing" not in afrikaans
+    completion = _mortality_completion_message({"pig_name": "A<B & C",
+        "welfare_case_closed": True, "living_checks_reconciled": 1}, "en")
+    assert "A&lt;B &amp; C" in completion and "A<B" not in completion
+    af_completion = _mortality_completion_message({"tag_number": "126",
+        "welfare_case_closed": True, "living_checks_reconciled": 1}, "af")
+    assert af_completion.startswith("<b>VARK 126 AANGETEKEN</b>")
+    assert "SE AFSTERWE AANGETEKEN" not in af_completion
 
 
 def evidence():
@@ -68,6 +88,51 @@ def memory_store(active=None):
         return {"success": True, "created": True}
 
     return store, recorded
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.prepare_health_loss_owner_preview")
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_natural_afrikaans_vark_mortality_without_date_enters_shared_preview(loader, prepare):
+    loader.return_value = evidence()
+    prepare.return_value = {"question_count": 1, "owner_message": "Een vraag: Op watter datum?",
+        "confirmation_binding": {"operation_id": ""}, "evaluator": {"identity": {
+            "pig_id": "PIG-2026-125A", "tag_number": "126"}}}
+    store, recorded = memory_store()
+    message = {**parsed("Vark 126 is dood, ons het hom verwyder en begrawe.", "fresh-anton-126"),
+        "output_language": "af"}
+    result, status = handle_authenticated_health_loss_message(
+        message, issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["handled"] is True
+    assert result["status"] == "waiting_for_input"
+    assert len(recorded) == 1 and recorded[0]["output_language"] == "af"
+    assert recorded[0]["combined_text"].startswith("Vark 126 is dood")
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.prepare_health_loss_owner_preview")
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_fresh_mortality_preview_uses_generation_bound_visible_card(loader, prepare):
+    loader.return_value = evidence()
+    prepare.return_value = {"question_count": 0, "owner_message": "Voorskou",
+        "confirmation_binding": {"operation_id": "HERD-FRESH", "preview_sha256": "P" * 64},
+        "evaluator": {"event_family": "found_dead", "identity": {
+            "pig_id": "PIG-2026-E88A", "tag_number": "11"}}}
+    store, _recorded = memory_store()
+    claimed = {}
+    def create(**kwargs):
+        claimed.update(kwargs)
+        return {"preview_digest": "a" * 64, "callback_token": "FRESH",
+                "action_kind": "mortality"}
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed("Vark 11 is dood en begrawe", "fresh-card"), "output_language": "af"},
+        issue_gateway_owner_authority("42", "42"), context_store=store,
+        claim_creator=create)
+    assert status == 200
+    assert result["mission_id"].startswith("OOM-HERDMASTER-")
+    assert result["card_mission_id"] == result["mission_id"] + ":PROTECTED:" + "A" * 24
+    assert result["card_mission_id"] != result["mission_id"]
+    assert claimed["preview_payload"]["effect_kind"] == "mortality"
+    assert claimed["preview_payload"]["event_family"] == "found_dead"
+    prepare.assert_called_once()
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_litter_register_rows")
@@ -218,7 +283,7 @@ def test_pig_11_report_is_acknowledged_and_asks_only_current_welfare_question(lo
     assert status == 200
     assert result["status"] == "waiting_for_input"
     assert result["tool_used"] == "herdmaster_health_loss_preview"
-    assert "PIG 11 NEEDS CHECKING" in result["answer"]
+    assert "HERDMASTER - HEALTH PREVIEW" in result["answer"]
     assert "able to stand, breathe normally and drink water" in result["answer"]
     assert result["writes_farm_data"] is False
     assert recorded[0]["provider_message_id"] == "3169"
@@ -243,7 +308,7 @@ def test_follow_up_reuses_open_context_without_repeating_known_report(loader):
     assert status == 200
     assert result["status"] == "preview_ready"
     assert result["question_count"] == 0
-    assert "HERDMASTER PREVIEW READY" in result["answer"]
+    assert "HERDMASTER - HEALTH PREVIEW" in result["answer"]
     assert "not eating" in recorded[0]["combined_text"]
     assert "drinking water" in recorded[0]["combined_text"]
 
@@ -683,6 +748,6 @@ def test_mortality_write_success_with_lifecycle_store_failure_is_visible_and_rec
         message, issue_gateway_owner_authority("42", "42"), context_store=good_store)
     assert recovered_status == 200 and recovered["status"] == "completed"
     assert recovered["rows_created"] == 0
-    assert "Deceased" in recovered["answer"] and "no longer current/on farm" in recovered["answer"]
+    assert "DEATH RECORDED" in recovered["answer"] and "no longer available on farm" in recovered["answer"]
     assert recorded[0]["status"] == "completed"
     assert confirm.call_count == 2

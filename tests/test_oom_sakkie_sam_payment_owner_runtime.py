@@ -4,6 +4,7 @@ from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.oom_sakkie.sam_payment_owner_runtime import (
     ACTION_KIND, MISSION_ID, execute_claimed_sale_payment, present_sale_payment_preview,
 )
+from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
 
 
 PREVIEW = {"version": "sale_payment_preview_v1", "sale_id": "SALE-AUCT",
@@ -98,6 +99,9 @@ def test_claim_execution_rechecks_exact_preview_and_uses_only_canonical_writer()
     assert writes[0][1]["confirmed_preview_digest"] == "a" * 64
     assert result["answer"] == (
         "Auction completed. Settlement received: R4470.51 by EFT on 2026-08-11. Fully reconciled.")
+    af = localize_recipient_result({"output_language": "af"}, result, "SAM")
+    assert all(value in af["answer"] for value in ("4470.51", "EFT", "2026-08-11"))
+    assert "Auction completed" not in af["answer"]
 
 
 def test_changed_canonical_state_requires_repreview_and_writes_zero():

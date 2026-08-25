@@ -37,21 +37,27 @@ The confirmed high-level water path is:
 
 ### Borehole
 
-- Borehole 1 uses a separately commissioned SmartLife/IFTTT plug. It is a
+- Borehole 1 uses eWeLink device `1002851416`, display name
+  `Boorgat 1 Krag Toevoer`, a SONOFF MINI R4 sole output represented as logical
+  channel 1, with exact IFTTT events `borehole_1_on` and `borehole_1_off`. It is a
   distinct typed device and authority domain; B/C irrigation or fertilizer
   commissioning never grants borehole authority.
-- Commissioning proves the exact plug/control identity only. It does not by
-  itself prove that the motor ran, water moved, storage filled, or routine or
-  autonomous authority is enabled.
+- Power restoration is OFF and native inching/auto-OFF is four hours. Under the
+  owner's standing authority, fresh authoritative provider/app OFF -> ON -> OFF
+  is sufficient commissioning and operational proof; routine physical presence,
+  preview and confirmation are not required.
 - Every governed actuation still requires the exact canonical binding, fresh
   provider state, explicit applicable owner/standing authority, bounded native
-  shutdown, power-restoration-safe state, manual isolation and physical or
-  provider outcome verification. Missing evidence fails the protected action
+  shutdown, power-restoration-safe state and provider outcome verification.
+  Missing evidence fails the protected action
   closed.
 - The borehole may operate at night; there is no owner-reported noise-hour restriction.
 - The pump/controller has its own internal protection and storage-full cutoff.
 - If the storage tanks are full, the internal controller can stop pumping even while the smart plug remains energized.
-- ROOTLINE may not infer that the borehole ran, pumped water, or filled storage merely because the smart plug was ON.
+- ROOTLINE may report the exact governed power cycle from provider ON/OFF, but
+  may not infer pumped volume or storage fill merely because the smart plug was ON.
+- The approximately 1.2 kW inverter load is supporting evidence only and never
+  a gate or stop condition.
 - Once the exact canonical action and applicable authority are governed, nighttime is the borehole catch-up window. ROOTLINE chooses start time and duration from water continuity, storage/reservoir evidence, actual rain, forecast reliability, battery/solar/grid evidence, and expected need.
 - The internal full-tank cutoff means an energized overnight window is not itself proof of needless pumping, but ROOTLINE must verify actual outcome rather than equating plug state with water movement.
 
@@ -221,6 +227,21 @@ The safety objective is not "exactly one OFF request." The required physical out
 - `OFF` is a state-setting, physically idempotent action. Repeating `OFF` is safe and is required when stop confirmation is absent or ambiguous.
 - Before `ON`, ROOTLINE must arm and verify an independent maximum-runtime fail-stop that does not depend on the same process surviving. Preferred implementations, in order, are a device-native countdown/auto-OFF/inching function, a device-native paired stop schedule, or a separately durable controller/workflow with a device backup.
 - A command receipt proves transport acceptance only. Where direct device state, electrical-current, flow, or valve-position evidence exists, ROOTLINE uses it to verify start and stop. Until such telemetry exists, supervised physical observation may prove a bounded commissioning run.
+- Owner decision 2026-08-24: for the governed Fertilizer mixer, Fertilizer
+  injector and Borehole controller, fresh authoritative application/provider
+  ON then OFF readback is sufficient operational start/stop proof. Routine
+  owner physical presence, observation or per-run confirmation is not required;
+  ROOTLINE holds standing authority for exact registered devices inside current
+  eligibility and bounded fail-stop/interlock contracts; Charl and Anton will
+  report exceptions. This does not make a command receipt sufficient, prove
+  fertilizer or water moved, or waive exact device binding, current need,
+  interlocks, idempotency, replay protection, deterministic maximum-runtime
+  OFF, final verified OFF, or canonical lifecycle readback. Mixer remains bound
+  to the commissioned CH2 300-second fail-stop. Injector remains bound to
+  exactly one active irrigation zone, at least ten minutes pre-flow, at most
+  120 seconds injection and at least ten minutes clean-water flush. Borehole
+  may not be commanded until exact device/provider binding and bounded
+  fail-OFF are proven.
 - A bounded run records one authorized execution identity, its maximum runtime, backup-stop deadline, primary stop attempt, every safe repeated `OFF`, observed outcome, and final containment state.
 - Failure to arm the independent fail-stop blocks `ON`. Failure to verify shutdown after the fail-stop creates one urgent hardware exception and keeps the zone unavailable for autonomous reuse.
 

@@ -12,9 +12,14 @@ def main():
     url = os.getenv("OOM_SAKKIE_LLM_ROUTER_URL", "").strip() or "https://api.openai.com/v1/chat/completions"
     model = os.getenv("OOM_SAKKIE_LLM_ROUTER_MODEL", "").strip()
     key = os.getenv("OPENAI_API_KEY", "").strip()
+    semantic_enabled = os.getenv("OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
     print("url:", url)
     print("model:", model or "(missing)")
     print("key_present:", bool(key))
+    print("semantic_front_door_enabled:", semantic_enabled)
+    print("semantic_media_ready:", bool(semantic_enabled and model and key))
     if not model or not key:
         print("SKIP: model or key missing.")
         return 2

@@ -1,5 +1,7 @@
 from modules.oom_sakkie import protected_action_runtime as runtime
-from modules.oom_sakkie.protected_action_claims import build_buttons, canonical_preview_digest, create_claim
+from modules.oom_sakkie.protected_action_claims import (
+    build_buttons, canonical_preview_digest, claim_callback, create_claim,
+)
 from datetime import datetime, timedelta, timezone
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie import telegram_direct
@@ -15,6 +17,35 @@ def parsed(text="I confirm this"):
 
 def authority():
     return issue_gateway_owner_authority("5721652188", "5721652188")
+
+
+def manager_authority():
+    return issue_gateway_owner_authority("5721652188", "5721652188",
+        principal_role="farm_manager", capabilities=("mortality_confirmation",))
+
+
+def test_manager_callback_is_narrowly_bounded_to_mortality(monkeypatch):
+    observed = {}
+    def claim(*args, **kwargs):
+        observed.update(kwargs)
+        return {"success": False, "status": "protected_callback_unknown"}, 404
+    monkeypatch.setattr(runtime, "claim_callback", claim)
+    runtime.handle_protected_action_input(
+        {**parsed(""), "callback_data": "oompa:opaque:confirm"}, manager_authority())
+    assert observed["allowed_action_kinds"] == frozenset({"mortality"})
+
+
+def test_sealed_authority_must_match_parsed_actor_before_claim(monkeypatch):
+    calls=[]
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:calls.append(kwargs))
+    result,status=runtime.handle_protected_action_input({
+        "telegram_user_id":"1002","telegram_chat_id":"1002",
+        "provider_message_id":"cb-cross","provider_timestamp":"2026-08-23T20:27:24Z",
+        "reply_to_message_id":"700","callback_data":"oompa:opaque:confirm","text":""},
+        issue_gateway_owner_authority("1003","1003",principal_role="farm_manager",
+            capabilities=("mortality_confirmation",)))
+    assert status==200 and result["status"]=="protected_action_not_applicable"
+    assert calls==[]
 
 
 def test_buttons_are_short_opaque_and_have_required_afrikaans_labels():
@@ -190,6 +221,28 @@ def test_completed_irrigation_callback_retries_delivery_without_execution(monkey
     assert result["reply_markup"]=={"inline_keyboard":[]}
 
 
+def test_completed_mortality_callback_reuses_canonical_result_without_farm_write(monkeypatch):
+    canonical={"success":True,"status":"completed",
+      "answer":"<b>Die vark SE AFSTERWE AANGETEKEN</b>",
+      "writes_farm_data":True,"rows_created":1,"lifecycle_event_id":"LIFE-1"}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_completed_delivery_retry",
+      "action_kind":"mortality","mission_id":"OOM-HERD-1",
+      "preview_digest":"d"*64,"preview_payload":{"identity":{"tag_number":"126"}},
+      "result":canonical},200))
+    writes=[]
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm","output_language":"af"},authority(),
+      health_handler=lambda *args,**kwargs:writes.append(args))
+    assert status==200 and writes==[]
+    assert result["answer"].startswith("<b>VARK 126 AANGETEKEN</b>")
+    assert "Die vark SE AFSTERWE" not in result["answer"]
+    assert result["lifecycle_event_id"]=="LIFE-1"
+    assert result["delivery_recovery_required"] is True
+    assert result["writes_farm_data"] is False
+    assert result["reply_markup"]=={"inline_keyboard":[]}
+
+
 def test_completed_beacon_media_callback_retries_delivery_without_decision_write(monkeypatch):
     prior={"success":True,"status":"private_media_review_recorded",
       "answer":"Library decision recorded once.","mission_id":"GROUP:LIBRARY",
@@ -280,6 +333,19 @@ def test_irrigation_database_degraded_hold_contains_claim_and_clears_card(monkey
     assert "No controller command" in result["answer"]
 
 
+def test_completed_mortality_recovery_targets_exact_generation_card(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_completed_delivery_retry",
+      "callback_token":"opaque","action_kind":"mortality","mission_id":"MISSION",
+      "preview_digest":"b"*64,"result":{"success":True,
+        "status":"mortality_lifecycle_recorded","answer":"Aangeteken"}},200))
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority())
+    assert status==200
+    assert result["card_mission_id"]=="MISSION:PROTECTED:"+"B"*24
+    assert result["reply_markup"]=={"inline_keyboard":[]}
+
+
 def test_connection_failure_after_claim_is_retained_for_exact_recovery(monkeypatch):
     payload={"preview":{"row_count":7},"preview_sha256":"DIGEST"}
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
@@ -330,7 +396,78 @@ def test_allowed_family_reporter_cannot_use_protected_callback():
       "message":{"message_id":700,"chat":{"id":int(reporter),"type":"private"}}}}
     result,status=handle_telegram_direct_webhook(payload,
       headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
-    assert status==403 and result["status"]=="telegram_protected_action_owner_required"
+    assert status==403 and result["status"]=="telegram_protected_action_authority_required"
+
+
+def test_authenticated_farm_manager_mortality_callback_reaches_bound_protected_runtime(monkeypatch):
+    owner="5721652188";manager="1002";secret="s"*48
+    env={"OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED":"1","OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED":"1",
+      "OOM_SAKKIE_TELEGRAM_BOT_TOKEN":"123456789:"+"A"*40,
+      "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET":secret,
+      "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":owner+","+manager,
+      "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID":owner,
+      "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON":json.dumps([{"telegram_user_id":manager,
+        "role":"farm_manager","family_key":"dad",
+        "permissions":["farm_observation", "active_follow_up", "found_dead_observation",
+            "herdmaster_management_input", "herdmaster_reassessment", "welfare_hold",
+            "welfare_escalation", "irrigation_start", "irrigation_continue"],
+        "summary_domains":["herd"],
+        "authorization_id":"AUTH-MANAGER-1","authorized_by_user_id":owner,
+        "authorized_at":"2026-08-08T08:00:00+02:00","language":"af"}])}
+    observed={}
+    def protected(parsed, authority, **kwargs):
+        observed.update({"parsed":parsed,"authority":authority,"kwargs":kwargs})
+        return {"success":True,"status":"mortality_lifecycle_recorded","answer":"",
+                "writes_farm_data":True,"suppress_owner_delivery":True},200
+    monkeypatch.setattr(telegram_direct,"handle_protected_action_input",protected)
+    monkeypatch.setattr(telegram_direct,"acknowledge_telegram_callback",
+                        lambda *args,**kwargs:({"success":True},200))
+    payload={"callback_query":{"id":"cb-manager-1","data":"oompa:opaque:confirm",
+      "from":{"id":int(manager)},"message":{"message_id":700,
+      "chat":{"id":int(manager),"type":"private"}}}}
+    result,status=handle_telegram_direct_webhook(payload,
+      headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
+    assert status==200 and result["status"]=="mortality_lifecycle_recorded"
+    assert observed["authority"].principal_role=="farm_manager"
+    assert "mortality_confirmation" in observed["authority"].capabilities
+    assert "hardware_exception" not in observed["authority"].capabilities
+    assert "permission_change" not in observed["authority"].capabilities
+    assert observed["parsed"]["telegram_user_id"]==observed["parsed"]["telegram_chat_id"]==manager
+
+
+def test_manager_capability_envelope_excludes_non_farm_and_ungranted_actions(monkeypatch):
+    observed={}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:
+        (observed.update(kwargs) or {"success":False,"status":"protected_action_not_allowed"},403))
+    authority=issue_gateway_owner_authority("1002","1002",principal_role="farm_manager",
+        capabilities=("mortality_confirmation",))
+    result,status=runtime.handle_protected_action_input({
+        "telegram_user_id":"1002","telegram_chat_id":"1002","provider_message_id":"cb-2",
+        "provider_timestamp":"2026-08-23T20:27:24Z","reply_to_message_id":"700",
+        "callback_data":"oompa:opaque:confirm","text":""},authority)
+    assert status==403
+    assert observed["allowed_action_kinds"]==frozenset({"mortality"})
+    assert all(value not in observed["allowed_action_kinds"] for value in ("core","charlie","payment"))
+
+
+@pytest.mark.parametrize("denied_kind", [
+    "grouped_weights", "herdmaster_breeding_grouped", "herdmaster_record_farrowing_litter",
+    "rootline_irrigation_segment", "rootline_fertilizer_mixer_presence_refresh",
+    "rootline_fertilizer_mixer_commissioning", "sam_sale_payment",
+    "beacon_campaign_review", "beacon_private_album_finish", "beacon_media_review",
+    "documents_green_print", "documents_green_physical_acceptance", "core", "charlie",
+])
+def test_manager_urgent_callback_scope_explicitly_denies_every_non_mortality_kind(
+        monkeypatch, denied_kind):
+    observed={}
+    def claim(*args,**kwargs):
+        observed.update(kwargs)
+        assert denied_kind not in kwargs["allowed_action_kinds"]
+        return {"success":False,"status":"protected_action_not_allowed"},403
+    monkeypatch.setattr(runtime,"claim_callback",claim)
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"callback_data":"oompa:opaque:confirm"},manager_authority())
+    assert status==403 and observed["allowed_action_kinds"]==frozenset({"mortality"})
 
 
 def test_direct_callback_preserves_digest_scoped_card_lifecycle(monkeypatch):
@@ -376,6 +513,20 @@ class PriorClaimDb:
     def cursor(self):return self
     def execute(self,*args):pass
     def fetchone(self):return self.row
+
+
+def test_completed_mortality_claim_exposes_delivery_retry_from_canonical_result():
+    canonical={"success":True,"status":"completed","answer":"Recorded once.",
+               "lifecycle_event_id":"LIFE-1"}
+    row=("mortality","5721652188","5721652188","OOM-HERD-1","d"*64,"GEN",{},
+         "completed",datetime.now(timezone.utc)+timedelta(minutes=5),canonical,"700")
+    result,status=claim_callback("oompa:opaque:confirm",owner_user_id="5721652188",
+        private_chat_id="5721652188",provider_message_id="same-callback-receipt",
+        provider_timestamp="2026-08-24T06:10:37Z",source_card_message_id="700",
+        connect_factory=lambda:PriorClaimDb(row))
+    assert status==200
+    assert result["status"]=="protected_callback_completed_delivery_retry"
+    assert result["result"]==canonical
 
 
 def test_expired_or_cross_bound_claim_is_never_represented_with_dead_buttons():

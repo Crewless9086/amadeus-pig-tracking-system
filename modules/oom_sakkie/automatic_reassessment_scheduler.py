@@ -10,9 +10,9 @@ SAST = ZoneInfo("Africa/Johannesburg")
 CONTRACT_VERSION = "oom_sakkie_reassessment_schedule.v1"
 SCHEDULER_IDENTITY = "ALERT-POWER-BACKEND-DELIVERY:OOM-SAKKIE-REASSESSMENT"
 ENABLED_SPECIALISTS = frozenset({"ROOTLINE"})
-CADENCE_MINUTES = 15
+CADENCE_MINUTES = 1
 MAX_CLOCK_DRIFT = timedelta(minutes=5)
-MAX_MISSED_RUN_AGE = timedelta(minutes=CADENCE_MINUTES * 2)
+MAX_MISSED_RUN_AGE = timedelta(minutes=5)
 
 
 def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Mapping[str, Any]],
@@ -45,7 +45,8 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                 "invocation_receipt": digest, "terminal_outcome": prior_identity["status"]}
     latest = store("load_latest_outcome", specialist, None) or {}
     owned_due = _parse(latest.get("next_due_at"))
-    if owned_due and now < owned_due:
+    if (owned_due and now < owned_due
+            and not _current_bucket_second_offset(now, owned_due)):
         return {**_safe("scheduled_reassessment_not_yet_due"),
                 "next_due_at": owned_due.astimezone(SAST).isoformat()}
     record = {"contract_version": CONTRACT_VERSION, "schedule_identity": identity,
@@ -97,6 +98,22 @@ def _bucket(value: datetime) -> datetime:
     local = value.astimezone(SAST)
     minute = local.minute - local.minute % CADENCE_MINUTES
     return local.replace(minute=minute, second=0, microsecond=0)
+
+
+def _current_bucket_second_offset(now: datetime, due: datetime) -> bool:
+    """Accept scheduler jitter only at the current canonical bucket edge.
+
+    Durable due times can retain seconds from a prior invocation while the
+    recurring cron is minute-aligned.  Without this bounded tolerance, a cron
+    that consistently arrives a few seconds before the retained timestamp can
+    suppress every later invocation.  A due time in any later minute or bucket
+    remains strictly future work.
+    """
+    local_now = _aware(now).astimezone(SAST)
+    local_due = _aware(due).astimezone(SAST)
+    bucket = _bucket(local_now)
+    return (_bucket(local_due) == bucket
+            and local_due.minute == bucket.minute)
 
 
 def _next_due(now: datetime, result: Mapping[str, Any]) -> datetime:

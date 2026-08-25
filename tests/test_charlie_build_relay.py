@@ -1227,16 +1227,15 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(data["sources"]["charlie_improvement_analyst"]["authoritative"])
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
-    @patch("modules.charlie.routes._dashboard_owner_queue")
-    @patch("modules.charlie.routes.mission_status_summary")
+    @patch("modules.charlie.routes.mission_control_snapshot")
     def test_mission_control_snapshot_returns_all_compact_status_buckets(
-        self, mission_summary, owner_queue, _owner_access
+        self, snapshot, _owner_access
     ):
         charlie_routes.MISSION_CONTROL_CACHE.update({"expires_at": 0.0, "packet": None})
-        mission_summary.return_value = ({"success": True, "counts": {"blocked": 1, "new": 2}}, 200)
-        owner_queue.return_value = ({"success": True, "missions": [
+        snapshot.return_value = ({"success": True, "counts": {"blocked": 1, "new": 2}, "missions": [
             {"mission_id": "NEW-1", "status": "new"},
             {"mission_id": "ACTIVE-1", "status": "in_progress"},
+            {"mission_id": "WAITING-1", "status": "paused"},
             {"mission_id": "BLOCK-1", "status": "blocked"},
         ]}, 200)
 
@@ -1254,31 +1253,27 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["authoritative"])
         self.assertEqual(data["source"], "supabase_charlie_missions")
-        self.assertEqual(data["buckets"]["active"][0]["mission_id"], "ACTIVE-1")
+        self.assertEqual(
+            [mission["mission_id"] for mission in data["buckets"]["active"]],
+            ["ACTIVE-1", "WAITING-1"],
+        )
         self.assertEqual(data["buckets"]["blocked"][0]["mission_id"], "BLOCK-1")
         self.assertEqual(data["revision_truth"]["github_accepted_commit"], "accepted")
         self.assertEqual(data["revision_truth"]["render_deployed_commit"], "render")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
-    @patch("modules.charlie.routes._dashboard_owner_queue")
-    @patch("modules.charlie.routes.mission_status_summary")
-    def test_mission_control_keeps_queue_visible_when_count_summary_fails(
-        self, mission_summary, owner_queue, _owner_access
+    @patch("modules.charlie.routes.mission_control_snapshot")
+    def test_mission_control_fails_closed_when_canonical_snapshot_fails(
+        self, snapshot, _owner_access
     ):
         charlie_routes.MISSION_CONTROL_CACHE.update({"expires_at": 0.0, "packet": None})
-        mission_summary.return_value = ({"success": False, "status": "mission_summary_failed"}, 503)
-        owner_queue.return_value = ({"success": True, "missions": [
-            {"mission_id": "REVIEW-1", "status": "pr_ready"},
-            {"mission_id": "APPROVED-1", "status": "approved"},
-        ]}, 200)
+        snapshot.return_value = ({"success": False, "status": "mission_control_snapshot_failed"}, 503)
 
         response = self.client.get("/api/charlie/build-relay/mission-control?refresh=1")
         data = response.get_json()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["counts_source"], "owner_queue_fallback")
-        self.assertEqual(data["counts"]["pr_ready"], 1)
-        self.assertEqual(data["buckets"]["review"][0]["mission_id"], "REVIEW-1")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["status"], "mission_control_snapshot_unavailable")
 
     @patch("modules.charlie.routes.time.sleep")
     def test_dashboard_read_retries_transient_server_failures(self, sleep):

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from modules.telemetry.rootline_borehole_commissioning import (assess_borehole_commissioning_readiness,
   prepare_borehole_execution_plan, load_registered_borehole_baseline,
-  build_borehole_runtime_eligibility)
+  build_borehole_runtime_eligibility, advance_borehole_execution)
 from modules.telemetry.rootline_device_registry import get_device_contract
 from modules.telemetry.rootline_execution_runtime import prepare_rootline_borehole_cycle
 from modules.telemetry.rootline_irrigation_execution_store import _valid_borehole_eligibility
@@ -10,7 +10,7 @@ NOW=datetime(2026,8,20,11,0,tzinfo=timezone.utc)
 def provider(**changes):
     value={"device_id":"1002851416","device_name":"Boorgat 1 Krag Toevoer","model":"MINIR4","online":True,
       "retrieved_at":NOW.isoformat(),"channels":[{"channel":1,"output_state":"OFF"}],"native_auto_off_enabled":True,
-      "native_auto_off_seconds":30,"power_restoration_state":"OFF","timers_enabled":False,"scenes_enabled":False,"interlock_enabled":False}
+      "native_auto_off_seconds":14400,"power_restoration_state":"OFF","timers_enabled":False,"scenes_enabled":False,"interlock_enabled":False}
     value.update(changes); return value
 def canonical(**changes):
     value={"current":True,"device_identity":"BOREHOLE-1-MINI-R4-CH1","device_id":"1002851416","channel":1,
@@ -20,14 +20,16 @@ def physical(**changes):
     value={key:True for key in ("supervised","pump_started","water_flow_observed","native_auto_off_observed","pump_stopped","water_flow_stopped","manual_off_and_isolation_proven")}
     value.update(changes); return value
 
-def test_registry_is_identity_only_and_grants_no_authority():
+def test_registry_binds_exact_owner_approved_connector_but_grants_no_authority():
     row=get_device_contract("BOREHOLE-1-MINI-R4-CH1")
     assert (row["device_id"],row["channel"],row["model"])==("1002851416",1,"MINIR4")
-    assert row["commissioned"] is False and row["on_event"] is row["off_event"] is None
+    assert row["commissioned"] is False
+    assert (row["on_event"],row["off_event"],row["native_fail_stop_seconds"]) == (
+        "borehole_1_on","borehole_1_off",14400)
 def test_provider_ready_prepares_only_protected_supervised_commissioning():
     value=assess_borehole_commissioning_readiness(provider(),now=NOW)
     assert value["eligible_for_protected_commissioning"] is True
-    assert value["blockers"]==["canonical_commissioned_baseline_absent","supervised_physical_baseline_absent"]
+    assert value["blockers"]==["canonical_commissioned_baseline_absent"]
     assert value["hardware_commands"]==value["provider_control_calls"]==0
 def test_ambiguity_fails_closed():
     value=assess_borehole_commissioning_readiness(provider(channels=[{"channel":1,"output_state":"Unknown"}],timers_enabled="Unknown"),now=NOW)
@@ -77,7 +79,76 @@ def test_runtime_identity_is_deterministic_and_command_inert():
     assert _valid_borehole_eligibility({**first,"requested_seconds":901}) is False
     assert _valid_borehole_eligibility({**first,"eligible":False}) is False
 
-def test_existing_runtime_is_disabled_then_persists_only_eligibility(monkeypatch):
+
+class BoreholeStore:
+    def __init__(self): self.active=None; self.events=[]
+    def __call__(self, action, body):
+        if action=="load_active_borehole": return self.active
+        if action=="load_borehole_off_attempts": return []
+        if action in {"claim_borehole_before_on","claim_borehole_off_attempt"}:
+            if action=="claim_borehole_before_on": self.active=dict(body)
+            self.events.append((action,body)); return {"success":True,"created":True}
+        if action=="mark_borehole_active": self.active=dict(body)
+        if action=="record_borehole_completed": self.active=None
+        self.events.append((action,body)); return {"success":True,"created":True}
+
+
+class BoreholeTransport:
+    def __init__(self, on_accepted=True, on_readback="ON"):
+        self.state="OFF"; self.commands=[]; self.on_accepted=on_accepted
+        self.on_readback=on_readback
+    def set_state(self,**kwargs):
+        self.commands.append(kwargs)
+        if kwargs["state"]=="ON":
+            self.state=self.on_readback
+            return {"accepted_unambiguous":self.on_accepted,
+                "status":"accepted" if self.on_accepted else "provider_outcome_ambiguous"}
+        self.state="OFF"; return {"accepted_unambiguous":True,"status":"accepted"}
+    def read_output_state(self,**_kwargs):
+        return {"authoritative":True,"state":self.state,
+            "evidence_id":"PROVIDER-"+self.state}
+
+
+def test_one_on_then_bounded_off_and_restart_recovery_use_same_execution():
+    baseline={**canonical(maximum_routine_runtime_seconds=14400),"registry_generation":2}
+    artifact=build_borehole_runtime_eligibility(need={"eligible":True},baseline=baseline,
+      authority={"inside_standing_authority":True},provider={"authoritative":True,"state":"OFF"},
+      interlocks={"dry_run_safe":True,"low_water_clear":True,"supply_pressure_safe":True,
+        "full_tank_not_blocking":True},energy={"eligible":True},requested_seconds=60,now=NOW)
+    store=BoreholeStore(); transport=BoreholeTransport()
+    started=advance_borehole_execution(eligibility=artifact,store=store,
+      transport=transport,now=NOW)
+    assert started["status"]=="borehole_started"
+    assert [row["state"] for row in transport.commands]==["ON"]
+    completed=advance_borehole_execution(eligibility=artifact,store=store,
+      transport=transport,now=NOW.replace(minute=2))
+    assert completed["status"]=="borehole_completed"
+    assert [row["state"] for row in transport.commands]==["ON","OFF"]
+    assert completed["execution"]["operational_proof"]=="provider_app_on_to_off"
+
+
+def test_ambiguous_or_unverified_start_is_off_contained_never_completed():
+    baseline={**canonical(maximum_routine_runtime_seconds=14400),"registry_generation":2}
+    artifact=build_borehole_runtime_eligibility(need={"eligible":True},baseline=baseline,
+      authority={"inside_standing_authority":True},provider={"authoritative":True,"state":"OFF"},
+      interlocks={"dry_run_safe":True,"low_water_clear":True,"supply_pressure_safe":True,
+        "full_tank_not_blocking":True},energy={"eligible":True},requested_seconds=60,now=NOW)
+    for transport in (BoreholeTransport(on_accepted=False),
+                      BoreholeTransport(on_readback="Unknown")):
+        store=BoreholeStore()
+        result=advance_borehole_execution(eligibility=artifact,store=store,
+          transport=transport,now=NOW)
+        assert result["success"] is False
+        assert result["status"]=="borehole_start_failure_contained"
+        assert [row["state"] for row in transport.commands]==["ON","OFF"]
+        assert not any(action=="record_borehole_completed" for action,_ in store.events)
+        replay=advance_borehole_execution(eligibility=artifact,store=store,
+          transport=transport,now=NOW.replace(minute=2))
+        assert replay["success"] is False
+        assert replay["status"]=="borehole_start_failure_contained"
+        assert not any(action=="record_borehole_completed" for action,_ in store.events)
+
+def test_existing_runtime_is_disabled_then_advances_with_injected_transport(monkeypatch):
     common=dict(need={"eligible":True},provider={"authoritative":True,"state":"OFF"},
       interlocks={"dry_run_safe":True,"low_water_clear":True,"supply_pressure_safe":True,
         "full_tank_not_blocking":True},energy={"eligible":True},requested_seconds=900,
@@ -86,9 +157,8 @@ def test_existing_runtime_is_disabled_then_persists_only_eligibility(monkeypatch
     baseline={**canonical(),"registry_generation":2}
     monkeypatch.setattr("modules.telemetry.rootline_borehole_commissioning.load_registered_borehole_baseline",
       lambda **kwargs:baseline)
-    calls=[]
+    store=BoreholeStore(); transport=BoreholeTransport()
     result=prepare_rootline_borehole_cycle(**common,environ={"ROOTLINE_BOREHOLE_ENABLED":"true"},
-      store=lambda action,payload:calls.append((action,payload)) or {"success":True})
-    assert result["status"]=="borehole_eligibility_persisted_claim_disabled"
-    assert [row[0] for row in calls]==["record_borehole_eligibility"]
-    assert result["claim_created"] is False and result["hardware_commands"]==0
+      store=store,transport=transport)
+    assert result["status"]=="borehole_started"
+    assert [row["state"] for row in transport.commands]==["ON"]

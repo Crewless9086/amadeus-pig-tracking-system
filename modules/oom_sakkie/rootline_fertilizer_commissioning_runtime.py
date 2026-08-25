@@ -38,7 +38,7 @@ def prepare_fertilizer_commissioning(*, owner_result, parsed, gateway_authority=
         return _result("commissioning_acceptance_receipt_unproven")
     observed = _time(parsed.get("provider_timestamp"))
     if observed is None or not 0 <= (now - observed).total_seconds() <= 300:
-        return _result("commissioning_presence_expired")
+        return _result("commissioning_request_expired")
     if owner_result.get("ready_for_supervised_proof") is not True:
         return dict(owner_result)
     source = environ if environ is not None else os.environ
@@ -149,7 +149,7 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
                                       environ=None, store=None, token_store=None,
                                       transport=None, power_loader=None,
                                       acceptance_loader=None):
-    """Advance only a fresh, exactly bound supervised mixer acceptance."""
+    """Advance only a fresh, exactly bound standing-authority Mixer request."""
     deterministic_now = now is not None
     now = _aware(now or datetime.now(timezone.utc))
     source = environ if environ is not None else os.environ
@@ -160,10 +160,10 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
         return _result("commissioning_acceptance_receipt_unproven")
     observed = _time(parsed.get("provider_timestamp"))
     if observed is None or not 0 <= (now - observed).total_seconds() <= 300:
-        return _result("waiting_for_input",
-            answer=("<b>FERTILIZER MIXER — READY WHEN YOU ARE</b>\n\n"
-                    "Are you at the fertilizer valves now for the five-minute mixer test?"),
-            next_reassessment="fresh_owner_presence")
+        return _result("commissioning_request_expired",
+            answer=("<b>FERTILIZER MIXER — REQUEST EXPIRED</b>\n\n"
+                    "The authenticated command is outside the five-minute anti-replay window. No command was issued."),
+            next_reassessment="fresh_authenticated_request")
     if owner_result.get("ready_for_supervised_proof") is not True:
         return dict(owner_result)
     token_store = token_store or PostgresOAuthTokenStore()
@@ -266,6 +266,21 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
     finally:
         transport.auxiliary_on_authorizer = None
     return _finalize(outcome, store)
+
+
+def execute_fertilizer_commissioning_under_standing_authority(*, owner_result, parsed,
+        gateway_authority=None, **runtime_overrides):
+    """Run one exact owner-requested Mixer pulse without a confirmation card."""
+    first = continue_fertilizer_commissioning(owner_result=owner_result, parsed=parsed,
+        gateway_authority=gateway_authority, **runtime_overrides)
+    if (first.get("status") != "commissioning_specific_hold"
+            or first.get("hold_reason") != "auxiliary_safety_unproven"
+            or int(first.get("hardware_commands") or 0) != 0
+            or int(first.get("provider_control_calls") or 0) != 0):
+        return first
+    second = continue_fertilizer_commissioning(owner_result=owner_result, parsed=parsed,
+        gateway_authority=gateway_authority, **runtime_overrides)
+    return {**second, "bounded_readiness_recheck": True}
 
 
 def recover_fertilizer_commissioning(*, now=None, environ=None, store=None,
@@ -401,6 +416,12 @@ def _load_exact_acceptance(result, parsed):
                       'contextual_followup_completed'
                 order by created_at desc""", (mission,))
             rows = [row[0] for row in cursor.fetchall()]
+    return _matches_exact_acceptance(rows, result, parsed)
+
+
+def _matches_exact_acceptance(rows, result, parsed):
+    """Validate either persisted source using the exact production receipt contract."""
+    mission = str(result.get("mission_id") or "")
     text_sha = sha256(str(parsed.get("text") or "").encode()).hexdigest()
     matches = []
     expected_authority = {"configuration_write": False, "hardware_control": False,
@@ -434,24 +455,24 @@ def _hold(reason):
         "auxiliary_safety_unproven": "The controller safety readback is not currently complete.",
         "auxiliary_device_contained": "The mixer control is safely contained pending a verified shutdown review.",
     }.get(str(reason), "A current mixer-specific safety condition is not yet proven.")
-    return _result("commissioning_specific_hold",
+    return {**_result("commissioning_specific_hold",
         answer=("<b>FERTILIZER MIXER — TEMPORARY HOLD</b>\n\n"
                 f"{human}\n\nROOTLINE will reassess on the next automatic check; "
-                "you do not need to repeat the setup."), next_reassessment="next_scheduler_tick")
+                "you do not need to repeat the setup."), next_reassessment="next_scheduler_tick"),
+        "hold_reason": str(reason or "")}
 
 
 def _present(outcome):
     status = str(outcome.get("status") or "")
     if status == "auxiliary_started":
         answer = ("<b>🟢 FERTILIZER MIXER — STARTED</b>\n\n"
-                  "The five-minute Kunsmis Meng test has started. CH1 and unrelated outputs "
-                  "remain outside this test, and the controller owns the 300-second auto-OFF.\n\n"
-                  "Is the tank recirculating normally, is the pressure-switched pump behaving "
-                  "as expected, and are the other outputs still off?")
+                  "The bounded five-minute Kunsmis Meng run has started. CH1 and unrelated "
+                  "outputs remain outside this run. ROOTLINE will verify the provider ON-to-OFF "
+                  "sequence and the controller owns the 300-second auto-OFF.")
     elif status == "auxiliary_completed":
         enabled = outcome.get("mixing_enabled") is True
         answer = ("<b>✅ FERTILIZER MIXER — COMPLETED</b>\n\n"
-                  "Provider and physical shutdown are verified. Fertilizer mixing is now commissioned; "
+                  "Provider ON-to-OFF and bounded shutdown are verified. Fertilizer mixing is now commissioned; "
                   "injection stays disabled until an eligible irrigation segment."
                   if enabled else
                   "<b>✅ FERTILIZER MIXER — STOPPED</b>\n\n"
@@ -467,7 +488,7 @@ def _present(outcome):
     return {"success": outcome.get("success") is True, "handled": True,
         "status": status, "answer": answer,
         "requires_visible_notification": bool(answer),
-        "question_count": 1 if status == "auxiliary_started" else 0,
+        "question_count": 0,
         "hardware_commands": int(outcome.get("hardware_commands") or 0),
         "mixing_enabled": outcome.get("mixing_enabled") is True,
         "injection_enabled": False,

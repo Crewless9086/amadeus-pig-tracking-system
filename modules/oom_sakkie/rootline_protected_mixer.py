@@ -67,12 +67,28 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
     payload = build_preview_payload(artifact, parsed, device_loader=device_loader)
     if parent_claim_token:
         payload["presence_refresh_claim_token"] = str(parent_claim_token)
-    claim = create_claim(action_kind=ACTION_KIND,
-        owner_user_id=payload["owner_user_id"],
-        private_chat_id=payload["private_chat_id"], mission_id=MISSION_ID,
-        provider_message_id=payload["presence_provider_message_id"],
-        evidence_generation=payload["plan_generation"], preview_payload=payload,
-        ttl_minutes=5, connect_factory=connect_factory, supersede_active=False)
+    try:
+        claim = create_claim(action_kind=ACTION_KIND,
+            owner_user_id=payload["owner_user_id"],
+            private_chat_id=payload["private_chat_id"], mission_id=MISSION_ID,
+            provider_message_id=payload["presence_provider_message_id"],
+            evidence_generation=payload["plan_generation"], preview_payload=payload,
+            ttl_minutes=5, connect_factory=connect_factory, supersede_active=False,
+            retire_expired_unbound_predecessor={
+                "action_kind": PRESENCE_ACTION_KIND,
+                "contract_version": "oom_rootline_mixer_presence_refresh.v1",
+                "specialist_identity": "ROOTLINE",
+                "next_specialist_step": "supervised_fertilizer_mixer_proof"})
+    except (RuntimeError, ValueError):
+        return {**_safe("mixer_protected_preview_conflict"),
+            "handled": True, "success": False,
+            "answer": ("<b>MIXER CH2 — PREVIEW CONTAINED</b>\n\n"
+                "I could not create one exact current confirmation card. "
+                "Nothing started. Do not resend or confirm; ROOTLINE will retain the technical blocker."),
+            "requires_visible_notification": True,
+            "mission_id": MISSION_ID, "card_mission_id": MISSION_ID,
+            "hardware_commands": 0, "provider_control_calls": 0,
+            "writes_farm_data": False}
     token = claim["callback_token"]
     buttons = [[
         {"text": "Confirm", "callback_data": f"{CALLBACK_PREFIX}{token}:confirm"},

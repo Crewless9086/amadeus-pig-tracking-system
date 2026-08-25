@@ -11,8 +11,16 @@ def canonical_preview_digest(kind, payload):
     material={"kind":str(kind),"payload":payload}
     return hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest()
 
-def build_buttons(token, *, grouped=False):
-    token=str(token); values=[("Bevestig alles" if grouped else "Bevestig","confirm"),("Verander","change"),("Kanselleer","cancel")]
+def protected_card_mission_id(mission_id, preview_digest):
+    """Give each protected preview generation its own visible Telegram card."""
+    return f"{str(mission_id)}:PROTECTED:{str(preview_digest)[:24].upper()}"
+
+def build_buttons(token, *, grouped=False, language="af"):
+    token=str(token)
+    if str(language).casefold().startswith("af"):
+        values=[("Bevestig alles" if grouped else "Bevestig","confirm"),("Verander","change"),("Kanselleer","cancel")]
+    else:
+        values=[("Confirm all" if grouped else "Confirm","confirm"),("Correct","change"),("Cancel","cancel")]
     rows=[[{"text":label,"callback_data":f"{CALLBACK_PREFIX}{token}:{action}"} for label,action in values]]
     if any(len(button["callback_data"].encode())>MAX_CALLBACK_BYTES for row in rows for button in row):
         raise ValueError("protected callback exceeds Telegram limit")
@@ -31,7 +39,8 @@ def build_physical_acceptance_buttons(token):
 def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                  provider_message_id, evidence_generation, preview_payload,
                  ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True,
-                 reuse_active_provider_identity=False):
+                 reuse_active_provider_identity=False,
+                 retire_expired_unbound_predecessor=None):
     digest=canonical_preview_digest(action_kind,preview_payload)
     token=secrets.token_urlsafe(12).replace("-","").replace("_","")[:16]
     expires=(datetime.fromisoformat(str(expires_at).replace("Z","+00:00"))
@@ -76,6 +85,58 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                   "preview_card_message_id":str(prior[8] or ""),"action_kind":action_kind}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
         if not supersede_active:
+            # Serialize the mission-wide active-claim invariant before cleanup
+            # and insert. The production partial unique index remains the final
+            # constraint; this lock turns a concurrent loser into the governed
+            # conflict below instead of leaking a database uniqueness error.
+            lock_material = hashlib.sha256(
+                f"protected-claim|{mission_id}".encode()).hexdigest()
+            cur.execute("select pg_advisory_xact_lock(%s)",
+                (int(lock_material[:15], 16),))
+            predecessor = (retire_expired_unbound_predecessor
+                if isinstance(retire_expired_unbound_predecessor, dict) else None)
+            if predecessor:
+                predecessor_action = str(predecessor.get("action_kind") or "")
+                expected_contract = str(predecessor.get("contract_version") or "")
+                expected_specialist = str(predecessor.get("specialist_identity") or "")
+                expected_step = str(predecessor.get("next_specialist_step") or "")
+                if (not predecessor_action or predecessor_action == str(action_kind)
+                        or not expected_contract or not expected_specialist or not expected_step):
+                    raise ValueError("protected_claim_predecessor_contract_invalid")
+                cur.execute("""select callback_token,preview_digest,preview_payload,
+                    owner_user_id,private_chat_id,expires_at,preview_card_message_id
+                  from app_private.oom_protected_action_claims
+                  where action_kind=%s and mission_id=%s and status='active'
+                  order by created_at desc limit 2 for update""",
+                  (predecessor_action, mission_id))
+                predecessors = cur.fetchall()
+                if len(predecessors) == 1:
+                    predecessor_row = predecessors[0]
+                    predecessor_payload = predecessor_row[2]
+                    valid_payload = (isinstance(predecessor_payload, dict)
+                        and predecessor_payload.get("contract_version") == expected_contract
+                        and predecessor_payload.get("mission_id") == str(mission_id)
+                        and predecessor_payload.get("owner_user_id") == str(owner_user_id)
+                        and predecessor_payload.get("private_chat_id") == str(private_chat_id)
+                        and predecessor_payload.get("specialist_identity") == expected_specialist
+                        and predecessor_payload.get("next_specialist_step") == expected_step
+                        and predecessor_row[1] == canonical_preview_digest(
+                            predecessor_action, predecessor_payload))
+                    if (predecessor_row[3] == str(owner_user_id)
+                            and predecessor_row[4] == str(private_chat_id)
+                            and predecessor_row[5] <= datetime.now(timezone.utc)
+                            and predecessor_row[6] is None and valid_payload):
+                        cur.execute("""update app_private.oom_protected_action_claims
+                          set status='expired' where callback_token=%s and status='active'
+                          and expires_at<=now() and preview_card_message_id is null""",
+                          (predecessor_row[0],))
+            # An unbound preview that expired before delivery cannot receive a
+            # valid callback and must not block the next governed preview.
+            # Bound cards retain their terminal audit/callback behavior.
+            cur.execute("""update app_private.oom_protected_action_claims
+              set status='expired' where action_kind=%s and mission_id=%s
+              and status='active' and expires_at<=now()
+              and preview_card_message_id is null""", (action_kind, mission_id))
             cur.execute("""select 1 from app_private.oom_protected_action_claims
               where mission_id=%s and status='active' limit 1""", (mission_id,))
             if cur.fetchone():
@@ -220,7 +281,8 @@ def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
             "expires_at":row[7].isoformat(),"result":result}
 
 def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_message_id,
-                   provider_timestamp, source_card_message_id="", connect_factory=None):
+                   provider_timestamp, source_card_message_id="", connect_factory=None,
+                   allowed_action_kinds=None):
     data=str(callback_data or "")
     try:
         provider_time=datetime.fromisoformat(str(provider_timestamp or "").replace("Z","+00:00"))
@@ -237,12 +299,16 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         row=cur.fetchone()
         if not row:return {"success":False,"status":"protected_callback_unknown"},404
         if str(row[1])!=str(owner_user_id) or str(row[2])!=str(private_chat_id):return {"success":False,"status":"protected_callback_unauthorized"},403
+        if allowed_action_kinds is not None and str(row[0]) not in set(allowed_action_kinds):
+            return {"success":False,"status":"protected_callback_capability_denied",
+                    "action_kind":str(row[0]),"mission_id":str(row[3]),
+                    "writes_farm_data":False,"hardware_commands":0},403
         if not row[10]:
             return {"success":False,"status":"protected_callback_card_unbound"},409
         if str(row[10])!=str(source_card_message_id or ""):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
         if row[7]=="completed":
-            if row[0] in {"rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
+            if row[0] in {"mortality", "rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
                     "rootline_fertilizer_mixer_presence_refresh",
                     "sam_sale_payment", "beacon_media_review",
                     "herdmaster_record_farrowing_litter"}:

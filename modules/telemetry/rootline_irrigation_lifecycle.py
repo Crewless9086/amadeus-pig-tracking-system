@@ -26,7 +26,8 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
     decision = str(recommendation.get("status") or recommendation.get("recommendation") or "")
 
     revalidating = bool(history.get("incomplete_parent_job"))
-    completed = _completed(events, execution, allow_historical=not revalidating)
+    completed = _completed(events, execution,
+                           allow_historical=not revalidating and not execution)
     failed = (action in {"contain_zone", "record_ambiguous_shutdown"}
               or execution_state in {"failed", "ambiguous", "contained"})
     started = (action == "mark_active" or execution_state in {"active", "started", "running"})
@@ -49,10 +50,21 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
     else:
         state, reason, next_action = "Held", _reason(recommendation), "ROOTLINE must reassess on the declared evidence or due-time trigger."
 
-    return {"contract_version": "rootline_zone_lifecycle.v1", "zone_id": zone_id,
+    result = {"contract_version": "rootline_zone_lifecycle.v1", "zone_id": zone_id,
             "state": state, "reason": reason or "Unknown",
             "next_action_owner": "ROOTLINE", "next_action": next_action,
             "supported_states": list(STATES)}
+    if state == "Completed" and isinstance(completed, Mapping):
+        result["completion_evidence"] = {
+            "zone_id": zone_id,
+            "shutdown_verified": completed.get("shutdown_verified") is True,
+            "objective_satisfied": completed.get("objective_satisfied") is True,
+            "qualifies_as_completed_watering": completed.get(
+                "qualifies_as_completed_watering") is True,
+            "shutdown_evidence": completed.get("shutdown_evidence") or
+                completed.get("provider_final_off_evidence") or {},
+        }
+    return result
 
 
 def _completed(events, execution, *, allow_historical):

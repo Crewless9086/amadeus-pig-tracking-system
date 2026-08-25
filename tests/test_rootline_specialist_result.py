@@ -90,6 +90,21 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         self.assertFalse(result["current_local_weather"]["is_forecast"])
         self.assertFalse(result["forecast"]["is_current_local_weather"])
 
+    def test_actual_builder_prefers_current_execution_over_historical_completion(self):
+        history = {"zones": {"B12345": {"events": [{
+            "qualifies_as_completed_watering": True, "shutdown_verified": True,
+            "verified_runtime_minutes": 59.9833}], "latest_execution": {
+                "action": "mark_active", "state": "Active",
+                "execution_id": "ROOTLINE-EXECUTION-CURRENT"}},
+            "C12345": {"events": []}}}
+        result = self.build(irrigation_history=history)
+        self.assertEqual(result["irrigation_lifecycle"]["B12345"]["state"], "Started")
+        text = __import__("modules.oom_sakkie.rootline_daily_presentation", fromlist=[
+            "compose_daily_rootline_plan"]).compose_daily_rootline_plan(result)
+        self.assertIn("B Camp:</b> Currently running", text)
+        self.assertNotIn("Lifecycle:", text)
+        self.assertNotIn("59.9833 minutes", text)
+
     def test_plan_projection_retains_timing_cadence_and_recovery(self):
         plan = {
             "success": True,
@@ -476,8 +491,7 @@ class RootlineSpecialistResultTests(unittest.TestCase):
             self.recommendation(result, "borehole")["status"], "Needs Data"
         )
         self.assertTrue(result["current_power"]["battery_soc_pct"])
-        self.assertEqual(len(result["owner_questions"]), 1)
-        self.assertFalse(result["owner_questions"][0]["required_now"])
+        self.assertEqual(result["owner_questions"], [])
 
     def test_transfer_pump_is_dependency_never_controllable(self):
         transfer = self.recommendation(self.build(), "solar_transfer_dependency")
@@ -665,7 +679,9 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         self.assertIn("recommend_now", brief)
         self.assertTrue(brief["why"])
         self.assertIn(" at ", brief["reassess"])
-        self.assertIn("LOW, OK or FULL", brief["family_fact_needed"])
+        self.assertNotIn("LOW, OK or FULL", brief["family_fact_needed"])
+        self.assertFalse(any(question.get("fact") == "current_tank_observation"
+                             for question in result["owner_questions"]))
 
 
 if __name__ == "__main__":

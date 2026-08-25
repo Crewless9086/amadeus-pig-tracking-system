@@ -9,7 +9,8 @@ from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 from modules.oom_sakkie.herdmaster_farrowing_runtime import handle_farrowing_litter_message
 from modules.oom_sakkie.operational_specialist_intake import (
-    handle_operational_specialist_message, recover_contextual_specialist_replay)
+    handle_operational_specialist_message, is_exact_fertilizer_commissioning_request,
+    recover_contextual_specialist_replay)
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
@@ -18,7 +19,9 @@ from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_mess
 from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import handle_grouped_breeding_message
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
-from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
+from modules.oom_sakkie.family_access import (
+    FamilyRole, authorize_family_message, family_access_policy, resolve_family_principal,
+)
 from modules.oom_sakkie.family_runtime import handle_family_runtime_message
 from modules.oom_sakkie.family_rootline_callback import (
     CALLBACK_PREFIX as FAMILY_CALLBACK_PREFIX, bind_family_rootline_preview_card,
@@ -262,6 +265,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     family_principal = resolve_family_principal(parsed, source)
     if family_principal.role is FamilyRole.UNKNOWN_SENDER:
         return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    parsed["output_language"] = family_principal.language
+    farm_manager_principal = family_principal.role is FamilyRole.FARM_MANAGER
     if str(parsed.get("callback_data") or "").startswith(FAMILY_CALLBACK_PREFIX):
         if family_principal.role is not FamilyRole.FARM_MANAGER:
             callback_result, callback_status = ({"success": False,
@@ -283,32 +288,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
             "writes": False, "hardware_commands": int(callback_result.get("hardware_commands") or 0)})
         return body, callback_status if acknowledgement.get("success") else 202
-    if family_principal.role is not FamilyRole.OWNER:
-        family_result, family_status = handle_family_runtime_message(parsed, family_principal,
-            summary_loader=load_family_summary,
-            observation_adapter=herdmaster_family_observation,
-            contextual_loader=load_family_question,
-            contextual_adapter=retain_family_question_reply,
-            rootline_adapter=rootline_family_handoff,
-            rootline_preview_adapter=prepare_family_rootline_preview,
-            replay_store=family_replay_store)
-        delivery = (deliver_family_result(parsed, family_result, specialist="OOM_SAKKIE_FAMILY")
-                    if str(family_result.get("answer") or "").strip()
-                    else {"success": True, "status": "family_private_denial_no_delivery",
-                          "telegram_sends": 0, "telegram_edits": 0})
-        body, _ = _gateway_result(family_result.get("success") is True,
-            str(family_result.get("status") or "family_request_contained"), policy, family_status)
-        body.update({"message": family_result, "answer": family_result.get("answer", ""),
-            "delivery": delivery,
-            "records_audit_trace": family_result.get("audit_trace_recorded") is True,
-            "reply_transport": "backend_handles_family_delivery",
-            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
-            "writes": family_result.get("writes_farm_data") is True,
-            "hardware_commands": int(family_result.get("hardware_commands") or 0),
-            "physical_controls_enabled": int(family_result.get("hardware_commands") or 0) > 0})
-        if family_result.get("callback_token"):
-            body["preview_card_bound"] = bind_family_rootline_preview_card(family_result, delivery)
-        return body, family_status if delivery.get("success") else 202
+    if family_principal.role not in {FamilyRole.OWNER, FamilyRole.FARM_MANAGER}:
+        return _family_gateway_response(parsed, family_principal, policy)
 
     media = telegram_media_envelope(payload)
     if media is not None:
@@ -374,12 +355,18 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                        "reply_transport": "family_message_lifecycle"})
         return intake, intake_status if delivery.get("success") else 202
 
-    owner_task, owner_task_status = handle_owner_task_input(
-        payload,
-        environ=source,
-        telegram_sender=lambda chat_id, text, purpose: _send_owner_task_telegram(
-            chat_id, text, source),
-    )
+    # The owner-task lifecycle accepts arbitrary specialist identities and is
+    # therefore not an Oom Sakkie farm-specialist capability surface. Keep it
+    # structurally owner-only so FARM_MANAGER can never dispatch CORE, CHARLIE
+    # or development tasks through an allow-list identity check.
+    owner_task, owner_task_status = ({"handled": False}, 200)
+    if family_principal.role is FamilyRole.OWNER:
+        owner_task, owner_task_status = handle_owner_task_input(
+            payload,
+            environ=source,
+            telegram_sender=lambda chat_id, text, purpose: _send_owner_task_telegram(
+                chat_id, text, source),
+        )
     if owner_task.get("handled"):
         owner_task.update({
             "mode": "authenticated_gateway_owner_task",
@@ -403,6 +390,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     gateway_authority = issue_gateway_owner_authority(
         parsed["telegram_user_id"],
         parsed["telegram_chat_id"],
+        principal_role=family_principal.role.value,
+        capabilities=family_principal.permissions,
     )
     if parsed["telegram_chat_type"] != "private":
         gateway_authority = None
@@ -413,8 +402,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             if (str(replay_result.get("status") or "") == "specialist_accepted"
                     and str(replay_result.get("next_specialist_step") or "") ==
                         "supervised_fertilizer_mixer_proof"):
-                from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
-                replay_result = create_mixer_preview(owner_result=replay_result,
+                from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                    execute_fertilizer_commissioning_under_standing_authority,
+                )
+                replay_result = execute_fertilizer_commissioning_under_standing_authority(owner_result=replay_result,
                     parsed=parsed, gateway_authority=gateway_authority)
                 delivery = deliver_family_result(parsed, replay_result,
                     specialist="ROOTLINE",
@@ -602,8 +593,54 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, breeding_status if delivery.get("success") else 202
 
-    manager_reply, manager_reply_status = handle_manager_question_reply(
-        parsed, gateway_authority, semantic, question=active_manager_question)
+    # Exact governed Mixer presence belongs to its specialist-bound pending
+    # context, never to an older manager water question. Resolve it before the
+    # broad manager-question continuation while retaining every check inside
+    # the operational specialist handler.
+    operational_result, operational_status = ({"handled": False}, 200)
+    if is_exact_fertilizer_commissioning_request(parsed):
+        operational_result, operational_status = handle_operational_specialist_message(
+            parsed, gateway_authority,
+        )
+        if (operational_result.get("handled")
+                and str(operational_result.get("status") or "") == "specialist_accepted"
+                and str(operational_result.get("next_specialist_step") or "") ==
+                    "supervised_fertilizer_mixer_proof"):
+            # This exact phrase is the protected commissioning front door.  Do
+            # not carry its accepted readback through the generic contextual
+            # delivery path: turn it into the bound claim/card here, before an
+            # old manager context can project a plain reply.
+            from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                execute_fertilizer_commissioning_under_standing_authority,
+            )
+            preview = execute_fertilizer_commissioning_under_standing_authority(
+                owner_result=operational_result, parsed=parsed,
+                gateway_authority=gateway_authority)
+            operational_result = {**operational_result, **preview,
+                "mission_id": preview.get("mission_id") or operational_result.get("mission_id"),
+                "card_mission_id": preview.get("card_mission_id") or operational_result.get("card_mission_id"),
+                "specialist_identity": "ROOTLINE"}
+            delivery = deliver_family_result(
+                parsed, operational_result, specialist="ROOTLINE",
+                mission_id=str(operational_result.get("mission_id") or ""),
+                card_mission_id=str(operational_result.get("card_mission_id") or ""))
+            delivery = _bind_protected_preview_card(operational_result, delivery)
+            body, _ = _gateway_result(delivery.get("success") is True,
+                str(operational_result.get("status") or "contained"), policy,
+                operational_status)
+            body.update({"telegram_user_id": parsed["telegram_user_id"],
+                "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+                "answer": operational_result.get("answer", ""),
+                "message": operational_result, "delivery": delivery,
+                "records_audit_trace": True,
+                "reply_transport": "backend_handles_owner_task_delivery",
+                "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+                "writes": False})
+            return body, operational_status if delivery.get("success") else 202
+
+    manager_reply, manager_reply_status = (({"handled": False}, 200)
+        if operational_result.get("handled") else handle_manager_question_reply(
+            parsed, gateway_authority, semantic, question=active_manager_question))
     if manager_reply.get("handled"):
         refreshed = None
         complete_receipt = (manager_reply.get("success") is True
@@ -643,9 +680,16 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, manager_reply_status if delivery.get("success") else 202
 
-    continuation_result, continuation_status = handle_owner_operational_continuation(
-        parsed, gateway_authority,
-    )
+    # An exact Mixer commissioning-presence reply belongs to the already-bound
+    # specialist lifecycle.  Resolve that lifecycle before the broader owner
+    # operational continuation reader, which may contain old irrigation
+    # context.  All actor, chat, chronology, mission and digest checks remain
+    # inside the specialist handler; this grants no generic stale-context path.
+    continuation_result, continuation_status = ({"handled": False}, 200)
+    if not operational_result.get("handled"):
+        continuation_result, continuation_status = handle_owner_operational_continuation(
+            parsed, gateway_authority,
+        )
     if continuation_result.get("handled"):
         delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
                      "status": "owner_delivery_suppressed_replay_or_metadata"}
@@ -663,15 +707,18 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, 200 if delivery.get("success") else 202
 
-    operational_result, operational_status = handle_operational_specialist_message(
-        parsed, gateway_authority,
-    )
+    if not operational_result.get("handled"):
+        operational_result, operational_status = handle_operational_specialist_message(
+            parsed, gateway_authority,
+        )
     if operational_result.get("handled"):
         if (str(operational_result.get("status") or "") == "specialist_accepted"
                 and str(operational_result.get("next_specialist_step") or "") ==
                     "supervised_fertilizer_mixer_proof"):
-            from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
-            continued = create_mixer_preview(
+            from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                execute_fertilizer_commissioning_under_standing_authority,
+            )
+            continued = execute_fertilizer_commissioning_under_standing_authority(
                 owner_result=operational_result, parsed=parsed,
                 gateway_authority=gateway_authority)
             operational_result = {**operational_result, **continued,
@@ -757,39 +804,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                       "Nothing was recorded; one technical follow-up is required.")
             health_result = {**health_result, "answer": answer,
                              "status": str(health_result.get("status") or "contained")}
-        body, _ = _gateway_result(
-            health_result.get("success") is True,
-            str(health_result.get("status") or "health_loss_contained"),
-            policy,
-            health_status,
-        )
-        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
-                     "status": "owner_delivery_suppressed_existing_card_unchanged"}
-                    if health_result.get("suppress_owner_delivery") is True else
-                    deliver_family_result(
-                        parsed, health_result, specialist="HERDMASTER",
-                        mission_id=str(health_result.get("mission_id") or ""),
-                        card_mission_id=str(health_result.get("card_mission_id") or "")))
-        delivery = _bind_protected_preview_card(health_result, delivery)
-        body.update({
-            "telegram_user_id": parsed["telegram_user_id"],
-            "telegram_chat_id": parsed["telegram_chat_id"],
-            "text": parsed["text"],
-            "answer": answer,
-            "message": health_result,
-            "records_audit_trace": health_result.get("records_audit_trace") is True,
-            "audit_trace_status": "stored" if health_result.get("records_audit_trace") is True else "not_written",
-            "reply": {
-                "chat_id": parsed["telegram_chat_id"],
-                "text": answer,
-                "parse_mode": "HTML",
-                "sends_telegram": False,
-            },
-            "delivery": delivery,
-            "reply_transport": "backend_handles_owner_task_delivery",
-            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
-        })
-        return body, health_status if delivery.get("success") else 202
+        return _health_gateway_response(parsed, policy, health_result, health_status)
 
     herd_request, herd_request_status = handle_herdmaster_request(parsed, gateway_authority)
     if herd_request.get("handled"):
@@ -829,6 +844,9 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "records_audit_trace": True, "reply_transport": "backend_handles_owner_task_delivery",
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, manager_status if delivery.get("success") else 202
+
+    if farm_manager_principal:
+        return _family_gateway_response(parsed, family_principal, policy)
 
     service_payload = {
         "text": parsed["text"],
@@ -893,6 +911,73 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         if not delivery.get("success"):
             return body, 202
     return body, response_code
+
+
+def _family_gateway_response(parsed, principal, policy):
+    """Use the restricted family surface only after operational routes decline."""
+    observation_adapter = (_farm_manager_operational_fallback
+        if principal.role is FamilyRole.FARM_MANAGER else herdmaster_family_observation)
+    family_result, family_status = handle_family_runtime_message(parsed, principal,
+        summary_loader=load_family_summary,
+        observation_adapter=observation_adapter,
+        contextual_loader=load_family_question,
+        contextual_adapter=retain_family_question_reply,
+        rootline_adapter=rootline_family_handoff,
+        rootline_preview_adapter=prepare_family_rootline_preview,
+        replay_store=family_replay_store)
+    delivery = (deliver_family_result(parsed, family_result, specialist="OOM_SAKKIE_FAMILY")
+                if str(family_result.get("answer") or "").strip()
+                else {"success": True, "status": "family_private_denial_no_delivery",
+                      "telegram_sends": 0, "telegram_edits": 0})
+    body, _ = _gateway_result(family_result.get("success") is True,
+        str(family_result.get("status") or "family_request_contained"), policy, family_status)
+    body.update({"message": family_result, "answer": family_result.get("answer", ""),
+        "delivery": delivery,
+        "records_audit_trace": family_result.get("audit_trace_recorded") is True,
+        "reply_transport": "backend_handles_family_delivery",
+        "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+        "writes": family_result.get("writes_farm_data") is True,
+        "hardware_commands": int(family_result.get("hardware_commands") or 0),
+        "physical_controls_enabled": int(family_result.get("hardware_commands") or 0) > 0})
+    if family_result.get("callback_token"):
+        body["preview_card_bound"] = bind_family_rootline_preview_card(family_result, delivery)
+    return body, family_status if delivery.get("success") else 202
+
+
+def _farm_manager_operational_fallback(*, parsed, principal, capability, replay_identity):
+    """Never revive the observation-only lane for an authenticated farm manager."""
+    afrikaans = str(principal.language or "").casefold().startswith("af")
+    answer = ("Een vraag: Watter plaas- of besproeiingshandeling wil jy hê Oom Sakkie moet hanteer?"
+              if afrikaans else
+              "One question: Which farm or irrigation action should Oom Sakkie handle?")
+    return {"success": True, "status": "farm_manager_operational_clarification_required",
+        "answer": answer, "question_count": 1, "writes_farm_data": False,
+        "animal_mutations": 0, "hardware_commands": 0,
+        "protected_actions_performed": False, "legacy_observation_path_used": False}
+
+
+def _rootline_irrigation_completion_summary(zone, execution):
+    """Return concise owner text containing only verified completion facts."""
+    runtime_seconds = int(execution.get("verified_runtime_seconds") or 0)
+    cumulative_seconds = int(execution.get("cumulative_verified_runtime_seconds") or 0)
+    segment = int(execution.get("current_segment") or execution.get("segment_number") or 0)
+    expected = int(execution.get("expected_segment_count") or 0)
+    lines = ["<b>✅ IRRIGATION COMPLETED</b>", "", f"{zone} is stopped and verified off."]
+    if runtime_seconds > 0:
+        minutes, seconds = divmod(runtime_seconds, 60)
+        label = f"Segment {segment}/{expected}" if segment and expected else "This segment"
+        lines.append(f"{label} ran for {minutes}m {seconds}s.")
+    if cumulative_seconds > runtime_seconds > 0:
+        minutes, seconds = divmod(cumulative_seconds, 60)
+        lines.append(f"Total verified watering: {minutes}m {seconds}s.")
+    if execution.get("fertilizer_delivery_verified") is True:
+        injections = execution.get("verified_fertilizer_injection_count")
+        mixes = execution.get("verified_fertilizer_mixing_count")
+        if isinstance(injections, int):
+            lines.append(f"Verified fertilizer injections: {injections}.")
+        if isinstance(mixes, int):
+            lines.append(f"Verified mixing cycles: {mixes}.")
+    return "\n".join(lines)
 
 
 def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
@@ -1053,7 +1138,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "herd": executor.submit(_load_herdmaster, authority,
                             manager_owner, manager_now,
                             str(manual_payload.get("language") or "en")),
-                        "rootline": executor.submit(_load_rootline, manager_now),
+                        "rootline": executor.submit(_load_rootline, manager_now,
+                            str(manual_payload.get("language") or "en")),
                         "litters": executor.submit(get_breeding_attention_source_snapshot,
                             deadline_seconds=20),
                         "sales": executor.submit(list_sales_transactions),
@@ -1165,7 +1251,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 def notify(state, execution):
                     zone = str(execution.get("zone_id") or "irrigation")
                     answer = ({"Started": f"<b>💧 IRRIGATION STARTED</b>\n\n{zone} is running for no more than 59 minutes 59 seconds.",
-                               "Completed": f"<b>✅ IRRIGATION COMPLETED</b>\n\n{zone} is stopped and the supported segment is complete.",
+                               "Completed": _rootline_irrigation_completion_summary(zone, execution),
                                "Blocked": (f"<b>IRRIGATION WAITING</b>\n\n{zone} is ready for water but cannot start: "
                                            f"{execution.get('blocker')}. No owner action is currently required. "
                                            f"ROOTLINE will reassess at {execution.get('next_reassessment_at') or 'the next automatic check'}."),
@@ -1288,6 +1374,54 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         delivery=delivery_proof, state_store=state_store)
     return {**result, "delivery": delivery, "delivery_record": recorded,
             "telegram_sends": int(delivery.get("telegram_sends") or 0)}, 200 if delivery_proof["provider_delivery_confirmed"] else 202
+
+
+def _health_gateway_response(parsed, policy, health_result, health_status):
+    answer = str(health_result.get("answer") or "")
+    body, _ = _gateway_result(
+        health_result.get("success") is True,
+        str(health_result.get("status") or "health_loss_contained"),
+        policy, health_status)
+    delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                 "status": "owner_delivery_suppressed_existing_card_unchanged"}
+                if health_result.get("suppress_owner_delivery") is True else
+                deliver_family_result(
+                    parsed, health_result, specialist="HERDMASTER",
+                    mission_id=str(health_result.get("mission_id") or ""),
+                    card_mission_id=str(health_result.get("card_mission_id") or "")))
+    delivery = _bind_protected_preview_card(health_result, delivery)
+    body.update({
+        "telegram_user_id": parsed["telegram_user_id"],
+        "telegram_chat_id": parsed["telegram_chat_id"],
+        "text": parsed.get("text", ""), "answer": answer, "message": health_result,
+        "records_audit_trace": health_result.get("records_audit_trace") is True,
+        "audit_trace_status": "stored" if health_result.get("records_audit_trace") is True else "not_written",
+        "reply": {"chat_id": parsed["telegram_chat_id"], "text": answer,
+                  "parse_mode": "HTML", "sends_telegram": False},
+        "delivery": delivery, "reply_transport": "backend_handles_owner_task_delivery",
+        "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+    })
+    return body, health_status if delivery.get("success") else 202
+
+
+def _protected_gateway_response(parsed, policy, result, status):
+    delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                 "status": "protected_replay_noop"}
+                if result.get("suppress_owner_delivery") else deliver_family_result(
+                    parsed, result, specialist=str(result.get("specialist") or "HERDMASTER"),
+                    mission_id=str(result.get("mission_id") or ""),
+                    card_mission_id=str(result.get("card_mission_id") or result.get("mission_id") or "")))
+    if result.get("callback_token") and not result.get("suppress_owner_delivery"):
+        delivery = _bind_protected_preview_card(result, delivery)
+    body, _ = _gateway_result(result.get("success") is True,
+        str(result.get("status") or "protected_action_contained"), policy, status)
+    body.update({"telegram_user_id": parsed["telegram_user_id"],
+        "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed.get("text", ""),
+        "answer": result.get("answer", ""), "message": result, "delivery": delivery,
+        "records_audit_trace": True, "reply_transport": "backend_handles_owner_task_delivery",
+        "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+        "writes": result.get("writes_farm_data") is True})
+    return body, status if delivery.get("success") else (503 if result.get("success") else 202)
 
 
 def parse_telegram_gateway_payload(payload):

@@ -12,6 +12,33 @@ understandable preview of every potentially affected canonical domain. Protected
 effects occur only after explicit confirmation through their existing governed
 services.
 
+## Farm-manager authority envelope
+
+Anton is the authenticated human farm manager. Within the farm and irrigation
+domains he may report, preview, and confirm his own governed operational
+actions, including mortality lifecycle confirmation. Authorization is based on
+the authenticated principal's bounded role/capability, not a blanket
+`is_owner` identity check. The preview and confirmation remain bound to the
+same actor; Anton cannot confirm Charl's claim and Charl cannot silently
+confirm Anton's claim. Audit evidence, canonical revalidation, atomic writes,
+idempotency, replay containment, and irrigation/device safety controls remain
+mandatory.
+
+Across specialists governed by Oom Sakkie, Anton and Charl receive the same
+operational routes, protected approval journeys and messages; only the
+recipient's configured language differs. This parity includes HERDMASTER,
+ROOTLINE, SAM, BEACON and governed DOCUMENTS work. A `farm_manager` must never
+be diverted into the legacy observation-only family adapter after one of these
+shared routes declines. Capability and action-kind boundaries remain explicit;
+no wildcard owner identity is minted.
+
+This authority does not grant Anton access to CORE or CHARLIE, permission or
+role administration, credentials, or an unsafe hardware exception. Those are
+platform/owner-administration boundaries, not Oom Sakkie specialist work. Every
+shared specialist retains its existing actor-bound confirmation, evidence,
+revalidation, audit, replay, provider and physical-safety gates. This creates no
+second manager, bot, parser, database, queue, or lifecycle.
+
 The owner must not need to know database tables, forms, specialist lanes, or
 record types.
 
@@ -135,6 +162,12 @@ message lifecycle contain authenticated intake/context wiring. Presence in
 source does not prove that a deployed route is enabled, correctly configured,
 or operationally successful.
 
+The existing authenticated family principal supplies the durable output
+language (`charl` defaults to English; a configured Afrikaans family principal
+such as `dad` remains Afrikaans). Inbound-language detection never writes this
+preference. The same selection is carried through the pure preview composer,
+protected buttons, correction/failure states and completion.
+
 ### Protected write authority
 
 `modules/pig_weights/herdmaster_health_loss_recording.py` contains narrowly
@@ -144,6 +177,29 @@ no authority to create arbitrary litter, mating, medical, movement, disposal,
 availability, customer, or sales effects. Stage 1 neither invokes nor expands
 this writer.
 
+For a supported confirmed death, the writer uses one database transaction to
+record the canonical lifecycle effect, close the attributable living-welfare
+case with an append-only death event/link, complete now-invalid living-animal
+checks with append-only manager-case events, and retain distinct mortality,
+disposal and biosecurity work. Canonical readback must prove the pig, lifecycle,
+welfare closure and active-projection outcome before completion is composed;
+failure rolls the whole transaction back. Exact replay reuses the same
+operation and readback and creates no second effect.
+
+The protected claim stores that canonical completed result before Telegram
+presentation. If the provider completion edit/send fails after commit, an
+exact retry of the same bound callback receipt may reuse the stored result for
+delivery only; it must not enter the farm writer again.
+The existing scheduled protected-recovery cycle also leases a completed
+mortality claim whose delivery has not yet been recovered, recomposes the
+recipient-language presentation from the sealed identity and canonical result,
+and edits/sends through the existing idempotent card lifecycle. It neither
+requires another owner action nor creates a new provider or farm event. A
+completed animal may retain its last `pig_current_state.current_pen_id` as historical location
+context because that view derives the latest location event. Current pen
+occupancy is instead the governed projection of Active, on-farm animals; death
+completion must prove that active membership is zero rather than erase history.
+
 `202608200002_create_pig_welfare_case_lifecycle.sql` is the reviewed additive
 foundation for case identity, append-only case events and non-merging fact
 links. `modules/pig_weights/pig_welfare_case_runtime.py` is the bounded adapter:
@@ -152,15 +208,23 @@ context, prefers durable open cases over its legacy 24-hour compatibility
 chronology, carries HERDMASTER owner/urgency/next-check state and projects the
 same case/work identity for the existing shared-attention contract. It creates
 no second observation, treatment, movement, mortality, manager, queue or
-Telegram lifecycle. Runtime reads and writes remain fail-closed unless
-`PIG_WELFARE_CASE_RUNTIME_ENABLED=true`; production application, explicit
-post-migration activation and exact deployed revision remain separate evidence
-gates until an immutable migration receipt and readiness proof are verified.
+Telegram lifecycle. Migration `202608200002` is mandatory on the production
+migration rail. Once its immutable receipt, readiness probe and canonical
+database configuration are present, the runtime is active by default;
+`PIG_WELFARE_CASE_RUNTIME_ENABLED=false` is the explicit containment switch.
+Missing schema, missing database configuration, malformed configured values
+and database failure remain fail-closed. Exact deployed revision,
+provider confirmation and canonical readback remain separate evidence gates.
 
 ### Production status
 
-Production activation and a genuine end-to-end health/loss journey remain
-unproven by this workflow. Historical GateKeeper execution `64196`, relay
+Production activation and canonical mortality acceptance were proven on
+2026-08-24 by one actor-bound provider interaction: the transaction recorded
+the lifecycle and welfare closure exactly once and canonical readback proved
+the animal Dead, off farm, and absent from active pen and availability
+projections. The provider completion failed after commit, so visible completion
+and later terminal-independent continuity remain open acceptance evidence.
+Historical GateKeeper execution `64196`, relay
 execution `64197`, and the original Pig 002 provider update are failed-
 acceptance evidence only and must not be consumed, replayed, resent, or used as
 a write trigger.

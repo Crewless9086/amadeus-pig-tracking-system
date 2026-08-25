@@ -130,7 +130,8 @@ def _irrigation_lifecycle(recommendations, irrigation_history):
     indexed = {str(row.get("subject") or ""): row for row in recommendations
                if isinstance(row, dict)}
     return {zone: project_zone_lifecycle(zone_id=zone,
-        recommendation=indexed.get(zone), history=histories.get(zone))
+        recommendation=indexed.get(zone), history=histories.get(zone),
+        execution=(histories.get(zone) or {}).get("latest_execution"))
         for zone in ("B12345", "C12345")}
 
 
@@ -571,25 +572,9 @@ def _reassessment(
 
 def _owner_questions(plan, evidence, recommendations):
     questions = []
-    tanks = plan.get("tank_evidence", {})
-    water_work = any(
-        item["subject"] in {"borehole", "B12345", "C12345"}
-        and item["status"] in {"Needs Data", "Hold"}
-        for item in recommendations
-    )
-    if water_work and tanks.get("status") in {UNAVAILABLE, "stale"}:
-        questions.append(
-            {
-                "fact": "current_tank_observation",
-                "question": (
-                    "If someone is near the tanks, are storage and reservoir tanks "
-                    "LOW, OK or FULL (or what fraction is available), and when was "
-                    "that observed?"
-                ),
-                "why_needed": "It changes only recommendations that depend on water availability.",
-                "required_now": False,
-            }
-        )
+    # Missing or stale tank telemetry is not an owner task. Within the
+    # commissioned B/C envelope supply is assumed available unless the family
+    # reports LOW/EMPTY or fresh canonical evidence proves an adverse state.
     demand = evidence.get("water_demand")
     if not isinstance(demand, dict) or demand.get("status") not in {
         "normal", "needed", "urgent", "standing_essential"
@@ -678,7 +663,7 @@ def _owner_brief(result):
     ]
     question = (
         result["owner_questions"][0]["question"]
-        if result["owner_questions"] else "No owner fact is required now."
+        if result["owner_questions"] else ""
     )
     return {
         "recommend_now": (

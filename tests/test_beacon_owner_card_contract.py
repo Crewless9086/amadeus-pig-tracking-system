@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import html
+import os
 from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
@@ -7,6 +9,9 @@ from modules.oom_sakkie.beacon_request_runtime import (
     build_litter_media_choice, prepare_campaign_owner_card, select_litter_story_media,
 )
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
+from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
+
+os.environ.setdefault("BEACON_FACEBOOK_PAGE_ID", "PAGE-1")
 
 
 def opportunity():
@@ -57,6 +62,16 @@ def test_owner_card_is_compact_nonduplicative_and_has_real_callbacks():
     assert preview["packet_id"] and preview["packet_generation"]
     assert preview["campaign_digest"] and preview["stop_conditions"] and preview["rollback"]
     assert preview["target_page_id"] == "PAGE-1"
+    af = localize_recipient_result({"output_language": "af"}, value, "BEACON")
+    for fact in (preview["exact_post_copy"], preview["target_page_id"],
+                 preview["publication_time"], str(preview["budget_cap"]["total"])):
+        assert fact in af["answer"]
+    assert "Business objective" not in af["answer"] and "Publish by" not in af["answer"]
+    assert "farm_awareness" not in af["answer"]
+    assert "Gebonde publikasie-inhoud" in af["answer"]
+    assert f"<blockquote>{html.escape(preview['exact_post_copy'])}</blockquote>" in af["answer"]
+    assert [button["text"] for button in af["reply_markup"]["inline_keyboard"][0]] == [
+        "Bevestig", "Maak reg", "Kanselleer"]
     assert "Facebook Page ID:</b> PAGE-1" in value["answer"]
     assert "ZAR 0.00 total" in value["answer"] and "0 days; no boost" in value["answer"]
     assert "no automatic retry" in value["answer"]
@@ -119,7 +134,7 @@ def test_explicit_generic_awareness_can_use_bound_text_only_publication():
     candidate={"success":True,"owner_review_packet":{
         "packet_id":"CONTENT-1","draft_copy":"A quiet farm-life update from Amadeus Farm.",
         "audience":"People interested in responsible local farm life",
-        "public_livestock_policy":{"policy_version":"beacon_public_livestock_awareness_only_v1"}}}
+        "public_livestock_policy":{"policy_version":"beacon_public_livestock_awareness_only_v2"}}}
     proposal=build_live_stock_awareness_proposal(
         {"success":True,"cards":[]}, candidate, {"success":True,"items":[]})
     protected=build_protected_campaign_package(proposal,
@@ -130,6 +145,57 @@ def test_explicit_generic_awareness_can_use_bound_text_only_publication():
     assert campaign["sam_response_contract"]["inbound_only"] is True
     card=owner_card(protected)
     assert card["campaign_review_preview"]["target_page_id"] == "PAGE-1"
+
+
+def test_real_awareness_builder_preserves_exact_policy_authority_into_owner_claim():
+    candidate={"success":True,"owner_review_packet":{
+        "packet_id":"CONTENT-REAL","draft_copy":"A quiet farm-life update from Amadeus Farm.",
+        "audience":"People interested in responsible local farm life",
+        "public_livestock_policy":{"policy_version":"beacon_public_livestock_awareness_only_v2"}}}
+    proposal=build_live_stock_awareness_proposal(
+        {"success":True,"cards":[]}, candidate, {"success":True,"items":[]},
+        target_page_id="PAGE-1")
+    original=proposal["public_content_policy"]
+    protected=build_protected_campaign_package(proposal,
+        now=datetime(2026,8,17,12,tzinfo=timezone.utc))
+    captured=[]
+    prepare_campaign_owner_card(protected, owner_user_id="42", private_chat_id="42",
+        provider_message_id="scheduled:case:G12", packet_generation="G12",
+        target_page_id="PAGE-1", claim_creator=lambda **kwargs: (
+            captured.append(kwargs) or {"callback_token":"token","preview_digest":"d"*64}))
+    assert captured[0]["preview_payload"]["public_content_policy"] == original
+    authority=original["policy_authority"]
+    assert authority["target_page_id"] == "PAGE-1"
+    assert authority["entity_id"] == "AMADEUS-FARM-ZA"
+    assert authority["jurisdiction"] == "ZA"
+    assert authority["source_digest"]
+    assert all(source["content_sha256"] for source in authority["sources"])
+
+
+def test_policy_authority_drift_creates_no_owner_prompt():
+    candidate={"success":True,"owner_review_packet":{
+        "packet_id":"CONTENT-DRIFT","draft_copy":"A quiet farm-life update from Amadeus Farm.",
+        "audience":"People interested in responsible local farm life",
+        "public_livestock_policy":{"policy_version":"beacon_public_livestock_awareness_only_v2"}}}
+    for mutate in (
+            lambda binding: binding["policy_authority"].update(target_page_id="OTHER-PAGE"),
+            lambda binding: binding["policy_authority"].update(entity_id="OTHER-ENTITY"),
+            lambda binding: binding["policy_authority"].update(jurisdiction="OTHER"),
+            lambda binding: binding["policy_authority"].update(valid_through="2026-08-16"),
+            lambda binding: binding["policy_authority"].update(source_digest="0"*64),
+            lambda binding: binding["policy_authority"]["sources"][0].update(
+                content_sha256="0"*64)):
+        proposal=build_live_stock_awareness_proposal(
+            {"success":True,"cards":[]}, candidate, {"success":True,"items":[]},
+            target_page_id="PAGE-1")
+        mutate(proposal["public_content_policy"])
+        try:
+            build_protected_campaign_package(proposal,
+                now=datetime(2026,8,17,12,tzinfo=timezone.utc))
+        except ValueError as exc:
+            assert str(exc) == "beacon_campaign_public_policy_binding_required"
+        else:
+            raise AssertionError("authority drift must stop before an owner claim")
 
 
 def test_litter_story_copy_and_stock_digest_bind_exact_litter_context():

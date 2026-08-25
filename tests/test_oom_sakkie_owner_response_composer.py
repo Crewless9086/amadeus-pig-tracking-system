@@ -27,7 +27,7 @@ def test_verbose_rootline_packet_becomes_compact_farm_message_without_b_camp_cop
         "retain the four-day weekly target.")
     answer=compose_rootline(packet)
     assert "<b>ROOTLINE — WATER &amp; POWER</b>" in answer
-    assert "<b>B Camp:</b> Hold" in answer and "<b>C Camp:</b> Hold" in answer
+    assert "<b>B Camp:</b> Not running" in answer and "<b>C Camp:</b> Not running" in answer
     assert "B-Camp plan" not in answer and "authority" not in answer.lower()
     assert "today's proportional camp plan" in answer
     assert "internal" not in answer.lower() and len(answer)<1200
@@ -39,6 +39,71 @@ def test_rootline_hostile_scalar_values_are_never_rendered_as_telegram_html():
     answer=compose_rootline(packet)
     assert "<b>oops</b>" not in answer and "<i>bad</i>" not in answer and "<u>bad</u>" not in answer
     assert answer.count("Unavailable") == 5
+
+
+def test_conversational_rootline_uses_lifecycle_truth_and_hides_backend_tokens():
+    packet = rootline("Recommend")
+    packet["recommendations"][0].update({
+        "status": "Recommend", "reason": "now_after_fresh_execution_revalidation"})
+    packet["recommendations"][1].update({
+        "status": "Recommend", "reason": "now_after_fresh_execution_revalidation"})
+    packet["irrigation_lifecycle"] = {
+        "B12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "B12345", "state": "Started", "reason": "execution_started",
+            "next_action_owner": "ROOTLINE", "next_action": "claim exactly once"},
+        "C12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "C12345", "state": "Held", "reason": "safety_hold",
+            "next_action_owner": "ROOTLINE", "next_action": "claim exactly once"},
+    }
+
+    answer = compose_rootline(packet)
+
+    assert "<b>B Camp:</b> Currently running" in answer
+    assert "<b>C Camp:</b> Not running" in answer
+    assert "now_after_fresh_execution_revalidation" not in answer
+    assert "Lifecycle:" not in answer and "claim exactly once" not in answer
+    assert "ROOTLINE recommends now: Plan ready." in answer
+
+
+def test_conversational_rootline_lifecycle_projection_is_recipient_localized():
+    packet = rootline("Recommend")
+    packet["recommendations"][0]["reason"] = "durable_zone_containment"
+    packet["recommendations"][1]["reason"] = "now_after_fresh_execution_revalidation"
+    packet["irrigation_lifecycle"] = {
+        "B12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "B12345", "state": "Failed", "reason": "contained",
+            "next_action_owner": "ROOTLINE", "next_action": "reassess"},
+        "C12345": {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": "C12345", "state": "Recommended", "reason": "needs_water",
+            "next_action_owner": "ROOTLINE", "next_action": "reassess"},
+    }
+
+    answer = compose_rootline(packet, language="af")
+
+    assert "<b>B Kamp:</b> Veilig teruggehou" in answer
+    assert "<b>C Kamp:</b> Moet natgemaak word" in answer
+    assert "Vars kanonieke bewyse bepaal die huidige besluit." in answer
+    assert "durable_zone_containment" not in answer
+    assert "now_after_fresh_execution_revalidation" not in answer
+    assert "Recommendation" not in answer and "Eligible" not in answer
+
+
+def test_conversational_rootline_completed_label_requires_bound_off_evidence():
+    packet = rootline("Recommend")
+    packet["irrigation_lifecycle"] = {"B12345": {
+        "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "B12345",
+        "state": "Completed", "reason": "record_completed",
+        "next_action_owner": "ROOTLINE", "next_action": "reassess",
+        "completion_evidence": {"zone_id": "C12345", "shutdown_verified": True,
+            "objective_satisfied": True,
+            "shutdown_evidence": {"authoritative": True, "state": "OFF"}}}}
+    malformed = compose_rootline(packet)
+    assert "<b>B Camp:</b> Not running" in malformed
+    assert "off and verified" not in malformed
+
+    packet["irrigation_lifecycle"]["B12345"]["completion_evidence"]["zone_id"] = "B12345"
+    verified = compose_rootline(packet)
+    assert "<b>B Camp:</b> Completed" in verified and "off and verified" in verified
 
 def test_manager_sections_and_afrikaans_layout_preserve_supported_facts():
     p=Provenance("herdmaster","R",("canonical",),NOW,1)
@@ -78,8 +143,8 @@ def test_production_shaped_rootline_afrikaans_marks_every_dynamic_source_fragmen
     packet["battery_policy"]["governing_reason"]="A dynamic reserve model selected 63 percent."
     answer=compose_rootline(packet,language="af")
     assert "Bronbesluit (bronwoorde): Dynamic specialist decision" in answer
-    assert "Spesialisrede (bronwoorde): A dynamic specialist reason" in answer
-    assert "Spesialisbewys (bronwoorde): A dynamic reserve model" in answer
+    assert "A dynamic specialist reason" in answer
+    assert "A dynamic reserve model" in answer
     assert "Spesialisvraag (bronwoorde): Are the east tanks" in answer
     assert "Spesialis se herbeoordeling (bronwoorde): When rain telemetry" in answer
 
@@ -123,10 +188,10 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
     assert rows[first["notification_identity"]]["zones"] == [
         {"zone_id":"B12345","decision":"Hold",
          "reason":"Reserve is below the governing target.",
-         "planned_duration_minutes":None,"feasible_window":None},
+         "planned_duration_minutes":None,"feasible_window":None,"lifecycle":{}},
         {"zone_id":"C12345","decision":"Hold",
          "reason":"Fresh evidence supports this C Camp decision.",
-         "planned_duration_minutes":None,"feasible_window":None},
+         "planned_duration_minutes":None,"feasible_window":None,"lifecycle":{}},
     ]
     assert rows[first["notification_identity"]]["operating_date"] == "2026-08-04"
     pending=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
@@ -138,18 +203,17 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
     unchanged=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
         specialist_loader=lambda:rootline(),state_store=state)
     changed=reassess_rootline(owner_user_id="42",chat_id="42",trigger="material_evidence_change",
-        specialist_loader=lambda:rootline("Run later"),state_store=state)
+        specialist_loader=lambda:rootline("Recommend"),state_store=state)
     record_reassessment_delivery(identity=changed["notification_identity"],owner_user_id="42",chat_id="42",
         material_digest=changed["material_digest"],delivery={"provider_delivery_confirmed":True,
         "provider_message_id":"7002"},state_store=state)
     replay=reassess_rootline(owner_user_id="42",chat_id="42",trigger="material_evidence_change",
-        specialist_loader=lambda:rootline("Run later"),state_store=state)
+        specialist_loader=lambda:rootline("Recommend"),state_store=state)
     assert first["notify_owner"] is True
     assert unchanged["notify_owner"] is False and unchanged["telegram_sends"]==0
     observations=[row for row in rows.values() if row.get("delivery_state")=="observation_only"]
     assert len(observations)==2
-    assert changed["notify_owner"] is True and "C Camp:</b> Recommendation - irrigate" in changed["answer"]
-    assert "Not yet authorized or started" in changed["answer"]
+    assert changed["notify_owner"] is True and "C Camp:</b> Needs watering" in changed["answer"]
     assert replay["notify_owner"] is False and len(rows)==4
     assert all(item["hardware_commands"]==0 for item in (first,unchanged,changed,replay))
 
@@ -175,6 +239,160 @@ def test_later_result_generation_updates_observation_silently_when_material_is_s
     assert changed["notify_owner"] is False and changed["telegram_sends"]==0
     assert any(row.get("result_id") == "R2" and row.get("delivery_state") == "observation_only"
                for row in rows.values())
+
+
+def test_hidden_specialist_churn_does_not_repeat_the_same_owner_water_plan():
+    rows, state = store()
+    first_packet = rootline("Recommend")
+    first_packet["next_reassessment"] = {
+        "trigger": "new_canonical_evidence", "at": "2026-08-04T10:00:00+02:00"}
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], result_id=first["result_id"],
+        evidence_generation=first["evidence_generation"], state_store=state)
+
+    later_packet = rootline("Recommend")
+    later_packet.update({"overall_status": "Internal auxiliary state changed",
+                         "generation": "G2", "result_id": "R2"})
+    later_packet["recommendations"][2].update(
+        {"status": "Recommend", "reason": "Borehole telemetry changed."})
+    later_packet["recommendations"][3].update(
+        {"status": "Hold", "reason": "Mixer evidence changed."})
+    later_packet["next_reassessment"] = {
+        "trigger": "new_canonical_evidence", "at": "2026-08-04T10:15:00+02:00"}
+
+    unchanged = reassess_rootline(owner_user_id="42", chat_id="42",
+        trigger="declared_time", specialist_loader=lambda: later_packet, state_store=state)
+
+    assert unchanged["status"] == "rootline_reassessment_unchanged"
+    assert unchanged["notify_owner"] is False
+    assert unchanged["telegram_sends"] == 0
+
+
+def test_owner_visible_zone_change_still_emits_one_successor_plan():
+    rows, state = store()
+    first_packet = rootline("Hold")
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], result_id=first["result_id"],
+        evidence_generation=first["evidence_generation"], state_store=state)
+
+    changed_packet = rootline("Recommend")
+    changed = reassess_rootline(owner_user_id="42", chat_id="42",
+        trigger="material_evidence_change", specialist_loader=lambda: changed_packet,
+        state_store=state)
+
+    assert changed["status"] == "rootline_reassessment_changed"
+    assert changed["notify_owner"] is True
+    assert "C Camp:</b> Needs watering" in changed["answer"]
+
+
+def test_legacy_digest_cutover_uses_exact_stable_owner_plan_and_stays_silent():
+    rows, state = store()
+    first_packet = rootline("Recommend")
+    first_packet["next_reassessment"] = {
+        "trigger": "new_canonical_evidence", "at": "2026-08-04T10:00:00+02:00"}
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest="legacy-digest-before-semantic-fix",
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], result_id=first["result_id"],
+        evidence_generation=first["evidence_generation"], state_store=state)
+    later = {**first_packet, "generation": "G2", "result_id": "R2",
+        "next_reassessment": {"trigger": "new_canonical_evidence",
+                              "at": "2026-08-04T10:15:00+02:00"}}
+
+    unchanged = reassess_rootline(owner_user_id="42", chat_id="42",
+        trigger="declared_time", specialist_loader=lambda: later, state_store=state)
+
+    assert unchanged["status"] == "rootline_reassessment_unchanged"
+    assert unchanged["notify_owner"] is False and unchanged["telegram_sends"] == 0
+
+
+def test_digest_cutover_never_suppresses_wrong_recipient_date_or_changed_question():
+    from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_plan
+    current = rootline("Recommend")
+    current["operating_date"] = "2026-08-24"
+    prior = {"identity": "PRIOR", "owner_user_id": "42", "chat_id": "42",
+        "operating_date": "2026-08-23", "delivery_state": "delivered",
+        "provider_message_id": "7001", "material_digest": "legacy",
+        "answer": compose_daily_rootline_plan(current)}
+    rows, base = store()
+    calls = []
+    def state(action, identity, payload):
+        if action == "load_delivered": return prior
+        return base(action, identity, payload)
+    wrong_date = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: current, state_store=state)
+    assert wrong_date["notify_owner"] is True
+
+    prior["operating_date"] = "2026-08-24"
+    changed = {**current, "owner_brief": {**current["owner_brief"],
+        "family_fact_needed": "Is the tank empty?"}}
+    changed_question = reassess_rootline(owner_user_id="42", chat_id="42",
+        trigger="declared_time", specialist_loader=lambda: changed, state_store=state)
+    assert changed_question["notify_owner"] is True
+
+
+def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
+    rows, state = store()
+    first_packet = rootline("Recommend")
+    first_packet["recommendations"][1]["reason"] = "now_after_fresh_execution_revalidation"
+    first_packet["irrigation_lifecycle"] = {"C12345": {
+        "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",
+        "state": "Eligible", "reason": "now_after_fresh_execution_revalidation",
+        "next_action_owner": "ROOTLINE", "next_action": "claim exactly once"}}
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], state_store=state)
+    churn = {**first_packet, "result_id": "R2", "generation": "G2",
+        "recommendations": [dict(row) for row in first_packet["recommendations"]]}
+    churn["recommendations"][1]["reason"] = "durable_zone_containment"
+    quiet = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: churn, state_store=state)
+    assert quiet["status"] == "rootline_reassessment_unchanged"
+    completed = {**churn, "result_id": "R3", "generation": "G3",
+        "irrigation_lifecycle": {"C12345": {
+            "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",
+            "state": "Completed", "reason": "record_completed",
+            "next_action_owner": "ROOTLINE", "next_action": "reassess",
+            "completion_evidence": {"zone_id": "C12345", "shutdown_verified": True,
+                "objective_satisfied": True,
+                "shutdown_evidence": {"authoritative": True, "state": "OFF"}}}}}
+    changed = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: completed, state_store=state)
+    assert changed["status"] == "rootline_reassessment_changed"
+    assert "Completed — off and verified" in changed["answer"]
+
+
+def test_meaningful_owner_reason_change_is_material_with_same_decision():
+    rows, state = store()
+    first_packet = rootline()
+    first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
+        chat_id="42", material_digest=first["material_digest"],
+        delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
+        operating_date=first["operating_date"], state_store=state)
+    changed_packet = {**first_packet, "result_id": "R2", "generation": "G2",
+        "recommendations": [dict(row) for row in first_packet["recommendations"]]}
+    changed_packet["recommendations"][0]["reason"] = (
+        "Fresh observed rain means B Camp does not need another segment today.")
+    changed = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: changed_packet, state_store=state)
+    assert changed["status"] == "rootline_reassessment_changed"
+    assert changed["notify_owner"] is True
+    assert "Fresh observed rain" in changed["answer"]
 
 
 def test_fixed_reassessment_deadline_change_remains_material():

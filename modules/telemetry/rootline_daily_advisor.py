@@ -18,6 +18,9 @@ from modules.telemetry.rootline_operating_policy import (
     list_policy_review,
     normalize_policy_snapshot,
 )
+from modules.telemetry.rootline_ewelink_commissioned_baseline import (
+    commissioned_controller_baseline,
+)
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -49,7 +52,7 @@ OPERATING_KNOWLEDGE = {
             "water_supply": "gravity_fed_downhill",
             "pump_required": False,
             "priority": "equal",
-            "physical_mapping_status": "owner_confirmed_not_canary_proven",
+            "physical_mapping_status": "supervised_commissioned",
         },
         "C12345": {
             "zone_id": "C12345",
@@ -72,8 +75,8 @@ OPERATING_KNOWLEDGE = {
             "observed_runtime",
             "measured_delivery",
         ],
-        "daylight_only": True,
-        "allowed_windows": UNKNOWN,
+        "daylight_only": False,
+        "allowed_windows": "adaptive_by_rootline_from_current_evidence",
         "minimum_runtime_minutes": UNKNOWN,
         "maximum_runtime_minutes": UNKNOWN,
         "repeat_same_day": "fresh_owner_review_required",
@@ -282,19 +285,7 @@ def build_rootline_daily_advisor(brief, advisor_date, active_policy=None, now=No
                 if active_snapshot else UNAVAILABLE
             ),
         },
-        "physical_identity_evidence": {
-            "C12345": {
-                "status": "proven_once_supervised",
-                "counts_as_verified_watering": False,
-                "packet_id": _C12345_CANARY_RECORD["packet_id"],
-                "evidence_sha256": C12345_CANARY_SHA256,
-                "final_physical_state": "safe_closed",
-            },
-            "B12345": {
-                "status": "not_canary_proven",
-                "counts_as_verified_watering": False,
-            },
-        },
+        "physical_identity_evidence": _commissioned_identity_evidence(),
         "unresolved_owner_decisions": unresolved,
         "canary_evidence_persistence": canary_evidence_persistence_contract(),
         "authority": deepcopy(AUTHORITY),
@@ -615,16 +606,12 @@ def _advise_zone(
             "the governed local station; that automatic evidence is not proven."
         )
     else:
-        time_gate, time_reason = _daylight_gate(
-            daylight_window, evaluated_at, advisor_date
-        )
-        recommendation = "Hold" if time_gate == "outside" else "Needs Data"
-        eligibility = recommendation
+        recommendation = "Needs Data"
+        eligibility = "Needs Data"
         reasons.extend(
             [
                 "The active live-rain Hold is released; this does not prove irrigation eligibility.",
-                time_reason,
-                "Passing the daylight gate does not prove irrigation eligibility or runtime.",
+                "ROOTLINE selects the safest useful execution time adaptively from current need, weather, water and commissioned-device evidence; a fixed daylight window is not an irrigation gate.",
                 "Eligibility is manual-advisory only.",
                 "Forecast-rain thresholds are Unknown.",
             ]
@@ -653,12 +640,7 @@ def _advise_zone(
             "crop_need_band_unknown",
             "forecast_rain_threshold_unknown",
         ]
-        + (
-            ["allowed_window_unknown"]
-            if _daylight_gate(daylight_window, evaluated_at, advisor_date)[0]
-            == "needs_data"
-            else []
-        ),
+        ,
         "reasoning": list(dict.fromkeys(reasons)),
         "previous_activity": {
             "legacy_planned_minutes": legacy_planned,
@@ -686,19 +668,29 @@ def _unresolved_owner_decisions(active_policy=None):
         {"decision": "controller_power_loss_behavior", "current_value": UNKNOWN},
         {"decision": "residual_drainage_decay_seconds", "current_value": UNAVAILABLE},
     ]
-    zones = active_policy.get("zones") if isinstance(active_policy, dict) else None
-    if (
-        not isinstance(zones, dict)
-        or any(
-            not isinstance(zone, dict) or zone.get("daylight_window") == UNKNOWN
-            for zone in zones.values()
-        )
-    ):
-        decisions.insert(
-            1,
-            {"decision": "exact_daylight_windows_per_zone", "current_value": UNKNOWN},
-        )
     return decisions
+
+
+def _commissioned_identity_evidence():
+    baseline = commissioned_controller_baseline()
+    commissioning_ids = baseline.get("irrigation_commissioning_ids") or {}
+    common = {
+        "status": "supervised_commissioned",
+        "counts_as_verified_watering": False,
+        "controller_baseline_id": baseline.get("baseline_id"),
+        "commissioning_evidence_sha256": baseline.get("commissioning_evidence_sha256"),
+        "evidence_source": baseline.get("evidence_source"),
+    }
+    return {
+        "B12345": {**common, "commissioning_id": commissioning_ids.get("B12345")},
+        "C12345": {
+            **common,
+            "commissioning_id": commissioning_ids.get("C12345"),
+            "legacy_canary_packet_id": _C12345_CANARY_RECORD["packet_id"],
+            "legacy_canary_evidence_sha256": C12345_CANARY_SHA256,
+            "legacy_canary_final_physical_state": "safe_closed",
+        },
+    }
 
 
 def _executive_summary(zones, weather, forecast):
@@ -711,12 +703,12 @@ def _executive_summary(zones, weather, forecast):
     if any(zone["recommendation"] == "Hold" for zone in zones):
         return (
             "ROOTLINE is holding one or both known drip zones because an active "
-            "weather, dry-release or daylight evidence gate is not safely cleared. "
+            "weather or dry-release evidence gate is not safely cleared. "
             f"No runtime is proposed and no action is authorized.{suffix}"
         )
     return (
-        "B12345 and C12345 remain manual-advisory only. Unknown operating windows, "
-        "runtime limits, crop-need bands, and forecast-rain policy prevent an Irrigate "
+        "B12345 and C12345 remain manual-advisory only. Unknown runtime limits, "
+        "crop-need bands, and forecast-rain policy prevent an Irrigate "
         f"recommendation or proposed runtime.{suffix}"
     )
 

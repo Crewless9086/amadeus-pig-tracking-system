@@ -5,7 +5,21 @@ from modules.pig_weights.herdmaster_breeding_operating_loop import (
     build_breeding_operating_loop,
     oom_sakkie_worklist_summary,
     preview_conversational_inspection,
+    _required_checks,
+    _task,
 )
+
+
+def test_legacy_heat_task_and_current_inspection_never_require_heat():
+    legacy = {"task_group": "observe for standing heat", "observed_checks": {}}
+    inspection = {"task_group": "inspect for breeding readiness",
+        "observed_checks": {"body condition": False, "movement": False,
+                            "visible concerns": False, "heat signs": False}}
+    assert _required_checks(legacy) == []
+    assert _required_checks(inspection) == [
+        "body condition", "movement", "visible concerns"]
+    assert _task({}, {}, legacy, [], {}, date(2026, 8, 24),
+                 datetime(2026, 8, 24, tzinfo=timezone.utc)) is None
 
 TODAY = date(2026, 7, 28)
 
@@ -203,6 +217,10 @@ def test_post_litter_natural_reply_previews_direct_facts_and_can_close_task():
     assert preview["facts"]["body_condition_score"] == 3
     assert preview["facts"]["standing_heat"] == "not_observed"
     assert preview["task_would_close"] is False
+    assert preview["provisional_reassessment"] == (
+        "Review current reproductive status"
+    )
+    assert "heat" not in preview["provisional_reassessment"].lower()
     assert preview["recording_contract"]["recording_enabled"] is False
 
 
@@ -274,7 +292,32 @@ def test_canonical_mating_creates_milestones_without_writes():
     assert case["classification"]["canonical_mating_exists"] is True
     assert case["classification"]["latest_mating_id"] == "MAT-1"
     assert len(case["milestones"]) == 3
+    assert case["milestones"][0]["name"] == "Return-to-heat observation window"
+    assert all(
+        item["milestone"] != "Return-to-heat observation window"
+        for item in result["reminder_plan"]["items"]
+    )
     assert result["reminder_plan"]["sent_count"] == 0
+
+
+def test_heat_milestone_is_history_only_for_due_and_future_projection():
+    for mating_date in ("2026-06-01", "2026-08-20"):
+        result = build(matings=[{
+            "mating_id": f"MAT-{mating_date}", "sow_pig_id": "PIG-MS",
+            "boar_pig_id": "BOAR-1", "boar_tag_number": "Prince",
+            "mating_date": mating_date, "mating_status": "Open",
+        }])
+        case = result["cases"][0]
+        assert any(
+            item["name"] == "Return-to-heat observation window"
+            for item in case["milestones"]
+        )
+        assert all(
+            item["milestone"] != "Return-to-heat observation window"
+            for item in result["reminder_plan"]["items"]
+        )
+        assert result["reminder_plan"]["delivery_operational"] is False
+        assert result["reminder_plan"]["sent_count"] == 0
 
 
 def test_due_pregnancy_check_is_worklist_attention():

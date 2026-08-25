@@ -26,13 +26,15 @@ from modules.telemetry.rootline_water_energy_plan import (
 
 def prepare_rootline_borehole_cycle(*, need, provider, interlocks, energy,
         requested_seconds, connect_factory, authority, now=None,
-        store=rootline_irrigation_execution_store, environ=None):
-    """Persist inert Borehole 1 eligibility on the existing ROOTLINE rail."""
+        store=rootline_irrigation_execution_store, environ=None, transport=None,
+        token_store=None):
+    """Advance Borehole 1 only through its exact standing-authority rail."""
     source = environ if environ is not None else os.environ
     if str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() != "true":
         return {**_safe("borehole_authority_disabled"), "eligible": False}
     from modules.telemetry.rootline_borehole_commissioning import (
-        build_borehole_runtime_eligibility, load_registered_borehole_baseline,
+        advance_borehole_execution, build_borehole_runtime_eligibility,
+        load_registered_borehole_baseline,
     )
     try:
         baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
@@ -53,11 +55,10 @@ def prepare_rootline_borehole_cycle(*, need, provider, interlocks, energy,
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         return {**_safe("borehole_eligibility_persistence_unproven"),
             "success": False, "eligible": False}
-    # Commissioning/configuration release remains a separate immutable boundary.
-    # No claim and no provider adapter are reachable from this source stage.
-    return {**_safe("borehole_eligibility_persisted_claim_disabled"),
-        "execution_eligibility": artifact, "eligible": True,
-        "claim_created": False, "autonomous_on_enabled": False}
+    transport = transport or RootlineIFTTTTransport(
+        token_store=token_store or PostgresOAuthTokenStore(), environ=source)
+    return advance_borehole_execution(eligibility=artifact, store=store,
+        transport=transport, now=now)
 
 
 def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url=None,
@@ -291,9 +292,10 @@ def _persist_stale_parent_resolutions(plan, store):
     for task in (plan.get("candidate_tasks") or []):
         if not isinstance(task, dict):
             continue
-        deferred = [*(task.get("stale_incomplete_parent_jobs") or []),
-            *(task.get("contained_parent_jobs") or [])]
-        for parent in deferred:
+        deferred = [*((parent, True) for parent in
+            (task.get("stale_incomplete_parent_jobs") or [])),
+            *((parent, False) for parent in (task.get("contained_parent_jobs") or []))]
+        for parent, terminal in deferred:
             job = parent.get("job") if isinstance(parent, dict) else None
             projection = parent.get("projection") if isinstance(parent, dict) else None
             if not isinstance(job, dict) or not isinstance(projection, dict):
@@ -308,8 +310,11 @@ def _persist_stale_parent_resolutions(plan, store):
                     "cumulative_verified_runtime_seconds"),
                 "remaining_seconds": parent.get("remaining_seconds"),
                 "reason": str(parent.get("resolution_reason") or
-                    "parent_operating_date_elapsed_before_remaining_objective_completed"),
-                "source_plan_generation": plan.get("evidence_generation")}
+                    "parent_operating_date_elapsed_before_remaining_objective_completed")}
+            if terminal:
+                material["terminal"] = True
+            else:
+                material["source_plan_generation"] = plan.get("evidence_generation")
             digest = _digest(material)
             result = store("record_job_resolution", {**material,
                 "resolution_sha256": digest,
@@ -454,14 +459,23 @@ def _planning_observation(initial, owner, chat, next_due):
         task = tasks.get(zone, {})
         raw = str(task.get("zone_decision") or "Needs Data")
         decision = raw if raw in {"Run now", "Run later", "Hold", "Needs Data", "Not Due"} else "Needs Data"
+        artifact = initial["artifact"]
+        per_zone = (artifact.get("zone_eligibility_reasons")
+                    if isinstance(artifact.get("zone_eligibility_reasons"), dict) else {})
+        if artifact.get("eligible") is True and artifact.get("zone_id") == zone:
+            blocker = ""
+        elif artifact.get("status") == "durable_parent_job_deferred" and decision == "Run now":
+            blocker = str(per_zone.get(zone) or "run_projection_eligibility_invariant_failed")
+            if blocker == "eligible_candidate":
+                blocker = "run_projection_eligibility_invariant_failed"
+        else:
+            blocker = str(per_zone.get(zone) or artifact.get("status") or "")
         zones.append({"zone_id": zone, "decision": "Run" if decision == "Run now" else decision,
-            "reason": str(task.get("reason") or initial["artifact"].get("status") or
+            "reason": str(task.get("reason") or artifact.get("status") or
                           "No canonical zone task is available."),
             "planned_duration_minutes": task.get("planned_duration_minutes"),
             "feasible_window": task.get("preferred_window"),
-            "eligibility_blocker": "" if initial["artifact"].get("eligible") is True
-                                  and initial["artifact"].get("zone_id") == zone
-                                  else str(initial["artifact"].get("status") or "")})
+            "eligibility_blocker": blocker})
     material = {"operating_date": operating_date, "generation": generation,
                 "evidence_cutoff": cutoff, "zones": zones}
     digest = _digest(material)
