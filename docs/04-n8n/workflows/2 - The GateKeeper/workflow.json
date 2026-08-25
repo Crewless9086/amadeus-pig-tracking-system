@@ -44,6 +44,9 @@
                       "id":  "ca5600f9-53c8-4b19-bd34-0e14a8ef2238",
                       "name":  "Get User Info",
                       "alwaysOutputData":  true,
+                      "retryOnFail":  true,
+                      "maxTries":  5,
+                      "waitBetweenTries":  2000,
                       "credentials":  {
                                           "googleSheetsOAuth2Api":  {
                                                                         "id":  "DbtelWXdvwe4DuHc",
@@ -1235,6 +1238,9 @@
                                             "id":  "ca5600f9-53c8-4b19-bd34-0e14a8ef2238",
                                             "name":  "Get User Info",
                                             "alwaysOutputData":  true,
+                                            "retryOnFail":  true,
+                                            "maxTries":  5,
+                                            "waitBetweenTries":  2000,
                                             "credentials":  {
                                                                 "googleSheetsOAuth2Api":  {
                                                                                               "id":  "DbtelWXdvwe4DuHc",
