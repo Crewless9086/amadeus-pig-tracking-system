@@ -2737,3 +2737,26 @@ projection/delivery must exclude the legacy heat window while the historical
 milestone remains available for audit. Source repair is active; **NO BUSINESS
 OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
 questions, tasks and reminders on a later natural cycle.
+
+## 2026-08-25 - DMQ-20260816-01 standing print authority addendum
+
+Charl's authenticated private request to print an allowlisted farm document is
+the authority for one bounded GREEN job on the commissioned fixed local queue.
+The old weekly-sheet preview/Confirm loop is a systemic owner-burden defect and
+must not remain in the natural request path. Oom Sakkie must create the exact
+immutable revision, persist a deterministic digest-bound standing-authority
+receipt, create/recover the one canonical job idempotently, follow provider and
+canonical truth through completion, and ask Charl only about a genuine exception
+or the physical page result. One A4 monochrome copy, registry-bound printer and
+queue, bounded retry/reconciliation and no automatic reprint remain invariant.
+
+This remains the existing `DMQ-20260816-01` mission and the existing GREEN job,
+worker, queue and physical-follow-up rail. The document catalogue is the sole
+extension inventory: current governed PDF generators may gain small immutable
+revision adapters one at a time, but may not create a second print API, worker,
+queue, ledger or confirmation system. Loading sheet, removal/transport, health
+declaration and quote are catalogued extension candidates; their direct-print
+authority remains fail-closed until each adapter and its evidence binding are
+implemented and tested. No job was synthesized or sent by this source change.
+**NO BUSINESS OUTCOME. OWNER ACTION: NONE** until integration/deployment and a
+later genuine request prove canonical/provider/physical readback.

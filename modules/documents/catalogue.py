@@ -76,12 +76,12 @@ _CATALOGUE = (
         (_field("pen_ids", "Optional canonical pen identifiers"),),
         "web.print_sheets.v1", "HERDMASTER", "Transitional Supabase-first livestock/pen reads with bounded Google Sheets fallback",
         PreviewContract(Support.SUPPORTED, "text/html", "application:/print-sheets"),
-        Support.UNSUPPORTED, Support.UNSUPPORTED, Support.UNKNOWN,
+        Support.SUPPORTED, Support.UNSUPPORTED, Support.SUPPORTED,
         frozenset({RequesterRole.OWNER, RequesterRole.FARM_MANAGER}),
         frozenset({Requester.APPLICATION, Requester.OOM_SAKKIE, Requester.HERDMASTER}),
         ("authenticated_principal_id", "requester", "document_id", "canonical_input_ids", "generator_id", "channel", "decision", "result_status"),
         ("authenticated_principal_id", "requester", "document_id", "canonical_input_ids", "generator_id", "channel", "requested_revision"), False,
-        "Mission 2 may add PDF and Telegram adapters without changing this generator identity.",
+        "GREEN uses the shared canonical job/worker rail: fixed registered queue, one A4 monochrome copy, digest idempotency and no automatic reprint.",
     ),
     DocumentDefinition(
         "farm.weight_report.v1", "Weight report", "Gewigsverslag",
@@ -177,3 +177,15 @@ def require_delivery_support(document_id: str, method: str) -> None:
     }.get(method, Support.UNKNOWN)
     if support is not Support.SUPPORTED:
         raise PermissionError("document request denied")
+
+
+def governed_print_extension_candidates() -> Tuple[DocumentDefinition, ...]:
+    """Return existing PDF capabilities eligible for a future GREEN adapter.
+
+    This is inventory only.  A candidate stays ``direct_print=Unknown`` until
+    its owning generator has an immutable revision adapter and focused tests;
+    it must then reuse the one canonical print-job/worker/queue rail.
+    """
+    return tuple(document for document in _CATALOGUE
+                 if document.pdf is Support.SUPPORTED
+                 and document.direct_print is not Support.SUPPORTED)

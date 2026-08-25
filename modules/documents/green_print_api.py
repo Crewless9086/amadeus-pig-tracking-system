@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 import hmac
+import hashlib
 import os
 import re
 import time
@@ -170,6 +171,87 @@ def execute_claimed_weekly_print(claim, parsed, *, connect_factory=None):
         canonical_api_origin=os.getenv("DOCUMENTS_CANONICAL_API_ORIGIN", "").strip(),
         connect_factory=connect_factory,
     )
+
+
+def authorize_standing_weekly_print(preview, revision, parsed, *, connect_factory=None):
+    """Persist one job directly from one authenticated owner request.
+
+    The durable claim remains the authorization receipt and digest fence, but
+    enters ``executing`` directly: there is deliberately no preview-card or
+    callback dependency for this fixed-printer, one-copy standing authority.
+    """
+    from modules.documents.weekly_weight_sheet import PRINT_ACTION_KIND
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    principal = _bounded_id(parsed.get("telegram_user_id"), "authenticated_principal_id")
+    if (principal != str(parsed.get("telegram_chat_id") or "").strip()
+            or parsed.get("telegram_chat_type") != "private"):
+        raise ValueError("authenticated_owner_principal_required")
+    provider_id = _bounded_id(parsed.get("provider_message_id"), "provider_message_id")
+    payload = {key: value for key, value in preview.items() if key != "preview_digest"}
+    digest = canonical_preview_digest(PRINT_ACTION_KIND, payload)
+    if preview.get("preview_digest") != digest:
+        raise ValueError("standing_print_preview_digest_mismatch")
+    receipt = "GREEN-SA-" + hashlib.sha256(
+        (principal + ":" + digest).encode()).hexdigest()[:32].upper()
+    mission = "DMQ-20260816-01:" + str(preview["document_version"])
+    db = (connect_factory or _connect_api)()
+    with db:
+        with db.cursor() as cursor:
+            from psycopg.types.json import Jsonb
+            cursor.execute("""insert into app_private.oom_protected_action_claims(
+              callback_token,action_kind,owner_user_id,private_chat_id,mission_id,
+              provider_message_id,preview_digest,evidence_generation,preview_payload,
+              status,expires_at,result_payload)
+              values(%s,%s,%s,%s,%s,%s,%s,%s,%s,'executing',%s,
+                '{"status":"standing_print_request_claimed"}'::jsonb)
+              on conflict(action_kind,mission_id,preview_digest) do nothing""",
+              (receipt, PRINT_ACTION_KIND, principal, principal, mission, provider_id,
+               digest, preview["canonical_input_sha256"], Jsonb(payload),
+               preview["authorization_expires_at"]))
+            cursor.execute("""update app_private.oom_protected_action_claims
+              set status='executing',provider_message_id=%s,
+                  result_payload='{"status":"standing_print_request_claimed"}'::jsonb
+              where action_kind=%s and mission_id=%s and preview_digest=%s
+                and status='active' and owner_user_id=%s and private_chat_id=%s
+                and preview_payload=%s""", (provider_id, PRINT_ACTION_KIND,
+              mission, digest, principal, principal, Jsonb(payload)))
+            cursor.execute("""select callback_token,status,owner_user_id,preview_payload
+              from app_private.oom_protected_action_claims
+              where action_kind=%s and mission_id=%s and preview_digest=%s for update""",
+              (PRINT_ACTION_KIND, mission, digest))
+            row = cursor.fetchone()
+            if (not row or row[1] not in {"executing", "completed"}
+                    or row[2] != principal or row[3] != payload):
+                raise ValueError("standing_print_authority_conflict")
+            receipt = row[0]
+            if row[1] == "completed":
+                cursor.execute("""select to_jsonb(j) from app_private.document_print_jobs j
+                  where job_id=%s and authorization_receipt_id=%s
+                    and document_version=%s and pdf_sha256=%s""",
+                  (preview["job_id"], row[0], preview["document_version"],
+                   preview["pdf_sha256"]))
+                existing = cursor.fetchone()
+                if not existing:
+                    raise ValueError("standing_print_completed_job_missing")
+                return _public_job(existing[0])
+            claim = {"callback_token": row[0], "action_kind": PRINT_ACTION_KIND,
+                "preview_digest": digest, "preview_payload": payload,
+                "status": "protected_callback_claimed"}
+        result = create_authorized_job_from_claim(claim, revision,
+            authenticated_principal_id=principal, request_channel="telegram",
+            farm_scope_id=os.getenv("DOCUMENTS_FARM_SCOPE_ID", "").strip(),
+            canonical_api_origin=os.getenv("DOCUMENTS_CANONICAL_API_ORIGIN", "").strip(),
+            connect_factory=lambda: db)
+        with db.cursor() as cursor:
+            from psycopg.types.json import Jsonb
+            cursor.execute("""update app_private.oom_protected_action_claims
+              set status='completed',result_payload=%s
+              where callback_token=%s and status='executing'""",
+              (Jsonb({"status":"documents_green_print_authorized",
+                      "job_id":result.get("job_id")}), receipt))
+            if cursor.rowcount != 1:
+                raise ValueError("standing_print_receipt_completion_conflict")
+        return result
 
 
 def execute_claimed_physical_page_acceptance(claim, parsed, *, connect_factory=None):
