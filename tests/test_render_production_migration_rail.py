@@ -648,7 +648,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             "O",
         )
         self.assertEqual(
-            first["migrations"][-1]["readback"]["protected_claim_acl"],
+            first["migrations"][-2]["readback"]["protected_claim_acl"],
             {
                 "unauthorized_privilege_count": 0,
                 "managed_read_roles": [
@@ -659,10 +659,10 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             },
         )
         self.assertTrue(
-            first["migrations"][-2]["readback"]["migration_log_description_sha256"]
+            first["migrations"][-3]["readback"]["migration_log_description_sha256"]
         )
         self.assertTrue(
-            first["migrations"][-1]["readback"]["migration_log_description_sha256"]
+            first["migrations"][-2]["readback"]["migration_log_description_sha256"]
         )
         self.assertEqual(
             second["migrations"][-2]["readback"],
