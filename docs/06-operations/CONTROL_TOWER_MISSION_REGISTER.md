@@ -3476,3 +3476,15 @@ future cadence and allowing later cases to rotate. A later successful refresh
 still follows normal genuine-question delivery. Source/tests are not an owner
 outcome; natural post-deploy cadence and queue continuation remain required.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
+## 2026-08-25 - Molly first-treatment clean-source recovery
+
+The existing continuous-husbandry parity implementation was found uncommitted
+in a stale worktree and absent from production. It has been recovered without
+altering that worktree or Molly's records into a clean current-main lineage.
+The bounded source separates first treatment from farrowing, reuses the existing
+protected claim and litter-health operation, requires canonical Supabase writes,
+and preserves the heat-free rule. Source and tests are not business completion;
+review, deployment, production preflight, a fresh genuine report, canonical
+readback and automatic follow-up remain required. Priority is unchanged.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**

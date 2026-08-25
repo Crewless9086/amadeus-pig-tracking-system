@@ -3525,6 +3525,9 @@ def record_litter_newborn_health(
     female_count=None,
     dry_run: bool = True,
     treatment_context: str = "first_treatment",
+    require_supabase: bool = False,
+    canonical_detail=None,
+    canonical_products=None,
 ):
     litter_id = to_clean_string(litter_id)
     action_date = parse_sheet_date(action_date_value)
@@ -3563,7 +3566,7 @@ def record_litter_newborn_health(
 
     products = {
         product["product_id"]: product
-        for product in get_products()
+        for product in (canonical_products if canonical_products is not None else get_products())
     }
     if antiparasitic_product_id and antiparasitic_product_id not in products:
         errors.append(f"Antiparasitic product '{antiparasitic_product_id}' was not found or is inactive.")
@@ -3577,7 +3580,12 @@ def record_litter_newborn_health(
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     medical_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    pig_rows = _get_pig_master_rows()
+    if canonical_detail is not None:
+        pig_rows = [{columns["pig_id"]: row.get("pig_id"), "Litter_ID": litter_id,
+            columns["status"]: row.get("status"),
+            columns["on_farm"]: row.get("on_farm")} for row in canonical_detail.get("piglets") or []]
+    else:
+        pig_rows = _get_pig_master_rows()
     active_piglets = [
         row for row in pig_rows
         if to_clean_string(row.get("Litter_ID", "")) == litter_id
@@ -3709,6 +3717,10 @@ def record_litter_newborn_health(
     litter_rows_updated = 0
     if not dry_run:
         supabase_available = farm_supabase_write_service.farm_supabase_writes_available()
+        if require_supabase and not supabase_available:
+            return {"success": False, "status": "canonical_supabase_write_required",
+                "errors": ["Canonical Supabase treatment writes are unavailable."],
+                "source": {"writes_to_sheets": False, "writes_to_supabase": False}}, 503
         if supabase_available:
             pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
             if pig_rows_updated is None:
@@ -3720,7 +3732,7 @@ def record_litter_newborn_health(
             if litter_tally_updates:
                 litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
             writes_to_supabase = True
-        else:
+        elif not require_supabase:
             pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
             if litter_tally_updates:
                 litter_rows_updated = batch_update_rows_by_id(
