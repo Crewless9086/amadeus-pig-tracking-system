@@ -3348,3 +3348,15 @@ is equal, rejects every immutable drift, and emits only a credential-free hold
 reason. It creates no job, authorization, replay, recovery call or print.
 Source completion is not the owner outcome. **DURABLY LOGGED - NOT YET AN
 OUTCOME. OWNER ACTION: NONE.**
+
+### 2026-08-25 GREEN 0.3.11 publication-rail binding correction
+
+The reviewed 0.3.11 worker repair merged, but publication preflight found the
+existing immutable-image workflow still bound its normal publish/recover lane
+to version 0.3.10. Dispatch was stopped before any package effect. This is a
+release-rail defect within existing `DMQ-20260816-01`, not a new mission and not
+authority to overwrite the immutable 0.3.10 tag. The bounded successor binds
+normal publication, SBOM and release-packet names to 0.3.11 while preserving
+the separately quarantined historical 0.3.10 partial-publication recovery
+contract unchanged. No image, installation, recovery or print occurred.
+**DURABLY LOGGED - NOT YET AN OUTCOME. OWNER ACTION: NONE.**

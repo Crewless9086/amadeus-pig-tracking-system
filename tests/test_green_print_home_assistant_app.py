@@ -225,7 +225,7 @@ def test_image_workflow_is_manual_publish_fail_closed_and_attested():
     assert 'gh attestation verify "oci://${digest_ref}"' in workflow
     assert 'GH_TOKEN: ${{ github.token }}' in workflow
     assert 'tag_resolved_digest=${{ steps.pushed.outputs.resolved_digest }}' in workflow
-    assert "green-print-0.3.10-verified-release-packet" in workflow
+    assert "green-print-0.3.11-verified-release-packet" in workflow
     assert "load: true" in workflow
     assert "Run real arm64 zero-job startup under package AppArmor" in workflow
     assert "green_print_startup_apparmor_probe.py" in workflow
@@ -253,7 +253,14 @@ def test_036_publish_verifies_descriptor_and_config_before_signing_or_attesting(
     path=ROOT/".github/workflows/green-print-image.yml"
     workflow=path.read_text(encoding="utf-8")
     parsed=yaml.safe_load(workflow)
-    assert parsed["env"]["VERSION"]=="0.3.10"
+    assert parsed["env"]["VERSION"]=="0.3.11"
+    assert parsed["jobs"]["recover_partial_publication"]["env"]=={"VERSION":"0.3.10"}
+    assert "VERSION" not in parsed["jobs"]["verify"].get("env",{})
+    assert "VERSION" not in parsed["jobs"]["publish"].get("env",{})
+    normal=json.dumps({key:parsed["jobs"][key] for key in ("verify","publish","recover")})
+    partial=json.dumps(parsed["jobs"]["recover_partial_publication"])
+    assert "green-print-0.3.10" not in normal and "0.3.11" not in partial
+    assert "green-print-0.3.11" in normal and "green-print-0.3.10" in partial
     steps=parsed["jobs"]["publish"]["steps"]
     names=[step.get("name") for step in steps]
     verify=names.index("Verify pushed index descriptor, config and OCI bindings")
