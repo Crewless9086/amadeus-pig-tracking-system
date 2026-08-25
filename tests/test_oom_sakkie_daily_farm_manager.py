@@ -141,11 +141,24 @@ def test_agent_owned_reconciliation_is_not_presented_as_owner_work_or_raw_pollin
                 next_action="Reconcile tags " + ", ".join(str(value) for value in range(1, 76))),
     ]
     answer = build_daily_management_packet([result(items=rows)], now=NOW)["answer"]
-    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
-    assert "No action required from you." in answer
+    assert answer == ""
     assert "ACTION NEEDED" not in answer
     assert "Reconcile tags" not in answer
     assert "within 15 minutes" not in answer
+
+
+def test_internal_only_natural_cycle_records_tasks_but_sends_nothing():
+    state = store(); deliveries = []
+    rows = [item("MORTALITY", "Mortality follow-up â€” PIG-2026-3EE5", WorkState.URGENT),
+        item("ROOTLINE", "Irrigation B, C: Checking safely", WorkState.PLANNED),
+        replace(item("WEIGHTS", "Weighing: 0 of 75 recorded", WorkState.WAITING_EVIDENCE),
+                metadata={"routine_weekly_weighing": True})]
+    outcome = run_daily_farm_manager(owner_user_id="42", chat_id="42",
+        specialist_results=[result(items=rows)], litter_rows=[], now=NOW, store=state,
+        deliver=lambda *_args, **_kwargs: deliveries.append(1))
+    assert outcome["status"] == "daily_manager_internal_work_silent"
+    assert outcome["task_count"] == 3
+    assert outcome["telegram_sends"] == 0 and deliveries == []
 
 
 def test_exact_owner_decision_is_the_only_action_section():
@@ -157,7 +170,7 @@ def test_exact_owner_decision_is_the_only_action_section():
                                            now=NOW)["answer"]
     assert "ACTION NEEDED" in answer
     assert "Review the protected preview." in answer
-    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
+    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" not in answer
     assert "No action required from you." not in answer
 
 
@@ -226,7 +239,7 @@ def test_before_morning_boundary_is_silent_and_durably_due():
 def test_afrikaans_uses_same_evidence_and_authority():
     packet=build_daily_management_packet([result(items=[item("R-1","Reën hou besproeiing")])],
         now=NOW,language="af")
-    assert "VANDAG SE PLAASPLAN" in packet["answer"]
+    assert packet["answer"] == ""
     assert packet["all_tasks"][0]["authority"]=="read_only"
 
 
@@ -236,10 +249,10 @@ def test_provider_ambiguity_is_quarantined_without_retry():
         calls.append(1);return {"success":False,"status":"provider_ambiguous",
                                 "telegram_sends":0,"telegram_edits":0}
     first=run_daily_farm_manager(owner_user_id="42",chat_id="42",
-        specialist_results=[result(items=[item("R-1","Rain Hold")])],litter_rows=[],
+        specialist_results=[result(items=[replace(item("R-1","Rain Hold"), authority=Authority.OWNER_DECISION)])],litter_rows=[],
         deliver=ambiguous,store=state,now=NOW)
     replay=run_daily_farm_manager(owner_user_id="42",chat_id="42",
-        specialist_results=[result(items=[item("R-1","Rain Hold")])],litter_rows=[],
+        specialist_results=[result(items=[replace(item("R-1","Rain Hold"), authority=Authority.OWNER_DECISION)])],litter_rows=[],
         deliver=ambiguous,store=state,now=NOW)
     assert first["status"]=="daily_manager_delivery_ambiguous"
     assert replay["status"]=="daily_manager_replay_suppressed" and len(calls)==1
@@ -250,16 +263,16 @@ def test_material_refresh_replaces_brief_instead_of_editing_or_acknowledging():
     def deliver(*_args,**_kwargs):
         return {"success":True,"telegram_message_id":"4000","telegram_sends":1}
     first=run_daily_farm_manager(owner_user_id="42",chat_id="42",
-        specialist_results=[result(items=[item("R-1","Old current work")])],
+        specialist_results=[result(items=[replace(item("R-1","Old current work"), authority=Authority.OWNER_DECISION)])],
         litter_rows=[],deliver=deliver,store=state,now=NOW)
-    def replace(parsed,outcome,**kwargs):
+    def replace_delivery(parsed,outcome,**kwargs):
         replacements.append((parsed,outcome,kwargs))
         return {"success":True,"status":"brief_replaced",
             "telegram_message_id":"4001","telegram_sends":1,"telegram_deletes":1}
     refreshed=run_daily_farm_manager(owner_user_id="42",chat_id="42",
-        specialist_results=[result(items=[item("R-2","New current work")])],
+        specialist_results=[result(items=[replace(item("R-2","New current work"), authority=Authority.OWNER_DECISION)])],
         litter_rows=[],deliver=lambda *_a,**_k:pytest.fail("must not edit old brief"),
-        replace_brief=replace,store=state,now=NOW)
+        replace_brief=replace_delivery,store=state,now=NOW)
     assert first["telegram_message_id"] == "4000"
     assert refreshed["status"] == "daily_manager_presented"
     assert refreshed["telegram_message_id"] == "4001"
@@ -276,7 +289,7 @@ def test_daily_projection_and_provider_claims_are_cross_owner_isolated():
             "telegram_sends":1}
     for owner in ("42","84"):
         value=run_daily_farm_manager(owner_user_id=owner,chat_id=owner,
-            specialist_results=[result(items=[item("R-1","Current work")])],
+                specialist_results=[result(items=[replace(item("R-1","Current work"), authority=Authority.OWNER_DECISION)])],
             litter_rows=[],deliver=deliver,store=state,now=NOW)
         assert value["status"] == "daily_manager_presented"
     assert len(sends) == 2 and sends[0][1] != sends[1][1]
