@@ -2892,6 +2892,29 @@ proving names-first parity, one protected exact treatment journey when truly
 due, canonical completion/readback, replay containment and a later stable cycle
 without repeated work.
 
+## 2026-08-25 - HMQ-20260813-05 automatic completed-batch consumption source repair
+
+The accepted selective-BCS batch exposed the existing closed-loop defect: its
+canonical weight and observation events were complete, but no deployed
+automatic cycle had projected the material exact-pig findings into stable
+HERDMASTER manager cases. Read-only manual analysis was not an owner outcome.
+
+The bounded repair reuses the existing five-minute general-manager worker and
+`oom_manager_cases` lifecycle. It reads only completed canonical batches,
+binds every finding to the exact pig plus batch and weight/observation event,
+and uses stable pig-scoped dedupe identities. A material BCS or descriptive
+weight change retains a seven-day HERDMASTER reassessment; a newer exact
+in-range/non-material event completes that same case. Replay and concurrent
+cycles cannot create another case or terminal event. Heat is neither requested
+nor inferred. No batch, observation, farm record, provider, scheduler, schema,
+queue or store was mutated or added by source preparation.
+
+Source readiness remains distinct from acceptance. Completion requires reviewed
+merge/deployment, a natural five-minute worker cycle consuming the already
+completed batch without replaying it, exact case/event readback, and a later
+terminal-independent cycle proving idempotency and continued ownership.
+**NO BUSINESS OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-25 - OMQ-20260813-03 Morning Farm Plan outcome projection defect
 
 Live Telegram card `4033` (observed `08:16:19Z`, presented `08:16:51Z`) repeated
