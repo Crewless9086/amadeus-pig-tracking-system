@@ -206,7 +206,7 @@ def authorize_standing_weekly_print(preview, revision, parsed, *, connect_factor
               status,expires_at,result_payload)
               values(%s,%s,%s,%s,%s,%s,%s,%s,%s,'executing',%s,
                 '{"status":"standing_print_request_claimed"}'::jsonb)
-              on conflict(action_kind,mission_id,preview_digest) do nothing""",
+              on conflict do nothing""",
               (receipt, PRINT_ACTION_KIND, principal, principal, mission, provider_id,
                digest, preview["canonical_input_sha256"], Jsonb(payload),
                preview["authorization_expires_at"]))
