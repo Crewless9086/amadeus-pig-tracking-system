@@ -2658,6 +2658,34 @@ stored message may be recovered exactly once only after reviewed provider
 deployment/readback; no direct backend POST, manufactured card or pre-confirm
 actuation is permitted.
 
+## 2026-08-25 - ROOTLINE standing-authority and fresh Mixer ingress correction
+
+Charl removed routine commissioning confirmations and human-presence
+requirements for all already governed ROOTLINE valves/connectors. Fresh
+authenticated owner requests and current eligible plans may execute under
+ROOTLINE standing authority when the exact registered device, current need,
+provider safety, deterministic claim, replay/concurrency and native fail-stop
+contracts pass. Authoritative application/provider ON then OFF readback is
+sufficient operational proof. Mixer remains exact CH2/`100204d497`/300 seconds;
+Injection retains exactly-one-zone, ten-minute pre-flow, 120-second maximum and
+ten-minute flush requirements. Borehole remains uncommandable until tomorrow's
+exact binding and bounded fail-OFF are proven.
+
+Fresh Telegram message `4023` entered GateKeeper execution `66616` at
+`2026-08-25T04:49:34Z`; child relay execution `66617` completed before the
+parent at `04:50:15Z`, proving the reviewed `waitForSubWorkflow=true` receipt
+repair. The backend returned `commissioning_specific_hold` because its first
+controller read was incomplete. It created no claim/card/execution and made no
+hardware/provider-control call. The automatic collector then passed at
+`04:50:10.625293Z` with readiness digest
+`3da21131194f782aaefe4b393a8405f99958f7f2a739330a57bdc8c74eaf985b`,
+unknowns `[]`, exact CH2 OFF/300-second fail-stop/no active execution and zero
+control calls. This is a bounded fresh-read timing race, not an unsafe device
+state. Same-lineage repair removes the confirmation-card detour, permits one
+bounded readiness recheck only after a zero-effect transient safety hold, and
+uses the existing claimed execution spine for ON, native deadline, OFF and
+provider verification. **NO BUSINESS OUTCOME YET. OWNER ACTION: NONE.**
+
 ## 2026-08-24 - GREEN farm-house printer risk acceptance addendum
 
 Charl accepts the confidentiality and local-network risk of practical

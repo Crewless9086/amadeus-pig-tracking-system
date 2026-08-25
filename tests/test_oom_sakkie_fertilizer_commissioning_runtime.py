@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
     _evaluation_time, continue_fertilizer_commissioning,
     emergency_off_fertilizer_mixer, execute_protected_fertilizer_commissioning,
+    execute_fertilizer_commissioning_under_standing_authority,
     recover_fertilizer_commissioning,
 )
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
@@ -109,7 +110,7 @@ def test_fresh_context_starts_exactly_one_mixer_proof_and_replay_does_not_start_
         power_loader=lambda _now: {"suitable": True, "generation": "POWER-1"},
         acceptance_loader=lambda *_args: True)
     assert result["status"] == "auxiliary_started"
-    assert result["question_count"] == 1
+    assert result["question_count"] == 0
     assert [row[0] for row in transport.commands] == ["ON"]
     denied=transport.set_state(device_id="100204d497",channel=2,state="ON",
         idempotency_key=store.active["execution_id"]+":ON")
@@ -135,7 +136,7 @@ def test_scheduler_recovers_after_native_deadline_and_never_retries_on():
         store=store, transport=transport)
     assert completed["status"] == "auxiliary_completed"
     assert [row[0] for row in transport.commands] == ["ON", "OFF"]
-    assert completed["mixing_enabled"] is False
+    assert completed["mixing_enabled"] is True
     assert completed["injection_enabled"] is False
 
 
@@ -170,6 +171,45 @@ def test_low_power_is_commissioning_specific_hold_with_owned_reassessment():
     assert result["status"] == "commissioning_specific_hold"
     assert result["hardware_commands"] == 0
     assert result["next_reassessment"] == "next_scheduler_tick"
+
+
+def test_standing_authority_rechecks_one_transient_safety_hold_then_starts_once(monkeypatch):
+    outcomes = iter([
+        {"status": "commissioning_specific_hold", "hold_reason": "auxiliary_safety_unproven",
+         "hardware_commands": 0, "provider_control_calls": 0},
+        {"success": True, "status": "auxiliary_started", "hardware_commands": 1},
+    ])
+    calls = []
+    def run(**kwargs):
+        calls.append(kwargs)
+        return next(outcomes)
+    monkeypatch.setattr(
+        "modules.oom_sakkie.rootline_fertilizer_commissioning_runtime.continue_fertilizer_commissioning",
+        run)
+    result = execute_fertilizer_commissioning_under_standing_authority(
+        owner_result=owner_result(), parsed=parsed(), gateway_authority=authority())
+    assert result["status"] == "auxiliary_started"
+    assert result["bounded_readiness_recheck"] is True
+    assert len(calls) == 2
+
+
+def test_standing_authority_never_rechecks_low_power_or_effectful_hold(monkeypatch):
+    for hold in (
+        {"status": "commissioning_specific_hold", "hold_reason": "low_power_mix_deferred",
+         "hardware_commands": 0, "provider_control_calls": 0},
+        {"status": "commissioning_specific_hold", "hold_reason": "auxiliary_safety_unproven",
+         "hardware_commands": 1, "provider_control_calls": 1},
+    ):
+        calls = []
+        def run(**kwargs):
+            calls.append(kwargs)
+            return hold
+        monkeypatch.setattr(
+            "modules.oom_sakkie.rootline_fertilizer_commissioning_runtime.continue_fertilizer_commissioning",
+            run)
+        assert execute_fertilizer_commissioning_under_standing_authority(
+            owner_result=owner_result(), parsed=parsed(), gateway_authority=authority()) == hold
+        assert len(calls) == 1
 
 
 def test_unproven_acceptance_cannot_mint_auxiliary_on_authority():

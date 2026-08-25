@@ -272,29 +272,31 @@ def test_exact_mixer_presence_precedes_stale_generic_operational_context(
     payload={"message":{"message_id":4001,"date":1787585194,
         "text":"I am at the fertilizer valves and ready for the five-minute Mixer CH2 commissioning test.",
         "from":{"id":42},"chat":{"id":42,"type":"private"}}}
-    protected={"handled":True,"success":True,"status":"mixer_protected_preview_created",
+    protected={"handled":True,"success":True,"status":"auxiliary_started",
         "answer":"<b>MIXER CH2 — SUPERVISED TEST</b>\n\nNothing has started yet. Confirm / Cancel.",
         "mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
-        "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809:PREVIEW:ABC",
+        "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
         "callback_token":"TOKEN","preview_digest":"DIGEST",
-        "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+        "hardware_commands":1,"provider_control_calls":1,"writes_farm_data":False}
+    protected.update({"answer":"<b>MIXER CH2 - STARTED</b> Bounded provider-monitored run started."})
     with patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",
                return_value=None), patch(
-               "modules.oom_sakkie.rootline_protected_mixer.create_mixer_preview",
-               return_value=protected) as create_preview, patch(
+               "modules.oom_sakkie.rootline_fertilizer_commissioning_runtime.execute_fertilizer_commissioning_under_standing_authority",
+               return_value=protected) as execute_standing, patch(
                "modules.oom_sakkie.telegram_gateway._bind_protected_preview_card",
                side_effect=lambda result, delivery: delivery) as bind_card:
         value,status=handle_telegram_gateway_message(payload,
             headers={"Authorization":"Bearer "+"x"*40},environ=env)
-    assert status==200 and value["message"]["status"]=="mixer_protected_preview_created"
-    assert value["message"]["card_mission_id"].endswith(":PREVIEW:ABC")
-    assert "Confirm / Cancel" in value["answer"]
-    create_preview.assert_called_once()
+    assert status==200 and value["message"]["status"]=="auxiliary_started"
+    assert value["message"]["card_mission_id"]=="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    assert "STARTED" in value["answer"] and "Confirm / Cancel" not in value["answer"]
+    assert "reply_markup" not in value["message"]
+    execute_standing.assert_called_once()
     bind_card.assert_called_once()
     continuation.assert_not_called()
     manager_question.assert_not_called()
     operational.assert_called_once()
-    assert value["message"]["hardware_commands"]==0
+    assert value["message"]["hardware_commands"]==1
 
 
 @patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message")

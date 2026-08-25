@@ -224,7 +224,9 @@ The safety objective is not "exactly one OFF request." The required physical out
 - Owner decision 2026-08-24: for the governed Fertilizer mixer, Fertilizer
   injector and Borehole controller, fresh authoritative application/provider
   ON then OFF readback is sufficient operational start/stop proof. Routine
-  owner physical presence or observation is not required; Charl and Anton will
+  owner physical presence, observation or per-run confirmation is not required;
+  ROOTLINE holds standing authority for exact registered devices inside current
+  eligibility and bounded fail-stop/interlock contracts; Charl and Anton will
   report exceptions. This does not make a command receipt sufficient, prove
   fertilizer or water moved, or waive exact device binding, current need,
   interlocks, idempotency, replay protection, deterministic maximum-runtime
