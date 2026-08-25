@@ -2737,3 +2737,25 @@ projection/delivery must exclude the legacy heat window while the historical
 milestone remains available for audit. Source repair is active; **NO BUSINESS
 OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
 questions, tasks and reminders on a later natural cycle.
+## 2026-08-25 - RMQ-20260813-06 Borehole 1 exact connector and standing authority
+
+Charl supplied the existing Borehole 1 connector binding: eWeLink device
+`1002851416`, display `Boorgat 1 Krag Toevoer`, SONOFF MINI R4 sole output
+(logical channel 1), exact IFTTT events `borehole_1_on` / `borehole_1_off`,
+power-restoration OFF and native four-hour auto-OFF. The supplied Maker key and
+URLs are secret and are intentionally absent from this register, repository,
+PR and evidence. They may be consumed only through the existing protected
+`ROOTLINE_IFTTT_MAKER_KEY` configuration rail.
+
+Owner standing authority removes routine presence and preview/confirmation.
+Fresh provider/app OFF -> ON -> OFF is sufficient operational proof for this
+governed power connector. The approximately 1.2 kW inverter load is supporting
+evidence only, never a gate or stop. The internal tank-full cutoff may stop the
+pump while the plug remains energized, so plug ON never proves pumped volume or
+storage gain. ROOTLINE may schedule repeat bounded overnight segments from
+canonical water need, power and no-rain evidence, but each segment requires an
+exclusive deterministic claim, exactly one ON attempt, native/primary deadline,
+bounded OFF recovery, authoritative final OFF and restart recovery. No live
+configuration or actuation occurred. **NO BUSINESS OUTCOME. OWNER ACTION: NONE**
+until reviewed source is deployed and the protected secret/configuration and
+canonical standing-active baseline are proven loaded.

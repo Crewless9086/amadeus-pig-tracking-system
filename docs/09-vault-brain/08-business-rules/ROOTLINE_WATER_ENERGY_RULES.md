@@ -37,21 +37,27 @@ The confirmed high-level water path is:
 
 ### Borehole
 
-- Borehole 1 uses a separately commissioned SmartLife/IFTTT plug. It is a
+- Borehole 1 uses eWeLink device `1002851416`, display name
+  `Boorgat 1 Krag Toevoer`, a SONOFF MINI R4 sole output represented as logical
+  channel 1, with exact IFTTT events `borehole_1_on` and `borehole_1_off`. It is a
   distinct typed device and authority domain; B/C irrigation or fertilizer
   commissioning never grants borehole authority.
-- Commissioning proves the exact plug/control identity only. It does not by
-  itself prove that the motor ran, water moved, storage filled, or routine or
-  autonomous authority is enabled.
+- Power restoration is OFF and native inching/auto-OFF is four hours. Under the
+  owner's standing authority, fresh authoritative provider/app OFF -> ON -> OFF
+  is sufficient commissioning and operational proof; routine physical presence,
+  preview and confirmation are not required.
 - Every governed actuation still requires the exact canonical binding, fresh
   provider state, explicit applicable owner/standing authority, bounded native
-  shutdown, power-restoration-safe state, manual isolation and physical or
-  provider outcome verification. Missing evidence fails the protected action
+  shutdown, power-restoration-safe state and provider outcome verification.
+  Missing evidence fails the protected action
   closed.
 - The borehole may operate at night; there is no owner-reported noise-hour restriction.
 - The pump/controller has its own internal protection and storage-full cutoff.
 - If the storage tanks are full, the internal controller can stop pumping even while the smart plug remains energized.
-- ROOTLINE may not infer that the borehole ran, pumped water, or filled storage merely because the smart plug was ON.
+- ROOTLINE may report the exact governed power cycle from provider ON/OFF, but
+  may not infer pumped volume or storage fill merely because the smart plug was ON.
+- The approximately 1.2 kW inverter load is supporting evidence only and never
+  a gate or stop condition.
 - Once the exact canonical action and applicable authority are governed, nighttime is the borehole catch-up window. ROOTLINE chooses start time and duration from water continuity, storage/reservoir evidence, actual rain, forecast reliability, battery/solar/grid evidence, and expected need.
 - The internal full-tank cutoff means an energized overnight window is not itself proof of needless pumping, but ROOTLINE must verify actual outcome rather than equating plug state with water movement.
 
