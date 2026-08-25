@@ -143,7 +143,10 @@ class CanonicalClient:
         event_id=str(uuid.uuid5(uuid.NAMESPACE_URL,event_material))
         body={"event_id":event_id,"lease_token":token,"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"target_state":state,**evidence}
         return self.request("POST",f"/api/documents/print-jobs/{quote(job['job_id'],safe='')}/transition",body)
-    def command(self,worker_id): self.worker_id=worker_id; return self.request("POST",COMMAND_PATH,{"worker_id":worker_id})
+    def command(self,worker_id):
+        self.worker_id=worker_id
+        value=self.request("POST",COMMAND_PATH,{"worker_id":worker_id}) or {}
+        return value if value.get("job") else None
     def transition_command(self,command,target_state):
         job=command["job"]
         body={"lease_token":command["lease_token"],"document_version":job["document_version"],"pdf_sha256":job["pdf_sha256"],"authorization_receipt_id":job["authorization_receipt_id"],"command_receipt_id":command["command_receipt_id"],"command_kind":command["command"],"target_state":target_state}

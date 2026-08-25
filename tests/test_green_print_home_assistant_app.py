@@ -777,6 +777,14 @@ def test_public_client_rejects_redirect_and_binds_auth_farm_green_and_host(tmp_p
     assert headers["Authorization"]=="Bearer synthetic-token" and headers["X-Amadeus-Farm-Scope-Id"]=="farm-amadeus"
     assert headers["X-Amadeus-Green-Id"]=="green-synthetic" and headers["Host"]=="amadeus-pig-tracking-system.onrender.com" and connection.closed
 
+def test_idle_command_envelope_does_not_block_ordinary_job_claim():
+    client=object.__new__(S.CanonicalClient);client.worker_id=None
+    calls=[]
+    client.request=lambda method,path,body:(calls.append((method,path,body)) or
+        {"job":None,"lease_token":None,"command_receipt_id":None,"command":None})
+    assert client.command("green-worker-1") is None
+    assert calls==[("POST",S.COMMAND_PATH,{"worker_id":"green-worker-1"})]
+
 def test_dns_rebinding_cannot_change_transport_target(tmp_path,monkeypatch):
     cfg=config(tmp_path); monkeypatch.setattr(S,"CA_CERTIFICATE_PATH",cfg["ca_certificate_path"]); path=tmp_path/"options.json"; path.write_text(json.dumps(cfg),encoding="utf-8")
     calls=iter([[(None,None,None,None,("10.23.0.5",0))],[(None,None,None,None,("8.8.8.8",0))]])
