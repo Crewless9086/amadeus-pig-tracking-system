@@ -86,6 +86,7 @@ class BoreholeStore:
         if action=="load_active_borehole": return self.active
         if action=="load_borehole_off_attempts": return []
         if action in {"claim_borehole_before_on","claim_borehole_off_attempt"}:
+            if action=="claim_borehole_before_on": self.active=dict(body)
             self.events.append((action,body)); return {"success":True,"created":True}
         if action=="mark_borehole_active": self.active=dict(body)
         if action=="record_borehole_completed": self.active=None
@@ -140,6 +141,11 @@ def test_ambiguous_or_unverified_start_is_off_contained_never_completed():
         assert result["success"] is False
         assert result["status"]=="borehole_start_failure_contained"
         assert [row["state"] for row in transport.commands]==["ON","OFF"]
+        assert not any(action=="record_borehole_completed" for action,_ in store.events)
+        replay=advance_borehole_execution(eligibility=artifact,store=store,
+          transport=transport,now=NOW.replace(minute=2))
+        assert replay["success"] is False
+        assert replay["status"]=="borehole_start_failure_contained"
         assert not any(action=="record_borehole_completed" for action,_ in store.events)
 
 def test_existing_runtime_is_disabled_then_advances_with_injected_transport(monkeypatch):

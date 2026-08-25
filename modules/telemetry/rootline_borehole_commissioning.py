@@ -188,6 +188,10 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None):
     now = _aware(now or datetime.now(timezone.utc))
     active = store("load_active_borehole", None)
     if isinstance(active, dict):
+        start = active.get("provider_start_evidence") or {}
+        if start.get("authoritative") is not True or start.get("state") != "ON":
+            return _contain_failed_borehole_start(
+                {**active, "reason": "restart_without_verified_start"}, store, transport)
         deadline = _time(active.get("primary_stop_deadline"))
         if active.get("state") == "Active" and deadline is not None and now < deadline:
             return _borehole_result("borehole_active", execution=active)
