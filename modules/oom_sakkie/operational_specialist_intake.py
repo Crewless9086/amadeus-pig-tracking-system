@@ -257,7 +257,7 @@ def handle_operational_specialist_message(
         return result, 503
     digest = _digest(evidence)
     mission = _mission(parsed)
-    return ({"handled": True, "success": True, "status": "specialist_accepted",
+    outcome = {"handled": True, "success": True, "status": "specialist_accepted",
         "dispatch_state": "specialist_accepted", "specialist_identity": "ROOTLINE",
         "ready_for_supervised_proof": True,
         "next_specialist_step": "supervised_fertilizer_mixer_proof",
@@ -268,7 +268,30 @@ def handle_operational_specialist_message(
         "answer": ("✅ <b>ROOTLINE REQUEST ACCEPTED</b>\n\n"
             "ROOTLINE accepted the authenticated Mixer request under standing authority. "
             "Every registered-device safety boundary remains mandatory."),
-        **ZERO_AUTHORITY}, 200)
+        "authority": {"configuration_write": False, "hardware_control": False,
+                      "farm_write": False, "telegram_send": False},
+        "provider_control_calls": 0, "response_contract_version": "contextual_specialist_response_v2",
+        **ZERO_AUTHORITY}
+    if commissioning_command:
+        context = {"mission_id": mission, "card_mission_id": mission,
+            "owner_user_id": str(parsed.get("telegram_user_id") or ""),
+            "chat_id": str(parsed.get("telegram_chat_id") or ""),
+            "provider_message_id": provider_id, "provider_timestamp": provider_at.isoformat(),
+            "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "contextual_task_kind": "fertilizer_commissioning"}
+        receipt_id = mission + "-DIRECT-COMMAND-" + _digest(context)[:20].upper()
+        try:
+            recorded = (operation_store or _operation_event_store)("record", receipt_id,
+                {"event_id": receipt_id, "mission_id": mission,
+                 "state": "contextual_followup_completed", "context": context,
+                 "outcome": outcome})
+        except Exception:
+            recorded = {}
+        if recorded.get("success") is not True:
+            return _contained(parsed, "direct_commissioning_acceptance_persistence_unavailable", now), 503
+        outcome["acceptance_receipt_event_id"] = receipt_id
+        outcome["acceptance_receipt_created"] = recorded.get("created") is True
+    return outcome, 200
 
 
 def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observation_writer, now, store):

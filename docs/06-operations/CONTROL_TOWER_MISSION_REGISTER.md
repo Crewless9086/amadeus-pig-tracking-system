@@ -2686,6 +2686,18 @@ bounded readiness recheck only after a zero-effect transient safety hold, and
 uses the existing claimed execution spine for ON, native deadline, OFF and
 provider verification. **NO BUSINESS OUTCOME YET. OWNER ACTION: NONE.**
 
+Independent review of PR #1251 then found that the first direct-command repair
+reached the standing-authority executor without persisting the exact durable
+acceptance receipt required by its production authorization check. That head
+would therefore stop at `commissioning_acceptance_receipt_unproven`, with zero
+device effect. The correction now records one deterministic, idempotent
+`contextual_followup_completed` receipt on the existing ROOTLINE operational
+intake rail before execution. Its mission, owner/chat, provider message/time,
+text digest, task kind, zero-effect authority and response contract are checked
+by the same production validator. Persistence failure remains fail-closed; no
+presence, preview or confirmation step is restored. This is technical repair
+only, not a Mixer commissioning outcome.
+
 ## 2026-08-24 - GREEN farm-house printer risk acceptance addendum
 
 Charl accepts the confidentiality and local-network risk of practical

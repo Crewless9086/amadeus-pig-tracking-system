@@ -416,6 +416,12 @@ def _load_exact_acceptance(result, parsed):
                       'contextual_followup_completed'
                 order by created_at desc""", (mission,))
             rows = [row[0] for row in cursor.fetchall()]
+    return _matches_exact_acceptance(rows, result, parsed)
+
+
+def _matches_exact_acceptance(rows, result, parsed):
+    """Validate either persisted source using the exact production receipt contract."""
+    mission = str(result.get("mission_id") or "")
     text_sha = sha256(str(parsed.get("text") or "").encode()).hexdigest()
     matches = []
     expected_authority = {"configuration_write": False, "hardware_control": False,

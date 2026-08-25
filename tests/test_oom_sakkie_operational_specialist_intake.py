@@ -10,6 +10,7 @@ from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie import operational_specialist_intake
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from modules.oom_sakkie.rootline_operational_adapter import _recovery_observations
+from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import _matches_exact_acceptance
 
 NOW = datetime(2026, 8, 2, 15, 0, tzinfo=timezone.utc)
 TEXT = "I am at the B and C valve area now, can observe both camps, and can intervene immediately for supervised commissioning."
@@ -65,7 +66,8 @@ def test_fresh_authenticated_presence_is_accepted_without_hardware_authority():
     "Run the governed five-minute Mixer CH2 commissioning now.",
     "Start die goedgekeurde vyf-minuut menger CH2 kommissie nou.",
 ])
-def test_standing_authority_command_never_requires_physical_presence(text):
+def test_standing_authority_command_persists_exact_acceptance_without_physical_presence(
+        text, operation_store):
     message = {**parsed(), "text": text}
     assert is_exact_fertilizer_commissioning_request(message) is True
     value, status = handle_operational_specialist_message(
@@ -75,6 +77,12 @@ def test_standing_authority_command_never_requires_physical_presence(text):
     assert value["dispatch_state"] == "specialist_accepted"
     assert value["ready_for_supervised_proof"] is True
     assert value["next_specialist_step"] == "supervised_fertilizer_mixer_proof"
+    receipt = operation_store[value["acceptance_receipt_event_id"]]
+    assert receipt["state"] == "contextual_followup_completed"
+    assert receipt["context"]["provider_message_id"] == "3181"
+    assert receipt["context"]["contextual_task_kind"] == "fertilizer_commissioning"
+    assert receipt["outcome"]["response_contract_version"] == "contextual_specialist_response_v2"
+    assert _matches_exact_acceptance([receipt], value, message) is True
     assert "PRESENCE" not in value["answer"] and value["hardware_commands"] == 0
 
 
