@@ -16,12 +16,12 @@ on:
         required: true
         type: string
       publish:
-        description: Publish the immutable 0.3.10 package artifact
+        description: Publish the immutable 0.3.11 package artifact
         required: true
         default: false
         type: boolean
       recover_existing:
-        description: Verify an already-published immutable 0.3.10 digest without publishing
+        description: Verify an already-published immutable 0.3.11 digest without publishing
         required: true
         default: false
         type: boolean
@@ -65,7 +65,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/crewless9086/amadeus-green-print-bridge
-  VERSION: 0.3.10
+  VERSION: 0.3.11
 
 jobs:
   verify:
@@ -139,7 +139,7 @@ jobs:
           test "${GITHUB_SHA}" = "${EXPECTED_SOURCE_COMMIT}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SOURCE_COMMIT}"
           test "${GITHUB_REF}" = "refs/heads/main"
-          grep -Fqx 'version: "0.3.10"' green_print_bridge/config.yaml
+          grep -Fqx 'version: "0.3.11"' green_print_bridge/config.yaml
           grep -Fqx 'image: ghcr.io/crewless9086/amadeus-green-print-bridge' green_print_bridge/config.yaml
       - name: Authenticate only for the bounded package publication
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
@@ -223,8 +223,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "${{ steps.syft.outputs.cmd }}" scan --platform linux/arm64 "registry:${IMAGE}@${{ steps.pushed.outputs.resolved_digest }}" --output "spdx-json=green-print-0.3.10.spdx.json"
-          jq -e '.spdxVersion == "SPDX-2.3"' green-print-0.3.10.spdx.json >/dev/null
+          "${{ steps.syft.outputs.cmd }}" scan --platform linux/arm64 "registry:${IMAGE}@${{ steps.pushed.outputs.resolved_digest }}" --output "spdx-json=green-print-0.3.11.spdx.json"
+          jq -e '.spdxVersion == "SPDX-2.3"' green-print-0.3.11.spdx.json >/dev/null
       - name: Attest build provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
@@ -236,7 +236,7 @@ jobs:
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.pushed.outputs.resolved_digest }}
-          sbom-path: green-print-0.3.10.spdx.json
+          sbom-path: green-print-0.3.11.spdx.json
           push-to-registry: true
       - name: Verify signature and digest-bound attestations
         id: verify
@@ -257,7 +257,7 @@ jobs:
           echo "cosign_sha256=$(sha256sum cosign-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "provenance_sha256=$(sha256sum provenance-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
           echo "sbom_attestation_sha256=$(sha256sum sbom-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
-          echo "sbom_sha256=$(sha256sum green-print-0.3.10.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_sha256=$(sha256sum green-print-0.3.11.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
       - name: Emit digest-bound non-secret release receipt
         shell: bash
         run: |
@@ -279,7 +279,7 @@ jobs:
       - name: Preserve non-secret verified release packet
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: green-print-0.3.10-verified-release-packet
+          name: green-print-0.3.11-verified-release-packet
           if-no-files-found: error
           retention-days: 90
           path: |
@@ -289,7 +289,7 @@ jobs:
             cosign-verification.json
             provenance-verification.json
             sbom-attestation-verification.json
-            green-print-0.3.10.spdx.json
+            green-print-0.3.11.spdx.json
 
   recover:
     name: Recover verification for existing immutable aarch64 package
@@ -393,7 +393,7 @@ jobs:
       - name: Preserve recovered non-secret verified release packet
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: green-print-0.3.10-recovered-verified-release-packet
+          name: green-print-0.3.11-recovered-verified-release-packet
           if-no-files-found: error
           retention-days: 90
           path: |
