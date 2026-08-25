@@ -3019,3 +3019,71 @@ work is to reconcile and apply the already governed missing migration through
 the protected migration rail, verify exact loaded revision and duplicate-safe
 readback, then request one fresh owner report only when the deployed path is
 ready. **NO BUSINESS OUTCOME. OWNER ACTION: NONE; DO NOT RESEND YET.**
+
+## 2026-08-25 - HMQ-20260813-05 automatic batch-to-management owner outcome
+
+The existing `HMQ-20260813-05` lineage has advanced from source-ready to a
+genuine deployed-agent outcome for completed-batch consumption. PR `#1270`
+passed independent review and merged as exact revision
+`8465103df799acd7b6225c8c98440ccb4cfa05b5`; Render loaded that revision.
+
+The terminal-independent Oom Sakkie general-manager cycle
+`OOM-MANAGER-CYCLE-20260825T121524106342Z-E5A83E83364E4A2D90C67A6F924FEE71`
+consumed genuine accepted batch `df4c6197-4b2c-4253-b120-b07ad69305f4` at
+`2026-08-25T12:15:24.106342Z`. It created exactly seven stable HERDMASTER
+cases, each generation 1 with exactly one append-only `created` event:
+
+- Teena BCS 2: `OOM-CASE-D2D021AD952D54D4EBB16689`;
+- Waki BCS 2: `OOM-CASE-06F41E4EF440CC20585E312C`;
+- tag 138 weight -20.0%: `OOM-CASE-FF00ED3DB3A385AE091C08EF`;
+- tag 139 weight -10.6%: `OOM-CASE-C9695FF2BE2A3A3C1BF4A52E`;
+- tag 111 weight -10.3%: `OOM-CASE-C1A2AB12E9C1A2D664B32A4B`;
+- tag 2 weight +15.6%: `OOM-CASE-BDE56DBB892229C103AC8541`; and
+- Ms Piggy weight -22.6%: `OOM-CASE-1FB5B5C3B6F7C36E412265F5`.
+
+Later terminal-independent cycles from `2026-08-25T12:20:28.858735Z` through
+`2026-08-25T13:40:23.087785Z` created zero cases. The seven exact batch cases
+remain generation 1 with unchanged evidence digests and unchanged update time
+`2026-08-25T12:15:24.106342Z`, proving replay containment and no multi-batch
+generation churn. The three in-range BCS observations correctly created no open
+case. No heat evidence, question, task, reminder, confidence penalty or blocker
+was introduced.
+
+**OWNER OUTCOME PROVEN** is deliberately bounded to automatic completed-batch
+consumption, durable material-case ownership and later terminal-independent
+idempotency. The seven material cases remain open with reassessment dates around
+`2026-09-01`; their later animal outcomes are not claimed. The next automatic
+action is HERDMASTER reassessment from fresh canonical condition, appetite,
+movement, welfare, weight and lifecycle evidence. **OWNER ACTION: NONE.**
+
+### CONTROL TOWER CHECK RECEIPT
+
+- Governance: PASS - Control Tower current-main worktree
+  `C:/tmp/linda-migration-diagnosis`, HEAD/main `8465103d`; Standard blob
+  `3002b94713e286c4eb2019419c438cc378c337fa` (1127 physical lines), Protocol
+  blob `8fbd0b9c9160164e31a17a2cbfa51ab88792a909` (319), Programme blob
+  `fb44d7f86c47e605c283ed33c28ba2c4267d6edb` (278); all tracked and read
+  completely.
+- Feedback freshness: current - production cycles and canonical readback were
+  observed after the exact deployment.
+- Terminal truth: released - PR `#1270` is merged; no terminal is sustaining
+  the runtime cycle.
+- Runtime truth: autonomous - scheduled worker
+  `oom-sakkie-general-manager-v1`, trigger
+  `oom-sakkie-morning-scheduler:general-manager`, exact loaded revision,
+  repeated five-minute cycles and next-cycle timestamps are canonical.
+- Mission: `HMQ-20260813-05` - bounded owner outcome proven; seven material
+  animal follow-ups remain open.
+- Strategic WIP: existing operating-spine outcome-depth activation; no new
+  mission or priority.
+- Owner workload delta: manual post-upload inspection and case creation -> zero
+  post-upload case-creation steps; natural worker and later cycles prove removal.
+- Release lane: released after exact deploy and readback.
+- Collision/worktrees: clear for this documentation-only receipt; historical
+  weighing, observation and review worktrees preserved.
+- Owner repetition: none; accepted batch must not be resubmitted.
+- Register: updated in this existing mission lineage.
+- All-terminal sweep: delegated to the root Control Tower because this
+  specialist receipt does not hold current state for unrelated terminals.
+- Dispatch: `CONTINUE - SEND NOTHING`; deployed HERDMASTER/Oom Sakkie worker
+  owns reassessment automatically.
