@@ -6,7 +6,7 @@ from modules.oom_sakkie.daily_farm_manager import (
     build_daily_management_packet, build_litter_watch_result, build_sale_watch_result,
     run_daily_farm_manager)
 from modules.oom_sakkie.farm_manager_loop import (
-    Authority, Provenance, SpecialistAvailability, SpecialistResult,
+    Authority, PROTECTED_AUTHORITIES, Provenance, SpecialistAvailability, SpecialistResult,
     SpecialistWorkItem, WorkState)
 from modules.oom_sakkie.herdmaster_daily_manager_adapter import (
     reconcile_manager_question_answer)
@@ -131,6 +131,71 @@ def test_semantic_manager_may_rank_supported_ids_but_cannot_invent_or_omit_work(
     rejected=build_daily_management_packet([result(items=items)],now=NOW,
         semantic_prioritizer=lambda rows,**_kwargs:["INVENTED"])
     assert [row.item_id for row in rejected["priorities"]]==["ONE","THREE","TWO"]
+
+
+def test_agent_owned_reconciliation_is_not_presented_as_owner_work_or_raw_polling():
+    rows = [
+        item("MORTALITY", "Mortality follow-up — Pig 126", WorkState.URGENT),
+        item("ROOTLINE", "Irrigation: Checking safely", WorkState.PLANNED),
+        replace(item("WEIGHTS", "Weighing: 0 of 75 recorded", WorkState.WAITING_EVIDENCE),
+                next_action="Reconcile tags " + ", ".join(str(value) for value in range(1, 76))),
+    ]
+    answer = build_daily_management_packet([result(items=rows)], now=NOW)["answer"]
+    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
+    assert "No action required from you." in answer
+    assert "ACTION NEEDED" not in answer
+    assert "Reconcile tags" not in answer
+    assert "within 15 minutes" not in answer
+
+
+def test_exact_owner_decision_is_the_only_action_section():
+    protected = replace(item("SALE", "Payment evidence", WorkState.DUE_TODAY),
+                        authority=Authority.OWNER_DECISION,
+                        next_action="Review the protected preview.")
+    automatic = item("ROOTLINE", "Irrigation: Checking safely")
+    answer = build_daily_management_packet([result(items=[protected, automatic])],
+                                           now=NOW)["answer"]
+    assert "ACTION NEEDED" in answer
+    assert "Review the protected preview." in answer
+    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
+    assert "No action required from you." not in answer
+
+
+@pytest.mark.parametrize("authority", sorted(PROTECTED_AUTHORITIES, key=lambda value: value.value))
+def test_every_protected_authority_remains_owner_visible(authority):
+    protected = replace(item("PROTECTED", "Governed action", WorkState.DUE_TODAY),
+                        authority=authority, next_action="Review the exact governed action.")
+    answer = build_daily_management_packet([result(items=[protected])], now=NOW)["answer"]
+    assert "ACTION NEEDED" in answer
+    assert "Review the exact governed action." in answer
+    assert "No action required from you." not in answer
+
+
+def test_exact_ready_physical_work_remains_owner_visible():
+    physical = replace(item("WEIGH-PIG", "Weigh Pig 146 now", WorkState.DUE_TODAY),
+                       authority=Authority.ADVISORY,
+                       metadata={"physical_work_ready": True})
+    answer = build_daily_management_packet([result(items=[physical])], now=NOW)["answer"]
+    assert "ACTION NEEDED" in answer and "Weigh Pig 146 now" in answer
+    assert "No action required from you." not in answer
+
+
+def test_automatic_reassessment_clock_does_not_create_a_new_owner_brief():
+    first = item("ROOTLINE", "Irrigation: Checking safely")
+    later = replace(first, next_action="ROOTLINE will reassess automatically around 10:46")
+    earlier = replace(first, next_action="ROOTLINE will reassess automatically around 09:47")
+    assert build_daily_management_packet([result(items=[earlier])], now=NOW)[
+        "material_digest"] == build_daily_management_packet([result(items=[later])], now=NOW)[
+            "material_digest"]
+
+
+def test_changed_owner_action_remains_material():
+    first = replace(item("SALE", "Payment", WorkState.DUE_TODAY),
+                    authority=Authority.OWNER_DECISION, next_action="Review preview A")
+    second = replace(first, next_action="Review preview B")
+    assert build_daily_management_packet([result(items=[first])], now=NOW)[
+        "material_digest"] != build_daily_management_packet([result(items=[second])], now=NOW)[
+            "material_digest"]
 
 
 def test_scheduler_daily_delivery_and_unchanged_replay_are_exact_once():

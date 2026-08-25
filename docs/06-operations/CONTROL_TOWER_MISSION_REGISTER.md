@@ -2891,3 +2891,24 @@ independent review, exact deployment, then one fresh genuine Telegram cycle
 proving names-first parity, one protected exact treatment journey when truly
 due, canonical completion/readback, replay containment and a later stable cycle
 without repeated work.
+
+## 2026-08-25 - OMQ-20260813-03 Morning Farm Plan outcome projection defect
+
+Live Telegram card `4033` (observed `08:16:19Z`, presented `08:16:51Z`) repeated
+the same unresolved work seen on cards `4027` and `4029`: terminal Pig 126
+mortality appeared as a generic follow-up, ROOTLINE called B/C ready while its
+canonical reason said current deficit was insufficient, and weekly weighing
+dumped `0/75` plus 75 reconciliation tags. With no genuine question, the same
+message then said no action was required and exposed a 15-minute backend poll.
+This is consolidated into existing `OMQ-20260813-03`; no new mission, store or
+priority was created.
+
+The bounded source repair preserves the shared Daily Farm Manager and canonical
+specialist rails. It distinguishes exact owner-required work from Oom Sakkie's
+automatic reconciliation, removes raw polling and long reconciliation commands
+from owner output, preserves exact mortality lifecycle closure binding, and contains exact ROOTLINE
+Eligible-versus-insufficient-deficit conflicts as automatic safe checking.
+Source completion is not acceptance. Completion still requires merge/deploy,
+a later natural concise Brief, unchanged-cycle silence and proof that specialist
+work advances or reports a bounded exception without duplicate effects.
+**OWNER ACTION: NONE.**

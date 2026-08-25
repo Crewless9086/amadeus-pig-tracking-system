@@ -150,7 +150,8 @@ def _looks_afrikaans(text: str) -> bool:
         "received", "recorded", "nothing", "printed", "stored", "remaining"}
     afrikaans = words & {"die", "het", "is", "nie", "geen", "word", "bevestig",
         "vark", "plaas", "besproeiing", "veilig", "wanneer", "hierdie", "jou",
-        "foto", "foto's", "voltooi", "reggestelde", "gekanselleer"}
+        "foto", "foto's", "voltooi", "reggestelde", "gekanselleer", "aksie",
+        "nodig", "staan", "drink", "kontroleer", "outomaties", "welstandsopdatering"}
     return len(afrikaans) >= 2 and not bool(words & english)
 
 
