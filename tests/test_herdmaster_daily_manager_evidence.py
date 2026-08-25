@@ -207,7 +207,7 @@ def test_new_mortality_opens_one_attributable_active_followup():
         active_lifecycles=[{"pig_id": "P1", "state": "working"}])
     mortality_items = [item for item in result.work_items if "mortality:" in item.dedupe_key]
     assert len(mortality_items) == 1
-    assert "associations, not diagnoses" in mortality_items[0].next_action
+    assert "will not guess a diagnosis" in mortality_items[0].next_action
 
 
 def test_legacy_fingerprint_migration_suppresses_only_deaths_recorded_before_consumption():
@@ -240,7 +240,7 @@ def test_new_canonical_death_opens_one_followup_without_preexisting_lifecycle():
     result = consume_daily_manager_evidence(packet, observed_at=NOW, active_lifecycles=[])
     mortality_items = [item for item in result.work_items if "mortality:" in item.dedupe_key]
     assert len(mortality_items) == 1
-    assert "opened this attributable individual follow-up" in mortality_items[0].why
+    assert "A death was recorded for P1" in mortality_items[0].why
 
 
 def test_completed_mortality_followup_stays_closed_even_when_digest_changed():

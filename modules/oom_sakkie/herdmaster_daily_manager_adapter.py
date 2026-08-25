@@ -133,10 +133,10 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                 items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality:"+event_key,
                     dedupe_key="herdmaster:mortality:"+event_key,
                     domain="herd", title=f"Mortality follow-up — {tag}",
-                    why=("One changed canonical death opened this attributable individual follow-up."
+                    why=(f"A death was recorded for {tag}. HERDMASTER opened one follow-up to check whether any remaining pigs or farm actions need attention."
                          if str(row.get("pig_id") or "") not in open_ids else
-                         "One changed canonical death has an unresolved attributable individual lifecycle."),
-                    next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
+                         f"The follow-up for {tag} is still open; HERDMASTER is checking whether any farm fact or action is missing."),
+                    next_action="HERDMASTER will check the related records and ask one clear question only if a farm fact is missing; it will not guess a diagnosis.",
                     assignee="charl", state=WorkState.URGENT, authority=Authority.ADVISORY,
                     provenance=provenance, business_value=1000,
                     metadata={"mortality_fingerprints": dict(
