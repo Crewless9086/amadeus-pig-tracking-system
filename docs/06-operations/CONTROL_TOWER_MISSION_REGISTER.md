@@ -2737,3 +2737,41 @@ projection/delivery must exclude the legacy heat window while the historical
 milestone remains available for audit. Source repair is active; **NO BUSINESS
 OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
 questions, tasks and reminders on a later natural cycle.
+
+## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.8 device commissioning receipt
+
+The existing GREEN/DOCUMENTS mission advanced through release and real-device
+commissioning without creating another mission, document, queue or print
+workflow. PR #1250 merged as exact revision
+`844d3a10944e07a5341602ea18b337fca16b0dbd`; PR #1194 was closed as
+superseded. Guarded workflow run `32810759240` published the one-time
+`linux/arm64` 0.3.8 package and verified its Cosign signature, provenance,
+SPDX SBOM, OCI source/version/platform bindings and tag equality at immutable
+index digest
+`sha256:587e0a21237d5706d42122161a5ec71ae75be54f4cf5db283ee26e5d922ee9bd`.
+
+Charl installed the released package through Home Assistant. Control Tower
+corrected the existing saved transport fields to the reviewed bounded profile:
+`local_ipp_fixed` and the exact fixed queue endpoint
+`ipp://192.168.0.118:631/printers/weekly-a4`. After a stability wait, Home
+Assistant reported `Current version 0.3.8` and `Running`. This proves the bridge
+is installed and active on the intended device. It does not prove a document
+printed: no canonical print job or CUPS submission was created during
+commissioning, and no physical page or later continuity readback exists yet.
+Lifecycle is `WORKING / BRIDGE_ACTIVE / GENUINE_PRINT_ACCEPTANCE_WAITING`.
+
+The smallest existing governed acceptance path remains the shared DOCUMENTS
+weekly-sheet rail already bound to this mission. A genuine private Oom Sakkie
+request with semantic intent `weekly_weighing_sheet_print` builds the canonical
+`farm.weekly_weight_sheet.v1` revision from current active pigs and creates one
+actor-bound `documents_green_print` protected preview. Nothing prints until the
+same actor confirms. Confirmation atomically creates the one digest-bound job;
+the installed Green worker then claims it, retrieves the exact canonical PDF,
+submits only to the fixed `weekly-a4` queue and records CUPS/canonical outcome.
+The separate protected physical-page follow-up records printed/incorrect/
+uncertain truth and never auto-reprints. Do not manufacture a request, document,
+confirmation or job merely for commissioning. **OWNER ACTION: NONE:** the next
+automatic action is for Green to remain in its zero-job polling/heartbeat cycle
+until a genuine farm need produces the existing protected weekly-sheet request;
+Control Tower then follows that single journey through confirmation, provider/
+canonical readback and a later terminal-independent continuity cycle.
