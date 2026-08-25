@@ -72,6 +72,9 @@ def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, A
     summary = _text(raw.get("summary"), "summary", 500)
     next_action = _text(raw.get("next_action"), "next_action", 500)
     next_at = _time(raw.get("next_reassessment_at"), "next_reassessment_at")
+    terminal_state = str(raw.get("terminal_state") or "").strip().lower()
+    if terminal_state not in {"", "completed"}:
+        raise ManagerCaseError("unsupported_terminal_state")
     if next_at < now - timedelta(minutes=5):
         next_at = now
     material = {
@@ -84,6 +87,7 @@ def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, A
         "summary": summary,
         "next_action": next_action,
         "next_reassessment_at": next_at.isoformat(),
+        "terminal_state": terminal_state,
     }
     # Scheduling is worker state, not new domain evidence.  Excluding it keeps a
     # repeated collector observation an exact replay instead of manufacturing a
@@ -263,6 +267,22 @@ class PostgresManagerCaseStore:
             from app_private.oom_manager_cases where dedupe_key=%s for update""",
                     (candidate["dedupe_key"],))
         prior = cur.fetchone()
+        if candidate.get("terminal_state") == "completed":
+            if not prior:
+                return "replayed"
+            if prior[2] == "completed" and prior[0] == candidate["evidence_digest"]:
+                return "replayed"
+            generation = int(prior[1]) + 1
+            cur.execute("""update app_private.oom_manager_cases set status='completed',
+                evidence_digest=%s,evidence_refs=%s::jsonb,unknowns='[]'::jsonb,
+                summary=%s,next_action=%s,next_reassessment_at=%s,generation=%s,
+                assigned_worker_id=null,lease_until=null,updated_at=%s where dedupe_key=%s""",
+                (candidate["evidence_digest"], json.dumps(candidate["evidence_refs"]),
+                 candidate["summary"], candidate["next_action"],
+                 _time(candidate["next_reassessment_at"], "next_reassessment_at"),
+                 generation, now, candidate["dedupe_key"]))
+            self._event(cur, {**candidate, "generation": generation}, "completed", now)
+            return "changed"
         if (prior and candidate["specialist"] == "BEACON"
                 and prior[0] != candidate["evidence_digest"]):
             current_provider = f"scheduled:{candidate['case_id']}:G{int(prior[1])}"

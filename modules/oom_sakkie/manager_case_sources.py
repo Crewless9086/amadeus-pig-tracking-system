@@ -147,6 +147,7 @@ def _herdmaster(now):
     from modules.oom_sakkie.farm_manager_runtime import _load_herdmaster
     result = _load_herdmaster(None, owner, now)
     candidates = []
+    candidates.extend(_completed_bulk_batch_findings(now))
     from modules.pig_weights.pig_welfare_case_runtime import (
         load_open_welfare_attention_cases,
         project_welfare_case_attention,
@@ -286,6 +287,96 @@ def _herdmaster(now):
                 presentation_identity={"human_name": "Molly",
                                        "stable_reference": litter_id}))
     return candidates
+
+
+def _completed_bulk_batch_findings(now, *, connect=None):
+    """Project material completed-batch facts into the existing case rail.
+
+    The manager case dedupe key is the durable consumption receipt. Repeated
+    five-minute collection is a replay; a newer exact observation/event changes
+    the evidence digest and advances the same pig-scoped case generation.
+    """
+    connector = connect or connect_bounded_read
+    with connector() as connection:
+        with connection.cursor() as cur:
+            cur.execute("""with completed as (
+                    select batch_id,client_draft_id,weight_date,updated_at
+                    from public.bulk_weight_batches
+                    where status='complete' and updated_at >= %s
+                ), current_bcs as (
+                    select o.observation_event_id,o.pig_id,o.observed_at,o.recorded_at,
+                           o.measurements_json,o.idempotency_key,b.batch_id,b.client_draft_id,
+                           p.tag_number,p.pig_name
+                    from completed b join public.pig_observation_events o
+                      on o.idempotency_key=('bulk-bcs:'||b.client_draft_id||':'||o.pig_id)
+                    join public.pigs p on p.pig_id=o.pig_id
+                    where not exists(select 1 from public.pig_observation_events newer
+                        where newer.supersedes_observation_event_id=o.observation_event_id)
+                ), latest_bcs as (
+                    select current_bcs.*,row_number() over(partition by pig_id
+                        order by observed_at desc,recorded_at desc,observation_event_id desc) as position
+                    from current_bcs
+                ) select observation_event_id,pig_id,observed_at,recorded_at,
+                    measurements_json,batch_id,client_draft_id,tag_number,pig_name
+                    from latest_bcs where position=1 order by pig_id""",
+                (_aware(now) - timedelta(days=35),))
+            bcs_rows = cur.fetchall()
+            cur.execute("""with history as (
+                    select w.weight_event_id,w.pig_id,w.weight_date,w.weight_kg,w.bulk_batch_id,w.created_at,
+                           lag(w.weight_kg) over(partition by w.pig_id order by w.weight_date,w.created_at,w.weight_event_id) prior_kg,
+                           lag(w.weight_date) over(partition by w.pig_id order by w.weight_date,w.created_at,w.weight_event_id) prior_date
+                    from public.pig_weight_events w
+                ), completed_history as (
+                    select h.*,p.tag_number,p.pig_name,row_number() over(partition by h.pig_id
+                        order by h.weight_date desc,h.created_at desc,h.weight_event_id desc) as position
+                    from history h join public.bulk_weight_batches b on b.batch_id=h.bulk_batch_id
+                    join public.pigs p on p.pig_id=h.pig_id
+                    where b.status='complete' and b.updated_at >= %s and h.prior_kg is not null
+                ) select weight_event_id,pig_id,weight_date,weight_kg,prior_kg,prior_date,
+                    h.bulk_batch_id,h.tag_number,h.pig_name
+                    from completed_history h where position=1 order by pig_id""",
+                (_aware(now) - timedelta(days=35),))
+            weight_rows = cur.fetchall()
+    findings = []
+    for event_id,pig_id,observed_at,recorded_at,measurements,batch_id,draft_id,tag,name in bcs_rows:
+        score = (measurements or {}).get("body_condition_score")
+        try: score = float(score)
+        except (TypeError, ValueError): continue
+        label = str(name or tag or "Animal name unavailable")
+        in_range = 2.5 <= score <= 4.0
+        findings.append(_candidate(
+            f"herdmaster:bulk-condition:{pig_id}", "HERDMASTER", "urgent",
+            [f"pig:{pig_id}", f"batch:{batch_id}", f"draft:{draft_id}",
+             f"observation:{event_id}", f"observed:{_aware(observed_at).isoformat()}",
+             f"bcs:{score:g}"], [],
+            (f"{label}'s latest body-condition score is back in range at {score:g}."
+             if in_range else f"{label} has a material recorded body-condition score of {score:g}."),
+            ("The exact pig-scoped BCS follow-up is resolved by newer in-range canonical evidence."
+             if in_range else "HERDMASTER must retain recovery monitoring and reassess from fresh canonical "
+             "condition, appetite, movement and welfare evidence; time or silence cannot close it."),
+            max(_aware(now), _aware(recorded_at) + timedelta(days=7)),
+            task_class="informational_watch", welfare_priority=True,
+            message_family="body_condition_follow_up",
+            presentation_identity={"human_name": label, "stable_reference": str(tag or pig_id)},
+            terminal_state="completed" if in_range else None))
+    for event_id,pig_id,weight_date,weight,prior,prior_date,batch_id,tag,name in weight_rows:
+        label = str(name or tag or "Animal name unavailable")
+        change = 100 * (float(weight) - float(prior)) / float(prior)
+        material = abs(change) >= 10
+        findings.append(_candidate(
+            f"herdmaster:bulk-weight-change:{pig_id}", "HERDMASTER", "due",
+            [f"pig:{pig_id}", f"batch:{batch_id}", f"weight_event:{event_id}",
+             f"weight:{float(weight):g}", f"prior_weight:{float(prior):g}",
+             f"weight_date:{weight_date}", f"prior_date:{prior_date}"], [],
+            (f"{label} has a recorded weight change of {change:+.1f}% ({float(prior):g} kg to {float(weight):g} kg)."
+             if material else f"{label}'s latest recorded weight change is within the material threshold at {change:+.1f}%."),
+            ("HERDMASTER must reassess this descriptive change against current canonical health, feed and lifecycle evidence; no cause is inferred."
+             if material else "The exact pig-scoped material-weight follow-up is resolved by newer canonical weight evidence."),
+            _aware(now) + timedelta(days=7), task_class="informational_watch",
+            message_family="material_weight_follow_up",
+            presentation_identity={"human_name": label, "stable_reference": str(tag or pig_id)},
+            terminal_state=None if material else "completed"))
+    return findings
 
 
 def _purpose_review_candidates(snapshot, *, now, today, observed_at):
@@ -501,7 +592,8 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
                message_family=None, physical_work_ready=False,
                physical_assignee=None, owner_question_eligible=False,
                irreducible_owner_exception=False, routine_weekly_weighing=False,
-               exceptional_weighing_due_now=False, detail_target=None):
+               exceptional_weighing_due_now=False, detail_target=None,
+               terminal_state=None):
     result = {"dedupe_key": dedupe_key, "specialist": specialist, "urgency": urgency,
         "evidence_refs": list(refs), "unknowns": list(unknowns), "summary": summary,
         "next_action": next_action, "next_reassessment_at": _aware(next_at).isoformat()}
@@ -527,6 +619,8 @@ def _candidate(dedupe_key, specialist, urgency, refs, unknowns, summary, next_ac
         result["exceptional_weighing_due_now"] = True
     if detail_target:
         result["detail_target"] = str(detail_target)
+    if terminal_state:
+        result["terminal_state"] = str(terminal_state)
     return result
 
 

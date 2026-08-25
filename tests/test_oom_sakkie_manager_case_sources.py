@@ -2,10 +2,65 @@ from datetime import datetime, timedelta, timezone
 from threading import Barrier
 
 from modules.oom_sakkie.manager_case_sources import (
-    collect_manager_candidate, collect_manager_candidates)
+    _completed_bulk_batch_findings, collect_manager_candidate, collect_manager_candidates)
 
 
 NOW = datetime(2026, 8, 17, 10, 0, tzinfo=timezone.utc)
+
+
+def test_completed_batch_projects_exact_pig_material_bcs_and_weight_findings():
+    class Cursor:
+        calls = 0
+        def execute(self, *_args): self.calls += 1
+        def fetchall(self):
+            if self.calls == 1:
+                return [("OBS-LOW", "PIG-A", NOW, NOW, {"body_condition_score": 2},
+                    "BATCH-1", "DRAFT-1", "Teena", None),
+                    ("OBS-OK", "PIG-B", NOW, NOW, {"body_condition_score": 3.5},
+                    "BATCH-1", "DRAFT-1", "Bonnie", None)]
+            return [("WEIGHT-1", "PIG-C", NOW.date(), 45, 40, NOW.date()-timedelta(days=7),
+                     "BATCH-1", "Waki", None)]
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+    class Connection:
+        def cursor(self): return Cursor()
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+    rows = _completed_bulk_batch_findings(NOW, connect=lambda: Connection())
+    assert [row["dedupe_key"] for row in rows] == [
+        "herdmaster:bulk-condition:PIG-A", "herdmaster:bulk-condition:PIG-B",
+        "herdmaster:bulk-weight-change:PIG-C"]
+    assert rows[0]["evidence_refs"][:4] == [
+        "pig:PIG-A", "batch:BATCH-1", "draft:DRAFT-1", "observation:OBS-LOW"]
+    assert rows[0].get("terminal_state") is None
+    assert rows[1]["terminal_state"] == "completed"
+    assert "+12.5%" in rows[2]["summary"]
+
+
+def test_completed_batch_query_is_read_only_and_heat_free():
+    source = __import__("inspect").getsource(_completed_bulk_batch_findings)
+    assert "insert " not in source.casefold() and "update " not in source.casefold()
+    assert "heat" not in source.casefold()
+    assert source.count("row_number() over(partition by") == 2
+    assert source.count("where position=1") == 2
+
+
+def test_completed_batch_queries_select_one_deterministic_latest_row_per_pig():
+    statements = []
+    class Cursor:
+        calls = 0
+        def execute(self, sql, _params): statements.append(sql); self.calls += 1
+        def fetchall(self): return []
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+    class Connection:
+        def cursor(self): return Cursor()
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+    assert _completed_bulk_batch_findings(NOW, connect=lambda: Connection()) == []
+    assert "observed_at desc,recorded_at desc,observation_event_id desc" in statements[0]
+    assert "weight_date desc,h.created_at desc,h.weight_event_id desc" in statements[1]
+    assert all("where position=1" in statement for statement in statements)
 
 
 def test_collectors_preserve_specialist_candidates():
