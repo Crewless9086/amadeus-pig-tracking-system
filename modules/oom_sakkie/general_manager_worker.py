@@ -565,10 +565,14 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     else:
         result = None
     unknowns = tuple(str(value) for value in case.get("unknowns") or ())
+    if result is None and not unknowns:
+        return {"success": True, "status": "no_owner_question_delivery_suppressed",
+                "delivery_confirmed": False, "telegram_sends": 0,
+                "writes_farm_data": False, "hardware_commands": 0}
     lines = [f"<b>OOM SAKKIE — {specialist} CURRENT CASE</b>", "",
              html.escape(str(case.get("summary") or "Current farm case.")), "",
              "<b>Next:</b> " + html.escape(str(case.get("next_action") or "Reassess current canonical evidence.")),
-             "<b>Next evidence check:</b> " + html.escape(str(case.get("next_reassessment_at") or "Unavailable"))]
+             "Oom Sakkie will check this again automatically."]
     if unknowns:
         lines.extend(("", "<b>Still unproven:</b> " + html.escape("; ".join(unknowns))))
     if result is None:
