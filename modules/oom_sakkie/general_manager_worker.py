@@ -414,6 +414,19 @@ class PostgresManagerCaseStore:
                 # already confirmed result.
                 if (current[2] == case["evidence_digest"] and not confirmed
                         and outcome.get("status") != "manager_delivery_duplicate_suppressed"):
+                    # Preserve confirmed truth without leaving this overdue
+                    # generation in the fixed claim window forever.
+                    monotonic_next = (parsed_next if parsed_next and parsed_next > now
+                                      else now + CADENCE)
+                    cur.execute("""update app_private.oom_manager_cases set
+                        status='waiting_reassessment',next_reassessment_at=%s,
+                        assigned_worker_id=null,lease_until=null,
+                        last_heartbeat_at=%s,updated_at=%s where case_id=%s""",
+                        (monotonic_next, now, now, case["case_id"]))
+                    self._event(cur, case, "reassessment_scheduled", now,
+                                next_reassessment_at=monotonic_next.isoformat(),
+                                outcome_status=str(outcome.get("status") or ""),
+                                confirmed_generation_preserved=True)
                     return True
                 delivery_digest = case["evidence_digest"] if confirmed else None
                 cur.execute("""update app_private.oom_manager_cases set status=%s,
