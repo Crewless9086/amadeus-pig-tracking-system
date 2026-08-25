@@ -80,6 +80,22 @@ def test_beacon_reconciliation_checks_claimed_publication_point_of_no_return():
     assert commands[-1][1] == ("scheduled:CASE-A:G26",)
 
 
+def test_terminal_completed_candidate_closes_existing_case_without_delivery():
+    commands = []
+    class Cursor:
+        responses = [("old", 2, "waiting_reassessment", None, None,
+                      ["pig:PIG-A", "observation:OLD"])]
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchone(self): return self.responses.pop(0)
+    candidate = normalize_candidate(_candidate(dedupe_key="herdmaster:bulk-condition:PIG-A",
+        evidence_refs=["pig:PIG-A", "observation:NEW"], terminal_state="completed"), now=NOW)
+    result = PostgresManagerCaseStore(connect_factory=lambda: None)._reconcile(Cursor(), candidate, NOW)
+    assert result == "changed"
+    assert any("status='completed'" in sql for sql, _ in commands)
+    assert any("oom_manager_case_events" in sql and params[3] == "completed"
+               for sql, params in commands)
+
+
 def test_cycle_wrapper_supplies_current_brain_guard_audit_to_store():
     class Store:
         def run_cycle(self, candidates, **kwargs):

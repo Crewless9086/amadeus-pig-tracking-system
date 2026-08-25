@@ -66,6 +66,33 @@ def test_exact_replay_is_one_case_and_delivery_is_not_duplicated():
         assert db.execute("select count(*) from app_private.oom_manager_cases where dedupe_key='rootline:current-plan'").fetchone()[0] == 1
 
 
+def test_exact_pig_terminal_evidence_completes_case_once_without_delivery():
+    now = datetime.now(timezone.utc) + timedelta(seconds=30)
+    dedupe = "herdmaster:bulk-condition:PG-TERMINAL"
+    material = candidate("observation:PG-LOW", now, dedupe_key=dedupe,
+        specialist="HERDMASTER", summary="Exact pig has material low BCS evidence.",
+        next_action="Retain exact-pig recovery monitoring.", unknowns=[])
+    recovered = candidate("observation:PG-IN-RANGE", now, dedupe_key=dedupe,
+        specialist="HERDMASTER", summary="Exact pig is back in range.",
+        next_action="Complete the exact-pig BCS follow-up.", unknowns=[],
+        terminal_state="completed")
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    with connect() as db, db.cursor() as cur:
+        opened = normalize_candidate(material, now=now)
+        terminal = normalize_candidate(recovered, now=now)
+        assert store._reconcile(cur, opened, now) == "created"
+        assert store._reconcile(cur, terminal, now) == "changed"
+        assert store._reconcile(cur, terminal, now) == "replayed"
+    with connect() as db:
+        row = db.execute("""select status,generation,evidence_digest,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where dedupe_key=%s""", (dedupe,)).fetchone()
+        events = db.execute("""select event_type from app_private.oom_manager_case_events
+            where case_id=(select case_id from app_private.oom_manager_cases where dedupe_key=%s)
+            order by occurred_at""", (dedupe,)).fetchall()
+    assert row == ("completed", 2, terminal["evidence_digest"], None, None)
+    assert events.count(("completed",)) == 1
+
+
 @pytest.mark.parametrize("material_kind", ["target-page", "enquiry-policy"])
 def test_beacon_material_binding_change_creates_exactly_one_successor(material_kind):
     """Builder-bound Page/policy digest changes advance one manager generation."""
