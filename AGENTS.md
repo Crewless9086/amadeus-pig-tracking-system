@@ -10,9 +10,7 @@ registered cross-system exceptions. Development workers must also read
 `.agents/skills/amadeus-implement/SKILL.md`.
 
 Do not substitute legacy start-here files, planning notes, handovers, static
-agent cards, or archive material for current Vault authority. Supabase remains
-operational truth; do not create competing queues, Vaults, Control Towers,
-COREs, agent frameworks, or runtimes.
+agent cards, or archive material for current Vault authority.
 
 ## Safe Cloud development commands
 
@@ -40,6 +38,5 @@ node tests/oom_sakkie_browser_behavior_smoke.js
 
 The exact Oom Sakkie real-browser gate and its test-only environment are defined
 in `.github/workflows/oom-sakkie-browser-behavior.yml`. Never place secrets in
-Git, use production service-role credentials for development, deploy, migrate
-production data, contact customers, publish, or operate hardware without the
-separate exact authority required by the selected Vault pack.
+Git. Architecture, data authority, review, release, and safety boundaries come
+only from the selected Vault pack and current technical/runtime evidence.
