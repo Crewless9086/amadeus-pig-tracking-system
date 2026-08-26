@@ -24,7 +24,7 @@ def manager_authority():
         principal_role="farm_manager", capabilities=("mortality_confirmation",))
 
 
-def test_manager_callback_is_narrowly_bounded_to_mortality(monkeypatch):
+def test_manager_callback_is_narrowly_bounded_to_mortality_actions(monkeypatch):
     observed = {}
     def claim(*args, **kwargs):
         observed.update(kwargs)
@@ -32,7 +32,8 @@ def test_manager_callback_is_narrowly_bounded_to_mortality(monkeypatch):
     monkeypatch.setattr(runtime, "claim_callback", claim)
     runtime.handle_protected_action_input(
         {**parsed(""), "callback_data": "oompa:opaque:confirm"}, manager_authority())
-    assert observed["allowed_action_kinds"] == frozenset({"mortality"})
+    assert observed["allowed_action_kinds"] == frozenset(
+        {"mortality", "herdmaster_record_litter_piglet_deaths"})
 
 
 def test_sealed_authority_must_match_parsed_actor_before_claim(monkeypatch):
@@ -446,7 +447,8 @@ def test_manager_capability_envelope_excludes_non_farm_and_ungranted_actions(mon
         "provider_timestamp":"2026-08-23T20:27:24Z","reply_to_message_id":"700",
         "callback_data":"oompa:opaque:confirm","text":""},authority)
     assert status==403
-    assert observed["allowed_action_kinds"]==frozenset({"mortality"})
+    assert observed["allowed_action_kinds"]==frozenset(
+        {"mortality", "herdmaster_record_litter_piglet_deaths"})
     assert all(value not in observed["allowed_action_kinds"] for value in ("core","charlie","payment"))
 
 
@@ -467,7 +469,8 @@ def test_manager_urgent_callback_scope_explicitly_denies_every_non_mortality_kin
     monkeypatch.setattr(runtime,"claim_callback",claim)
     result,status=runtime.handle_protected_action_input(
         {**parsed(""),"callback_data":"oompa:opaque:confirm"},manager_authority())
-    assert status==403 and observed["allowed_action_kinds"]==frozenset({"mortality"})
+    assert status==403 and observed["allowed_action_kinds"]==frozenset(
+        {"mortality", "herdmaster_record_litter_piglet_deaths"})
 
 
 def test_direct_callback_preserves_digest_scoped_card_lifecycle(monkeypatch):

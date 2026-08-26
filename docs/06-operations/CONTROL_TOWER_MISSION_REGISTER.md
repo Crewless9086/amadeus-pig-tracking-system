@@ -3283,6 +3283,15 @@ work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - External Slack/Cursor authorization wait
+
+The existing external-integration lane cannot complete its Slack connection:
+workspace approval is disabled and Cursor's OAuth request returns
+`invalid_scope_requested` for `links:read` / `links:write`. The owner has
+already contacted Cursor support. This is retained as an external wait finding
+only; it does not reprioritize any mission and no resolution is claimed.
+**DURABLY LOGGED - EXTERNAL WAIT UNRESOLVED. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - ROOTLINE managed-device recovery family alias
 
 Post-deploy natural schedule evidence bound the current Water & Energy Plan but
