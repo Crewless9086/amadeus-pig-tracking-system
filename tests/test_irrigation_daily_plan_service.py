@@ -8,11 +8,45 @@ from app import app
 from modules.telemetry.irrigation_daily_plan_service import (
     InMemoryDailyPlanLedger,
     canonical_plan_identity,
+    project_rootline_specialist_daily_plan,
     generate_or_reuse_daily_plan,
     get_current_daily_plan,
     operating_date,
     prepare_daily_plan,
 )
+
+
+def test_specialist_projection_creates_and_reuses_date_stable_plan_without_authority():
+    ledger = InMemoryDailyPlanLedger()
+    result = {"success": True, "operating_date": "2026-08-26",
+        "result_id": "ROOTLINE-RESULT-1", "generation": "GEN-1",
+        "evidence_cutoff": "2026-08-26T05:12:00+00:00", "overall_status": "Run",
+        "recommendations": [
+            {"subject": "B12345", "status": "Recommend", "reason": "Water deficit.",
+             "planned_duration_minutes": 45, "preferred_window": "08:00-09:00"},
+            {"subject": "C12345", "status": "Do Not Run", "reason": "Not due."},
+        ]}
+    first = project_rootline_specialist_daily_plan(result, ledger=ledger)
+    replay = project_rootline_specialist_daily_plan(result, ledger=ledger)
+    assert first["created"] is True and replay["created"] is False
+    assert first["daily_plan"]["daily_plan_id"] == "ROOTLINE-DAILY-PLAN-20260826"
+    assert first["daily_plan"]["status"] == "planned"
+    assert first["daily_plan"]["zones"][0]["subject"] == "B12345"
+    assert first["status"] == "daily_plan_created" and first["readback_bound"] is True
+    assert replay["status"] == "daily_plan_reused" and replay["readback_bound"] is True
+
+
+def test_specialist_projection_rejects_readback_not_bound_to_write_receipt():
+    class MismatchLedger(InMemoryDailyPlanLedger):
+        def get_current(self, day):
+            value = super().get_current(day)
+            return {**value, "evidence_sha256": "0" * 64}
+    result = {"success": True, "operating_date": "2026-08-26",
+        "result_id": "R", "generation": "G",
+        "evidence_cutoff": "2026-08-26T05:12:00+00:00",
+        "recommendations": []}
+    with __import__("pytest").raises(Exception, match="daily_plan_readback_binding_unproven"):
+        project_rootline_specialist_daily_plan(result, ledger=MismatchLedger())
 
 
 def packet(**overrides):

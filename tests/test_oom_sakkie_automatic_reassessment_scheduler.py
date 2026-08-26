@@ -269,11 +269,18 @@ def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_c
             return {"success":True,"created":created}
         if action == "mark_delivered":
             lifecycle[identity] = {**lifecycle[identity], **payload}; return {"success":True}
+    projected=[]
+    def generate(result):
+        projected.append(result)
+        return {"success":True,"status":"daily_plan_created","created":True,
+            "readback_bound":True,"daily_plan":{
+                "daily_plan_id":"ROOTLINE-DAILY-PLAN-20260805",
+                "operating_date":"2026-08-05","generation":1,"evidence_sha256":"a"*64}}
     value,status=handle_rootline_reassessment_trigger(bound,
         {"X-Oom-Sakkie-Telegram-Token":"x"*40},env,schedule_store=schedules,
         state_store=state,
         scheduler_now=NOW,family_delivery=deliver,execution_cycle=cycle,
-        specialist_loader=lambda:current)
+        specialist_loader=lambda:current,daily_plan_generator=generate)
     assert status==200 and value["status"]=="scheduled_rootline_plan_and_execution_completed"
     assert value["plan_delivery_status"]=="delivered_current_irrigation_plan"
     assert value["plan_reassessment_status"]=="rootline_reassessment_changed"
@@ -282,6 +289,54 @@ def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_c
     assert value["telegram_sends"]==1
     assert cycles[0]["owner_user_id"]==cycles[0]["chat_id"]=="42"
     assert cycles[0]["observation_store"] is not None
+    assert projected == [current]
+    assert value["daily_plan_id"] == "ROOTLINE-DAILY-PLAN-20260805"
+
+
+def test_daily_plan_persistence_failure_contains_execution_and_delivery():
+    _, schedules = memory_store(); calls=[]
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
+         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
+         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42",
+         "ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"}
+    bound={**scheduled_payload(),"owner_user_id":"42","chat_id":"42",
+           "trigger":"declared_time","trigger_id":"AUTO-PLAN-HOLD",
+           "trigger_timestamp":"2026-08-05T10:15:00+02:00"}
+    current={"success":True,"operating_date":"2026-08-05",
+        "evidence_cutoff":"2026-08-05T10:14:00+02:00","recommendations":[]}
+    value,status=handle_rootline_reassessment_trigger(bound,
+        {"X-Oom-Sakkie-Telegram-Token":"x"*40},env,schedule_store=schedules,
+        state_store=lambda *a:None,scheduler_now=NOW,specialist_loader=lambda:current,
+        daily_plan_generator=lambda _result: (_ for _ in ()).throw(RuntimeError("db")),
+        family_delivery=lambda *a,**k:calls.append("send"),
+        execution_cycle=lambda **k:calls.append("execute"))
+    assert status==202
+    assert value["status"]=="scheduled_rootline_daily_plan_persistence_ambiguous"
+    assert value["hardware_commands"]==0 and value["writes_farm_data"] is None
+    assert value["write_state"]=="unknown"
+    assert calls==[]
+
+
+def test_empty_plan_receipt_fails_before_any_delivery_or_execution():
+    _, schedules = memory_store(); calls=[]
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
+         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
+         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42",
+         "ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"}
+    value,status=handle_rootline_reassessment_trigger(
+        {**scheduled_payload(),"owner_user_id":"42","chat_id":"42",
+         "trigger":"declared_time","trigger_id":"EMPTY-PLAN",
+         "trigger_timestamp":"2026-08-05T10:15:00+02:00"},
+        {"X-Oom-Sakkie-Telegram-Token":"x"*40},env,schedule_store=schedules,
+        state_store=lambda *a:None,scheduler_now=NOW,
+        specialist_loader=lambda:{"success":True,"operating_date":"2026-08-05",
+            "evidence_cutoff":"2026-08-05T10:14:00+02:00"},
+        daily_plan_generator=lambda _result:{},
+        family_delivery=lambda *a,**k:calls.append("send"),
+        execution_cycle=lambda **k:calls.append("execute"))
+    assert status==202
+    assert value["status"]=="scheduled_rootline_daily_plan_persistence_ambiguous"
+    assert value["write_state"]=="unknown" and calls==[]
 
 
 def test_plan_delivery_failure_and_containment_return_exact_separate_statuses():

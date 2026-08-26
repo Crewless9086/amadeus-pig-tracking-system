@@ -3283,6 +3283,36 @@ work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - OMQ-20260813-03 ROOTLINE daily-plan commissioning gap
+
+Fresh canonical readback after the overnight continuity release showed no
+`irrigation_daily_plan_*` artifact and no irrigation execution, although the
+recurring manager selected mixed specialists and ROOTLINE reassessment
+continued with duplicate-suppressed owner delivery. The remaining defect was
+not scheduler inactivity: the scheduled ROOTLINE rail consumed the specialist
+result but did not project that same date-stable decision into the existing
+immutable daily-plan ledger before manager delivery or separately gated
+execution.
+
+The bounded PR #1295 candidate requires a successful created-or-reused receipt,
+nonempty canonical plan ID, operating date, generation and evidence digest, and
+an exact current-ledger readback binding before any manager brief, protected
+delivery recovery or irrigation execution. Empty, false or mismatched evidence
+fails closed. A commit followed by an exception is reported as unknown write
+state rather than falsely claiming that no write occurred. The manager consumes
+the already-bound ROOTLINE snapshot. This creates no scheduler, command,
+provider-control or hardware authority.
+
+This addendum remains inside existing `OMQ-20260813-03`; priority is unchanged.
+Reconciliation onto main `fa9801e5` preserves the already merged PR #1294
+Anton-burst/litter-death truth and PR #1291 Linda/Molly first-treatment truth;
+neither is superseded or reinterpreted here. Source, tests, review and release
+are not an owner outcome. Acceptance still requires deployed canonical
+daily-plan readback, a naturally eligible separately governed execution, and
+canonical/provider/device final-OFF plus physical water-flow evidence before
+any irrigation outcome can be claimed. **DURABLY LOGGED - NOT YET AN OWNER
+OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - OMQ/HERDMASTER Anton rapid-message recovery integration addendum
 
 PR #1294 merged to authoritative main as merge commit `efe3e1c5`. That source
