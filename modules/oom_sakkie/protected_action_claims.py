@@ -311,7 +311,7 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
             if row[0] in {"mortality", "rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
                     "rootline_fertilizer_mixer_presence_refresh",
                     "sam_sale_payment", "beacon_media_review",
-                    "herdmaster_record_farrowing_litter"}:
+                    "herdmaster_record_farrowing_litter", "herdmaster_record_litter_piglet_deaths"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
                   "result":row[9],"telegram_sends":0,"telegram_edits":0},200
