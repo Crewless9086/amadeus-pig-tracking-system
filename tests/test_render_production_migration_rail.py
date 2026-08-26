@@ -492,7 +492,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(sum(isinstance(value, dict) for value in outcomes), 1)
         self.assertTrue(any("migration_legacy_adoption_already_initialized" in value for value in outcomes if isinstance(value, str)))
         with psycopg.connect(DATABASE_URL) as db:
-            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 6)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 7)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_legacy_authorization_order_is_irrelevant_but_set_and_identities_are_exact(self):
@@ -749,8 +749,12 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
     def test_disposable_postgres_b_action_kind_replay_and_schema_mismatch_fail_closed(self):
         import psycopg
 
+        # Replay the current end of the ordered append-only action-kind chain.
+        # The farrowing migration's own target is now a proven predecessor of
+        # this migration, so directly replaying that historical SQL against the
+        # downstream target must remain fail-closed.
         migration = Path(
-            "supabase/migrations/202608220002_allow_herdmaster_farrowing_protected_claims.sql"
+            "supabase/migrations/202608260001_allow_herdmaster_litter_actions_protected_claims.sql"
         ).read_text(encoding="utf-8")
         with psycopg.connect(DATABASE_URL) as db:
             db.execute(migration)
@@ -1586,12 +1590,12 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         applied = run(DATABASE_URL, baseline_env)
         self.assertEqual(
             [item["outcome"] for item in applied["migrations"]],
-            ["baseline_verified"] * 3 + ["applied"] * 4,
+            ["baseline_verified"] * 3 + ["applied"] * 5,
         )
         replay = run(DATABASE_URL, ENV)
         self.assertEqual(
             [item["outcome"] for item in replay["migrations"]],
-            ["baseline_verified"] * 3 + ["already_applied"] * 4,
+            ["baseline_verified"] * 3 + ["already_applied"] * 5,
         )
         with psycopg.connect(DATABASE_URL) as db:
             self.assertEqual(

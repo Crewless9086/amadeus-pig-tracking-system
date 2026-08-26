@@ -1800,6 +1800,17 @@ def _verify_migration_precondition(
         if action_kinds == PREDECESSOR_PROTECTED_ACTION_KINDS:
             _verify_migration_log(connection, item.migration_id, required=True)
             return "target"
+        if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS and already_applied:
+            # A later append-only migration legitimately supersedes this
+            # migration's target.  Prove both ordered migration-log facts;
+            # never treat an unreceipted constraint expansion as replay.
+            _verify_migration_log(connection, item.migration_id, required=True)
+            _verify_migration_log(
+                connection,
+                "202608260001_allow_herdmaster_litter_actions_protected_claims",
+                required=True,
+            )
+            return "downstream_target"
         raise RuntimeError(f"migration_precondition_action_constraint_mismatch:{action_kinds}")
     if item.migration_id == "202608260001_allow_herdmaster_litter_actions_protected_claims":
         _verify_protected_claim_acl(connection)
@@ -1888,8 +1899,17 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
             "oom_protected_action_claims",
             "oom_protected_action_claims_action_kind_check",
         )
-        if action_kinds != PREDECESSOR_PROTECTED_ACTION_KINDS:
+        if action_kinds not in (
+            PREDECESSOR_PROTECTED_ACTION_KINDS,
+            EXPECTED_PROTECTED_ACTION_KINDS,
+        ):
             raise RuntimeError(f"migration_readback_action_constraint_mismatch:{action_kinds}")
+        if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS:
+            _verify_migration_log(
+                connection,
+                "202608260001_allow_herdmaster_litter_actions_protected_claims",
+                required=True,
+            )
         log_description = _verify_migration_log(
             connection, item.migration_id, required=True
         )
