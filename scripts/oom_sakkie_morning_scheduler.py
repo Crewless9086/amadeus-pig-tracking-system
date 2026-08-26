@@ -23,7 +23,7 @@ manager = post(manager_url, {})
 beacon = post(beacon_url, {})
 now = datetime.now(timezone.utc)
 morning = None
-if synthetic or (now.hour == 4 and 45 <= now.minute < 50):
+if synthetic or (now.hour > 4 or (now.hour == 4 and now.minute >= 45)):
     morning = post(url, {"synthetic_acceptance_identity": synthetic} if synthetic else {})
 safe_recovery = recovery.get("status") in {"payment_recovery_idle", "payment_recovery_completed"}
 safe_green_recovery = green_recovery.get("status") in {

@@ -141,13 +141,14 @@ def test_agent_owned_reconciliation_is_not_presented_as_owner_work_or_raw_pollin
                 next_action="Reconcile tags " + ", ".join(str(value) for value in range(1, 76))),
     ]
     answer = build_daily_management_packet([result(items=rows)], now=NOW)["answer"]
-    assert answer == ""
+    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
+    assert "Mortality follow-up" in answer
     assert "ACTION NEEDED" not in answer
     assert "Reconcile tags" not in answer
     assert "within 15 minutes" not in answer
 
 
-def test_internal_only_natural_cycle_records_tasks_but_sends_nothing():
+def test_internal_only_morning_cycle_sends_one_bounded_summary():
     state = store(); deliveries = []
     rows = [item("MORTALITY", "Mortality follow-up â€” PIG-2026-3EE5", WorkState.URGENT),
         item("ROOTLINE", "Irrigation B, C: Checking safely", WorkState.PLANNED),
@@ -155,10 +156,11 @@ def test_internal_only_natural_cycle_records_tasks_but_sends_nothing():
                 metadata={"routine_weekly_weighing": True})]
     outcome = run_daily_farm_manager(owner_user_id="42", chat_id="42",
         specialist_results=[result(items=rows)], litter_rows=[], now=NOW, store=state,
-        deliver=lambda *_args, **_kwargs: deliveries.append(1))
-    assert outcome["status"] == "daily_manager_internal_work_silent"
+        deliver=lambda *_args, **_kwargs: {"success": True, "telegram_message_id": "99",
+                                            "telegram_sends": 1})
+    assert outcome["status"] == "daily_manager_presented"
     assert outcome["task_count"] == 3
-    assert outcome["telegram_sends"] == 0 and deliveries == []
+    assert outcome["telegram_sends"] == 1
 
 
 def test_exact_owner_decision_is_the_only_action_section():
@@ -170,7 +172,7 @@ def test_exact_owner_decision_is_the_only_action_section():
                                            now=NOW)["answer"]
     assert "ACTION NEEDED" in answer
     assert "Review the protected preview." in answer
-    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" not in answer
+    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
     assert "No action required from you." not in answer
 
 
@@ -239,7 +241,8 @@ def test_before_morning_boundary_is_silent_and_durably_due():
 def test_afrikaans_uses_same_evidence_and_authority():
     packet=build_daily_management_packet([result(items=[item("R-1","Reën hou besproeiing")])],
         now=NOW,language="af")
-    assert packet["answer"] == ""
+    assert "OOM SAKKIE KONTROLEER OUTOMATIES" in packet["answer"]
+    assert "Re" in packet["answer"]
     assert packet["all_tasks"][0]["authority"]=="read_only"
 
 
