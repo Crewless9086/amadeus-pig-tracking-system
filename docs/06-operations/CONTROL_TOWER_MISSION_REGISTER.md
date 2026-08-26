@@ -3305,6 +3305,32 @@ effect was authorized. Durable terminal-independent continuity remains the
 existing `CMQ-20260813-05` outcome; repeated chat restarts do not satisfy it.
 
 **NO BUSINESS OUTCOME. OWNER ACTION: NONE.**
+## 2026-08-26 - Molly first-treatment current-main and atomic-write reconciliation
+
+Existing mission `HERDMASTER-CONTINUOUS-HUSBANDRY` remains the controlling
+outcome and priority. Local recovery commit `827e9485` was preserved, rebased
+without patch loss onto authoritative `origin/main` `8144e572`, and reconciled
+with PR #1291's former remote head `499fb958`. Review candidate `62531a6d`
+adds one serializable, litter-scoped advisory-lock transaction for the protected
+Supabase first-treatment path so piglet earmarks, exact medical events and the
+litter sex tally cannot partially commit. The ordinary non-protected legacy
+path remains unchanged. Focused verification passed 131 tests plus nine
+first-treatment/newborn-health tests; the broader suite still contains the
+pre-existing unrelated farrowing test that attempts an unmocked governed
+database connection. Exact-head CI and independent review are pending.
+
+This is technical risk reduction, not a farm result. No farm row, Telegram
+message, provider effect, confirmation, deployment or manufactured acceptance
+event occurred. After reviewed merge and deployment through the serialized
+release lane, the deployed Oom Sakkie/HERDMASTER runtime must receive one fresh
+genuine owner report through the authenticated Telegram channel, create its own
+protected preview, consume genuine confirmation, commit once, prove canonical
+medical/tally readback, schedule HERDMASTER follow-up, and later complete a
+terminal-independent reassessment. The historical Molly message remains sealed
+as evidence and must not be replayed. Automatic promotion trigger: exact-head
+CI and independent review pass, followed by release-lane availability; then
+resume merge/deployment and read-only commissioning without owner relay.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
 ## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.10 migration-rail defect
 
