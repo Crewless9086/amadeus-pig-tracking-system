@@ -4,9 +4,29 @@ from modules.oom_sakkie.automatic_reassessment_scheduler import (
     SCHEDULER_IDENTITY, run_due_reassessment,
 )
 from modules.oom_sakkie.telegram_gateway import handle_rootline_reassessment_trigger
-from modules.oom_sakkie.telegram_gateway import _rootline_irrigation_completion_summary
+from modules.oom_sakkie.telegram_gateway import (
+    _canonical_rootline_plan_receipt, _rootline_irrigation_completion_summary,
+)
 
 NOW = datetime(2026, 8, 5, 8, 15, tzinfo=timezone.utc)
+
+
+def test_existing_canonical_water_energy_plan_is_exact_bound_receipt():
+    receipt = _canonical_rootline_plan_receipt({"success": True,
+        "operating_date": "2026-08-26", "canonical_plan": {
+            "plan_id": "ROOTLINE-WATER-PLAN-1", "generation": 19,
+            "evidence_sha256": "a" * 64}})
+    assert receipt["success"] is receipt["readback_bound"] is True
+    assert receipt["status"] == "canonical_rootline_plan_bound"
+    assert receipt["daily_plan"] == {"daily_plan_id": "ROOTLINE-WATER-PLAN-1",
+        "operating_date": "2026-08-26", "generation": 19,
+        "evidence_sha256": "a" * 64}
+
+
+def test_existing_plan_receipt_rejects_missing_canonical_binding():
+    receipt = _canonical_rootline_plan_receipt({"success": True,
+        "operating_date": "2026-08-26", "canonical_plan": {"plan_id": "P"}})
+    assert receipt["success"] is receipt["readback_bound"] is False
 
 
 def test_completion_summary_reports_verified_runtime_and_omits_unproven_fertilizer():

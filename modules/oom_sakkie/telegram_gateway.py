@@ -997,6 +997,22 @@ def _rootline_irrigation_completion_summary(zone, execution):
     return "\n".join(lines)
 
 
+def _canonical_rootline_plan_receipt(current):
+    """Bind scheduled work to the already-current Water & Energy Plan rail."""
+    value = current if isinstance(current, dict) else {}
+    canonical = value.get("canonical_plan")
+    plan = ({"daily_plan_id": canonical.get("plan_id"),
+        "operating_date": value.get("operating_date"),
+        "generation": canonical.get("generation"),
+        "evidence_sha256": canonical.get("evidence_sha256")}
+        if isinstance(canonical, dict) else {})
+    required = ("daily_plan_id", "operating_date", "generation", "evidence_sha256")
+    proven = (value.get("success") is True and isinstance(canonical, dict)
+        and all(plan.get(key) not in (None, "") for key in required))
+    return {"success": proven, "status": "canonical_rootline_plan_bound",
+        "created": False, "readback_bound": proven, "daily_plan": plan}
+
+
 def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
                                          state_store=None, family_delivery=None, schedule_store=None,
                                          scheduler_now=None, execution_cycle=None,
@@ -1065,15 +1081,14 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 current = scheduled_loader()
                 generator = daily_plan_generator
                 if generator is None:
-                    from modules.telemetry.irrigation_daily_plan_service import (
-                        project_rootline_specialist_daily_plan,
-                    )
-                    generator = project_rootline_specialist_daily_plan
-                receipt = dict(generator(current) or {})
+                    receipt = _canonical_rootline_plan_receipt(current)
+                else:
+                    receipt = dict(generator(current) or {})
                 plan = receipt.get("daily_plan")
                 required = ("daily_plan_id", "operating_date", "generation", "evidence_sha256")
                 if (receipt.get("success") is not True
-                        or receipt.get("status") not in {"daily_plan_created", "daily_plan_reused"}
+                        or receipt.get("status") not in {"canonical_rootline_plan_bound",
+                            "daily_plan_created", "daily_plan_reused"}
                         or receipt.get("readback_bound") is not True
                         or not isinstance(plan, dict)
                         or any(plan.get(key) in (None, "") for key in required)):

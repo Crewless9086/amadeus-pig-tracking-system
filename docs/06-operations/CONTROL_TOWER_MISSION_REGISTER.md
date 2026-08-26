@@ -3286,22 +3286,23 @@ normalization, locking and persistence failures remain cycle-fatal.
 ## 2026-08-26 - OMQ-20260813-03 ROOTLINE daily-plan commissioning gap
 
 Fresh canonical readback after the overnight continuity release showed no
-`irrigation_daily_plan_*` artifact and no irrigation execution, although the
+legacy `irrigation_daily_plan_*` artifact and no irrigation execution, although the
 recurring manager selected mixed specialists and ROOTLINE reassessment
 continued with duplicate-suppressed owner delivery. The remaining defect was
-not scheduler inactivity: the scheduled ROOTLINE rail consumed the specialist
-result but did not project that same date-stable decision into the existing
-immutable daily-plan ledger before manager delivery or separately gated
-execution.
+not scheduler inactivity. Post-deploy evidence then proved that the proposed
+ledger dependency was itself invalid: migration `202607260005` is deliberately
+registered `superseded_unapplied` pending legacy irrigation reconciliation, and
+production correctly has no such tables or function. Repeated minute cron runs
+failed closed with `scheduled_rootline_daily_plan_persistence_ambiguous` and zero
+Telegram or hardware commands.
 
-The bounded PR #1295 candidate requires a successful created-or-reused receipt,
-nonempty canonical plan ID, operating date, generation and evidence digest, and
-an exact current-ledger readback binding before any manager brief, protected
-delivery recovery or irrigation execution. Empty, false or mismatched evidence
-fails closed. A commit followed by an exception is reported as unknown write
-state rather than falsely claiming that no write occurred. The manager consumes
-the already-bound ROOTLINE snapshot. This creates no scheduler, command,
-provider-control or hardware authority.
+The corrected PR #1295 candidate removes the superseded-ledger dependency and
+instead requires the existing scheduler-owned Water & Energy Plan refresh to
+return its already-persisted exact canonical plan ID, operating date, generation
+and evidence digest before any manager brief, protected delivery recovery or
+irrigation execution. Empty, false or mismatched binding fails closed. The
+manager consumes that same bound ROOTLINE snapshot. This creates no migration,
+scheduler, command, provider-control or hardware authority.
 
 This addendum remains inside existing `OMQ-20260813-03`; priority is unchanged.
 Reconciliation onto main `fa9801e5` preserves the already merged PR #1294
