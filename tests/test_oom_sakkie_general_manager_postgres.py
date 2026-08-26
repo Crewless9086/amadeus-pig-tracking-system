@@ -851,3 +851,34 @@ def test_concurrent_newer_hold_and_prince_evidence_is_never_overwritten_or_deliv
             where dedupe_key=%s""", (stale["dedupe_key"],)).fetchone()
     assert row[0] == retained["summary"]
     assert set(row[1]) == set(retained["unknowns"])
+
+
+def test_retained_recovery_family_survives_store_claim_and_routes_one_preview_only():
+    now = datetime.now(timezone.utc) + timedelta(minutes=6)
+    dedupe = "herdmaster:retained-mortality:pg-" + now.strftime("%H%M%S%f")
+    raw = candidate("provider_message:4050", now, dedupe_key=dedupe,
+        specialist="HERDMASTER", message_family="retained_protected_recovery",
+        unknowns=["fresh_canonical_mortality_preview"],
+        summary="Retained Pig 146 mortality requires re-preview.",
+        next_action="Route only to the protected mortality preview.")
+    previews = []
+    def builder(case):
+        previews.append((case["case_id"], case["message_family"]))
+        return {"success": True, "status": "mortality_preview_ready",
+            "answer": "Exact protected preview", "callback_token": "CALLBACK",
+            "confirmation_required": True, "writes_farm_data": False}
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    result = store.run_cycle([raw], now=now, source_revision="test",
+        refresh=lambda _case: raw,
+        deliver=lambda case: deliver_farm_manager_case(
+            case, retained_recovery=builder))
+    assert previews and len(previews) == 1
+    assert result["deliveries_confirmed"] == 0
+    with connect() as db:
+        row = db.execute("""select evidence_refs from app_private.oom_manager_cases
+            where dedupe_key=%s""", (dedupe,)).fetchone()
+        events = db.execute("""select event_type from app_private.oom_manager_case_events
+            where case_id=(select case_id from app_private.oom_manager_cases where dedupe_key=%s)""",
+            (dedupe,)).fetchall()
+    assert "manager_message_family:retained_protected_recovery" in row[0]
+    assert {value[0] for value in events} >= {"created", "claimed", "delegated", "delivery_suppressed"}

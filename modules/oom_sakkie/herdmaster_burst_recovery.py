@@ -188,3 +188,23 @@ def bind_reply(candidates: Iterable[RecoveryItem], text: str) -> RecoveryItem | 
     tokens = {_key(token) for token in re.findall(r"[A-Za-z0-9]+", text) if _key(token)}
     matches = [item for item in candidates if _key(item.subject) in tokens]
     return matches[0] if len(matches) == 1 else None
+
+
+def route_retained_manager_recovery(case, *, preview_builder=None):
+    """Permit delivery only after an exact protected preview exists."""
+    if str((case or {}).get("message_family") or "") != "retained_protected_recovery":
+        return {"success": False, "status": "retained_recovery_binding_invalid",
+                "suppress_owner_delivery": True, "telegram_sends": 0,
+                "writes_farm_data": False}
+    if preview_builder is None:
+        return {"success": False, "status": "retained_protected_repreview_unavailable",
+                "suppress_owner_delivery": True, "telegram_sends": 0,
+                "writes_farm_data": False, "recovery_required": True}
+    result = dict(preview_builder(case) or {})
+    if (result.get("success") is not True or not result.get("callback_token")
+            or result.get("confirmation_required") is not True
+            or not str(result.get("answer") or "").strip()):
+        return {"success": False, "status": "retained_protected_repreview_unproven",
+                "suppress_owner_delivery": True, "telegram_sends": 0,
+                "writes_farm_data": False, "recovery_required": True}
+    return {**result, "suppress_owner_delivery": False, "writes_farm_data": False}

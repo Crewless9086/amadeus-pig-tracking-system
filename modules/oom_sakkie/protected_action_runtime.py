@@ -8,10 +8,12 @@ from modules.oom_sakkie.protected_action_claims import (
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
 
 NATURAL_CONFIRM=re.compile(r"^(?:i\s+confirm(?:\s+this)?|confirm(?:\s+all)?|yes[, ]*confirm|ek\s+bevestig(?:\s+alles)?|bevestig(?:\s+alles)?)\s*[.!]?$",re.I)
-OOM_SAKKIE_MANAGER_ACTION_KINDS=frozenset({"mortality", "herdmaster_record_litter_first_treatment"})
+OOM_SAKKIE_MANAGER_ACTION_KINDS=frozenset({"mortality", "herdmaster_record_litter_first_treatment",
+    "herdmaster_record_litter_piglet_deaths"})
 OOM_SAKKIE_MANAGER_ACTION_CAPABILITIES={
     "mortality": "mortality_confirmation",
     "herdmaster_record_litter_first_treatment": "treatment",
+    "herdmaster_record_litter_piglet_deaths": "mortality_confirmation",
 }
 
 def handle_protected_action_input(parsed, gateway_authority, *, callback_data="",
@@ -74,6 +76,13 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
               "owner_visible_completion_policy":"verified_edit_or_new_message",
               "delivery_recovery_required":True,"writes_farm_data":False},200
         if claimed.get("action_kind")=="herdmaster_record_litter_first_treatment":
+            result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            return {"handled":True,**result,"specialist":"HERDMASTER",
+              "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
+              "reply_markup":{"inline_keyboard":[]},
+              "owner_visible_completion_policy":"verified_edit_or_new_message",
+              "delivery_recovery_required":True,"writes_farm_data":False},200
+        if claimed.get("action_kind")=="herdmaster_record_litter_piglet_deaths":
             result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
             return {"handled":True,**result,"specialist":"HERDMASTER",
               "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
@@ -369,6 +378,27 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             if completion.get("replayed") is True:
                 result={**result,"answer":"","suppress_owner_delivery":True,
                     "writes_farm_data":False,"status":"litter_first_treatment_replayed_noop"}
+        elif result_status < 500:
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result},result_status
+    if claimed["action_kind"]=="herdmaster_record_litter_piglet_deaths":
+        from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
+            execute_claimed_litter_piglet_deaths,
+        )
+        try:
+            result,result_status=execute_claimed_litter_piglet_deaths(claimed,parsed)
+        except Exception as exc:
+            return {"handled":True,"success":False,
+                "status":"litter_piglet_deaths_recovery_pending",
+                "answer":"The protected confirmation was retained, but canonical completion is not yet proven. Do not confirm again.",
+                "writes_farm_data":False,"recovery_required":True,
+                "error_type":type(exc).__name__},503
+        if result.get("success") is True:
+            completion=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            result=completion.get("result") if isinstance(completion.get("result"),dict) else result
+            if completion.get("replayed") is True:
+                result={**result,"answer":"","suppress_owner_delivery":True,
+                    "writes_farm_data":False,"status":"litter_piglet_deaths_replayed_noop"}
         elif result_status < 500:
             contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         return {"handled":True,**result},result_status

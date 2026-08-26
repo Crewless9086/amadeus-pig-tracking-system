@@ -3283,6 +3283,15 @@ work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - External Slack/Cursor authorization wait
+
+The existing external-integration lane cannot complete its Slack connection:
+workspace approval is disabled and Cursor's OAuth request returns
+`invalid_scope_requested` for `links:read` / `links:write`. The owner has
+already contacted Cursor support. This is retained as an external wait finding
+only; it does not reprioritize any mission and no resolution is claimed.
+**DURABLY LOGGED - EXTERNAL WAIT UNRESOLVED. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - ROOTLINE managed-device recovery family alias
 
 Post-deploy natural schedule evidence bound the current Water & Energy Plan but
@@ -3305,6 +3314,36 @@ HTTP 503 after manager completion and remains unaccepted. Source/tests are not
 owner outcomes; post-deploy canonical final-OFF, physical water-flow and family
 brief acceptance remain required. Priority is unchanged. **DURABLY LOGGED -
 NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+## 2026-08-26 - Anton retained-burst deployed commissioning gap
+
+Read-only commissioning at deployed exact source `c573ba52` proved the merged
+first-treatment handler is wired for fresh Telegram input, but the merged
+retained-burst planner has no runtime caller. No post-deployment Anton recovery
+claim or canonical effect exists. Pig 138 remains exactly-once complete; Pig
+146 remains Active; Mona retains only expired provider claim 4051 with no
+canonical litter; Linda retains provider rows 4052/4054 but has neither the
+three-piglet loss nor first-treatment medical evidence.
+
+The bounded source repair projects unresolved retained health rows and expired
+farrowing claims into the existing automatic HERDMASTER manager-case rail. It
+groups only same-principal private-chat and incident-date evidence, preserves
+provider IDs, suppresses already-terminal animals and farrowing with a newer
+claim or canonical litter, and requires fresh canonical protected previews
+without replay or fact repetition. The manager delivery path is explicitly
+fail-closed for these cases until a callback-bound protected preview exists;
+it cannot substitute a generic manager card.
+The subsequent persistence review found `message_family` was not retained by
+the manager-case schema lifecycle. The correction stores a backward-compatible
+typed family marker in immutable evidence refs and reconstructs it on every
+claim/readback, avoiding an uncommissioned schema change. Production delivery
+now supplies a retained-recovery builder that reconstructs mortality and
+farrowing through the existing callback-bound protected preview generators;
+missing or unproved adapters, including litter loss until its protected adapter
+is available, remain silent and fail closed.
+It grants no new write, confirmation or delivery authority. Source, tests and
+later deployment are not farm acceptance; genuine preview/confirmation,
+canonical readback, follow-up and terminal-independent recurrence remain.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
 ## 2026-08-26 - OMQ-20260813-03 ROOTLINE daily-plan commissioning gap
 
