@@ -196,8 +196,10 @@ class ProtectedBreedingClaimPostgresTests(unittest.TestCase):
         rows=[]; mutations=[]
         def mutate(*_args,**_kwargs):
             mutations.append(operation)
-            rows.extend({"Pig_ID":pig,"Status":"Dead","On_Farm":"No",
-                "General_Notes":"oom_sakkie:"+operation} for pig in payload["pig_ids"])
+            # Model a provider/readback lag after the committed batch: only one
+            # exact marker is initially visible although the mutation returned.
+            rows.append({"Pig_ID":"P1","Status":"Dead","On_Farm":"No",
+                "General_Notes":"oom_sakkie:"+operation})
             return {"success":True,"piglet_count":3,"pig_ids":payload["pig_ids"]},200
         callback=f"oompa:{claim['callback_token']}:confirm"
         with patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
@@ -209,6 +211,20 @@ class ProtectedBreedingClaimPostgresTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 handle_protected_action_input(parsed,authority,callback_data=callback,
                                               connect_factory=self.connect)
+        with patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
+                   side_effect=lambda:list(rows)), \
+             patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead") as duplicate:
+            held,held_status=handle_protected_action_input(parsed,authority,
+                callback_data=callback,connect_factory=self.connect)
+        self.assertEqual(held_status,503)
+        self.assertEqual(held["status"],"litter_piglet_deaths_partial_readback_recovery_required")
+        duplicate.assert_not_called()
+        with self.connect() as db,db.cursor() as cur:
+            cur.execute("select status from app_private.oom_protected_action_claims where callback_token=%s",
+                        (claim["callback_token"],))
+            self.assertEqual(cur.fetchone(),("executing",))
+        rows.extend({"Pig_ID":pig,"Status":"Dead","On_Farm":"No",
+            "General_Notes":"oom_sakkie:"+operation} for pig in ("P2","P3"))
         with patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
                    side_effect=lambda:list(rows)), \
              patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead") as duplicate:

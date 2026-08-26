@@ -209,9 +209,12 @@ def _litter_loss_operation_readback(service, preview, operation_id):
             and str(row.get(columns["on_farm"], "")).casefold() == "no"
             and operation_id in notes)
         matched.append(exact)
-    if len(matched) != len(wanted) or not any(matched):
-        return "mismatch"
-    return "complete" if all(matched) else "partial"
+    if len(matched) == len(wanted) and all(matched):
+        return "complete"
+    # Once any exact operation marker exists, absence or mixed state is not a
+    # safe invitation to run the mutation again. Keep the claimed receipt in
+    # recovery until the entire bound selection can be proved canonically.
+    return "partial" if any(matched) else "mismatch"
 
 
 def _contained(status):

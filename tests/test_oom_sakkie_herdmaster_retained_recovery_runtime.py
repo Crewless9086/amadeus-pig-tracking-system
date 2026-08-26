@@ -78,6 +78,24 @@ def test_same_receipt_recovers_committed_deaths_without_second_mutation():
     action.assert_not_called()
 
 
+def test_partial_operation_marker_with_missing_bound_row_holds_without_mutation():
+    operation="HERD-LITTER-LOSS-PARTIAL"
+    claimed={"mission_id":"MISSION","preview_payload":{
+        "contract_version":"herdmaster_litter_piglet_deaths_v1",
+        "owner_user_id":"ANTON","litter_id":"L1","event_date":"2026-08-26",
+        "reason":"Unknown","operation_id":operation,"pig_ids":["P1","P2","P3"]}}
+    rows=[{"Pig_ID":"P1","Status":"Dead","On_Farm":"No",
+           "General_Notes":"oom_sakkie:"+operation},
+          {"Pig_ID":"P2","Status":"Active","On_Farm":"Yes","General_Notes":""}]
+    with patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
+               return_value=rows), \
+         patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead") as action:
+        result,status=execute_claimed_litter_piglet_deaths(claimed,{"telegram_user_id":"ANTON"})
+    assert status==503 and result["recovery_required"] is True
+    assert result["status"]=="litter_piglet_deaths_partial_readback_recovery_required"
+    action.assert_not_called()
+
+
 def test_pig138_unknown_case_kind_is_suppressed_before_any_claim():
     result=build_retained_protected_preview({"dedupe_key":"herdmaster:suppressed:138",
         "evidence_refs":["provider_message:4057"]})
