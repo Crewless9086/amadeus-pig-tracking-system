@@ -1000,7 +1000,7 @@ def _rootline_irrigation_completion_summary(zone, execution):
 def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
                                          state_store=None, family_delivery=None, schedule_store=None,
                                          scheduler_now=None, execution_cycle=None,
-                                         managed_device_cycle=None):
+                                         managed_device_cycle=None, daily_plan_generator=None):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
@@ -1220,6 +1220,32 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                                ("The scheduled assessment exceeded its bounded evidence deadline. "
                                 "No further ROOTLINE assessment was started; the durable schedule "
                                 "remains recoverable."))}
+            # Persist the same date-stable ROOTLINE decision that the owner and
+            # executor are about to consume.  This is plan evidence only: the
+            # plan ledger has no command, provider, scheduler or hardware rail.
+            projected_current = None
+            plan_projection = {"created": False, "daily_plan": {}}
+            if production_persistence or daily_plan_generator is not None:
+                try:
+                    projected_current = scheduled_loader()
+                    generator = daily_plan_generator
+                    if generator is None:
+                        from modules.telemetry.irrigation_daily_plan_service import (
+                            project_rootline_specialist_daily_plan,
+                        )
+                        generator = project_rootline_specialist_daily_plan
+                    plan_projection = dict(generator(projected_current) or {})
+                    if not isinstance(plan_projection.get("daily_plan"), dict):
+                        raise RuntimeError("daily_plan_persistence_unproven")
+                except Exception as exc:
+                    return {"success": False,
+                        "status": "scheduled_rootline_daily_plan_persistence_unproven",
+                        "daily_plan_error_type": type(exc).__name__,
+                        "telegram_sends": int(daily.get("telegram_sends") or 0),
+                        "hardware_commands": 0, "writes_farm_data": False,
+                        "automatic_irrigation_authority": False}
+            plan_loader = ((lambda: projected_current)
+                if projected_current is not None else scheduled_loader)
             if not str(source.get("DATABASE_URL") or "").strip():
                 mixer_recovery = {"status": "no_active_fertilizer_commissioning",
                     "hardware_commands": 0, "telegram_sends": 0}
@@ -1250,7 +1276,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "no_active_fertilizer_commissioning", "auxiliary_completed"}
             plan_result, plan_http_status = handle_rootline_reassessment_trigger(
                 manual_payload, headers=headers, environ=source,
-                specialist_loader=scheduled_loader, state_store=state_store,
+                specialist_loader=plan_loader, state_store=state_store,
                 family_delivery=family_delivery)
             plan_reassessment_status = str(plan_result.get("status") or "")
             plan_delivery_confirmed = plan_http_status == 200
@@ -1332,10 +1358,14 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "plan_reassessment_status": plan_reassessment_status,
                     "execution_status": str(cycle_result.get("status") or ""),
                     "hardware_commands": int(cycle_result.get("hardware_commands") or 0),
-                    "writes_farm_data": bool(cycle_result.get("writes_farm_data")),
+                    "writes_farm_data": bool(cycle_result.get("writes_farm_data"))
+                        or plan_projection.get("created") is True,
+                    "daily_plan_created": plan_projection.get("created") is True,
                     "fertilizer_commissioning_status": str(mixer_recovery.get("status") or ""),
                     "daily_presentation_status": str(daily.get("status") or ""),
                     "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                    "daily_plan_id": str((plan_projection.get("daily_plan") or {}).get(
+                        "daily_plan_id") or ""),
                     "telegram_sends": int(daily.get("telegram_sends") or 0)
                         + int(mixer_recovery.get("telegram_sends") or 0)
                         + int(plan_result.get("telegram_sends") or 0)
@@ -1351,8 +1381,12 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "plan_reassessment_status": plan_reassessment_status,
                     "execution_status": mixer_status,
                     "hardware_commands": int(mixer_recovery.get("hardware_commands") or 0),
+                    "writes_farm_data": plan_projection.get("created") is True,
+                    "daily_plan_created": plan_projection.get("created") is True,
                     "daily_presentation_status": str(daily.get("status") or ""),
                     "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                    "daily_plan_id": str((plan_projection.get("daily_plan") or {}).get(
+                        "daily_plan_id") or ""),
                     "telegram_sends": int(daily.get("telegram_sends") or 0)
                         + int(mixer_recovery.get("telegram_sends") or 0)
                         + int(plan_result.get("telegram_sends") or 0)}
@@ -1362,9 +1396,17 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "status": "scheduled_reassessment_delivery_contained",
                         "plan_delivery_status": plan_delivery_status,
                         "plan_reassessment_status": plan_reassessment_status,
-                        "execution_status": "not_attempted"}
+                        "execution_status": "not_attempted",
+                        "writes_farm_data": plan_projection.get("created") is True,
+                        "daily_plan_created": plan_projection.get("created") is True,
+                        "daily_plan_id": str((plan_projection.get("daily_plan") or {}).get(
+                            "daily_plan_id") or "")}
             return {**plan_result, "daily_presentation_status": str(daily.get("status") or ""),
                     "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                    "writes_farm_data": plan_projection.get("created") is True,
+                    "daily_plan_created": plan_projection.get("created") is True,
+                    "daily_plan_id": str((plan_projection.get("daily_plan") or {}).get(
+                        "daily_plan_id") or ""),
                     "telegram_sends": int(daily.get("telegram_sends") or 0)
                         + int(plan_result.get("telegram_sends") or 0),
                     "plan_delivery_status": plan_delivery_status,

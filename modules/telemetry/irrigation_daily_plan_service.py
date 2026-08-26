@@ -96,6 +96,45 @@ def generate_or_reuse_daily_plan(payload, *, ledger=None):
     return ledger.generate_or_reuse(plan)
 
 
+def project_rootline_specialist_daily_plan(result, *, ledger=None):
+    """Persist the current specialist decision as the date-stable plan ledger.
+
+    This projection grants no scheduling or command authority.  It only closes
+    the canonical-plan gap before the separately gated execution runtime is
+    allowed to consider a segment.
+    """
+    current = result if isinstance(result, dict) else {}
+    if current.get("success") is not True:
+        raise DailyPlanValidationError("successful_rootline_result_required")
+    day = operating_date(current.get("operating_date"))
+    observed = _timestamp(current.get("evidence_cutoff"))
+    zones = []
+    for row in current.get("recommendations") or []:
+        if not isinstance(row, dict) or row.get("subject") not in {"B12345", "C12345"}:
+            continue
+        zones.append({key: row.get(key) for key in (
+            "subject", "status", "reason", "planned_duration_minutes", "preferred_window"
+        )})
+    decisions = {str(row.get("status") or "") for row in zones}
+    if "Recommend" in decisions:
+        state = "planned"
+    elif zones and decisions <= {"Do Not Run"}:
+        state = "no_irrigation_required"
+    elif zones:
+        state = "stale"
+    else:
+        state = "unavailable"
+    evidence = {key: current.get(key) for key in (
+        "result_id", "generation", "evidence_cutoff", "overall_status"
+    )}
+    return generate_or_reuse_daily_plan({
+        "operating_date": day.isoformat(), "status": state,
+        "evidence_observed_at": observed.isoformat(),
+        "replacement_reason": "scheduled_rootline_specialist_projection",
+        "evidence": evidence, "zones": zones,
+    }, ledger=ledger)
+
+
 def get_current_daily_plan(value=None, *, ledger=None):
     try:
         day = operating_date(value)
