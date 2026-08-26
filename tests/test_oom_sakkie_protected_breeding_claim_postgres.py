@@ -2,12 +2,15 @@ import os
 import unittest
 import uuid
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import psycopg
 
 from modules.oom_sakkie.protected_action_claims import (
     bind_claim_card, claim_callback, complete_claim, create_claim,
 )
+from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
 
 
 URL = os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL", "").strip()
@@ -150,6 +153,55 @@ class ProtectedBreedingClaimPostgresTests(unittest.TestCase):
             connect_factory=self.connect)
         self.assertEqual(missing_card_status, 409)
         self.assertEqual(missing_card["status"], "protected_callback_card_mismatch")
+
+    def test_litter_loss_commit_then_completion_failure_recovers_exactly_once(self):
+        mission="MISSION-"+self.suffix
+        operation="HERD-LITTER-LOSS-"+self.suffix.upper()
+        payload={"contract_version":"herdmaster_litter_piglet_deaths_v1",
+            "owner_user_id":"5721652188","private_chat_id":"5721652188",
+            "litter_id":"L1","event_date":"2026-08-26","reason":"Unknown",
+            "operation_id":operation,"pig_ids":["P1","P2","P3"]}
+        claim=create_claim(action_kind="herdmaster_record_litter_piglet_deaths",
+            owner_user_id="5721652188",private_chat_id="5721652188",mission_id=mission,
+            provider_message_id="MSG-"+self.suffix,evidence_generation="GEN-"+self.suffix,
+            preview_payload=payload,connect_factory=self.connect)
+        self.assertTrue(bind_claim_card(claim["callback_token"],"CARD-"+self.suffix,
+                                        connect_factory=self.connect))
+        receipt="CALLBACK-"+self.suffix
+        stamp=datetime.now(timezone.utc).isoformat()
+        parsed={"telegram_user_id":"5721652188","telegram_chat_id":"5721652188",
+            "provider_message_id":receipt,"provider_timestamp":stamp,
+            "reply_to_message_id":"CARD-"+self.suffix,"output_language":"en"}
+        authority=issue_gateway_owner_authority("5721652188","5721652188")
+        rows=[]; mutations=[]
+        def mutate(*_args,**_kwargs):
+            mutations.append(operation)
+            rows.extend({"Pig_ID":pig,"Status":"Dead","On_Farm":"No",
+                "General_Notes":"oom_sakkie:"+operation} for pig in payload["pig_ids"])
+            return {"success":True,"piglet_count":3,"pig_ids":payload["pig_ids"]},200
+        callback=f"oompa:{claim['callback_token']}:confirm"
+        with patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
+                   side_effect=lambda:list(rows)), \
+             patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead",
+                   side_effect=mutate), \
+             patch("modules.oom_sakkie.protected_action_runtime.complete_claim",
+                   side_effect=RuntimeError("completion store interrupted")):
+            with self.assertRaises(RuntimeError):
+                handle_protected_action_input(parsed,authority,callback_data=callback,
+                                              connect_factory=self.connect)
+        with patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
+                   side_effect=lambda:list(rows)), \
+             patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead") as duplicate:
+            recovered,status=handle_protected_action_input(parsed,authority,
+                callback_data=callback,connect_factory=self.connect)
+        self.assertEqual(status,200)
+        self.assertEqual(recovered["status"],"litter_piglet_deaths_recovered_from_canonical")
+        self.assertEqual(mutations,[operation])
+        duplicate.assert_not_called()
+        with self.connect() as db,db.cursor() as cur:
+            cur.execute("select status,result_payload->>'status' from app_private.oom_protected_action_claims where callback_token=%s",
+                        (claim["callback_token"],))
+            self.assertEqual(cur.fetchone(),("completed","litter_piglet_deaths_recovered_from_canonical"))
 
 
 if __name__ == "__main__":

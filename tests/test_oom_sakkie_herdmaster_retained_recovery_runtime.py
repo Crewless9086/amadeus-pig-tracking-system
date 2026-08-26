@@ -48,14 +48,34 @@ def test_production_linda_builder_creates_exact_protected_preview_without_write(
 def test_linda_execution_uses_exact_bound_selection_only_after_claim():
     claimed={"preview_payload":{"contract_version":"herdmaster_litter_piglet_deaths_v1",
         "owner_user_id":"ANTON","litter_id":"L1","event_date":"2026-08-26",
-        "reason":"Unknown","pig_ids":["P1","P2","P3"]}}
+        "reason":"Unknown","operation_id":"HERD-LITTER-LOSS-EXACT",
+        "pig_ids":["P1","P2","P3"]}}
     with patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead",
-               return_value=({"success":True,"piglet_count":3},200)) as action:
+               return_value=({"success":True,"piglet_count":3},200)) as action, \
+         patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
+               return_value=[]):
         result,status=execute_claimed_litter_piglet_deaths(
             claimed,{"telegram_user_id":"ANTON"})
     assert status == 200 and result["success"] is True
     assert action.call_args.kwargs == {"pig_ids":["P1","P2","P3"],
-        "changed_by":"oom_sakkie","dry_run":False}
+        "changed_by":"oom_sakkie:HERD-LITTER-LOSS-EXACT","dry_run":False}
+
+
+def test_same_receipt_recovers_committed_deaths_without_second_mutation():
+    operation="HERD-LITTER-LOSS-EXACT"
+    claimed={"mission_id":"MISSION","preview_payload":{
+        "contract_version":"herdmaster_litter_piglet_deaths_v1",
+        "owner_user_id":"ANTON","litter_id":"L1","event_date":"2026-08-26",
+        "reason":"Unknown","operation_id":operation,"pig_ids":["P1","P2","P3"]}}
+    rows=[{"Pig_ID":pig,"Status":"Dead","On_Farm":"No",
+           "General_Notes":"Recorded by oom_sakkie:"+operation} for pig in ("P1","P2","P3")]
+    with patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
+               return_value=rows), \
+         patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead") as action:
+        result,status=execute_claimed_litter_piglet_deaths(claimed,{"telegram_user_id":"ANTON"})
+    assert status==200 and result["status"]=="litter_piglet_deaths_recovered_from_canonical"
+    assert result["rows_updated"]==0
+    action.assert_not_called()
 
 
 def test_pig138_unknown_case_kind_is_suppressed_before_any_claim():
