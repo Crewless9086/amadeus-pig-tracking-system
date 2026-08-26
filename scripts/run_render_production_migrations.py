@@ -348,14 +348,15 @@ def _load_sql(item: AllowedMigration) -> str:
     return sql
 
 
-def _allowlist_payload(items=ALLOWLIST) -> list[dict[str, str]]:
+def _allowlist_payload(items=None) -> list[dict[str, str]]:
+    selected = ALLOWLIST if items is None else items
     return [
         {
             "migration_id": item.migration_id,
             "filename": item.filename,
             "sha256": item.sha256,
         }
-        for item in items
+        for item in selected
     ]
 
 
@@ -1600,17 +1601,24 @@ def _verify_catalog_checkpoint(connection) -> dict:
             raise RuntimeError("migration_catalog_checkpoint_identity_mismatch")
         validated.append(row)
     latest = validated[0]
-    expected_functions = list(CATALOG_FUNCTIONS)
-    if len(latest[1]) < len(current_payload):
-        newly_added_functions = {"app_private.claim_document_print_job"}
-        if len(latest[1]) < len(current_payload) - 1:
-            newly_added_functions.update({
-                "app_private.green_print_job_device_active",
-                "app_private.recover_document_print_job_lease",
-                "app_private.renew_document_print_job_lease",
-            })
-        expected_functions = [name for name in expected_functions
-            if name not in newly_added_functions]
+    # Scope is derived from the exact migration identities recorded in the
+    # checkpoint, not from its distance from today's allowlist tail.  A later
+    # migration may add no catalog functions (as with the HERDMASTER action-
+    # kind admission), so positional inference would incorrectly subtract a
+    # function that the prior checkpoint already and immutably covered.
+    checkpoint_ids = {str(item.get("migration_id") or "") for item in latest[1]}
+    unavailable_functions = set()
+    if "202608250001_fence_green_print_lease_device_binding" not in checkpoint_ids:
+        unavailable_functions.update({
+            "app_private.green_print_job_device_active",
+            "app_private.recover_document_print_job_lease",
+            "app_private.renew_document_print_job_lease",
+        })
+    if "202608250002_adopt_green_lost_pre_attempt_claim" not in checkpoint_ids:
+        unavailable_functions.add("app_private.claim_document_print_job")
+    expected_functions = [
+        name for name in CATALOG_FUNCTIONS if name not in unavailable_functions
+    ]
     expected_scope = {
         "relations": list(CATALOG_RELATIONS),
         "functions": expected_functions,
