@@ -2509,6 +2509,44 @@ effect occurred. `OWNER ACTION: NONE`: do not resend the message, press an old
 button or operate CH1, CH2 or Borehole until exact dedupe-safe relay recovery is
 proved and one fresh protected Mixer preview is visible.
 
+### 2026-08-26 - CMQ-20260813-05 CORE bootstrap commissioning boundary
+
+Exact current-main source audit, reconciled through
+`8144e572828d92955b44b5c691b8ce2bfa2477d6`, found no justified missing
+engineering-loop source repair. Canonical pickup, controller-owned supervisor
+and runner, exact-generation heartbeat, isolated mission worktree, existing
+Codex bridge, structured final artifact, tests/review backflow, branch/PR
+production and separate candidate-bound release approval already exist in
+source and tests. They are not commissioned or naturally proven.
+
+Local read-only evidence remains governed-stopped: marker SHA-256
+`8887c0c06d040b60fef580c0135761019fe7e416d594538cf86fcf18d1e594b1`;
+supervisor and runner stopped; scheduled task
+`\CHARLIE CORE Runner Watchdog` disabled; zero runnable approved missions. The
+staged runtime/execution revision `3961411236fca3329abaac2d34cfb863167c1c73`
+is stale against current main and cannot be commissioned. Historical activation
+`4ee5c3545bb84873b8f65581736a3caf` remains sealed and non-replayable.
+
+The exact capability matrix, collision disposition, handover transaction and
+non-activating packet are recorded in
+`CMQ_20260813_05_CORE_BOOTSTRAP_COMMISSIONING_PACKET_20260825.md`. Lifecycle is
+`PROTECTED_BOUNDARY`, not operational or Business-complete. Automatic resume
+requires one fresh signed, short-lived, exact-revision commissioning packet and
+the packet's exact owner authorization sentence; then the same mission may
+stage/activate one repository-only T1 canary, stop at owner review and prove
+terminal-close plus later-cycle continuity. No stop marker, process, scheduled
+task, mission row, activation identity, PR, release, deployment, migration,
+provider, farm, printer or secret state was changed by this audit.
+
+The `8144e572...` advance contains only GREEN 0.3.11 release-order evidence and
+this register's existing GREEN addendum; it changes no CORE runtime or test
+source and does not alter priority. It also cannot be the immutable CORE canary
+candidate because this receipt is not yet integrated. The exact authorization
+sentence remains semantically unchanged, but it becomes actionable only after
+integration establishes the final 40-character `origin/main` candidate and a
+fresh signed validation/staging packet binds that candidate. Until then, the
+governed stop and disabled task remain the correct state.
+
 #### ROOTLINE message 4000 post-deploy silence failure
 
 The first natural reassessment after exact live revision
@@ -3244,6 +3282,29 @@ monotonic-delivery invariants. Independent review blocked initial head
 work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
+## 2026-08-26 - Control Tower chat-worker interruption continuity defect
+
+The three assigned development source lanes (`green_print_outcome`,
+`herdmaster_outcomes`, and `core_bootstrap`) stopped when the Control Tower chat
+turn was interrupted. Their Git worktrees, commits, pull requests and handovers
+survived, but no target-specific process or heartbeat survived and no deployed
+agent outcome occurred. This is a continuity defect in the current chat-scoped
+orchestration, not evidence that a visible terminal or deployed agent remained
+active. It is logged without changing mission priority.
+
+Fresh recovery truth: GREEN retains PR `#1290` at `52b37ca9` in
+`C:\tmp\green-0312-timestamp-contract`; HERDMASTER retains draft PR `#1291`
+at remote `499fb958` plus local branch commit `827e9485` requiring
+preservation/reconciliation; CORE retains its dirty commissioning packet in
+`C:\tmp\cmq05-core-bootstrap-20260825`, while the governed stop remains active
+and supervisor/runner activation remains unauthorized. The same three bounded
+lanes were restarted for safe source, review and handover work only. No
+provider, customer, farm, printer, hardware, runner activation or protected
+effect was authorized. Durable terminal-independent continuity remains the
+existing `CMQ-20260813-05` outcome; repeated chat restarts do not satisfy it.
+
+**NO BUSINESS OUTCOME. OWNER ACTION: NONE.**
 
 ## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.10 migration-rail defect
 
