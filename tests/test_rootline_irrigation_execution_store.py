@@ -12,9 +12,18 @@ from modules.telemetry.rootline_irrigation_execution_store import (
     _event_id, _stored_event_body, _terminal_closes_active,
     _verified_terminal_containment_resolution,
     _is_active_candidate, _verified_borehole_completion,
+    _recoverable_stopping_candidate,
     _claim_borehole_material_load, RootlineExecutionStoreUnavailable,
     rootline_irrigation_execution_store,
 )
+
+
+def test_zone_stopping_recovery_never_aliases_borehole_or_auxiliary_loader():
+    stopping={"action":"mark_stopping","execution_id":"ROOTLINE-ZONE-1",
+        "zone_id":"B12345","state":"stopping"}
+    assert _recoverable_stopping_candidate(stopping) is True
+    assert _recoverable_stopping_candidate(stopping,borehole=True) is False
+    assert _recoverable_stopping_candidate(stopping,auxiliary=True) is False
 
 
 class BoundedFailure(Exception):

@@ -3283,6 +3283,29 @@ work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - ROOTLINE managed-device recovery family alias
+
+Post-deploy natural schedule evidence bound the current Water & Energy Plan but
+contained B/C execution as `borehole_shutdown_unverified`. Canonical history
+proved the referenced execution is actually a C12345 irrigation segment in
+`mark_stopping`, not a Borehole claim. The shared active loader admitted every
+zone `mark_stopping` row into both the B/C and Borehole families because its
+stopping branch excluded auxiliary loads but failed to exclude Borehole loads.
+The managed-device runtime consequently sent historical Borehole OFF attempts
+and read Borehole output for a C12345 identity, then blocked ordinary B/C
+recovery. Accepted provider OFF calls did not prove authoritative final OFF and
+are not completion or physical evidence.
+
+The bounded correction keeps `mark_stopping` recovery exclusively in the B/C
+loader. It grants no command or hardware authority; the existing B/C runtime
+must perform its own separately governed OFF/readback reconciliation. The same
+natural manager cycles confirmed all 20 cases were duplicate/no-question
+suppression, not missing agent activity. Morning lifecycle separately returned
+HTTP 503 after manager completion and remains unaccepted. Source/tests are not
+owner outcomes; post-deploy canonical final-OFF, physical water-flow and family
+brief acceptance remain required. Priority is unchanged. **DURABLY LOGGED -
+NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - OMQ-20260813-03 ROOTLINE daily-plan commissioning gap
 
 Fresh canonical readback after the overnight continuity release showed no
