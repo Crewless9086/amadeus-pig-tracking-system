@@ -157,16 +157,13 @@ class PostgresManagerCaseStore:
                         select m.case_id,m.dedupe_key,m.specialist,m.urgency,m.status,
                             m.evidence_digest,m.evidence_refs,m.unknowns,m.summary,m.next_action,
                             m.next_reassessment_at,m.generation,m.last_delivery_digest
-                        from eligible e cross join lateral (
-                            select locked.* from app_private.oom_manager_cases locked
-                            where locked.case_id=e.case_id
-                            for update of locked skip locked
-                        ) m
+                        from app_private.oom_manager_cases m join eligible e using(case_id)
                         order by case when e.specialist_rank=1 then 0 else 1 end,
                             case e.urgency when 'critical' then 0 when 'urgent' then 1
                             when 'due' then 2 when 'planned' then 3 else 4 end,
                             case when e.specialist='BEACON' then 0 else 1 end,
-                            e.next_reassessment_at,e.case_id limit 20""", (now, now))
+                            e.next_reassessment_at,e.case_id
+                        for update of m skip locked limit 20""", (now, now))
                     for row in cur.fetchall():
                         case = _case_row(row)
                         cur.execute("""update app_private.oom_manager_cases set

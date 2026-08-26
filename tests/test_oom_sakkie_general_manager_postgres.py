@@ -118,6 +118,37 @@ def test_mixed_suppressions_advance_cadence_and_rotate_beyond_claim_limit(monkey
     assert dict(statuses) == {"manager_delivery_duplicate_suppressed": 7,
         "no_owner_question_delivery_suppressed": 7,
         "non_farm_case_delivery_suppressed": 7}
+
+
+def test_two_workers_skip_locked_and_backfill_disjoint_fair_cohorts():
+    now=datetime.now(timezone.utc)+timedelta(hours=4)
+    prefix="concurrent-fair:"+now.strftime("%Y%m%d%H%M%S%f")
+    values=[candidate(f"event:{i}",now,dedupe_key=f"{prefix}:{i:02d}",
+        specialist=("ROOTLINE" if i==0 else "SAM"),urgency="urgent",
+        unknowns=[],summary=f"case {i}",next_action="reassess") for i in range(30)]
+    seed=PostgresManagerCaseStore(connect_factory=connect)
+    with connect() as db,db.cursor() as cur:
+        for value in values:
+            seed._reconcile(cur,normalize_candidate(value,now=now),now)
+    barrier=__import__("threading").Barrier(2)
+    def worker(_):
+        store=PostgresManagerCaseStore(connect_factory=connect)
+        original=store._finish_claim; first=[True]
+        def held(*args,**kwargs):
+            if first[0]: first[0]=False; barrier.wait(timeout=10)
+            return original(*args,**kwargs)
+        store._finish_claim=held
+        return store.run_cycle([],now=now,source_revision="concurrency-test")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(worker,range(2)))
+    assert sorted(row["cases_claimed"] for row in results)==[10,20]
+    cycle_ids=[row["cycle_id"] for row in results]
+    with connect() as db:
+        rows=db.execute("""select event_payload->>'cycle_id',count(*) from app_private.oom_manager_case_events e
+            join app_private.oom_manager_cases c using(case_id)
+            where c.dedupe_key like %s and e.event_type='claimed'
+            group by 1""",(prefix+":%",)).fetchall()
+    assert sorted(count for _,count in rows if _ in cycle_ids)==[10,20]
     assert provider_sends == []
 
 

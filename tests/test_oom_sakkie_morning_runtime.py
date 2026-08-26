@@ -111,7 +111,7 @@ def test_changed_evidence_after_restart_cannot_edit_or_send_again():
     assert deliveries[0].endswith(":DELIVERY")
 
 
-def test_in_window_failure_retries_then_missed_window_escalates_once():
+def test_source_failure_remains_visible_for_late_durable_retry():
     def broken():
         raise RuntimeError("source unavailable")
     before = run_morning_cycle(now=NOW, environ=ENV, herd_loader=broken,
@@ -138,21 +138,19 @@ def test_in_window_failure_retries_then_missed_window_escalates_once():
         store=store,
         deliver=lambda *a, **k: deliveries.append(k["mission_id"]) or {
             "success": True, "telegram_message_id": "failure-1", "telegram_sends": 1})
-    assert after["status"] == "morning_runtime_failure_escalated"
-    assert after["provider_delivery_confirmed"] is True
-    assert len(deliveries) == 1 and ":OWNER:" in deliveries[0]
-    assert deliveries[0].endswith(":FAILURE")
+    assert after["status"] == "morning_runtime_recovery_pending"
+    assert deliveries == []
     replay = run_morning_cycle(now=datetime(2026, 8, 13, 10, 31, tzinfo=timezone.utc),
         environ=ENV, herd_loader=broken,
         rootline_loader=lambda: _specialist("rootline"), litter_loader=lambda: {},
         sales_loader=lambda: ({}, 503), store=store,
         deliver=lambda *a, **k: deliveries.append(k["mission_id"]) or {})
-    assert replay["status"] == "morning_runtime_failure_replay_suppressed"
+    assert replay["status"] == "morning_runtime_recovery_pending"
     assert replay["telegram_sends"] == replay["telegram_edits"] == 0
-    assert len(deliveries) == 1
+    assert deliveries == []
 
 
-def test_restart_after_window_never_loads_or_creates_a_plan():
+def test_restart_at_0712_sast_loads_and_delivers_date_stable_plan_once():
     events = {}
     deliveries = []
     loader_calls = []
@@ -166,32 +164,31 @@ def test_restart_after_window_never_loads_or_creates_a_plan():
             events.setdefault(identity, dict(payload or {}))
         return {"success": True, "created": created}
 
-    def forbidden_loader():
+    def late_loader():
         loader_calls.append(True)
-        raise AssertionError("missed-window restart must not load plan evidence")
+        return _specialist("late")
 
     def deliver(*args, **kwargs):
         deliveries.append(kwargs["mission_id"])
-        return {"success": True, "telegram_message_id": "failure-1",
+        return {"success": True, "telegram_message_id": "late-brief-1",
                 "telegram_sends": 1, "telegram_edits": 0}
 
-    args = dict(now=datetime(2026, 8, 14, 5, 1, tzinfo=timezone.utc),
+    args = dict(now=datetime(2026, 8, 14, 5, 12, tzinfo=timezone.utc),
                 environ=ENV, store=store, deliver=deliver,
-                herd_loader=forbidden_loader, rootline_loader=forbidden_loader,
-                litter_loader=forbidden_loader, sales_loader=forbidden_loader)
+                herd_loader=late_loader, rootline_loader=late_loader,
+                litter_loader=lambda: {"allocation_inputs":{"litter_rows":[]}},
+                sales_loader=lambda: ({"success":True,"sales_transactions":[]},200))
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(lambda _: run_morning_cycle(**args), range(2)))
 
     first = next(result for result in results
-                 if result["status"] == "morning_runtime_failure_escalated")
+                 if result["status"] == "daily_manager_presented")
     concurrent_restart = next(result for result in results
-                              if result["status"] == "morning_runtime_failure_replay_suppressed")
-    assert first["failure_class"] == "MorningWindowMissed"
-    assert concurrent_restart["status"] == "morning_runtime_failure_replay_suppressed"
+                              if result["status"] == "daily_manager_replay_suppressed")
     assert concurrent_restart["telegram_sends"] == concurrent_restart["telegram_edits"] == 0
-    assert loader_calls == []
+    assert loader_calls
     assert len(deliveries) == 1 and ":OWNER:" in deliveries[0]
-    assert deliveries[0].endswith(":FAILURE")
+    assert deliveries[0].endswith(":DELIVERY")
 
 
 def test_success_claim_blocks_later_failure_card_for_same_date():
@@ -216,7 +213,7 @@ def test_success_claim_blocks_later_failure_card_for_same_date():
     failed = run_morning_cycle(now=datetime(2026, 8, 13, 10, 30, tzinfo=timezone.utc),
         herd_loader=lambda: (_ for _ in ()).throw(RuntimeError("down")), **common)
     assert first["status"] == "daily_manager_presented"
-    assert failed["status"] == "morning_runtime_failure_replay_suppressed"
+    assert failed["status"] == "morning_runtime_recovery_pending"
     assert failed["telegram_sends"] == failed["telegram_edits"] == 0
     assert len(deliveries) == 1
     assert deliveries[0].startswith("OOM-DAILY-FARM-MANAGER-2026-08-13:OWNER:")

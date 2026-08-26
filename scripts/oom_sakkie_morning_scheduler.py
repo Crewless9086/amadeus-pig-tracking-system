@@ -14,7 +14,7 @@ def post(target, payload):
         return json.load(response)
 
 MORNING_OK = {"daily_manager_presented", "daily_manager_replay_suppressed",
-              "daily_manager_unchanged_silent"}
+              "daily_manager_unchanged_silent", "morning_runtime_recipients_projected"}
 
 def run_scheduler(*, now=None, post_fn=post):
     recovery_url = url.rsplit("/morning-schedule", 1)[0] + "/protected-payment-recovery"

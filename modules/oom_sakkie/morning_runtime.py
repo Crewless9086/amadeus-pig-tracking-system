@@ -40,10 +40,9 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
 
     from modules.oom_sakkie.telegram_gateway import deliver_family_result
     deliver = deliver or deliver_family_result
-    if local.time() >= PLAN_WINDOW_END:
-        return _escalate_failure(
-            recipients, now, deliver, MorningWindowMissed("morning_plan_window_missed"),
-            store=store)
+    # A delayed provider tick still owns today's date-stable lifecycle. The
+    # canonical claim prevents duplicate delivery, so infrastructure delay must
+    # not turn the whole day into a permanent missed-window failure.
 
     from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
     try:
