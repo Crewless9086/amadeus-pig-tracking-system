@@ -61,12 +61,23 @@ The bounded candidate now:
 - adds rapid-burst regression tests proving unthreaded ambiguity and exact-138
   binding while preserving the independent Pig 146 lifecycle.
 
-Focused result: `33 passed` in
-`tests/test_oom_sakkie_herdmaster_health_loss_runtime.py`.
+The isolated recovery seam now also implements a pure retained-chronology
+planner in `modules/oom_sakkie/herdmaster_burst_recovery.py`. It combines the
+`Linds` typo and Linda/date messages as corroborating provider evidence for one
+active-litter event, invokes only the existing canonical piglet-death dry-run,
+retains stable operation identities, suppresses completed Pig 138, refreshes
+expired Mona as a new preview requirement, and asks only for the selector the
+canonical action cannot derive. It performs no send, claim or farm write.
 
-This correction does not yet implement the separate Linda active-litter
-piglet-death semantic/action adapter or recover missing provider delivery for
-Pig 146. Technical progress is not an owner outcome.
+PR #1291 changes the first-treatment integration surfaces
+(`semantic_front_door.py`, `telegram_gateway.py`, `protected_action_runtime.py`
+and `pig_weights_service.py`). This candidate intentionally does not touch
+those files. Runtime wiring is deferred until #1291 lands so there is one
+writer and no parallel treatment path. This is declared integration isolation,
+not completion.
+
+Focused result: `38 passed` across the health-loss and burst-recovery suites.
+Technical progress is not an owner outcome.
 
 ## Exact recovery instructions
 
@@ -123,4 +134,3 @@ Pig 146. Technical progress is not an owner outcome.
 
 Owner action requested now: none. Any later confirmation must be shown only
 after current evidence is reconstructed into a correct exact preview.
-

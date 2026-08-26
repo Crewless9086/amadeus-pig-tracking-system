@@ -3498,8 +3498,13 @@ confirmation/write/readback, automatic follow-up and a later terminal-
 independent multi-message cycle. The bounded source candidate in
 `.w/anton-burst-recovery` removes unsafe newest-open-case fallback and accepts a
 bare semantic entity only when it exactly matches an open canonical context;
-33 focused tests pass. Piglet-loss semantics/action wiring and provider-event
-recovery remain. No send, replay, confirmation, farm write or activation was
+38 focused tests pass. A new pure chronology planner now produces one stable
+Linda active-litter dry-run request from provider messages 4052/4054, preserves
+Mona expired re-preview, Pig 146 missing-disposal scope and terminal Pig 138.
+PR #1291 overlaps every first-treatment gateway/action integration surface, so
+this branch deliberately isolates the adapter in a new module and defers wiring
+until that PR lands; provider-event runtime recovery remains. No send, replay,
+confirmation, farm write or activation was
 performed. Complete evidence and recovery instructions are in
 `docs/06-operations/OMQ_ANTON_BURST_RECOVERY_HANDOVER_20260826.md`.
 
