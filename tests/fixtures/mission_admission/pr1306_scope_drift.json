@@ -1,0 +1,77 @@
+{
+  "fixture_version": "mission_admission_adversarial_candidate_v1",
+  "pull_request": 1306,
+  "base_sha": "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f",
+  "head_sha": "bf7ee6a000000000000000000000000000000000",
+  "historical_ci": {
+    "conclusion": "success",
+    "checks_green": true,
+    "scope_authority_granted": false
+  },
+  "candidate_files": [
+    "app.py",
+    "docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md",
+    "modules/oom_sakkie/herdmaster_health_loss_preview.py",
+    "modules/oom_sakkie/herdmaster_health_loss_runtime.py",
+    "modules/oom_sakkie/telegram_gateway.py",
+    "modules/pig_weights/farm_supabase_read_service.py",
+    "modules/pig_weights/farm_supabase_write_service.py",
+    "modules/pig_weights/herdmaster_health_loss_recording.py",
+    "modules/pig_weights/herdmaster_natural_health_loss_intake.py",
+    "modules/pig_weights/litter_loss_recovery.py",
+    "modules/pig_weights/pig_weights_controller.py",
+    "modules/pig_weights/pig_weights_routes.py",
+    "modules/protocols/mission_protocol_store.py",
+    "static/js/dashboard.js",
+    "static/js/litterDetail.js",
+    "templates/dashboard.html",
+    "templates/litter-detail.html",
+    "tests/test_herdmaster_health_loss_recording.py",
+    "tests/test_oom_sakkie_herdmaster_health_loss_runtime.py",
+    "tests/test_pig_weights_routes.py",
+    "tests/test_pr1306_scope_drift.py",
+    "tests/test_telegram_health_loss_parity.py"
+  ],
+  "adversarial_expectations": [
+    {
+      "case": "telegram_adapter_parity_without_existing_farm_trace",
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "existing_system_trace_incomplete",
+      "may_be_readmitted_after": "Trace the existing Farm canonical preview, authority, writer, and readback path and admit only the smallest adapter files."
+    },
+    {
+      "case": "new_protocol_store",
+      "paths": [
+        "modules/protocols/mission_protocol_store.py"
+      ],
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "parallel_source_of_truth"
+    },
+    {
+      "case": "farm_route_controller_js_template_rewrite",
+      "paths": [
+        "modules/pig_weights/pig_weights_controller.py",
+        "modules/pig_weights/pig_weights_routes.py",
+        "static/js/dashboard.js",
+        "static/js/litterDetail.js",
+        "templates/dashboard.html",
+        "templates/litter-detail.html"
+      ],
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "candidate_scope_drift"
+    },
+    {
+      "case": "unrelated_litter_loss_recovery",
+      "paths": [
+        "modules/pig_weights/litter_loss_recovery.py"
+      ],
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "unrelated_effect"
+    },
+    {
+      "case": "historical_green_ci",
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "green_ci_cannot_grant_scope"
+    }
+  ]
+}

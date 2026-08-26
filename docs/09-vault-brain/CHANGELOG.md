@@ -1,5 +1,24 @@
 # Vault Brain Changelog
 
+## 2026-08-26 - Bootstrap Mission Admission Guard Stage 1
+
+- Added fail-closed `mission_admission_receipt_v1` validation for repository
+  mutation, binding owner intent, mission/generation, exact base and candidate,
+  complete governance identities, existing-system trace, scope/effects,
+  collisions, tests and operational acceptance through the existing validation-
+  receipt authority.
+- Reused `operational_events` and `charlie_missions.metadata_json` for immutable
+  admission events and current projection. An authenticated canonical owner
+  correction that changes generation invalidates current admission
+  transactionally; no schema, queue, protocol store or second ledger was added.
+- Configured supported Cursor Cloud pre-action hooks with explicit fail-closed
+  behavior and added the same complete-diff validator to CHARLIE CI. Missing or
+  stale external receipt/key material leaves the repository read-only.
+- Added PR #1306 adversarial evidence showing that green CI cannot cure a new
+  protocol store, broad Farm rewrite, unrelated litter recovery or an untraced
+  Telegram adapter. Stage 1 grants no execution, release, deployment,
+  production or business authority; existing-bridge delivery remains Stage 2.
+
 ## 2026-08-24 - ROOTLINE provider-readback commissioning authority
 
 - Recorded Charl's standing decision that authoritative application/provider

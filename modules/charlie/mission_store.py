@@ -29,6 +29,7 @@ from modules.charlie.adaptive_orchestration import validate_orchestration_bindin
 from modules.charlie.mission_control import (
     apply_event_to_projection, build_mission_control_event, canonical_event_equal,
 )
+from modules.charlie.operational_events import build_event
 
 
 MISSION_STATUSES = {
@@ -1576,6 +1577,297 @@ def record_mission_event(mission_id, event_type, notes="", metadata=None, databa
     return {"success": True, "configured": True, "status": "ok", "mission_id": mission_id}, 201
 
 
+def append_mission_admission_event(
+    mission_id,
+    admission,
+    *,
+    authenticated_principal,
+    database_url=None,
+    connect_factory=None,
+):
+    """Append one immutable admission event and project it on the mission row."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    admission = admission if isinstance(admission, dict) else {}
+    required = {
+        "receipt_id",
+        "content_sha256",
+        "generation",
+        "base_sha",
+        "head_sha",
+    }
+    if (
+        not mission_id
+        or not principal
+        or set(admission) != required
+        or not str(admission.get("receipt_id") or "").startswith("MAR-")
+        or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("content_sha256") or ""))
+        or not re.fullmatch(r"[0-9a-f]{40}", str(admission.get("base_sha") or ""))
+        or not re.fullmatch(r"[0-9a-f]{40}", str(admission.get("head_sha") or ""))
+        or not _clean_text(admission.get("generation"), 200)
+    ):
+        return {"success": False, "status": "invalid_mission_admission_event"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    projection = {
+        **admission,
+        "status": "valid",
+        "recorded_by": principal,
+    }
+    event = _mission_admission_operational_event(
+        mission_id, "mission_admission_recorded", projection, principal
+    )
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select coalesce(metadata_json,'{}'::jsonb)
+                       from public.charlie_missions
+                       where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id},
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                metadata = dict(row[0] or {})
+                current = metadata.get("mission_admission")
+                if isinstance(current, dict) and current.get("status") == "valid":
+                    if current.get("receipt_id") == projection["receipt_id"]:
+                        return {
+                            "success": True,
+                            "status": "exact_replay",
+                            "mission_id": mission_id,
+                            "admission": current,
+                        }, 200
+                    return {
+                        "success": False,
+                        "status": "mission_admission_conflict",
+                        "mission_id": mission_id,
+                    }, 409
+                created = _insert_operational_event(cursor, event)
+                if not created:
+                    stored = _load_operational_event(cursor, event["idempotency_key"])
+                    if not _same_operational_event(stored, event):
+                        return {
+                            "success": False,
+                            "status": "mission_admission_event_replay_conflict",
+                            "mission_id": mission_id,
+                        }, 409
+                metadata["mission_admission"] = projection
+                cursor.execute(
+                    """update public.charlie_missions
+                       set metadata_json=%(metadata)s::jsonb,updated_at=now()
+                       where mission_id=%(mission_id)s""",
+                    {
+                        "metadata": json.dumps(metadata, sort_keys=True),
+                        "mission_id": mission_id,
+                    },
+                )
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "mission_admission_write_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+    return {
+        "success": True,
+        "status": "mission_admission_recorded",
+        "mission_id": mission_id,
+        "event_id": event["event_id"],
+        "admission": projection,
+    }, 201
+
+
+def invalidate_mission_admission_for_owner_correction(
+    mission_id,
+    new_generation,
+    *,
+    owner_authentication,
+    database_url=None,
+    connect_factory=None,
+):
+    """Atomically invalidate admission when a canonical owner correction changes generation."""
+    mission_id = _clean_text(mission_id, 90)
+    new_generation = _clean_text(new_generation, 200)
+    authentication = owner_authentication if isinstance(owner_authentication, dict) else {}
+    if (
+        not mission_id
+        or not new_generation
+        or set(authentication) != {
+            "authenticated",
+            "principal_type",
+            "principal_id",
+            "correction_event_id",
+            "correction_digest",
+        }
+        or authentication.get("authenticated") is not True
+        or authentication.get("principal_type") != "owner_admin"
+        or not _clean_text(authentication.get("principal_id"), 200)
+        or not _clean_text(authentication.get("correction_event_id"), 200)
+        or not re.fullmatch(r"[0-9a-f]{64}", str(authentication.get("correction_digest") or ""))
+    ):
+        return {"success": False, "status": "authenticated_owner_correction_required"}, 403
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    principal = _clean_text(authentication["principal_id"], 200)
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select coalesce(metadata_json,'{}'::jsonb)
+                       from public.charlie_missions
+                       where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id},
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                metadata = dict(row[0] or {})
+                current = metadata.get("mission_admission")
+                if not isinstance(current, dict) or current.get("status") != "valid":
+                    return {
+                        "success": False,
+                        "status": "current_mission_admission_missing",
+                        "mission_id": mission_id,
+                    }, 409
+                if current.get("generation") == new_generation:
+                    return {
+                        "success": True,
+                        "status": "generation_unchanged",
+                        "mission_id": mission_id,
+                        "admission": current,
+                    }, 200
+                cursor.execute(
+                    """select event_id from public.charlie_mission_events
+                       where event_id=%(event_id)s
+                         and mission_id=%(mission_id)s
+                         and event_type='owner_correction_recorded'
+                         and recorded_by=%(principal)s
+                       limit 1""",
+                    {
+                        "event_id": authentication["correction_event_id"],
+                        "mission_id": mission_id,
+                        "principal": principal,
+                    },
+                )
+                if cursor.fetchone() is None:
+                    return {
+                        "success": False,
+                        "status": "authenticated_owner_correction_not_found",
+                        "mission_id": mission_id,
+                    }, 409
+                invalidated = {
+                    **current,
+                    "status": "invalidated",
+                    "invalidated_by_correction_event_id": authentication["correction_event_id"],
+                    "correction_digest": authentication["correction_digest"],
+                    "replacement_generation": new_generation,
+                }
+                event = _mission_admission_operational_event(
+                    mission_id,
+                    "mission_admission_invalidated",
+                    invalidated,
+                    principal,
+                )
+                created = _insert_operational_event(cursor, event)
+                if not created:
+                    stored = _load_operational_event(cursor, event["idempotency_key"])
+                    if not _same_operational_event(stored, event):
+                        return {
+                            "success": False,
+                            "status": "mission_admission_event_replay_conflict",
+                            "mission_id": mission_id,
+                        }, 409
+                metadata["mission_admission"] = invalidated
+                cursor.execute(
+                    """update public.charlie_missions
+                       set metadata_json=%(metadata)s::jsonb,updated_at=now()
+                       where mission_id=%(mission_id)s""",
+                    {
+                        "metadata": json.dumps(metadata, sort_keys=True),
+                        "mission_id": mission_id,
+                    },
+                )
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "mission_admission_invalidation_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+    return {
+        "success": True,
+        "status": "mission_admission_invalidated",
+        "mission_id": mission_id,
+        "event_id": event["event_id"],
+        "admission": invalidated,
+    }, 201
+
+
+def read_mission_admission_events(
+    mission_id,
+    *,
+    limit=100,
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = _clean_text(mission_id, 90)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        parsed_limit = max(1, min(int(limit or 100), 1000))
+    except (TypeError, ValueError):
+        return {"success": False, "status": "invalid_limit"}, 400
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select event_id,event_type,occurred_at,recorded_at,
+                              payload_json,provenance_json,actor_type,actor_id
+                       from public.operational_events
+                       where domain='missions'
+                         and aggregate_type='charlie_mission'
+                         and aggregate_id=%(mission_id)s
+                         and event_type in (
+                             'mission_admission_recorded',
+                             'mission_admission_invalidated'
+                         )
+                       order by occurred_at,recorded_at,event_id
+                       limit %(limit)s""",
+                    {"mission_id": mission_id, "limit": parsed_limit},
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "mission_admission_read_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+    events = [
+        {
+            "event_id": row[0],
+            "event_type": row[1],
+            "occurred_at": _iso(row[2]),
+            "recorded_at": _iso(row[3]),
+            "payload": row[4] if isinstance(row[4], dict) else {},
+            "provenance": row[5] if isinstance(row[5], dict) else {},
+            "actor_type": row[6],
+            "actor_id": row[7],
+        }
+        for row in rows
+    ]
+    return {
+        "success": True,
+        "status": "mission_admission_events_ready",
+        "mission_id": mission_id,
+        "events": events,
+    }, 200
+
+
 def update_mission_vault(
     mission_id,
     vault_metadata,
@@ -2958,6 +3250,106 @@ def _insert_event(cursor, mission_id, event_type, notes, metadata):
         """,
         params,
     )
+
+
+def _mission_admission_operational_event(mission_id, event_type, payload, principal):
+    now = datetime.now(timezone.utc).isoformat()
+    digest = hashlib.sha256(json.dumps(
+        {
+            "mission_id": mission_id,
+            "event_type": event_type,
+            "payload": payload,
+            "principal": principal,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    built = build_event({
+        "event_id": f"EVT-MISSION-ADMISSION-{digest[:24].upper()}",
+        "idempotency_key": f"mission-admission:{mission_id}:{digest}",
+        "event_type": event_type,
+        "domain": "missions",
+        "aggregate_type": "charlie_mission",
+        "aggregate_id": mission_id,
+        "source_system": "charlie_mission_store",
+        "source_record_id": payload.get("receipt_id", ""),
+        "authority_tier": "owner_approved",
+        "privacy_class": "owner_private",
+        "actor_type": "owner" if event_type.endswith("invalidated") else "control_tower",
+        "actor_id": principal,
+        "occurred_at": now,
+        "payload": payload,
+        "provenance": {
+            "source_ref": "modules/charlie/mission_store.py",
+            "content_sha256": payload.get("content_sha256", ""),
+        },
+    }, recorded_at=now)
+    if not built.get("accepted"):
+        raise ValueError(built.get("status") or "mission_admission_event_invalid")
+    return built["event"]
+
+
+def _insert_operational_event(cursor, event):
+    cursor.execute(
+        """insert into public.operational_events (
+               event_id,idempotency_key,schema_version,event_type,domain,
+               aggregate_type,aggregate_id,source_system,source_record_id,
+               authority_tier,privacy_class,actor_type,actor_id,correlation_id,
+               causation_id,occurred_at,recorded_at,freshness_at,payload_json,
+               provenance_json
+           ) values (
+               %(event_id)s,%(idempotency_key)s,%(schema_version)s,%(event_type)s,
+               %(domain)s,%(aggregate_type)s,%(aggregate_id)s,%(source_system)s,
+               %(source_record_id)s,%(authority_tier)s,%(privacy_class)s,
+               %(actor_type)s,%(actor_id)s,%(correlation_id)s,%(causation_id)s,
+               %(occurred_at)s,%(recorded_at)s,%(freshness_at)s,
+               %(payload)s::jsonb,%(provenance)s::jsonb
+           ) on conflict (idempotency_key) do nothing returning event_id""",
+        {
+            **event,
+            "payload": json.dumps(event["payload"], sort_keys=True),
+            "provenance": json.dumps(event["provenance"], sort_keys=True),
+        },
+    )
+    return cursor.fetchone() is not None
+
+
+def _load_operational_event(cursor, idempotency_key):
+    cursor.execute(
+        """select event_id,idempotency_key,schema_version,event_type,domain,
+                  aggregate_type,aggregate_id,source_system,source_record_id,
+                  authority_tier,privacy_class,actor_type,actor_id,correlation_id,
+                  causation_id,occurred_at,recorded_at,freshness_at,payload_json,
+                  provenance_json
+           from public.operational_events
+           where idempotency_key=%(idempotency_key)s limit 1""",
+        {"idempotency_key": idempotency_key},
+    )
+    row = cursor.fetchone()
+    if not row:
+        return {}
+    keys = (
+        "event_id", "idempotency_key", "schema_version", "event_type", "domain",
+        "aggregate_type", "aggregate_id", "source_system", "source_record_id",
+        "authority_tier", "privacy_class", "actor_type", "actor_id",
+        "correlation_id", "causation_id", "occurred_at", "recorded_at",
+        "freshness_at", "payload", "provenance",
+    )
+    result = dict(zip(keys, row))
+    for key in ("occurred_at", "recorded_at", "freshness_at"):
+        result[key] = _iso(result.get(key))
+    return result
+
+
+def _same_operational_event(left, right):
+    if not isinstance(left, dict):
+        return False
+    comparable = {
+        key: value
+        for key, value in right.items()
+        if key != "late_event"
+    }
+    return all(left.get(key) == value for key, value in comparable.items())
 
 
 def _mission_row(row):

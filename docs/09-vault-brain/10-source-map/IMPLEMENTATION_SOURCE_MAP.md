@@ -106,6 +106,23 @@
   `tests/test_private_opaque_mission_creation_postgres.py`.
 - Bootstrap implementation evidence:
   `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md`.
+- Stage 1 repository Mission Admission Guard:
+  `modules/charlie/mission_admission.py` defines the strict
+  `mission_admission_receipt_v1` content and HMAC contract using the existing
+  validation-receipt authority. `scripts/charlie_mission_admission_guard.py` is
+  the shared Cursor-hook and CI validator. `.cursor/hooks.json` applies
+  fail-closed `preToolUse` and `beforeShellExecution` prevention plus
+  audit-only `afterFileEdit`; `.github/workflows/charlie-core-tests.yml`
+  validates the complete exact candidate. `modules/charlie/mission_store.py`
+  appends immutable admission lifecycle events to existing
+  `operational_events` and transactionally projects or invalidates admission in
+  existing `charlie_missions.metadata_json`; no schema or second ledger exists.
+  Focused contract, hook, event, invalidation and PR #1306 scope-drift coverage:
+  `tests/test_charlie_mission_admission.py` and
+  `tests/fixtures/mission_admission/pr1306_scope_drift.json`. Receipt/key
+  delivery is external to source. Stage 1 grants no execution bridge, merge,
+  deployment, production or business authority and defaults read-only until a
+  separately admitted Stage 2 integration.
 - Legacy portfolio classification: `modules/charlie/portfolio_classification.py`
   implements the sealed exact-baseline/exact-set atomic operation documented in
   `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` and tested by

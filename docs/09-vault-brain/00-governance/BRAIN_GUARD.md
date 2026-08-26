@@ -102,6 +102,32 @@ The deterministic alignment audit in `modules/charlie/vault_alignment.py` must
 also pass. Citation and a free-text `no_vault_update_required` statement cannot
 override a failed repository alignment result.
 
+## Mission Admission Guard
+
+Repository mutation requires `mission_admission_receipt_v1`, not a natural-
+language prompt alone. The content-addressed receipt binds the canonical mission
+and generation, owner-instruction chain, exact base, complete governance byte
+identities, existing-system trace, smallest gap, allowed and forbidden files
+and effects, collision snapshot, tests, operational acceptance and exact
+candidate. Its HMAC is verified through the existing isolated-validation
+receipt authority; the receipt and key are supplied outside committed source.
+
+Cursor `preToolUse` and `beforeShellExecution` hooks use the shared validator
+and set `failClosed: true`. Read-only actions remain available. Missing, stale,
+tampered, changed or incomplete admission denies mutation as
+`READMISSION_REQUIRED`; `afterFileEdit` is audit only. The CHARLIE CI workflow
+uses the same validator against the complete base-to-head candidate. Green
+tests cannot cure a forbidden path or effect. Complete-byte-read evidence proves
+which bytes were read, not model comprehension.
+
+Admission events and the current projection reuse `operational_events` and
+`charlie_missions.metadata_json`. A canonical authenticated owner correction
+that changes generation invalidates the projection in the same transaction.
+This Stage 1 guard grants no execution, merge, deployment, provider, customer,
+farm, payment, hardware or business authority. After merge it remains read-only
+until the existing CHARLIE execution bridge supplies a valid external receipt
+in a separately admitted Stage 2.
+
 ## Batch 2 Authority-Routing Gate
 
 Brain Guard must distinguish doctrine from evidence. A file is not authoritative

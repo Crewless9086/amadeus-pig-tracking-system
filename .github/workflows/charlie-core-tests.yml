@@ -6,6 +6,58 @@ on:
     branches: [main]
 
 jobs:
+  mission-admission:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      CHARLIE_MISSION_ADMISSION_REPOSITORY: Crewless9086/amadeus-pig-tracking-system
+      CHARLIE_MISSION_ADMISSION_GENERATION: ${{ secrets.CHARLIE_MISSION_ADMISSION_GENERATION }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Run Mission Admission Guard contract tests
+        run: python -m unittest tests.test_charlie_mission_admission -q
+      - name: Validate complete exact candidate
+        shell: bash
+        env:
+          MISSION_ADMISSION_RECEIPT_JSON: ${{ secrets.CHARLIE_MISSION_ADMISSION_RECEIPT_JSON }}
+          VALIDATION_RECEIPT_KEY_B64: ${{ secrets.CHARLIE_VALIDATION_RECEIPT_KEY_B64 }}
+          CHARLIE_MISSION_ADMISSION_OWNER_CORRECTION_SHA256: ${{ secrets.CHARLIE_MISSION_ADMISSION_OWNER_CORRECTION_SHA256 }}
+          CHARLIE_MISSION_ADMISSION_COLLISION_SHA256: ${{ secrets.CHARLIE_MISSION_ADMISSION_COLLISION_SHA256 }}
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          if [[ "$base" == "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f" \
+                && "${{ github.head_ref }}" == "cursor/mission-admission-guard-80dd" ]]; then
+            python scripts/charlie_mission_admission_guard.py ci \
+              --base "$base" \
+              --head "$head" \
+              --bootstrap-generation "mission-admission-guard-bootstrap-20260826" \
+              --owner-instruction-sha256 "b9d959ee6f8ef1ff6f20e5d7aca6344b17106e9cb6e0723f95096590063a5ef5" \
+              --admission-packet-sha256 "e1af16aca874ac24af53371a7bf7384c850d788c986f9c6bcbca45800cc21014"
+          else
+            test -n "$MISSION_ADMISSION_RECEIPT_JSON"
+            test -n "$VALIDATION_RECEIPT_KEY_B64"
+            install -m 700 -d "$RUNNER_TEMP/mission-admission"
+            printf '%s' "$MISSION_ADMISSION_RECEIPT_JSON" \
+              > "$RUNNER_TEMP/mission-admission/receipt.json"
+            printf '%s' "$VALIDATION_RECEIPT_KEY_B64" | base64 --decode \
+              > "$RUNNER_TEMP/mission-admission/validation-receipt.key"
+            chmod 600 "$RUNNER_TEMP/mission-admission/"*
+            export CHARLIE_MISSION_ADMISSION_RECEIPT_PATH="$RUNNER_TEMP/mission-admission/receipt.json"
+            export CHARLIE_VALIDATION_RECEIPT_KEY_PATH="$RUNNER_TEMP/mission-admission/validation-receipt.key"
+            python scripts/charlie_mission_admission_guard.py ci \
+              --base "$base" \
+              --head "$head"
+          fi
+
   charlie-core:
     runs-on: ubuntu-latest
     env:

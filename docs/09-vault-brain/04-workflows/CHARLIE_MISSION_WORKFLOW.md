@@ -39,6 +39,30 @@ one canonical mission and event contract. A register, worktree, shell, process
 or old wait is planning or collision evidence, never current activity proof
 without a fresh attributable heartbeat or result.
 
+### Repository mutation admission
+
+`mission_admission_receipt_v1` is the sole Stage 1 repository-write admission
+contract. It is deterministic, content-addressed and HMAC-signed by the existing
+validation-receipt authority. It binds owner intent and latest correction,
+mission/root/generation, exact repository base, complete governance identities,
+existing implementation trace, smallest gap, reused components, files, effects,
+collisions, required tests, operational acceptance and the exact candidate.
+Complete-byte evidence does not assert comprehension.
+
+The receipt and authority key remain external to Git. Cursor hooks and the
+CHARLIE CI workflow call one shared validator. Reads are allowed; missing,
+invalid, expired, stale, changed or tampered admission returns
+`READMISSION_REQUIRED`. The candidate diff must remain a subset of admitted
+files, and forbidden files or effects fail before tests can influence the
+verdict. Hook crashes, invalid output and timeouts fail closed.
+
+Admission lifecycle events use the existing `operational_events` fabric and the
+current projection in `charlie_missions.metadata_json`. An authenticated
+canonical owner correction that changes generation atomically invalidates the
+projection. Stage 1 intentionally has no execution-bridge producer: after merge
+the repository defaults to deny-all/read-only until a separately admitted Stage
+2 supplies a current receipt through the existing CHARLIE execution bridge.
+
 ### Shadow Control Tower observation
 
 Shadow Control Tower is disabled by default, observe-only and proposal-before-
