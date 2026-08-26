@@ -3283,6 +3283,28 @@ work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - Anton retained-recovery production checkpoint-prefix defect
+
+The exact deployed HERDMASTER retained-recovery source reached its governed
+production migration job, but the job failed before executing any migration
+with `migration_catalog_checkpoint_scope_mismatch`. Redacted Render job logs
+and read-only production receipts proved the latest immutable checkpoint
+already covered both GREEN function-producing migrations while the newly
+appended HERDMASTER action-kind migration adds no catalog function. The rail
+incorrectly inferred catalog scope from the number of migrations appended
+rather than the exact migration identities already recorded by the checkpoint.
+
+This remains the existing Anton burst / HERDMASTER outcome and does not change
+priority. The bounded repair derives historical function scope from those
+exact identities, preserves prefix, digest, catalog, receipt and replay
+verification, and adds a disposable-PostgreSQL transition proof from the exact
+seven-item production checkpoint to the eight-item allowlist. The failed job
+rolled back; migration `202608260001` remains absent and no Telegram message,
+confirmation, protected action or farm fact was produced. Source, review,
+deployment and migration progress are not an owner outcome. Canonical recovery
+readback and genuine protected previews remain required before any redo
+instruction. **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - Anton retained recovery production-migration rail gap
 
 Read-only commissioning of merged release `13f556d75` proved the exact manager

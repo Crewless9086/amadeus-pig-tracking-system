@@ -471,6 +471,49 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 3)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
+    def test_append_only_non_function_migration_accepts_exact_prior_checkpoint(self):
+        import psycopg
+
+        _reset_disposable_database()
+        with patch.object(migration_rail, "ALLOWLIST", ALLOWLIST[:-1]):
+            prior = run(DATABASE_URL, ENV)
+        self.assertEqual(len(prior["migrations"]), len(ALLOWLIST) - 1)
+
+        advanced = run(DATABASE_URL, ENV)
+        self.assertEqual(
+            advanced["prior_catalog_checkpoint"]["allowlist"],
+            [
+                {
+                    "filename": item.filename,
+                    "migration_id": item.migration_id,
+                    "sha256": item.sha256,
+                }
+                for item in ALLOWLIST[:-1]
+            ],
+        )
+        self.assertEqual(advanced["migrations"][-1]["outcome"], "applied")
+        self.assertEqual(
+            advanced["migrations"][-1]["readback"]["action_kinds"],
+            list(EXPECTED_PROTECTED_ACTION_KINDS),
+        )
+        replay = run(DATABASE_URL, ENV)
+        self.assertEqual(replay["migrations"][-1]["outcome"], "already_applied")
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertEqual(
+                db.execute(
+                    "select count(*) from app_private.production_migration_catalog_checkpoints"
+                ).fetchone()[0],
+                2,
+            )
+            self.assertEqual(
+                db.execute(
+                    "select count(*) from app_private.production_migration_receipts "
+                    "where migration_id='202608260001_allow_herdmaster_litter_actions_protected_claims'"
+                ).fetchone()[0],
+                1,
+            )
+
+    @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_legacy_catalog_drift_and_concurrent_adoption_fail_closed(self):
         import psycopg
 
