@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 import hashlib
 import json
 import os
@@ -11,6 +11,8 @@ from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+
+COLLECTOR_DEADLINE_SECONDS = 20
 
 
 def collect_manager_candidates(*, now: datetime, collectors=None):
@@ -34,9 +36,25 @@ def collect_manager_candidates(*, now: datetime, collectors=None):
     if len(selected) <= 1:
         groups = [collect(value) for value in selected]
     else:
-        with ThreadPoolExecutor(max_workers=min(6, len(selected)),
-                                thread_name_prefix="oom-manager-read") as executor:
-            groups = list(executor.map(collect, selected))
+        executor = ThreadPoolExecutor(max_workers=min(6, len(selected)),
+                                      thread_name_prefix="oom-manager-read")
+        futures = [executor.submit(collect, value) for value in selected]
+        wait(futures, timeout=COLLECTOR_DEADLINE_SECONDS)
+        groups = []
+        for collector, future in zip(selected, futures):
+            if future.done():
+                groups.append(future.result())
+                continue
+            name = getattr(collector, "__name__", "collector").strip("_") or "collector"
+            groups.append([_candidate(
+                dedupe_key=f"runtime:collector:{name}", specialist="RUNTIME",
+                urgency="urgent", refs=[f"collector:{name}:TimeoutError"],
+                unknowns=[f"current_{name}_specialist_evidence"],
+                summary=f"Oom Sakkie could not load current {name} evidence.",
+                next_action=(f"Retry the canonical {name} collector; retain the case "
+                             "until evidence loads or one precise dependency is recorded."),
+                next_at=now + timedelta(minutes=5))])
+        executor.shutdown(wait=False, cancel_futures=True)
     result = []
     for group in groups:
         result.extend(group)

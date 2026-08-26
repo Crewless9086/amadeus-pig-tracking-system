@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta, timezone
+import time
 
 import pytest
 
@@ -260,6 +261,49 @@ def test_due_selection_orders_then_locks_with_skip_locked_and_limit():
     selection = next(sql for sql, _ in commands if "join eligible" in sql)
     assert "for update of m skip locked limit 20" in selection
     assert "partition by specialist" in selection
+
+
+def test_expired_cycle_budget_defers_claim_without_specialist_or_provider_call():
+    finished = []
+    delivered = []
+    case_row = ("OOM-CASE-BUDGET", "herdmaster:budget", "HERDMASTER", "urgent",
+        "delegated", "d" * 64, ["event:one"], ["current_fact"],
+        "Current case.", "Reassess.", NOW, 1, None)
+
+    class Cursor:
+        def __init__(self):
+            self.last_sql = ""
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, _params): self.last_sql = sql
+        def fetchall(self):
+            return [case_row] if "join eligible" in self.last_sql else []
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+        def close(self): pass
+
+    store = PostgresManagerCaseStore(connect_factory=Connection)
+    store._finish_claim = lambda case, outcome, *_args: (
+        finished.append((case, outcome)) or True)
+    audit = build_scheduled_brain_guard_audit(
+        source_revision="abc", now=NOW,
+        alignment_result={"version":"v1","passed":True,
+                          "findings":[],"checked_files":[]})
+
+    result = store.run_cycle([], now=NOW, source_revision="abc",
+        deliver=lambda case: delivered.append(case),
+        refresh=lambda case: (_ for _ in ()).throw(AssertionError()),
+        deadline_monotonic=time.monotonic(),
+        brain_guard_audit=audit)
+
+    assert result["success"] is True
+    assert delivered == []
+    assert finished[0][1]["status"] == "manager_cycle_deadline_deferred"
+    assert result["case_results"][0]["outcome_status"] == \
+        "manager_cycle_deadline_deferred"
 
 
 def _candidate(**changes):

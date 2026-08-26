@@ -6,13 +6,14 @@ Those effects remain owned by the existing protected and specialist rails.
 """
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 import hashlib
 import html
 import json
 import os
 import re
+import time
 import uuid
 from typing import Any, Callable, Iterable, Mapping
 
@@ -24,6 +25,9 @@ WORKER_ID = "oom-sakkie-general-manager-v1"
 TRIGGER_IDENTITY = "oom-sakkie-morning-scheduler:general-manager"
 CADENCE = timedelta(minutes=5)
 LEASE = timedelta(minutes=4)
+GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS = 75
+CASE_COMPLETION_RESERVE_SECONDS = 15
+REFRESH_SNAPSHOT_DEADLINE_SECONDS = 20
 SPECIALISTS = frozenset({"ROOTLINE", "HERDMASTER", "SAM", "BEACON", "RUNTIME"})
 URGENCIES = frozenset({"critical", "urgent", "due", "planned", "watch"})
 OPEN_STATES = frozenset({"open", "delegated", "waiting_reassessment", "exception"})
@@ -120,6 +124,7 @@ class PostgresManagerCaseStore:
                   refresh: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
                   refresh_batch: Callable[[Iterable[Mapping[str, Any]]],
                                           Mapping[str, Any]] | None = None,
+                  deadline_monotonic: float | None = None,
                   brain_guard_audit: Mapping[str, Any] | None = None):
         now = _aware(now)
         brain_guard = dict(brain_guard_audit or build_scheduled_brain_guard_audit(
@@ -194,7 +199,10 @@ class PostgresManagerCaseStore:
                 current_case = case
                 specialist_failure = None
                 refresh_eligible = case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
-                if (deliver and refresh_eligible
+                deadline_deferred = bool(deadline_monotonic is not None
+                    and time.monotonic() >= (
+                        deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS))
+                if (not deadline_deferred and deliver and refresh_eligible
                         and case.get("last_delivery_digest") != case["evidence_digest"]):
                     refreshed = None
                     if refresh_batch:
@@ -217,7 +225,12 @@ class PostgresManagerCaseStore:
                             _aware(datetime.now(timezone.utc)), cycle_id)
                     else:
                         current_case = case
-                if specialist_failure is not None:
+                if deadline_deferred:
+                    outcome = {"success": True,
+                        "status": "manager_cycle_deadline_deferred",
+                        "delivery_confirmed": False, "telegram_sends": 0,
+                        "next_reassessment_at": (now + CADENCE).isoformat()}
+                elif specialist_failure is not None:
                     outcome = {"success": False,
                         "status": "manager_specialist_processing_exception_contained",
                         "failure_kind": specialist_failure.__class__.__name__,
@@ -570,6 +583,7 @@ class PostgresManagerCaseStore:
 
 def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None,
                               store=None, collectors=None, deliver=None):
+    deadline_monotonic = time.monotonic() + GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS
     now = _aware(now or datetime.now(timezone.utc))
     refresh = None
     refresh_batch = None
@@ -577,24 +591,40 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
         from modules.oom_sakkie.manager_case_sources import (
             collect_manager_candidate, collect_manager_candidates,
             collect_manager_refresh_snapshot)
-        candidates = collect_manager_candidates(now=now, collectors=collectors)
         if collectors is None:
             from modules.telemetry.rootline_mixer_readiness_observer import (
                 collect_mixer_readiness,
             )
+            source_started = time.monotonic()
+            source_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="oom-manager-mixer-read")
+            mixer_future = source_executor.submit(collect_mixer_readiness, now=now)
+            candidates = collect_manager_candidates(now=now)
+            remaining = max(0.0, REFRESH_SNAPSHOT_DEADLINE_SECONDS
+                            - (time.monotonic() - source_started))
+            completed, _ = wait((mixer_future,), timeout=remaining)
             try:
-                candidates.extend(collect_mixer_readiness(now=now))
+                mixer_rows = mixer_future.result() if completed else None
             except Exception as exc:
+                mixer_failure_kind = exc.__class__.__name__
+            else:
+                mixer_failure_kind = "" if mixer_rows is not None else "TimeoutError"
+            if mixer_failure_kind:
                 candidates.append({
                     "dedupe_key": "rootline-readiness:fertilizer-mixer-ch2",
                     "specialist": "ROOTLINE", "urgency": "urgent",
-                    "evidence_refs": [f"collector:mixer_readiness:{exc.__class__.__name__}"],
+                    "evidence_refs": [f"collector:mixer_readiness:{mixer_failure_kind}"],
                     "unknowns": ["current_provider_mixer_readiness"],
                     "summary": "ROOTLINE fertilizer mixer readiness could not be observed.",
                     "next_action": ("Keep mixer execution fail-closed and retry the existing "
                                     "zero-control-call readback on the next manager cycle."),
                     "next_reassessment_at": (now + CADENCE).isoformat(),
                 })
+            else:
+                candidates.extend(mixer_rows or ())
+            source_executor.shutdown(wait=False, cancel_futures=True)
+        else:
+            candidates = collect_manager_candidates(now=now, collectors=collectors)
         def refresh(case):
             if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"):
                 from modules.telemetry.rootline_mixer_readiness_observer import (
@@ -625,13 +655,22 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                 return collect_mixer_readiness(now=datetime.now(timezone.utc))
 
             jobs = {}
-            with ThreadPoolExecutor(max_workers=2,
-                                    thread_name_prefix="oom-manager-refresh") as executor:
-                if regular:
-                    jobs["regular"] = executor.submit(collect_regular)
-                if readiness:
-                    jobs["readiness"] = executor.submit(collect_readiness)
-                if "regular" in jobs:
+            executor = ThreadPoolExecutor(
+                max_workers=2, thread_name_prefix="oom-manager-refresh")
+            if regular:
+                jobs["regular"] = executor.submit(collect_regular)
+            if readiness:
+                jobs["readiness"] = executor.submit(collect_readiness)
+            completed, _ = wait(tuple(jobs.values()),
+                timeout=max(0.0, min(REFRESH_SNAPSHOT_DEADLINE_SECONDS,
+                    deadline_monotonic - time.monotonic()
+                    - CASE_COMPLETION_RESERVE_SECONDS)))
+            if "regular" in jobs:
+                if jobs["regular"] not in completed:
+                    for case in regular:
+                        results[case["case_id"]] = TimeoutError(
+                            "manager_regular_refresh_deadline_exceeded")
+                else:
                     try:
                         snapshot = jobs["regular"].result()
                     except (ValueError, RuntimeError, OSError) as exc:
@@ -642,7 +681,12 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                             results[case["case_id"]] = snapshot.get((
                                 str(case.get("dedupe_key") or ""),
                                 str(case.get("specialist") or "").upper()))
-                if "readiness" in jobs:
+            if "readiness" in jobs:
+                if jobs["readiness"] not in completed:
+                    for case in readiness:
+                        results[case["case_id"]] = TimeoutError(
+                            "manager_readiness_refresh_deadline_exceeded")
+                else:
                     try:
                         rows = jobs["readiness"].result()
                     except (ValueError, RuntimeError, OSError) as exc:
@@ -654,12 +698,14 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                         for case in readiness:
                             results[case["case_id"]] = by_key.get(
                                 str(case.get("dedupe_key") or ""))
+            executor.shutdown(wait=False, cancel_futures=True)
             return results
     revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
     brain_guard = build_scheduled_brain_guard_audit(source_revision=revision, now=now)
     return (store or PostgresManagerCaseStore()).run_cycle(
         candidates, now=now, source_revision=revision, deliver=deliver,
-        refresh=refresh, refresh_batch=refresh_batch, brain_guard_audit=brain_guard)
+        refresh=refresh, refresh_batch=refresh_batch,
+        deadline_monotonic=deadline_monotonic, brain_guard_audit=brain_guard)
 
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None,
