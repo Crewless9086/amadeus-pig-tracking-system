@@ -61,6 +61,7 @@ def _semantic(domain, intent, **extra):
         "breeding_actions": extra.get("breeding_actions", []),
         "farrowing_litter": extra.get("farrowing_litter"),
         "litter_first_treatment": extra.get("litter_first_treatment"),
+        "litter_piglet_loss": extra.get("litter_piglet_loss"),
         "protected_preview_required": extra.get("protected_preview_required", False),
         "recording_prohibited": extra.get("recording_prohibited", False),
         "requested_action": extra.get("requested_action", ""), "language": extra.get("language", "en"),
@@ -95,9 +96,7 @@ def test_farrowing_correction_contract_preserves_target_and_reason():
 
 def test_first_treatment_is_typed_and_mutually_exclusive_from_farrowing():
     treatment = {"sow_ref": "Molly", "action_date": "2026-08-25",
-        "male_count": 4, "female_count": 4, "total_count": 8,
-        "earmarked": True, "antiparasitic_product_ref": "Iron Plus",
-        "dose": "1 ml", "route": "injection", "batch_lot_number": "LOT-7"}
+        "male_count": 4, "female_count": 4, "total_count": 8}
     value = _semantic("herd_management", "record_litter_first_treatment",
         message_kind="command", entity_refs=["Molly"], litter_first_treatment=treatment)
     result = parse_semantic_response(_response(value))
@@ -108,6 +107,26 @@ def test_first_treatment_is_typed_and_mutually_exclusive_from_farrowing():
         "total_born": 8, "born_alive": 8, "stillborn": 0, "mummified": 0,
         "died_after_live_birth": 0}
     assert parse_semantic_response(_response(value)) is None
+
+
+def test_linda_piglet_loss_and_natural_continuation_have_distinct_typed_contract():
+    first = _semantic("herd_health", "record_litter_piglet_deaths",
+        message_kind="observation", entity_refs=["Linda"],
+        litter_piglet_loss={"sow_ref": "Linda", "litter_ref": None,
+            "event_date": "2026-08-26", "count": 3,
+            "male_count": None, "female_count": None, "sex_unknown": False})
+    parsed = parse_semantic_response(_response(first))
+    assert parsed.litter_piglet_loss["count"] == 3
+    assert parsed.litter_piglet_loss["event_date"] == "2026-08-26"
+    later = _semantic("herd_health", "record_litter_piglet_deaths",
+        message_kind="observation", entity_refs=["Linda"], continuation=True,
+        litter_piglet_loss={"sow_ref": "Linda", "litter_ref": None,
+            "event_date": None, "count": 1, "male_count": None,
+            "female_count": None, "sex_unknown": False})
+    continuation = parse_semantic_response(_response(later))
+    assert continuation.continuation is True
+    assert continuation.litter_piglet_loss["count"] == 1
+    assert continuation.litter_piglet_loss["event_date"] is None
 
 
 @pytest.mark.parametrize("text,language", [

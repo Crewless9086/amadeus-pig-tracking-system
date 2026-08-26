@@ -54,34 +54,59 @@ def _litter_loss(provider_ids, refs, recovery_identity):
                 where lower(s.pig_name)=lower(%s) and lower(coalesce(l.litter_status,''))='active'
                 order by l.farrowing_date desc,l.litter_id desc limit 2""", ("Linda",))
             litters = cur.fetchall()
+            piglets = []
+            if len(litters) == 1:
+                cur.execute("""select pig_id,coalesce(tag_number,''),coalesce(pig_name,''),
+                    coalesce(sex,''),status,on_farm
+                    from public.pigs where litter_id=%s
+                    order by coalesce(tag_number,''),pig_id""", (str(litters[0][0]),))
+                piglets = cur.fetchall()
     if len(litters) != 1:
         return _contained("retained_litter_loss_active_litter_unproven")
     litter_id, count = str(litters[0][0]), next(iter(counts))
-    from modules.pig_weights.pig_weights_service import mark_litter_piglets_dead
-    preview, status = mark_litter_piglets_dead(
-        litter_id, incident, "Unknown", count=count, changed_by="oom_sakkie", dry_run=True)
-    if status >= 400 or preview.get("success") is not True:
-        return {**_contained("retained_litter_loss_selection_required"),
-                "answer": "HERDMASTER retained Linda, the date and the three deaths. "
-                          + " ".join(str(value) for value in preview.get("errors") or ())}
-    operation_id = "HERD-LITTER-LOSS-" + hashlib.sha256(
-        (recovery_identity + "|" + "|".join(provider_ids) + "|" + litter_id
-         + "|" + incident + "|" + str(count)).encode()).hexdigest()[:24].upper()
-    payload = {"contract_version": "herdmaster_litter_piglet_deaths_v1",
-        "litter_id": litter_id, "event_date": incident, "reason": "Unknown",
-        "count": count, "pig_ids": list(preview.get("pig_ids") or ()),
-        "operation_id": operation_id,
-        "provider_message_ids": list(provider_ids), "owner_user_id": owner,
-        "private_chat_id": chat, "selected_piglets": preview.get("selected_piglets") or []}
-    from modules.oom_sakkie.protected_action_claims import create_claim
+    from modules.pig_weights.herdmaster_litter_loss_action import (
+        prepare_litter_loss_preview, render_litter_loss_preview)
+    male_count = next((int(str(value).split(":", 1)[1]) for value in refs
+                       if str(value).startswith("male_count:")), None)
+    female_count = next((int(str(value).split(":", 1)[1]) for value in refs
+                         if str(value).startswith("female_count:")), None)
+    sex_unknown = "sex_unknown:true" in refs
+    canonical = {"animals": [{"pig_id": "LINDA", "name": "Linda"}],
+        "litters": [{"litter_id": litter_id, "sow_pig_id": "LINDA",
+            "litter_status": "Active", "detail": {"piglets": [
+                {"pig_id": str(row[0]), "tag_number": str(row[1] or ""),
+                 "name": str(row[2] or ""), "sex": str(row[3] or ""),
+                 "status": str(row[4] or ""), "on_farm": row[5]}
+                for row in piglets]}}]}
+    prepared = prepare_litter_loss_preview({
+        "sow_ref": "Linda", "litter_ref": litter_id, "event_date": incident,
+        "count": count, "male_count": male_count, "female_count": female_count,
+        "sex_unknown": sex_unknown, "source_event_ids": list(provider_ids),
+    }, canonical)
     suffix = hashlib.sha256((recovery_identity + "|" + "|".join(provider_ids)).encode()).hexdigest()[:20].upper()
     mission = "OOM-HERDMASTER-LITTER-LOSS-" + suffix
+    if prepared.get("success") is not True:
+        question = str(prepared.get("question") or "")
+        if question:
+            return {"success": True, "handled": True, "status": "waiting_for_input",
+                "answer": ("HERDMASTER retained Linda, the incident date "
+                           f"{incident}, and exactly {count} deaths. {question}"),
+                "clarification_question": question, "question_count": 1,
+                "mission_id": mission, "card_mission_id": mission,
+                "confirmation_required": False, "writes_farm_data": False}
+        return {**_contained(str(prepared.get("status") or
+                                "retained_litter_loss_selection_required")),
+                "answer": "HERDMASTER retained Linda, the date and the deaths; "
+                          "current active piglet membership conflicts with a safe preview."}
+    payload = {**prepared["preview"], "owner_user_id": owner,
+        "private_chat_id": chat}
+    from modules.oom_sakkie.protected_action_claims import create_claim
     claim = create_claim(action_kind="herdmaster_record_litter_piglet_deaths",
         owner_user_id=owner, private_chat_id=chat, mission_id=mission,
         provider_message_id=provider_ids[0], evidence_generation=recovery_identity,
         preview_payload=payload)
     return _protected({"success": True, "status": "litter_piglet_deaths_preview_ready",
-        "answer": f"HERDMASTER protected preview: Linda's litter; {count} piglets died on {incident}; reason Unknown. Confirm only if correct.",
+        "answer": render_litter_loss_preview(payload),
         "mission_id": mission, "card_mission_id": mission,
         "callback_token": claim["callback_token"], "preview_digest": claim["preview_digest"],
         "action_kind": "herdmaster_record_litter_piglet_deaths",
@@ -217,7 +242,9 @@ def _protected(result):
 def execute_claimed_litter_piglet_deaths(claimed, parsed):
     """Execute only an already callback-claimed, exact piglet selection."""
     preview = dict(claimed.get("preview_payload") or {})
-    if preview.get("contract_version") != "herdmaster_litter_piglet_deaths_v1":
+    if preview.get("contract_version") not in {
+            "herdmaster_litter_piglet_deaths_v1",
+            "herdmaster_litter_piglet_deaths_v2"}:
         return {"success": False, "status": "litter_piglet_deaths_binding_invalid",
                 "writes_farm_data": False}, 409
     if str(preview.get("owner_user_id") or "") != str(parsed.get("telegram_user_id") or ""):
@@ -230,9 +257,12 @@ def execute_claimed_litter_piglet_deaths(claimed, parsed):
     from modules.pig_weights import pig_weights_service as service
     readback = _litter_loss_operation_readback(service, preview, operation_id)
     if readback == "complete":
+        remaining = _remaining_active_litter_piglets(service, preview)
         return {"success": True, "status": "litter_piglet_deaths_recovered_from_canonical",
             "piglet_count": len(preview.get("pig_ids") or ()),
             "pig_ids": list(preview.get("pig_ids") or ()), "rows_updated": 0,
+            "remaining_active_count": len(remaining),
+            "remaining_active_pig_ids": remaining,
             "answer": "The exact piglet deaths were already recorded; protected completion was recovered without another mutation.",
             "writes_farm_data": False, "reply_markup": {"inline_keyboard": []}}, 200
     if readback == "partial":
@@ -242,7 +272,11 @@ def execute_claimed_litter_piglet_deaths(claimed, parsed):
         preview.get("event_date"), preview.get("reason"), pig_ids=preview.get("pig_ids") or (),
         changed_by="oom_sakkie:" + operation_id, dry_run=False)
     if result.get("success") is True:
-        result = {**result, "answer": f"Recorded {result.get('piglet_count')} piglet deaths for Linda's litter exactly once.",
+        sow = str(preview.get("sow_name") or preview.get("sow_tag_number") or "the sow")
+        remaining = _remaining_active_litter_piglets(service, preview)
+        result = {**result, "answer": f"Recorded {result.get('piglet_count')} piglet deaths for {sow}'s litter exactly once.",
+                  "remaining_active_count": len(remaining),
+                  "remaining_active_pig_ids": remaining,
                   "reply_markup": {"inline_keyboard": []}}
     return result, status
 
@@ -267,6 +301,19 @@ def _litter_loss_operation_readback(service, preview, operation_id):
     # safe invitation to run the mutation again. Keep the claimed receipt in
     # recovery until the entire bound selection can be proved canonically.
     return "partial" if any(matched) else "mismatch"
+
+
+def _remaining_active_litter_piglets(service, preview):
+    columns = service.PIG_WEIGHTS_CONFIG["columns"]
+    litter_id = str(preview.get("litter_id") or "")
+    return sorted(
+        str(row.get(columns["pig_id"], ""))
+        for row in service._get_pig_master_rows()
+        if str(row.get("Litter_ID") or "") == litter_id
+        and str(row.get(columns["status"], "")).casefold() == "active"
+        and str(row.get(columns["on_farm"], "")).casefold() == "yes"
+        and str(row.get(columns["pig_id"], ""))
+    )
 
 
 def _contained(status):

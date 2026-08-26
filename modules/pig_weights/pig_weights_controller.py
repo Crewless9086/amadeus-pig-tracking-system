@@ -28,7 +28,6 @@ from modules.pig_weights.pig_weights_service import (
     mark_litter_weaned,
     mark_pig_death_or_removal,
     mark_litter_piglets_dead,
-    record_litter_newborn_health,
     skip_litter_first_treatment,
     record_litter_piglet_sex_counts,
     assign_litter_piglet_tag_numbers,
@@ -61,6 +60,10 @@ from modules.pig_weights.pig_weights_validation import (
     validate_new_product_payload,
     validate_new_pen_payload,
     validate_new_litter_payload,
+)
+from modules.pig_weights.herdmaster_litter_first_treatment_action import (
+    execute_first_treatment,
+    preview_first_treatment,
 )
 from modules.pig_weights.purpose_correction_batch_service import (
     approve_correction_batch,
@@ -265,23 +268,33 @@ def process_litter_profile_weaning_day(litter_id: str, payload: dict):
     return process_litter_weaning_day(litter_id, payload or {})
 
 
-def record_litter_profile_newborn_health(litter_id: str, payload: dict):
+def record_litter_profile_newborn_health(
+    litter_id: str, payload: dict, *, actor_id: str = ""
+):
     payload = payload or {}
-    return record_litter_newborn_health(
-        litter_id=litter_id,
-        action_date_value=payload.get("action_date", ""),
-        changed_by=payload.get("changed_by", "web_app"),
-        earmarked=payload.get("earmarked", False) is True,
-        antiparasitic_product_id=payload.get("antiparasitic_product_id", ""),
-        deworming_product_id=payload.get("deworming_product_id", ""),
-        vaccination_product_id=payload.get("vaccination_product_id", ""),
-        dose=payload.get("dose", None),
-        route=payload.get("route", ""),
-        batch_lot_number=payload.get("batch_lot_number", ""),
-        notes=payload.get("notes", ""),
-        male_count=payload.get("male_count", None),
-        female_count=payload.get("female_count", None),
-        dry_run=payload.get("dry_run", True) is True,
+    facts = {
+        "litter_ref": litter_id,
+        "action_date": payload.get("action_date"),
+        "male_count": payload.get("male_count"),
+        "female_count": payload.get("female_count"),
+    }
+    source_reference = (
+        str(payload.get("idempotency_key") or "").strip()
+        or f"application:{litter_id}:{payload.get('action_date') or ''}"
+    )
+    if payload.get("dry_run", True) is True:
+        return preview_first_treatment(
+            facts,
+            actor_id=actor_id,
+            channel="application",
+            source_reference=source_reference,
+        )
+    return execute_first_treatment(
+        facts,
+        actor_id=actor_id,
+        channel="application",
+        source_reference=source_reference,
+        confirmation_binding=payload.get("confirmation_binding") or {},
     )
 
 

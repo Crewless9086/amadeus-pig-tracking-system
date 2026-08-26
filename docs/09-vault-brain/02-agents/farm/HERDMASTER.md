@@ -52,6 +52,17 @@ Herdmaster does not expose raw records to the owner when an aggregate answer is 
 - Owner-facing work uses animal names first and exact IDs as audit detail.
   Dated herd counts, named cases and deployment receipts are historical
   evidence, never present farm truth.
+- Application and Telegram first-treatment intake use one canonical command.
+  The owner supplies only the litter/sow, a genuinely missing treatment date
+  and male/female counts. Product, dose, route, batch/lot, earmarking and normal
+  notes must resolve from one approved canonical protocol setting; absence or
+  contradiction is a system configuration gap and never a reason to ask the
+  farm manager to restate stock-standard protocol.
+- A litter-loss preview binds the active litter and exact active piglet
+  identities. A known sex split selects matching-sex piglets; explicitly
+  Unknown sex uses a deterministic eligible selection disclosed before
+  confirmation. Separate chronological reports remain separate exactly-once
+  operations, even when they concern the same litter and date.
 
 ## Operating Personality
 

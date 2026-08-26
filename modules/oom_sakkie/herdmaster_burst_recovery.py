@@ -201,6 +201,13 @@ def route_retained_manager_recovery(case, *, preview_builder=None):
                 "suppress_owner_delivery": True, "telegram_sends": 0,
                 "writes_farm_data": False, "recovery_required": True}
     result = dict(preview_builder(case) or {})
+    if (result.get("success") is True
+            and result.get("status") == "waiting_for_input"
+            and int(result.get("question_count") or 0) == 1
+            and str(result.get("answer") or "").strip()
+            and result.get("writes_farm_data") is False):
+        return {**result, "suppress_owner_delivery": False,
+                "confirmation_required": False}
     if (result.get("success") is not True or not result.get("callback_token")
             or result.get("confirmation_required") is not True
             or not str(result.get("answer") or "").strip()):

@@ -411,8 +411,17 @@ def litter_piglet_observations_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/newborn-health", methods=["POST"])
 def litter_newborn_health_route(litter_id):
+    denied = require_owner_admin_access()
+    if not denied:
+        denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
-    result, status_code = record_litter_profile_newborn_health(litter_id, payload)
+    result, status_code = record_litter_profile_newborn_health(
+        litter_id,
+        payload,
+        actor_id=owner_admin_principal() or strict_owner_admin_principal(),
+    )
     return jsonify(result), status_code
 
 

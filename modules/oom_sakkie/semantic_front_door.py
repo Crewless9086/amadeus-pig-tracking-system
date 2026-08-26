@@ -40,6 +40,7 @@ class SemanticInterpretation:
     breeding_actions: tuple[Mapping[str, Any], ...] = ()
     farrowing_litter: Mapping[str, Any] | None = None
     litter_first_treatment: Mapping[str, Any] | None = None
+    litter_piglet_loss: Mapping[str, Any] | None = None
     confirmation_facts: Mapping[str, bool] | None = None
     commissioning_facts: Mapping[str, bool] | None = None
     protected_preview_required: bool = False
@@ -169,7 +170,9 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         breeding_actions = _breeding_actions(value.get("breeding_actions"))
         farrowing_litter = _farrowing_litter(value.get("farrowing_litter"))
         litter_first_treatment = _litter_first_treatment(value.get("litter_first_treatment"))
-        if farrowing_litter and litter_first_treatment:
+        litter_piglet_loss = _litter_piglet_loss(value.get("litter_piglet_loss"))
+        if sum(bool(item) for item in (
+                farrowing_litter, litter_first_treatment, litter_piglet_loss)) > 1:
             return None
         confirmation_facts = _confirmation_facts(value.get("confirmation_facts"))
         commissioning_facts = _commissioning_facts(value.get("commissioning_facts"))
@@ -182,6 +185,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             breeding_actions=breeding_actions,
             farrowing_litter=farrowing_litter,
             litter_first_treatment=litter_first_treatment,
+            litter_piglet_loss=litter_piglet_loss,
             confirmation_facts=confirmation_facts,
             commissioning_facts=commissioning_facts,
             protected_preview_required=value.get("protected_preview_required") is True,
@@ -276,7 +280,7 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,observation_facts,breeding_actions,farrowing_litter,litter_first_treatment,confirmation_facts,commissioning_facts,"
+        "observation,observation_facts,breeding_actions,farrowing_litter,litter_first_treatment,litter_piglet_loss,confirmation_facts,commissioning_facts,"
         "protected_preview_required,recording_prohibited,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
         " For an owner report of actual boar placements, removals, a body-condition recovery hold or clearance, or a sow appearing close to farrowing, "
@@ -288,7 +292,9 @@ def _payload(parsed, context, source):
         " For a natural request to record a real farrowing/litter, use herd_management with stable intent record_farrowing_litter and return farrowing_litter. "
         "Allowed farrowing_litter keys are sow_ref,farrowing_date,total_born,born_alive,stillborn,mummified,died_after_live_birth,mating_ref,father_ref,correction_of_litter_id,correction_reason. "
         "For an already-born litter's first treatment, use herd_management with stable intent record_litter_first_treatment and return litter_first_treatment, never farrowing_litter. "
-        "Allowed litter_first_treatment keys are sow_ref,litter_ref,action_date,male_count,female_count,total_count,earmarked,antiparasitic_product_ref,deworming_product_ref,vaccination_product_ref,dose,route,batch_lot_number,notes. Preserve only facts explicitly reported; never invent a product,dose,route or batch. "
+        "Allowed litter_first_treatment keys are sow_ref,litter_ref,action_date,male_count,female_count,total_count. Preserve only facts explicitly reported; products,doses,routes,batches,earmarking and standard notes come from the canonical approved protocol, never owner repetition or model invention. "
+        "For piglets that died after live birth in an already-active litter, use herd_health with stable intent record_litter_piglet_deaths and return litter_piglet_loss, never treat the sow as the animal that died. "
+        "Allowed litter_piglet_loss keys are sow_ref,litter_ref,event_date,count,male_count,female_count,sex_unknown. A natural continuation such as 'one more of Linda's piglets died' must set continuation true and count 1, retain Linda, and leave event_date null when omitted so deterministic chronology can bind it. Preserve explicit sex counts; set sex_unknown true only when the owner explicitly says the sex is unknown. "
         "Use correction_of_litter_id and correction_reason only when the owner explicitly corrects an existing litter; preserve both exactly. "
         "Separate dates and outcome counts from animal identity. Preserve omitted mating_ref and father_ref as null; never invent them. "
         "Use integer counts only when explicitly supplied and keep born_alive distinct from alive_now: died_after_live_birth is a subset of born_alive, not another birth outcome."
@@ -439,19 +445,14 @@ def _litter_first_treatment(value):
     if not isinstance(value, Mapping):
         return None
     allowed = {"sow_ref", "litter_ref", "action_date", "male_count",
-               "female_count", "total_count", "earmarked",
-               "antiparasitic_product_ref", "deworming_product_ref",
-               "vaccination_product_ref", "dose", "route",
-               "batch_lot_number", "notes"}
+               "female_count", "total_count"}
     if set(value) - allowed:
         return None
     sow_ref = str(value.get("sow_ref") or "").strip()[:80]
     if not sow_ref:
         return None
     result = {"sow_ref": sow_ref}
-    for key in ("litter_ref", "action_date", "antiparasitic_product_ref",
-                "deworming_product_ref", "vaccination_product_ref", "route",
-                "batch_lot_number", "notes"):
+    for key in ("litter_ref", "action_date"):
         raw = value.get(key)
         result[key] = str(raw).strip()[:500 if key == "notes" else 80] if raw not in (None, "") else None
     for key in ("male_count", "female_count", "total_count"):
@@ -462,14 +463,39 @@ def _litter_first_treatment(value):
             result[key] = raw
         else:
             return None
-    earmarked = value.get("earmarked")
-    if earmarked is not None and type(earmarked) is not bool:
+    return result
+
+
+def _litter_piglet_loss(value):
+    if value in (None, {}):
         return None
-    result["earmarked"] = earmarked
-    dose = value.get("dose")
-    if dose is not None and not isinstance(dose, (int, float, str)):
+    if not isinstance(value, Mapping):
         return None
-    result["dose"] = dose
+    allowed = {
+        "sow_ref", "litter_ref", "event_date", "count",
+        "male_count", "female_count", "sex_unknown",
+    }
+    if set(value) - allowed:
+        return None
+    sow_ref = str(value.get("sow_ref") or "").strip()[:80]
+    if not sow_ref:
+        return None
+    result = {"sow_ref": sow_ref}
+    for key in ("litter_ref", "event_date"):
+        raw = value.get(key)
+        result[key] = str(raw).strip()[:80] if raw not in (None, "") else None
+    for key in ("count", "male_count", "female_count"):
+        raw = value.get(key)
+        if raw is None:
+            result[key] = None
+        elif type(raw) is int and 0 <= raw <= 40:
+            result[key] = raw
+        else:
+            return None
+    sex_unknown = value.get("sex_unknown")
+    if sex_unknown is not None and type(sex_unknown) is not bool:
+        return None
+    result["sex_unknown"] = sex_unknown is True
     return result
 
 

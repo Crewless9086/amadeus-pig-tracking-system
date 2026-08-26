@@ -22,7 +22,7 @@ class Connection:
     def __exit__(self, *_args): return False
 
 
-def test_production_linda_builder_creates_exact_protected_preview_without_write():
+def test_production_linda_builder_retains_three_and_asks_only_sex_split():
     retained = [({"owner_user_id":"ANTON", "chat_id":"ANTON",
         "owner_text_verbatim":"Linds 3 kleintjies dood", "provider_message_id":"4052"},),
         ({"owner_user_id":"ANTON", "chat_id":"ANTON",
@@ -30,23 +30,47 @@ def test_production_linda_builder_creates_exact_protected_preview_without_write(
     case = {"dedupe_key":"herdmaster:retained-litter-loss:4052:2026-08-26",
         "evidence_digest":"DIGEST", "evidence_refs":["provider_message:4052",
         "provider_message:4054", "incident_date:2026-08-26"]}
-    dry = {"success":True,"pig_ids":["P1","P2","P3"],"selected_piglets":[]}
+    with patch("modules.oom_sakkie.herdmaster_retained_recovery_runtime.connect_bounded_read",
+               return_value=Connection([retained, [("LITTER-LINDA",)], [
+                   ("P1","01","","Male","Active",True),
+                   ("P2","02","","Male","Active",True),
+                   ("P3","03","","Female","Active",True)]])), \
+         patch("modules.oom_sakkie.protected_action_claims.create_claim") as create:
+        result = build_retained_protected_preview(case)
+    assert result["success"] is True and result["status"] == "waiting_for_input"
+    assert result["question_count"] == 1 and result["writes_farm_data"] is False
+    assert "exactly 3 deaths" in result["answer"]
+    assert "male" in result["answer"] and "female" in result["answer"]
+    create.assert_not_called()
+
+
+def test_production_linda_builder_creates_sex_aware_exact_protected_preview():
+    retained = [({"owner_user_id":"ANTON", "chat_id":"ANTON",
+        "owner_text_verbatim":"Linds 3 kleintjies dood", "provider_message_id":"4052"},),
+        ({"owner_user_id":"ANTON", "chat_id":"ANTON",
+        "owner_text_verbatim":"Linda kleintjies dood op 26 Aug", "provider_message_id":"4054"},)]
+    case = {"dedupe_key":"herdmaster:retained-litter-loss:4052:2026-08-26",
+        "evidence_digest":"DIGEST", "evidence_refs":["provider_message:4052",
+        "provider_message:4054", "incident_date:2026-08-26",
+        "male_count:2", "female_count:1"]}
     claim = {"callback_token":"TOKEN","preview_digest":"PREVIEW"}
     with patch("modules.oom_sakkie.herdmaster_retained_recovery_runtime.connect_bounded_read",
-               return_value=Connection([retained, [("LITTER-LINDA",)]])), \
-         patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead",
-               return_value=(dry, 200)) as action, \
+               return_value=Connection([retained, [("LITTER-LINDA",)], [
+                   ("P1","01","","Male","Active",True),
+                   ("P2","02","","Male","Active",True),
+                   ("P3","03","","Female","Active",True),
+                   ("P4","04","","Female","Active",True)]])), \
          patch("modules.oom_sakkie.protected_action_claims.create_claim",
                return_value=claim) as create:
         result = build_retained_protected_preview(case)
     assert result["success"] is True and result["callback_token"] == "TOKEN"
     assert result["confirmation_required"] is True and result["writes_farm_data"] is False
-    assert action.call_args.kwargs["dry_run"] is True
     assert create.call_args.kwargs["preview_payload"]["pig_ids"] == ["P1","P2","P3"]
+    assert "P1" in result["answer"] and "P3" in result["answer"]
 
 
 def test_linda_execution_uses_exact_bound_selection_only_after_claim():
-    claimed={"preview_payload":{"contract_version":"herdmaster_litter_piglet_deaths_v1",
+    claimed={"preview_payload":{"contract_version":"herdmaster_litter_piglet_deaths_v2",
         "owner_user_id":"ANTON","litter_id":"L1","event_date":"2026-08-26",
         "reason":"Unknown","operation_id":"HERD-LITTER-LOSS-EXACT",
         "pig_ids":["P1","P2","P3"]}}
@@ -94,6 +118,52 @@ def test_partial_operation_marker_with_missing_bound_row_holds_without_mutation(
     assert status==503 and result["recovery_required"] is True
     assert result["status"]=="litter_piglet_deaths_partial_readback_recovery_required"
     action.assert_not_called()
+
+
+def test_sequential_three_plus_one_receipts_preserve_exact_once_and_remaining_truth():
+    first_operation = "HERD-LITTER-LOSS-FIRST-3"
+    later_operation = "HERD-LITTER-LOSS-LATER-1"
+    rows = [{"Pig_ID": f"P{index}", "Litter_ID": "L1", "Status": "Active",
+             "On_Farm": "Yes", "General_Notes": ""} for index in range(1, 6)]
+
+    def mark(_litter, _date, _reason, *, pig_ids, changed_by, dry_run):
+        operation = changed_by.split(":", 1)[1]
+        for row in rows:
+            if row["Pig_ID"] in pig_ids:
+                row.update(Status="Dead", On_Farm="No",
+                           General_Notes="Recorded by oom_sakkie:" + operation)
+        return {"success": True, "piglet_count": len(pig_ids),
+                "pig_ids": list(pig_ids), "rows_updated": len(pig_ids)}, 200
+
+    first = {"preview_payload": {
+        "contract_version": "herdmaster_litter_piglet_deaths_v2",
+        "owner_user_id": "ANTON", "litter_id": "L1",
+        "event_date": "2026-08-26", "reason": "Unknown",
+        "operation_id": first_operation, "pig_ids": ["P1", "P2", "P3"],
+        "sow_name": "Linda"}}
+    later = {"preview_payload": {
+        "contract_version": "herdmaster_litter_piglet_deaths_v2",
+        "owner_user_id": "ANTON", "litter_id": "L1",
+        "event_date": "2026-08-26", "reason": "Unknown",
+        "operation_id": later_operation, "pig_ids": ["P4"],
+        "sow_name": "Linda"}}
+    with patch("modules.pig_weights.pig_weights_service._get_pig_master_rows",
+               side_effect=lambda: rows), \
+         patch("modules.pig_weights.pig_weights_service.mark_litter_piglets_dead",
+               side_effect=mark) as action:
+        first_result, first_status = execute_claimed_litter_piglet_deaths(
+            first, {"telegram_user_id": "ANTON"})
+        later_result, later_status = execute_claimed_litter_piglet_deaths(
+            later, {"telegram_user_id": "ANTON"})
+        replay, replay_status = execute_claimed_litter_piglet_deaths(
+            first, {"telegram_user_id": "ANTON"})
+    assert (first_status, later_status, replay_status) == (200, 200, 200)
+    assert first_result["remaining_active_count"] == 2
+    assert later_result["remaining_active_count"] == 1
+    assert later_result["remaining_active_pig_ids"] == ["P5"]
+    assert replay["status"] == "litter_piglet_deaths_recovered_from_canonical"
+    assert replay["rows_updated"] == 0
+    assert action.call_count == 2
 
 
 def test_pig138_unknown_case_kind_is_suppressed_before_any_claim():

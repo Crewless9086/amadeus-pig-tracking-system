@@ -11,14 +11,8 @@ const markWeanedUseLatestWeights = document.getElementById("mark_weaned_use_late
 const markWeanedButton = document.getElementById("mark_weaned_button");
 const newbornHealthForm = document.getElementById("newborn_health_form");
 const newbornHealthDate = document.getElementById("newborn_health_date");
-const newbornHealthEarmarked = document.getElementById("newborn_health_earmarked");
-const newbornHealthAntiparasitic = document.getElementById("newborn_health_antiparasitic");
-const newbornHealthDeworming = document.getElementById("newborn_health_deworming");
-const newbornHealthVaccination = document.getElementById("newborn_health_vaccination");
-const newbornHealthGivenBy = document.getElementById("newborn_health_given_by");
 const newbornHealthMaleCount = document.getElementById("newborn_health_male_count");
 const newbornHealthFemaleCount = document.getElementById("newborn_health_female_count");
-const newbornHealthNotes = document.getElementById("newborn_health_notes");
 const newbornHealthPreview = document.getElementById("newborn_health_preview");
 const newbornHealthPreviewButton = document.getElementById("newborn_health_preview_button");
 const newbornHealthApplyButton = document.getElementById("newborn_health_apply_button");
@@ -101,7 +95,6 @@ let latestStillbornReclassifyPreview = null;
 let latestWeaningDayPreview = null;
 let latestHistoricalObservationPreview = null;
 let historicalObservationOperationKey = null;
-let productsLoaded = false;
 let weaningProductsLoaded = false;
 let pensLoaded = false;
 let manualActionsExpanded = false;
@@ -268,20 +261,6 @@ function setSelectOptions(select, products, patterns, preferredName = "") {
   }
 }
 
-async function loadProductsForNewbornHealth() {
-  if (productsLoaded) return;
-  const response = await fetch("/api/pig-weights/products");
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error("Could not load products.");
-  }
-  const products = data.products || [];
-  setSelectOptions(newbornHealthAntiparasitic, products, ["antiparasitic", "parasite", "ecomectin"], "ecomectin");
-  setSelectOptions(newbornHealthDeworming, products, ["deworm", "panacur"], "panacur");
-  setSelectOptions(newbornHealthVaccination, products, ["vacc"], "");
-  productsLoaded = true;
-}
-
 async function loadProductsForWeaningDay() {
   if (weaningProductsLoaded) return;
   const response = await fetch("/api/pig-weights/products");
@@ -344,11 +323,6 @@ function renderAttention(litter) {
   markWeanedDate.value = attention.wean_date || todayIsoDate();
   if (newbornHealthDate && !newbornHealthDate.value) {
     newbornHealthDate.value = todayIsoDate();
-  }
-  if (canRecordNewbornHealth) {
-    loadProductsForNewbornHealth().catch(() => {
-      showLitterMessage("Could not load products for newborn health.", "error");
-    });
   }
 }
 
@@ -1011,32 +985,37 @@ function setMarkWeanedSubmitting(isSubmitting) {
 }
 
 function newbornHealthPayload(dryRun) {
-  return {
+  const payload = {
     action_date: newbornHealthDate.value,
-    changed_by: newbornHealthGivenBy.value || "web_app",
-    earmarked: newbornHealthEarmarked.checked,
-    antiparasitic_product_id: newbornHealthAntiparasitic.value,
-    deworming_product_id: newbornHealthDeworming.value,
-    vaccination_product_id: newbornHealthVaccination.value,
-    notes: newbornHealthNotes.value,
-    male_count: newbornHealthMaleCount.value,
-    female_count: newbornHealthFemaleCount.value,
+    male_count: newbornHealthMaleCount.value === "" ? null : Number(newbornHealthMaleCount.value),
+    female_count: newbornHealthFemaleCount.value === "" ? null : Number(newbornHealthFemaleCount.value),
     dry_run: dryRun,
   };
+  if (!dryRun && latestNewbornHealthPreview?.confirmation_binding) {
+    payload.confirmation_binding = latestNewbornHealthPreview.confirmation_binding;
+  }
+  return payload;
 }
 
 function renderNewbornHealthPreview(preview) {
   if (!newbornHealthPreview) return;
   newbornHealthPreview.classList.remove("hidden");
-  const treatmentCount = preview.treatment_rows_planned || 0;
-  const pigletCount = preview.piglet_count || 0;
+  const value = preview.preview || preview;
+  const treatments = (value.protocol?.treatments || []).map((row) =>
+    `${escapeHtml(row.product_name)} ${escapeHtml(row.dose)} ${escapeHtml(row.dose_unit)} / ${escapeHtml(row.route)} / lot ${escapeHtml(row.batch_lot_number)}`
+  ).join("<br>");
+  const piglets = (value.piglets || []).map((row) =>
+    `${escapeHtml(row.tag_number || row.name || row.pig_id)} (${escapeHtml(row.pig_id)})`
+  ).join(", ");
   newbornHealthPreview.innerHTML = `
     <div class="bulk-review-header">
-      <strong>Preview ready</strong>
-      <span>${pigletCount} piglet${pigletCount === 1 ? "" : "s"} / ${treatmentCount} treatment row${treatmentCount === 1 ? "" : "s"}</span>
+      <strong>Beskermde voorskou gereed</strong>
+      <span>${value.total_count} aktiewe varkies</span>
     </div>
-    <p class="form-helper"><strong>Geslagtelling:</strong> ${preview.sex_count_recorded ? `${preview.male_count} beertjies en ${preview.female_count} sogvarkies as 'n werpseltelling. Geen anonieme varkie word outomaties 'n geslag toegeken nie.` : "Nie by hierdie stap aangeteken nie; voltooi dit by speen."}</p>
-    <p class="form-helper">Earmarks and selected treatments will be saved for all active on-farm piglets in this litter.</p>
+    <p class="form-helper"><strong>Geslagtelling:</strong> ${value.male_count} beertjies + ${value.female_count} sogvarkies = ${value.total_count}.</p>
+    <p class="form-helper"><strong>Kanonieke protokol:</strong><br>${treatments}</p>
+    <p class="form-helper"><strong>Oormerk:</strong> ${value.protocol?.earmarked ? "Ja" : "Nee"}<br><strong>Notas:</strong> ${escapeHtml(value.protocol?.notes || "Geen")}</p>
+    <p class="form-helper"><strong>Presiese varkies:</strong> ${piglets}</p>
   `;
 }
 
@@ -1544,7 +1523,7 @@ async function skipNewbornHealth() {
     const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/first-treatment/skip`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ changed_by: newbornHealthGivenBy.value || "web_app" }),
+      body: JSON.stringify({}),
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
@@ -1847,13 +1826,8 @@ manualActionsToggle.addEventListener("click", () => {
 });
 [
   newbornHealthDate,
-  newbornHealthEarmarked,
-  newbornHealthAntiparasitic,
-  newbornHealthDeworming,
   newbornHealthMaleCount,
   newbornHealthFemaleCount,
-  newbornHealthVaccination,
-  newbornHealthNotes,
 ].forEach((element) => {
   if (element) element.addEventListener("change", resetNewbornHealthPreview);
 });

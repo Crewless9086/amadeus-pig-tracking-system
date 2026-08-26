@@ -77,6 +77,17 @@ def handle_authenticated_health_loss_message(
     provider_message_id = str(parsed.get("provider_message_id") or "").strip()
     provider_timestamp = str(parsed.get("provider_timestamp") or "").strip()
     output_language = "af" if str(parsed.get("output_language") or "en").casefold().startswith("af") else "en"
+    if semantic.get("intent") == "record_litter_piglet_deaths":
+        from modules.oom_sakkie.herdmaster_litter_loss_runtime import (
+            handle_litter_loss_message,
+        )
+
+        return handle_litter_loss_message(
+            parsed,
+            gateway_authority,
+            connect_factory=connect_factory,
+            claim_creator=claim_creator,
+        )
     explicit_health = bool(HEALTH_PATTERN.search(text) or (
         semantic.get("domain") == "herd_health" and not semantic.get("needs_clarification")))
     confirmation_shaped = bool(CONFIRMATION_PATTERN.fullmatch(text))

@@ -1,4 +1,3 @@
-import pytest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -17,14 +16,18 @@ def canonical(*, litters=None, animals=None):
             "litter_status": "Active", "active_count": 8, "detail": {"piglets": [
                 {"pig_id": f"PIG-{number}", "status": "Active", "on_farm": True}
                 for number in range(8)]}}],
-        "products": [{"product_id": "PROD-IRON", "product_name": "Iron Plus", "active": True}]}
+        "products": [{"product_id": "PROD-IRON", "product_name": "Iron Plus",
+            "default_dose": 1, "dose_unit": "ml", "active": True}],
+        "settings": {"herdmaster_first_treatment_protocol_v1": {
+            "protocol_id": "PIGLET-FIRST-STANDARD", "version": "1",
+            "earmarked": True, "notes": "Standard first treatment",
+            "treatments": [{"role": "antiparasitic", "product_id": "PROD-IRON",
+                "route": "injection", "batch_lot_number": "LOT-7"}]}}}
 
 
 def report(**overrides):
     facts = {"sow_ref": "Molly", "action_date": "2026-08-25", "male_count": 4,
-        "female_count": 4, "total_count": 8, "earmarked": True,
-        "antiparasitic_product_ref": "Iron Plus", "dose": "1 ml",
-        "route": "injection", "batch_lot_number": "LOT-7"}
+        "female_count": 4, "total_count": 8}
     facts.update(overrides)
     return {"authenticated": True, "authenticated_principal_id": "ANTON",
             "provider_message_id": "TG-1", "litter_first_treatment": facts}
@@ -40,14 +43,13 @@ def test_retains_exact_sow_litter_and_canonical_active_membership():
     assert result["preview"]["litter_id"] == "LIT-MOLLY"
 
 
-@pytest.mark.parametrize("change", [
-    {"antiparasitic_product_ref": None}, {"dose": None}, {"route": None},
-    {"batch_lot_number": None},
-])
-def test_missing_medical_details_are_one_question_and_never_inferred(change):
-    result = prepare_litter_first_treatment_preview(report(**change), canonical())
+def test_missing_canonical_protocol_is_exact_gap_not_repeat_question():
+    packet = canonical()
+    packet["settings"] = {}
+    result = prepare_litter_first_treatment_preview(report(), packet)
     assert result["success"] is False
-    assert result["question"] == "Which exact product, dose, route and batch did you use?"
+    assert result["status"] == "canonical_first_treatment_protocol_missing"
+    assert "question" not in result
 
 
 def test_multiple_active_litters_fail_closed():
@@ -63,11 +65,19 @@ def test_distinct_matching_sows_remain_ambiguous():
     assert result["status"] == "sow_identity_required"
 
 
-def test_natural_report_does_not_require_owner_to_repeat_litter_tally():
+def test_natural_report_asks_only_for_missing_sex_tally():
     result = prepare_litter_first_treatment_preview(report(
         male_count=None, female_count=None, total_count=None), canonical())
-    assert result["success"] is True
-    assert result["preview"]["total_count"] == 8
+    assert result["success"] is False
+    assert result["status"] == "litter_sex_counts_required"
+    assert "8 active piglets" in result["question"]
+
+
+def test_sex_tally_must_equal_current_active_membership():
+    result = prepare_litter_first_treatment_preview(
+        report(male_count=3, female_count=4), canonical())
+    assert result["status"] == "litter_sex_count_conflict"
+    assert result["active_piglet_count"] == 8
 
 
 def test_telegram_first_treatment_builds_one_protected_preview_without_writing():
@@ -77,7 +87,7 @@ def test_telegram_first_treatment_builds_one_protected_preview_without_writing()
             "litter_first_treatment": report()["litter_first_treatment"]}}
     created = []
     with patch("modules.oom_sakkie.herdmaster_litter_first_treatment_runtime.validates_gateway_owner_authority",
-               return_value=True):
+               return_value=True), patch.dict("os.environ", {"SECRET_KEY": "test-secret"}):
         result, status = handle_litter_first_treatment_message(parsed,
             SimpleNamespace(capabilities=("treatment",)),
             evidence_loader=lambda **_kwargs: canonical(),
