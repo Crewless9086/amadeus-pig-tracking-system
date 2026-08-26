@@ -364,14 +364,16 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(report["migrations"][4]["outcome"], "applied")
         self.assertEqual(report["migrations"][5]["outcome"], "applied")
         self.assertEqual(report["migrations"][6]["outcome"], "applied")
+        self.assertEqual(report["migrations"][7]["outcome"], "applied")
         replay = run(DATABASE_URL, ENV)
         self.assertEqual(replay["migrations"][4]["outcome"], "already_applied")
         self.assertEqual(replay["migrations"][5]["outcome"], "already_applied")
         self.assertEqual(replay["migrations"][6]["outcome"], "already_applied")
+        self.assertEqual(replay["migrations"][7]["outcome"], "already_applied")
         with psycopg.connect(DATABASE_URL) as db:
             self.assertEqual(dict(db.execute("select migration_id,ordinal from app_private.production_migration_receipts where migration_id=any(%s)", (list(item.migration_id for item in ALLOWLIST[:3]),)).fetchall()), {
               ALLOWLIST[0].migration_id: 1, ALLOWLIST[1].migration_id: 1, ALLOWLIST[2].migration_id: 2})
-            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 6)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 7)
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_baselines").fetchone()[0], 1)
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_catalog_checkpoints").fetchone()[0], 1)
 
@@ -674,19 +676,19 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             self.assertTrue(applied["receipt_identity"]["render_instance_id"])
             self.assertEqual(applied["receipt_guard"], replayed["receipt_guard"])
         self.assertEqual(
-            first["migrations"][-4]["readback"]["reason_values"],
+            first["migrations"][-5]["readback"]["reason_values"],
             list(EXPECTED_LITTER_SUPERSESSION_REASONS),
         )
         self.assertEqual(
-            first["migrations"][-3]["readback"]["action_kinds"],
+            first["migrations"][-4]["readback"]["action_kinds"],
             list(EXPECTED_PROTECTED_ACTION_KINDS),
         )
         self.assertEqual(
-            first["migrations"][-4]["readback"]["validator_trigger"]["enabled"],
+            first["migrations"][-5]["readback"]["validator_trigger"]["enabled"],
             "O",
         )
         self.assertEqual(
-            first["migrations"][-3]["readback"]["protected_claim_acl"],
+            first["migrations"][-4]["readback"]["protected_claim_acl"],
             {
                 "unauthorized_privilege_count": 0,
                 "managed_read_roles": [
@@ -697,10 +699,10 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             },
         )
         self.assertTrue(
-            first["migrations"][-4]["readback"]["migration_log_description_sha256"]
+            first["migrations"][-5]["readback"]["migration_log_description_sha256"]
         )
         self.assertTrue(
-            first["migrations"][-3]["readback"]["migration_log_description_sha256"]
+            first["migrations"][-4]["readback"]["migration_log_description_sha256"]
         )
         self.assertEqual(
             second["migrations"][-3]["readback"],
@@ -1605,7 +1607,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                        (select count(*) from app_private.production_migration_receipts),
                        (select count(*) from app_private.production_migration_catalog_checkpoints)"""
                 ).fetchone(),
-                (1, 4, 1),
+                (1, 5, 1),
             )
             with self.assertRaisesRegex(psycopg.errors.RaiseException, "append-only"):
                 db.execute(
