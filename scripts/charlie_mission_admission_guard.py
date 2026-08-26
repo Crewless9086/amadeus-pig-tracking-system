@@ -416,7 +416,9 @@ def _worktree_changed_files(base):
         for line in _git_text("diff", "--name-only", base, "--").splitlines()
         if line.strip()
     }
-    status = _git_text("status", "--porcelain=v1", "--untracked-files=all")
+    status = _git_bytes(
+        "status", "--porcelain=v1", "--untracked-files=all"
+    ).decode("utf-8", errors="strict")
     for line in status.splitlines():
         candidate = line[3:] if len(line) > 3 else ""
         if " -> " in candidate:

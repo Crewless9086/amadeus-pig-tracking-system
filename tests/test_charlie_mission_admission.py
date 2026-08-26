@@ -1,5 +1,6 @@
 import copy
 import hashlib
+import io
 import json
 import os
 import tempfile
@@ -35,6 +36,7 @@ GENERATION = "mission-admission-generation-test"
 ALLOWED_FILES = sorted([
     ".cursor/hooks.json",
     "modules/charlie/mission_admission.py",
+    "scripts/charlie_mission_admission_guard.py",
     "tests/test_charlie_mission_admission.py",
 ])
 ALLOWED_EFFECTS = sorted([
@@ -271,15 +273,14 @@ class MissionAdmissionReceiptTests(unittest.TestCase):
 
 class MissionAdmissionGuardTests(unittest.TestCase):
     def _hook(self, packet, environ=None):
-        output = tempfile.TemporaryFile(mode="w+")
+        output = io.StringIO()
         import contextlib
         with contextlib.redirect_stdout(output):
             code = hook_main(
-                stdin=__import__("io").StringIO(json.dumps(packet)),
+                stdin=io.StringIO(json.dumps(packet)),
                 environ=environ or {},
             )
-        output.seek(0)
-        return code, json.loads(output.read())
+        return code, json.loads(output.getvalue())
 
     def test_reads_are_allowed_but_missing_receipt_denies_mutation(self):
         _, read = self._hook({
@@ -313,13 +314,53 @@ class MissionAdmissionGuardTests(unittest.TestCase):
             "tool_input": {},
         })
         self.assertEqual(unknown["permission"], "deny")
-        output = tempfile.TemporaryFile(mode="w+")
+        output = io.StringIO()
         import contextlib
         with contextlib.redirect_stdout(output):
-            code = hook_main(stdin=__import__("io").StringIO("{broken"), environ={})
-        output.seek(0)
+            code = hook_main(stdin=io.StringIO("{broken"), environ={})
         self.assertEqual(code, 0)
-        self.assertEqual(json.loads(output.read())["permission"], "deny")
+        self.assertEqual(json.loads(output.getvalue())["permission"], "deny")
+
+    def test_valid_external_receipt_allows_only_admitted_write(self):
+        import subprocess
+        current_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        current_base = current_head
+        receipt = _receipt(base=current_base, head=current_head)
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_path = Path(directory) / "receipt.json"
+            key_path = Path(directory) / "authority.key"
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            key_path.write_bytes(KEY)
+            environ = {
+                "CHARLIE_MISSION_ADMISSION_RECEIPT_PATH": str(receipt_path),
+                "CHARLIE_VALIDATION_RECEIPT_KEY_PATH": str(key_path),
+                "CHARLIE_MISSION_ADMISSION_GENERATION": GENERATION,
+                "CHARLIE_MISSION_ADMISSION_REPOSITORY": "Crewless9086/amadeus-pig-tracking-system",
+                "CHARLIE_MISSION_ADMISSION_OWNER_CORRECTION_SHA256": (
+                    receipt["owner_instruction_chain"]["latest_correction_digest"]
+                ),
+                "CHARLIE_MISSION_ADMISSION_COLLISION_SHA256": (
+                    receipt["collision_snapshot"]["snapshot_sha256"]
+                ),
+            }
+            _, allowed = self._hook({
+                "hook_event_name": "preToolUse",
+                "tool_name": "Write",
+                "tool_input": {"path": "tests/test_charlie_mission_admission.py"},
+            }, environ=environ)
+            _, denied = self._hook({
+                "hook_event_name": "preToolUse",
+                "tool_name": "Write",
+                "tool_input": {"path": "app.py"},
+            }, environ=environ)
+        self.assertEqual(allowed["permission"], "allow", allowed)
+        self.assertEqual(denied["permission"], "deny")
 
     def test_hook_configuration_overrides_cursor_fail_open_defaults(self):
         config = json.loads((ROOT / ".cursor/hooks.json").read_text(encoding="utf-8"))
