@@ -238,8 +238,8 @@ jobs:
       - name: Run pig observation privilege gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres tests.test_herdmaster_breeding_observation_postgres
 
-      - name: Run Herdmaster Weaning Day atomic transaction gates
-        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
+      - name: Run Herdmaster litter treatment atomic transaction gates
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres tests.test_litter_first_treatment_atomic_postgres
 
       - name: Run Herdmaster mortality and welfare atomic transaction gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_herdmaster_health_loss_recording_postgres

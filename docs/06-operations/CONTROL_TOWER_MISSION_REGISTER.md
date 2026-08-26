@@ -3283,6 +3283,25 @@ work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - OMQ/HERDMASTER Anton rapid-message recovery integration addendum
+
+PR #1294 merged to authoritative main as merge commit `efe3e1c5`. That source
+isolates rapid report lifecycles, preserves exact-token reply binding and adds a
+pure retained-chronology recovery planner. Its deferred Anton register record
+is now preserved alongside the Molly first-treatment entry during PR #1291's
+serialized rebase; neither entry replaces the other and mission priority is
+unchanged.
+
+Read-only reconciliation remains: Pig 138 is canonical and exactly-once
+complete; Mona's 12 total/1 stillborn report requires a refreshed preview; Pig
+146's death/date are known but removal/disposal remains missing; Linda's two
+messages corroborate one three-piglet loss event, while her first treatment
+remains unrecorded. Never replay Pig 138 or ask Anton to repeat known facts.
+Merged source is not deployment, farm acceptance or an owner outcome. Runtime
+wiring, reviewed release, genuine protected confirmations, canonical readback,
+automatic follow-up and a later terminal-independent cycle remain outstanding.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - Control Tower chat-worker interruption continuity defect
 
 The three assigned development source lanes (`green_print_outcome`,
@@ -3305,6 +3324,32 @@ effect was authorized. Durable terminal-independent continuity remains the
 existing `CMQ-20260813-05` outcome; repeated chat restarts do not satisfy it.
 
 **NO BUSINESS OUTCOME. OWNER ACTION: NONE.**
+## 2026-08-26 - Molly first-treatment current-main and atomic-write reconciliation
+
+Existing mission `HERDMASTER-CONTINUOUS-HUSBANDRY` remains the controlling
+outcome and priority. Local recovery commit `827e9485` was preserved, rebased
+without patch loss onto authoritative `origin/main` `8144e572`, and reconciled
+with PR #1291's former remote head `499fb958`. Review candidate `62531a6d`
+adds one serializable, litter-scoped advisory-lock transaction for the protected
+Supabase first-treatment path so piglet earmarks, exact medical events and the
+litter sex tally cannot partially commit. The ordinary non-protected legacy
+path remains unchanged. Focused verification passed 131 tests plus nine
+first-treatment/newborn-health tests; the broader suite still contains the
+pre-existing unrelated farrowing test that attempts an unmocked governed
+database connection. Exact-head CI and independent review are pending.
+
+This is technical risk reduction, not a farm result. No farm row, Telegram
+message, provider effect, confirmation, deployment or manufactured acceptance
+event occurred. After reviewed merge and deployment through the serialized
+release lane, the deployed Oom Sakkie/HERDMASTER runtime must receive one fresh
+genuine owner report through the authenticated Telegram channel, create its own
+protected preview, consume genuine confirmation, commit once, prove canonical
+medical/tally readback, schedule HERDMASTER follow-up, and later complete a
+terminal-independent reassessment. The historical Molly message remains sealed
+as evidence and must not be replayed. Automatic promotion trigger: exact-head
+CI and independent review pass, followed by release-lane availability; then
+resume merge/deployment and read-only commissioning without owner relay.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
 ## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.10 migration-rail defect
 
@@ -3475,4 +3520,16 @@ question and confirmed history while keeping exception state, scheduling a
 future cadence and allowing later cases to rotate. A later successful refresh
 still follows normal genuine-question delivery. Source/tests are not an owner
 outcome; natural post-deploy cadence and queue continuation remain required.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
+## 2026-08-25 - Molly first-treatment clean-source recovery
+
+The existing continuous-husbandry parity implementation was found uncommitted
+in a stale worktree and absent from production. It has been recovered without
+altering that worktree or Molly's records into a clean current-main lineage.
+The bounded source separates first treatment from farrowing, reuses the existing
+protected claim and litter-health operation, requires canonical Supabase writes,
+and preserves the heat-free rule. Source and tests are not business completion;
+review, deployment, production preflight, a fresh genuine report, canonical
+readback and automatic follow-up remain required. Priority is unchanged.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**

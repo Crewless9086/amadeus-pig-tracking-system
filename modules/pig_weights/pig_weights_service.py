@@ -3525,6 +3525,10 @@ def record_litter_newborn_health(
     female_count=None,
     dry_run: bool = True,
     treatment_context: str = "first_treatment",
+    require_supabase: bool = False,
+    canonical_detail=None,
+    canonical_products=None,
+    protected_operation_id: str = "",
 ):
     litter_id = to_clean_string(litter_id)
     action_date = parse_sheet_date(action_date_value)
@@ -3538,6 +3542,7 @@ def record_litter_newborn_health(
     dose_value = to_float(dose)
     dry_run = dry_run is True
     treatment_context = to_clean_string(treatment_context) or "first_treatment"
+    protected_operation_id = to_clean_string(protected_operation_id)
 
     errors = []
     if treatment_context not in {"first_treatment", "weaning_day"}:
@@ -3563,7 +3568,7 @@ def record_litter_newborn_health(
 
     products = {
         product["product_id"]: product
-        for product in get_products()
+        for product in (canonical_products if canonical_products is not None else get_products())
     }
     if antiparasitic_product_id and antiparasitic_product_id not in products:
         errors.append(f"Antiparasitic product '{antiparasitic_product_id}' was not found or is inactive.")
@@ -3577,7 +3582,12 @@ def record_litter_newborn_health(
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     medical_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    pig_rows = _get_pig_master_rows()
+    if canonical_detail is not None:
+        pig_rows = [{columns["pig_id"]: row.get("pig_id"), "Litter_ID": litter_id,
+            columns["status"]: row.get("status"),
+            columns["on_farm"]: row.get("on_farm")} for row in canonical_detail.get("piglets") or []]
+    else:
+        pig_rows = _get_pig_master_rows()
     active_piglets = [
         row for row in pig_rows
         if to_clean_string(row.get("Litter_ID", "")) == litter_id
@@ -3672,6 +3682,7 @@ def record_litter_newborn_health(
                 notes=notes,
                 litter_id=litter_id,
                 treatment_context=treatment_context,
+                protected_operation_id=protected_operation_id,
             ))
         if deworming_product_id:
             deworming_product = products[deworming_product_id]
@@ -3687,6 +3698,7 @@ def record_litter_newborn_health(
                 notes=notes,
                 litter_id=litter_id,
                 treatment_context=treatment_context,
+                protected_operation_id=protected_operation_id,
             ))
         if vaccination_product_id:
             treatment_rows.append(_build_litter_health_treatment_row(
@@ -3701,6 +3713,7 @@ def record_litter_newborn_health(
                 notes=notes,
                 litter_id=litter_id,
                 treatment_context=treatment_context,
+                protected_operation_id=protected_operation_id,
             ))
 
     pig_rows_updated = 0
@@ -3709,18 +3722,38 @@ def record_litter_newborn_health(
     litter_rows_updated = 0
     if not dry_run:
         supabase_available = farm_supabase_write_service.farm_supabase_writes_available()
+        if require_supabase and not supabase_available:
+            return {"success": False, "status": "canonical_supabase_write_required",
+                "errors": ["Canonical Supabase treatment writes are unavailable."],
+                "source": {"writes_to_sheets": False, "writes_to_supabase": False}}, 503
         if supabase_available:
-            pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
-            if pig_rows_updated is None:
-                pig_rows_updated = 0
-            treatment_result = farm_supabase_write_service.insert_missing_medical_events_from_sheet_rows(
-                treatment_rows
-            )
-            treatment_rows_created = treatment_result["created"]
-            if litter_tally_updates:
-                litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
+            if treatment_context == "first_treatment" and require_supabase:
+                atomic = farm_supabase_write_service.apply_litter_first_treatment_packet({
+                    "litter_id": litter_id,
+                    "sow_pig_id": (canonical_detail or {}).get("mother_pig_id"),
+                    "pig_ids": [to_clean_string(row.get(columns["pig_id"], "")) for row in active_piglets],
+                    "action_date": action_date,
+                    "protected_operation_id": protected_operation_id,
+                    "earmarked": earmarked,
+                    "male_count": male_count_int,
+                    "female_count": female_count_int,
+                    "treatment_rows": treatment_rows,
+                })
+                pig_rows_updated = atomic["pig_rows_updated"]
+                treatment_rows_created = atomic["treatment_rows_created"]
+                litter_rows_updated = atomic["litter_rows_updated"]
+            else:
+                pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
+                if pig_rows_updated is None:
+                    pig_rows_updated = 0
+                treatment_result = farm_supabase_write_service.insert_missing_medical_events_from_sheet_rows(
+                    treatment_rows
+                )
+                treatment_rows_created = treatment_result["created"]
+                if litter_tally_updates:
+                    litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
             writes_to_supabase = True
-        else:
+        elif not require_supabase:
             pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
             if litter_tally_updates:
                 litter_rows_updated = batch_update_rows_by_id(
@@ -3822,6 +3855,7 @@ def _build_litter_health_treatment_row(
     notes,
     litter_id,
     treatment_context="first_treatment",
+    protected_operation_id="",
 ):
     withdrawal_days = product.get("default_withdrawal_days")
     withdrawal_days_int = int(withdrawal_days) if withdrawal_days not in (None, "") else ""
@@ -3839,8 +3873,12 @@ def _build_litter_health_treatment_row(
     if notes:
         medical_notes = f"{medical_notes} Notes: {notes}"
 
+    event_id = generate_medical_log_id()
+    if protected_operation_id:
+        event_id = farm_supabase_write_service.stable_first_treatment_event_id(
+            protected_operation_id, pig_id, treatment_type, product["product_id"])
     return [
-        generate_medical_log_id(),
+        event_id,
         pig_id,
         format_date_for_sheet(action_date),
         treatment_type,

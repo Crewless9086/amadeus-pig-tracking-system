@@ -1819,6 +1819,73 @@ class LitterNewbornHealthTests(unittest.TestCase):
         get_products.assert_called_once()
         get_pigs.assert_called_once()
 
+    def test_first_treatment_uses_one_atomic_supabase_packet(self):
+        product_rows = [{
+            "product_id": "PRD-IRON",
+            "product_name": "Iron",
+            "product_category": "Treatment",
+            "default_dose": 1,
+            "dose_unit": "ml",
+            "default_withdrawal_days": 0,
+        }]
+        canonical_detail = {
+            "mother_pig_id": "SOW-1",
+            "piglets": [
+                {"pig_id": "PIG-1", "status": "Active", "on_farm": "Yes"},
+                {"pig_id": "PIG-2", "status": "Active", "on_farm": "Yes"},
+            ],
+        }
+        atomic_result = {
+            "pig_rows_updated": 2,
+            "treatment_rows_created": 2,
+            "litter_rows_updated": 1,
+        }
+
+        with patch.object(
+                pig_weights_service.farm_supabase_write_service,
+                "farm_supabase_writes_available", return_value=True), \
+             patch.object(pig_weights_service, "_try_supabase_read", return_value=None), \
+             patch.object(
+                 pig_weights_service.farm_supabase_write_service,
+                 "apply_litter_first_treatment_packet", return_value=atomic_result,
+             ) as apply_packet, \
+             patch.object(pig_weights_service, "_try_supabase_pig_updates") as split_pig_write, \
+             patch.object(
+                 pig_weights_service.farm_supabase_write_service,
+                 "insert_missing_medical_events_from_sheet_rows",
+             ) as split_medical_write, \
+             patch.object(pig_weights_service, "_try_supabase_litter_update") as split_litter_write:
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-08-25",
+                changed_by="OWNER-1",
+                antiparasitic_product_id="PRD-IRON",
+                dose=1,
+                route="IM",
+                batch_lot_number="BATCH-1",
+                male_count=1,
+                female_count=1,
+                dry_run=False,
+                require_supabase=True,
+                canonical_detail=canonical_detail,
+                canonical_products=product_rows,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["pig_rows_updated"], 2)
+        self.assertEqual(result["treatment_rows_created"], 2)
+        self.assertEqual(result["litter_rows_updated"], 1)
+        packet = apply_packet.call_args.args[0]
+        self.assertEqual(packet["litter_id"], "LIT-1")
+        self.assertEqual(packet["sow_pig_id"], "SOW-1")
+        self.assertEqual(packet["pig_ids"], ["PIG-1", "PIG-2"])
+        self.assertEqual((packet["male_count"], packet["female_count"]), (1, 1))
+        self.assertEqual(len(packet["treatment_rows"]), 2)
+        split_pig_write.assert_not_called()
+        split_medical_write.assert_not_called()
+        split_litter_write.assert_not_called()
+
     def test_mark_litter_weaned_prefers_supabase_pig_reads_and_writes(self):
         pig_rows = [
             {

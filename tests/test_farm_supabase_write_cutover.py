@@ -2,10 +2,49 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from modules.pig_weights import pig_weights_service
+from modules.pig_weights import farm_supabase_write_service, pig_weights_service
 
 
 class FarmSupabaseWriteCutoverTests(unittest.TestCase):
+    def test_atomic_first_treatment_rejects_incomplete_packet_before_connecting(self):
+        with self.assertRaisesRegex(ValueError, "complete_first_treatment_packet_required"):
+            farm_supabase_write_service.apply_litter_first_treatment_packet(
+                {"litter_id": "LIT-1"},
+                connect_factory=lambda _url: self.fail("database must not be opened"),
+            )
+
+    def test_atomic_first_treatment_rejects_tally_conflict_before_connecting(self):
+        packet = {
+            "litter_id": "LIT-1",
+            "sow_pig_id": "SOW-1",
+            "protected_operation_id": "OOM-CLAIM-1",
+            "pig_ids": ["PIG-1", "PIG-2"],
+            "male_count": 2,
+            "female_count": 1,
+            "treatment_rows": [["MED-1", "PIG-1"], ["MED-2", "PIG-2"]],
+        }
+        with self.assertRaisesRegex(ValueError, "first_treatment_tally_conflict"):
+            farm_supabase_write_service.apply_litter_first_treatment_packet(
+                packet,
+                connect_factory=lambda _url: self.fail("database must not be opened"),
+            )
+
+    def test_atomic_first_treatment_requires_medical_evidence_for_every_piglet(self):
+        packet = {
+            "litter_id": "LIT-1",
+            "sow_pig_id": "SOW-1",
+            "protected_operation_id": "OOM-CLAIM-1",
+            "pig_ids": ["PIG-1", "PIG-2"],
+            "male_count": 1,
+            "female_count": 1,
+            "treatment_rows": [["MED-1", "PIG-1"]],
+        }
+        with self.assertRaisesRegex(ValueError, "every_active_piglet_requires_medical_evidence"):
+            farm_supabase_write_service.apply_litter_first_treatment_packet(
+                packet,
+                connect_factory=lambda _url: self.fail("database must not be opened"),
+            )
+
     def test_save_new_pen_prefers_supabase(self):
         cleaned = {
             "pen_name": "Farrowing 1",

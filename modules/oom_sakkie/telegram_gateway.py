@@ -8,6 +8,7 @@ from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message
 from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 from modules.oom_sakkie.herdmaster_farrowing_runtime import handle_farrowing_litter_message
+from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import handle_litter_first_treatment_message
 from modules.oom_sakkie.operational_specialist_intake import (
     handle_operational_specialist_message, is_exact_fertilizer_commissioning_request,
     recover_contextual_specialist_replay)
@@ -775,6 +776,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "reply_transport": "backend_handles_owner_task_delivery",
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, weight_status if delivery.get("success") else 202
+
+    treatment_result, treatment_status = handle_litter_first_treatment_message(parsed, gateway_authority)
+    if treatment_result.get("handled"):
+        delivery = deliver_family_result(parsed, treatment_result, specialist="HERDMASTER",
+            mission_id=str(treatment_result.get("mission_id") or ""),
+            card_mission_id=str(treatment_result.get("card_mission_id") or ""))
+        delivery = _bind_protected_preview_card(treatment_result, delivery)
+        body, _ = _gateway_result(delivery.get("success") is True,
+            str(treatment_result.get("status") or "litter_first_treatment_contained"), policy, treatment_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": treatment_result.get("answer", ""), "message": treatment_result,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, treatment_status if delivery.get("success") else 202
 
     litter_result, litter_status = handle_farrowing_litter_message(parsed, gateway_authority)
     if litter_result.get("handled"):
