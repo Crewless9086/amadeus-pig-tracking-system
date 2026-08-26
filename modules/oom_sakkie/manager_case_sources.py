@@ -74,6 +74,42 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
                  and str(row.get("specialist") or "").upper() == claimed_specialist), None)
 
 
+def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
+    """Refresh every claimed case from one read per owning specialist.
+
+    A manager cohort can contain many cases from one specialist. Re-running the
+    complete specialist collector for every case serializes the same canonical
+    reads and can exhaust the provider request window. This snapshot keeps the
+    existing per-collector containment and parallel collection behavior while
+    returning only exact claimed identities.
+    """
+    requested = {
+        (str(case.get("dedupe_key") or ""), str(case.get("specialist") or "").upper())
+        for case in cases or ()
+    }
+    requested.discard(("", ""))
+    if not requested:
+        return {}
+    available = tuple(collectors or (
+        _rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime))
+    wanted = set()
+    for dedupe_key, _specialist in requested:
+        prefix = dedupe_key.split(":", 1)[0].casefold()
+        if prefix in {"rootline", "herdmaster", "sam", "beacon", "runtime"}:
+            wanted.add(prefix)
+        elif prefix == "delivery":
+            wanted.add("delivery_gaps")
+    selected = tuple(collector for collector in available
+        if (getattr(collector, "__name__", "").strip("_").casefold() in wanted))
+    rows = collect_manager_candidates(now=now, collectors=selected) if selected else []
+    return {
+        (str(row.get("dedupe_key") or ""), str(row.get("specialist") or "").upper()): row
+        for row in rows
+        if (str(row.get("dedupe_key") or ""),
+            str(row.get("specialist") or "").upper()) in requested
+    }
+
+
 def _rootline(now):
     local_date = _aware(now).astimezone(ZoneInfo("Africa/Johannesburg")).date().isoformat()
     with connect_bounded_read() as connection:

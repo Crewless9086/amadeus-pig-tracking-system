@@ -110,6 +110,40 @@ def test_cycle_wrapper_supplies_current_brain_guard_audit_to_store():
     assert audit["checked_count"] > 0
 
 
+def test_cycle_wrapper_refreshes_claimed_specialists_as_one_batch(monkeypatch):
+    calls = []
+    cases = [
+        {"case_id": "CASE-ONE", "dedupe_key": "herdmaster:first",
+         "specialist": "HERDMASTER"},
+        {"case_id": "CASE-TWO", "dedupe_key": "herdmaster:second",
+         "specialist": "HERDMASTER"},
+    ]
+    snapshot = {
+        ("herdmaster:first", "HERDMASTER"): {"dedupe_key": "herdmaster:first"},
+        ("herdmaster:second", "HERDMASTER"): {"dedupe_key": "herdmaster:second"},
+    }
+    monkeypatch.setattr(
+        "modules.oom_sakkie.manager_case_sources.collect_manager_candidates",
+        lambda **_kwargs: [])
+    monkeypatch.setattr(
+        "modules.oom_sakkie.manager_case_sources.collect_manager_refresh_snapshot",
+        lambda **kwargs: (calls.append(tuple(kwargs["cases"])) or snapshot))
+
+    class Store:
+        def run_cycle(self, _candidates, **kwargs):
+            return kwargs["refresh_batch"](cases)
+
+    result = run_general_manager_cycle(
+        now=NOW, source_revision="abc123", store=Store(),
+        collectors=(lambda _now: [],))
+
+    assert calls == [tuple(cases)]
+    assert result == {
+        "CASE-ONE": snapshot[("herdmaster:first", "HERDMASTER")],
+        "CASE-TWO": snapshot[("herdmaster:second", "HERDMASTER")],
+    }
+
+
 def test_failed_brain_guard_is_persisted_and_blocks_case_delivery():
     commands = []
 

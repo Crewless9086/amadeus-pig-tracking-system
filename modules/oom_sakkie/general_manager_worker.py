@@ -6,6 +6,7 @@ Those effects remain owned by the existing protected and specialist rails.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import hashlib
 import html
@@ -117,6 +118,8 @@ class PostgresManagerCaseStore:
     def run_cycle(self, candidates: Iterable[Mapping[str, Any]], *, now: datetime,
                   source_revision: str, deliver: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
                   refresh: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
+                  refresh_batch: Callable[[Iterable[Mapping[str, Any]]],
+                                          Mapping[str, Any]] | None = None,
                   brain_guard_audit: Mapping[str, Any] | None = None):
         now = _aware(now)
         brain_guard = dict(brain_guard_audit or build_scheduled_brain_guard_audit(
@@ -184,6 +187,9 @@ class PostgresManagerCaseStore:
                         claimed.append(case)
             delivered = suppressed = exceptions = 0
             case_results = []
+            batch_refreshes = {}
+            if deliver and refresh_batch and claimed:
+                batch_refreshes = dict(refresh_batch(tuple(claimed)) or {})
             for case in claimed:
                 current_case = case
                 specialist_failure = None
@@ -191,7 +197,13 @@ class PostgresManagerCaseStore:
                 if (deliver and refresh_eligible
                         and case.get("last_delivery_digest") != case["evidence_digest"]):
                     refreshed = None
-                    if refresh:
+                    if refresh_batch:
+                        refreshed = batch_refreshes.get(case["case_id"])
+                        if isinstance(refreshed, (ValueError, RuntimeError, OSError)):
+                            if isinstance(refreshed, ManagerCaseError):
+                                raise refreshed
+                            specialist_failure = refreshed
+                    elif refresh:
                         try:
                             refreshed = refresh(case)
                         except (ValueError, RuntimeError, OSError) as exc:
@@ -560,9 +572,11 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                               store=None, collectors=None, deliver=None):
     now = _aware(now or datetime.now(timezone.utc))
     refresh = None
+    refresh_batch = None
     if candidates is None:
         from modules.oom_sakkie.manager_case_sources import (
-            collect_manager_candidate, collect_manager_candidates)
+            collect_manager_candidate, collect_manager_candidates,
+            collect_manager_refresh_snapshot)
         candidates = collect_manager_candidates(now=now, collectors=collectors)
         if collectors is None:
             from modules.telemetry.rootline_mixer_readiness_observer import (
@@ -592,11 +606,60 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
             return collect_manager_candidate(now=datetime.now(timezone.utc),
                 dedupe_key=case["dedupe_key"], specialist=case["specialist"],
                 collectors=collectors)
+        def refresh_batch(cases):
+            cases = tuple(cases)
+            regular = tuple(case for case in cases
+                if not str(case.get("dedupe_key") or "").startswith("rootline-readiness:"))
+            readiness = tuple(case for case in cases
+                if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"))
+            results = {}
+
+            def collect_regular():
+                return collect_manager_refresh_snapshot(
+                    now=datetime.now(timezone.utc), cases=regular, collectors=collectors)
+
+            def collect_readiness():
+                from modules.telemetry.rootline_mixer_readiness_observer import (
+                    collect_mixer_readiness,
+                )
+                return collect_mixer_readiness(now=datetime.now(timezone.utc))
+
+            jobs = {}
+            with ThreadPoolExecutor(max_workers=2,
+                                    thread_name_prefix="oom-manager-refresh") as executor:
+                if regular:
+                    jobs["regular"] = executor.submit(collect_regular)
+                if readiness:
+                    jobs["readiness"] = executor.submit(collect_readiness)
+                if "regular" in jobs:
+                    try:
+                        snapshot = jobs["regular"].result()
+                    except (ValueError, RuntimeError, OSError) as exc:
+                        for case in regular:
+                            results[case["case_id"]] = exc
+                    else:
+                        for case in regular:
+                            results[case["case_id"]] = snapshot.get((
+                                str(case.get("dedupe_key") or ""),
+                                str(case.get("specialist") or "").upper()))
+                if "readiness" in jobs:
+                    try:
+                        rows = jobs["readiness"].result()
+                    except (ValueError, RuntimeError, OSError) as exc:
+                        for case in readiness:
+                            results[case["case_id"]] = exc
+                    else:
+                        by_key = {str(row.get("dedupe_key") or ""): row
+                                  for row in rows or ()}
+                        for case in readiness:
+                            results[case["case_id"]] = by_key.get(
+                                str(case.get("dedupe_key") or ""))
+            return results
     revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
     brain_guard = build_scheduled_brain_guard_audit(source_revision=revision, now=now)
     return (store or PostgresManagerCaseStore()).run_cycle(
         candidates, now=now, source_revision=revision, deliver=deliver,
-        refresh=refresh, brain_guard_audit=brain_guard)
+        refresh=refresh, refresh_batch=refresh_batch, brain_guard_audit=brain_guard)
 
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None,

@@ -3,7 +3,8 @@ from threading import Barrier
 
 from modules.oom_sakkie.manager_case_sources import (
     _completed_bulk_batch_findings, _project_retained_herd_report_recovery,
-    collect_manager_candidate, collect_manager_candidates)
+    collect_manager_candidate, collect_manager_candidates,
+    collect_manager_refresh_snapshot)
 from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
 
 
@@ -262,6 +263,35 @@ def test_injected_collectors_are_narrowed_to_owner():
         collectors=(_beacon, _herdmaster))
     assert result["specialist"] == "HERDMASTER"
     assert calls == ["herdmaster"]
+
+
+def test_claim_refresh_reads_each_owning_specialist_once_for_many_cases():
+    calls = []
+    def _herdmaster(now):
+        calls.append(("herdmaster", now))
+        return [
+            {"dedupe_key": "herdmaster:first", "specialist": "HERDMASTER"},
+            {"dedupe_key": "herdmaster:second", "specialist": "HERDMASTER"},
+            {"dedupe_key": "herdmaster:unclaimed", "specialist": "HERDMASTER"},
+        ]
+    def _beacon(now):
+        calls.append(("beacon", now))
+        return [{"dedupe_key": "beacon:current", "specialist": "BEACON"}]
+    cases = [
+        {"dedupe_key": "herdmaster:first", "specialist": "HERDMASTER"},
+        {"dedupe_key": "herdmaster:second", "specialist": "HERDMASTER"},
+        {"dedupe_key": "beacon:current", "specialist": "BEACON"},
+    ]
+
+    snapshot = collect_manager_refresh_snapshot(
+        now=NOW, cases=cases, collectors=(_beacon, _herdmaster))
+
+    assert set(snapshot) == {
+        ("herdmaster:first", "HERDMASTER"),
+        ("herdmaster:second", "HERDMASTER"),
+        ("beacon:current", "BEACON"),
+    }
+    assert sorted(name for name, _ in calls) == ["beacon", "herdmaster"]
 
 
 def test_beacon_candidate_identity_uses_only_consumed_campaign_evidence(monkeypatch):
