@@ -3337,6 +3337,31 @@ canonical/provider/device final-OFF plus physical water-flow evidence before
 any irrigation outcome can be claimed. **DURABLY LOGGED - NOT YET AN OWNER
 OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - OMQ-20260813-03 ROOTLINE no-dispatch terminal truth
+
+The first natural post-PR #1297 ROOTLINE cycle produced canonical Water &
+Energy Plan generation 39 and reached the B/C execution authority without a
+hardware command. Its exact weekly ledger showed both B12345 and C12345 at two
+verified completed days against two expected days by Wednesday, 2026-08-26:
+`delivery_debt_days=0`, with two of four weekly days remaining. The resulting
+`weekly_delivery_debt_not_dispatchable` is therefore a governed no-run, not a
+missing worker or failed irrigation attempt. The safe existing-authority path
+is a later natural reassessment after expected weekly demand exceeds verified
+completed days, followed by all existing live weather, controller, canonical
+authority, provider readback and final-OFF gates. No manual plan, command or
+hardware action is justified by the present evidence.
+
+The outer scheduler nevertheless labelled that no-dispatch cycle
+`scheduled_rootline_plan_and_execution_completed`. The bounded correction says
+`scheduled_rootline_plan_and_execution_cycle_completed`, preserving successful
+technical-cycle truth without claiming irrigation execution. This is an
+addendum to existing `OMQ-20260813-03`; priority is unchanged. The separate
+morning HTTP 503 occurred after manager completion and has no causal role in
+the weekly-debt decision. Source and tests are not an owner outcome; reviewed
+release, a naturally debt-positive dispatch, canonical/device final-OFF and
+physical water-flow evidence remain required. **DURABLY LOGGED - NOT YET AN
+OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - OMQ/HERDMASTER Anton rapid-message recovery integration addendum
 
 PR #1294 merged to authoritative main as merge commit `efe3e1c5`. That source
