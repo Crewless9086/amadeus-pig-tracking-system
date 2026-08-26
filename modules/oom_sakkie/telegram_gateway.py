@@ -1396,7 +1396,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 compound_success = plan_delivery_confirmed and cycle_result.get("success") is True
                 return {**plan_result,
                     "success": compound_success,
-                    "status": ("scheduled_rootline_plan_and_execution_completed"
+                    # Success proves that the bounded execution *cycle* reached
+                    # a safe terminal result.  It does not prove that a zone
+                    # was dispatchable or that irrigation occurred.
+                    "status": ("scheduled_rootline_plan_and_execution_cycle_completed"
                         if compound_success else "scheduled_rootline_plan_or_execution_contained"),
                     "plan_delivery_status": plan_delivery_status,
                     "plan_reassessment_status": plan_reassessment_status,

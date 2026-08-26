@@ -301,7 +301,7 @@ def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_c
         state_store=state,
         scheduler_now=NOW,family_delivery=deliver,execution_cycle=cycle,
         specialist_loader=lambda:current,daily_plan_generator=generate)
-    assert status==200 and value["status"]=="scheduled_rootline_plan_and_execution_completed"
+    assert status==200 and value["status"]=="scheduled_rootline_plan_and_execution_cycle_completed"
     assert value["plan_delivery_status"]=="delivered_current_irrigation_plan"
     assert value["plan_reassessment_status"]=="rootline_reassessment_changed"
     assert value["execution_status"]=="zone_contained"
