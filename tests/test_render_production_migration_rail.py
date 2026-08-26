@@ -681,6 +681,10 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         )
         self.assertEqual(
             first["migrations"][-4]["readback"]["action_kinds"],
+            list(PREDECESSOR_PROTECTED_ACTION_KINDS),
+        )
+        self.assertEqual(
+            second["migrations"][-4]["readback"]["action_kinds"],
             list(EXPECTED_PROTECTED_ACTION_KINDS),
         )
         self.assertEqual(
