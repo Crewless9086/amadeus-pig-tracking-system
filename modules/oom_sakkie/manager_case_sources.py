@@ -147,6 +147,7 @@ def _herdmaster(now):
     from modules.oom_sakkie.farm_manager_runtime import _load_herdmaster
     result = _load_herdmaster(None, owner, now)
     candidates = []
+    candidates.extend(_retained_herd_report_recovery_candidates(now))
     candidates.extend(_completed_bulk_batch_findings(now))
     from modules.pig_weights.pig_welfare_case_runtime import (
         load_open_welfare_attention_cases,
@@ -286,6 +287,74 @@ def _herdmaster(now):
                 message_family=("litter_first_treatment" if treatment_due else "litter_care"),
                 presentation_identity={"human_name": "Molly",
                                        "stable_reference": litter_id}))
+    return candidates
+
+
+def _retained_herd_report_recovery_candidates(now, *, connect=None):
+    """Keep retained, unresolved herd reports on the automatic manager rail."""
+    connector = connect or connect_bounded_read
+    with connector() as connection:
+        with connection.cursor() as cur:
+            cur.execute("""select review_json->'herdmaster_health_loss'
+                from public.sam_live_stock_conversation_review_events
+                where event_source='oom_sakkie_herdmaster_health_loss_runtime'
+                  and created_at >= %s
+                  and review_json->'herdmaster_health_loss'->>'status'='waiting_for_input'
+                order by created_at,review_event_id""", (now - timedelta(days=7),))
+            health = [row[0] for row in cur.fetchall() if row and isinstance(row[0], dict)]
+            cur.execute("""select action_kind,mission_id,provider_message_id,status,expires_at,preview_payload
+                from app_private.oom_protected_action_claims
+                where action_kind='herdmaster_record_farrowing_litter'
+                  and status='active' and expires_at < %s order by created_at""", (now,))
+            expired = [{"action_kind": row[0], "mission_id": row[1],
+                "provider_message_id": row[2], "status": row[3],
+                "expires_at": row[4], "preview_payload": row[5] or {}}
+                for row in cur.fetchall()]
+    return _project_retained_herd_report_recovery(now, health, expired)
+
+
+def _project_retained_herd_report_recovery(now, health, expired):
+    candidates = []
+    litter_loss = [row for row in health or () if
+        "kleintjies dood" in str(row.get("owner_text_verbatim") or "").casefold()]
+    grouped = {}
+    for row in litter_loss:
+        key = (str(row.get("owner_user_id") or ""), str(row.get("chat_id") or ""))
+        grouped.setdefault(key, []).append(row)
+    for (owner, chat), rows in grouped.items():
+        provider_ids = sorted({str(row.get("provider_message_id") or "") for row in rows
+                               if str(row.get("provider_message_id") or "")})
+        if not owner or owner != chat or not provider_ids:
+            continue
+        linda = any("linda" in str(row.get("owner_text_verbatim") or "").casefold()
+                    for row in rows)
+        candidates.append(_candidate(
+            "herdmaster:retained-litter-loss:" + provider_ids[0], "HERDMASTER", "urgent",
+            [*(f"provider_message:{value}" for value in provider_ids),
+             "retained_provider_chronology", "canonical_effect:none"],
+            ["fresh_canonical_litter_loss_preview"],
+            ("Linda's retained piglet-loss reports remain unresolved."
+             if linda else "A retained piglet-loss report remains unresolved."),
+            "HERDMASTER must reconstruct one exact current preview from the retained provider chronology; do not ask the reporter to repeat known facts.",
+            now + timedelta(minutes=5), task_class="status_reconciliation",
+            presentation_identity={"human_name": "Linda" if linda else "Retained litter",
+                                   "stable_reference": provider_ids[0]}))
+    for claim in expired or ():
+        preview = claim.get("preview_payload") if isinstance(claim.get("preview_payload"), dict) else {}
+        mission = str(claim.get("mission_id") or "")
+        provider = str(claim.get("provider_message_id") or "")
+        if not mission or not provider:
+            continue
+        candidates.append(_candidate(
+            "herdmaster:expired-farrowing:" + mission, "HERDMASTER", "urgent",
+            [f"mission:{mission}", f"provider_message:{provider}",
+             f"sow:{preview.get('sow_pig_id') or 'unknown'}", "canonical_effect:none"],
+            ["fresh_canonical_farrowing_preview"],
+            "A delivered farrowing preview expired without a canonical litter result.",
+            "HERDMASTER must refresh canonical evidence and present a new protected preview without replaying the original report.",
+            now + timedelta(minutes=5), task_class="status_reconciliation",
+            presentation_identity={"familiar_meaning": "Retained farrowing report",
+                                   "stable_reference": mission}))
     return candidates
 
 

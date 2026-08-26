@@ -3305,6 +3305,24 @@ HTTP 503 after manager completion and remains unaccepted. Source/tests are not
 owner outcomes; post-deploy canonical final-OFF, physical water-flow and family
 brief acceptance remain required. Priority is unchanged. **DURABLY LOGGED -
 NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+## 2026-08-26 - Anton retained-burst deployed commissioning gap
+
+Read-only commissioning at deployed exact source `c573ba52` proved the merged
+first-treatment handler is wired for fresh Telegram input, but the merged
+retained-burst planner has no runtime caller. No post-deployment Anton recovery
+claim or canonical effect exists. Pig 138 remains exactly-once complete; Pig
+146 remains Active; Mona retains only expired provider claim 4051 with no
+canonical litter; Linda retains provider rows 4052/4054 but has neither the
+three-piglet loss nor first-treatment medical evidence.
+
+The bounded source repair projects unresolved retained health rows and expired
+farrowing claims into the existing automatic HERDMASTER manager-case rail. It
+groups only same-principal private-chat evidence, preserves provider IDs, and
+requires fresh canonical protected previews without replay or fact repetition.
+It grants no new write, confirmation or delivery authority. Source, tests and
+later deployment are not farm acceptance; genuine preview/confirmation,
+canonical readback, follow-up and terminal-independent recurrence remain.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
 ## 2026-08-26 - OMQ-20260813-03 ROOTLINE daily-plan commissioning gap
 

@@ -2,10 +2,46 @@ from datetime import datetime, timedelta, timezone
 from threading import Barrier
 
 from modules.oom_sakkie.manager_case_sources import (
-    _completed_bulk_batch_findings, collect_manager_candidate, collect_manager_candidates)
+    _completed_bulk_batch_findings, _project_retained_herd_report_recovery,
+    collect_manager_candidate, collect_manager_candidates)
 
 
 NOW = datetime(2026, 8, 17, 10, 0, tzinfo=timezone.utc)
+
+
+def test_retained_anton_reports_become_automatic_recovery_cases_without_replay():
+    health = [
+        {"owner_user_id": "ANTON", "chat_id": "ANTON", "provider_message_id": "4052",
+         "owner_text_verbatim": "Linds 3 kleintjies dood"},
+        {"owner_user_id": "ANTON", "chat_id": "ANTON", "provider_message_id": "4054",
+         "owner_text_verbatim": "Linda kleintjies dood op 26 Aug"},
+    ]
+    expired = [{"mission_id": "OOM-MONA", "provider_message_id": "4051",
+        "preview_payload": {"sow_pig_id": "PIG-MONA"}}]
+    rows = _project_retained_herd_report_recovery(NOW, health, expired)
+    assert len(rows) == 2
+    linda = next(row for row in rows if "litter-loss" in row["dedupe_key"])
+    assert "provider_message:4052" in linda["evidence_refs"]
+    assert "provider_message:4054" in linda["evidence_refs"]
+    assert linda["unknowns"] == ["fresh_canonical_litter_loss_preview"]
+    assert "repeat known facts" in linda["next_action"]
+    mona = next(row for row in rows if "expired-farrowing" in row["dedupe_key"])
+    assert mona["unknowns"] == ["fresh_canonical_farrowing_preview"]
+    assert "replaying" in mona["next_action"]
+
+
+def test_retained_recovery_never_cross_groups_principal_or_chat():
+    health = [
+        {"owner_user_id": "ANTON", "chat_id": "ANTON", "provider_message_id": "1",
+         "owner_text_verbatim": "Linda 3 kleintjies dood"},
+        {"owner_user_id": "OTHER", "chat_id": "OTHER", "provider_message_id": "2",
+         "owner_text_verbatim": "Linda 3 kleintjies dood"},
+        {"owner_user_id": "ANTON", "chat_id": "GROUP", "provider_message_id": "3",
+         "owner_text_verbatim": "Linda 3 kleintjies dood"},
+    ]
+    rows = _project_retained_herd_report_recovery(NOW, health, [])
+    assert len(rows) == 2
+    assert all("provider_message:3" not in row["evidence_refs"] for row in rows)
 
 
 def test_completed_batch_projects_exact_pig_material_bcs_and_weight_findings():
