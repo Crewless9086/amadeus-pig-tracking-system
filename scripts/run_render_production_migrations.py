@@ -70,6 +70,11 @@ ALLOWLIST = (
         filename="202608250002_adopt_green_lost_pre_attempt_claim.sql",
         sha256="977f45d6f935d3bf7b39b6bfbe9c696c52fd88db743f8c86c5b73719ff28475e",
     ),
+    AllowedMigration(
+        migration_id="202608260001_allow_herdmaster_litter_actions_protected_claims",
+        filename="202608260001_allow_herdmaster_litter_actions_protected_claims.sql",
+        sha256="1470c98984b982597433e9ac5d9fe9b3db81f14bc335441a40d9ac69965ea6c2",
+    ),
 )
 
 
@@ -89,6 +94,8 @@ EXPECTED_PROTECTED_ACTION_KINDS = (
     "grouped_weights",
     "herdmaster_breeding_grouped",
     "herdmaster_record_farrowing_litter",
+    "herdmaster_record_litter_first_treatment",
+    "herdmaster_record_litter_piglet_deaths",
     "mortality",
     "rootline_delegated_family",
     "rootline_fertilizer_mixer_commissioning",
@@ -99,9 +106,14 @@ EXPECTED_PROTECTED_ACTION_KINDS = (
 PREDECESSOR_PROTECTED_ACTION_KINDS = tuple(
     value
     for value in EXPECTED_PROTECTED_ACTION_KINDS
-    if value != "herdmaster_record_farrowing_litter"
+    if value not in {"herdmaster_record_litter_first_treatment",
+                     "herdmaster_record_litter_piglet_deaths"}
 )
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
+    "202608260001_allow_herdmaster_litter_actions_protected_claims": (
+        "Admit exact-preview HERDMASTER litter treatment and piglet-loss claims "
+        "through the canonical protected action spine."
+    ),
     "202608250002_adopt_green_lost_pre_attempt_claim": (
         "Allow one exact active and authorized expired pre-attempt GREEN claim "
         "to be adopted by a fresh local ledger"

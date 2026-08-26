@@ -19,6 +19,7 @@ from scripts.run_render_production_migrations import (
     EXPECTED_MIGRATION_LOG_DESCRIPTIONS,
     EXPECTED_LITTER_SUPERSESSION_REASONS,
     EXPECTED_PROTECTED_ACTION_KINDS,
+    PREDECESSOR_PROTECTED_ACTION_KINDS,
     AllowedMigration,
     _constraint_readback,
     _catalog_snapshot,
@@ -541,6 +542,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             "202608220002_allow_herdmaster_farrowing_protected_claims.sql",
             "202608250001_fence_green_print_lease_device_binding.sql",
             "202608250002_adopt_green_lost_pre_attempt_claim.sql",
+            "202608260001_allow_herdmaster_litter_actions_protected_claims.sql",
         ])
         self.assertEqual(list(ALLOWLIST), sorted(ALLOWLIST, key=lambda row: row.migration_id))
         for row in ALLOWLIST:
@@ -578,11 +580,14 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertIsNotNone(predecessor)
         self.assertEqual(
             tuple(re.findall(r"'([^']+)'", target.group(1))),
-            EXPECTED_PROTECTED_ACTION_KINDS,
+            PREDECESSOR_PROTECTED_ACTION_KINDS,
         )
         self.assertEqual(
             set(re.findall(r"'([^']+)'", predecessor.group(1))),
-            set(EXPECTED_PROTECTED_ACTION_KINDS) - {"herdmaster_record_farrowing_litter"},
+            set(PREDECESSOR_PROTECTED_ACTION_KINDS) - {
+                "herdmaster_record_farrowing_litter",
+                "herdmaster_record_litter_first_treatment",
+                "herdmaster_record_litter_piglet_deaths"},
         )
         self.assertIn("canonical protected action-kind constraint mismatch", action_sql)
         self.assertNotIn("create table", action_sql.lower())

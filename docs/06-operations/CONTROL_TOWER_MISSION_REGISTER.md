@@ -3283,6 +3283,23 @@ work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - Anton retained recovery production-migration rail gap
+
+Read-only commissioning of merged release `13f556d75` proved the exact manager
+revision naturally created independent Linda litter-loss and Pig 146 mortality
+cases while suppressing already-terminal Pig 138. The new protected-action
+migration was absent from production, however, because the closed Render
+migration allowlist ended at `202608250002`. A correctly exact-commit-bound
+governed migration run therefore succeeded without applying `202608260001`;
+the production constraint still excludes both litter first-treatment and
+piglet-death action kinds. Two natural exact-revision manager cycles remain
+`started`, no recovery claim/provider receipt exists and no pre-confirmation
+farm effect occurred. This is an existing OMQ/HERDMASTER release blocker, not
+a new mission or priority change. The bounded repair appends the reviewed
+migration/checksum/readback contract to the closed rail. Source/review/deploy
+and later natural completion remain required. **DURABLY LOGGED - NOT YET AN
+OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - External Slack/Cursor authorization wait
 
 The existing external-integration lane cannot complete its Slack connection:
