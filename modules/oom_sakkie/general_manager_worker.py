@@ -27,6 +27,8 @@ SPECIALISTS = frozenset({"ROOTLINE", "HERDMASTER", "SAM", "BEACON", "RUNTIME"})
 URGENCIES = frozenset({"critical", "urgent", "due", "planned", "watch"})
 OPEN_STATES = frozenset({"open", "delegated", "waiting_reassessment", "exception"})
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
+_PRODUCTION_RETAINED_RECOVERY = object()
+_MESSAGE_FAMILY_REF = "manager_message_family:"
 
 
 class ManagerCaseError(ValueError):
@@ -68,6 +70,11 @@ def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, A
     if urgency not in URGENCIES:
         raise ManagerCaseError("unsupported_urgency")
     refs = _bounded_strings(raw.get("evidence_refs"), "evidence_refs", required=True)
+    message_family = str(raw.get("message_family") or "").strip()
+    if message_family and not _ID.fullmatch(message_family):
+        raise ManagerCaseError("message_family_invalid")
+    if message_family:
+        refs = sorted(set(refs + [_MESSAGE_FAMILY_REF + message_family]))
     unknowns = _bounded_strings(raw.get("unknowns") or (), "unknowns")
     summary = _text(raw.get("summary"), "summary", 500)
     next_action = _text(raw.get("next_action"), "next_action", 500)
@@ -88,6 +95,7 @@ def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, A
         "next_action": next_action,
         "next_reassessment_at": next_at.isoformat(),
         "terminal_state": terminal_state,
+        "message_family": message_family,
     }
     # Scheduling is worker state, not new domain evidence.  Excluding it keeps a
     # repeated collector observation an exact replay instead of manufacturing a
@@ -592,7 +600,7 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
 
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None,
-                              retained_recovery=None):
+                              retained_recovery=_PRODUCTION_RETAINED_RECOVERY):
     """Present changed farm cases through the existing owner-only lifecycle."""
     if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"):
         return {"success": True, "status": "readiness_attention_only",
@@ -607,8 +615,12 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
         from modules.oom_sakkie.herdmaster_burst_recovery import (
             route_retained_manager_recovery,
         )
-        return route_retained_manager_recovery(
-            case, preview_builder=retained_recovery)
+        if retained_recovery is _PRODUCTION_RETAINED_RECOVERY:
+            from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
+                build_retained_protected_preview,
+            )
+            retained_recovery = build_retained_protected_preview
+        return route_retained_manager_recovery(case, preview_builder=retained_recovery)
     owners = [value.strip() for value in str(
         os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",")
         if value.strip()]
@@ -690,6 +702,9 @@ def _case_row(row):
             "evidence_refs","unknowns","summary","next_action","next_reassessment_at",
             "generation","last_delivery_digest")
     value = dict(zip(keys, row)); value["next_reassessment_at"] = value["next_reassessment_at"].isoformat()
+    value["message_family"] = next((str(ref)[len(_MESSAGE_FAMILY_REF):]
+        for ref in value.get("evidence_refs") or ()
+        if str(ref).startswith(_MESSAGE_FAMILY_REF)), "")
     return value
 
 

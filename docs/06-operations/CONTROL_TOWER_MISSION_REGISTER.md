@@ -3323,6 +3323,14 @@ claim or canonical litter, and requires fresh canonical protected previews
 without replay or fact repetition. The manager delivery path is explicitly
 fail-closed for these cases until a callback-bound protected preview exists;
 it cannot substitute a generic manager card.
+The subsequent persistence review found `message_family` was not retained by
+the manager-case schema lifecycle. The correction stores a backward-compatible
+typed family marker in immutable evidence refs and reconstructs it on every
+claim/readback, avoiding an uncommissioned schema change. Production delivery
+now supplies a retained-recovery builder that reconstructs mortality and
+farrowing through the existing callback-bound protected preview generators;
+missing or unproved adapters, including litter loss until its protected adapter
+is available, remain silent and fail closed.
 It grants no new write, confirmation or delivery authority. Source, tests and
 later deployment are not farm acceptance; genuine preview/confirmation,
 canonical readback, follow-up and terminal-independent recurrence remain.

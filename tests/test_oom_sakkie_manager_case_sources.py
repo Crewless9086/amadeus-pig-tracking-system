@@ -86,10 +86,24 @@ def test_mona_expired_projection_terminalizes_on_effect_or_newer_claim():
 def test_retained_case_never_delivers_generic_manager_card_before_preview():
     case = {"dedupe_key": "herdmaster:retained-mortality:4050",
         "specialist": "HERDMASTER", "message_family": "retained_protected_recovery"}
-    result = deliver_farm_manager_case(case)
+    result = deliver_farm_manager_case(case, retained_recovery=None)
     assert result["status"] == "retained_protected_repreview_unavailable"
     assert result["suppress_owner_delivery"] is True
     assert result["telegram_sends"] == 0
+
+
+def test_retained_message_family_survives_normalization_contract():
+    from modules.oom_sakkie.general_manager_worker import normalize_candidate
+    raw = {"dedupe_key": "herdmaster:retained-mortality:4050",
+        "specialist": "HERDMASTER", "urgency": "urgent",
+        "evidence_refs": ["provider_message:4050"],
+        "unknowns": ["fresh_canonical_mortality_preview"],
+        "summary": "Retained mortality.", "next_action": "Build preview.",
+        "next_reassessment_at": NOW.isoformat(),
+        "message_family": "retained_protected_recovery"}
+    normalized = normalize_candidate(raw, now=NOW)
+    assert normalized["message_family"] == "retained_protected_recovery"
+    assert "manager_message_family:retained_protected_recovery" in normalized["evidence_refs"]
 
 
 def test_completed_batch_projects_exact_pig_material_bcs_and_weight_findings():
