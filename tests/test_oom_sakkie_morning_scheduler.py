@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import importlib
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 
@@ -88,3 +89,43 @@ def test_payment_recovery_route_uses_same_strong_scheduler_authority(monkeypatch
     assert denied.status_code == 403
     assert accepted.status_code == 200
     assert accepted.get_json()["status"] == "payment_recovery_idle"
+
+
+def _script_module(monkeypatch):
+    monkeypatch.setenv("OOM_SAKKIE_MORNING_SCHEDULER_URL", "https://example.test/morning-schedule")
+    monkeypatch.setenv("OOM_SAKKIE_MORNING_SCHEDULER_TOKEN", "x" * 32)
+    return importlib.import_module("scripts.oom_sakkie_morning_scheduler")
+
+
+def _scheduler_post(morning, calls):
+    def call(url, payload):
+        calls.append((url, payload))
+        if url.endswith("morning-schedule"): return morning
+        if url.endswith("protected-payment-recovery"): return {"status":"payment_recovery_idle"}
+        if url.endswith("green-print-recovery"): return {"status":"documents_green_recovery_idle"}
+        if url.endswith("general-manager-cycle"): return {"status":"general_manager_cycle_completed"}
+        return {"success":True}
+    return call
+
+
+def test_late_provider_tick_still_invokes_morning(monkeypatch):
+    module=_script_module(monkeypatch); calls=[]
+    result,code=module.run_scheduler(now=datetime(2026,8,26,5,12,tzinfo=timezone.utc),
+        post_fn=_scheduler_post({"success":True,"status":"daily_manager_replay_suppressed"},calls))
+    assert code==0 and result["success"] is True
+    assert any(url.endswith("morning-schedule") for url,_ in calls)
+
+
+def test_morning_failure_propagates_to_scheduler_exit(monkeypatch):
+    module=_script_module(monkeypatch); calls=[]
+    result,code=module.run_scheduler(now=datetime(2026,8,26,4,46,tzinfo=timezone.utc),
+        post_fn=_scheduler_post({"success":False,"status":"daily_manager_claim_unproven"},calls))
+    assert code==1 and result["success"] is False
+
+
+def test_multi_recipient_runtime_success_is_scheduler_success(monkeypatch):
+    module=_script_module(monkeypatch); calls=[]
+    result,code=module.run_scheduler(now=datetime(2026,8,26,5,12,tzinfo=timezone.utc),
+        post_fn=_scheduler_post({"success":True,
+            "status":"morning_runtime_recipients_projected"},calls))
+    assert code==0 and result["success"] is True

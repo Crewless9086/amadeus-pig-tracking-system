@@ -143,18 +143,27 @@ class PostgresManagerCaseStore:
                         created += result == "created"
                         changed += result == "changed"
                         replayed += result == "replayed"
-                    cur.execute("""select case_id,dedupe_key,specialist,urgency,status,evidence_digest,
-                            evidence_refs,unknowns,summary,next_action,next_reassessment_at,generation,
-                            last_delivery_digest
-                        from app_private.oom_manager_cases
-                        where status in ('open','delegated','waiting_reassessment','exception')
-                          and next_reassessment_at<=%s
-                          and (lease_until is null or lease_until<%s)
-                        order by case when specialist='BEACON' then 0 else 1 end,
-                            case urgency when 'critical' then 0 when 'urgent' then 1
+                    cur.execute("""with eligible as materialized (
+                            select case_id,specialist,urgency,next_reassessment_at,
+                                row_number() over (partition by specialist order by
+                                    case urgency when 'critical' then 0 when 'urgent' then 1
+                                    when 'due' then 2 when 'planned' then 3 else 4 end,
+                                    next_reassessment_at,case_id) specialist_rank
+                            from app_private.oom_manager_cases
+                            where status in ('open','delegated','waiting_reassessment','exception')
+                              and next_reassessment_at<=%s
+                              and (lease_until is null or lease_until<%s)
+                        )
+                        select m.case_id,m.dedupe_key,m.specialist,m.urgency,m.status,
+                            m.evidence_digest,m.evidence_refs,m.unknowns,m.summary,m.next_action,
+                            m.next_reassessment_at,m.generation,m.last_delivery_digest
+                        from app_private.oom_manager_cases m join eligible e using(case_id)
+                        order by case when e.specialist_rank=1 then 0 else 1 end,
+                            case e.urgency when 'critical' then 0 when 'urgent' then 1
                             when 'due' then 2 when 'planned' then 3 else 4 end,
-                            next_reassessment_at,case_id
-                        for update skip locked limit 20""", (now, now))
+                            case when e.specialist='BEACON' then 0 else 1 end,
+                            e.next_reassessment_at,e.case_id
+                        for update of m skip locked limit 20""", (now, now))
                     for row in cur.fetchall():
                         case = _case_row(row)
                         cur.execute("""update app_private.oom_manager_cases set

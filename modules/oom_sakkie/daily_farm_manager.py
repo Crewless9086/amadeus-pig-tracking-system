@@ -422,11 +422,9 @@ def _render(priorities, watch, question, now, language):
     visible = list(priorities) + list(watch)
     owner_work = [row for row in visible if _owner_action_required(row)]
     automatic_work = [row for row in visible if not _owner_action_required(row)]
-    if not owner_work and not question:
-        return ""
-    # Agent-owned reconciliation remains in the durable task lifecycle. It is
-    # not owner-visible until it produces an outcome or material exception.
-    automatic_work = []
+    # Keep the daily projection useful without turning every reassessment into
+    # owner work. Detailed unchanged cycles remain silent on the manager rail.
+    automatic_work = automatic_work[:3]
     lines = ["<b>VANDAG SE PLAASPLAN</b>" if af
              else "<b>TODAY'S FARM PLAN</b>"]
     if owner_work:

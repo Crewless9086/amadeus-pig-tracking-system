@@ -206,6 +206,28 @@ def test_audit_checkpoint_uses_existing_started_status_vocabulary():
     assert "brain_guard_alignment_passed" in checkpoint[-1]
 
 
+def test_due_selection_orders_then_locks_with_skip_locked_and_limit():
+    commands = []
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchall(self): return []
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+        def close(self): pass
+    audit = build_scheduled_brain_guard_audit(source_revision="abc", now=NOW,
+        alignment_result={"version":"v1","passed":True,"findings":[],"checked_files":[]})
+    result = PostgresManagerCaseStore(connect_factory=Connection).run_cycle(
+        [], now=NOW, source_revision="abc", brain_guard_audit=audit)
+    assert result["success"] is True
+    selection = next(sql for sql, _ in commands if "join eligible" in sql)
+    assert "for update of m skip locked limit 20" in selection
+    assert "partition by specialist" in selection
+
+
 def _candidate(**changes):
     value = {
         "dedupe_key": "rootline:current-plan",
