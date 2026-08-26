@@ -79,14 +79,24 @@ def make_litter_death_preview(
 ) -> RecoveryItem:
     """Request the canonical dry-run only; never execute the resulting action."""
     message_ids = tuple(sorted({_clean(item) for item in provider_message_ids if _clean(item)}))
-    identity = {
+    audit = {
         "owner_id": _clean(owner_id), "chat_id": _clean(chat_id),
         "provider_message_ids": message_ids, "litter_id": _clean(litter_id),
         "event_date": event_date, "count": int(count), "reason": reason,
         "male_count": male_count, "female_count": female_count,
         "pig_ids": sorted(pig_ids or []),
     }
-    operation_key = f"litter-death:{_digest(identity)[:24]}"
+    # Provider retries and spelling corrections are evidence for the same farm
+    # event, not a new operation.  Their ids remain in the audit payload but do
+    # not alter the canonical event identity.
+    operation_identity = {
+        "owner_id": _clean(owner_id), "chat_id": _clean(chat_id),
+        "litter_id": _clean(litter_id), "event_date": event_date,
+        "count": int(count), "reason": reason,
+        "male_count": male_count, "female_count": female_count,
+        "pig_ids": sorted(pig_ids or []),
+    }
+    operation_key = f"litter-death:{_digest(operation_identity)[:24]}"
     result, status = previewer(
         _clean(litter_id), event_date, reason, count=count,
         male_count=male_count, female_count=female_count, pig_ids=pig_ids,
@@ -96,7 +106,7 @@ def make_litter_death_preview(
     if status == 200 and result.get("success"):
         return RecoveryItem(
             "Linda", "mark_litter_piglets_dead", message_ids, "preview_ready",
-            operation_key, {**identity, "preview": result}, (),
+            operation_key, {**audit, "preview": result}, (),
         )
     errors = tuple(result.get("errors") or ())
     missing: tuple[str, ...] = ("pig_ids_or_sex_counts",) if any(
@@ -104,7 +114,7 @@ def make_litter_death_preview(
     ) else ("canonical_litter_evidence",)
     return RecoveryItem(
         "Linda", "mark_litter_piglets_dead", message_ids, "needs_fact",
-        operation_key, {**identity, "preview_errors": errors}, missing,
+        operation_key, {**audit, "preview_errors": errors}, missing,
     )
 
 
@@ -128,18 +138,31 @@ def plan_anton_burst(
 
     # Typo corroboration: "Linds 3 ..." and the later Linda/date message are one
     # report when owner/chat match.  Both provider ids remain in the audit identity.
-    linda_rows = [row for row in reports if re.search(r"\blinds?\b|\blinda\b", row.text, re.I) and "dood" in row.text.casefold()]
+    linda_rows = [row for row in reports if re.search(r"\b(?:linds|linda)\b", row.text, re.I) and "dood" in row.text.casefold()]
     if linda_rows and (linda := by_label.get("linda")) and linda.active_litter_id:
-        count_match = next((re.search(r"\b(\d+)\b", row.text) for row in linda_rows if re.search(r"\b(\d+)\b", row.text)), None)
-        date_match = next((re.search(r"\b(\d{1,2})\s+aug\b", row.text, re.I) for row in linda_rows if re.search(r"\b(\d{1,2})\s+aug\b", row.text, re.I)), None)
-        count = int(count_match.group(1)) if count_match else 0
-        day = int(date_match.group(1)) if date_match else 26
-        output.append(make_litter_death_preview(
-            provider_message_ids=[row.provider_message_id for row in linda_rows],
-            owner_id=linda_rows[0].owner_id, chat_id=linda_rows[0].chat_id,
-            litter_id=linda.active_litter_id, event_date=f"2026-08-{day:02d}",
-            count=count, previewer=previewer,
-        ))
+        principals: dict[tuple[str, str], list[ProviderReport]] = {}
+        for row in linda_rows:
+            principals.setdefault((row.owner_id, row.chat_id), []).append(row)
+        for (owner_id, chat_id), principal_rows in principals.items():
+            dated: dict[int, list[ProviderReport]] = {}
+            undated: list[ProviderReport] = []
+            for row in principal_rows:
+                match = re.search(r"\b(\d{1,2})\s+aug\b", row.text, re.I)
+                (dated.setdefault(int(match.group(1)), []) if match else undated).append(row)
+            # An undated correction/corroboration may join only when this
+            # principal/private-chat context has exactly one incident date.
+            if len(dated) == 1:
+                next(iter(dated.values())).extend(undated)
+            for day, incident_rows in dated.items():
+                count_match = next((re.search(r"\b(\d+)\b(?!\s+aug\b)", row.text, re.I) for row in incident_rows if re.search(r"\b(\d+)\b(?!\s+aug\b)", row.text, re.I)), None)
+                if not count_match:
+                    continue
+                output.append(make_litter_death_preview(
+                    provider_message_ids=[row.provider_message_id for row in incident_rows],
+                    owner_id=owner_id, chat_id=chat_id,
+                    litter_id=linda.active_litter_id, event_date=f"2026-08-{day:02d}",
+                    count=int(count_match.group(1)), previewer=previewer,
+                ))
 
     for report in reports:
         text = report.text.casefold()
@@ -162,6 +185,6 @@ def plan_anton_burst(
 
 def bind_reply(candidates: Iterable[RecoveryItem], text: str) -> RecoveryItem | None:
     """Bind only an explicit exact subject; entity-free replies stay ambiguous."""
-    token = _key(text)
-    matches = [item for item in candidates if _key(item.subject) and _key(item.subject) in token]
+    tokens = {_key(token) for token in re.findall(r"[A-Za-z0-9]+", text) if _key(token)}
+    matches = [item for item in candidates if _key(item.subject) in tokens]
     return matches[0] if len(matches) == 1 else None

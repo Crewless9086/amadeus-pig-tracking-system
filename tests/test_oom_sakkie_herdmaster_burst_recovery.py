@@ -75,6 +75,8 @@ def test_entity_free_reply_is_ambiguous_but_explicit_tag_binds():
     assert bind_reply(items, "Ja") is None
     assert bind_reply(items, "Ja, 146 is verwyder en begrawe") .subject == "146"
     assert bind_reply(items, "Bevestig Linda") .subject == "Linda"
+    assert bind_reply(items, "2138 is verwyder") is None
+    assert bind_reply(items, "Lindale is reg") is None
 
 
 def test_provider_retry_order_is_stable_and_does_not_duplicate():
@@ -83,3 +85,36 @@ def test_provider_retry_order_is_stable_and_does_not_duplicate():
     assert [(item.subject, item.operation_key) for item in first] == [
         (item.subject, item.operation_key) for item in second
     ]
+
+
+def test_incremental_correction_retains_operation_identity():
+    subjects = [CanonicalSubject("Linda", "PIG-LINDA", "LITTER-LINDA")]
+    initial = plan_anton_burst(
+        [_report(4052, "Linds 3 kleintjies dood op 26 Aug", 2)], subjects, [],
+        previewer=_untagged_previewer,
+    )
+    corrected = plan_anton_burst(
+        [
+            _report(4052, "Linds 3 kleintjies dood op 26 Aug", 2),
+            _report(4054, "Linda kleintjies dood op 26 Aug", 4),
+        ], subjects, [], previewer=_untagged_previewer,
+    )
+    assert len(initial) == len(corrected) == 1
+    assert initial[0].operation_key == corrected[0].operation_key
+    assert corrected[0].provider_message_ids == ("4052", "4054")
+
+
+def test_linda_chronology_never_combines_cross_owner_or_chat():
+    reports = [
+        _report(4052, "Linds 3 kleintjies dood op 26 Aug", 2),
+        ProviderReport("other-owner", "someone-else", "farm", "Linda 3 kleintjies dood op 26 Aug", "2026-08-26T08:06:03+02:00"),
+        ProviderReport("other-chat", "anton", "group-chat", "Linda 3 kleintjies dood op 26 Aug", "2026-08-26T08:06:04+02:00"),
+    ]
+    items = plan_anton_burst(
+        reports, [CanonicalSubject("Linda", "PIG-LINDA", "LITTER-LINDA")], [],
+        previewer=_untagged_previewer,
+    )
+    linda_items = [item for item in items if item.subject == "Linda"]
+    assert len(linda_items) == 3
+    assert all(len(item.provider_message_ids) == 1 for item in linda_items)
+    assert len({item.operation_key for item in linda_items}) == 3

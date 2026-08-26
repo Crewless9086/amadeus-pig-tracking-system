@@ -105,6 +105,13 @@ Technical progress is not an owner outcome.
 
 ## Operational reality and authority
 
+This handover is also the temporary durable addendum for the Anton recovery.
+The shared mission-register edit was removed from this branch because PR #1291
+has an open concurrent entry there. On serialized integration, preserve #1291's
+entry and then copy this addendum into the register; neither record may be
+lost. Until then, this document is the authoritative branch-local record and
+does not claim collision-free register integration.
+
 - Operational actor: deployed Oom Sakkie -> deployed HERDMASTER canonical
   action spine.
 - Genuine trigger: Anton's retained provider messages and later natural
