@@ -70,6 +70,11 @@ ALLOWLIST = (
         filename="202608250002_adopt_green_lost_pre_attempt_claim.sql",
         sha256="977f45d6f935d3bf7b39b6bfbe9c696c52fd88db743f8c86c5b73719ff28475e",
     ),
+    AllowedMigration(
+        migration_id="202608260001_allow_herdmaster_litter_actions_protected_claims",
+        filename="202608260001_allow_herdmaster_litter_actions_protected_claims.sql",
+        sha256="1470c98984b982597433e9ac5d9fe9b3db81f14bc335441a40d9ac69965ea6c2",
+    ),
 )
 
 
@@ -89,6 +94,8 @@ EXPECTED_PROTECTED_ACTION_KINDS = (
     "grouped_weights",
     "herdmaster_breeding_grouped",
     "herdmaster_record_farrowing_litter",
+    "herdmaster_record_litter_first_treatment",
+    "herdmaster_record_litter_piglet_deaths",
     "mortality",
     "rootline_delegated_family",
     "rootline_fertilizer_mixer_commissioning",
@@ -99,9 +106,18 @@ EXPECTED_PROTECTED_ACTION_KINDS = (
 PREDECESSOR_PROTECTED_ACTION_KINDS = tuple(
     value
     for value in EXPECTED_PROTECTED_ACTION_KINDS
+    if value not in {"herdmaster_record_litter_first_treatment",
+                     "herdmaster_record_litter_piglet_deaths"}
+)
+FARROWING_PREDECESSOR_ACTION_KINDS = tuple(
+    value for value in PREDECESSOR_PROTECTED_ACTION_KINDS
     if value != "herdmaster_record_farrowing_litter"
 )
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
+    "202608260001_allow_herdmaster_litter_actions_protected_claims": (
+        "Admit exact-preview HERDMASTER litter treatment and piglet-loss claims "
+        "through the canonical protected action spine."
+    ),
     "202608250002_adopt_green_lost_pre_attempt_claim": (
         "Allow one exact active and authorized expired pre-attempt GREEN claim "
         "to be adopted by a fresh local ledger"
@@ -1776,15 +1792,39 @@ def _verify_migration_precondition(
             "oom_protected_action_claims",
             "oom_protected_action_claims_action_kind_check",
         )
-        if action_kinds == PREDECESSOR_PROTECTED_ACTION_KINDS:
+        if action_kinds == FARROWING_PREDECESSOR_ACTION_KINDS:
             if already_applied:
                 raise RuntimeError("migration_precondition_action_predecessor_mismatch")
+            _verify_migration_log(connection, item.migration_id, required=False)
+            return "predecessor"
+        if action_kinds == PREDECESSOR_PROTECTED_ACTION_KINDS:
+            _verify_migration_log(connection, item.migration_id, required=True)
+            return "target"
+        if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS and already_applied:
+            # A later append-only migration legitimately supersedes this
+            # migration's target.  Prove both ordered migration-log facts;
+            # never treat an unreceipted constraint expansion as replay.
+            _verify_migration_log(connection, item.migration_id, required=True)
+            _verify_migration_log(
+                connection,
+                "202608260001_allow_herdmaster_litter_actions_protected_claims",
+                required=True,
+            )
+            return "downstream_target"
+        raise RuntimeError(f"migration_precondition_action_constraint_mismatch:{action_kinds}")
+    if item.migration_id == "202608260001_allow_herdmaster_litter_actions_protected_claims":
+        _verify_protected_claim_acl(connection)
+        _, action_kinds = _constraint_readback(connection, "app_private",
+            "oom_protected_action_claims", "oom_protected_action_claims_action_kind_check")
+        if action_kinds == PREDECESSOR_PROTECTED_ACTION_KINDS:
+            if already_applied:
+                raise RuntimeError("migration_precondition_litter_actions_predecessor_mismatch")
             _verify_migration_log(connection, item.migration_id, required=False)
             return "predecessor"
         if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS:
             _verify_migration_log(connection, item.migration_id, required=True)
             return "target"
-        raise RuntimeError(f"migration_precondition_action_constraint_mismatch:{action_kinds}")
+        raise RuntimeError(f"migration_precondition_litter_actions_constraint_mismatch:{action_kinds}")
     if item.migration_id == "202608200001_add_sales_financial_disposition" and not already_applied:
         columns = connection.execute(
             """select column_name from information_schema.columns where table_schema='public'
@@ -1859,8 +1899,17 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
             "oom_protected_action_claims",
             "oom_protected_action_claims_action_kind_check",
         )
-        if action_kinds != EXPECTED_PROTECTED_ACTION_KINDS:
+        if action_kinds not in (
+            PREDECESSOR_PROTECTED_ACTION_KINDS,
+            EXPECTED_PROTECTED_ACTION_KINDS,
+        ):
             raise RuntimeError(f"migration_readback_action_constraint_mismatch:{action_kinds}")
+        if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS:
+            _verify_migration_log(
+                connection,
+                "202608260001_allow_herdmaster_litter_actions_protected_claims",
+                required=True,
+            )
         log_description = _verify_migration_log(
             connection, item.migration_id, required=True
         )
@@ -1875,6 +1924,17 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
             "action_kinds": list(action_kinds),
             "protected_claim_acl": acl,
         }
+    if item.migration_id == "202608260001_allow_herdmaster_litter_actions_protected_claims":
+        acl = _verify_protected_claim_acl(connection)
+        constraint, action_kinds = _constraint_readback(connection, "app_private",
+            "oom_protected_action_claims", "oom_protected_action_claims_action_kind_check")
+        if action_kinds != EXPECTED_PROTECTED_ACTION_KINDS:
+            raise RuntimeError(f"migration_readback_litter_actions_constraint_mismatch:{action_kinds}")
+        description = _verify_migration_log(connection, item.migration_id, required=True)
+        return {"migration_log_present": True,
+            "migration_log_description_sha256": hashlib.sha256(description.encode()).hexdigest(),
+            "action_kind_constraint_sha256": hashlib.sha256(constraint.encode()).hexdigest(),
+            "action_kinds": list(action_kinds), "protected_claim_acl": acl}
     description = _migration_log_description(connection, item.migration_id)
     if not description:
         raise RuntimeError(f"migration_readback_historical_log_missing:{item.migration_id}")

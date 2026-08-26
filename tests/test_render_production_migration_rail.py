@@ -19,6 +19,7 @@ from scripts.run_render_production_migrations import (
     EXPECTED_MIGRATION_LOG_DESCRIPTIONS,
     EXPECTED_LITTER_SUPERSESSION_REASONS,
     EXPECTED_PROTECTED_ACTION_KINDS,
+    PREDECESSOR_PROTECTED_ACTION_KINDS,
     AllowedMigration,
     _constraint_readback,
     _catalog_snapshot,
@@ -363,14 +364,16 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(report["migrations"][4]["outcome"], "applied")
         self.assertEqual(report["migrations"][5]["outcome"], "applied")
         self.assertEqual(report["migrations"][6]["outcome"], "applied")
+        self.assertEqual(report["migrations"][7]["outcome"], "applied")
         replay = run(DATABASE_URL, ENV)
         self.assertEqual(replay["migrations"][4]["outcome"], "already_applied")
         self.assertEqual(replay["migrations"][5]["outcome"], "already_applied")
         self.assertEqual(replay["migrations"][6]["outcome"], "already_applied")
+        self.assertEqual(replay["migrations"][7]["outcome"], "already_applied")
         with psycopg.connect(DATABASE_URL) as db:
             self.assertEqual(dict(db.execute("select migration_id,ordinal from app_private.production_migration_receipts where migration_id=any(%s)", (list(item.migration_id for item in ALLOWLIST[:3]),)).fetchall()), {
               ALLOWLIST[0].migration_id: 1, ALLOWLIST[1].migration_id: 1, ALLOWLIST[2].migration_id: 2})
-            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 6)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipt_identity_anchors").fetchone()[0], 7)
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_baselines").fetchone()[0], 1)
             self.assertEqual(db.execute("select count(*) from app_private.production_migration_catalog_checkpoints").fetchone()[0], 1)
 
@@ -491,7 +494,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertEqual(sum(isinstance(value, dict) for value in outcomes), 1)
         self.assertTrue(any("migration_legacy_adoption_already_initialized" in value for value in outcomes if isinstance(value, str)))
         with psycopg.connect(DATABASE_URL) as db:
-            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 6)
+            self.assertEqual(db.execute("select count(*) from app_private.production_migration_receipts").fetchone()[0], 7)
 
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_legacy_authorization_order_is_irrelevant_but_set_and_identities_are_exact(self):
@@ -541,6 +544,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             "202608220002_allow_herdmaster_farrowing_protected_claims.sql",
             "202608250001_fence_green_print_lease_device_binding.sql",
             "202608250002_adopt_green_lost_pre_attempt_claim.sql",
+            "202608260001_allow_herdmaster_litter_actions_protected_claims.sql",
         ])
         self.assertEqual(list(ALLOWLIST), sorted(ALLOWLIST, key=lambda row: row.migration_id))
         for row in ALLOWLIST:
@@ -578,11 +582,14 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         self.assertIsNotNone(predecessor)
         self.assertEqual(
             tuple(re.findall(r"'([^']+)'", target.group(1))),
-            EXPECTED_PROTECTED_ACTION_KINDS,
+            PREDECESSOR_PROTECTED_ACTION_KINDS,
         )
         self.assertEqual(
             set(re.findall(r"'([^']+)'", predecessor.group(1))),
-            set(EXPECTED_PROTECTED_ACTION_KINDS) - {"herdmaster_record_farrowing_litter"},
+            set(PREDECESSOR_PROTECTED_ACTION_KINDS) - {
+                "herdmaster_record_farrowing_litter",
+                "herdmaster_record_litter_first_treatment",
+                "herdmaster_record_litter_piglet_deaths"},
         )
         self.assertIn("canonical protected action-kind constraint mismatch", action_sql)
         self.assertNotIn("create table", action_sql.lower())
@@ -669,19 +676,23 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             self.assertTrue(applied["receipt_identity"]["render_instance_id"])
             self.assertEqual(applied["receipt_guard"], replayed["receipt_guard"])
         self.assertEqual(
-            first["migrations"][-4]["readback"]["reason_values"],
+            first["migrations"][-5]["readback"]["reason_values"],
             list(EXPECTED_LITTER_SUPERSESSION_REASONS),
         )
         self.assertEqual(
-            first["migrations"][-3]["readback"]["action_kinds"],
+            first["migrations"][-4]["readback"]["action_kinds"],
+            list(PREDECESSOR_PROTECTED_ACTION_KINDS),
+        )
+        self.assertEqual(
+            second["migrations"][-4]["readback"]["action_kinds"],
             list(EXPECTED_PROTECTED_ACTION_KINDS),
         )
         self.assertEqual(
-            first["migrations"][-4]["readback"]["validator_trigger"]["enabled"],
+            first["migrations"][-5]["readback"]["validator_trigger"]["enabled"],
             "O",
         )
         self.assertEqual(
-            first["migrations"][-3]["readback"]["protected_claim_acl"],
+            first["migrations"][-4]["readback"]["protected_claim_acl"],
             {
                 "unauthorized_privilege_count": 0,
                 "managed_read_roles": [
@@ -692,10 +703,10 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
             },
         )
         self.assertTrue(
-            first["migrations"][-4]["readback"]["migration_log_description_sha256"]
+            first["migrations"][-5]["readback"]["migration_log_description_sha256"]
         )
         self.assertTrue(
-            first["migrations"][-3]["readback"]["migration_log_description_sha256"]
+            first["migrations"][-4]["readback"]["migration_log_description_sha256"]
         )
         self.assertEqual(
             second["migrations"][-3]["readback"],
@@ -744,8 +755,12 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
     def test_disposable_postgres_b_action_kind_replay_and_schema_mismatch_fail_closed(self):
         import psycopg
 
+        # Replay the current end of the ordered append-only action-kind chain.
+        # The farrowing migration's own target is now a proven predecessor of
+        # this migration, so directly replaying that historical SQL against the
+        # downstream target must remain fail-closed.
         migration = Path(
-            "supabase/migrations/202608220002_allow_herdmaster_farrowing_protected_claims.sql"
+            "supabase/migrations/202608260001_allow_herdmaster_litter_actions_protected_claims.sql"
         ).read_text(encoding="utf-8")
         with psycopg.connect(DATABASE_URL) as db:
             db.execute(migration)
@@ -1581,12 +1596,12 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
         applied = run(DATABASE_URL, baseline_env)
         self.assertEqual(
             [item["outcome"] for item in applied["migrations"]],
-            ["baseline_verified"] * 3 + ["applied"] * 4,
+            ["baseline_verified"] * 3 + ["applied"] * 5,
         )
         replay = run(DATABASE_URL, ENV)
         self.assertEqual(
             [item["outcome"] for item in replay["migrations"]],
-            ["baseline_verified"] * 3 + ["already_applied"] * 4,
+            ["baseline_verified"] * 3 + ["already_applied"] * 5,
         )
         with psycopg.connect(DATABASE_URL) as db:
             self.assertEqual(
@@ -1596,7 +1611,7 @@ class RenderProductionMigrationRailTests(unittest.TestCase):
                        (select count(*) from app_private.production_migration_receipts),
                        (select count(*) from app_private.production_migration_catalog_checkpoints)"""
                 ).fetchone(),
-                (1, 4, 1),
+                (1, 5, 1),
             )
             with self.assertRaisesRegex(psycopg.errors.RaiseException, "append-only"):
                 db.execute(
