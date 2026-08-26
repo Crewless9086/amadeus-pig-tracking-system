@@ -61,7 +61,13 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
                 chat_id=principal.private_chat_id, specialist_results=results,
                 litter_rows=litters, sale_rows=sales, deliver=deliver, store=store,
                 now=now, language=principal.language))
-        return _recipient_summary(outcomes)
+        summary = _recipient_summary(outcomes)
+        optional_failures = list(snapshot.get("optional_source_failures") or ())
+        if optional_failures:
+            summary = {**summary,
+                "optional_source_failure_count": len(optional_failures),
+                "optional_source_failures": optional_failures}
+        return summary
     except Exception as exc:
         return {**_safe("morning_runtime_recovery_pending", success=False),
                 "failure_class": exc.__class__.__name__,
@@ -158,20 +164,34 @@ def _load_input_snapshot(owner, now, source, *, herd_loader, rootline_loader,
         if futures["herd"] not in done or futures["rootline"] not in done:
             raise TimeoutError("morning_runtime_specialist_deadline")
         herd = futures["herd"].result(); rootline = futures["rootline"].result()
+        optional_source_failures = []
         litters = []
         if futures["litters"] in done:
-            snapshot = futures["litters"].result()
-            litters = ((snapshot.get("allocation_inputs") or {}).get("litter_rows") or [])
+            try:
+                snapshot = futures["litters"].result()
+                litters = ((snapshot.get("allocation_inputs") or {}).get("litter_rows") or [])
+            except Exception as exc:
+                optional_source_failures.append({
+                    "source": "breeding_attention",
+                    "failure_class": exc.__class__.__name__,
+                })
         sales = []
         if futures["sales"] in done:
-            payload, status = futures["sales"].result()
-            if status == 200 and payload.get("success") is True:
-                sales = payload.get("sales_transactions") or []
+            try:
+                payload, status = futures["sales"].result()
+                if status == 200 and payload.get("success") is True:
+                    sales = payload.get("sales_transactions") or []
+            except Exception as exc:
+                optional_source_failures.append({
+                    "source": "sales_transactions",
+                    "failure_class": exc.__class__.__name__,
+                })
         for future in pending:
             future.cancel()
         return {"herd": herd, "rootline": rootline, "litters": tuple(litters),
                 "sales": tuple(sales), "injected_herd": injected_herd,
-                "injected_rootline": injected_rootline}
+                "injected_rootline": injected_rootline,
+                "optional_source_failures": tuple(optional_source_failures)}
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
 

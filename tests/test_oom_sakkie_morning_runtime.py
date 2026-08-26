@@ -4,6 +4,8 @@ from threading import Lock
 from unittest.mock import patch
 import json
 
+import pytest
+
 from modules.oom_sakkie.farm_manager_loop import SpecialistAvailability, SpecialistResult
 from modules.oom_sakkie.morning_runtime import (
     _load_inputs, run_morning_cycle, start_production_morning_runtime)
@@ -148,6 +150,49 @@ def test_source_failure_remains_visible_for_late_durable_retry():
     assert replay["status"] == "morning_runtime_recovery_pending"
     assert replay["telegram_sends"] == replay["telegram_edits"] == 0
     assert deliveries == []
+
+
+@pytest.mark.parametrize("failed_source", ["breeding_attention", "sales_transactions"])
+def test_optional_source_exception_does_not_block_date_stable_morning_claim(failed_source):
+    events = {}
+    deliveries = []
+
+    def store(action, identity, payload):
+        if action == "load_daily":
+            matches = [row for row in events.values()
+                       if row.get("daily_identity") == identity
+                       and row.get("status") in {"presented", "unchanged", "provider_ambiguous"}]
+            return matches[-1] if matches else None
+        if action == "load_answered_questions":
+            return ()
+        created = identity not in events
+        events.setdefault(identity, dict(payload or {}))
+        return {"success": True, "created": created}
+
+    def deliver(*args, **kwargs):
+        deliveries.append(kwargs["mission_id"])
+        return {"success": True, "telegram_message_id": "optional-gap-brief",
+                "telegram_sends": 1, "telegram_edits": 0}
+
+    def broken():
+        raise RuntimeError("optional source unavailable")
+
+    args = dict(now=NOW, environ=ENV, deliver=deliver, store=store,
+        herd_loader=lambda: _specialist("herdmaster"),
+        rootline_loader=lambda: _specialist("rootline"),
+        litter_loader=(broken if failed_source == "breeding_attention" else
+                       lambda: {"allocation_inputs": {"litter_rows": []}}),
+        sales_loader=(broken if failed_source == "sales_transactions" else
+                      lambda: ({"success": True, "sales_transactions": []}, 200)))
+    first = run_morning_cycle(**args)
+    replay = run_morning_cycle(**args)
+
+    assert first["status"] == "daily_manager_presented"
+    assert first["optional_source_failures"] == [
+        {"source": failed_source, "failure_class": "RuntimeError"}]
+    assert replay["status"] == "daily_manager_unchanged_silent"
+    assert replay["optional_source_failure_count"] == 1
+    assert len(deliveries) == 1
 
 
 def test_restart_at_0712_sast_loads_and_delivers_date_stable_plan_once():
