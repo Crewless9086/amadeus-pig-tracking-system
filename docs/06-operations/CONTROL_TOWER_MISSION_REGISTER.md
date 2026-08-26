@@ -3278,6 +3278,24 @@ identity or owner outcome exists. The next automatic action is the reviewed API
 timestamp repair, normal deployment and natural recovery of the same job.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+### 2026-08-25 GREEN canonical timestamp boundary defect
+
+Fresh production readback after GREEN 0.3.11 installation proved the sole
+existing job remained `claimed`, pre-attempt and bound to the active registered
+device, while the new worker rotated its lease and then emitted
+`green_cycle_held reason=ValueError`. Source reconciliation established the
+exact cross-boundary cause: the private API passed PostgreSQL timestamp objects
+to Flask unchanged, Flask encoded them as RFC-1123 HTTP dates, and GREEN's
+strict ISO-8601 parser rejected the recovered lease before local persistence.
+
+This is an existing `DMQ-20260816-01` defect and does not reprioritize the
+mission. The bounded repair serializes aware canonical timestamps as UTC
+ISO-8601 at the API boundary, rejects timezone-naive source values and
+classifies any malformed timestamp in GREEN without credentials. Version
+0.3.12 contains the worker-side classification. No new job, replay, direct
+lease mutation or print is authorized by this repair. **DURABLY LOGGED - NOT
+YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ### 2026-08-25 normal governed migration dispatch addendum
 
 GitHub rejected blank legacy-adoption inputs before creating a normal governed

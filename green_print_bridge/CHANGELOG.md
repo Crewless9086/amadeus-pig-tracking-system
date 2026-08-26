@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.12
+
+- Classify malformed canonical timestamp responses without exposing credentials.
+- Consume the backend's exact UTC ISO-8601 lease and authorization timestamps.
+
 ## 0.3.11
 
 - Preserve immutable job identity while accepting canonical lease rotation during exact lost-ledger adoption.
