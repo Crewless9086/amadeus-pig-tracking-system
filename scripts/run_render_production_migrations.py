@@ -348,14 +348,15 @@ def _load_sql(item: AllowedMigration) -> str:
     return sql
 
 
-def _allowlist_payload(items=ALLOWLIST) -> list[dict[str, str]]:
+def _allowlist_payload(items=None) -> list[dict[str, str]]:
+    selected = ALLOWLIST if items is None else items
     return [
         {
             "migration_id": item.migration_id,
             "filename": item.filename,
             "sha256": item.sha256,
         }
-        for item in items
+        for item in selected
     ]
 
 
