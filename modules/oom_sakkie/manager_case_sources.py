@@ -317,11 +317,13 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None):
             cur.execute("select litter_id,sow_pig_id,farrowing_date from public.litters")
             litters = [{"litter_id": row[0], "sow_pig_id": row[1],
                         "farrowing_date": row[2]} for row in cur.fetchall()]
-            cur.execute("""select mission_id,provider_message_id,status,expires_at,preview_payload
+            cur.execute("""select mission_id,provider_message_id,status,expires_at,preview_payload,
+                preview_card_message_id,coalesce(delivery_state,'claim_created')
                 from app_private.oom_protected_action_claims
                 where action_kind='herdmaster_record_farrowing_litter' order by created_at""")
             claims = [{"mission_id": row[0], "provider_message_id": row[1],
-                "status": row[2], "expires_at": row[3], "preview_payload": row[4] or {}}
+                "status": row[2], "expires_at": row[3], "preview_payload": row[4] or {},
+                "preview_card_message_id": row[5], "delivery_state": row[6]}
                 for row in cur.fetchall()]
     return _project_retained_herd_report_recovery(
         now, health, expired, canonical_pigs=pigs, canonical_litters=litters,
@@ -404,7 +406,10 @@ def _project_retained_herd_report_recovery(now, health, expired, *, canonical_pi
         if any(str(row.get("mission_id") or "") != mission
                and str((row.get("preview_payload") or {}).get("sow_pig_id") or "") == sow
                and str((row.get("preview_payload") or {}).get("farrowing_date") or "") == event_date
-               and str(row.get("status") or "") in {"active", "completed"}
+               and (str(row.get("status") or "") == "completed"
+                    or (str(row.get("status") or "") == "active"
+                        and bool(str(row.get("preview_card_message_id") or "").strip())
+                        and str(row.get("delivery_state") or "") == "delivery_confirmed"))
                for row in farrowing_claims):
             continue
         candidates.append(_candidate(
