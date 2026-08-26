@@ -1055,6 +1055,34 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if observed > requested:
                 return {"success": False, "status": "scheduled_reassessment_evidence_after_cutoff"}
             return current
+        plan_context = {"current": None, "receipt": None, "error": None}
+        def ensure_daily_plan():
+            if plan_context["receipt"] is not None:
+                return plan_context["current"], plan_context["receipt"]
+            if plan_context["error"] is not None:
+                raise plan_context["error"]
+            try:
+                current = scheduled_loader()
+                generator = daily_plan_generator
+                if generator is None:
+                    from modules.telemetry.irrigation_daily_plan_service import (
+                        project_rootline_specialist_daily_plan,
+                    )
+                    generator = project_rootline_specialist_daily_plan
+                receipt = dict(generator(current) or {})
+                plan = receipt.get("daily_plan")
+                required = ("daily_plan_id", "operating_date", "generation", "evidence_sha256")
+                if (receipt.get("success") is not True
+                        or receipt.get("status") not in {"daily_plan_created", "daily_plan_reused"}
+                        or receipt.get("readback_bound") is not True
+                        or not isinstance(plan, dict)
+                        or any(plan.get(key) in (None, "") for key in required)):
+                    raise RuntimeError("daily_plan_persistence_unproven")
+                plan_context.update({"current": current, "receipt": receipt})
+                return current, receipt
+            except Exception as exc:
+                plan_context["error"] = exc
+                raise
         def recover_pending_protected_delivery():
             """Delivery-only recovery; never enters ROOTLINE execution."""
             deliver = family_delivery or deliver_family_result
@@ -1087,6 +1115,17 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 return {"success":False,"status":"protected_delivery_recovery_unavailable",
                     "telegram_sends":0,"hardware_commands":0,"provider_control_calls":0,
                     "writes_farm_data":False}
+        def recover_delivery_after_plan():
+            if production_persistence or daily_plan_generator is not None:
+                try:
+                    ensure_daily_plan()
+                except Exception as exc:
+                    return {"success": False,
+                        "status": "scheduled_rootline_daily_plan_persistence_ambiguous",
+                        "daily_plan_error_type": type(exc).__name__, "telegram_sends": 0,
+                        "hardware_commands": 0, "writes_farm_data": None,
+                        "write_state": "unknown"}
+            return recover_pending_protected_delivery()
         def invoke():
             deliver = family_delivery or deliver_family_result
             if production_persistence:
@@ -1103,6 +1142,22 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "writes_farm_data": False, "automatic_irrigation_authority": False,
                         "answer": ("The scheduled assessment could not load its durable context. "
                                    "No provider or hardware action was attempted.")}
+            # Establish and read back the canonical date-stable plan before
+            # any manager brief, protected delivery, or execution can occur.
+            projected_current = None
+            plan_projection = {"created": False, "daily_plan": {}}
+            if production_persistence or daily_plan_generator is not None:
+                try:
+                    projected_current, plan_projection = ensure_daily_plan()
+                except Exception as exc:
+                    return {"success": False,
+                        "status": "scheduled_rootline_daily_plan_persistence_ambiguous",
+                        "daily_plan_error_type": type(exc).__name__,
+                        "telegram_sends": 0, "hardware_commands": 0,
+                        "writes_farm_data": None, "write_state": "unknown",
+                        "automatic_irrigation_authority": False}
+            plan_loader = ((lambda: projected_current)
+                if projected_current is not None else scheduled_loader)
             try:
                 from modules.oom_sakkie.documents_green_followup_runtime import (
                     recover_documents_green_physical_follow_up)
@@ -1156,8 +1211,6 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "herd": executor.submit(_load_herdmaster, authority,
                             manager_owner, manager_now,
                             str(manual_payload.get("language") or "en")),
-                        "rootline": executor.submit(_load_rootline, manager_now,
-                            str(manual_payload.get("language") or "en")),
                         "litters": executor.submit(get_breeding_attention_source_snapshot,
                             deadline_seconds=20),
                         "sales": executor.submit(list_sales_transactions),
@@ -1165,9 +1218,11 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     from modules.oom_sakkie.bounded_postgres_read import OWNER_REQUEST_DEADLINE_SECONDS
                     done, pending = wait(tuple(futures.values()),
                                          timeout=OWNER_REQUEST_DEADLINE_SECONDS)
-                    if futures["herd"] not in done or futures["rootline"] not in done:
+                    if futures["herd"] not in done:
                         raise TimeoutError("daily_manager_specialist_deadline")
-                    specialists = [futures["herd"].result(), futures["rootline"].result()]
+                    specialists = [futures["herd"].result(),
+                        projected_current if projected_current is not None else
+                        _load_rootline(manager_now, str(manual_payload.get("language") or "en"))]
                     litter_rows = []
                     if futures["litters"] in done:
                         snapshot = futures["litters"].result()
@@ -1220,32 +1275,6 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                                ("The scheduled assessment exceeded its bounded evidence deadline. "
                                 "No further ROOTLINE assessment was started; the durable schedule "
                                 "remains recoverable."))}
-            # Persist the same date-stable ROOTLINE decision that the owner and
-            # executor are about to consume.  This is plan evidence only: the
-            # plan ledger has no command, provider, scheduler or hardware rail.
-            projected_current = None
-            plan_projection = {"created": False, "daily_plan": {}}
-            if production_persistence or daily_plan_generator is not None:
-                try:
-                    projected_current = scheduled_loader()
-                    generator = daily_plan_generator
-                    if generator is None:
-                        from modules.telemetry.irrigation_daily_plan_service import (
-                            project_rootline_specialist_daily_plan,
-                        )
-                        generator = project_rootline_specialist_daily_plan
-                    plan_projection = dict(generator(projected_current) or {})
-                    if not isinstance(plan_projection.get("daily_plan"), dict):
-                        raise RuntimeError("daily_plan_persistence_unproven")
-                except Exception as exc:
-                    return {"success": False,
-                        "status": "scheduled_rootline_daily_plan_persistence_unproven",
-                        "daily_plan_error_type": type(exc).__name__,
-                        "telegram_sends": int(daily.get("telegram_sends") or 0),
-                        "hardware_commands": 0, "writes_farm_data": False,
-                        "automatic_irrigation_authority": False}
-            plan_loader = ((lambda: projected_current)
-                if projected_current is not None else scheduled_loader)
             if not str(source.get("DATABASE_URL") or "").strip():
                 mixer_recovery = {"status": "no_active_fertilizer_commissioning",
                     "hardware_commands": 0, "telegram_sends": 0}
@@ -1413,7 +1442,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "plan_reassessment_status": plan_reassessment_status,
                     "execution_status": "not_enabled"}
         scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=schedule_store,
-            now=scheduler_now, recover_delivery=(recover_pending_protected_delivery
+            now=scheduler_now, recover_delivery=(recover_delivery_after_plan
                 if production_persistence else None))
         return scheduled, 200 if scheduled.get("success") else 202
     owner = str((payload or {}).get("owner_user_id") or "").strip()

@@ -127,12 +127,29 @@ def project_rootline_specialist_daily_plan(result, *, ledger=None):
     evidence = {key: current.get(key) for key in (
         "result_id", "generation", "evidence_cutoff", "overall_status"
     )}
-    return generate_or_reuse_daily_plan({
+    selected_ledger = ledger or PostgresDailyPlanLedger()
+    receipt = generate_or_reuse_daily_plan({
         "operating_date": day.isoformat(), "status": state,
         "evidence_observed_at": observed.isoformat(),
         "replacement_reason": "scheduled_rootline_specialist_projection",
         "evidence": evidence, "zones": zones,
-    }, ledger=ledger)
+    }, ledger=selected_ledger)
+    if type(receipt.get("created")) is not bool:
+        raise DailyPlanUnavailableError("daily_plan_write_receipt_unproven")
+    written = receipt.get("daily_plan")
+    required = ("daily_plan_id", "operating_date", "generation", "evidence_sha256")
+    if (not isinstance(written, dict)
+            or any(written.get(key) in (None, "") for key in required)):
+        raise DailyPlanUnavailableError("daily_plan_write_binding_unproven")
+    current = selected_ledger.get_current(day)
+    if (not isinstance(current, dict)
+            or any(str(current.get(key) or "") != str(written.get(key) or "")
+                   for key in required)):
+        raise DailyPlanUnavailableError("daily_plan_readback_binding_unproven")
+    return {**receipt, "success": True,
+        "status": ("daily_plan_created" if receipt["created"]
+                   else "daily_plan_reused"), "daily_plan": current,
+        "readback_bound": True}
 
 
 def get_current_daily_plan(value=None, *, ledger=None):
