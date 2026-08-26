@@ -1,0 +1,4 @@
+{
+  "name": "Amadeus Cloud Development",
+  "install": "python3 -m pip install -r requirements.txt && npm ci && npx playwright install chromium"
+}
