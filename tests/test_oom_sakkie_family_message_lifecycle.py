@@ -209,6 +209,22 @@ def test_delivery_and_duplicate_update_are_exact_once():
     assert len(memory.sent)==1 and memory.edited==[]
 
 
+@patch("modules.oom_sakkie.family_message_lifecycle.time.monotonic",
+       return_value=90.0)
+def test_provider_attempt_is_not_claimed_when_cycle_reserve_is_exhausted(_clock):
+    memory=Memory(); effects=[]
+    def sender(_chat, _text, *, deadline_monotonic):
+        effects.append(deadline_monotonic)
+        return {"success":True,"telegram_message_id":"late"}
+
+    result=deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",
+        event_store=memory.store,sender=sender,deadline_monotonic=100.0)
+
+    assert result["status"]=="family_message_cycle_deadline_deferred"
+    assert result["telegram_sends"]==0
+    assert effects==[] and memory.rows=={}
+
+
 def test_structured_mortality_completion_survives_actual_en_and_af_delivery_boundary():
     stored={"success":True,"status":"completed","answer":"old stored prose",
         "lifecycle_event_id":"LIFE-1","welfare_case_closed":True}

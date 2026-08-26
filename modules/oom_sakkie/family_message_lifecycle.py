@@ -11,9 +11,17 @@ import hashlib
 import html
 import json
 import os
+import time
 from typing import Any, Callable, Mapping
 
 EVENT_SOURCE = "oom_sakkie_family_message_lifecycle"
+PROVIDER_DELIVERY_RESERVE_SECONDS = 30
+
+
+def _provider_deadline_available(deadline_monotonic):
+    return (deadline_monotonic is None
+            or time.monotonic() + PROVIDER_DELIVERY_RESERVE_SECONDS
+                <= deadline_monotonic)
 
 
 def _visible_notification_identity(card_mission_id, text_sha, parsed, specialist):
@@ -198,7 +206,8 @@ def _afrikaans_farm_action(value: Any) -> str:
 def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], *,
                           specialist: str, mission_id: str = "", card_mission_id: str = "",
                           event_store=None, sender=None, editor=None,
-                          delivery_retry_authority=None, protected_delivery=None) -> dict[str, Any]:
+                          delivery_retry_authority=None, protected_delivery=None,
+                          deadline_monotonic=None) -> dict[str, Any]:
     """Persist and visibly deliver one result; duplicate input is a no-op."""
     result = localize_recipient_result(parsed, result, specialist)
     if result.get("recipient_language_render_unrecognized") is True:
@@ -228,7 +237,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 mission_id=mission_id, card_mission_id=card_mission_id,
                 event_store=event_store, sender=sender, editor=editor,
                 delivery_retry_authority=delivery_retry_authority,
-                protected_delivery=protected_delivery))
+                protected_delivery=protected_delivery,
+                deadline_monotonic=deadline_monotonic))
     if (result.get("album_progress_serialization_required") is True
             and result.get("album_progress_verified") is True
             and result.get("_album_progress_lock_held") is not True):
@@ -242,7 +252,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                     specialist=specialist,mission_id=mission_id,card_mission_id=card_mission_id,
                     event_store=event_store,sender=sender,editor=editor,
                     delivery_retry_authority=delivery_retry_authority,
-                    protected_delivery=protected_delivery)
+                    protected_delivery=protected_delivery,
+                    deadline_monotonic=deadline_monotonic)
         except Exception:
             return {"success":False,"status":"family_message_album_progress_lock_unavailable",
                 "mission_id":mission_id,"card_mission_id":card_mission_id,
@@ -393,7 +404,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
         return _deliver_visible_notification(parsed, payload, text, mission_id,
             card_mission_id, card_id, text_sha, store, sender,
-            specialist=specialist, prior_edits=0)
+            specialist=specialist, prior_edits=0,
+            deadline_monotonic=deadline_monotonic)
     if (provider_replay and not material_update and not contextual_delivery_resume
             and not exclusive_completion_restore):
         return {"success": True, "status": "family_message_provider_replay_noop",
@@ -423,7 +435,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                     "telegram_sends": 0, "telegram_edits": 0}
             return _deliver_visible_notification(parsed, payload, text, mission_id,
                 card_mission_id, card_id, text_sha, store, sender,
-                specialist=specialist, prior_edits=0)
+                specialist=specialist, prior_edits=0,
+                deadline_monotonic=deadline_monotonic)
     if latest and str(latest.get("text_sha256") or "") == text_sha:
         return {"success": True, "status": "family_message_replayed_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
@@ -469,14 +482,25 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                     "telegram_sends": 0, "telegram_edits": 0}
             return _deliver_visible_notification(parsed, payload, text, mission_id,
                 card_mission_id, card_id, text_sha, store, sender,
-                specialist=specialist, prior_edits=0)
+                specialist=specialist, prior_edits=0,
+                deadline_monotonic=deadline_monotonic)
+        if not _provider_deadline_available(deadline_monotonic):
+            return {"success": False, "status": "family_message_cycle_deadline_deferred",
+                    "mission_id": mission_id, "card_mission_id": card_mission_id,
+                    "telegram_message_id": card_id,
+                    "telegram_sends": 0, "telegram_edits": 0}
         claimed = store("record", update_id, {**payload, "event_id": update_id,
             "state": "update_attempted", "telegram_message_id": card_id})
         if claimed.get("created") is False:
             return {"success": False, "status": "family_message_update_delivery_ambiguous",
                     "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
-        response = ((editor)(str(parsed.get("telegram_chat_id") or ""), card_id, text)
-                    if editor else _edit_telegram(str(parsed.get("telegram_chat_id") or ""),card_id,text,reply_markup))
+        provider_editor = editor or _edit_telegram
+        editor_args = (str(parsed.get("telegram_chat_id") or ""), card_id, text)
+        editor_kwargs = ({"deadline_monotonic": deadline_monotonic}
+                         if deadline_monotonic is not None else {})
+        if editor is None:
+            editor_kwargs["reply_markup"] = reply_markup
+        response = provider_editor(*editor_args, **editor_kwargs)
         edit_verified = bool(response.get("success") and (
             not exclusive_completion
             or str(response.get("telegram_message_id") or "") == card_id
@@ -496,7 +520,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         if result.get("requires_visible_notification") is True:
             return _deliver_visible_notification(parsed, payload, text, mission_id,
                 card_mission_id, card_id, text_sha, store, sender,
-                specialist=specialist, prior_edits=1)
+                specialist=specialist, prior_edits=1,
+                deadline_monotonic=deadline_monotonic)
         return {"success": True, "status": "family_message_card_updated",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 1}
@@ -505,12 +530,21 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     retry_two = validates_delivery_retry_authority(delivery_retry_authority,
         mission_id=mission_id, card_mission_id=card_mission_id, text=text)
     attempt_id = card_mission_id + ("-DELIVERY-RETRY-2" if retry_two else "-DELIVERY-ATTEMPT")
+    if not _provider_deadline_available(deadline_monotonic):
+        return {"success": False, "status": "family_message_cycle_deadline_deferred",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_sends": 0, "telegram_edits": 0}
     claimed = store("record", attempt_id, {**payload, "event_id": attempt_id, "state": "delivery_attempted"})
     if claimed.get("created") is False:
         return {"success": False, "status": "family_message_delivery_ambiguous",
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
-    response = ((sender)(str(parsed.get("telegram_chat_id") or ""), text)
-                if sender else _send_telegram(str(parsed.get("telegram_chat_id") or ""),text,reply_markup))
+    provider_sender = sender or _send_telegram
+    sender_args = (str(parsed.get("telegram_chat_id") or ""), text)
+    sender_kwargs = ({"deadline_monotonic": deadline_monotonic}
+                     if deadline_monotonic is not None else {})
+    if sender is None:
+        sender_kwargs["reply_markup"] = reply_markup
+    response = provider_sender(*sender_args, **sender_kwargs)
     message_id = str(response.get("telegram_message_id") or "")
     if not response.get("success") or not message_id:
         reason = ("telegram_delivery_definitely_not_sent"
@@ -704,7 +738,12 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
 
 def _deliver_visible_notification(parsed, payload, text, mission_id, card_mission_id,
                                    card_id, text_sha, store, sender, *, specialist,
-                                   prior_edits):
+                                   prior_edits, deadline_monotonic=None):
+    if not _provider_deadline_available(deadline_monotonic):
+        return {"success": False, "status": "family_message_cycle_deadline_deferred",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": card_id, "telegram_sends": 0,
+            "telegram_edits": prior_edits}
     notification_id = _visible_notification_identity(
         card_mission_id, text_sha, parsed, specialist)
     notification_claim = store("record", notification_id, {**payload,
@@ -714,7 +753,11 @@ def _deliver_visible_notification(parsed, payload, text, mission_id, card_missio
         return {"success": False, "status": "family_message_notification_ambiguous",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": prior_edits}
-    notification = (sender or _send_telegram)(str(parsed.get("telegram_chat_id") or ""), text)
+    provider_sender = sender or _send_telegram
+    sender_kwargs = ({"deadline_monotonic": deadline_monotonic}
+                     if deadline_monotonic is not None else {})
+    notification = provider_sender(
+        str(parsed.get("telegram_chat_id") or ""), text, **sender_kwargs)
     notification_message_id = str(notification.get("telegram_message_id") or "")
     if not notification.get("success") or not notification_message_id:
         store("record", notification_id + "-CONTAINED", {**payload,
@@ -947,7 +990,10 @@ def load_family_lifecycle(card_mission_id: str, *, event_store=None):
     return list((event_store or _event_store)("load", str(card_mission_id or ""), None) or [])
 
 
-def _send_telegram(chat_id, text, reply_markup=None):
+def _send_telegram(chat_id, text, reply_markup=None, *, deadline_monotonic=None):
+    if not _provider_deadline_available(deadline_monotonic):
+        return {"success": False, "status": "family_message_cycle_deadline_deferred",
+                "delivery_definitely_not_sent": True}
     from modules.sales.sam_live_stock_launch_control import _telegram_api
     token=str(os.environ.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or os.environ.get("OOM_SAKKIE_TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:return {"success":False,"status":"telegram_token_not_configured","delivery_definitely_not_sent":True}
@@ -960,7 +1006,10 @@ def _send_telegram(chat_id, text, reply_markup=None):
             "telegram_message_id":str((result or {}).get("message_id") or "")}
 
 
-def _edit_telegram(chat_id, message_id, text, reply_markup=None):
+def _edit_telegram(chat_id, message_id, text, reply_markup=None, *,
+                   deadline_monotonic=None):
+    if not _provider_deadline_available(deadline_monotonic):
+        return {"success": False, "status": "family_message_cycle_deadline_deferred"}
     from modules.sales.sam_live_stock_launch_control import _telegram_api
     token = str(os.environ.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or
                 os.environ.get("OOM_SAKKIE_TELEGRAM_BOT_TOKEN") or "").strip()

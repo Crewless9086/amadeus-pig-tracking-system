@@ -9,7 +9,7 @@ import pytest
 
 from modules.oom_sakkie.manager_case_sources import _completed_bulk_batch_findings
 from modules.oom_sakkie.general_manager_worker import (
-    ManagerCaseError, PostgresManagerCaseStore, deliver_farm_manager_case,
+    CLAIM_LIMIT, ManagerCaseError, PostgresManagerCaseStore, deliver_farm_manager_case,
     normalize_candidate,
 )
 
@@ -93,17 +93,17 @@ def test_mixed_suppressions_advance_cadence_and_rotate_beyond_claim_limit(monkey
             (duplicate_keys,))
     provider_sends = []
     provider = lambda *_a, **_k: provider_sends.append("unexpected")
-    first = store.run_cycle(candidates, now=now, source_revision="test",
-        deliver=lambda case: deliver_farm_manager_case(case, now=now,
-            deliver=provider),
-        refresh=lambda claimed: by_key[claimed["dedupe_key"]])
-    second_now = now + timedelta(seconds=1)
-    second = store.run_cycle(candidates, now=second_now, source_revision="test",
-        deliver=lambda case: deliver_farm_manager_case(case, now=second_now,
-            deliver=provider),
-        refresh=lambda claimed: by_key[claimed["dedupe_key"]])
-    assert first["deliveries_suppressed"] == 20
-    assert second["deliveries_suppressed"] == 1
+    cycles = []
+    for offset in range((len(candidates) + CLAIM_LIMIT - 1) // CLAIM_LIMIT):
+        cycle_now = now + timedelta(seconds=offset)
+        cycles.append(store.run_cycle(candidates, now=cycle_now,
+            source_revision="test",
+            deliver=lambda case: deliver_farm_manager_case(
+                case, now=cycle_now, deliver=provider),
+            refresh=lambda claimed: by_key[claimed["dedupe_key"]]))
+    final_now = now + timedelta(seconds=len(cycles) - 1)
+    assert sum(row["deliveries_suppressed"] for row in cycles) == len(candidates)
+    assert all(row["cases_claimed"] <= CLAIM_LIMIT for row in cycles)
     with connect() as db:
         rows = db.execute("""select status,next_reassessment_at from app_private.oom_manager_cases
             where dedupe_key like %s order by dedupe_key""", (prefix + ":%",)).fetchall()
@@ -114,7 +114,7 @@ def test_mixed_suppressions_advance_cadence_and_rotate_beyond_claim_limit(monkey
             group by e.event_payload->>'outcome_status'""",
             (prefix + ":%",)).fetchall()
     assert len(rows) == 21 and all(row[0] == "waiting_reassessment" for row in rows)
-    assert all(row[1] > second_now for row in rows)
+    assert all(row[1] > final_now for row in rows)
     assert dict(statuses) == {"manager_delivery_duplicate_suppressed": 7,
         "no_owner_question_delivery_suppressed": 7,
         "non_farm_case_delivery_suppressed": 7}
@@ -127,6 +127,7 @@ def test_two_workers_skip_locked_and_backfill_disjoint_fair_cohorts():
         specialist=("ROOTLINE" if i==0 else "SAM"),urgency="urgent",
         unknowns=[],summary=f"case {i}",next_action="reassess") for i in range(30)]
     seed=PostgresManagerCaseStore(connect_factory=connect)
+    provider_sends=[]
     with connect() as db,db.cursor() as cur:
         for value in values:
             seed._reconcile(cur,normalize_candidate(value,now=now),now)
@@ -141,14 +142,14 @@ def test_two_workers_skip_locked_and_backfill_disjoint_fair_cohorts():
         return store.run_cycle([],now=now,source_revision="concurrency-test")
     with ThreadPoolExecutor(max_workers=2) as pool:
         results=list(pool.map(worker,range(2)))
-    assert sorted(row["cases_claimed"] for row in results)==[10,20]
+    assert sorted(row["cases_claimed"] for row in results)==[CLAIM_LIMIT,CLAIM_LIMIT]
     cycle_ids=[row["cycle_id"] for row in results]
     with connect() as db:
         rows=db.execute("""select event_payload->>'cycle_id',count(*) from app_private.oom_manager_case_events e
             join app_private.oom_manager_cases c using(case_id)
             where c.dedupe_key like %s and e.event_type='claimed'
             group by 1""",(prefix+":%",)).fetchall()
-    assert sorted(count for _,count in rows if _ in cycle_ids)==[10,20]
+    assert sorted(count for _,count in rows if _ in cycle_ids)==[CLAIM_LIMIT,CLAIM_LIMIT]
     assert provider_sends == []
 
 
