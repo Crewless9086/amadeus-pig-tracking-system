@@ -100,3 +100,41 @@ def test_pig138_unknown_case_kind_is_suppressed_before_any_claim():
     result=build_retained_protected_preview({"dedupe_key":"herdmaster:suppressed:138",
         "evidence_refs":["provider_message:4057"]})
     assert result["success"] is False and result["suppress_owner_delivery"] is True
+
+
+def test_mona_existing_undelivered_claim_is_routed_without_duplicate_claim():
+    row = [("ANTON", "ANTON", "4051", {"counts": {"total_born": 12,
+        "stillborn": 1}, "farrowing_date": "2026-08-26"}, "TOKEN", "MISSION",
+        "DIGEST", "active", None)]
+    case = {"dedupe_key": "herdmaster:expired-farrowing:OLD",
+        "evidence_digest": "EVIDENCE", "evidence_refs": ["provider_message:4051"]}
+    with patch("modules.oom_sakkie.herdmaster_retained_recovery_runtime.connect_bounded_read",
+               return_value=Connection([row])), \
+         patch("modules.oom_sakkie.protected_action_claims.create_claim") as create:
+        result = build_retained_protected_preview(case)
+    assert result["success"] is True and result["callback_token"] == "TOKEN"
+    assert result["mission_id"] == "MISSION"
+    create.assert_not_called()
+
+
+def test_pig146_fresh_recovery_proves_identity_then_retains_only_missing_disposal():
+    retained = [({"owner_user_id": "ANTON", "chat_id": "ANTON",
+        "provider_message_id": "3926", "provider_timestamp": "2026-08-23T20:29:12+00:00",
+        "output_language": "af", "owner_text_verbatim": "Vark nr 146 dood op 23 Aug 2026"},)]
+    preview = {"success": True, "question_count": 1,
+        "owner_text": "One question: was 146 removed and disposed?",
+        "evaluator": {"identity": {"pig_id": "PIG-2026-E58B", "tag_number": "146"}}}
+    case = {"dedupe_key": "herdmaster:retained-mortality:3926",
+        "evidence_refs": ["provider_message:3926", "pig:PIG-2026-E58B", "tag:146"]}
+    with patch("modules.oom_sakkie.herdmaster_retained_recovery_runtime.connect_bounded_read",
+               return_value=Connection([retained])), \
+         patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence",
+               return_value={"evidence_generation": "EVIDENCE"}), \
+         patch("modules.oom_sakkie.herdmaster_health_loss_preview.prepare_health_loss_owner_preview",
+               return_value=preview), \
+         patch("modules.oom_sakkie.protected_action_claims.create_claim") as create:
+        result = build_retained_protected_preview(case)
+    assert result["status"] == "retained_mortality_removed_disposal_required"
+    assert result["missing_facts"] == ["removed_disposal"]
+    assert result["suppress_owner_delivery"] is True
+    create.assert_not_called()

@@ -3305,6 +3305,30 @@ deployment and migration progress are not an owner outcome. Canonical recovery
 readback and genuine protected previews remain required before any redo
 instruction. **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+### 2026-08-26 post-migration retained-preview acceptance defects
+
+Migration `202608260001` was applied through the exact deployed governed rail
+and read back with its ordinal-eight receipt and final action-kind constraint.
+Natural exact-revision manager cycles nevertheless delivered no retained
+preview. Read-only provider/canonical reconciliation proved three distinct
+existing-outcome conditions: Pig 146's retained lifecycle still held the old
+date-number identity ambiguity although the current evaluator resolves exact
+tag 146; Mona's newly created recovery claim had no provider card but was being
+treated as a terminalizing newer claim; and Linda has no current canonical
+active-litter identity from which an exact piglet selection can be previewed.
+The manager additionally collapsed each concrete contained cause into generic
+`retained_protected_repreview_unproven` with blank `failure_kind`.
+
+The bounded follow-up re-evaluates Pig 146 from retained provider truth and
+exact canonical pig binding, preserves the genuinely missing
+removal/disposal fact without sending, routes Mona's existing undelivered claim
+instead of creating another, terminalizes only delivered/completed successor
+claims, and retains exact contained status for automatic diagnosis. Linda
+remains fail-closed until one canonical active litter is provable; her known
+name, incident date and count are not to be repeated. No Telegram send,
+confirmation, protected execution or farm write occurred. Priority remains
+unchanged. **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - Anton retained recovery production-migration rail gap
 
 Read-only commissioning of merged release `13f556d75` proved the exact manager

@@ -80,7 +80,13 @@ def test_mona_expired_projection_terminalizes_on_effect_or_newer_claim():
         canonical_litters=[{"sow_pig_id": "MONA", "farrowing_date": "2026-08-26"}]) == []
     assert _project_retained_herd_report_recovery(NOW, [], expired,
         farrowing_claims=[{"mission_id": "NEW", "status": "active",
+            "preview_card_message_id": "CARD", "delivery_state": "delivery_confirmed",
             "preview_payload": {"sow_pig_id": "MONA", "farrowing_date": "2026-08-26"}}]) == []
+    rows = _project_retained_herd_report_recovery(NOW, [], expired,
+        farrowing_claims=[{"mission_id": "NEW", "status": "active",
+            "preview_card_message_id": None, "delivery_state": "claim_created",
+            "preview_payload": {"sow_pig_id": "MONA", "farrowing_date": "2026-08-26"}}])
+    assert len(rows) == 1 and "expired-farrowing" in rows[0]["dedupe_key"]
 
 
 def test_retained_case_never_delivers_generic_manager_card_before_preview():
@@ -90,6 +96,17 @@ def test_retained_case_never_delivers_generic_manager_card_before_preview():
     assert result["status"] == "retained_protected_repreview_unavailable"
     assert result["suppress_owner_delivery"] is True
     assert result["telegram_sends"] == 0
+
+
+def test_retained_containment_preserves_exact_failure_without_delivery():
+    case = {"dedupe_key": "herdmaster:retained-mortality:4050",
+        "specialist": "HERDMASTER", "message_family": "retained_protected_recovery"}
+    result = deliver_farm_manager_case(case, retained_recovery=lambda _case: {
+        "success": False, "status": "retained_mortality_removed_disposal_required",
+        "suppress_owner_delivery": True, "telegram_sends": 0})
+    assert result["status"] == "retained_mortality_removed_disposal_required"
+    assert result["failure_kind"] == "retained_mortality_removed_disposal_required"
+    assert result["suppress_owner_delivery"] is True
 
 
 def test_retained_message_family_survives_normalization_contract():

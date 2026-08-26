@@ -204,7 +204,9 @@ def route_retained_manager_recovery(case, *, preview_builder=None):
     if (result.get("success") is not True or not result.get("callback_token")
             or result.get("confirmation_required") is not True
             or not str(result.get("answer") or "").strip()):
-        return {"success": False, "status": "retained_protected_repreview_unproven",
+        return {"success": False,
+                "status": str(result.get("status") or "retained_protected_repreview_unproven"),
+                "failure_kind": str(result.get("failure_kind") or result.get("status") or ""),
                 "suppress_owner_delivery": True, "telegram_sends": 0,
                 "writes_farm_data": False, "recovery_required": True}
     return {**result, "suppress_owner_delivery": False, "writes_farm_data": False}

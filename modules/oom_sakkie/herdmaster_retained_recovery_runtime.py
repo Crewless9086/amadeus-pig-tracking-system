@@ -19,7 +19,7 @@ def build_retained_protected_preview(case):
     if "expired-farrowing" in str((case or {}).get("dedupe_key") or ""):
         return _farrowing(provider_ids, str((case or {}).get("evidence_digest") or ""))
     if "retained-mortality" in str((case or {}).get("dedupe_key") or ""):
-        return _mortality(provider_ids)
+        return _mortality(provider_ids, refs)
     return _contained("retained_recovery_case_kind_unsupported")
 
 
@@ -94,7 +94,8 @@ def _litter_loss(provider_ids, refs, recovery_identity):
 def _farrowing(provider_ids, recovery_identity):
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
-            cur.execute("""select owner_user_id,private_chat_id,provider_message_id,preview_payload
+            cur.execute("""select owner_user_id,private_chat_id,provider_message_id,preview_payload,
+                callback_token,mission_id,preview_digest,status,preview_card_message_id
                 from app_private.oom_protected_action_claims
                 where action_kind='herdmaster_record_farrowing_litter'
                   and provider_message_id=any(%s) order by created_at desc limit 1""",
@@ -103,6 +104,19 @@ def _farrowing(provider_ids, recovery_identity):
     if not row or str(row[0] or "") != str(row[1] or ""):
         return _contained("retained_farrowing_principal_unproven")
     owner, chat, provider, preview = str(row[0]), str(row[1]), str(row[2]), dict(row[3] or {})
+    if str(row[7] or "") == "active" and not str(row[8] or ""):
+        counts = dict(preview.get("counts") or {})
+        return _protected({"success": True, "status": "farrowing_litter_preview_ready",
+            "answer": (f"HERDMASTER protected preview: {counts.get('total_born')} total born; "
+                       f"{counts.get('stillborn')} stillborn on {preview.get('farrowing_date')}. "
+                       "Confirm only if correct."),
+            "mission_id": str(row[5]), "card_mission_id": str(row[5]),
+            "callback_token": str(row[4]), "preview_digest": str(row[6]),
+            "action_kind": "herdmaster_record_farrowing_litter",
+            "reply_markup": {"inline_keyboard": [[
+                {"text": "Confirm and record", "callback_data": f"oompa:{row[4]}:confirm"},
+                {"text": "Change", "callback_data": f"oompa:{row[4]}:change"},
+                {"text": "Cancel", "callback_data": f"oompa:{row[4]}:cancel"}]]}})
     counts = dict(preview.get("counts") or {})
     parsed = {"telegram_user_id": owner, "telegram_chat_id": chat,
         "provider_message_id": provider, "output_language": preview.get("language") or "af",
@@ -130,7 +144,7 @@ def _farrowing(provider_ids, recovery_identity):
     return _protected(result)
 
 
-def _mortality(provider_ids):
+def _mortality(provider_ids, refs):
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
             cur.execute("""select review_json->'herdmaster_health_loss'
@@ -143,16 +157,54 @@ def _mortality(provider_ids):
     owner, chat = str(payload.get("owner_user_id") or ""), str(payload.get("chat_id") or "")
     if not owner or owner != chat:
         return _contained("retained_mortality_principal_unproven")
-    parsed = {"telegram_user_id": owner, "telegram_chat_id": chat,
-        "provider_message_id": str(payload.get("provider_message_id") or ""),
+    target = next((value.split(":", 1)[1] for value in refs
+                   if value.startswith("pig:") and ":" in value), "")
+    from modules.oom_sakkie.herdmaster_health_loss_preview import (
+        prepare_health_loss_owner_preview,
+    )
+    from modules.oom_sakkie.herdmaster_health_loss_runtime import (
+        load_canonical_health_loss_evidence,
+    )
+    evidence = load_canonical_health_loss_evidence()
+    provider = str(payload.get("provider_message_id") or "")
+    preview = prepare_health_loss_owner_preview({
+        "gateway_authority": issue_gateway_owner_authority(owner, chat),
+        "provider_message_id": provider,
         "provider_timestamp": str(payload.get("provider_timestamp") or ""),
+        "provider_timezone": "Africa/Johannesburg",
         "output_language": payload.get("output_language") or "af",
         "text": str(payload.get("owner_text_verbatim") or ""),
-        "semantic": dict(payload.get("semantic_interpretation") or {})}
-    from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
-    result, _status = handle_authenticated_health_loss_message(
-        parsed, issue_gateway_owner_authority(owner, chat))
-    return _protected(result)
+    }, evidence)
+    identity = dict((preview.get("evaluator") or {}).get("identity") or {})
+    if not target or str(identity.get("pig_id") or "") != target:
+        return _contained("retained_mortality_exact_identity_unproven")
+    if int(preview.get("question_count") or 0):
+        return {**_contained("retained_mortality_removed_disposal_required"),
+                "missing_facts": ["removed_disposal"],
+                "answer": str(preview.get("owner_text") or "")}
+    binding = dict(preview.get("confirmation_binding") or {})
+    operation = str(binding.get("operation_id") or "")
+    if preview.get("success") is not True or not operation:
+        return _contained("retained_mortality_preview_unproven")
+    mission = "OOM-HERDMASTER-MORTALITY-" + hashlib.sha256(
+        (provider + "|" + target + "|" + operation).encode()).hexdigest()[:24].upper()
+    from modules.oom_sakkie.protected_action_claims import create_claim
+    claim = create_claim(action_kind="mortality", owner_user_id=owner,
+        private_chat_id=chat, mission_id=mission, provider_message_id=provider,
+        evidence_generation=str(evidence.get("evidence_generation") or ""),
+        preview_payload={"operation_id": operation,
+            "preview_sha256": str(binding.get("preview_sha256") or ""),
+            "identity": identity,
+            "event_family": str((preview.get("evaluator") or {}).get("event_family") or ""),
+            "effect_kind": "mortality"})
+    return _protected({"success": True, "status": "mortality_preview_ready",
+        "answer": str(preview.get("owner_text") or ""), "mission_id": mission,
+        "card_mission_id": mission, "callback_token": claim["callback_token"],
+        "preview_digest": claim["preview_digest"], "action_kind": "mortality",
+        "reply_markup": {"inline_keyboard": [[
+            {"text": "Confirm and record", "callback_data": f"oompa:{claim['callback_token']}:confirm"},
+            {"text": "Change", "callback_data": f"oompa:{claim['callback_token']}:change"},
+            {"text": "Cancel", "callback_data": f"oompa:{claim['callback_token']}:cancel"}]]}})
 
 
 def _protected(result):
