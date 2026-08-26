@@ -2,6 +2,7 @@ import os
 import unittest
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 import psycopg
@@ -23,6 +24,15 @@ class ProtectedBreedingClaimPostgresTests(unittest.TestCase):
 
     def setUp(self):
         self.suffix = uuid.uuid4().hex
+        # The PR workflow definition is loaded from the protected base branch,
+        # so this disposable suite applies and therefore tests the new migration
+        # before exercising its new action kind.
+        with self.connect() as db, db.cursor() as cur:
+            for name in ("202608210001_create_green_print_jobs.sql",
+                         "202608220002_allow_herdmaster_farrowing_protected_claims.sql",
+                         "202608260001_allow_herdmaster_litter_actions_protected_claims.sql"):
+                migration = Path("supabase/migrations") / name
+                cur.execute(migration.read_text(encoding="utf-8"))
 
     def tearDown(self):
         with self.connect() as db, db.cursor() as cur:
@@ -61,6 +71,16 @@ class ProtectedBreedingClaimPostgresTests(unittest.TestCase):
         self.assertEqual(replay["status"], "protected_callback_replayed_noop")
         self.assertEqual(replay["telegram_sends"], 0)
         self.assertEqual(replay["telegram_edits"], 0)
+
+    def test_litter_first_treatment_action_kind_is_admitted(self):
+        claim=create_claim(action_kind="herdmaster_record_litter_first_treatment",
+            owner_user_id="5721652188",private_chat_id="5721652188",
+            mission_id="MISSION-"+self.suffix,provider_message_id="MSG-"+self.suffix,
+            evidence_generation="GEN-"+self.suffix,
+            preview_payload={"contract_version":"herdmaster_litter_first_treatment_v1"},
+            connect_factory=self.connect)
+        self.assertTrue(claim["success"])
+        self.assertEqual(claim["action_kind"],"herdmaster_record_litter_first_treatment")
 
     def test_exact_expired_active_claim_is_rearmed_without_new_token_or_card(self):
         mission="MISSION-"+self.suffix
