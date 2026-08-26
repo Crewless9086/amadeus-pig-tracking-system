@@ -134,7 +134,8 @@ def _load(action, payload):
                     if item.get("action") in terminal_actions:
                         if _terminal_closes_active(item, auxiliary=auxiliary, borehole=borehole):
                             terminal.add(identity)
-                    elif not auxiliary and item.get("action") == "mark_stopping":
+                    elif _recoverable_stopping_candidate(item, auxiliary=auxiliary,
+                                                          borehole=borehole):
                         candidates.setdefault(identity,item)
                     elif _is_active_candidate(item, active_action, claim_action):
                         candidates.setdefault(identity, item)
@@ -314,6 +315,12 @@ def _is_active_candidate(item, active_action, claim_action):
     action = item.get("action") if isinstance(item, dict) else None
     return (action == claim_action
             or (action == active_action and item.get("state") == "Active"))
+
+
+def _recoverable_stopping_candidate(item, *, auxiliary=False, borehole=False):
+    """A zone stop belongs only to the B/C loader, never a managed device."""
+    return (not auxiliary and not borehole and isinstance(item, dict)
+            and item.get("action") == "mark_stopping")
 
 
 def _bounded_claim(action, claim, body):
