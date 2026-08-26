@@ -13,26 +13,29 @@ def post(target, payload):
     with urllib.request.urlopen(request, timeout=120) as response:
         return json.load(response)
 
-recovery_url = url.rsplit("/morning-schedule", 1)[0] + "/protected-payment-recovery"
-green_recovery_url = url.rsplit("/morning-schedule", 1)[0] + "/green-print-recovery"
-manager_url = url.rsplit("/morning-schedule", 1)[0] + "/general-manager-cycle"
-beacon_url = url.rsplit("/morning-schedule", 1)[0] + "/beacon-publication-cycle"
-recovery = post(recovery_url, {})
-green_recovery = post(green_recovery_url, {})
-manager = post(manager_url, {})
-beacon = post(beacon_url, {})
-now = datetime.now(timezone.utc)
-morning = None
-if synthetic or (now.hour > 4 or (now.hour == 4 and now.minute >= 45)):
-    morning = post(url, {"synthetic_acceptance_identity": synthetic} if synthetic else {})
-safe_recovery = recovery.get("status") in {"payment_recovery_idle", "payment_recovery_completed"}
-safe_green_recovery = green_recovery.get("status") in {
-    "documents_green_recovery_idle", "documents_green_recovery_authorized"}
-safe_manager = manager.get("status") == "general_manager_cycle_completed"
-safe_beacon = beacon.get("success") is True
-if not safe_recovery or not safe_green_recovery or not safe_manager or not safe_beacon:
-    raise SystemExit(1)
-print(json.dumps({"success": True, "status": recovery.get("status"),
+MORNING_OK = {"daily_manager_presented", "daily_manager_replay_suppressed",
+              "daily_manager_unchanged_silent"}
+
+def run_scheduler(*, now=None, post_fn=post):
+    recovery_url = url.rsplit("/morning-schedule", 1)[0] + "/protected-payment-recovery"
+    green_recovery_url = url.rsplit("/morning-schedule", 1)[0] + "/green-print-recovery"
+    manager_url = url.rsplit("/morning-schedule", 1)[0] + "/general-manager-cycle"
+    beacon_url = url.rsplit("/morning-schedule", 1)[0] + "/beacon-publication-cycle"
+    recovery = post_fn(recovery_url, {})
+    green_recovery = post_fn(green_recovery_url, {})
+    manager = post_fn(manager_url, {})
+    beacon = post_fn(beacon_url, {})
+    now = now or datetime.now(timezone.utc)
+    morning = None
+    if synthetic or (now.hour > 4 or (now.hour == 4 and now.minute >= 45)):
+        morning = post_fn(url, {"synthetic_acceptance_identity": synthetic} if synthetic else {})
+    safe = (recovery.get("status") in {"payment_recovery_idle", "payment_recovery_completed"}
+        and green_recovery.get("status") in {"documents_green_recovery_idle", "documents_green_recovery_authorized"}
+        and manager.get("status") == "general_manager_cycle_completed"
+        and beacon.get("success") is True
+        and (morning is None or (morning.get("success") is True
+                                 and morning.get("status") in MORNING_OK)))
+    result = {"success": safe, "status": recovery.get("status"),
     "worker_id": recovery.get("worker_id"), "cycle_id": recovery.get("cycle_id"),
     "heartbeat_at": recovery.get("heartbeat_at"), "next_cycle_at": recovery.get("next_cycle_at"),
     "telegram_sends": recovery.get("telegram_sends", 0),
@@ -48,4 +51,10 @@ print(json.dumps({"success": True, "status": recovery.get("status"),
     "manager_deliveries_confirmed": manager.get("deliveries_confirmed", 0),
     "beacon_publication_status": beacon.get("status"),
     "beacon_publication_consumer_status": beacon.get("consumer_status"),
-    "morning_status": (morning or {}).get("status")}))
+    "morning_status": (morning or {}).get("status")}
+    return result, 0 if safe else 1
+
+if __name__ == "__main__":
+    result, code = run_scheduler()
+    print(json.dumps(result))
+    raise SystemExit(code)
