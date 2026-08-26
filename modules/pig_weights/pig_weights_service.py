@@ -3722,15 +3722,30 @@ def record_litter_newborn_health(
                 "errors": ["Canonical Supabase treatment writes are unavailable."],
                 "source": {"writes_to_sheets": False, "writes_to_supabase": False}}, 503
         if supabase_available:
-            pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
-            if pig_rows_updated is None:
-                pig_rows_updated = 0
-            treatment_result = farm_supabase_write_service.insert_missing_medical_events_from_sheet_rows(
-                treatment_rows
-            )
-            treatment_rows_created = treatment_result["created"]
-            if litter_tally_updates:
-                litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
+            if treatment_context == "first_treatment" and require_supabase:
+                atomic = farm_supabase_write_service.apply_litter_first_treatment_packet({
+                    "litter_id": litter_id,
+                    "sow_pig_id": (canonical_detail or {}).get("mother_pig_id"),
+                    "pig_ids": [to_clean_string(row.get(columns["pig_id"], "")) for row in active_piglets],
+                    "action_date": action_date,
+                    "earmarked": earmarked,
+                    "male_count": male_count_int,
+                    "female_count": female_count_int,
+                    "treatment_rows": treatment_rows,
+                })
+                pig_rows_updated = atomic["pig_rows_updated"]
+                treatment_rows_created = atomic["treatment_rows_created"]
+                litter_rows_updated = atomic["litter_rows_updated"]
+            else:
+                pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
+                if pig_rows_updated is None:
+                    pig_rows_updated = 0
+                treatment_result = farm_supabase_write_service.insert_missing_medical_events_from_sheet_rows(
+                    treatment_rows
+                )
+                treatment_rows_created = treatment_result["created"]
+                if litter_tally_updates:
+                    litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
             writes_to_supabase = True
         elif not require_supabase:
             pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
