@@ -591,7 +591,8 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
         refresh=refresh, brain_guard_audit=brain_guard)
 
 
-def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None):
+def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None,
+                              retained_recovery=None):
     """Present changed farm cases through the existing owner-only lifecycle."""
     if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"):
         return {"success": True, "status": "readiness_attention_only",
@@ -602,6 +603,12 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     if specialist not in {"HERDMASTER", "ROOTLINE", "BEACON"}:
         return {"success": True, "status": "non_farm_case_delivery_suppressed",
                 "delivery_confirmed": False, "telegram_sends": 0}
+    if str(case.get("message_family") or "") == "retained_protected_recovery":
+        from modules.oom_sakkie.herdmaster_burst_recovery import (
+            route_retained_manager_recovery,
+        )
+        return route_retained_manager_recovery(
+            case, preview_builder=retained_recovery)
     owners = [value.strip() for value in str(
         os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",")
         if value.strip()]

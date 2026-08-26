@@ -4,6 +4,7 @@ from threading import Barrier
 from modules.oom_sakkie.manager_case_sources import (
     _completed_bulk_batch_findings, _project_retained_herd_report_recovery,
     collect_manager_candidate, collect_manager_candidates)
+from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
 
 
 NOW = datetime(2026, 8, 17, 10, 0, tzinfo=timezone.utc)
@@ -27,21 +28,68 @@ def test_retained_anton_reports_become_automatic_recovery_cases_without_replay()
     assert "repeat known facts" in linda["next_action"]
     mona = next(row for row in rows if "expired-farrowing" in row["dedupe_key"])
     assert mona["unknowns"] == ["fresh_canonical_farrowing_preview"]
-    assert "replaying" in mona["next_action"]
+    assert "replay" in mona["next_action"]
 
 
 def test_retained_recovery_never_cross_groups_principal_or_chat():
     health = [
         {"owner_user_id": "ANTON", "chat_id": "ANTON", "provider_message_id": "1",
-         "owner_text_verbatim": "Linda 3 kleintjies dood"},
+         "owner_text_verbatim": "Linda 3 kleintjies dood op 26 Aug"},
         {"owner_user_id": "OTHER", "chat_id": "OTHER", "provider_message_id": "2",
-         "owner_text_verbatim": "Linda 3 kleintjies dood"},
+         "owner_text_verbatim": "Linda 3 kleintjies dood op 26 Aug"},
         {"owner_user_id": "ANTON", "chat_id": "GROUP", "provider_message_id": "3",
-         "owner_text_verbatim": "Linda 3 kleintjies dood"},
+         "owner_text_verbatim": "Linda 3 kleintjies dood op 26 Aug"},
     ]
     rows = _project_retained_herd_report_recovery(NOW, health, [])
     assert len(rows) == 2
     assert all("provider_message:3" not in row["evidence_refs"] for row in rows)
+
+
+def test_linda_recovery_partitions_incident_dates():
+    health = [
+        {"owner_user_id": "ANTON", "chat_id": "ANTON", "provider_message_id": "1",
+         "owner_text_verbatim": "Linda 3 kleintjies dood op 25 Aug"},
+        {"owner_user_id": "ANTON", "chat_id": "ANTON", "provider_message_id": "2",
+         "owner_text_verbatim": "Linda 3 kleintjies dood op 26 Aug"},
+    ]
+    rows = _project_retained_herd_report_recovery(NOW, health, [])
+    assert len(rows) == 2
+    assert {next(ref for ref in row["evidence_refs"] if ref.startswith("incident_date:"))
+            for row in rows} == {"incident_date:2026-08-25", "incident_date:2026-08-26"}
+
+
+def test_pig_146_projects_but_terminal_138_is_suppressed():
+    health = [
+        {"owner_user_id": "ANTON", "chat_id": "ANTON", "provider_message_id": "4050",
+         "owner_text_verbatim": "Vark nr 146 dood op 23 Aug"},
+        {"owner_user_id": "ANTON", "chat_id": "ANTON", "provider_message_id": "4057",
+         "owner_text_verbatim": "Vark nr 138 dood op 26 Aug"},
+    ]
+    pigs = [{"pig_id": "P146", "tag_number": "146", "status": "Active", "on_farm": True},
+            {"pig_id": "P138", "tag_number": "138", "status": "Dead", "on_farm": False}]
+    rows = _project_retained_herd_report_recovery(NOW, health, [], canonical_pigs=pigs)
+    assert len(rows) == 1
+    assert rows[0]["dedupe_key"] == "herdmaster:retained-mortality:4050"
+    assert "tag:146" in rows[0]["evidence_refs"]
+
+
+def test_mona_expired_projection_terminalizes_on_effect_or_newer_claim():
+    expired = [{"mission_id": "OLD", "provider_message_id": "4051",
+        "preview_payload": {"sow_pig_id": "MONA", "farrowing_date": "2026-08-26"}}]
+    assert _project_retained_herd_report_recovery(NOW, [], expired,
+        canonical_litters=[{"sow_pig_id": "MONA", "farrowing_date": "2026-08-26"}]) == []
+    assert _project_retained_herd_report_recovery(NOW, [], expired,
+        farrowing_claims=[{"mission_id": "NEW", "status": "active",
+            "preview_payload": {"sow_pig_id": "MONA", "farrowing_date": "2026-08-26"}}]) == []
+
+
+def test_retained_case_never_delivers_generic_manager_card_before_preview():
+    case = {"dedupe_key": "herdmaster:retained-mortality:4050",
+        "specialist": "HERDMASTER", "message_family": "retained_protected_recovery"}
+    result = deliver_farm_manager_case(case)
+    assert result["status"] == "retained_protected_repreview_unavailable"
+    assert result["suppress_owner_delivery"] is True
+    assert result["telegram_sends"] == 0
 
 
 def test_completed_batch_projects_exact_pig_material_bcs_and_weight_findings():

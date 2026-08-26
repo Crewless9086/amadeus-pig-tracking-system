@@ -3317,8 +3317,12 @@ three-piglet loss nor first-treatment medical evidence.
 
 The bounded source repair projects unresolved retained health rows and expired
 farrowing claims into the existing automatic HERDMASTER manager-case rail. It
-groups only same-principal private-chat evidence, preserves provider IDs, and
-requires fresh canonical protected previews without replay or fact repetition.
+groups only same-principal private-chat and incident-date evidence, preserves
+provider IDs, suppresses already-terminal animals and farrowing with a newer
+claim or canonical litter, and requires fresh canonical protected previews
+without replay or fact repetition. The manager delivery path is explicitly
+fail-closed for these cases until a callback-bound protected preview exists;
+it cannot substitute a generic manager card.
 It grants no new write, confirmation or delivery authority. Source, tests and
 later deployment are not farm acceptance; genuine preview/confirmation,
 canonical readback, follow-up and terminal-independent recurrence remain.

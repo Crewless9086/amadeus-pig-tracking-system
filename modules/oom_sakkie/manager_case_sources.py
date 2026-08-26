@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
+import re
 from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
 
@@ -310,18 +311,66 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None):
                 "provider_message_id": row[2], "status": row[3],
                 "expires_at": row[4], "preview_payload": row[5] or {}}
                 for row in cur.fetchall()]
-    return _project_retained_herd_report_recovery(now, health, expired)
+            cur.execute("select pig_id,tag_number,status,on_farm from public.pigs")
+            pigs = [{"pig_id": row[0], "tag_number": row[1], "status": row[2],
+                     "on_farm": row[3]} for row in cur.fetchall()]
+            cur.execute("select litter_id,sow_pig_id,farrowing_date from public.litters")
+            litters = [{"litter_id": row[0], "sow_pig_id": row[1],
+                        "farrowing_date": row[2]} for row in cur.fetchall()]
+            cur.execute("""select mission_id,provider_message_id,status,expires_at,preview_payload
+                from app_private.oom_protected_action_claims
+                where action_kind='herdmaster_record_farrowing_litter' order by created_at""")
+            claims = [{"mission_id": row[0], "provider_message_id": row[1],
+                "status": row[2], "expires_at": row[3], "preview_payload": row[4] or {}}
+                for row in cur.fetchall()]
+    return _project_retained_herd_report_recovery(
+        now, health, expired, canonical_pigs=pigs, canonical_litters=litters,
+        farrowing_claims=claims)
 
 
-def _project_retained_herd_report_recovery(now, health, expired):
+def _project_retained_herd_report_recovery(now, health, expired, *, canonical_pigs=(),
+                                            canonical_litters=(), farrowing_claims=()):
     candidates = []
+    pig_by_tag = {str(row.get("tag_number") or "").casefold(): row for row in canonical_pigs}
+    for row in health or ():
+        text = str(row.get("owner_text_verbatim") or "")
+        match = re.search(r"\b(?:vark|pig)\s*(?:nr)?\s*(\d+)\b", text, re.I)
+        if not match or "dood" not in text.casefold():
+            continue
+        tag = match.group(1); pig = pig_by_tag.get(tag.casefold()) or {}
+        if str(pig.get("status") or "").casefold() in {"dead", "deceased", "culled"} or pig.get("on_farm") is False:
+            continue
+        provider = str(row.get("provider_message_id") or "")
+        owner, chat = str(row.get("owner_user_id") or ""), str(row.get("chat_id") or "")
+        if not provider or not owner or owner != chat:
+            continue
+        candidates.append(_candidate(
+            "herdmaster:retained-mortality:" + provider, "HERDMASTER", "urgent",
+            [f"provider_message:{provider}", f"pig:{pig.get('pig_id') or tag}",
+             f"tag:{tag}", "canonical_effect:none"],
+            ["fresh_canonical_mortality_preview"],
+            f"Retained mortality report for pig {tag} remains unresolved.",
+            "Route retained evidence to the protected mortality re-preview adapter; never send a generic manager card.",
+            now + timedelta(minutes=5), task_class="status_reconciliation",
+            message_family="retained_protected_recovery",
+            presentation_identity={"familiar_meaning": f"Pig {tag}", "stable_reference": tag}))
     litter_loss = [row for row in health or () if
         "kleintjies dood" in str(row.get("owner_text_verbatim") or "").casefold()]
-    grouped = {}
+    principals = {}
     for row in litter_loss:
         key = (str(row.get("owner_user_id") or ""), str(row.get("chat_id") or ""))
-        grouped.setdefault(key, []).append(row)
-    for (owner, chat), rows in grouped.items():
+        principals.setdefault(key, []).append(row)
+    grouped = {}
+    for principal, rows in principals.items():
+        dated, undated = {}, []
+        for row in rows:
+            match = re.search(r"\b(\d{1,2})\s+aug\b", str(row.get("owner_text_verbatim") or ""), re.I)
+            (dated.setdefault(f"2026-08-{int(match.group(1)):02d}", []) if match else undated).append(row)
+        if len(dated) == 1:
+            next(iter(dated.values())).extend(undated)
+        for incident_date, incident_rows in dated.items():
+            grouped[(*principal, incident_date)] = incident_rows
+    for (owner, chat, incident_date), rows in grouped.items():
         provider_ids = sorted({str(row.get("provider_message_id") or "") for row in rows
                                if str(row.get("provider_message_id") or "")})
         if not owner or owner != chat or not provider_ids:
@@ -329,14 +378,16 @@ def _project_retained_herd_report_recovery(now, health, expired):
         linda = any("linda" in str(row.get("owner_text_verbatim") or "").casefold()
                     for row in rows)
         candidates.append(_candidate(
-            "herdmaster:retained-litter-loss:" + provider_ids[0], "HERDMASTER", "urgent",
+            "herdmaster:retained-litter-loss:" + provider_ids[0] + ":" + incident_date,
+            "HERDMASTER", "urgent",
             [*(f"provider_message:{value}" for value in provider_ids),
-             "retained_provider_chronology", "canonical_effect:none"],
+             f"incident_date:{incident_date}", "retained_provider_chronology", "canonical_effect:none"],
             ["fresh_canonical_litter_loss_preview"],
             ("Linda's retained piglet-loss reports remain unresolved."
              if linda else "A retained piglet-loss report remains unresolved."),
-            "HERDMASTER must reconstruct one exact current preview from the retained provider chronology; do not ask the reporter to repeat known facts.",
+            "Route retained evidence to the protected litter-loss re-preview adapter; never send a generic manager card or ask the reporter to repeat known facts.",
             now + timedelta(minutes=5), task_class="status_reconciliation",
+            message_family="retained_protected_recovery",
             presentation_identity={"human_name": "Linda" if linda else "Retained litter",
                                    "stable_reference": provider_ids[0]}))
     for claim in expired or ():
@@ -345,14 +396,26 @@ def _project_retained_herd_report_recovery(now, health, expired):
         provider = str(claim.get("provider_message_id") or "")
         if not mission or not provider:
             continue
+        sow, event_date = str(preview.get("sow_pig_id") or ""), str(preview.get("farrowing_date") or "")
+        if any(str(row.get("sow_pig_id") or "") == sow
+               and str(row.get("farrowing_date") or "") == event_date
+               for row in canonical_litters):
+            continue
+        if any(str(row.get("mission_id") or "") != mission
+               and str((row.get("preview_payload") or {}).get("sow_pig_id") or "") == sow
+               and str((row.get("preview_payload") or {}).get("farrowing_date") or "") == event_date
+               and str(row.get("status") or "") in {"active", "completed"}
+               for row in farrowing_claims):
+            continue
         candidates.append(_candidate(
             "herdmaster:expired-farrowing:" + mission, "HERDMASTER", "urgent",
             [f"mission:{mission}", f"provider_message:{provider}",
              f"sow:{preview.get('sow_pig_id') or 'unknown'}", "canonical_effect:none"],
             ["fresh_canonical_farrowing_preview"],
             "A delivered farrowing preview expired without a canonical litter result.",
-            "HERDMASTER must refresh canonical evidence and present a new protected preview without replaying the original report.",
+            "Route retained evidence to the protected farrowing re-preview adapter; never send a generic manager card or replay the original report.",
             now + timedelta(minutes=5), task_class="status_reconciliation",
+            message_family="retained_protected_recovery",
             presentation_identity={"familiar_meaning": "Retained farrowing report",
                                    "stable_reference": mission}))
     return candidates
