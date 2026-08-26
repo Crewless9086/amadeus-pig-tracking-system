@@ -122,4 +122,3 @@ def _date(value):
 def _text(value):
     return str(value or "").strip()
 
-
