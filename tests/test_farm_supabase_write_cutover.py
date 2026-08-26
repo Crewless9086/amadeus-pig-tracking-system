@@ -17,6 +17,7 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
         packet = {
             "litter_id": "LIT-1",
             "sow_pig_id": "SOW-1",
+            "protected_operation_id": "OOM-CLAIM-1",
             "pig_ids": ["PIG-1", "PIG-2"],
             "male_count": 2,
             "female_count": 1,
@@ -32,6 +33,7 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
         packet = {
             "litter_id": "LIT-1",
             "sow_pig_id": "SOW-1",
+            "protected_operation_id": "OOM-CLAIM-1",
             "pig_ids": ["PIG-1", "PIG-2"],
             "male_count": 1,
             "female_count": 1,

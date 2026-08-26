@@ -3528,6 +3528,7 @@ def record_litter_newborn_health(
     require_supabase: bool = False,
     canonical_detail=None,
     canonical_products=None,
+    protected_operation_id: str = "",
 ):
     litter_id = to_clean_string(litter_id)
     action_date = parse_sheet_date(action_date_value)
@@ -3541,6 +3542,7 @@ def record_litter_newborn_health(
     dose_value = to_float(dose)
     dry_run = dry_run is True
     treatment_context = to_clean_string(treatment_context) or "first_treatment"
+    protected_operation_id = to_clean_string(protected_operation_id)
 
     errors = []
     if treatment_context not in {"first_treatment", "weaning_day"}:
@@ -3680,6 +3682,7 @@ def record_litter_newborn_health(
                 notes=notes,
                 litter_id=litter_id,
                 treatment_context=treatment_context,
+                protected_operation_id=protected_operation_id,
             ))
         if deworming_product_id:
             deworming_product = products[deworming_product_id]
@@ -3695,6 +3698,7 @@ def record_litter_newborn_health(
                 notes=notes,
                 litter_id=litter_id,
                 treatment_context=treatment_context,
+                protected_operation_id=protected_operation_id,
             ))
         if vaccination_product_id:
             treatment_rows.append(_build_litter_health_treatment_row(
@@ -3709,6 +3713,7 @@ def record_litter_newborn_health(
                 notes=notes,
                 litter_id=litter_id,
                 treatment_context=treatment_context,
+                protected_operation_id=protected_operation_id,
             ))
 
     pig_rows_updated = 0
@@ -3728,6 +3733,7 @@ def record_litter_newborn_health(
                     "sow_pig_id": (canonical_detail or {}).get("mother_pig_id"),
                     "pig_ids": [to_clean_string(row.get(columns["pig_id"], "")) for row in active_piglets],
                     "action_date": action_date,
+                    "protected_operation_id": protected_operation_id,
                     "earmarked": earmarked,
                     "male_count": male_count_int,
                     "female_count": female_count_int,
@@ -3849,6 +3855,7 @@ def _build_litter_health_treatment_row(
     notes,
     litter_id,
     treatment_context="first_treatment",
+    protected_operation_id="",
 ):
     withdrawal_days = product.get("default_withdrawal_days")
     withdrawal_days_int = int(withdrawal_days) if withdrawal_days not in (None, "") else ""
@@ -3866,8 +3873,12 @@ def _build_litter_health_treatment_row(
     if notes:
         medical_notes = f"{medical_notes} Notes: {notes}"
 
+    event_id = generate_medical_log_id()
+    if protected_operation_id:
+        event_id = farm_supabase_write_service.stable_first_treatment_event_id(
+            protected_operation_id, pig_id, treatment_type, product["product_id"])
     return [
-        generate_medical_log_id(),
+        event_id,
         pig_id,
         format_date_for_sheet(action_date),
         treatment_type,

@@ -40,11 +40,16 @@ def prepare_litter_first_treatment_preview(report: Mapping, canonical: Mapping) 
     litter = active[0]
     if litter.get("first_treatment_complete") is True or litter.get("first_treatment_partial") is True:
         return _hold("first_treatment_already_has_canonical_evidence")
-    male, female, total = (facts.get("male_count"), facts.get("female_count"), facts.get("total_count"))
-    if any(type(value) is not int or value < 0 for value in (male, female, total)):
-        return _hold("male_female_total_required")
-    if male + female != total or total != int(litter.get("active_count") or -1):
-        return _hold("litter_tally_conflict", active_count=litter.get("active_count"))
+    detail = litter.get("detail") if isinstance(litter.get("detail"), Mapping) else {}
+    active_pig_ids = sorted({_text(row.get("pig_id")) for row in detail.get("piglets") or []
+                             if _text(row.get("pig_id"))
+                             and _text(row.get("status")).casefold() == "active"
+                             and row.get("on_farm") in (True, "Yes", "yes")})
+    if not active_pig_ids:
+        return _hold("canonical_active_litter_membership_required")
+    canonical_count = int(litter.get("active_count") or len(active_pig_ids))
+    if canonical_count != len(active_pig_ids):
+        return _hold("canonical_active_litter_membership_conflict")
     action_date = _date(facts.get("action_date"))
     if not action_date:
         return _hold("action_date_required", question="On which date was the first treatment given?")
@@ -70,8 +75,8 @@ def prepare_litter_first_treatment_preview(report: Mapping, canonical: Mapping) 
                 "provider_message_id": provider_id, "evidence_generation": generation,
                 "sow_pig_id": sow["pig_id"], "sow_tag_number": sow.get("tag_number"),
                 "sow_name": sow.get("name"), "litter_id": _text(litter.get("litter_id")),
-                "action_date": action_date.isoformat(), "male_count": male,
-                "female_count": female, "total_count": total,
+                "action_date": action_date.isoformat(),
+                "pig_ids": active_pig_ids, "total_count": canonical_count,
                 "earmarked": facts.get("earmarked") is True, "products": products,
                 "dose": facts.get("dose"), "route": _text(facts.get("route")),
                 "batch_lot_number": _text(facts.get("batch_lot_number")),

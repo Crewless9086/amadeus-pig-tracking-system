@@ -64,8 +64,7 @@ def execute_claimed_litter_first_treatment(claimed, parsed, *, connect_factory=N
     preview = dict(claimed.get("preview_payload") or {})
     fresh = load_canonical_litter_treatment_evidence(connect_factory=connect_factory)
     facts = {"sow_ref": preview.get("sow_pig_id"), "litter_ref": preview.get("litter_id"),
-        "action_date": preview.get("action_date"), "male_count": preview.get("male_count"),
-        "female_count": preview.get("female_count"), "total_count": preview.get("total_count"),
+        "action_date": preview.get("action_date"),
         "earmarked": preview.get("earmarked"), "dose": preview.get("dose"),
         "route": preview.get("route"), "batch_lot_number": preview.get("batch_lot_number"),
         "notes": preview.get("notes")}
@@ -87,20 +86,18 @@ def execute_claimed_litter_first_treatment(claimed, parsed, *, connect_factory=N
         deworming_product_id=(products.get("deworming") or {}).get("product_id", ""),
         vaccination_product_id=(products.get("vaccination") or {}).get("product_id", ""),
         dose=preview["dose"], route=preview["route"], batch_lot_number=preview["batch_lot_number"],
-        notes=preview["notes"], male_count=preview["male_count"], female_count=preview["female_count"],
+        notes=preview["notes"],
         dry_run=False, require_supabase=True, canonical_detail=detail,
-        canonical_products=fresh["products"])
+        canonical_products=fresh["products"], protected_operation_id=claimed["mission_id"])
     if result.get("success") is not True:
         return {**result, "writes_farm_data": False}, status
     readback = farm_supabase_read_service.get_litter_detail(preview["litter_id"], connect_factory=connect_factory)
-    if (not readback or readback.get("first_treatment_complete") is not True
-            or int(readback.get("male_count") or -1) != preview["male_count"]
-            or int(readback.get("female_count") or -1) != preview["female_count"]):
+    if (not readback or readback.get("first_treatment_complete") is not True):
         return {**result, "success": False, "status": "litter_treatment_readback_recovery_required",
                 "recovery_required": True}, 503
     identity = preview.get("sow_name") or preview.get("sow_tag_number") or "the sow"
-    answer = (f"First treatment recorded once for {identity}'s litter: {preview['male_count']} male, "
-              f"{preview['female_count']} female, {preview['total_count']} total. "
+    answer = (f"First treatment recorded once for {identity}'s litter: "
+              f"{preview['total_count']} canonical active piglets. "
               "HERDMASTER will reassess the litter through the existing follow-up cycle.")
     return {**result, "answer": answer, "canonical_readback": readback,
             "follow_up_owner": "HERDMASTER", "reply_markup": {"inline_keyboard": []}}, 201
@@ -147,6 +144,6 @@ def _preview_answer(preview):
     identity = preview.get("sow_name") or preview.get("sow_tag_number") or "the sow"
     products = ", ".join(item["product_name"] for item in preview["products"])
     return (f"HERDMASTER first-treatment preview for {identity}'s litter: "
-            f"{preview['male_count']} male, {preview['female_count']} female, {preview['total_count']} total; "
+            f"{preview['total_count']} canonical active piglets; "
             f"{products}, {preview['dose']}, {preview['route']}, batch {preview['batch_lot_number']}. Confirm the exact protected record.")
 

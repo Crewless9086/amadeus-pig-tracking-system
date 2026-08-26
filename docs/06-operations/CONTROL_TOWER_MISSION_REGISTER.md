@@ -3283,6 +3283,25 @@ work. The corrected boundary catches only the specialist invocation; canonical
 normalization, locking and persistence failures remain cycle-fatal.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
 
+## 2026-08-26 - OMQ/HERDMASTER Anton rapid-message recovery integration addendum
+
+PR #1294 merged to authoritative main as merge commit `efe3e1c5`. That source
+isolates rapid report lifecycles, preserves exact-token reply binding and adds a
+pure retained-chronology recovery planner. Its deferred Anton register record
+is now preserved alongside the Molly first-treatment entry during PR #1291's
+serialized rebase; neither entry replaces the other and mission priority is
+unchanged.
+
+Read-only reconciliation remains: Pig 138 is canonical and exactly-once
+complete; Mona's 12 total/1 stillborn report requires a refreshed preview; Pig
+146's death/date are known but removal/disposal remains missing; Linda's two
+messages corroborate one three-piglet loss event, while her first treatment
+remains unrecorded. Never replay Pig 138 or ask Anton to repeat known facts.
+Merged source is not deployment, farm acceptance or an owner outcome. Runtime
+wiring, reviewed release, genuine protected confirmations, canonical readback,
+automatic follow-up and a later terminal-independent cycle remain outstanding.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ## 2026-08-26 - Control Tower chat-worker interruption continuity defect
 
 The three assigned development source lanes (`green_print_outcome`,

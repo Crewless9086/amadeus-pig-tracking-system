@@ -794,10 +794,13 @@ def apply_litter_first_treatment_packet(packet, connect_factory=None):
     sow_pig_id = to_clean_string(packet.get("sow_pig_id"))
     pig_ids = sorted({to_clean_string(value) for value in packet.get("pig_ids", []) if to_clean_string(value)})
     rows = [list(value or []) + [""] * 18 for value in packet.get("treatment_rows", [])]
+    operation_id = to_clean_string(packet.get("protected_operation_id"))
     male_count, female_count = _int_or_none(packet.get("male_count")), _int_or_none(packet.get("female_count"))
-    if not litter_id or not sow_pig_id or not pig_ids or male_count is None or female_count is None:
+    if not litter_id or not sow_pig_id or not pig_ids or not operation_id:
         raise ValueError("complete_first_treatment_packet_required")
-    if male_count + female_count != len(pig_ids):
+    if (male_count is None) != (female_count is None):
+        raise ValueError("first_treatment_tally_conflict")
+    if male_count is not None and male_count + female_count != len(pig_ids):
         raise ValueError("first_treatment_tally_conflict")
     if not rows or {to_clean_string(row[1]) for row in rows} != set(pig_ids):
         raise ValueError("every_active_piglet_requires_medical_evidence")
@@ -832,6 +835,10 @@ def apply_litter_first_treatment_packet(packet, connect_factory=None):
                     "withdrawal_end": _date_or_none(raw[12]), "given_by": to_clean_string(raw[13]),
                     "follow_up": _bool_or_none_from_sheet(raw[14]) is True,
                     "follow_up_date": _date_or_none(raw[15]), "notes": to_clean_string(raw[16])}
+                expected_event_id = stable_first_treatment_event_id(
+                    operation_id, params["pig_id"], params["type"], params["product_id"])
+                if params["event_id"] != expected_event_id:
+                    raise ValueError("first_treatment_event_identity_conflict")
                 cursor.execute("""select product_name,dose,dose_unit,route,batch_lot_number
                     from public.pig_medical_events where medical_event_id=%(event_id)s""", params)
                 existing = cursor.fetchone()
@@ -847,7 +854,7 @@ def apply_litter_first_treatment_packet(packet, connect_factory=None):
                         %(route)s,%(reason)s,%(batch)s,%(withdrawal_days)s,%(withdrawal_end)s,%(given_by)s,
                         %(follow_up)s,%(follow_up_date)s,%(notes)s)""", params)
                     created += 1
-            if litter[1] != male_count or litter[2] != female_count:
+            if male_count is not None and (litter[1] != male_count or litter[2] != female_count):
                 cursor.execute("update public.litters set male_count=%s,female_count=%s,unknown_sex_count=0,updated_at=now() where litter_id=%s",
                                (male_count, female_count, litter_id))
                 litter_updated = cursor.rowcount
@@ -862,6 +869,15 @@ def apply_litter_first_treatment_packet(packet, connect_factory=None):
             else "first_treatment_committed", "treatment_rows_created": created, "pig_rows_updated": updated,
             "litter_rows_updated": litter_updated, "medical_readback": medical_readback,
             "pig_ids": pig_ids, "male_count": male_count, "female_count": female_count}
+
+
+def stable_first_treatment_event_id(operation_id, pig_id, treatment_type, product_id):
+    """Stable identity for one protected treatment effect on one pig."""
+    material = "|".join(to_clean_string(value) for value in (
+        operation_id, pig_id, treatment_type, product_id))
+    if not all(to_clean_string(value) for value in (operation_id, pig_id, treatment_type, product_id)):
+        raise ValueError("complete_first_treatment_event_identity_required")
+    return "MED-HFT-" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:24].upper()
 
 
 def _stable_weaning_event_id(prefix, operation_id, pig_id, discriminator):

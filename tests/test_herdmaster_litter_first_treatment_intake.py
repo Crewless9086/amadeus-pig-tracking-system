@@ -14,7 +14,9 @@ def canonical(*, litters=None, animals=None):
     return {"evidence_generation": "GEN-1", "animals": animals or [
         {"pig_id": "PIG-MOLLY", "tag_number": "146", "name": "Molly"}],
         "litters": litters or [{"litter_id": "LIT-MOLLY", "sow_pig_id": "PIG-MOLLY",
-            "litter_status": "Active", "active_count": 8}],
+            "litter_status": "Active", "active_count": 8, "detail": {"piglets": [
+                {"pig_id": f"PIG-{number}", "status": "Active", "on_farm": True}
+                for number in range(8)]}}],
         "products": [{"product_id": "PROD-IRON", "product_name": "Iron Plus", "active": True}]}
 
 
@@ -28,12 +30,12 @@ def report(**overrides):
             "provider_message_id": "TG-1", "litter_first_treatment": facts}
 
 
-def test_retains_exact_sow_litter_and_four_four_eight_facts():
+def test_retains_exact_sow_litter_and_canonical_active_membership():
     result = prepare_litter_first_treatment_preview(report(), canonical())
     assert result["success"] is True
     assert result["preview"] | {"x": 1}
-    assert (result["preview"]["male_count"], result["preview"]["female_count"],
-            result["preview"]["total_count"]) == (4, 4, 8)
+    assert result["preview"]["total_count"] == 8
+    assert result["preview"]["pig_ids"] == [f"PIG-{number}" for number in range(8)]
     assert result["preview"]["sow_pig_id"] == "PIG-MOLLY"
     assert result["preview"]["litter_id"] == "LIT-MOLLY"
 
@@ -61,8 +63,11 @@ def test_distinct_matching_sows_remain_ambiguous():
     assert result["status"] == "sow_identity_required"
 
 
-def test_tally_must_match_active_canonical_piglets():
-    assert prepare_litter_first_treatment_preview(report(total_count=9), canonical())["status"] == "litter_tally_conflict"
+def test_natural_report_does_not_require_owner_to_repeat_litter_tally():
+    result = prepare_litter_first_treatment_preview(report(
+        male_count=None, female_count=None, total_count=None), canonical())
+    assert result["success"] is True
+    assert result["preview"]["total_count"] == 8
 
 
 def test_telegram_first_treatment_builds_one_protected_preview_without_writing():
