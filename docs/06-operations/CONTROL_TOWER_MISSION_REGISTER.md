@@ -3319,6 +3319,26 @@ touch production. Existing job `GREEN-WWS-WWS-20260825.r1.a79d4a6effa6`
 remains the sole pre-attempt job; it must not be recreated or replayed.
 **DURABLY LOGGED - NOT YET AN OUTCOME. OWNER ACTION: NONE.**
 
+### 2026-08-25 GREEN 0.3.11 premature-manifest visibility finding
+
+During the governed 0.3.11 publication, Home Assistant exposed the merged
+add-on manifest as an available update before the immutable GHCR image existed.
+The owner selected that visible update and Home Assistant reported an unknown
+install error. No second update was requested. After publication run
+`32900638205` completed, the already-pending installation naturally progressed
+to `Installed version 0.3.11 / Latest version 0.3.11 / Up-to-date`.
+
+This is provider-visible evidence of a release-order defect in existing
+`DMQ-20260816-01`, not a new mission and not a print failure. Future releases
+must make the immutable image and its verified evidence available before the
+repository manifest advertises the version, so Home Assistant cannot expose an
+uninstallable update. Priority is unchanged. GREEN 0.3.11 was subsequently
+installed and started by the owner. Its natural same-job claim then exposed the
+separately registered timestamp-contract defect; no attempt, CUPS job, provider
+identity or owner outcome exists. The next automatic action is the reviewed API
+timestamp repair, normal deployment and natural recovery of the same job.
+**DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
 ### 2026-08-25 normal governed migration dispatch addendum
 
 GitHub rejected blank legacy-adoption inputs before creating a normal governed
