@@ -4,6 +4,8 @@ from threading import Lock
 from unittest.mock import patch
 import json
 
+import pytest
+
 from modules.oom_sakkie.farm_manager_loop import SpecialistAvailability, SpecialistResult
 from modules.oom_sakkie.morning_runtime import (
     _load_inputs, run_morning_cycle, start_production_morning_runtime)
@@ -150,7 +152,8 @@ def test_source_failure_remains_visible_for_late_durable_retry():
     assert deliveries == []
 
 
-def test_optional_source_exception_does_not_block_date_stable_morning_claim():
+@pytest.mark.parametrize("failed_source", ["breeding_attention", "sales_transactions"])
+def test_optional_source_exception_does_not_block_date_stable_morning_claim(failed_source):
     events = {}
     deliveries = []
 
@@ -171,17 +174,22 @@ def test_optional_source_exception_does_not_block_date_stable_morning_claim():
         return {"success": True, "telegram_message_id": "optional-gap-brief",
                 "telegram_sends": 1, "telegram_edits": 0}
 
+    def broken():
+        raise RuntimeError("optional source unavailable")
+
     args = dict(now=NOW, environ=ENV, deliver=deliver, store=store,
         herd_loader=lambda: _specialist("herdmaster"),
         rootline_loader=lambda: _specialist("rootline"),
-        litter_loader=lambda: (_ for _ in ()).throw(RuntimeError("breeding unavailable")),
-        sales_loader=lambda: ({"success": True, "sales_transactions": []}, 200))
+        litter_loader=(broken if failed_source == "breeding_attention" else
+                       lambda: {"allocation_inputs": {"litter_rows": []}}),
+        sales_loader=(broken if failed_source == "sales_transactions" else
+                      lambda: ({"success": True, "sales_transactions": []}, 200)))
     first = run_morning_cycle(**args)
     replay = run_morning_cycle(**args)
 
     assert first["status"] == "daily_manager_presented"
     assert first["optional_source_failures"] == [
-        {"source": "breeding_attention", "failure_class": "RuntimeError"}]
+        {"source": failed_source, "failure_class": "RuntimeError"}]
     assert replay["status"] == "daily_manager_unchanged_silent"
     assert replay["optional_source_failure_count"] == 1
     assert len(deliveries) == 1
