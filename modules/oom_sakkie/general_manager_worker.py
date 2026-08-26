@@ -156,9 +156,9 @@ class PostgresManagerCaseStore:
                         ), chosen as (
                             select case_id from eligible order by
                                 case when specialist_rank=1 then 0 else 1 end,
-                                case when specialist='BEACON' then 0 else 1 end,
                                 case urgency when 'critical' then 0 when 'urgent' then 1
                                 when 'due' then 2 when 'planned' then 3 else 4 end,
+                                case when specialist='BEACON' then 0 else 1 end,
                                 next_reassessment_at,case_id limit 20
                         )
                         select m.case_id,m.dedupe_key,m.specialist,m.urgency,m.status,
