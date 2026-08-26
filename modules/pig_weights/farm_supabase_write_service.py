@@ -807,7 +807,11 @@ def apply_litter_first_treatment_packet(packet, connect_factory=None):
     created = updated = litter_updated = 0
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("set transaction isolation level serializable")
+            # The transaction-scoped litter advisory lock is the serialization
+            # boundary. Read committed lets a waiter acquire a fresh snapshot
+            # after the predecessor commits, so it can prove a deterministic
+            # replay no-op instead of failing on a stale serializable snapshot.
+            cursor.execute("set transaction isolation level read committed")
             cursor.execute("set local statement_timeout = '15s'")
             cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))", ("herdmaster-first-treatment:" + litter_id,))
             cursor.execute("select sow_pig_id,male_count,female_count from public.litters where litter_id=%s for update", (litter_id,))
