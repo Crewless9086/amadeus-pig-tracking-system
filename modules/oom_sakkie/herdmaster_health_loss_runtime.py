@@ -843,7 +843,7 @@ def _resolve_active_context(text, contexts, provider_message_id="", *,
         if len(replies) > 1:
             return None, replies, []
     entity = ENTITY_PATTERN.search(text)
-    semantic_tag = _semantic_tag(entity_refs)
+    semantic_tag = _semantic_tag(entity_refs, contexts)
     if entity or semantic_tag:
         tag = entity.group(1).casefold() if entity else semantic_tag
         consumed_contexts = {str(value or "") for row in contexts
@@ -896,20 +896,28 @@ def _resolve_active_context(text, contexts, provider_message_id="", *,
             return removal[0], False, []
     if len(candidates) == 1:
         return candidates[0], False, []
-    waiting = [row for row in candidates if str(row.get("status") or "") == "waiting_for_input"]
-    if waiting:
-        newest_time = max(str(row.get("provider_timestamp") or "") for row in waiting)
-        newest = [row for row in waiting if str(row.get("provider_timestamp") or "") == newest_time]
-        if len(newest) == 1 and _chronology_allows(newest[0], provider_message_id, provider_timestamp):
-            return newest[0], False, []
+    # Chronology can prove that a reply is later than an open case; it cannot
+    # prove which case the human meant.  Rapid independent reports routinely
+    # leave several waiting cases in one private chat.  Never attach an
+    # unthreaded, entity-free reply to whichever case happens to be newest.
+    # A reply-card binding, exact operation ID, or explicit/semantic entity is
+    # required above; otherwise preserve every case and ask one clarification.
     return None, candidates if len(candidates) > 1 else False, []
 
 
-def _semantic_tag(entity_refs):
+def _semantic_tag(entity_refs, contexts=()):
+    context_tags = {_context_tag(row) for row in contexts if _context_tag(row)}
     for value in entity_refs or ():
         match = ENTITY_PATTERN.search(str(value))
         if match:
             return match.group(1).casefold()
+        # The semantic front door often supplies a bare resolved reference
+        # (for example ``138`` or ``Linda``).  Accept it only when it exactly
+        # equals one currently open canonical context tag; never interpret an
+        # arbitrary number/date as an animal identity.
+        bare = str(value or "").strip().casefold()
+        if bare and bare in context_tags:
+            return bare
     return ""
 
 

@@ -5,11 +5,49 @@ from modules.oom_sakkie.herdmaster_health_loss_runtime import (
     _health_loss_message,
     _mortality_completion_message,
     _record_lifecycle_event,
+    _resolve_active_context,
     handle_authenticated_health_loss_message,
     load_canonical_health_loss_evidence,
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+
+
+def test_rapid_unthreaded_reply_never_binds_to_newest_open_case():
+    contexts = [
+        {"status": "waiting_for_input", "mission_id": "LINDA-LITTER-LOSS",
+         "provider_message_id": "4054", "provider_timestamp": "2026-08-26T05:15:03+00:00"},
+        {"status": "waiting_for_input", "mission_id": "PIG-138-MORTALITY",
+         "provider_message_id": "4055", "provider_timestamp": "2026-08-26T05:27:09+00:00"},
+    ]
+
+    active, ambiguity, superseded = _resolve_active_context(
+        "Ja, dit is verwyder en begrawe", contexts, "4057",
+        provider_timestamp="2026-08-26T05:58:24+00:00")
+
+    assert active is None
+    assert [row["mission_id"] for row in ambiguity] == [
+        "LINDA-LITTER-LOSS", "PIG-138-MORTALITY"]
+    assert superseded == []
+
+
+def test_rapid_reply_with_exact_entity_keeps_its_own_lifecycle():
+    contexts = [
+        {"status": "waiting_for_input", "mission_id": "PIG-146-MORTALITY",
+         "provider_message_id": "4050", "provider_timestamp": "2026-08-26T05:13:40+00:00",
+         "preview": {"evaluator": {"identity": {"tag_number": "146"}}}},
+        {"status": "waiting_for_input", "mission_id": "PIG-138-MORTALITY",
+         "provider_message_id": "4055", "provider_timestamp": "2026-08-26T05:27:09+00:00",
+         "preview": {"evaluator": {"identity": {"tag_number": "138"}}}},
+    ]
+
+    active, ambiguity, superseded = _resolve_active_context(
+        "Ja 138 is verwyder en begrawe", contexts, "4057",
+        provider_timestamp="2026-08-26T05:58:24+00:00", entity_refs=["138"])
+
+    assert active["mission_id"] == "PIG-138-MORTALITY"
+    assert ambiguity is False
+    assert superseded == []
 
 
 def parsed(text, message_id="3169"):

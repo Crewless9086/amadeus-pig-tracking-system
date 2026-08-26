@@ -3476,3 +3476,35 @@ future cadence and allowing later cases to rotate. A later successful refresh
 still follows normal genuine-question delivery. Source/tests are not an owner
 outcome; natural post-deploy cadence and queue continuation remain required.
 **DURABLY LOGGED - NOT YET AN OWNER OUTCOME. OWNER ACTION: NONE.**
+
+## 2026-08-26 - OMQ/HERDMASTER Anton rapid-message recovery addendum
+
+Charl reported a rapid genuine Anton Telegram burst containing Pig 146 death,
+Mona farrowing, Linda litter losses, Linda first-treatment backlog and Pig 138
+mortality. This is a `CURRENT_BLOCKER` addendum to the existing OOM SAKKIE
+operating-spine/HERDMASTER continuous-husbandry outcome; it does not reprioritize
+or create a fourth strategic lane.
+
+Fresh read-only canonical reconciliation proves only Pig 138 is exactly-once
+complete. Mona has a correct delivered but expired/unconfirmed protected
+preview and no litter row. Pig 146 remains Active with no mortality result.
+Linda's provider report is retained but was misread as a sow-health question;
+no three-piglet loss or first-treatment medical event was found. The duplicate
+`Linds` message is corroborating spelling chronology, not another three deaths.
+
+The existing mission remains `WORKING`. The owner outcome is independent
+provider-bound lifecycles under burst input, correct exact previews, governed
+confirmation/write/readback, automatic follow-up and a later terminal-
+independent multi-message cycle. The bounded source candidate in
+`.w/anton-burst-recovery` removes unsafe newest-open-case fallback and accepts a
+bare semantic entity only when it exactly matches an open canonical context;
+33 focused tests pass. Piglet-loss semantics/action wiring and provider-event
+recovery remain. No send, replay, confirmation, farm write or activation was
+performed. Complete evidence and recovery instructions are in
+`docs/06-operations/OMQ_ANTON_BURST_RECOVERY_HANDOVER_20260826.md`.
+
+Automatic promotion: independent exact-head review, serialized integration and
+deployment, then reconstruct fresh previews from retained provider chronology.
+Never ask Anton to repeat known mother/count/date/death facts; request only
+irreducible missing action fields and each exact protected confirmation. Pig
+138 must never be replayed. OWNER ACTION: NONE.
