@@ -787,6 +787,83 @@ def insert_missing_medical_events_from_sheet_rows(rows, connect_factory=None):
     return {"created": created, "skipped": skipped}
 
 
+def apply_litter_first_treatment_packet(packet, connect_factory=None):
+    """Apply and read back one exact first-treatment packet atomically."""
+    packet = packet if isinstance(packet, dict) else {}
+    litter_id = to_clean_string(packet.get("litter_id"))
+    sow_pig_id = to_clean_string(packet.get("sow_pig_id"))
+    pig_ids = sorted({to_clean_string(value) for value in packet.get("pig_ids", []) if to_clean_string(value)})
+    rows = [list(value or []) + [""] * 18 for value in packet.get("treatment_rows", [])]
+    male_count, female_count = _int_or_none(packet.get("male_count")), _int_or_none(packet.get("female_count"))
+    if not litter_id or not sow_pig_id or not pig_ids or male_count is None or female_count is None:
+        raise ValueError("complete_first_treatment_packet_required")
+    if male_count + female_count != len(pig_ids):
+        raise ValueError("first_treatment_tally_conflict")
+    if not rows or {to_clean_string(row[1]) for row in rows} != set(pig_ids):
+        raise ValueError("every_active_piglet_requires_medical_evidence")
+    created = updated = litter_updated = 0
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("set transaction isolation level serializable")
+            cursor.execute("set local statement_timeout = '15s'")
+            cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))", ("herdmaster-first-treatment:" + litter_id,))
+            cursor.execute("select sow_pig_id,male_count,female_count from public.litters where litter_id=%s for update", (litter_id,))
+            litter = cursor.fetchone()
+            if not litter or to_clean_string(litter[0]) != sow_pig_id:
+                raise ValueError("stale_litter_or_sow_identity")
+            cursor.execute("""select pig_id,status,on_farm from public.pigs
+                where litter_id=%s order by pig_id for update""", (litter_id,))
+            active = sorted(to_clean_string(row[0]) for row in cursor.fetchall()
+                            if to_clean_string(row[1]).casefold() == "active" and row[2] is True)
+            if active != pig_ids:
+                raise ValueError("stale_active_piglet_membership")
+            if packet.get("earmarked") is True:
+                cursor.execute("""update public.pigs set earmarked=true,earmark_date=%s,updated_at=now()
+                    where pig_id=any(%s) and (earmarked is distinct from true or earmark_date is distinct from %s)""",
+                    (_date_or_none(packet.get("action_date")), pig_ids, _date_or_none(packet.get("action_date"))))
+                updated = cursor.rowcount
+            for raw in rows:
+                params = {"event_id": to_clean_string(raw[0]), "pig_id": to_clean_string(raw[1]),
+                    "date": _date_or_none(raw[2]), "type": to_clean_string(raw[3]),
+                    "product_id": to_clean_string(raw[4]) or None, "product_name": to_clean_string(raw[5]),
+                    "dose": "" if raw[6] is None else str(raw[6]), "unit": to_clean_string(raw[7]),
+                    "route": to_clean_string(raw[8]), "reason": to_clean_string(raw[9]),
+                    "batch": to_clean_string(raw[10]), "withdrawal_days": _int_or_none(raw[11]),
+                    "withdrawal_end": _date_or_none(raw[12]), "given_by": to_clean_string(raw[13]),
+                    "follow_up": _bool_or_none_from_sheet(raw[14]) is True,
+                    "follow_up_date": _date_or_none(raw[15]), "notes": to_clean_string(raw[16])}
+                cursor.execute("""select product_name,dose,dose_unit,route,batch_lot_number
+                    from public.pig_medical_events where medical_event_id=%(event_id)s""", params)
+                existing = cursor.fetchone()
+                expected = (params["product_name"], params["dose"], params["unit"], params["route"], params["batch"])
+                if existing and tuple(existing) != expected:
+                    raise ValueError("conflicting_first_treatment_replay")
+                if not existing:
+                    cursor.execute("""insert into public.pig_medical_events(
+                        medical_event_id,pig_id,treatment_date,treatment_type,product_id,product_name,dose,dose_unit,
+                        route,reason_for_treatment,batch_lot_number,withdrawal_days,withdrawal_end_date,given_by,
+                        follow_up_required,follow_up_date,medical_notes) values(
+                        %(event_id)s,%(pig_id)s,%(date)s,%(type)s,%(product_id)s,%(product_name)s,%(dose)s,%(unit)s,
+                        %(route)s,%(reason)s,%(batch)s,%(withdrawal_days)s,%(withdrawal_end)s,%(given_by)s,
+                        %(follow_up)s,%(follow_up_date)s,%(notes)s)""", params)
+                    created += 1
+            if litter[1] != male_count or litter[2] != female_count:
+                cursor.execute("update public.litters set male_count=%s,female_count=%s,unknown_sex_count=0,updated_at=now() where litter_id=%s",
+                               (male_count, female_count, litter_id))
+                litter_updated = cursor.rowcount
+            cursor.execute("""select medical_event_id,pig_id,treatment_type,product_id
+                from public.pig_medical_events where medical_event_id=any(%s) order by medical_event_id""",
+                           ([to_clean_string(row[0]) for row in rows],))
+            medical_readback = [{"medical_event_id": row[0], "pig_id": row[1],
+                "treatment_type": row[2], "product_id": row[3]} for row in cursor.fetchall()]
+            if len(medical_readback) != len(rows):
+                raise RuntimeError("first_treatment_medical_readback_incomplete")
+    return {"success": True, "status": "first_treatment_replayed_noop" if not (created or updated or litter_updated)
+            else "first_treatment_committed", "treatment_rows_created": created, "pig_rows_updated": updated,
+            "litter_rows_updated": litter_updated, "medical_readback": medical_readback,
+            "pig_ids": pig_ids, "male_count": male_count, "female_count": female_count}
+
+
 def _stable_weaning_event_id(prefix, operation_id, pig_id, discriminator):
     digest = hashlib.sha256(
         f"{operation_id}|{pig_id}|{discriminator}".encode("utf-8")
