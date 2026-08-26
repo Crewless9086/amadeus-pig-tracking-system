@@ -150,4 +150,3 @@ def _preview_answer(preview):
             f"{preview['male_count']} male, {preview['female_count']} female, {preview['total_count']} total; "
             f"{products}, {preview['dose']}, {preview['route']}, batch {preview['batch_lot_number']}. Confirm the exact protected record.")
 
-

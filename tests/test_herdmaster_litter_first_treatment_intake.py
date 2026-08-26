@@ -92,4 +92,3 @@ def test_first_treatment_never_cross_routes_as_farrowing():
         SimpleNamespace(capabilities=("treatment",)))
     assert status == 200
     assert result == {"handled": False, "status": "litter_first_treatment_not_applicable"}
-
