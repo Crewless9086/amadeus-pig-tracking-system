@@ -1762,7 +1762,10 @@ def bind_external_supervisor_candidate(
                 if isinstance(existing, dict) and existing:
                     if existing == packet and metadata.get("mission_admission_contract") == contract:
                         return {"success": True, "status": "exact_replay", "mission_id": mission_id}, 200
-                    return {"success": False, "status": "external_candidate_binding_conflict"}, 409
+                    current_admission = metadata.get("mission_admission") \
+                        if isinstance(metadata.get("mission_admission"), dict) else {}
+                    if current_admission.get("status") not in {"revoked", "invalidated", "consumed"}:
+                        return {"success": False, "status": "external_candidate_binding_conflict"}, 409
                 family = dict(metadata.get("mission_family") or {})
                 family["root_mission_id"] = family.get("root_mission_id") or mission_id
                 family["generation"] = binding["generation"]
