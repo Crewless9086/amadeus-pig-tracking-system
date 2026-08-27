@@ -42,6 +42,11 @@ from modules.charlie.runner_control import (
 )
 from modules.charlie.process_ownership import inspect_process, make_ownership_record, process_termination_enabled, validate_termination
 from modules.charlie.secret_redaction import redact_file_in_place, restricted_agent_environment
+from modules.charlie.mission_admission_delivery import (
+    admitted_agent_environment,
+    start_admission_guard_server,
+    stop_admission_guard_server,
+)
 from modules.charlie.environment import env_value
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.concurrency_control import ReleaseCoordinator, build_admission, declared_source_files, release_file_lease
@@ -303,6 +308,7 @@ def run_codex_execution_bridge(
     connect_factory=None,
     codex_command=None,
     run_subprocess=None,
+    admission_runtime=None,
 ):
     prepared, status_code = prepare_codex_execution(
         mission_id=mission_id,
@@ -338,7 +344,10 @@ def run_codex_execution_bridge(
         "-",
     ]
     started_at = datetime.now(timezone.utc).isoformat()
-    runner = run_subprocess or _run_agent_model_process
+    runner = _runner_with_admission(
+        run_subprocess or _run_agent_model_process,
+        admission_runtime,
+    )
     completed = runner(
         command,
         input=prompt_path.read_text(encoding="utf-8"),
@@ -416,6 +425,7 @@ def run_agent_execution_bridge_v2(
     codex_command=None,
     run_subprocess=None,
     artifact_consumer=None,
+    admission_runtime=None,
 ):
     artifact_consumer = artifact_consumer or consume_final_agent_artifact
     mission, status_code, error = _load_execution_mission(
@@ -465,7 +475,10 @@ def run_agent_execution_bridge_v2(
             "will_execute_codex": False,
         }, 200
 
-    runner = run_subprocess or _run_agent_model_process
+    runner = _runner_with_admission(
+        run_subprocess or _run_agent_model_process,
+        admission_runtime,
+    )
     command_base = codex_command or [
         _codex_executable(),
         "exec",
@@ -9891,6 +9904,19 @@ def _reconcile_merged_pr(pr_reference, runner):
     return result
 
 
+def _runner_with_admission(runner, admission_runtime):
+    """Bind a validated path-only admission contract to every writer stage."""
+
+    if admission_runtime is None:
+        return runner
+
+    def admitted_runner(*args, **kwargs):
+        kwargs["admission_runtime"] = admission_runtime
+        return runner(*args, **kwargs)
+
+    return admitted_runner
+
+
 def _run_agent_model_process(
     command,
     input="",
@@ -10079,6 +10105,7 @@ def _run_codex_process(
     final_path=None,
     mission_id="",
     execution_id="",
+    admission_runtime=None,
     **_kwargs,
 ):
     stdout_path = Path(stdout_path)
@@ -10095,18 +10122,35 @@ def _run_codex_process(
     )
     stdout_handle = stdout_path.open("w", encoding="utf-8", errors="replace")
     stderr_handle = stderr_path.open("w", encoding="utf-8", errors="replace")
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=stdout_handle,
-        stderr=stderr_handle,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=cwd,
-        env=restricted_agent_environment(),
-        **background_process_kwargs(),
-    )
+    guard_server = guard_thread = None
+    launch_runtime = admission_runtime
+    try:
+        if admission_runtime is not None:
+            guard_server, guard_thread, launch_runtime = start_admission_guard_server(
+                admission_runtime,
+                repo_root=Path(cwd or REPO_ROOT),
+            )
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
+            env=(
+                admitted_agent_environment(launch_runtime)
+                if launch_runtime is not None
+                else restricted_agent_environment()
+            ),
+            **background_process_kwargs(),
+        )
+    except Exception:
+        stdout_handle.close()
+        stderr_handle.close()
+        stop_admission_guard_server(guard_server, guard_thread)
+        raise
     execution_id = str(execution_id or f"process-{process.pid}")
     runner_generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "unmanaged-generation")
     ownership_expected = {
@@ -10181,6 +10225,7 @@ def _run_codex_process(
         if not (final_path.exists() and final_path.stat().st_size > 0):
             raise
     finally:
+        stop_admission_guard_server(guard_server, guard_thread)
         stdout_handle.close()
         stderr_handle.close()
         _wait_for_file_handles_released([stdout_path, stderr_path])

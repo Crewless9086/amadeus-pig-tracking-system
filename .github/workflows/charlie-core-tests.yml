@@ -36,7 +36,9 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
       - name: Run Mission Admission Guard contract tests
-        run: python -m unittest tests.test_charlie_mission_admission -q
+        run: >-
+          python -m unittest tests.test_charlie_mission_admission
+          tests.test_charlie_mission_admission_delivery -q
       - name: Run disposable PostgreSQL admission transaction tests
         env:
           CHARLIE_DISPOSABLE_POSTGRES_URL: ${{ env.DATABASE_URL }}
@@ -50,6 +52,13 @@ jobs:
           CURRENT_HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
+          if [ "$CURRENT_HEAD_REF" = "cursor/mission-admission-stage2-20260827" ]; then
+            export MISSION_ID="CMQ-20260813-05-STAGE2-ADMISSION"
+            export ROOT_MISSION_ID="CMQ-20260813-05"
+          else
+            export MISSION_ID="CMQ-20260813-05"
+            export ROOT_MISSION_ID="CMQ-20260813-05"
+          fi
           gh api graphql -f query='
             query {
               repository(owner:"Crewless9086", name:"amadeus-pig-tracking-system") {
@@ -71,7 +80,8 @@ jobs:
 
           import psycopg
 
-          mission_id = "CMQ-20260813-05"
+          mission_id = os.environ["MISSION_ID"]
+          root_mission_id = os.environ["ROOT_MISSION_ID"]
           now = datetime.now(timezone.utc)
           claims = json.load(open(
               os.path.join(os.environ["RUNNER_TEMP"], "open-pr-claims.json"),
@@ -154,7 +164,7 @@ jobs:
                       (
                           mission_id,
                           json.dumps({"mission_family": {
-                              "root_mission_id": mission_id
+                              "root_mission_id": root_mission_id
                           }}),
                           now,
                       ),
@@ -197,6 +207,7 @@ jobs:
         shell: bash
         env:
           VALIDATION_RECEIPT_KEY_B64: ${{ secrets.CHARLIE_VALIDATION_RECEIPT_KEY_B64 }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha }}"
@@ -206,8 +217,24 @@ jobs:
           printf '%s' "$VALIDATION_RECEIPT_KEY_B64" | base64 --decode \
             > .charlie_runner/validation-receipt.key
           chmod 600 .charlie_runner/validation-receipt.key
-          CI=true python scripts/charlie_mission_admission_guard.py \
-            issue-bootstrap --base "$base" --head "$head"
+          if [ "${{ github.head_ref }}" = "cursor/mission-admission-stage2-20260827" ]; then
+            admitted_head=""
+            for _attempt in $(seq 1 12); do
+              body="$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }} --jq .body)"
+              admitted_head="$(printf '%s' "$body" | sed -n 's/^Stage2-Admission-Head: \([0-9a-f]\{40\}\)$/\1/p')"
+              [ "$admitted_head" = "$head" ] && break
+              sleep 5
+            done
+            test "$admitted_head" = "$head"
+            export CHARLIE_STAGE2_ADMITTED_HEAD="$admitted_head"
+            CI=true python scripts/charlie_mission_admission_guard.py \
+              issue-stage2 --base "$base" --head "$head"
+            export CHARLIE_MISSION_ADMISSION_STATE_ROOT="$PWD/.charlie_runner"
+            export CHARLIE_MISSION_ADMISSION_MISSION_ID="CMQ-20260813-05-STAGE2-ADMISSION"
+          else
+            CI=true python scripts/charlie_mission_admission_guard.py \
+              issue-bootstrap --base "$base" --head "$head"
+          fi
           python scripts/charlie_mission_admission_guard.py ci \
             --base "$base" --head "$head"
 

@@ -66,10 +66,15 @@ FORBIDDEN_EFFECTS = sorted(set([
 
 
 def _governance_row(path="docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md"):
-    content = (ROOT / path).read_bytes()
     import subprocess
+    content = subprocess.run(
+        ["git", "show", f"HEAD:{path}"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
     blob = subprocess.run(
-        ["git", "hash-object", path],
+        ["git", "rev-parse", f"HEAD:{path}"],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -489,16 +494,20 @@ class MissionAdmissionGuardTests(unittest.TestCase):
                 ]["snapshot_sha256"],
             }
             authority_reader = lambda _mission_id: (authority, 200)
-            _, allowed = self._hook({
-                "hook_event_name": "preToolUse",
-                "tool_name": "Write",
-                "tool_input": {"path": "tests/test_charlie_mission_admission.py"},
-            }, environ=environ, authority_reader=authority_reader, repo_root=repo_root)
-            _, denied = self._hook({
-                "hook_event_name": "preToolUse",
-                "tool_name": "Write",
-                "tool_input": {"path": "app.py"},
-            }, environ=environ, authority_reader=authority_reader, repo_root=repo_root)
+            with patch(
+                "scripts.charlie_mission_admission_guard._worktree_changed_files",
+                return_value=[],
+            ):
+                _, allowed = self._hook({
+                    "hook_event_name": "preToolUse",
+                    "tool_name": "Write",
+                    "tool_input": {"path": "tests/test_charlie_mission_admission.py"},
+                }, environ=environ, authority_reader=authority_reader, repo_root=repo_root)
+                _, denied = self._hook({
+                    "hook_event_name": "preToolUse",
+                    "tool_name": "Write",
+                    "tool_input": {"path": "app.py"},
+                }, environ=environ, authority_reader=authority_reader, repo_root=repo_root)
         self.assertEqual(allowed["permission"], "allow", allowed)
         self.assertEqual(denied["permission"], "deny")
 

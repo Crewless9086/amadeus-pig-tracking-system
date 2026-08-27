@@ -126,9 +126,16 @@
   `tests/fixtures/mission_admission/pr1306_scope_drift.json`. Receipt/key
   delivery is external to source at the canonical runner state root. Stage 1
   grants no execution bridge, merge, deployment, production or business
-  authority. A separately admitted Stage 2 must supply trusted admission to the
-  existing execution bridge and prove the supported Cursor surfaces in the
-  target runtime.
+  authority. Stage 2 source is `modules/charlie/mission_admission_delivery.py`:
+  it verifies an externally issued receipt and key against the current
+  `charlie_missions` admission projection, stages them atomically outside Git,
+  and gives both existing bridge entry points a path-only launch contract. A
+  loopback-only parent verifier retains database authority and rechecks canonical
+  correction/collision state for every hook event; the model child receives no
+  database credential. The guard denies supported model-visible reads of the
+  staged authority. This is reviewed source
+  behavior; Windows/local Cursor and Linux Cloud target-runtime acceptance remain
+  required before operational admission is claimed.
 - Legacy portfolio classification: `modules/charlie/portfolio_classification.py`
   implements the sealed exact-baseline/exact-set atomic operation documented in
   `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` and tested by
