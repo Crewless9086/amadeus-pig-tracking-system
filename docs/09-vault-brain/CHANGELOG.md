@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-08-28 - Protected dynamic Mission Admission issuer
+
+- Added a protected-default-branch, manual-dispatch issuer that accepts only a
+  pull-request number and expected head. It resolves scope and mission lineage
+  from canonical CHARLIE records through a TLS, session-forced read-only
+  database identity, treats candidate Git data as inert, and updates exactly one
+  receipt marker without executing candidate code.
+- Replaced the trusted verifier's historical static canonical binding with an
+  independent current-authority read. Owner corrections, collision changes,
+  mission-generation changes, revocation, consumption, database failure and
+  privilege ambiguity fail closed. The stored static binding remains untouched
+  but is no longer in the active path.
+- No schema, endpoint, queue, service, deployment, farm, customer or business
+  authority was added.
+
 ## 2026-08-27 - Generic exact-candidate admission in hosted CI
 
 - Replaced the normal-PR fallback to the sealed Stage 1 bootstrap contract with

@@ -123,16 +123,25 @@
   governance reads and non-business acceptance. Missing or changed admission
   fails closed. Pull-request jobs contain only public verification material;
   the legacy repository-wide symmetric secret is removed. A separately rotated
-  Ed25519 signing key and the exact canonical mission/correction/collision
-  binding exist only in the protected validator environment. CI does not
-  synthesize canonical production mission state.
+  Ed25519 signing key exists only in the protected validator environment. CI
+  does not synthesize canonical production mission state.
+  `.github/workflows/mission-admission-issuer.yml` is the initial manual,
+  protected-main issuer. Its only inputs are PR number and expected head; it
+  resolves the exact mission/branch/head relationship and complete admission
+  contract from existing canonical records using the least-privilege
+  `charlie_admission_reader` identity. The session is TLS, explicitly read-only
+  and timeout-bounded. Candidate objects are diffed with external drivers and
+  text conversion disabled and are never checked out or executed.
   `.github/workflows/mission-admission-trusted.yml` is the non-candidate check
   producer: `pull_request_target` loads only the protected base, fetches the head
   as inert Git object data, uses no candidate cache/artifact/code, and publishes
   the exact `mission-admission` Check Run through the repository-only CHARLIE
   Admission Guard App. Its App and receipt-signing credentials and canonical
   binding exist only in the protected-main `charlie-admission-validator`
-  environment. The ordinary pull-request workflow emits only
+  environment. The trusted verifier independently reads current canonical
+  mission, correction, collision, admission lifecycle, scope, effects, tests
+  and acceptance state; the historical static binding secret is unused. The
+  ordinary pull-request workflow emits only
   `mission-admission-candidate-diagnostic`.
   `modules/charlie/mission_store.py` reads current mission/correction/collision
   evidence and appends admission, consume, revoke and invalidation lifecycle

@@ -15,7 +15,7 @@ from urllib import request as url_request
 from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -38,6 +38,8 @@ from modules.charlie.mission_admission import (  # noqa: E402
 from modules.charlie.validation_receipt import canonical_json  # noqa: E402
 from modules.charlie.mission_store import (  # noqa: E402
     append_mission_admission_event,
+    get_mission,
+    list_missions,
     read_current_mission_admission_authority,
 )
 
@@ -97,6 +99,7 @@ INTERPRETERS = {
 
 EXTERNAL_ADMISSION_PUBLIC_KEY_B64 = "ZAY5VaAnbWY2hrgxXivez5eLaNX4RjiRxjqYmPkoG9o="
 EXTERNAL_CANONICAL_BINDING_ENV = "CHARLIE_ADMISSION_CANONICAL_BINDING_B64"
+ADMISSION_READ_DATABASE_ENV = "CHARLIE_ADMISSION_READ_DATABASE_URL"
 EXTERNAL_COLLISION_MAX_AGE_SECONDS = 900
 
 BOOTSTRAP_BASE_SHA = "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f"
@@ -196,6 +199,10 @@ def main(argv=None):
     external_parser.add_argument("--receipt", required=True)
     trusted_parser = subparsers.add_parser("trusted-check")
     trusted_parser.add_argument("--event", required=True)
+    issuer_parser = subparsers.add_parser("issue-pr")
+    issuer_parser.add_argument("--pull-request-number", required=True, type=int)
+    issuer_parser.add_argument("--expected-head-sha", required=True)
+    issuer_parser.add_argument("--event-output")
     issue_parser = subparsers.add_parser("issue-bootstrap")
     issue_parser.add_argument("--base", required=True)
     issue_parser.add_argument("--head", required=True)
@@ -211,6 +218,8 @@ def main(argv=None):
         return ci_external_main(args)
     if args.mode == "trusted-check":
         return trusted_check_main(args)
+    if args.mode == "issue-pr":
+        return issue_pr_main(args)
     return ci_main(args)
 
 
@@ -531,6 +540,251 @@ def _validate_external_receipt_envelope(
     }
 
 
+def _protected_database_url(environ):
+    database_url = str(environ.get(ADMISSION_READ_DATABASE_ENV) or "").strip()
+    if not database_url or "sslmode=require" not in database_url.lower():
+        raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=3) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("set transaction read only")
+                cursor.execute("set local statement_timeout='10000ms'")
+                cursor.execute("set local lock_timeout='3000ms'")
+                cursor.execute("set local idle_in_transaction_session_timeout='10000ms'")
+                cursor.execute("show transaction_read_only")
+                if str(cursor.fetchone()[0]).lower() != "on":
+                    raise MissionAdmissionError("canonical_database_not_read_only")
+                for setting, allowed in (
+                    ("statement_timeout", {"10s", "10000ms"}),
+                    ("lock_timeout", {"3s", "3000ms"}),
+                    ("idle_in_transaction_session_timeout", {"10s", "10000ms"}),
+                ):
+                    cursor.execute(f"show {setting}")
+                    if str(cursor.fetchone()[0]).lower() not in allowed:
+                        raise MissionAdmissionError("canonical_database_timeout_invalid")
+                cursor.execute("select rolsuper,rolcreaterole,rolcreatedb,rolreplication,rolbypassrls from pg_roles where rolname=current_user")
+                role = cursor.fetchone()
+                if not role or any(role):
+                    raise MissionAdmissionError("canonical_database_privilege_invalid")
+                cursor.execute("select has_database_privilege(current_user,current_database(),'CREATE'),has_schema_privilege(current_user,'public','CREATE')")
+                if any(cursor.fetchone()):
+                    raise MissionAdmissionError("canonical_database_privilege_invalid")
+                for table in ("charlie_missions", "charlie_mission_events", "operational_events"):
+                    cursor.execute(
+                        "select has_table_privilege(current_user,%s,'SELECT'),has_table_privilege(current_user,%s,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')",
+                        (f"public.{table}", f"public.{table}"),
+                    )
+                    can_read, can_write = cursor.fetchone()
+                    if not can_read or can_write:
+                        raise MissionAdmissionError("canonical_database_privilege_invalid")
+    except MissionAdmissionError:
+        raise
+    except Exception as exc:
+        raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE") from exc
+    return database_url
+
+
+def _canonical_contract_for_pull(number, head, branch, diff_sha256, database_url):
+    result, status = list_missions(limit=100, database_url=database_url)
+    if status >= 400 or not result.get("success"):
+        raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+    matches = []
+    for mission in result.get("missions") or []:
+        metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+        if (
+            packet.get("pr_number") == number
+            and packet.get("candidate_revision") == head
+            and packet.get("branch_name") == branch
+            and packet.get("candidate_diff_sha256") == diff_sha256
+        ):
+            matches.append((mission, metadata))
+    if len(matches) != 1:
+        raise MissionAdmissionError("canonical_candidate_linkage_unavailable")
+    mission, metadata = matches[0]
+    contract = metadata.get("mission_admission_contract")
+    family = metadata.get("mission_family")
+    if not isinstance(contract, dict) or not isinstance(family, dict):
+        raise MissionAdmissionError("canonical_admission_contract_invalid")
+    return mission, metadata, contract, family
+
+
+def _compare_current_authority(receipt, authority, contract):
+    admission = authority.get("admission") if isinstance(authority.get("admission"), dict) else {}
+    mission = receipt["mission"]
+    if authority.get("mission_id") != mission["mission_id"] or authority.get("root_mission_id") != mission["root_mission_id"]:
+        raise MissionAdmissionError("mission_generation_changed")
+    if mission["generation"] != str(contract.get("generation") or mission["generation"]):
+        raise MissionAdmissionError("mission_generation_changed")
+    if admission.get("status") in {"revoked", "consumed"}:
+        raise MissionAdmissionError(f"admission_{admission['status']}")
+    if admission.get("status") != "valid":
+        raise MissionAdmissionError("canonical_admission_changed")
+    if receipt["owner_instruction_chain"]["latest_correction_digest"] != authority.get("latest_correction_digest"):
+        raise MissionAdmissionError("owner_correction_changed")
+    if receipt["collision_snapshot"]["snapshot_sha256"] != authority.get("collision_snapshot_sha256"):
+        raise MissionAdmissionError("collision_snapshot_changed")
+    if receipt["owner_instruction_chain"]["admission_packet_sha256"] != _canonical_packet_digest(authority, contract):
+        raise MissionAdmissionError("canonical_admission_changed")
+    comparisons = {
+        "allowed_files": receipt["scope"]["allowed_files"],
+        "forbidden_files": receipt["scope"]["forbidden_files"],
+        "allowed_effects": receipt["scope"]["allowed_effects"],
+        "forbidden_effects": receipt["scope"]["forbidden_effects"],
+        "required_tests": receipt["required_tests"],
+    }
+    for key, value in comparisons.items():
+        if sorted(value) != sorted(contract.get(key) or []):
+            raise MissionAdmissionError("canonical_admission_changed")
+    acceptance = receipt["operational_acceptance"]
+    if acceptance.get("business_outcome_authorized") is not False or sorted(acceptance.get("requirements") or []) != sorted(contract.get("operational_acceptance") or []):
+        raise MissionAdmissionError("canonical_admission_changed")
+
+
+def _canonical_packet_digest(authority, contract):
+    admission = authority.get("admission") if isinstance(authority.get("admission"), dict) else {}
+    binding = {
+        "admission": {
+            key: admission.get(key)
+            for key in (
+                "receipt_id", "content_sha256", "mission_id", "root_mission_id",
+                "generation", "base_sha", "head_sha", "authority_key_sha256",
+                "latest_correction_digest", "collision_snapshot_sha256", "status",
+            )
+        },
+        "contract": contract,
+        "latest_correction_digest": authority.get("latest_correction_digest"),
+        "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
+    }
+    return hashlib.sha256(canonical_json(binding)).hexdigest()
+
+
+def _github_pull_request(number, token, *, body=None):
+    url = f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/pulls/{number}"
+    payload = None if body is None else json.dumps({"body": body}, separators=(",", ":")).encode()
+    req = url_request.Request(url, data=payload, method="GET" if body is None else "PATCH", headers={
+        "Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json", "User-Agent": "CHARLIE-Admission-Issuer",
+        "X-GitHub-Api-Version": "2022-11-28",
+    })
+    with url_request.urlopen(req, timeout=15) as response:
+        return json.loads(response.read(1048576))
+
+
+def issue_pr_main(args, *, environ=None):
+    """Issue one exact signed receipt from protected canonical authority."""
+    environ = os.environ if environ is None else environ
+    try:
+        if args.pull_request_number <= 0 or not __import__("re").fullmatch(r"[0-9a-f]{40}", args.expected_head_sha):
+            raise MissionAdmissionError("issuer_input_invalid")
+        token = str(environ.get("GITHUB_TOKEN") or "")
+        if not token:
+            raise MissionAdmissionError("issuer_runtime_unavailable")
+        database_url = _protected_database_url(environ)
+        pull = _github_pull_request(args.pull_request_number, token)
+        if pull.get("state") != "open" or pull.get("merged_at") is not None:
+            raise MissionAdmissionError("issuer_target_not_open")
+        head = str((pull.get("head") or {}).get("sha") or "")
+        base = str((pull.get("base") or {}).get("sha") or "")
+        branch = str((pull.get("head") or {}).get("ref") or "")
+        if head != args.expected_head_sha or (pull.get("base") or {}).get("ref") != "main":
+            raise MissionAdmissionError("admission_candidate_changed")
+        subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=never", "fetch", "--no-tags", "--no-recurse-submodules", "origin", head], cwd=REPO_ROOT, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+        base, head = _commit(base), _commit(head)
+        changed_files = _changed_files(base, head)
+        patch = _git_bytes("diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", base, head, "--")
+        diff_sha256 = canonical_candidate_diff(changed_files, patch)
+        mission, metadata, contract, family = _canonical_contract_for_pull(args.pull_request_number, head, branch, diff_sha256, database_url)
+        if sorted(changed_files) != sorted(contract.get("allowed_files") or []) or base != contract.get("base_sha") or branch != contract.get("branch"):
+            raise MissionAdmissionError("canonical_candidate_linkage_changed")
+        if not str(family.get("generation") or ""):
+            raise MissionAdmissionError("mission_generation_changed")
+        authority, status = read_current_mission_admission_authority(mission["mission_id"], database_url=database_url)
+        if status >= 400 or not authority.get("success"):
+            raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+        collision_time, active_claims = authority["collision_observed_at"], list(authority["active_claims"])
+        if collision_snapshot_digest(collision_time, active_claims) != authority.get("collision_snapshot_sha256"):
+            raise MissionAdmissionError("canonical_collision_snapshot_invalid")
+        packet_digest = _canonical_packet_digest(authority, contract)
+        payload = {
+            "mission": {"mission_id": mission["mission_id"], "root_mission_id": authority["root_mission_id"], "generation": str(family.get("generation") or "")},
+            "owner_instruction_chain": {"instruction_digests": [hashlib.sha256(str(mission.get("raw_text") or "").encode()).hexdigest(), authority["latest_correction_digest"]], "latest_correction_digest": authority["latest_correction_digest"], "admission_packet_sha256": packet_digest},
+            "repository": {"repository": _repository_identity(), "base_ref": "main", "base_sha": base},
+            "governance_reads": _governance_read_identities(base),
+            "existing_system_trace": {"smallest_genuine_gap": "Protected main lacked a dynamic canonical receipt issuer.", "reused_components": ["charlie_missions", "charlie_mission_events", "operational_events", "mission_admission_receipt_v1", "CHARLIE Admission Guard"], "implementation_sources": sorted(["modules/charlie/mission_admission.py", "modules/charlie/mission_store.py", "scripts/charlie_mission_admission_guard.py"])},
+            "scope": {key: sorted(contract.get(key) or []) for key in ("allowed_files", "forbidden_files", "allowed_effects", "forbidden_effects")},
+            "collision_snapshot": {"captured_at": collision_time, "active_claims": active_claims, "snapshot_sha256": authority["collision_snapshot_sha256"]},
+            "required_tests": sorted(contract.get("required_tests") or []),
+            "operational_acceptance": {"requirements": sorted(contract.get("operational_acceptance") or []), "business_outcome_authorized": False},
+            "candidate": {"candidate_id": f"{mission['mission_id']}:{family.get('generation')}:{head}", "branch": branch, "base_sha": base, "head_sha": head, "diff_sha256": diff_sha256, "changed_files": changed_files},
+        }
+        try:
+            hmac_key = base64.b64decode(str(environ.get("CHARLIE_VALIDATION_RECEIPT_KEY_B64") or ""), validate=True)
+            signing_seed = base64.b64decode(str(environ.get("CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64") or ""), validate=True)
+            if len(signing_seed) != 32:
+                raise ValueError
+        except Exception as exc:
+            raise MissionAdmissionError("issuer_signing_authority_unavailable") from exc
+        body = str(pull.get("body") or "")
+        pattern = r"(?m)^Mission-Admission-Receipt-B64: .*(?:\r?\n|$)"
+        existing = __import__("re").findall(pattern, body)
+        if len(existing) > 1:
+            raise MissionAdmissionError("duplicate_external_admission_receipts")
+        receipt = None
+        marker = ""
+        encoded_existing = __import__("re").findall(
+            r"(?m)^Mission-Admission-Receipt-B64: ([A-Za-z0-9+/]+={0,2})\r?$",
+            body,
+        )
+        if len(encoded_existing) == 1:
+            try:
+                existing_envelope = json.loads(base64.b64decode(
+                    encoded_existing[0], validate=True
+                ))
+                existing_receipt, _identity = _validate_external_receipt_envelope(
+                    existing_envelope,
+                    expected_repository=_repository_identity(),
+                    expected_base_sha=base,
+                    expected_head_sha=head,
+                    expected_changed_files=changed_files,
+                )
+                if existing_receipt["candidate"]["diff_sha256"] != diff_sha256:
+                    raise MissionAdmissionError("admission_candidate_changed")
+                _compare_current_authority(existing_receipt, authority, contract)
+                receipt = existing_receipt
+                marker = encoded_existing[0]
+            except Exception:
+                receipt = None
+        if receipt is None:
+            receipt = sign_mission_admission_receipt(payload, hmac_key)
+            envelope = {"version": "mission_admission_ci_envelope_v1", "receipt": receipt, "signature_ed25519": base64.b64encode(Ed25519PrivateKey.from_private_bytes(signing_seed).sign(canonical_json(receipt))).decode()}
+            marker = base64.b64encode(canonical_json(envelope)).decode()
+        updated = __import__("re").sub(pattern, "", body).rstrip()
+        updated = (updated + "\n\n" if updated else "") + f"Mission-Admission-Receipt-B64: {marker}\n"
+        if updated != body:
+            _github_pull_request(args.pull_request_number, token, body=updated)
+        if args.event_output:
+            event_path = Path(args.event_output)
+            if event_path.is_symlink() or not event_path.parent.is_dir():
+                raise MissionAdmissionError("issuer_event_output_invalid")
+            event_path.write_text(json.dumps({
+                "number": args.pull_request_number,
+                "repository": {"full_name": _repository_identity()},
+                "pull_request": {
+                    "body": updated,
+                    "base": {"ref": "main", "sha": base},
+                    "head": {"ref": branch, "sha": head},
+                },
+            }, sort_keys=True), encoding="utf-8")
+        print(json.dumps({"success": True, "pr_number": args.pull_request_number, "head_sha": head, "receipt_id": receipt["receipt_id"], "expires_at": receipt["expires_at"]}, sort_keys=True))
+        hmac_key, signing_seed = b"", b""
+        return 0
+    except Exception as exc:
+        print(json.dumps({"success": False, "status": "READMISSION_REQUIRED", "reason_code": _reason(exc)}, sort_keys=True))
+        return 2
+
+
 def trusted_check_main(args, *, environ=None):
     """Publish the exact check using only protected-base code and an App token."""
     environ = os.environ if environ is None else environ
@@ -542,21 +796,7 @@ def trusted_check_main(args, *, environ=None):
         if event_path.is_symlink() or not event_path.is_file() or not token:
             raise MissionAdmissionError("trusted_check_runtime_unavailable")
         event = json.loads(event_path.read_text(encoding="utf-8"))
-        try:
-            canonical_binding = json.loads(base64.b64decode(
-                str(environ.get(EXTERNAL_CANONICAL_BINDING_ENV) or ""),
-                validate=True,
-            ))
-        except Exception as exc:
-            raise MissionAdmissionError(
-                "canonical_admission_binding_unavailable"
-            ) from exc
-        if not isinstance(canonical_binding, dict) or set(canonical_binding) != {
-            "mission_id", "root_mission_id", "generation",
-            "authority_key_sha256", "latest_correction_digest",
-            "collision_snapshot_sha256", "canonical_observed_at",
-        }:
-            raise MissionAdmissionError("canonical_admission_binding_invalid")
+        database_url = _protected_database_url(environ)
         pull = event.get("pull_request") if isinstance(event, dict) else {}
         repository = event.get("repository") if isinstance(event, dict) else {}
         base_row = pull.get("base") if isinstance(pull, dict) else {}
@@ -622,8 +862,24 @@ def trusted_check_main(args, *, environ=None):
             expected_base_sha=base,
             expected_head_sha=head,
             expected_changed_files=changed_files,
-            expected_canonical_binding=canonical_binding,
         )
+        mission_result, mission_status = get_mission(
+            receipt["mission"]["mission_id"], database_url=database_url
+        )
+        authority, authority_status = read_current_mission_admission_authority(
+            receipt["mission"]["mission_id"], database_url=database_url
+        )
+        if (
+            mission_status >= 400 or not mission_result.get("success")
+            or authority_status >= 400 or not authority.get("success")
+        ):
+            raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+        metadata = mission_result["mission"].get("metadata") or {}
+        contract = metadata.get("mission_admission_contract") or {}
+        family = metadata.get("mission_family") or {}
+        if receipt["mission"]["generation"] != family.get("generation"):
+            raise MissionAdmissionError("mission_generation_changed")
+        _compare_current_authority(receipt, authority, contract)
         _verify_governance_reads(receipt, head)
         if receipt["candidate"]["diff_sha256"] != diff_sha256:
             raise MissionAdmissionError("admission_candidate_changed")
