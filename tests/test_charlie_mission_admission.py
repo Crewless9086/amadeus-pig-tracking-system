@@ -1,4 +1,5 @@
 import copy
+import base64
 import hashlib
 import io
 import json
@@ -11,6 +12,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from modules.charlie.mission_admission import (
     MissionAdmissionError,
@@ -27,6 +31,7 @@ from modules.charlie.mission_store import (
     read_mission_admission_events,
     revoke_mission_admission,
 )
+from modules.charlie.validation_receipt import canonical_json
 from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_ALLOWED_FILES,
     BOOTSTRAP_BASE_SHA,
@@ -672,16 +677,23 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             "Mission-Admission-Receipt-B64:" in line and r"\r?$" in line
             for line in workflow
         ))
+        joined = "\n".join(workflow)
+        self.assertNotIn("CHARLIE_VALIDATION_RECEIPT_KEY_B64", joined)
+        self.assertNotIn("validation-receipt.key", joined)
 
     def _run(self, *, receipt, patch_bytes=b"external patch", head=HEAD):
         import contextlib
 
+        seed = hashlib.sha256(
+            b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+        ).digest()
+        public_key_b64 = base64.b64encode(
+            Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+                Encoding.Raw, PublicFormat.Raw
+            )
+        ).decode("ascii")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            state = root / ".charlie_runner"
-            state.mkdir()
-            (state / "validation-receipt.key").write_bytes(KEY)
-            (state / "validation-receipt.key").chmod(0o600)
             receipt_path = root / "receipt.json"
             receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
             output = io.StringIO()
@@ -705,6 +717,10 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                     "scripts.charlie_mission_admission_guard._repository_identity",
                     return_value="Crewless9086/amadeus-pig-tracking-system",
                 ),
+                patch(
+                    "scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64",
+                    public_key_b64,
+                ),
                 contextlib.redirect_stdout(output),
             ):
                 code = ci_external_main(
@@ -719,12 +735,23 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             ALLOWED_FILES, patch_bytes
         )
         issued = datetime.now(timezone.utc) - timedelta(seconds=1)
-        return sign_mission_admission_receipt(
+        receipt = sign_mission_admission_receipt(
             payload,
             KEY,
             issued_at=issued.isoformat().replace("+00:00", "Z"),
             expires_at=(issued + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
         )
+        seed = hashlib.sha256(
+            b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+        ).digest()
+        signature = Ed25519PrivateKey.from_private_bytes(seed).sign(
+            canonical_json(receipt)
+        )
+        return {
+            "version": "mission_admission_ci_envelope_v1",
+            "receipt": receipt,
+            "signature_ed25519": base64.b64encode(signature).decode("ascii"),
+        }
 
     def test_valid_external_receipt_accepts_exact_candidate(self):
         code, result = self._run(receipt=self._signed())
@@ -742,11 +769,11 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         self.assertEqual(result["reason_code"], "admission_candidate_changed")
 
     def test_external_receipt_rejects_altered_signature(self):
-        receipt = self._signed()
-        receipt["signature_hmac_sha256"] = "0" * 64
-        code, result = self._run(receipt=receipt)
+        envelope = self._signed()
+        envelope["signature_ed25519"] = base64.b64encode(b"0" * 64).decode("ascii")
+        code, result = self._run(receipt=envelope)
         self.assertEqual(code, 2)
-        self.assertEqual(result["reason_code"], "admission_signature_invalid")
+        self.assertEqual(result["reason_code"], "external_admission_signature_invalid")
 
 
 class MissionAdmissionStoreTests(unittest.TestCase):

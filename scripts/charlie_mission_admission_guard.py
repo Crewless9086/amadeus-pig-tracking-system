@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -12,6 +13,9 @@ import subprocess
 import sys
 from urllib import request as url_request
 from pathlib import Path
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -24,6 +28,14 @@ from modules.charlie.mission_admission import (  # noqa: E402
     sign_mission_admission_receipt,
     validate_mission_admission_receipt,
 )
+from modules.charlie.mission_admission import (  # noqa: E402
+    RECEIPT_CLOCK_SKEW_SECONDS,
+    _TOP_LEVEL_FIELDS,
+    _parse_timestamp,
+    _validate_body,
+    _validate_lifetime,
+)
+from modules.charlie.validation_receipt import canonical_json  # noqa: E402
 from modules.charlie.mission_store import (  # noqa: E402
     append_mission_admission_event,
     read_current_mission_admission_authority,
@@ -82,6 +94,8 @@ INTERPRETERS = {
     "python", "python3", "py", "node", "ruby", "perl", "php",
     "bash", "sh", "zsh", "fish",
 } | WINDOWS_INTERPRETERS
+
+EXTERNAL_ADMISSION_PUBLIC_KEY_B64 = "a/kXmHd5rb8AWLeHFtQfHPQ5nSvsgBy1DX7yaveapbc="
 
 BOOTSTRAP_BASE_SHA = "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f"
 BOOTSTRAP_MISSION_ID = "CMQ-20260813-05"
@@ -352,27 +366,12 @@ def ci_external_main(args, *, repo_root=REPO_ROOT, os_name=None):
         receipt_path = Path(args.receipt)
         if receipt_path.is_symlink() or not receipt_path.is_file():
             raise MissionAdmissionError("external_admission_receipt_unavailable")
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-
-        key_path = _trusted_state_root(repo_root, os_name=os_name) / "validation-receipt.key"
-        if key_path.is_symlink():
-            raise MissionAdmissionError("validation_authority_symlink_denied")
-        key = key_path.read_bytes()
-        if (os_name or os.name) != "nt" and key_path.stat().st_mode & 0o077:
-            raise MissionAdmissionError("validation_authority_permissions_invalid")
-        key_sha256 = hashlib.sha256(key).hexdigest()
-
-        mission = receipt.get("mission") if isinstance(receipt, dict) else {}
-        identity = validate_mission_admission_receipt(
-            receipt,
-            key,
+        envelope = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt, identity = _validate_external_receipt_envelope(
+            envelope,
             expected_repository=_repository_identity(),
             expected_base_sha=base,
             expected_head_sha=head,
-            expected_generation=str(mission.get("generation") or ""),
-            expected_mission_id=str(mission.get("mission_id") or ""),
-            expected_root_mission_id=str(mission.get("root_mission_id") or ""),
-            expected_authority_key_sha256=key_sha256,
             expected_changed_files=changed_files,
         )
         _verify_governance_reads(receipt, head)
@@ -416,6 +415,84 @@ def ci_external_main(args, *, repo_root=REPO_ROOT, os_name=None):
             "reason_code": _reason(exc),
         }, sort_keys=True))
         return 2
+
+
+def _validate_external_receipt_envelope(
+    envelope,
+    *,
+    expected_repository,
+    expected_base_sha,
+    expected_head_sha,
+    expected_changed_files,
+    now=None,
+):
+    if not isinstance(envelope, dict) or set(envelope) != {
+        "version", "receipt", "signature_ed25519"
+    } or envelope.get("version") != "mission_admission_ci_envelope_v1":
+        raise MissionAdmissionError("external_admission_envelope_invalid")
+    receipt = envelope.get("receipt")
+    try:
+        signature = base64.b64decode(envelope["signature_ed25519"], validate=True)
+        public_key = Ed25519PublicKey.from_public_bytes(
+            base64.b64decode(EXTERNAL_ADMISSION_PUBLIC_KEY_B64, validate=True)
+        )
+        public_key.verify(signature, canonical_json(receipt))
+    except (KeyError, TypeError, ValueError, InvalidSignature) as exc:
+        raise MissionAdmissionError("external_admission_signature_invalid") from exc
+    if not isinstance(receipt, dict) or set(receipt) != _TOP_LEVEL_FIELDS:
+        raise MissionAdmissionError("admission_receipt_schema_invalid")
+    body = {
+        key: value for key, value in receipt.items()
+        if key not in {"receipt_id", "content_sha256", "signature_hmac_sha256"}
+    }
+    _validate_body(body)
+    content_sha256 = hashlib.sha256(canonical_json(body)).hexdigest()
+    if (
+        receipt.get("content_sha256") != content_sha256
+        or receipt.get("receipt_id") != f"MAR-{content_sha256.upper()}"
+        or not __import__("re").fullmatch(
+            r"[0-9a-f]{64}", str(receipt.get("signature_hmac_sha256") or "")
+        )
+    ):
+        raise MissionAdmissionError("admission_content_digest_invalid")
+    issued = _parse_timestamp(receipt["issued_at"])
+    expiry = _parse_timestamp(receipt["expires_at"])
+    _validate_lifetime(issued, expiry)
+    clock = _parse_timestamp(now) if now else __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc
+    )
+    if issued > clock + __import__("datetime").timedelta(
+        seconds=RECEIPT_CLOCK_SKEW_SECONDS
+    ):
+        raise MissionAdmissionError("admission_not_yet_valid")
+    if clock >= expiry:
+        raise MissionAdmissionError("admission_expired")
+    mission = receipt["mission"]
+    repository = receipt["repository"]
+    candidate = receipt["candidate"]
+    changed_files = sorted(expected_changed_files)
+    if repository["repository"] != expected_repository:
+        raise MissionAdmissionError("admission_repository_changed")
+    if repository["base_sha"] != expected_base_sha:
+        raise MissionAdmissionError("admission_base_changed")
+    if candidate["head_sha"] != expected_head_sha:
+        raise MissionAdmissionError("admission_candidate_changed")
+    if candidate["changed_files"] != changed_files:
+        raise MissionAdmissionError("admission_candidate_changed")
+    return receipt, {
+        "receipt_id": receipt["receipt_id"],
+        "content_sha256": content_sha256,
+        "mission_id": mission["mission_id"],
+        "root_mission_id": mission["root_mission_id"],
+        "generation": mission["generation"],
+        "base_sha": repository["base_sha"],
+        "head_sha": candidate["head_sha"],
+        "allowed_files": list(receipt["scope"]["allowed_files"]),
+        "forbidden_files": list(receipt["scope"]["forbidden_files"]),
+        "allowed_effects": list(receipt["scope"]["allowed_effects"]),
+        "forbidden_effects": list(receipt["scope"]["forbidden_effects"]),
+        "changed_files": list(candidate["changed_files"]),
+    }
 
 
 def issue_bootstrap_main(

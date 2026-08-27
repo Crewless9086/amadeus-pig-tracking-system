@@ -118,10 +118,12 @@
   OS sandbox. `.github/workflows/charlie-core-tests.yml` validates a trusted
   signed exact candidate and disposable-PostgreSQL transaction. For ordinary
   PRs it extracts exactly one externally issued receipt from the PR body and
-  `ci-external` verifies its signature, protected-key identity, freshness,
+  `ci-external` verifies its detached Ed25519 signature, freshness,
   repository, mission lineage, base, head, complete binary diff, paths, effects,
   governance reads and non-business acceptance. Missing or changed admission
-  fails closed; CI does not synthesize canonical production mission state.
+  fails closed. Pull-request jobs contain only public verification material: the
+  existing symmetric validation authority remains external and cannot be read
+  by candidate code. CI does not synthesize canonical production mission state.
   `modules/charlie/mission_store.py` reads current mission/correction/collision
   evidence and appends admission, consume, revoke and invalidation lifecycle
   events through existing `charlie_missions`, `charlie_mission_events` and

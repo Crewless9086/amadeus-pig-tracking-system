@@ -4,8 +4,9 @@
 
 - Replaced the normal-PR fallback to the sealed Stage 1 bootstrap contract with
   verification of one externally issued, exact-candidate Mission Admission
-  Receipt carried in the PR body and authenticated by the protected existing
-  validation authority.
+  Receipt carried in the PR body. The existing protected validation authority
+  derives a detached Ed25519 signature externally; pull-request CI receives only
+  the fixed public verification key and never the symmetric authority secret.
 - Hosted CI now fails closed for a missing, duplicated, malformed, altered,
   expired or differently bound receipt, while retaining the historical Stage 2
   issuance path. It does not query or manufacture canonical production state.
