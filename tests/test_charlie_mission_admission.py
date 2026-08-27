@@ -47,6 +47,7 @@ from scripts.charlie_mission_admission_guard import (
     ci_external_main,
     ci_main,
     hook_main,
+    issue_pr_main,
     trusted_check_main,
 )
 
@@ -947,7 +948,14 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                     "success": True,
                     "mission_id": "CMQ-20260813-05",
                     "root_mission_id": "CMQ-20260813-05",
-                    "admission": {"status": "valid"},
+                    "admission": {
+                        "status": "valid", "mission_id": "CMQ-20260813-05",
+                        "root_mission_id": "CMQ-20260813-05", "generation": GENERATION,
+                        "base_sha": BASE, "head_sha": HEAD,
+                        "authority_key_sha256": envelope["receipt"]["authority_key_sha256"],
+                        "latest_correction_digest": envelope["receipt"]["owner_instruction_chain"]["latest_correction_digest"],
+                        "collision_snapshot_sha256": envelope["receipt"]["collision_snapshot"]["snapshot_sha256"],
+                    },
                     "latest_correction_digest": envelope["receipt"]["owner_instruction_chain"]["latest_correction_digest"],
                     "collision_snapshot_sha256": envelope["receipt"]["collision_snapshot"]["snapshot_sha256"],
                 }, 200)),
@@ -995,7 +1003,17 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         authority = {
             "mission_id": receipt["mission"]["mission_id"],
             "root_mission_id": receipt["mission"]["root_mission_id"],
-            "admission": {"status": "valid"},
+            "admission": {
+                "status": "valid",
+                "mission_id": receipt["mission"]["mission_id"],
+                "root_mission_id": receipt["mission"]["root_mission_id"],
+                "generation": receipt["mission"]["generation"],
+                "base_sha": receipt["repository"]["base_sha"],
+                "head_sha": receipt["candidate"]["head_sha"],
+                "authority_key_sha256": receipt["authority_key_sha256"],
+                "latest_correction_digest": receipt["owner_instruction_chain"]["latest_correction_digest"],
+                "collision_snapshot_sha256": receipt["collision_snapshot"]["snapshot_sha256"],
+            },
             "latest_correction_digest": receipt["owner_instruction_chain"]["latest_correction_digest"],
             "collision_snapshot_sha256": receipt["collision_snapshot"]["snapshot_sha256"],
         }
@@ -1015,6 +1033,107 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             changed["admission"]["status"] = status
             with self.subTest(status=status), self.assertRaisesRegex(MissionAdmissionError, f"admission_{status}"):
                 _compare_current_authority(receipt, changed, contract)
+
+    def test_issuer_uses_exact_canonical_linkage_preserves_body_and_is_idempotent(self):
+        seed = hashlib.sha256(b"issuer-test-seed").digest()
+        public = base64.b64encode(
+            Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+                Encoding.Raw, PublicFormat.Raw
+            )
+        ).decode()
+        captured_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        claims = []
+        contract = {
+            "base_sha": BASE,
+            "branch": "cursor/mission-admission-test",
+            "allowed_files": ALLOWED_FILES,
+            "forbidden_files": ["app.py"],
+            "allowed_effects": ALLOWED_EFFECTS,
+            "forbidden_effects": FORBIDDEN_EFFECTS,
+            "required_tests": sorted(BOOTSTRAP_REQUIRED_TESTS),
+            "operational_acceptance": ["Exact candidate CI passes."],
+        }
+        mission = {"mission_id": "CMQ-20260813-05", "raw_text": "owner instruction"}
+        family = {"generation": GENERATION}
+        correction = "1" * 64
+        collision = collision_snapshot_digest(captured_at, claims)
+        authority = {
+            "success": True,
+            "mission_id": mission["mission_id"],
+            "root_mission_id": mission["mission_id"],
+            "latest_correction_digest": correction,
+            "collision_observed_at": captured_at,
+            "collision_snapshot_sha256": collision,
+            "active_claims": claims,
+            "admission": {
+                "status": "valid", "mission_id": mission["mission_id"],
+                "root_mission_id": mission["mission_id"], "generation": GENERATION,
+                "base_sha": BASE, "head_sha": HEAD,
+                "authority_key_sha256": hashlib.sha256(KEY).hexdigest(),
+                "latest_correction_digest": correction,
+                "collision_snapshot_sha256": collision,
+                "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
+            },
+        }
+        pull = {
+            "state": "open", "merged_at": None, "body": "Preserve this text.\n",
+            "base": {"ref": "main", "sha": BASE},
+            "head": {"ref": contract["branch"], "sha": HEAD},
+        }
+        calls = []
+        def github(_number, _token, body=None):
+            if body is None:
+                return copy.deepcopy(pull)
+            calls.append(body)
+            pull["body"] = body
+            return copy.deepcopy(pull)
+        environ = {
+            "GITHUB_TOKEN": "not-logged",
+            "CHARLIE_VALIDATION_RECEIPT_KEY_B64": base64.b64encode(KEY).decode(),
+            "CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64": base64.b64encode(seed).decode(),
+        }
+        args = SimpleNamespace(pull_request_number=1312, expected_head_sha=HEAD, event_output=None)
+        import contextlib
+        governance = [_governance_row()]
+        for expected_writes in (1, 1):
+            output = io.StringIO()
+            with (
+                patch("scripts.charlie_mission_admission_guard._protected_database_url", return_value="postgres://readonly?sslmode=require"),
+                patch("scripts.charlie_mission_admission_guard._github_pull_request", side_effect=github),
+                patch("scripts.charlie_mission_admission_guard.subprocess.run"),
+                patch("scripts.charlie_mission_admission_guard._commit", side_effect=[BASE, HEAD]),
+                patch("scripts.charlie_mission_admission_guard._changed_files", return_value=ALLOWED_FILES),
+                patch("scripts.charlie_mission_admission_guard._git_bytes", return_value=b"external patch"),
+                patch("scripts.charlie_mission_admission_guard._canonical_contract_for_pull", return_value=(mission, {}, contract, family)),
+                patch("scripts.charlie_mission_admission_guard.read_current_mission_admission_authority", return_value=(authority, 200)),
+                patch("scripts.charlie_mission_admission_guard._governance_read_identities", return_value=governance),
+                patch("scripts.charlie_mission_admission_guard._repository_identity", return_value="Crewless9086/amadeus-pig-tracking-system"),
+                patch("scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64", public),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(issue_pr_main(args, environ=environ), 0, output.getvalue())
+            self.assertEqual(len(calls), expected_writes)
+        self.assertTrue(calls[0].startswith("Preserve this text."))
+        self.assertEqual(calls[0].count("Mission-Admission-Receipt-B64:"), 1)
+        self.assertNotIn("not-logged", output.getvalue())
+        self.assertNotIn(base64.b64encode(seed).decode(), output.getvalue())
+
+    def test_issuer_rejects_wrong_head_closed_pr_and_duplicate_markers(self):
+        cases = (
+            ({"state": "closed", "merged_at": None, "base": {}, "head": {}}, HEAD, "issuer_target_not_open"),
+            ({"state": "open", "merged_at": None, "base": {"ref": "main", "sha": BASE}, "head": {"ref": "x", "sha": "c" * 40}}, HEAD, "admission_candidate_changed"),
+        )
+        import contextlib
+        for pull, expected, reason in cases:
+            output = io.StringIO()
+            with (
+                patch("scripts.charlie_mission_admission_guard._protected_database_url", return_value="postgres://readonly?sslmode=require"),
+                patch("scripts.charlie_mission_admission_guard._github_pull_request", return_value=pull),
+                contextlib.redirect_stdout(output),
+            ):
+                code = issue_pr_main(SimpleNamespace(pull_request_number=1, expected_head_sha=expected, event_output=None), environ={"GITHUB_TOKEN": "token"})
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(output.getvalue())["reason_code"], reason)
 
 
 class MissionAdmissionStoreTests(unittest.TestCase):

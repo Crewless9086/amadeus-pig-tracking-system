@@ -625,6 +625,18 @@ def _compare_current_authority(receipt, authority, contract):
         raise MissionAdmissionError("owner_correction_changed")
     if receipt["collision_snapshot"]["snapshot_sha256"] != authority.get("collision_snapshot_sha256"):
         raise MissionAdmissionError("collision_snapshot_changed")
+    expected_projection = {
+        "mission_id": mission["mission_id"],
+        "root_mission_id": mission["root_mission_id"],
+        "generation": mission["generation"],
+        "base_sha": receipt["repository"]["base_sha"],
+        "head_sha": receipt["candidate"]["head_sha"],
+        "authority_key_sha256": receipt["authority_key_sha256"],
+        "latest_correction_digest": authority.get("latest_correction_digest"),
+        "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
+    }
+    if any(admission.get(key) != value for key, value in expected_projection.items()):
+        raise MissionAdmissionError("canonical_admission_changed")
     if receipt["owner_instruction_chain"]["admission_packet_sha256"] != _canonical_packet_digest(authority, contract):
         raise MissionAdmissionError("canonical_admission_changed")
     comparisons = {
@@ -658,6 +670,26 @@ def _canonical_packet_digest(authority, contract):
         "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
     }
     return hashlib.sha256(canonical_json(binding)).hexdigest()
+
+
+def _require_exact_admission_projection(authority, mission, family, base, head, authority_key_sha256):
+    admission = authority.get("admission") if isinstance(authority.get("admission"), dict) else {}
+    expected = {
+        "status": "valid",
+        "mission_id": mission["mission_id"],
+        "root_mission_id": authority.get("root_mission_id"),
+        "generation": family.get("generation"),
+        "base_sha": base,
+        "head_sha": head,
+        "authority_key_sha256": authority_key_sha256,
+        "latest_correction_digest": authority.get("latest_correction_digest"),
+        "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
+    }
+    if any(admission.get(key) != value for key, value in expected.items()):
+        status = admission.get("status")
+        if status in {"revoked", "consumed"}:
+            raise MissionAdmissionError(f"admission_{status}")
+        raise MissionAdmissionError("canonical_admission_changed")
 
 
 def _github_pull_request(number, token, *, body=None):
@@ -726,6 +758,11 @@ def issue_pr_main(args, *, environ=None):
                 raise ValueError
         except Exception as exc:
             raise MissionAdmissionError("issuer_signing_authority_unavailable") from exc
+        if not hmac_key:
+            raise MissionAdmissionError("issuer_signing_authority_unavailable")
+        _require_exact_admission_projection(
+            authority, mission, family, base, head, hashlib.sha256(hmac_key).hexdigest()
+        )
         body = str(pull.get("body") or "")
         pattern = r"(?m)^Mission-Admission-Receipt-B64: .*(?:\r?\n|$)"
         existing = __import__("re").findall(pattern, body)
