@@ -24,6 +24,7 @@ from modules.charlie.mission_store import (
     get_mission,
     get_mission_review_packet,
     append_mission_control_event,
+    bind_external_supervisor_candidate,
     list_missions,
     list_owner_work_missions,
     create_owner_execution_hold,
@@ -1003,6 +1004,19 @@ def charlie_build_relay_mission_detail_route(mission_id):
     if denied:
         return denied
     result, status_code = get_mission(mission_id)
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/external-candidate", methods=["POST"])
+def charlie_external_supervisor_candidate_route(mission_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "status": "external_candidate_binding_invalid"}), 400
+    result, status_code = bind_external_supervisor_candidate(
+        mission_id, payload, authenticated_principal=strict_owner_admin_principal())
     return jsonify(result), status_code
 
 

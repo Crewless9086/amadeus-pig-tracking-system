@@ -1698,6 +1698,92 @@ def append_mission_admission_event(
     }, 201
 
 
+def bind_external_supervisor_candidate(
+    mission_id,
+    binding,
+    *,
+    authenticated_principal,
+    database_url=None,
+    connect_factory=None,
+):
+    """Bind one externally supervised PR candidate without exposing raw storage."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    binding = binding if isinstance(binding, dict) else {}
+    required = {
+        "pr_number", "branch_name", "base_sha", "head_sha",
+        "candidate_diff_sha256", "changed_files", "generation",
+        "allowed_files", "forbidden_files", "allowed_effects",
+        "forbidden_effects", "required_tests", "operational_acceptance",
+    }
+    sha40 = lambda value: bool(re.fullmatch(r"[0-9a-f]{40}", str(value or "")))
+    sha64 = lambda value: bool(re.fullmatch(r"[0-9a-f]{64}", str(value or "")))
+    paths = sorted({_clean_text(item, 500) for item in binding.get("changed_files") or [] if _clean_text(item, 500)})
+    allowed = sorted({_clean_text(item, 500) for item in binding.get("allowed_files") or [] if _clean_text(item, 500)})
+    if (not mission_id or not principal or set(binding) != required
+            or not isinstance(binding.get("pr_number"), int) or binding["pr_number"] <= 0
+            or not _clean_text(binding.get("branch_name"), 240)
+            or not sha40(binding.get("base_sha")) or not sha40(binding.get("head_sha"))
+            or not sha64(binding.get("candidate_diff_sha256")) or paths != allowed
+            or not paths or not _clean_text(binding.get("generation"), 200)
+            or not all(isinstance(binding.get(key), list) for key in (
+                "forbidden_files", "allowed_effects", "forbidden_effects",
+                "required_tests", "operational_acceptance"))):
+        return {"success": False, "status": "external_candidate_binding_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    packet = {
+        "pr_number": binding["pr_number"], "branch_name": binding["branch_name"],
+        "candidate_revision": binding["head_sha"],
+        "candidate_diff_sha256": binding["candidate_diff_sha256"],
+        "changed_files": paths,
+    }
+    contract = {
+        "generation": binding["generation"], "branch": binding["branch_name"],
+        "base_sha": binding["base_sha"], "allowed_files": allowed,
+        **{key: sorted(binding[key]) for key in (
+            "forbidden_files", "allowed_effects", "forbidden_effects",
+            "required_tests", "operational_acceptance")},
+    }
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select status,coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                if row[0] not in {"approved", "in_progress", "pr_ready"}:
+                    return {"success": False, "status": "external_candidate_binding_state_invalid"}, 409
+                metadata = dict(row[1] or {})
+                existing = metadata.get("review_packet")
+                if isinstance(existing, dict) and existing:
+                    if existing == packet and metadata.get("mission_admission_contract") == contract:
+                        return {"success": True, "status": "exact_replay", "mission_id": mission_id}, 200
+                    return {"success": False, "status": "external_candidate_binding_conflict"}, 409
+                family = dict(metadata.get("mission_family") or {})
+                family["root_mission_id"] = family.get("root_mission_id") or mission_id
+                family["generation"] = binding["generation"]
+                metadata.update({"review_packet": packet, "mission_admission_contract": contract,
+                                 "mission_family": family, "external_supervisor": {
+                                     "principal": principal, "transport": "hermes_cursor_cloud_v1"}})
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Externally supervised exact PR candidate bound.",
+                    {"pr_number": binding["pr_number"], "head_sha": binding["head_sha"],
+                     "generation": binding["generation"], "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "external_candidate_binding_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "external_candidate_bound",
+            "mission_id": mission_id, "pr_number": binding["pr_number"],
+            "head_sha": binding["head_sha"]}, 201
+
+
 def invalidate_mission_admission_for_owner_correction(
     mission_id,
     new_generation,

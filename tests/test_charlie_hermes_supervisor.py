@@ -6,6 +6,8 @@ import unittest
 from modules.charlie.hermes_supervisor import (
     CursorCloudV1, HermesBridgeError, HermesSupervisor, verify_slack_request,
 )
+from modules.charlie.mission_store import bind_external_supervisor_candidate
+from tests.test_charlie_mission_store import FakeConnection
 
 
 def admission():
@@ -105,6 +107,34 @@ class HermesSupervisorTests(unittest.TestCase):
             self.cursor.cancel_run("bc-one", "run-one")
         self.cursor.cancel_run("bc-one", "run-one", governed=True)
         self.assertNotIn("secret", json.dumps(self.client.calls))
+
+    def test_canonical_candidate_binding_is_exact_and_bounded(self):
+        binding = {"pr_number": 1313, "branch_name": "cursor/hermes", "base_sha": "a" * 40,
+            "head_sha": "b" * 40, "candidate_diff_sha256": "c" * 64,
+            "changed_files": ["a.py"], "generation": "g1", "allowed_files": ["a.py"],
+            "forbidden_files": [".env"], "allowed_effects": ["repository_source"],
+            "forbidden_effects": ["merge", "deploy"], "required_tests": ["unit"],
+            "operational_acceptance": ["terminal-independent pilot"]}
+        connection = FakeConnection([("approved", {"mission_family": {"root_mission_id": "CMQ-ROOT"}})])
+        result, status = bind_external_supervisor_candidate("CMQ-X", binding,
+            authenticated_principal="owner:charl", database_url="postgres://unit-test",
+            connect_factory=lambda _: connection)
+        self.assertEqual(201, status)
+        self.assertEqual("external_candidate_bound", result["status"])
+        written = [params for sql, params in connection.cursor_instance.executed
+                   if "update public.charlie_missions set metadata_json" in sql][0]
+        metadata = json.loads(written["metadata"])
+        self.assertEqual(1313, metadata["review_packet"]["pr_number"])
+        self.assertEqual("g1", metadata["mission_admission_contract"]["generation"])
+        with self.assertRaises(KeyError):
+            _ = metadata["database_url"]
+
+        invalid = {**binding, "allowed_files": ["other.py"]}
+        result, status = bind_external_supervisor_candidate("CMQ-X", invalid,
+            authenticated_principal="owner:charl", database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection())
+        self.assertEqual(400, status)
+        self.assertEqual("external_candidate_binding_invalid", result["status"])
 
 
 if __name__ == "__main__": unittest.main()
