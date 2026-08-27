@@ -21,6 +21,7 @@ from modules.charlie.core_workflow import build_core_plan
 from modules.charlie.adaptive_orchestration import validate_orchestration_binding
 from modules.charlie.environment import env_value
 from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
+from modules.charlie.mission_admission_delivery import provision_from_canonical_runner_state
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids, mission_execution_dependency_ids
 from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
 from modules.charlie.runner_control import (
@@ -1090,11 +1091,20 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
                 mission_id=mission_id,
             )
         return preflight, 503
+    admission_runtime = None
+    admission_source = os.getenv("CHARLIE_ADMISSION_SOURCE_STATE_ROOT", "").strip()
+    if admission_source:
+        admission_runtime = provision_from_canonical_runner_state(
+            mission_id,
+            admission_source,
+            REPO_ROOT.parent / ".charlie_runner" / "admission-runs",
+        )
     result, status_code = run_agent_execution_bridge_v2(
         mission_id=mission_id,
         execute_codex=True,
         timeout_seconds=timeout_seconds,
         artifact_consumer=consume_final_agent_artifact,
+        admission_runtime=admission_runtime,
     )
     capability_key = f"core.mission.{str(mission.get('mission_type') or 'unknown').strip().lower().replace(' ', '_')}"
     result["capability_trust"] = record_capability_outcome(

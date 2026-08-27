@@ -10,6 +10,7 @@ import os
 import shlex
 import subprocess
 import sys
+from urllib import request as url_request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -120,6 +121,31 @@ BOOTSTRAP_REQUIRED_TESTS = frozenset({
     "python modules/charlie/vault_alignment.py",
     "git diff --check",
 })
+STAGE2_BASE_SHA = "7c603cfff58c984409e6b40100009166cc9c8062"
+STAGE2_MISSION_ID = "CMQ-20260813-05-STAGE2-ADMISSION"
+STAGE2_ROOT_MISSION_ID = "CMQ-20260813-05"
+STAGE2_GENERATION = "7379c0b621b7e53aa03aa03e"
+STAGE2_OWNER_INSTRUCTION_SHA256 = "4c8824fc68ed15522c6ca85b6bd4b8d85e8f31a76e1fe7f52d1f68d7042014e0"
+STAGE2_PACKET_SHA256 = "7a5ae24b827e83d633317fa48bb1fd97b0e56b71910e27b68732f2a681c0d1c8"
+STAGE2_ALLOWED_FILES = frozenset({
+    ".github/workflows/charlie-core-tests.yml",
+    "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+    "docs/09-vault-brain/CHANGELOG.md",
+    "modules/charlie/execution_bridge.py",
+    "modules/charlie/mission_admission_delivery.py",
+    "scripts/charlie_mission_admission_guard.py",
+    "scripts/charlie_codex_execution_bridge.py",
+    "scripts/charlie_mission_pickup.py",
+    "tests/test_charlie_mission_admission_delivery.py",
+    "tests/test_charlie_mission_admission.py",
+})
+STAGE2_REQUIRED_TESTS = frozenset({
+    "python -m unittest tests.test_charlie_mission_admission_delivery -q",
+    "python -m unittest tests.test_charlie_mission_admission -q",
+    "python -m unittest tests.test_charlie_execution_bridge -q",
+    "python -m modules.charlie.vault_alignment",
+    "git diff --check",
+})
 BOOTSTRAP_GOVERNANCE_PATHS = tuple(sorted({
     "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
     "docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md",
@@ -151,10 +177,13 @@ def main(argv=None):
     issue_parser = subparsers.add_parser("issue-bootstrap")
     issue_parser.add_argument("--base", required=True)
     issue_parser.add_argument("--head", required=True)
+    stage2_parser = subparsers.add_parser("issue-stage2")
+    stage2_parser.add_argument("--base", required=True)
+    stage2_parser.add_argument("--head", required=True)
     args = parser.parse_args(argv)
     if args.mode == "hook":
         return hook_main(audit=args.audit)
-    if args.mode == "issue-bootstrap":
+    if args.mode in {"issue-bootstrap", "issue-stage2"}:
         return issue_bootstrap_main(args)
     return ci_main(args)
 
@@ -173,10 +202,14 @@ def hook_main(
         packet = json.load(stdin or sys.stdin)
         if not isinstance(packet, dict):
             raise MissionAdmissionError("hook_input_invalid")
+        if environ.get("CHARLIE_MISSION_ADMISSION_GUARD_URL"):
+            _emit(_remote_authorization(packet, environ))
+            return 0
         event = str(packet.get("hook_event_name") or "")
         if audit or event == "afterFileEdit":
             _audit_after_file_edit(
                 packet,
+                environ=environ,
                 authority_reader=authority_reader,
                 repo_root=repo_root,
                 os_name=os_name,
@@ -185,6 +218,8 @@ def hook_main(
             return 0
         if event == "beforeShellExecution":
             command = str(packet.get("command") or "")
+            if _references_trusted_authority(command, environ):
+                raise MissionAdmissionError("trusted_admission_read_denied")
             if _is_read_only_shell(command, os_name=os_name):
                 return _allow("read_only_shell")
             raise MissionAdmissionError("stage1_shell_mutation_denied")
@@ -192,9 +227,13 @@ def hook_main(
             tool_name = str(packet.get("tool_name") or "").strip()
             normalized = tool_name.lower()
             if normalized in READ_ONLY_TOOLS:
+                if _references_trusted_authority(packet, environ):
+                    raise MissionAdmissionError("trusted_admission_read_denied")
                 return _allow("read_only_tool")
             if normalized == "shell":
                 command = str((packet.get("tool_input") or {}).get("command") or "")
+                if _references_trusted_authority(command, environ):
+                    raise MissionAdmissionError("trusted_admission_read_denied")
                 if _is_read_only_shell(command, os_name=os_name):
                     return _allow("read_only_shell")
                 raise MissionAdmissionError("stage1_shell_mutation_denied")
@@ -207,6 +246,7 @@ def hook_main(
                 _require_admission(
                     packet,
                     effect,
+                    environ=environ,
                     authority_reader=authority_reader,
                     repo_root=repo_root,
                     os_name=os_name,
@@ -243,15 +283,24 @@ def ci_main(
         _verify_governance_reads(receipt, head)
         if receipt["candidate"]["diff_sha256"] != diff_sha256:
             raise MissionAdmissionError("admission_candidate_changed")
+        if identity["generation"] == BOOTSTRAP_GENERATION:
+            contract_base = BOOTSTRAP_BASE_SHA
+            contract_files = BOOTSTRAP_ALLOWED_FILES
+            contract_tests = BOOTSTRAP_REQUIRED_TESTS
+        elif identity["generation"] == STAGE2_GENERATION:
+            contract_base = STAGE2_BASE_SHA
+            contract_files = STAGE2_ALLOWED_FILES
+            contract_tests = STAGE2_REQUIRED_TESTS
+        else:
+            raise MissionAdmissionError("candidate_admission_contract_unknown")
         if (
-            base != BOOTSTRAP_BASE_SHA
-            or identity["generation"] != BOOTSTRAP_GENERATION
-            or set(changed_files) != BOOTSTRAP_ALLOWED_FILES
-            or set(identity["allowed_files"]) != BOOTSTRAP_ALLOWED_FILES
+            base != contract_base
+            or set(changed_files) != contract_files
+            or set(identity["allowed_files"]) != contract_files
             or not BOOTSTRAP_FORBIDDEN_EFFECTS.issubset(
                 set(identity["forbidden_effects"])
             )
-            or not BOOTSTRAP_REQUIRED_TESTS.issubset(
+            or not contract_tests.issubset(
                 set(receipt["required_tests"])
             )
         ):
@@ -297,25 +346,39 @@ def issue_bootstrap_main(
     """Trusted CI issuer for the one immutable bootstrap candidate."""
     environ = os.environ if environ is None else environ
     try:
+        stage2 = getattr(args, "mode", "") == "issue-stage2"
+        contract = {
+            "base_sha": STAGE2_BASE_SHA if stage2 else BOOTSTRAP_BASE_SHA,
+            "mission_id": STAGE2_MISSION_ID if stage2 else BOOTSTRAP_MISSION_ID,
+            "root_mission_id": STAGE2_ROOT_MISSION_ID if stage2 else BOOTSTRAP_ROOT_MISSION_ID,
+            "generation": STAGE2_GENERATION if stage2 else BOOTSTRAP_GENERATION,
+            "owner_instruction_sha256": STAGE2_OWNER_INSTRUCTION_SHA256 if stage2 else BOOTSTRAP_OWNER_INSTRUCTION_SHA256,
+            "packet_sha256": STAGE2_PACKET_SHA256 if stage2 else BOOTSTRAP_PACKET_SHA256,
+            "allowed_files": STAGE2_ALLOWED_FILES if stage2 else BOOTSTRAP_ALLOWED_FILES,
+            "required_tests": STAGE2_REQUIRED_TESTS if stage2 else BOOTSTRAP_REQUIRED_TESTS,
+            "branch": "cursor/mission-admission-stage2-20260827" if stage2 else "cursor/mission-admission-guard-80dd",
+        }
         if str(environ.get("CI") or "").lower() != "true":
             raise MissionAdmissionError("bootstrap_issuer_ci_only")
         base = _commit(args.base)
         head = _commit(args.head)
+        if stage2 and str(environ.get("CHARLIE_STAGE2_ADMITTED_HEAD") or "") != head:
+            raise MissionAdmissionError("stage2_external_head_admission_required")
         changed_files = _changed_files(base, head)
         if (
-            base != BOOTSTRAP_BASE_SHA
-            or set(changed_files) != BOOTSTRAP_ALLOWED_FILES
+            base != contract["base_sha"]
+            or set(changed_files) != contract["allowed_files"]
         ):
             raise MissionAdmissionError("bootstrap_exact_contract_changed")
         authority_reader = (
             authority_reader or read_current_mission_admission_authority
         )
-        authority, status = authority_reader(BOOTSTRAP_MISSION_ID)
+        authority, status = authority_reader(contract["mission_id"])
         if status >= 400 or not authority.get("success"):
             raise MissionAdmissionError("canonical_admission_authority_unavailable")
         if (
-            authority.get("mission_id") != BOOTSTRAP_MISSION_ID
-            or authority.get("root_mission_id") != BOOTSTRAP_ROOT_MISSION_ID
+            authority.get("mission_id") != contract["mission_id"]
+            or authority.get("root_mission_id") != contract["root_mission_id"]
             or not __import__("re").fullmatch(
                 r"[0-9a-f]{64}",
                 str(authority.get("latest_correction_digest") or ""),
@@ -343,19 +406,19 @@ def issue_bootstrap_main(
             raise MissionAdmissionError("canonical_collision_snapshot_invalid")
         payload = {
             "mission": {
-                "mission_id": BOOTSTRAP_MISSION_ID,
-                "root_mission_id": BOOTSTRAP_ROOT_MISSION_ID,
-                "generation": BOOTSTRAP_GENERATION,
+                "mission_id": contract["mission_id"],
+                "root_mission_id": contract["root_mission_id"],
+                "generation": contract["generation"],
             },
             "owner_instruction_chain": {
                 "instruction_digests": [
-                    BOOTSTRAP_OWNER_INSTRUCTION_SHA256,
+                    contract["owner_instruction_sha256"],
                     authority["latest_correction_digest"],
                 ],
                 "latest_correction_digest": authority[
                     "latest_correction_digest"
                 ],
-                "admission_packet_sha256": BOOTSTRAP_PACKET_SHA256,
+                "admission_packet_sha256": contract["packet_sha256"],
             },
             "repository": {
                 "repository": _repository_identity(),
@@ -382,7 +445,7 @@ def issue_bootstrap_main(
                 ]),
             },
             "scope": {
-                "allowed_files": sorted(BOOTSTRAP_ALLOWED_FILES),
+                "allowed_files": sorted(contract["allowed_files"]),
                 "forbidden_files": sorted({
                     ".cursor/environment.json",
                     "AGENTS.md",
@@ -406,7 +469,7 @@ def issue_bootstrap_main(
                     "collision_snapshot_sha256"
                 ],
             },
-            "required_tests": sorted(BOOTSTRAP_REQUIRED_TESTS),
+            "required_tests": sorted(contract["required_tests"]),
             "operational_acceptance": {
                 "requirements": [
                     "Hosted exact-head admission and CHARLIE checks pass.",
@@ -417,9 +480,9 @@ def issue_bootstrap_main(
             },
             "candidate": {
                 "candidate_id": (
-                    f"{BOOTSTRAP_MISSION_ID}:{BOOTSTRAP_GENERATION}:{head}"
+                    f"{contract['mission_id']}:{contract['generation']}:{head}"
                 ),
-                "branch": "cursor/mission-admission-guard-80dd",
+                "branch": contract["branch"],
                 "base_sha": base,
                 "head_sha": head,
                 "diff_sha256": diff_sha256,
@@ -447,9 +510,9 @@ def issue_bootstrap_main(
         admission = {
             "receipt_id": receipt["receipt_id"],
             "content_sha256": receipt["content_sha256"],
-            "mission_id": BOOTSTRAP_MISSION_ID,
-            "root_mission_id": BOOTSTRAP_ROOT_MISSION_ID,
-            "generation": BOOTSTRAP_GENERATION,
+            "mission_id": contract["mission_id"],
+            "root_mission_id": contract["root_mission_id"],
+            "generation": contract["generation"],
             "base_sha": base,
             "head_sha": head,
             "authority_key_sha256": receipt["authority_key_sha256"],
@@ -462,7 +525,7 @@ def issue_bootstrap_main(
         }
         writer = admission_writer or append_mission_admission_event
         written, write_status = writer(
-            BOOTSTRAP_MISSION_ID,
+            contract["mission_id"],
             admission,
             authenticated_principal="control_tower_isolated_validator_v2",
         )
@@ -491,6 +554,7 @@ def _require_admission(
     packet,
     effect,
     *,
+    environ=None,
     authority_reader=None,
     repo_root=REPO_ROOT,
     os_name=None,
@@ -499,6 +563,7 @@ def _require_admission(
         authority_reader=authority_reader,
         repo_root=repo_root,
         os_name=os_name,
+        environ=environ,
     )
     _verify_governance_reads(receipt, identity["head_sha"])
     current_head = _commit("HEAD")
@@ -528,9 +593,16 @@ def _validated_trusted_identity(
     expected_base_sha="",
     expected_head_sha="",
     expected_changed_files=None,
+    environ=None,
 ):
+    environ = os.environ if environ is None else environ
+    delivered_root = str(environ.get("CHARLIE_MISSION_ADMISSION_STATE_ROOT") or "").strip()
+    delivered_mission = str(environ.get("CHARLIE_MISSION_ADMISSION_MISSION_ID") or "").strip()
+    if bool(delivered_root) != bool(delivered_mission):
+        raise MissionAdmissionError("trusted_admission_delivery_incomplete")
+    mission_id = delivered_mission or BOOTSTRAP_MISSION_ID
     authority_reader = authority_reader or read_current_mission_admission_authority
-    authority_result, authority_status = authority_reader(BOOTSTRAP_MISSION_ID)
+    authority_result, authority_status = authority_reader(mission_id)
     if authority_status >= 400 or not authority_result.get("success"):
         raise MissionAdmissionError("canonical_admission_authority_unavailable")
     authority = authority_result
@@ -545,6 +617,7 @@ def _validated_trusted_identity(
         current,
         repo_root=repo_root,
         os_name=os_name,
+        environ=environ,
     )
     identity = validate_mission_admission_receipt(
         receipt,
@@ -553,14 +626,14 @@ def _validated_trusted_identity(
         expected_base_sha=expected_base_sha,
         expected_head_sha=expected_head_sha,
         expected_generation=str(current.get("generation") or ""),
-        expected_mission_id=BOOTSTRAP_MISSION_ID,
-        expected_root_mission_id=BOOTSTRAP_ROOT_MISSION_ID,
+        expected_mission_id=mission_id,
+        expected_root_mission_id=str(authority.get("root_mission_id") or ""),
         expected_authority_key_sha256=key_sha256,
         expected_changed_files=expected_changed_files,
     )
     if (
-        authority.get("mission_id") != BOOTSTRAP_MISSION_ID
-        or authority.get("root_mission_id") != BOOTSTRAP_ROOT_MISSION_ID
+        authority.get("mission_id") != mission_id
+        or identity["root_mission_id"] != authority.get("root_mission_id")
         or identity["receipt_id"] != current.get("receipt_id")
         or identity["content_sha256"] != current.get("content_sha256")
         or receipt["owner_instruction_chain"]["latest_correction_digest"]
@@ -572,8 +645,8 @@ def _validated_trusted_identity(
     return receipt, identity, authority
 
 
-def _trusted_receipt(current, *, repo_root=REPO_ROOT, os_name=None):
-    state_root = _trusted_state_root(repo_root, os_name=os_name)
+def _trusted_receipt(current, *, repo_root=REPO_ROOT, os_name=None, environ=None):
+    state_root = _trusted_state_root(repo_root, os_name=os_name, environ=environ)
     receipt_id = str(current.get("receipt_id") or "")
     if not __import__("re").fullmatch(r"MAR-[0-9A-F]{64}", receipt_id):
         raise MissionAdmissionError("canonical_admission_identity_invalid")
@@ -597,11 +670,57 @@ def _trusted_receipt(current, *, repo_root=REPO_ROOT, os_name=None):
     return receipt, key, key_sha256
 
 
-def _trusted_state_root(repo_root=REPO_ROOT, *, os_name=None):
+def _trusted_state_root(repo_root=REPO_ROOT, *, os_name=None, environ=None):
+    environ = os.environ if environ is None else environ
+    delivered = str(environ.get("CHARLIE_MISSION_ADMISSION_STATE_ROOT") or "").strip()
+    if delivered:
+        candidate = Path(delivered)
+        if not candidate.is_absolute() or candidate.is_symlink():
+            raise MissionAdmissionError("trusted_state_root_invalid")
+        return candidate.resolve()
     root = Path(repo_root).resolve()
     if root.parent.name == ".charlie_runner":
         return root.parent
     return root / ".charlie_runner"
+
+
+def _references_trusted_authority(value, environ=None):
+    """Deny model-visible reads of the externally staged signing authority."""
+
+    environ = os.environ if environ is None else environ
+    serialized = json.dumps(value, default=str).replace("\\", "/").lower()
+    protected = {
+        "validation-receipt.key",
+        "mission-admission-receipts",
+    }
+    delivered = str(environ.get("CHARLIE_MISSION_ADMISSION_STATE_ROOT") or "").strip()
+    if delivered:
+        protected.add(str(Path(delivered).resolve()).replace("\\", "/").lower())
+    return any(item and item in serialized for item in protected)
+
+
+def _remote_authorization(packet, environ):
+    endpoint = str(environ.get("CHARLIE_MISSION_ADMISSION_GUARD_URL") or "").strip()
+    capability = str(environ.get("CHARLIE_MISSION_ADMISSION_CAPABILITY") or "").strip()
+    if not endpoint.startswith("http://127.0.0.1:") or not capability:
+        raise MissionAdmissionError("trusted_guard_endpoint_invalid")
+    request = url_request.Request(
+        endpoint,
+        data=json.dumps(packet).encode("utf-8"),
+        headers={
+            "Authorization": f"Charlie {capability}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with url_request.urlopen(request, timeout=5) as response:
+            result = json.loads(response.read(131072))
+    except Exception as exc:
+        raise MissionAdmissionError("trusted_guard_unavailable") from exc
+    if not isinstance(result, dict) or result.get("permission") not in {"allow", "deny"}:
+        raise MissionAdmissionError("trusted_guard_response_invalid")
+    return result
 
 
 def _verify_governance_reads(receipt, candidate_head):
@@ -771,6 +890,7 @@ def _tool_target_path(packet):
 def _audit_after_file_edit(
     packet,
     *,
+    environ=None,
     authority_reader=None,
     repo_root=REPO_ROOT,
     os_name=None,
@@ -785,6 +905,7 @@ def _audit_after_file_edit(
             "tool_input": {"path": path},
         },
         "repository_file_write",
+        environ=environ,
         authority_reader=authority_reader,
         repo_root=repo_root,
         os_name=os_name,

@@ -1,5 +1,21 @@
 # Vault Brain Changelog
 
+## 2026-08-27 - Mission Admission Guard Stage 2 delivery adapter
+
+- Added a bounded adapter that validates an externally issued Mission Admission
+  Receipt and the existing validation authority against the current canonical
+  mission projection before atomically staging either for an exact agent run.
+- Connected atomic directory staging and a loopback-only canonical verifier to
+  the direct bridge and actual mission-pickup v2 call sites. The parent retains
+  database/key authority and rechecks each hook event; secrets remain absent from
+  prompts, command lines, child environments, ledgers and returned metadata.
+- Generalized guard lookup from the bootstrap mission to the externally delivered
+  canonical mission identity, while retaining the bootstrap default and denying
+  supported read tools and read-only shell access to staged authority files.
+- Added no schema, queue, ledger, dispatcher, database, Vault, CORE, merge,
+  deployment, production or business authority. Target-runtime Windows/local and
+  Linux Cloud acceptance remains outstanding.
+
 ## 2026-08-26 - Bootstrap Mission Admission Guard Stage 1
 
 - Added `mission_admission_receipt_v1` source validation for repository
