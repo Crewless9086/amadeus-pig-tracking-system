@@ -44,6 +44,7 @@ from scripts.charlie_mission_admission_guard import (
     ci_external_main,
     ci_main,
     hook_main,
+    trusted_check_main,
 )
 
 
@@ -681,6 +682,23 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         self.assertNotIn("CHARLIE_VALIDATION_RECEIPT_KEY_B64", joined)
         self.assertNotIn("validation-receipt.key", joined)
 
+    def test_trusted_workflow_is_base_only_and_environment_isolated(self):
+        workflow = (ROOT / ".github/workflows/mission-admission-trusted.yml").read_text(
+            encoding="utf-8"
+        )
+        candidate = (ROOT / ".github/workflows/charlie-core-tests.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("pull_request_target:", workflow)
+        for activity in ("opened", "reopened", "synchronize", "edited", "ready_for_review"):
+            self.assertIn(activity, workflow)
+        self.assertIn("environment: charlie-admission-validator", workflow)
+        self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", workflow)
+        self.assertNotIn("github.event.pull_request.head", workflow)
+        self.assertIn("trusted-check", workflow)
+        self.assertIn("mission-admission-candidate-diagnostic:", candidate)
+        self.assertNotIn("\n  mission-admission:\n", candidate)
+
     def _run(self, *, receipt, patch_bytes=b"external patch", head=HEAD):
         import contextlib
 
@@ -774,6 +792,53 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         code, result = self._run(receipt=envelope)
         self.assertEqual(code, 2)
         self.assertEqual(result["reason_code"], "external_admission_signature_invalid")
+
+    def test_trusted_check_publishes_success_for_exact_event_without_candidate_execution(self):
+        envelope = self._signed()
+        marker = base64.b64encode(canonical_json(envelope)).decode("ascii")
+        event = {
+            "number": 1310,
+            "repository": {"full_name": "Crewless9086/amadeus-pig-tracking-system"},
+            "pull_request": {
+                "body": f"Mission-Admission-Receipt-B64: {marker}\r\n",
+                "base": {"ref": "main", "sha": BASE},
+                "head": {"sha": HEAD},
+            },
+        }
+        calls = []
+        def publish(method, token, payload, check_id=None):
+            calls.append((method, token, payload, check_id))
+            return {"id": 42} if method == "POST" else {"id": 42}
+        import contextlib
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "event.json"
+            path.write_text(json.dumps(event), encoding="utf-8")
+            output = io.StringIO()
+            seed = hashlib.sha256(
+                b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+            ).digest()
+            public_key_b64 = base64.b64encode(
+                Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+                    Encoding.Raw, PublicFormat.Raw
+                )
+            ).decode("ascii")
+            with (
+                patch("scripts.charlie_mission_admission_guard._app_check_request", side_effect=publish),
+                patch("scripts.charlie_mission_admission_guard.subprocess.run"),
+                patch("scripts.charlie_mission_admission_guard._commit", side_effect=[BASE, HEAD]),
+                patch("scripts.charlie_mission_admission_guard._changed_files", return_value=ALLOWED_FILES),
+                patch("scripts.charlie_mission_admission_guard._git_bytes", return_value=b"external patch"),
+                patch("scripts.charlie_mission_admission_guard._verify_governance_reads"),
+                patch("scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64", public_key_b64),
+                contextlib.redirect_stdout(output),
+            ):
+                code = trusted_check_main(
+                    SimpleNamespace(event=str(path)),
+                    environ={"CHARLIE_ADMISSION_APP_TOKEN": "installation-token"},
+                )
+        self.assertEqual(code, 0, output.getvalue())
+        self.assertEqual(calls[0][0], "POST")
+        self.assertEqual(calls[-1][2]["conclusion"], "success")
 
 
 class MissionAdmissionStoreTests(unittest.TestCase):
