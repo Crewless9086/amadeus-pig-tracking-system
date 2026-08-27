@@ -1,4 +1,5 @@
 import copy
+import base64
 import hashlib
 import io
 import json
@@ -11,6 +12,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from modules.charlie.mission_admission import (
     MissionAdmissionError,
@@ -27,6 +31,7 @@ from modules.charlie.mission_store import (
     read_mission_admission_events,
     revoke_mission_admission,
 )
+from modules.charlie.validation_receipt import canonical_json
 from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_ALLOWED_FILES,
     BOOTSTRAP_BASE_SHA,
@@ -35,9 +40,12 @@ from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_REQUIRED_TESTS,
     _is_read_only_shell,
     _tool_target_path,
+    _validate_external_receipt_envelope,
     _validate_paths_and_effects,
+    ci_external_main,
     ci_main,
     hook_main,
+    trusted_check_main,
 )
 
 
@@ -653,6 +661,291 @@ class MissionAdmissionGuardTests(unittest.TestCase):
         self.assertEqual(
             result["diff_sha256"],
             canonical_candidate_diff(ALLOWED_FILES, b"test patch"),
+        )
+
+
+class MissionAdmissionExternalCiTests(unittest.TestCase):
+    @staticmethod
+    def _test_public_key_b64():
+        seed = hashlib.sha256(
+            b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+        ).digest()
+        return base64.b64encode(
+            Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+                Encoding.Raw, PublicFormat.Raw
+            )
+        ).decode("ascii")
+
+    @staticmethod
+    def _canonical_binding(envelope, *, observed_at=None):
+        receipt = envelope["receipt"]
+        return {
+            "mission_id": receipt["mission"]["mission_id"],
+            "root_mission_id": receipt["mission"]["root_mission_id"],
+            "generation": receipt["mission"]["generation"],
+            "authority_key_sha256": receipt["authority_key_sha256"],
+            "latest_correction_digest": receipt["owner_instruction_chain"][
+                "latest_correction_digest"
+            ],
+            "collision_snapshot_sha256": receipt["collision_snapshot"][
+                "snapshot_sha256"
+            ],
+            "canonical_observed_at": observed_at or receipt["issued_at"],
+        }
+
+    def test_workflow_external_receipt_heredoc_is_shell_aligned(self):
+        workflow = (ROOT / ".github/workflows/charlie-core-tests.yml").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        opener = next(line for line in workflow if "python - <<'PY'" in line)
+        terminator = next(line for line in workflow if line.strip() == "PY")
+        first_python = next(line for line in workflow if line.strip() == "import base64")
+        indent = lambda line: len(line) - len(line.lstrip())
+        self.assertEqual(indent(opener), indent(terminator))
+        self.assertEqual(indent(opener), indent(first_python))
+        self.assertTrue(any(
+            "Mission-Admission-Receipt-B64:" in line and r"\r?$" in line
+            for line in workflow
+        ))
+        joined = "\n".join(workflow)
+        self.assertNotIn("CHARLIE_VALIDATION_RECEIPT_KEY_B64", joined)
+        self.assertNotIn("validation-receipt.key", joined)
+
+    def test_trusted_workflow_is_base_only_and_environment_isolated(self):
+        workflow = (ROOT / ".github/workflows/mission-admission-trusted.yml").read_text(
+            encoding="utf-8"
+        )
+        candidate = (ROOT / ".github/workflows/charlie-core-tests.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("pull_request_target:", workflow)
+        for activity in ("opened", "reopened", "synchronize", "edited", "ready_for_review"):
+            self.assertIn(activity, workflow)
+        self.assertIn("environment: charlie-admission-validator", workflow)
+        self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", workflow)
+        self.assertNotIn("github.event.pull_request.head", workflow)
+        self.assertIn("trusted-check", workflow)
+        self.assertIn("mission-admission-candidate-diagnostic:", candidate)
+        self.assertNotIn("\n  mission-admission:\n", candidate)
+
+    def _run(self, *, receipt, patch_bytes=b"external patch", head=HEAD):
+        import contextlib
+
+        seed = hashlib.sha256(
+            b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+        ).digest()
+        public_key_b64 = base64.b64encode(
+            Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+                Encoding.Raw, PublicFormat.Raw
+            )
+        ).decode("ascii")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt_path = root / "receipt.json"
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            output = io.StringIO()
+            with (
+                patch(
+                    "scripts.charlie_mission_admission_guard._commit",
+                    side_effect=[BASE, head],
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard._changed_files",
+                    return_value=ALLOWED_FILES,
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard._git_bytes",
+                    return_value=patch_bytes,
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard._verify_governance_reads"
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard._repository_identity",
+                    return_value="Crewless9086/amadeus-pig-tracking-system",
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64",
+                    public_key_b64,
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                code = ci_external_main(
+                    SimpleNamespace(base=BASE, head=head, receipt=str(receipt_path)),
+                    repo_root=root,
+                )
+        return code, json.loads(output.getvalue())
+
+    def _signed(self, *, patch_bytes=b"external patch", head=HEAD):
+        payload = _payload(base=BASE, head=head)
+        payload["candidate"]["diff_sha256"] = canonical_candidate_diff(
+            ALLOWED_FILES, patch_bytes
+        )
+        issued = datetime.now(timezone.utc) - timedelta(seconds=1)
+        captured_at = issued.isoformat().replace("+00:00", "Z")
+        payload["collision_snapshot"]["captured_at"] = captured_at
+        payload["collision_snapshot"]["snapshot_sha256"] = collision_snapshot_digest(
+            captured_at, payload["collision_snapshot"]["active_claims"]
+        )
+        receipt = sign_mission_admission_receipt(
+            payload,
+            KEY,
+            issued_at=issued.isoformat().replace("+00:00", "Z"),
+            expires_at=(issued + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        )
+        seed = hashlib.sha256(
+            b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+        ).digest()
+        signature = Ed25519PrivateKey.from_private_bytes(seed).sign(
+            canonical_json(receipt)
+        )
+        return {
+            "version": "mission_admission_ci_envelope_v1",
+            "receipt": receipt,
+            "signature_ed25519": base64.b64encode(signature).decode("ascii"),
+        }
+
+    def test_valid_external_receipt_accepts_exact_candidate(self):
+        code, result = self._run(receipt=self._signed())
+        self.assertEqual(code, 0, result)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["head_sha"], HEAD)
+
+    def test_external_receipt_rejects_changed_candidate_diff(self):
+        code, result = self._run(
+            receipt=self._signed(patch_bytes=b"original patch"),
+            patch_bytes=b"changed patch",
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(result["status"], "READMISSION_REQUIRED")
+        self.assertEqual(result["reason_code"], "admission_candidate_changed")
+
+    def test_external_receipt_rejects_altered_signature(self):
+        envelope = self._signed()
+        envelope["signature_ed25519"] = base64.b64encode(b"0" * 64).decode("ascii")
+        code, result = self._run(receipt=envelope)
+        self.assertEqual(code, 2)
+        self.assertEqual(result["reason_code"], "external_admission_signature_invalid")
+
+    def test_canonical_binding_rejects_every_changed_authority_identity(self):
+        envelope = self._signed()
+        binding = self._canonical_binding(envelope)
+        for field in binding:
+            if field == "canonical_observed_at":
+                continue
+            changed = dict(binding)
+            changed[field] = "different"
+            with self.subTest(field=field):
+                with (
+                    patch(
+                        "scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64",
+                        self._test_public_key_b64(),
+                    ),
+                    self.assertRaisesRegex(
+                        MissionAdmissionError, "canonical_admission_authority_changed"
+                    ),
+                ):
+                    _validate_external_receipt_envelope(
+                        envelope,
+                        expected_repository="Crewless9086/amadeus-pig-tracking-system",
+                        expected_base_sha=BASE,
+                        expected_head_sha=HEAD,
+                        expected_changed_files=ALLOWED_FILES,
+                        expected_canonical_binding=changed,
+                    )
+
+    def test_trusted_path_rejects_stale_canonical_observation(self):
+        envelope = self._signed()
+        receipt = envelope["receipt"]
+        issued = datetime.fromisoformat(receipt["issued_at"].replace("Z", "+00:00"))
+        stale = (issued - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+        with (
+            patch(
+                "scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64",
+                self._test_public_key_b64(),
+            ),
+            self.assertRaisesRegex(
+                MissionAdmissionError, "canonical_admission_observation_stale"
+            ),
+        ):
+            _validate_external_receipt_envelope(
+                envelope,
+                expected_repository="Crewless9086/amadeus-pig-tracking-system",
+                expected_base_sha=BASE,
+                expected_head_sha=HEAD,
+                expected_changed_files=ALLOWED_FILES,
+                expected_canonical_binding=self._canonical_binding(
+                    envelope, observed_at=stale
+                ),
+            )
+
+    def test_trusted_check_publishes_success_for_exact_event_without_candidate_execution(self):
+        envelope = self._signed()
+        marker = base64.b64encode(canonical_json(envelope)).decode("ascii")
+        event = {
+            "number": 1310,
+            "repository": {"full_name": "Crewless9086/amadeus-pig-tracking-system"},
+            "pull_request": {
+                "body": f"Mission-Admission-Receipt-B64: {marker}\r\n",
+                "base": {"ref": "main", "sha": BASE},
+                "head": {"sha": HEAD},
+            },
+        }
+        calls = []
+        def publish(method, token, payload, check_id=None):
+            calls.append((method, token, payload, check_id))
+            return {"id": 42} if method == "POST" else {"id": 42}
+        import contextlib
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "event.json"
+            path.write_text(json.dumps(event), encoding="utf-8")
+            output = io.StringIO()
+            seed = hashlib.sha256(
+                b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+            ).digest()
+            public_key_b64 = base64.b64encode(
+                Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+                    Encoding.Raw, PublicFormat.Raw
+                )
+            ).decode("ascii")
+            with (
+                patch("scripts.charlie_mission_admission_guard._app_check_request", side_effect=publish),
+                patch("scripts.charlie_mission_admission_guard.subprocess.run"),
+                patch("scripts.charlie_mission_admission_guard._commit", side_effect=[BASE, HEAD]),
+                patch("scripts.charlie_mission_admission_guard._changed_files", return_value=ALLOWED_FILES),
+                patch("scripts.charlie_mission_admission_guard._git_bytes", return_value=b"external patch"),
+                patch("scripts.charlie_mission_admission_guard._verify_governance_reads"),
+                patch("scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64", public_key_b64),
+                contextlib.redirect_stdout(output),
+            ):
+                code = trusted_check_main(
+                    SimpleNamespace(event=str(path)),
+                    environ={
+                        "CHARLIE_ADMISSION_APP_TOKEN": "installation-token",
+                        "CHARLIE_ADMISSION_CANONICAL_BINDING_B64": base64.b64encode(
+                            canonical_json(self._canonical_binding(envelope))
+                        ).decode("ascii"),
+                    },
+                )
+        self.assertEqual(code, 0, output.getvalue())
+        self.assertEqual(calls[0][0], "POST")
+        self.assertEqual(calls[-1][2]["conclusion"], "success")
+
+    def test_trusted_check_fails_closed_without_protected_canonical_binding(self):
+        import contextlib
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "event.json"
+            path.write_text("{}", encoding="utf-8")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = trusted_check_main(
+                    SimpleNamespace(event=str(path)),
+                    environ={"CHARLIE_ADMISSION_APP_TOKEN": "installation-token"},
+                )
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            json.loads(output.getvalue())["reason_code"],
+            "canonical_admission_binding_unavailable",
         )
 
 

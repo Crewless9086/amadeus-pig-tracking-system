@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -12,6 +13,9 @@ import subprocess
 import sys
 from urllib import request as url_request
 from pathlib import Path
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -24,6 +28,14 @@ from modules.charlie.mission_admission import (  # noqa: E402
     sign_mission_admission_receipt,
     validate_mission_admission_receipt,
 )
+from modules.charlie.mission_admission import (  # noqa: E402
+    RECEIPT_CLOCK_SKEW_SECONDS,
+    _TOP_LEVEL_FIELDS,
+    _parse_timestamp,
+    _validate_body,
+    _validate_lifetime,
+)
+from modules.charlie.validation_receipt import canonical_json  # noqa: E402
 from modules.charlie.mission_store import (  # noqa: E402
     append_mission_admission_event,
     read_current_mission_admission_authority,
@@ -82,6 +94,10 @@ INTERPRETERS = {
     "python", "python3", "py", "node", "ruby", "perl", "php",
     "bash", "sh", "zsh", "fish",
 } | WINDOWS_INTERPRETERS
+
+EXTERNAL_ADMISSION_PUBLIC_KEY_B64 = "ZAY5VaAnbWY2hrgxXivez5eLaNX4RjiRxjqYmPkoG9o="
+EXTERNAL_CANONICAL_BINDING_ENV = "CHARLIE_ADMISSION_CANONICAL_BINDING_B64"
+EXTERNAL_COLLISION_MAX_AGE_SECONDS = 900
 
 BOOTSTRAP_BASE_SHA = "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f"
 BOOTSTRAP_MISSION_ID = "CMQ-20260813-05"
@@ -174,6 +190,12 @@ def main(argv=None):
     ci_parser = subparsers.add_parser("ci")
     ci_parser.add_argument("--base", required=True)
     ci_parser.add_argument("--head", required=True)
+    external_parser = subparsers.add_parser("ci-external")
+    external_parser.add_argument("--base", required=True)
+    external_parser.add_argument("--head", required=True)
+    external_parser.add_argument("--receipt", required=True)
+    trusted_parser = subparsers.add_parser("trusted-check")
+    trusted_parser.add_argument("--event", required=True)
     issue_parser = subparsers.add_parser("issue-bootstrap")
     issue_parser.add_argument("--base", required=True)
     issue_parser.add_argument("--head", required=True)
@@ -185,6 +207,10 @@ def main(argv=None):
         return hook_main(audit=args.audit)
     if args.mode in {"issue-bootstrap", "issue-stage2"}:
         return issue_bootstrap_main(args)
+    if args.mode == "ci-external":
+        return ci_external_main(args)
+    if args.mode == "trusted-check":
+        return trusted_check_main(args)
     return ci_main(args)
 
 
@@ -270,7 +296,10 @@ def ci_main(
         base = _commit(args.base)
         head = _commit(args.head)
         changed_files = _changed_files(base, head)
-        patch = _git_bytes("diff", "--binary", "--full-index", base, head, "--")
+        patch = _git_bytes(
+            "diff", "--no-ext-diff", "--no-textconv", "--binary",
+            "--full-index", base, head, "--",
+        )
         diff_sha256 = canonical_candidate_diff(changed_files, patch)
         receipt, identity, _authority = _validated_trusted_identity(
             authority_reader=authority_reader,
@@ -332,6 +361,330 @@ def ci_main(
             "reason_code": _reason(exc),
         }, sort_keys=True))
         return 2
+
+
+def ci_external_main(args, *, repo_root=REPO_ROOT, os_name=None):
+    """Verify an externally issued exact-candidate receipt without DB access."""
+    try:
+        base = _commit(args.base)
+        head = _commit(args.head)
+        changed_files = _changed_files(base, head)
+        patch = _git_bytes("diff", "--binary", "--full-index", base, head, "--")
+        diff_sha256 = canonical_candidate_diff(changed_files, patch)
+
+        receipt_path = Path(args.receipt)
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise MissionAdmissionError("external_admission_receipt_unavailable")
+        envelope = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt, identity = _validate_external_receipt_envelope(
+            envelope,
+            expected_repository=_repository_identity(),
+            expected_base_sha=base,
+            expected_head_sha=head,
+            expected_changed_files=changed_files,
+        )
+        _verify_governance_reads(receipt, head)
+        if receipt["candidate"]["diff_sha256"] != diff_sha256:
+            raise MissionAdmissionError("admission_candidate_changed")
+        if receipt["repository"]["base_sha"] != receipt["candidate"]["base_sha"]:
+            raise MissionAdmissionError("admission_base_changed")
+        if not receipt.get("required_tests"):
+            raise MissionAdmissionError("admission_required_tests_invalid")
+        if receipt.get("operational_acceptance", {}).get("business_outcome_authorized") is not False:
+            raise MissionAdmissionError("admission_business_outcome_authority_invalid")
+        _validate_paths_and_effects(
+            changed_files,
+            identity["allowed_files"],
+            identity["forbidden_files"],
+            "repository_candidate_validation",
+            identity["allowed_effects"],
+            identity["forbidden_effects"],
+        )
+        print(json.dumps({
+            "success": True,
+            "status": "mission_admission_verified",
+            "receipt_id": identity["receipt_id"],
+            "generation": identity["generation"],
+            "base_sha": base,
+            "head_sha": head,
+            "changed_files": changed_files,
+            "diff_sha256": diff_sha256,
+        }, sort_keys=True))
+        return 0
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        MissionAdmissionError,
+        subprocess.SubprocessError,
+    ) as exc:
+        print(json.dumps({
+            "success": False,
+            "status": "READMISSION_REQUIRED",
+            "reason_code": _reason(exc),
+        }, sort_keys=True))
+        return 2
+
+
+def _validate_external_receipt_envelope(
+    envelope,
+    *,
+    expected_repository,
+    expected_base_sha,
+    expected_head_sha,
+    expected_changed_files,
+    expected_canonical_binding=None,
+    now=None,
+):
+    if not isinstance(envelope, dict) or set(envelope) != {
+        "version", "receipt", "signature_ed25519"
+    } or envelope.get("version") != "mission_admission_ci_envelope_v1":
+        raise MissionAdmissionError("external_admission_envelope_invalid")
+    receipt = envelope.get("receipt")
+    try:
+        signature = base64.b64decode(envelope["signature_ed25519"], validate=True)
+        public_key = Ed25519PublicKey.from_public_bytes(
+            base64.b64decode(EXTERNAL_ADMISSION_PUBLIC_KEY_B64, validate=True)
+        )
+        public_key.verify(signature, canonical_json(receipt))
+    except (KeyError, TypeError, ValueError, InvalidSignature) as exc:
+        raise MissionAdmissionError("external_admission_signature_invalid") from exc
+    if not isinstance(receipt, dict) or set(receipt) != _TOP_LEVEL_FIELDS:
+        raise MissionAdmissionError("admission_receipt_schema_invalid")
+    body = {
+        key: value for key, value in receipt.items()
+        if key not in {"receipt_id", "content_sha256", "signature_hmac_sha256"}
+    }
+    _validate_body(body)
+    content_sha256 = hashlib.sha256(canonical_json(body)).hexdigest()
+    if (
+        receipt.get("content_sha256") != content_sha256
+        or receipt.get("receipt_id") != f"MAR-{content_sha256.upper()}"
+        or not __import__("re").fullmatch(
+            r"[0-9a-f]{64}", str(receipt.get("signature_hmac_sha256") or "")
+        )
+    ):
+        raise MissionAdmissionError("admission_content_digest_invalid")
+    issued = _parse_timestamp(receipt["issued_at"])
+    expiry = _parse_timestamp(receipt["expires_at"])
+    _validate_lifetime(issued, expiry)
+    clock = _parse_timestamp(now) if now else __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc
+    )
+    if issued > clock + __import__("datetime").timedelta(
+        seconds=RECEIPT_CLOCK_SKEW_SECONDS
+    ):
+        raise MissionAdmissionError("admission_not_yet_valid")
+    if clock >= expiry:
+        raise MissionAdmissionError("admission_expired")
+    mission = receipt["mission"]
+    repository = receipt["repository"]
+    candidate = receipt["candidate"]
+    changed_files = sorted(expected_changed_files)
+    if expected_canonical_binding is not None:
+        expected = {
+            "mission_id": mission["mission_id"],
+            "root_mission_id": mission["root_mission_id"],
+            "generation": mission["generation"],
+            "authority_key_sha256": receipt["authority_key_sha256"],
+            "latest_correction_digest": receipt["owner_instruction_chain"][
+                "latest_correction_digest"
+            ],
+            "collision_snapshot_sha256": receipt["collision_snapshot"][
+                "snapshot_sha256"
+            ],
+        }
+        observed_at = expected_canonical_binding.get("canonical_observed_at")
+        if {
+            key: value for key, value in expected_canonical_binding.items()
+            if key != "canonical_observed_at"
+        } != expected:
+            raise MissionAdmissionError("canonical_admission_authority_changed")
+        observed = _parse_timestamp(observed_at)
+        if observed > issued + __import__("datetime").timedelta(
+            seconds=RECEIPT_CLOCK_SKEW_SECONDS
+        ) or issued - observed > __import__("datetime").timedelta(
+            seconds=EXTERNAL_COLLISION_MAX_AGE_SECONDS
+        ):
+            raise MissionAdmissionError("canonical_admission_observation_stale")
+    if repository["repository"] != expected_repository:
+        raise MissionAdmissionError("admission_repository_changed")
+    if repository["base_sha"] != expected_base_sha:
+        raise MissionAdmissionError("admission_base_changed")
+    if candidate["head_sha"] != expected_head_sha:
+        raise MissionAdmissionError("admission_candidate_changed")
+    if candidate["changed_files"] != changed_files:
+        raise MissionAdmissionError("admission_candidate_changed")
+    return receipt, {
+        "receipt_id": receipt["receipt_id"],
+        "content_sha256": content_sha256,
+        "mission_id": mission["mission_id"],
+        "root_mission_id": mission["root_mission_id"],
+        "generation": mission["generation"],
+        "base_sha": repository["base_sha"],
+        "head_sha": candidate["head_sha"],
+        "allowed_files": list(receipt["scope"]["allowed_files"]),
+        "forbidden_files": list(receipt["scope"]["forbidden_files"]),
+        "allowed_effects": list(receipt["scope"]["allowed_effects"]),
+        "forbidden_effects": list(receipt["scope"]["forbidden_effects"]),
+        "changed_files": list(candidate["changed_files"]),
+    }
+
+
+def trusted_check_main(args, *, environ=None):
+    """Publish the exact check using only protected-base code and an App token."""
+    environ = os.environ if environ is None else environ
+    check_id = None
+    head = ""
+    token = str(environ.get("CHARLIE_ADMISSION_APP_TOKEN") or "")
+    try:
+        event_path = Path(args.event)
+        if event_path.is_symlink() or not event_path.is_file() or not token:
+            raise MissionAdmissionError("trusted_check_runtime_unavailable")
+        event = json.loads(event_path.read_text(encoding="utf-8"))
+        try:
+            canonical_binding = json.loads(base64.b64decode(
+                str(environ.get(EXTERNAL_CANONICAL_BINDING_ENV) or ""),
+                validate=True,
+            ))
+        except Exception as exc:
+            raise MissionAdmissionError(
+                "canonical_admission_binding_unavailable"
+            ) from exc
+        if not isinstance(canonical_binding, dict) or set(canonical_binding) != {
+            "mission_id", "root_mission_id", "generation",
+            "authority_key_sha256", "latest_correction_digest",
+            "collision_snapshot_sha256", "canonical_observed_at",
+        }:
+            raise MissionAdmissionError("canonical_admission_binding_invalid")
+        pull = event.get("pull_request") if isinstance(event, dict) else {}
+        repository = event.get("repository") if isinstance(event, dict) else {}
+        base_row = pull.get("base") if isinstance(pull, dict) else {}
+        head_row = pull.get("head") if isinstance(pull, dict) else {}
+        number = event.get("number")
+        base = str((base_row or {}).get("sha") or "")
+        head = str((head_row or {}).get("sha") or "")
+        if (
+            repository.get("full_name") != "Crewless9086/amadeus-pig-tracking-system"
+            or (base_row or {}).get("ref") != "main"
+            or not isinstance(number, int)
+            or number <= 0
+            or not __import__("re").fullmatch(r"[0-9a-f]{40}", base)
+            or not __import__("re").fullmatch(r"[0-9a-f]{40}", head)
+        ):
+            raise MissionAdmissionError("trusted_check_event_invalid")
+        pending = _app_check_request(
+            "POST", token, {
+                "name": "mission-admission",
+                "head_sha": head,
+                "status": "in_progress",
+                "output": {
+                    "title": "Mission Admission verification running",
+                    "summary": f"Verifying exact candidate {head}.",
+                },
+            },
+        )
+        check_id = pending.get("id")
+        if not isinstance(check_id, int):
+            raise MissionAdmissionError("trusted_check_publish_failed")
+        subprocess.run(
+            [
+                "git", "-c", "core.hooksPath=/dev/null",
+                "-c", "protocol.file.allow=never", "fetch", "--no-tags",
+                "--no-recurse-submodules", "origin", head,
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        base = _commit(base)
+        head = _commit(head)
+        changed_files = _changed_files(base, head)
+        patch = _git_bytes(
+            "diff", "--no-ext-diff", "--no-textconv", "--binary",
+            "--full-index", base, head, "--",
+        )
+        diff_sha256 = canonical_candidate_diff(changed_files, patch)
+        matches = __import__("re").findall(
+            r"(?m)^Mission-Admission-Receipt-B64: ([A-Za-z0-9+/]+={0,2})\r?$",
+            str(pull.get("body") or ""),
+        )
+        if len(matches) != 1:
+            raise MissionAdmissionError("exactly_one_external_admission_receipt_required")
+        try:
+            envelope = json.loads(base64.b64decode(matches[0], validate=True))
+        except Exception as exc:
+            raise MissionAdmissionError("external_admission_receipt_invalid") from exc
+        receipt, identity = _validate_external_receipt_envelope(
+            envelope,
+            expected_repository=repository["full_name"],
+            expected_base_sha=base,
+            expected_head_sha=head,
+            expected_changed_files=changed_files,
+            expected_canonical_binding=canonical_binding,
+        )
+        _verify_governance_reads(receipt, head)
+        if receipt["candidate"]["diff_sha256"] != diff_sha256:
+            raise MissionAdmissionError("admission_candidate_changed")
+        _validate_paths_and_effects(
+            changed_files,
+            identity["allowed_files"],
+            identity["forbidden_files"],
+            "repository_candidate_validation",
+            identity["allowed_effects"],
+            identity["forbidden_effects"],
+        )
+        _app_check_request("PATCH", token, {
+            "status": "completed",
+            "conclusion": "success",
+            "output": {
+                "title": "Mission Admission verified",
+                "summary": (
+                    f"Receipt {identity['receipt_id']} verified for exact head {head}."
+                ),
+            },
+        }, check_id=check_id)
+        print(json.dumps({
+            "success": True, "receipt_id": identity["receipt_id"], "head_sha": head
+        }, sort_keys=True))
+        return 0
+    except Exception as exc:
+        reason = _reason(exc)
+        if check_id is not None:
+            try:
+                _app_check_request("PATCH", token, {
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "output": {
+                        "title": "Mission Admission rejected",
+                        "summary": f"Exact head {head}: {reason}",
+                    },
+                }, check_id=check_id)
+            except Exception:
+                pass
+        print(json.dumps({
+            "success": False, "status": "READMISSION_REQUIRED", "reason_code": reason
+        }, sort_keys=True))
+        return 2
+
+
+def _app_check_request(method, token, payload, *, check_id=None):
+    suffix = f"/{check_id}" if check_id is not None else ""
+    request = url_request.Request(
+        "https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/check-runs" + suffix,
+        data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "CHARLIE-Admission-Guard",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method=method,
+    )
+    with url_request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read(131072))
 
 
 def issue_bootstrap_main(
@@ -913,7 +1266,10 @@ def _audit_after_file_edit(
 
 
 def _changed_files(base, head):
-    output = _git_text("diff", "--name-only", "--diff-filter=ACMRDTUXB", base, head, "--")
+    output = _git_text(
+        "diff", "--no-ext-diff", "--no-textconv", "--name-only",
+        "--diff-filter=ACMRDTUXB", base, head, "--",
+    )
     return sorted({line.strip().replace("\\", "/") for line in output.splitlines() if line.strip()})
 
 
