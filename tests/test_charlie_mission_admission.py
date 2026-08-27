@@ -668,6 +668,10 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         indent = lambda line: len(line) - len(line.lstrip())
         self.assertEqual(indent(opener), indent(terminator))
         self.assertEqual(indent(opener), indent(first_python))
+        self.assertTrue(any(
+            "Mission-Admission-Receipt-B64:" in line and r"\r?$" in line
+            for line in workflow
+        ))
 
     def _run(self, *, receipt, patch_bytes=b"external patch", head=HEAD):
         import contextlib

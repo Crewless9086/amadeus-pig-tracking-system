@@ -249,7 +249,7 @@ jobs:
           )
           body = str(json.load(open(source, encoding="utf-8")).get("body") or "")
           matches = re.findall(
-              r"(?m)^Mission-Admission-Receipt-B64: ([A-Za-z0-9+/]+={0,2})$",
+              r"(?m)^Mission-Admission-Receipt-B64: ([A-Za-z0-9+/]+={0,2})\r?$",
               body,
           )
           if len(matches) != 1:
