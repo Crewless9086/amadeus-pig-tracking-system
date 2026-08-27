@@ -174,6 +174,10 @@ def main(argv=None):
     ci_parser = subparsers.add_parser("ci")
     ci_parser.add_argument("--base", required=True)
     ci_parser.add_argument("--head", required=True)
+    external_parser = subparsers.add_parser("ci-external")
+    external_parser.add_argument("--base", required=True)
+    external_parser.add_argument("--head", required=True)
+    external_parser.add_argument("--receipt", required=True)
     issue_parser = subparsers.add_parser("issue-bootstrap")
     issue_parser.add_argument("--base", required=True)
     issue_parser.add_argument("--head", required=True)
@@ -185,6 +189,8 @@ def main(argv=None):
         return hook_main(audit=args.audit)
     if args.mode in {"issue-bootstrap", "issue-stage2"}:
         return issue_bootstrap_main(args)
+    if args.mode == "ci-external":
+        return ci_external_main(args)
     return ci_main(args)
 
 
@@ -326,6 +332,84 @@ def ci_main(
         print(json.dumps(result, sort_keys=True))
         return 0
     except (OSError, ValueError, MissionAdmissionError, subprocess.SubprocessError) as exc:
+        print(json.dumps({
+            "success": False,
+            "status": "READMISSION_REQUIRED",
+            "reason_code": _reason(exc),
+        }, sort_keys=True))
+        return 2
+
+
+def ci_external_main(args, *, repo_root=REPO_ROOT, os_name=None):
+    """Verify an externally issued exact-candidate receipt without DB access."""
+    try:
+        base = _commit(args.base)
+        head = _commit(args.head)
+        changed_files = _changed_files(base, head)
+        patch = _git_bytes("diff", "--binary", "--full-index", base, head, "--")
+        diff_sha256 = canonical_candidate_diff(changed_files, patch)
+
+        receipt_path = Path(args.receipt)
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise MissionAdmissionError("external_admission_receipt_unavailable")
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+
+        key_path = _trusted_state_root(repo_root, os_name=os_name) / "validation-receipt.key"
+        if key_path.is_symlink():
+            raise MissionAdmissionError("validation_authority_symlink_denied")
+        key = key_path.read_bytes()
+        if (os_name or os.name) != "nt" and key_path.stat().st_mode & 0o077:
+            raise MissionAdmissionError("validation_authority_permissions_invalid")
+        key_sha256 = hashlib.sha256(key).hexdigest()
+
+        mission = receipt.get("mission") if isinstance(receipt, dict) else {}
+        identity = validate_mission_admission_receipt(
+            receipt,
+            key,
+            expected_repository=_repository_identity(),
+            expected_base_sha=base,
+            expected_head_sha=head,
+            expected_generation=str(mission.get("generation") or ""),
+            expected_mission_id=str(mission.get("mission_id") or ""),
+            expected_root_mission_id=str(mission.get("root_mission_id") or ""),
+            expected_authority_key_sha256=key_sha256,
+            expected_changed_files=changed_files,
+        )
+        _verify_governance_reads(receipt, head)
+        if receipt["candidate"]["diff_sha256"] != diff_sha256:
+            raise MissionAdmissionError("admission_candidate_changed")
+        if receipt["repository"]["base_sha"] != receipt["candidate"]["base_sha"]:
+            raise MissionAdmissionError("admission_base_changed")
+        if not receipt.get("required_tests"):
+            raise MissionAdmissionError("admission_required_tests_invalid")
+        if receipt.get("operational_acceptance", {}).get("business_outcome_authorized") is not False:
+            raise MissionAdmissionError("admission_business_outcome_authority_invalid")
+        _validate_paths_and_effects(
+            changed_files,
+            identity["allowed_files"],
+            identity["forbidden_files"],
+            "repository_candidate_validation",
+            identity["allowed_effects"],
+            identity["forbidden_effects"],
+        )
+        print(json.dumps({
+            "success": True,
+            "status": "mission_admission_verified",
+            "receipt_id": identity["receipt_id"],
+            "generation": identity["generation"],
+            "base_sha": base,
+            "head_sha": head,
+            "changed_files": changed_files,
+            "diff_sha256": diff_sha256,
+        }, sort_keys=True))
+        return 0
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        MissionAdmissionError,
+        subprocess.SubprocessError,
+    ) as exc:
         print(json.dumps({
             "success": False,
             "status": "READMISSION_REQUIRED",

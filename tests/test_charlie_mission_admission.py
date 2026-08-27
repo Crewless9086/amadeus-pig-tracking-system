@@ -36,6 +36,7 @@ from scripts.charlie_mission_admission_guard import (
     _is_read_only_shell,
     _tool_target_path,
     _validate_paths_and_effects,
+    ci_external_main,
     ci_main,
     hook_main,
 )
@@ -654,6 +655,83 @@ class MissionAdmissionGuardTests(unittest.TestCase):
             result["diff_sha256"],
             canonical_candidate_diff(ALLOWED_FILES, b"test patch"),
         )
+
+
+class MissionAdmissionExternalCiTests(unittest.TestCase):
+    def _run(self, *, receipt, patch_bytes=b"external patch", head=HEAD):
+        import contextlib
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / ".charlie_runner"
+            state.mkdir()
+            (state / "validation-receipt.key").write_bytes(KEY)
+            (state / "validation-receipt.key").chmod(0o600)
+            receipt_path = root / "receipt.json"
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            output = io.StringIO()
+            with (
+                patch(
+                    "scripts.charlie_mission_admission_guard._commit",
+                    side_effect=[BASE, head],
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard._changed_files",
+                    return_value=ALLOWED_FILES,
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard._git_bytes",
+                    return_value=patch_bytes,
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard._verify_governance_reads"
+                ),
+                patch(
+                    "scripts.charlie_mission_admission_guard._repository_identity",
+                    return_value="Crewless9086/amadeus-pig-tracking-system",
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                code = ci_external_main(
+                    SimpleNamespace(base=BASE, head=head, receipt=str(receipt_path)),
+                    repo_root=root,
+                )
+        return code, json.loads(output.getvalue())
+
+    def _signed(self, *, patch_bytes=b"external patch", head=HEAD):
+        payload = _payload(base=BASE, head=head)
+        payload["candidate"]["diff_sha256"] = canonical_candidate_diff(
+            ALLOWED_FILES, patch_bytes
+        )
+        issued = datetime.now(timezone.utc) - timedelta(seconds=1)
+        return sign_mission_admission_receipt(
+            payload,
+            KEY,
+            issued_at=issued.isoformat().replace("+00:00", "Z"),
+            expires_at=(issued + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        )
+
+    def test_valid_external_receipt_accepts_exact_candidate(self):
+        code, result = self._run(receipt=self._signed())
+        self.assertEqual(code, 0, result)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["head_sha"], HEAD)
+
+    def test_external_receipt_rejects_changed_candidate_diff(self):
+        code, result = self._run(
+            receipt=self._signed(patch_bytes=b"original patch"),
+            patch_bytes=b"changed patch",
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(result["status"], "READMISSION_REQUIRED")
+        self.assertEqual(result["reason_code"], "admission_candidate_changed")
+
+    def test_external_receipt_rejects_altered_signature(self):
+        receipt = self._signed()
+        receipt["signature_hmac_sha256"] = "0" * 64
+        code, result = self._run(receipt=receipt)
+        self.assertEqual(code, 2)
+        self.assertEqual(result["reason_code"], "admission_signature_invalid")
 
 
 class MissionAdmissionStoreTests(unittest.TestCase):
