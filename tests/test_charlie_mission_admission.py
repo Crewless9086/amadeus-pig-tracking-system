@@ -658,6 +658,17 @@ class MissionAdmissionGuardTests(unittest.TestCase):
 
 
 class MissionAdmissionExternalCiTests(unittest.TestCase):
+    def test_workflow_external_receipt_heredoc_is_shell_aligned(self):
+        workflow = (ROOT / ".github/workflows/charlie-core-tests.yml").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        opener = next(line for line in workflow if "python - <<'PY'" in line)
+        terminator = next(line for line in workflow if line.strip() == "PY")
+        first_python = next(line for line in workflow if line.strip() == "import base64")
+        indent = lambda line: len(line) - len(line.lstrip())
+        self.assertEqual(indent(opener), indent(terminator))
+        self.assertEqual(indent(opener), indent(first_python))
+
     def _run(self, *, receipt, patch_bytes=b"external patch", head=HEAD):
         import contextlib
 
