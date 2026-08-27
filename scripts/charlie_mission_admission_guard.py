@@ -610,6 +610,26 @@ def _canonical_contract_for_pull(number, head, branch, diff_sha256, database_url
     return mission, metadata, contract, family
 
 
+def _require_canonical_review_linkage(metadata, number, head, branch, diff_sha256, changed_files):
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    if (
+        packet.get("pr_number") != number
+        or packet.get("candidate_revision") != head
+        or packet.get("branch_name") != branch
+        or packet.get("candidate_diff_sha256") != diff_sha256
+        or sorted(packet.get("changed_files") or []) != sorted(changed_files)
+    ):
+        raise MissionAdmissionError("canonical_candidate_linkage_changed")
+
+
+def _replace_receipt_marker(body, marker):
+    pattern = r"(?m)^Mission-Admission-Receipt-B64: .*(?:\r?\n|$)"
+    if len(__import__("re").findall(pattern, body)) > 1:
+        raise MissionAdmissionError("duplicate_external_admission_receipts")
+    preserved = __import__("re").sub(pattern, "", body).rstrip()
+    return (preserved + "\n\n" if preserved else "") + f"Mission-Admission-Receipt-B64: {marker}\n"
+
+
 def _compare_current_authority(receipt, authority, contract):
     admission = authority.get("admission") if isinstance(authority.get("admission"), dict) else {}
     mission = receipt["mission"]
@@ -797,8 +817,7 @@ def issue_pr_main(args, *, environ=None):
             receipt = sign_mission_admission_receipt(payload, hmac_key)
             envelope = {"version": "mission_admission_ci_envelope_v1", "receipt": receipt, "signature_ed25519": base64.b64encode(Ed25519PrivateKey.from_private_bytes(signing_seed).sign(canonical_json(receipt))).decode()}
             marker = base64.b64encode(canonical_json(envelope)).decode()
-        updated = __import__("re").sub(pattern, "", body).rstrip()
-        updated = (updated + "\n\n" if updated else "") + f"Mission-Admission-Receipt-B64: {marker}\n"
+        updated = _replace_receipt_marker(body, marker)
         if updated != body:
             _github_pull_request(args.pull_request_number, token, body=updated)
         if args.event_output:
@@ -916,6 +935,14 @@ def trusted_check_main(args, *, environ=None):
         family = metadata.get("mission_family") or {}
         if receipt["mission"]["generation"] != family.get("generation"):
             raise MissionAdmissionError("mission_generation_changed")
+        _require_canonical_review_linkage(
+            metadata,
+            number,
+            head,
+            str((head_row or {}).get("ref") or ""),
+            diff_sha256,
+            changed_files,
+        )
         _compare_current_authority(receipt, authority, contract)
         _verify_governance_reads(receipt, head)
         if receipt["candidate"]["diff_sha256"] != diff_sha256:

@@ -41,6 +41,9 @@ from scripts.charlie_mission_admission_guard import (
     _is_read_only_shell,
     _compare_current_authority,
     _canonical_packet_digest,
+    _replace_receipt_marker,
+    _require_canonical_review_linkage,
+    _protected_database_url,
     _tool_target_path,
     _validate_external_receipt_envelope,
     _validate_paths_and_effects,
@@ -740,6 +743,11 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         self.assertNotIn("pull_request_target:", issuer)
         self.assertNotIn("pull_request:", issuer)
         self.assertIn("ref: ${{ github.sha }}", issuer)
+        self.assertIn("github.ref == 'refs/heads/main'", issuer)
+        guard = (ROOT / "scripts/charlie_mission_admission_guard.py").read_text(encoding="utf-8")
+        for option in ("--no-ext-diff", "--no-textconv", "--binary", "--full-index"):
+            self.assertIn(option, guard)
+        self.assertNotIn("checkout", "\n".join(line for line in issuer.splitlines() if "github.event.pull_request.head" in line))
 
     def _run(self, *, receipt, patch_bytes=b"external patch", head=HEAD):
         import contextlib
@@ -901,7 +909,7 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             "pull_request": {
                 "body": f"Mission-Admission-Receipt-B64: {marker}\r\n",
                 "base": {"ref": "main", "sha": BASE},
-                "head": {"sha": HEAD},
+                "head": {"ref": "cursor/mission-admission-test", "sha": HEAD},
             },
         }
         calls = []
@@ -934,6 +942,13 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                     "success": True,
                     "mission": {"metadata": {
                         "mission_family": {"generation": GENERATION},
+                        "review_packet": {
+                            "pr_number": 1310,
+                            "candidate_revision": HEAD,
+                            "branch_name": "cursor/mission-admission-test",
+                            "candidate_diff_sha256": canonical_candidate_diff(ALLOWED_FILES, b"external patch"),
+                            "changed_files": ALLOWED_FILES,
+                        },
                         "mission_admission_contract": {
                             "allowed_files": ALLOWED_FILES,
                             "forbidden_files": envelope["receipt"]["scope"]["forbidden_files"],
@@ -1134,6 +1149,54 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                 code = issue_pr_main(SimpleNamespace(pull_request_number=1, expected_head_sha=expected, event_output=None), environ={"GITHUB_TOKEN": "token"})
             self.assertEqual(code, 2)
             self.assertEqual(json.loads(output.getvalue())["reason_code"], reason)
+        with self.assertRaisesRegex(MissionAdmissionError, "duplicate_external_admission_receipts"):
+            _replace_receipt_marker(
+                "Mission-Admission-Receipt-B64: one\nMission-Admission-Receipt-B64: two\n",
+                "three",
+            )
+
+    def test_canonical_review_linkage_rejects_pr_branch_head_diff_and_files_transplant(self):
+        metadata = {"review_packet": {
+            "pr_number": 1312, "candidate_revision": HEAD,
+            "branch_name": "cursor/mission-admission-test",
+            "candidate_diff_sha256": "d" * 64, "changed_files": ALLOWED_FILES,
+        }}
+        _require_canonical_review_linkage(metadata, 1312, HEAD, "cursor/mission-admission-test", "d" * 64, ALLOWED_FILES)
+        cases = (
+            (1313, HEAD, "cursor/mission-admission-test", "d" * 64, ALLOWED_FILES),
+            (1312, HEAD, "other", "d" * 64, ALLOWED_FILES),
+            (1312, "c" * 40, "cursor/mission-admission-test", "d" * 64, ALLOWED_FILES),
+            (1312, HEAD, "cursor/mission-admission-test", "e" * 64, ALLOWED_FILES),
+            (1312, HEAD, "cursor/mission-admission-test", "d" * 64, ["other.py"]),
+        )
+        for args in cases:
+            with self.subTest(args=args), self.assertRaisesRegex(MissionAdmissionError, "canonical_candidate_linkage_changed"):
+                _require_canonical_review_linkage(metadata, *args)
+
+    def test_protected_database_rejects_timeout_and_admin_privilege(self):
+        class Cursor:
+            def __init__(self, mode): self.mode, self.sql = mode, ""
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, sql, params=None): self.sql = sql.lower()
+            def fetchone(self):
+                if "transaction_read_only" in self.sql: return ("on",)
+                if "statement_timeout" in self.sql: return (("0" if self.mode == "timeout" else "10s"),)
+                if "lock_timeout" in self.sql: return ("3s",)
+                if "idle_in_transaction" in self.sql: return ("10s",)
+                if "from pg_roles" in self.sql: return ((True, False, False, False, False) if self.mode == "admin" else (False,) * 5)
+                if "has_database_privilege" in self.sql: return (False, False)
+                if "has_table_privilege" in self.sql: return (True, False)
+                raise AssertionError(self.sql)
+        class Connection:
+            def __init__(self, mode): self.mode = mode
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return Cursor(self.mode)
+        for mode, reason in (("timeout", "canonical_database_timeout_invalid"), ("admin", "canonical_database_privilege_invalid")):
+            fake = SimpleNamespace(connect=lambda *_args, **_kwargs: Connection(mode))
+            with self.subTest(mode=mode), patch.dict(sys.modules, {"psycopg": fake}), self.assertRaisesRegex(MissionAdmissionError, reason):
+                _protected_database_url({"CHARLIE_ADMISSION_READ_DATABASE_URL": "postgres://redacted?sslmode=require"})
 
 
 class MissionAdmissionStoreTests(unittest.TestCase):
