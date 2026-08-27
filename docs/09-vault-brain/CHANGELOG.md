@@ -2,22 +2,32 @@
 
 ## 2026-08-26 - Bootstrap Mission Admission Guard Stage 1
 
-- Added fail-closed `mission_admission_receipt_v1` validation for repository
-  mutation, binding owner intent, mission/generation, exact base and candidate,
+- Added `mission_admission_receipt_v1` source validation for repository
+  mutation, binding owner intent, mission/root/generation, exact base/candidate,
   complete governance identities, existing-system trace, scope/effects,
   collisions, tests and operational acceptance through the existing validation-
   receipt authority.
-- Reused `operational_events` and `charlie_missions.metadata_json` for immutable
-  admission events and current projection. An authenticated canonical owner
-  correction that changes generation invalidates current admission
-  transactionally; no schema, queue, protocol store or second ledger was added.
-- Configured supported Cursor Cloud pre-action hooks with explicit fail-closed
-  behavior and added the same complete-diff validator to CHARLIE CI. Missing or
-  stale external receipt/key material leaves the repository read-only.
+- Reused `charlie_missions`, `charlie_mission_events` and `operational_events`
+  for admission/current-correction/collision reads, immutable lifecycle events
+  and current projection. Authenticated correction recording and changed-
+  generation invalidation share one transaction; consume, revoke and replay are
+  explicit. No schema, queue, protocol store or second ledger was added.
+- Configured supported Cursor command hooks with explicit fail-closed behavior.
+  Known reads remain available; Stage 1 denies shell mutation/interpreters, MCP,
+  Task/subagent and unknown tools while checking known file editors against one
+  trusted exact target. This is hook-level source behavior, not an OS sandbox or
+  proof of complete CHARLIE dispatch.
+- Added signed exact-candidate and disposable-PostgreSQL validation to CHARLIE
+  CI. The guard derives the validation key location from canonical runner
+  topology and reads correction/collision state from existing rails; caller-
+  selected key, receipt and current-state environment values are ignored.
 - Added PR #1306 adversarial evidence showing that green CI cannot cure a new
   protocol store, broad Farm rewrite, unrelated litter recovery or an untraced
-  Telegram adapter. Stage 1 grants no execution, release, deployment,
-  production or business authority; existing-bridge delivery remains Stage 2.
+  Telegram adapter. The fixture now carries exact head
+  `bf7ee6a160ead5fb3853662345ae57a459d8d42e`, exact 22-file provider list and
+  four historical green checks. Stage 1 grants no execution, release,
+  deployment, production or business authority; existing-bridge delivery and
+  target-runtime hook acceptance remain Stage 2.
 
 ## 2026-08-24 - ROOTLINE provider-readback commissioning authority
 

@@ -23,6 +23,7 @@ _TOP_LEVEL_FIELDS = frozenset({
     "version",
     "receipt_id",
     "authority",
+    "authority_key_sha256",
     "issued_at",
     "expires_at",
     "mission",
@@ -61,7 +62,7 @@ _SCOPE_FIELDS = frozenset({
     "forbidden_effects",
 })
 _COLLISION_FIELDS = frozenset({"captured_at", "active_claims", "snapshot_sha256"})
-_CLAIM_FIELDS = frozenset({"claim_id", "owner", "paths", "effects", "state"})
+_CLAIM_FIELDS = frozenset({"mission_id", "status", "paths", "effects", "lease_id"})
 _ACCEPTANCE_FIELDS = frozenset({"requirements", "business_outcome_authorized"})
 _CANDIDATE_FIELDS = frozenset({
     "candidate_id",
@@ -95,6 +96,7 @@ def sign_mission_admission_receipt(payload, signing_key, *, issued_at=None, expi
     body = {
         "version": RECEIPT_VERSION,
         "authority": ADMISSION_AUTHORITY,
+        "authority_key_sha256": hashlib.sha256(key).hexdigest(),
         "issued_at": _utc_text(issued),
         "expires_at": _utc_text(expiry),
         **payload,
@@ -126,6 +128,9 @@ def validate_mission_admission_receipt(
     expected_base_sha="",
     expected_head_sha="",
     expected_generation="",
+    expected_mission_id="",
+    expected_root_mission_id="",
+    expected_authority_key_sha256="",
     expected_changed_files=None,
     now=None,
 ):
@@ -170,6 +175,17 @@ def validate_mission_admission_receipt(
     repository = receipt["repository"]
     candidate = receipt["candidate"]
     mission = receipt["mission"]
+    if not expected_mission_id or not expected_root_mission_id or not expected_generation:
+        raise MissionAdmissionError("admission_expected_identity_required")
+    if mission["mission_id"] != expected_mission_id:
+        raise MissionAdmissionError("admission_mission_changed")
+    if mission["root_mission_id"] != expected_root_mission_id:
+        raise MissionAdmissionError("admission_root_mission_changed")
+    if (
+        expected_authority_key_sha256
+        and receipt["authority_key_sha256"] != expected_authority_key_sha256
+    ):
+        raise MissionAdmissionError("admission_validation_authority_changed")
     if expected_repository and repository["repository"] != expected_repository:
         raise MissionAdmissionError("admission_repository_changed")
     if expected_base_sha and repository["base_sha"] != expected_base_sha:
@@ -219,6 +235,8 @@ def collision_snapshot_digest(captured_at, active_claims):
 def _validate_body(body):
     if body.get("version") != RECEIPT_VERSION or body.get("authority") != ADMISSION_AUTHORITY:
         raise MissionAdmissionError("admission_receipt_schema_invalid")
+    if not _SHA256.fullmatch(str(body.get("authority_key_sha256") or "")):
+        raise MissionAdmissionError("admission_validation_authority_invalid")
     issued = _parse_timestamp(body.get("issued_at"))
     expiry = _parse_timestamp(body.get("expires_at"))
     _validate_lifetime(issued, expiry)
@@ -300,11 +318,11 @@ def _validate_body(body):
         )
         claim_effects_valid = _nonempty_text_list(item.get("effects"), allow_empty=True)
         if (
-            not _text(item.get("claim_id"), 300)
-            or not _text(item.get("owner"), 300)
+            not _text(item.get("mission_id"), 90)
+            or not _text(item.get("status"), 40)
             or not claim_effects_valid
             or not (claim_paths or item.get("effects"))
-            or item.get("state") not in {"active", "waiting", "released", "historical"}
+            or not isinstance(item.get("lease_id"), str)
         ):
             raise MissionAdmissionError("admission_collision_snapshot_invalid")
     expected_snapshot = collision_snapshot_digest(

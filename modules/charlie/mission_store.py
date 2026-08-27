@@ -28,6 +28,7 @@ from modules.charlie.evidence_reconciliation import (
 from modules.charlie.adaptive_orchestration import validate_orchestration_binding
 from modules.charlie.mission_control import (
     apply_event_to_projection, build_mission_control_event, canonical_event_equal,
+    validate_mission_control_event,
 )
 from modules.charlie.operational_events import build_event
 
@@ -1592,9 +1593,14 @@ def append_mission_admission_event(
     required = {
         "receipt_id",
         "content_sha256",
+        "mission_id",
+        "root_mission_id",
         "generation",
         "base_sha",
         "head_sha",
+        "authority_key_sha256",
+        "latest_correction_digest",
+        "collision_snapshot_sha256",
     }
     if (
         not mission_id
@@ -1604,6 +1610,11 @@ def append_mission_admission_event(
         or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("content_sha256") or ""))
         or not re.fullmatch(r"[0-9a-f]{40}", str(admission.get("base_sha") or ""))
         or not re.fullmatch(r"[0-9a-f]{40}", str(admission.get("head_sha") or ""))
+        or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("authority_key_sha256") or ""))
+        or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("latest_correction_digest") or ""))
+        or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("collision_snapshot_sha256") or ""))
+        or admission.get("mission_id") != mission_id
+        or not _clean_text(admission.get("root_mission_id"), 90)
         or not _clean_text(admission.get("generation"), 200)
     ):
         return {"success": False, "status": "invalid_mission_admission_event"}, 400
@@ -1631,6 +1642,14 @@ def append_mission_admission_event(
                 if not row:
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
                 metadata = dict(row[0] or {})
+                if admission["root_mission_id"] != _mission_root_identity(
+                    mission_id, metadata
+                ):
+                    return {
+                        "success": False,
+                        "status": "mission_admission_root_mismatch",
+                        "mission_id": mission_id,
+                    }, 409
                 current = metadata.get("mission_admission")
                 if isinstance(current, dict) and current.get("status") == "valid":
                     if current.get("receipt_id") == projection["receipt_id"]:
@@ -1684,10 +1703,11 @@ def invalidate_mission_admission_for_owner_correction(
     new_generation,
     *,
     owner_authentication,
+    correction_payload,
     database_url=None,
     connect_factory=None,
 ):
-    """Atomically invalidate admission when a canonical owner correction changes generation."""
+    """Record an authenticated owner correction and invalidate admission atomically."""
     mission_id = _clean_text(mission_id, 90)
     new_generation = _clean_text(new_generation, 200)
     authentication = owner_authentication if isinstance(owner_authentication, dict) else {}
@@ -1698,20 +1718,35 @@ def invalidate_mission_admission_for_owner_correction(
             "authenticated",
             "principal_type",
             "principal_id",
-            "correction_event_id",
-            "correction_digest",
         }
         or authentication.get("authenticated") is not True
         or authentication.get("principal_type") != "owner_admin"
         or not _clean_text(authentication.get("principal_id"), 200)
-        or not _clean_text(authentication.get("correction_event_id"), 200)
-        or not re.fullmatch(r"[0-9a-f]{64}", str(authentication.get("correction_digest") or ""))
     ):
         return {"success": False, "status": "authenticated_owner_correction_required"}, 403
+    principal = _clean_text(authentication["principal_id"], 200)
+    try:
+        correction = build_mission_control_event(
+            mission_id,
+            correction_payload,
+            recorded_by=principal,
+        )
+    except ValueError as exc:
+        return {"success": False, "status": str(exc)}, 400
+    if correction.get("event_type") != "owner_correction_recorded":
+        return {"success": False, "status": "owner_correction_event_required"}, 400
+    correction_digest = hashlib.sha256(json.dumps(
+        {
+            key: value
+            for key, value in correction.items()
+            if key != "recorded_at"
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
         return {"success": False, "configured": False, "status": "not_configured"}, 503
-    principal = _clean_text(authentication["principal_id"], 200)
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -1726,43 +1761,91 @@ def invalidate_mission_admission_for_owner_correction(
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
                 metadata = dict(row[0] or {})
                 current = metadata.get("mission_admission")
+                if (
+                    isinstance(current, dict)
+                    and current.get("status") == "invalidated"
+                    and current.get("invalidated_by_correction_event_id")
+                    == correction["event_id"]
+                    and current.get("correction_digest") == correction_digest
+                    and current.get("replacement_generation") == new_generation
+                ):
+                    return {
+                        "success": True,
+                        "status": "exact_replay",
+                        "mission_id": mission_id,
+                        "correction_event_id": correction["event_id"],
+                        "correction_digest": correction_digest,
+                        "admission": current,
+                    }, 200
                 if not isinstance(current, dict) or current.get("status") != "valid":
                     return {
                         "success": False,
                         "status": "current_mission_admission_missing",
                         "mission_id": mission_id,
                     }, 409
+                cursor.execute(
+                    """insert into public.charlie_mission_events
+                       (event_id,mission_id,event_type,notes,recorded_by,
+                        metadata_json,created_at)
+                       values (%(event_id)s,%(mission_id)s,
+                               'owner_correction_recorded',%(notes)s,
+                               %(principal)s,%(metadata)s::jsonb,%(created_at)s)
+                       on conflict (event_id) do nothing returning event_id""",
+                    {
+                        "event_id": correction["event_id"],
+                        "mission_id": mission_id,
+                        "notes": correction["summary"],
+                        "principal": principal,
+                        "metadata": json.dumps(correction, sort_keys=True),
+                        "created_at": correction["recorded_at"],
+                    },
+                )
+                correction_created = cursor.fetchone() is not None
+                if not correction_created:
+                    cursor.execute(
+                        """select coalesce(metadata_json,'{}'::jsonb)
+                           from public.charlie_mission_events
+                           where event_id=%(event_id)s
+                             and mission_id=%(mission_id)s
+                             and event_type='owner_correction_recorded'
+                             and recorded_by=%(principal)s
+                           limit 1""",
+                        {
+                            "event_id": correction["event_id"],
+                            "mission_id": mission_id,
+                            "principal": principal,
+                        },
+                    )
+                    stored = cursor.fetchone()
+                    stored_event = (
+                        stored[0]
+                        if stored and isinstance(stored[0], dict)
+                        else {}
+                    )
+                    if not canonical_event_equal(stored_event, correction):
+                        return {
+                            "success": False,
+                            "status": "owner_correction_replay_conflict",
+                            "mission_id": mission_id,
+                        }, 409
                 if current.get("generation") == new_generation:
                     return {
                         "success": True,
-                        "status": "generation_unchanged",
+                        "status": (
+                            "owner_correction_recorded"
+                            if correction_created
+                            else "exact_replay"
+                        ),
                         "mission_id": mission_id,
+                        "correction_event_id": correction["event_id"],
+                        "correction_digest": correction_digest,
                         "admission": current,
-                    }, 200
-                cursor.execute(
-                    """select event_id from public.charlie_mission_events
-                       where event_id=%(event_id)s
-                         and mission_id=%(mission_id)s
-                         and event_type='owner_correction_recorded'
-                         and recorded_by=%(principal)s
-                       limit 1""",
-                    {
-                        "event_id": authentication["correction_event_id"],
-                        "mission_id": mission_id,
-                        "principal": principal,
-                    },
-                )
-                if cursor.fetchone() is None:
-                    return {
-                        "success": False,
-                        "status": "authenticated_owner_correction_not_found",
-                        "mission_id": mission_id,
-                    }, 409
+                    }, 201 if correction_created else 200
                 invalidated = {
                     **current,
                     "status": "invalidated",
-                    "invalidated_by_correction_event_id": authentication["correction_event_id"],
-                    "correction_digest": authentication["correction_digest"],
+                    "invalidated_by_correction_event_id": correction["event_id"],
+                    "correction_digest": correction_digest,
                     "replacement_generation": new_generation,
                 }
                 event = _mission_admission_operational_event(
@@ -1801,6 +1884,8 @@ def invalidate_mission_admission_for_owner_correction(
         "status": "mission_admission_invalidated",
         "mission_id": mission_id,
         "event_id": event["event_id"],
+        "correction_event_id": correction["event_id"],
+        "correction_digest": correction_digest,
         "admission": invalidated,
     }, 201
 
@@ -1834,7 +1919,9 @@ def read_mission_admission_events(
                          and aggregate_id=%(mission_id)s
                          and event_type in (
                              'mission_admission_recorded',
-                             'mission_admission_invalidated'
+                             'mission_admission_invalidated',
+                             'mission_admission_consumed',
+                             'mission_admission_revoked'
                          )
                        order by occurred_at,recorded_at,event_id
                        limit %(limit)s""",
@@ -1866,6 +1953,327 @@ def read_mission_admission_events(
         "mission_id": mission_id,
         "events": events,
     }, 200
+
+
+def consume_mission_admission(
+    mission_id,
+    receipt_id,
+    *,
+    authenticated_principal,
+    database_url=None,
+    connect_factory=None,
+):
+    return _transition_mission_admission(
+        mission_id,
+        receipt_id,
+        "consumed",
+        authenticated_principal=authenticated_principal,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
+def revoke_mission_admission(
+    mission_id,
+    receipt_id,
+    *,
+    owner_authentication,
+    database_url=None,
+    connect_factory=None,
+):
+    authentication = owner_authentication if isinstance(owner_authentication, dict) else {}
+    if (
+        set(authentication) != {"authenticated", "principal_type", "principal_id"}
+        or authentication.get("authenticated") is not True
+        or authentication.get("principal_type") != "owner_admin"
+        or not _clean_text(authentication.get("principal_id"), 200)
+    ):
+        return {"success": False, "status": "authenticated_owner_revocation_required"}, 403
+    return _transition_mission_admission(
+        mission_id,
+        receipt_id,
+        "revoked",
+        authenticated_principal=authentication["principal_id"],
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
+def read_current_mission_admission_authority(
+    mission_id,
+    *,
+    database_url=None,
+    connect_factory=None,
+):
+    """Read current admission, owner correction, and active collision claims."""
+    mission_id = _clean_text(mission_id, 90)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select status,coalesce(metadata_json,'{}'::jsonb),updated_at
+                       from public.charlie_missions
+                       where mission_id=%(mission_id)s limit 1""",
+                    {"mission_id": mission_id},
+                )
+                mission_row = cursor.fetchone()
+                if not mission_row:
+                    return {
+                        "success": False,
+                        "status": "not_found",
+                        "mission_id": mission_id,
+                    }, 404
+                metadata = dict(mission_row[1] or {})
+                cursor.execute(
+                    """select event_id,coalesce(metadata_json,'{}'::jsonb),
+                              recorded_by
+                       from public.charlie_mission_events
+                       where mission_id=%(mission_id)s
+                         and event_type='owner_correction_recorded'
+                       order by created_at desc,event_id desc limit 1""",
+                    {"mission_id": mission_id},
+                )
+                correction_row = cursor.fetchone()
+                cursor.execute(
+                    """select mission_id,status,coalesce(metadata_json,'{}'::jsonb),
+                              updated_at
+                       from public.charlie_missions
+                       where status = any(%(statuses)s)
+                       order by mission_id""",
+                    {"statuses": sorted(OPEN_DUPLICATE_STATUSES)},
+                )
+                claim_rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "mission_admission_authority_read_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+    admission = (
+        dict(metadata.get("mission_admission") or {})
+        if isinstance(metadata.get("mission_admission"), dict)
+        else {}
+    )
+    correction_event = (
+        dict(correction_row[1] or {})
+        if correction_row and isinstance(correction_row[1], dict)
+        else {}
+    )
+    if not correction_event:
+        return {
+            "success": False,
+            "status": "canonical_owner_correction_unavailable",
+            "mission_id": mission_id,
+        }, 409
+    correction_valid, _correction_reason = validate_mission_control_event(
+        correction_event
+    )
+    if (
+        not correction_valid
+        or correction_event.get("mission_id") != mission_id
+        or correction_event.get("event_type") != "owner_correction_recorded"
+        or correction_event.get("recorded_by") != correction_row[2]
+    ):
+        return {
+            "success": False,
+            "status": "canonical_owner_correction_invalid",
+            "mission_id": mission_id,
+        }, 409
+    correction_digest = hashlib.sha256(json.dumps(
+        {
+            key: value
+            for key, value in correction_event.items()
+            if key != "recorded_at"
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    active_claims = _mission_admission_active_claims(claim_rows)
+    active_claim_ids = {claim["mission_id"] for claim in active_claims}
+    collision_observed_at = max(
+        [
+            _iso(row[3])
+            for row in claim_rows
+            if (
+                len(row) > 3
+                and row[3] is not None
+                and str(row[0]) in active_claim_ids
+            )
+        ]
+        or [str(correction_event.get("recorded_at") or _iso(mission_row[2]))]
+    )
+    collision_observed_at = collision_observed_at.replace("+00:00", "Z")
+    collision_digest = hashlib.sha256(json.dumps(
+        {
+            "captured_at": collision_observed_at,
+            "active_claims": active_claims,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    return {
+        "success": True,
+        "status": "mission_admission_authority_ready",
+        "mission_id": mission_id,
+        "root_mission_id": _mission_root_identity(mission_id, metadata),
+        "mission_status": mission_row[0],
+        "admission": admission,
+        "latest_owner_correction_event_id": (
+            correction_row[0] if correction_row else ""
+        ),
+        "latest_correction_digest": correction_digest,
+        "active_claims": active_claims,
+        "collision_observed_at": collision_observed_at,
+        "collision_snapshot_sha256": collision_digest,
+    }, 200
+
+
+def _transition_mission_admission(
+    mission_id,
+    receipt_id,
+    target_status,
+    *,
+    authenticated_principal,
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = _clean_text(mission_id, 90)
+    receipt_id = _clean_text(receipt_id, 80)
+    principal = _clean_text(authenticated_principal, 200)
+    if (
+        not mission_id
+        or not re.fullmatch(r"MAR-[0-9A-F]{64}", receipt_id)
+        or target_status not in {"consumed", "revoked"}
+        or not principal
+    ):
+        return {"success": False, "status": "mission_admission_transition_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select coalesce(metadata_json,'{}'::jsonb)
+                       from public.charlie_missions
+                       where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id},
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = (
+                    dict(metadata.get("mission_admission") or {})
+                    if isinstance(metadata.get("mission_admission"), dict)
+                    else {}
+                )
+                if current.get("receipt_id") != receipt_id:
+                    return {
+                        "success": False,
+                        "status": "mission_admission_receipt_mismatch",
+                    }, 409
+                if current.get("status") == target_status:
+                    return {
+                        "success": True,
+                        "status": "exact_replay",
+                        "mission_id": mission_id,
+                        "admission": current,
+                    }, 200
+                if current.get("status") != "valid":
+                    return {
+                        "success": False,
+                        "status": "mission_admission_not_active",
+                        "current_status": current.get("status"),
+                    }, 409
+                transitioned = {
+                    **current,
+                    "status": target_status,
+                    f"{target_status}_by": principal,
+                }
+                event = _mission_admission_operational_event(
+                    mission_id,
+                    f"mission_admission_{target_status}",
+                    transitioned,
+                    principal,
+                )
+                if not _insert_operational_event(cursor, event):
+                    stored = _load_operational_event(
+                        cursor, event["idempotency_key"]
+                    )
+                    if not _same_operational_event(stored, event):
+                        return {
+                            "success": False,
+                            "status": "mission_admission_event_replay_conflict",
+                        }, 409
+                metadata["mission_admission"] = transitioned
+                cursor.execute(
+                    """update public.charlie_missions
+                       set metadata_json=%(metadata)s::jsonb,updated_at=now()
+                       where mission_id=%(mission_id)s""",
+                    {
+                        "metadata": json.dumps(metadata, sort_keys=True),
+                        "mission_id": mission_id,
+                    },
+                )
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "mission_admission_transition_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+    return {
+        "success": True,
+        "status": f"mission_admission_{target_status}",
+        "mission_id": mission_id,
+        "event_id": event["event_id"],
+        "admission": transitioned,
+    }, 201
+
+
+def _mission_admission_active_claims(rows):
+    claims = []
+    for mission_id, status, raw_metadata, _updated_at in rows or []:
+        metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+        review = (
+            metadata.get("review_packet")
+            if isinstance(metadata.get("review_packet"), dict)
+            else {}
+        )
+        paths = sorted({
+            str(path or "").strip().replace("\\", "/")
+            for path in review.get("changed_files", [])
+            if str(path or "").strip()
+        })
+        effects = sorted({
+            str(effect or "").strip()
+            for effect in (
+                list(review.get("protected_operations") or [])
+                + list(metadata.get("protected_operations") or [])
+            )
+            if str(effect or "").strip()
+        })
+        lease = (
+            metadata.get("execution_lease")
+            if isinstance(metadata.get("execution_lease"), dict)
+            else {}
+        )
+        if lease:
+            effects = sorted(set(effects + ["execution_lease"]))
+        if paths or effects or lease:
+            claims.append({
+                "mission_id": str(mission_id),
+                "status": str(status),
+                "paths": paths,
+                "effects": effects,
+                "lease_id": str(lease.get("lease_id") or ""),
+            })
+    return claims
 
 
 def update_mission_vault(
@@ -3275,7 +3683,13 @@ def _mission_admission_operational_event(mission_id, event_type, payload, princi
         "source_record_id": payload.get("receipt_id", ""),
         "authority_tier": "owner_approved",
         "privacy_class": "owner_private",
-        "actor_type": "owner" if event_type.endswith("invalidated") else "control_tower",
+        "actor_type": (
+            "owner"
+            if event_type.endswith(("invalidated", "revoked"))
+            else "execution_bridge"
+            if event_type.endswith("consumed")
+            else "control_tower"
+        ),
         "actor_id": principal,
         "occurred_at": now,
         "payload": payload,
@@ -3287,6 +3701,20 @@ def _mission_admission_operational_event(mission_id, event_type, payload, princi
     if not built.get("accepted"):
         raise ValueError(built.get("status") or "mission_admission_event_invalid")
     return built["event"]
+
+
+def _mission_root_identity(mission_id, metadata):
+    family = (
+        metadata.get("mission_family")
+        if isinstance(metadata.get("mission_family"), dict)
+        else {}
+    )
+    return _clean_text(
+        family.get("root_mission_id")
+        or metadata.get("root_mission_id")
+        or mission_id,
+        90,
+    )
 
 
 def _insert_operational_event(cursor, event):

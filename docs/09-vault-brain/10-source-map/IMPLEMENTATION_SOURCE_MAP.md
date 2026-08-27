@@ -112,17 +112,23 @@
   validation-receipt authority. `scripts/charlie_mission_admission_guard.py` is
   the shared Cursor-hook and CI validator. `.cursor/hooks.json` applies
   fail-closed `preToolUse` and `beforeShellExecution` prevention plus
-  audit-only `afterFileEdit`; `.github/workflows/charlie-core-tests.yml`
-  validates the complete exact candidate. `modules/charlie/mission_store.py`
-  appends immutable admission lifecycle events to existing
-  `operational_events` and transactionally projects or invalidates admission in
-  existing `charlie_missions.metadata_json`; no schema or second ledger exists.
+  audit-only `afterFileEdit`. Stage 1 allows known reads and exact-path local
+  editor tools while denying shell mutation/interpreters, MCP, Task/subagent
+  delegation and unknown tools. This is tested repository-hook behavior, not an
+  OS sandbox. `.github/workflows/charlie-core-tests.yml` validates a trusted
+  signed exact candidate and disposable-PostgreSQL transaction.
+  `modules/charlie/mission_store.py` reads current mission/correction/collision
+  evidence and appends admission, consume, revoke and invalidation lifecycle
+  events through existing `charlie_missions`, `charlie_mission_events` and
+  `operational_events`; no schema or second ledger exists.
   Focused contract, hook, event, invalidation and PR #1306 scope-drift coverage:
   `tests/test_charlie_mission_admission.py` and
   `tests/fixtures/mission_admission/pr1306_scope_drift.json`. Receipt/key
-  delivery is external to source. Stage 1 grants no execution bridge, merge,
-  deployment, production or business authority and defaults read-only until a
-  separately admitted Stage 2 integration.
+  delivery is external to source at the canonical runner state root. Stage 1
+  grants no execution bridge, merge, deployment, production or business
+  authority. A separately admitted Stage 2 must supply trusted admission to the
+  existing execution bridge and prove the supported Cursor surfaces in the
+  target runtime.
 - Legacy portfolio classification: `modules/charlie/portfolio_classification.py`
   implements the sealed exact-baseline/exact-set atomic operation documented in
   `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` and tested by

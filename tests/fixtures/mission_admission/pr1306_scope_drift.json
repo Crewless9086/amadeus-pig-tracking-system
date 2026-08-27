@@ -2,35 +2,61 @@
   "fixture_version": "mission_admission_adversarial_candidate_v1",
   "pull_request": 1306,
   "base_sha": "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f",
-  "head_sha": "bf7ee6a000000000000000000000000000000000",
+  "head_sha": "bf7ee6a160ead5fb3853662345ae57a459d8d42e",
   "historical_ci": {
     "conclusion": "success",
     "checks_green": true,
-    "scope_authority_granted": false
+    "scope_authority_granted": false,
+    "checks": [
+      {
+        "workflow": "CHARLIE CORE Tests",
+        "name": "charlie-core",
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32991087771/job/98248566601"
+      },
+      {
+        "workflow": "Oom Sakkie Audit Rails",
+        "name": "Unit tests with disposable Postgres audit rails",
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32991087667/job/98248565812"
+      },
+      {
+        "workflow": "Oom Sakkie Audit Rails",
+        "name": "Closed Render migration rail with disposable Postgres",
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32991087667/job/98248566161"
+      },
+      {
+        "workflow": "Oom Sakkie Browser Behavior",
+        "name": "Playwright real-browser behavior gate",
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32991087629/job/98248565465"
+      }
+    ]
   },
   "candidate_files": [
-    "app.py",
-    "docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md",
-    "modules/oom_sakkie/herdmaster_health_loss_preview.py",
+    "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+    "modules/oom_sakkie/herdmaster_burst_recovery.py",
     "modules/oom_sakkie/herdmaster_health_loss_runtime.py",
-    "modules/oom_sakkie/telegram_gateway.py",
-    "modules/pig_weights/farm_supabase_read_service.py",
-    "modules/pig_weights/farm_supabase_write_service.py",
-    "modules/pig_weights/herdmaster_health_loss_recording.py",
-    "modules/pig_weights/herdmaster_natural_health_loss_intake.py",
-    "modules/pig_weights/litter_loss_recovery.py",
+    "modules/oom_sakkie/herdmaster_litter_first_treatment_runtime.py",
+    "modules/oom_sakkie/herdmaster_litter_loss_runtime.py",
+    "modules/oom_sakkie/herdmaster_retained_recovery_runtime.py",
+    "modules/oom_sakkie/semantic_front_door.py",
+    "modules/pig_weights/herdmaster_first_treatment_protocol.py",
+    "modules/pig_weights/herdmaster_litter_first_treatment_action.py",
+    "modules/pig_weights/herdmaster_litter_first_treatment_intake.py",
+    "modules/pig_weights/herdmaster_litter_loss_action.py",
     "modules/pig_weights/pig_weights_controller.py",
     "modules/pig_weights/pig_weights_routes.py",
-    "modules/protocols/mission_protocol_store.py",
-    "static/js/dashboard.js",
+    "static/assets/agents/herdmaster/agent.md",
     "static/js/litterDetail.js",
-    "templates/dashboard.html",
     "templates/litter-detail.html",
-    "tests/test_herdmaster_health_loss_recording.py",
-    "tests/test_oom_sakkie_herdmaster_health_loss_runtime.py",
-    "tests/test_pig_weights_routes.py",
-    "tests/test_pr1306_scope_drift.py",
-    "tests/test_telegram_health_loss_parity.py"
+    "tests/test_frontend_route_contracts.py",
+    "tests/test_herdmaster_first_treatment_parity.py",
+    "tests/test_herdmaster_litter_first_treatment_intake.py",
+    "tests/test_herdmaster_litter_loss_parity.py",
+    "tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py",
+    "tests/test_oom_sakkie_semantic_front_door.py"
   ],
   "adversarial_expectations": [
     {
@@ -42,7 +68,7 @@
     {
       "case": "new_protocol_store",
       "paths": [
-        "modules/protocols/mission_protocol_store.py"
+        "modules/pig_weights/herdmaster_first_treatment_protocol.py"
       ],
       "result": "READMISSION_REQUIRED",
       "reason_code": "parallel_source_of_truth"
@@ -52,9 +78,7 @@
       "paths": [
         "modules/pig_weights/pig_weights_controller.py",
         "modules/pig_weights/pig_weights_routes.py",
-        "static/js/dashboard.js",
         "static/js/litterDetail.js",
-        "templates/dashboard.html",
         "templates/litter-detail.html"
       ],
       "result": "READMISSION_REQUIRED",
@@ -63,7 +87,9 @@
     {
       "case": "unrelated_litter_loss_recovery",
       "paths": [
-        "modules/pig_weights/litter_loss_recovery.py"
+        "modules/oom_sakkie/herdmaster_litter_loss_runtime.py",
+        "modules/pig_weights/herdmaster_litter_loss_action.py",
+        "tests/test_herdmaster_litter_loss_parity.py"
       ],
       "result": "READMISSION_REQUIRED",
       "reason_code": "unrelated_effect"

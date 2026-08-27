@@ -104,29 +104,40 @@ override a failed repository alignment result.
 
 ## Mission Admission Guard
 
-Repository mutation requires `mission_admission_receipt_v1`, not a natural-
-language prompt alone. The content-addressed receipt binds the canonical mission
-and generation, owner-instruction chain, exact base, complete governance byte
-identities, existing-system trace, smallest gap, allowed and forbidden files
-and effects, collision snapshot, tests, operational acceptance and exact
-candidate. Its HMAC is verified through the existing isolated-validation
-receipt authority; the receipt and key are supplied outside committed source.
+Stage 1 defines `mission_admission_receipt_v1`. The content-addressed receipt
+binds the canonical mission/root/generation, owner-instruction chain, exact base
+and candidate, complete governance byte identities, existing-system trace,
+smallest gap, allowed and forbidden files/effects, collision snapshot, tests
+and operational acceptance. Complete-byte-read evidence proves byte identity,
+not model comprehension.
 
-Cursor `preToolUse` and `beforeShellExecution` hooks use the shared validator
-and set `failClosed: true`. Read-only actions remain available. Missing, stale,
-tampered, changed or incomplete admission denies mutation as
-`READMISSION_REQUIRED`; `afterFileEdit` is audit only. The CHARLIE CI workflow
-uses the same validator against the complete base-to-head candidate. Green
-tests cannot cure a forbidden path or effect. Complete-byte-read evidence proves
-which bytes were read, not model comprehension.
+The source validator resolves the existing validation-receipt key only from the
+canonical `.charlie_runner` state root derived from the checkout topology. It
+does not accept caller-selected receipt/key paths or caller-provided correction
+and collision digests. Current admission, latest metadata-validated owner
+correction and active mission claims are read through the existing
+`charlie_missions`, `charlie_mission_events` and `operational_events` rails.
+Missing trusted state returns `READMISSION_REQUIRED`.
 
-Admission events and the current projection reuse `operational_events` and
-`charlie_missions.metadata_json`. A canonical authenticated owner correction
-that changes generation invalidates the projection in the same transaction.
-This Stage 1 guard grants no execution, merge, deployment, provider, customer,
-farm, payment, hardware or business authority. After merge it remains read-only
-until the existing CHARLIE execution bridge supplies a valid external receipt
-in a separately admitted Stage 2.
+Repository `.cursor/hooks.json` configures supported command-based
+`preToolUse` and `beforeShellExecution` hooks with `failClosed: true`.
+Known local file-edit tools require one exact admitted target. Stage 1 denies
+all shell mutation, interpreter/script execution, MCP execution, subagent/Task
+delegation and unknown tools; a conservative command allowlist retains harmless
+reads on Cloud Linux and Windows/local Cursor. `afterFileEdit` is audit evidence
+only and cannot undo an edit. These claims apply only when Cursor loads and
+enforces the repository hooks; Stage 1 does not prove an OS-level sandbox or
+complete CHARLIE dispatch.
+
+Admission recording, consume, owner revoke and replay use the existing event
+fabric. Authenticated owner-correction recording and generation invalidation are
+one mission-row-locked transaction, with disposable-PostgreSQL rollback proof.
+The CHARLIE workflow compares a trusted signed receipt with the exact
+base-to-head SHA, complete diff digest and exact bootstrap file/test/effect
+contract. Green tests cannot cure scope drift. Stage 1 grants no execution,
+merge, deployment, provider, customer, farm, payment, hardware or business
+authority. Supplying admission to the existing execution bridge remains a
+separately admitted Stage 2.
 
 ## Batch 2 Authority-Routing Gate
 

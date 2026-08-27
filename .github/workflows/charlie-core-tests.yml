@@ -9,10 +9,23 @@ jobs:
   mission-admission:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mission_admission_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mission_admission_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      CHARLIE_MISSION_ADMISSION_REPOSITORY: Crewless9086/amadeus-pig-tracking-system
-      CHARLIE_MISSION_ADMISSION_GENERATION: ${{ secrets.CHARLIE_MISSION_ADMISSION_GENERATION }}
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mission_admission_test
     steps:
       - uses: actions/checkout@v5
         with:
@@ -21,42 +34,182 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
       - name: Run Mission Admission Guard contract tests
         run: python -m unittest tests.test_charlie_mission_admission -q
+      - name: Run disposable PostgreSQL admission transaction tests
+        env:
+          CHARLIE_DISPOSABLE_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: >-
+          python -m unittest
+          tests.test_charlie_mission_admission.MissionAdmissionPostgresTests -q
+      - name: Import current provider claims into disposable mission authority
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          gh api graphql -f query='
+            query {
+              repository(owner:"Crewless9086", name:"amadeus-pig-tracking-system") {
+                pullRequests(first:100, states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) {
+                  nodes {
+                    number
+                    headRefName
+                    updatedAt
+                    files(first:100) { nodes { path } }
+                  }
+                }
+              }
+            }' > "$RUNNER_TEMP/open-pr-claims.json"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          import psycopg
+
+          mission_id = "CMQ-20260813-05"
+          now = datetime.now(timezone.utc)
+          claims = json.load(open(
+              os.path.join(os.environ["RUNNER_TEMP"], "open-pr-claims.json"),
+              encoding="utf-8",
+          ))["data"]["repository"]["pullRequests"]["nodes"]
+          correction = {
+              "contract_version": "core_mission_control_event.v1",
+              "mission_id": mission_id,
+              "event_type": "owner_correction_recorded",
+              "summary": (
+                  "Independent SEND_BACK for rejected head "
+                  "e358306bfaf6228f4097de8f0adf1c748d6ff3f2."
+              ),
+              "recorded_by": "owner-charl",
+              "recorded_at": now.isoformat(),
+              "outcome": "Correct PR #1307 in the same mission and branch.",
+              "real_life_state": "prepared",
+              "first_missing_acceptance_gate": "fresh_independent_review",
+              "current_worker": "cursor/mission-admission-guard-80dd",
+              "next_automatic_step": "independent_review",
+              "owner_action": "NONE",
+              "corrects_event_id": "PR1307-REJECTED-E358306B",
+              "accepted": None,
+              "evidence_refs": [
+                  "PR #1307",
+                  "e358306bfaf6228f4097de8f0adf1c748d6ff3f2",
+              ],
+          }
+          correction["event_id"] = "CORE-MISSION-CONTROL-" + hashlib.sha256(
+              f"{mission_id}|owner_correction_recorded|pr1307-send-back-e358306b".encode()
+          ).hexdigest()[:24].upper()
+          with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
+              with connection.cursor() as cursor:
+                  cursor.execute("""
+                      drop table if exists public.operational_events cascade;
+                      drop table if exists public.charlie_mission_events cascade;
+                      drop table if exists public.charlie_missions cascade;
+                      create table public.charlie_missions (
+                          mission_id text primary key,
+                          status text not null,
+                          metadata_json jsonb not null default '{}'::jsonb,
+                          updated_at timestamptz not null default now()
+                      );
+                      create table public.charlie_mission_events (
+                          event_id text primary key,
+                          mission_id text not null,
+                          event_type text not null,
+                          notes text,
+                          recorded_by text,
+                          metadata_json jsonb not null default '{}'::jsonb,
+                          created_at timestamptz not null default now()
+                      );
+                      create table public.operational_events (
+                          event_id text primary key,
+                          idempotency_key text unique not null,
+                          schema_version text not null,
+                          event_type text not null,
+                          domain text not null,
+                          aggregate_type text not null,
+                          aggregate_id text not null,
+                          source_system text not null,
+                          source_record_id text,
+                          authority_tier text not null,
+                          privacy_class text not null,
+                          actor_type text not null,
+                          actor_id text,
+                          correlation_id text,
+                          causation_id text,
+                          occurred_at timestamptz not null,
+                          recorded_at timestamptz not null,
+                          freshness_at timestamptz not null,
+                          payload_json jsonb not null,
+                          provenance_json jsonb not null
+                      );
+                  """)
+                  cursor.execute(
+                      """insert into public.charlie_missions
+                         (mission_id,status,metadata_json,updated_at)
+                         values (%s,'paused',%s::jsonb,%s)""",
+                      (
+                          mission_id,
+                          json.dumps({"mission_family": {
+                              "root_mission_id": mission_id
+                          }}),
+                          now,
+                      ),
+                  )
+                  cursor.execute(
+                      """insert into public.charlie_mission_events
+                         (event_id,mission_id,event_type,notes,recorded_by,
+                          metadata_json,created_at)
+                         values (%s,%s,'owner_correction_recorded',%s,
+                                 'owner-charl',%s::jsonb,%s)""",
+                      (
+                          correction["event_id"],
+                          mission_id,
+                          correction["summary"],
+                          json.dumps(correction),
+                          now,
+                      ),
+                  )
+                  for claim in claims:
+                      if claim["headRefName"] == os.environ["CURRENT_HEAD_REF"]:
+                          continue
+                      metadata = {"review_packet": {
+                          "changed_files": sorted(
+                              row["path"]
+                              for row in claim["files"]["nodes"]
+                          )
+                      }}
+                      cursor.execute(
+                          """insert into public.charlie_missions
+                             (mission_id,status,metadata_json,updated_at)
+                             values (%s,'approved',%s::jsonb,%s)""",
+                          (
+                              f"GITHUB-PR-{claim['number']}",
+                              json.dumps(metadata),
+                              claim["updatedAt"],
+                          ),
+                      )
+          PY
       - name: Validate complete exact candidate
         shell: bash
         env:
-          MISSION_ADMISSION_RECEIPT_JSON: ${{ secrets.CHARLIE_MISSION_ADMISSION_RECEIPT_JSON }}
           VALIDATION_RECEIPT_KEY_B64: ${{ secrets.CHARLIE_VALIDATION_RECEIPT_KEY_B64 }}
-          CHARLIE_MISSION_ADMISSION_OWNER_CORRECTION_SHA256: ${{ secrets.CHARLIE_MISSION_ADMISSION_OWNER_CORRECTION_SHA256 }}
-          CHARLIE_MISSION_ADMISSION_COLLISION_SHA256: ${{ secrets.CHARLIE_MISSION_ADMISSION_COLLISION_SHA256 }}
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
-          if [[ "$base" == "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f" \
-                && "${{ github.head_ref }}" == "cursor/mission-admission-guard-80dd" ]]; then
-            python scripts/charlie_mission_admission_guard.py ci \
-              --base "$base" \
-              --head "$head" \
-              --bootstrap-generation "mission-admission-guard-bootstrap-20260826" \
-              --owner-instruction-sha256 "b9d959ee6f8ef1ff6f20e5d7aca6344b17106e9cb6e0723f95096590063a5ef5" \
-              --admission-packet-sha256 "e1af16aca874ac24af53371a7bf7384c850d788c986f9c6bcbca45800cc21014"
-          else
-            test -n "$MISSION_ADMISSION_RECEIPT_JSON"
-            test -n "$VALIDATION_RECEIPT_KEY_B64"
-            install -m 700 -d "$RUNNER_TEMP/mission-admission"
-            printf '%s' "$MISSION_ADMISSION_RECEIPT_JSON" \
-              > "$RUNNER_TEMP/mission-admission/receipt.json"
-            printf '%s' "$VALIDATION_RECEIPT_KEY_B64" | base64 --decode \
-              > "$RUNNER_TEMP/mission-admission/validation-receipt.key"
-            chmod 600 "$RUNNER_TEMP/mission-admission/"*
-            export CHARLIE_MISSION_ADMISSION_RECEIPT_PATH="$RUNNER_TEMP/mission-admission/receipt.json"
-            export CHARLIE_VALIDATION_RECEIPT_KEY_PATH="$RUNNER_TEMP/mission-admission/validation-receipt.key"
-            python scripts/charlie_mission_admission_guard.py ci \
-              --base "$base" \
-              --head "$head"
-          fi
+          test -n "$VALIDATION_RECEIPT_KEY_B64"
+          install -m 700 -d .charlie_runner
+          printf '%s' "$VALIDATION_RECEIPT_KEY_B64" | base64 --decode \
+            > .charlie_runner/validation-receipt.key
+          chmod 600 .charlie_runner/validation-receipt.key
+          CI=true python scripts/charlie_mission_admission_guard.py \
+            issue-bootstrap --base "$base" --head "$head"
+          python scripts/charlie_mission_admission_guard.py ci \
+            --base "$base" --head "$head"
 
   charlie-core:
     runs-on: ubuntu-latest
