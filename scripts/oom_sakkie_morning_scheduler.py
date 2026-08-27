@@ -33,7 +33,26 @@ def run_scheduler(*, now=None, post_fn=post):
     now = now or datetime.now(timezone.utc)
     morning = None
     if synthetic or (now.hour > 4 or (now.hour == 4 and now.minute >= 45)):
-        morning = invoke(url, {"synthetic_acceptance_identity": synthetic} if synthetic else {})
+        try:
+            morning = invoke(
+                url,
+                {"synthetic_acceptance_identity": synthetic} if synthetic else {},
+            )
+        except (OSError, TimeoutError, ValueError) as exc:
+            # A provider may have accepted the request before the response
+            # failed. Never retry an ambiguous morning lifecycle call; retain
+            # truthful failure evidence and continue into the separately
+            # bounded manager reserve.
+            morning = {
+                "success": False,
+                "status": "morning_schedule_request_contained",
+                "failure_kind": exc.__class__.__name__,
+                "telegram_sends": 0,
+                "telegram_edits": 0,
+                "provider_actions": 0,
+                "hardware_commands": 0,
+                "writes_farm_data": False,
+            }
     try:
         manager = invoke(manager_url, {}, timeout=MANAGER_TIMEOUT_SECONDS)
     except (OSError, TimeoutError, ValueError) as exc:
@@ -64,7 +83,8 @@ def run_scheduler(*, now=None, post_fn=post):
     "manager_deliveries_confirmed": manager.get("deliveries_confirmed", 0),
     "beacon_publication_status": beacon.get("status"),
     "beacon_publication_consumer_status": beacon.get("consumer_status"),
-    "morning_status": (morning or {}).get("status")}
+    "morning_status": (morning or {}).get("status"),
+    "morning_failure_kind": (morning or {}).get("failure_kind")}
     return result, 0 if safe else 1
 
 if __name__ == "__main__":
