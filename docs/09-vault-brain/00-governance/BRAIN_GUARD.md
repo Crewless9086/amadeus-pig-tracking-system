@@ -102,6 +102,43 @@ The deterministic alignment audit in `modules/charlie/vault_alignment.py` must
 also pass. Citation and a free-text `no_vault_update_required` statement cannot
 override a failed repository alignment result.
 
+## Mission Admission Guard
+
+Stage 1 defines `mission_admission_receipt_v1`. The content-addressed receipt
+binds the canonical mission/root/generation, owner-instruction chain, exact base
+and candidate, complete governance byte identities, existing-system trace,
+smallest gap, allowed and forbidden files/effects, collision snapshot, tests
+and operational acceptance. Complete-byte-read evidence proves byte identity,
+not model comprehension.
+
+The source validator resolves the existing validation-receipt key only from the
+canonical `.charlie_runner` state root derived from the checkout topology. It
+does not accept caller-selected receipt/key paths or caller-provided correction
+and collision digests. Current admission, latest metadata-validated owner
+correction and active mission claims are read through the existing
+`charlie_missions`, `charlie_mission_events` and `operational_events` rails.
+Missing trusted state returns `READMISSION_REQUIRED`.
+
+Repository `.cursor/hooks.json` configures supported command-based
+`preToolUse` and `beforeShellExecution` hooks with `failClosed: true`.
+Known local file-edit tools require one exact admitted target. Stage 1 denies
+all shell mutation, interpreter/script execution, MCP execution, subagent/Task
+delegation and unknown tools; a conservative command allowlist retains harmless
+reads on Cloud Linux and Windows/local Cursor. `afterFileEdit` is audit evidence
+only and cannot undo an edit. These claims apply only when Cursor loads and
+enforces the repository hooks; Stage 1 does not prove an OS-level sandbox or
+complete CHARLIE dispatch.
+
+Admission recording, consume, owner revoke and replay use the existing event
+fabric. Authenticated owner-correction recording and generation invalidation are
+one mission-row-locked transaction, with disposable-PostgreSQL rollback proof.
+The CHARLIE workflow compares a trusted signed receipt with the exact
+base-to-head SHA, complete diff digest and exact bootstrap file/test/effect
+contract. Green tests cannot cure scope drift. Stage 1 grants no execution,
+merge, deployment, provider, customer, farm, payment, hardware or business
+authority. Supplying admission to the existing execution bridge remains a
+separately admitted Stage 2.
+
 ## Batch 2 Authority-Routing Gate
 
 Brain Guard must distinguish doctrine from evidence. A file is not authoritative

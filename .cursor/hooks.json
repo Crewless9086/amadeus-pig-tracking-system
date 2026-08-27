@@ -1,4 +1,30 @@
 {
   "version": 1,
-  "hooks": {}
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "python scripts/charlie_mission_admission_guard.py hook",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "type": "command",
+        "command": "python scripts/charlie_mission_admission_guard.py hook",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "type": "command",
+        "command": "python scripts/charlie_mission_admission_guard.py hook --audit",
+        "matcher": "Write",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ]
+  }
 }
