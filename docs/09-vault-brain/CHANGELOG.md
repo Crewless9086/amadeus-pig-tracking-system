@@ -4,9 +4,10 @@
 
 - Replaced the normal-PR fallback to the sealed Stage 1 bootstrap contract with
   verification of one externally issued, exact-candidate Mission Admission
-  Receipt carried in the PR body. The existing protected validation authority
-  derives a detached Ed25519 signature externally; pull-request CI receives only
-  the fixed public verification key and never the symmetric authority secret.
+  Receipt carried in the PR body. A separately rotated Ed25519 signing key is
+  held only in the protected validator environment; pull-request CI receives
+  only its fixed public key. The legacy repository-wide symmetric secret was
+  removed so candidate workflows cannot recover either signing authority.
 - Hosted CI now fails closed for a missing, duplicated, malformed, altered,
   expired or differently bound receipt, while retaining the historical Stage 2
   issuance path. It does not query or manufacture canonical production state.
@@ -14,7 +15,9 @@
   executes candidate content and publishes the sole required `mission-admission`
   Check Run through the repository-scoped CHARLIE Admission Guard GitHub App.
   Candidate Actions retain a separately named diagnostic and cannot access the
-  protected App environment or satisfy the App-bound required check.
+  protected App environment or satisfy the App-bound required check. The trusted
+  workflow also compares mission lineage, authority identity, owner correction
+  and a fresh collision snapshot with a protected canonical binding.
 
 ## 2026-08-27 - Mission Admission Guard Stage 2 delivery adapter
 

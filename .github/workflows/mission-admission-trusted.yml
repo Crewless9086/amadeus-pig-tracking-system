@@ -39,6 +39,7 @@ jobs:
       - name: Verify event and publish App check
         env:
           CHARLIE_ADMISSION_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          CHARLIE_ADMISSION_CANONICAL_BINDING_B64: ${{ secrets.CHARLIE_ADMISSION_CANONICAL_BINDING_B64 }}
         run: >-
           python scripts/charlie_mission_admission_guard.py trusted-check
           --event "$GITHUB_EVENT_PATH"

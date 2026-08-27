@@ -95,7 +95,9 @@ INTERPRETERS = {
     "bash", "sh", "zsh", "fish",
 } | WINDOWS_INTERPRETERS
 
-EXTERNAL_ADMISSION_PUBLIC_KEY_B64 = "a/kXmHd5rb8AWLeHFtQfHPQ5nSvsgBy1DX7yaveapbc="
+EXTERNAL_ADMISSION_PUBLIC_KEY_B64 = "ZAY5VaAnbWY2hrgxXivez5eLaNX4RjiRxjqYmPkoG9o="
+EXTERNAL_CANONICAL_BINDING_ENV = "CHARLIE_ADMISSION_CANONICAL_BINDING_B64"
+EXTERNAL_COLLISION_MAX_AGE_SECONDS = 900
 
 BOOTSTRAP_BASE_SHA = "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f"
 BOOTSTRAP_MISSION_ID = "CMQ-20260813-05"
@@ -431,6 +433,7 @@ def _validate_external_receipt_envelope(
     expected_base_sha,
     expected_head_sha,
     expected_changed_files,
+    expected_canonical_binding=None,
     now=None,
 ):
     if not isinstance(envelope, dict) or set(envelope) != {
@@ -478,6 +481,28 @@ def _validate_external_receipt_envelope(
     repository = receipt["repository"]
     candidate = receipt["candidate"]
     changed_files = sorted(expected_changed_files)
+    if expected_canonical_binding is not None:
+        expected = {
+            "mission_id": mission["mission_id"],
+            "root_mission_id": mission["root_mission_id"],
+            "generation": mission["generation"],
+            "authority_key_sha256": receipt["authority_key_sha256"],
+            "latest_correction_digest": receipt["owner_instruction_chain"][
+                "latest_correction_digest"
+            ],
+            "collision_snapshot_sha256": receipt["collision_snapshot"][
+                "snapshot_sha256"
+            ],
+        }
+        if expected_canonical_binding != expected:
+            raise MissionAdmissionError("canonical_admission_authority_changed")
+        captured = _parse_timestamp(receipt["collision_snapshot"]["captured_at"])
+        if captured > issued + __import__("datetime").timedelta(
+            seconds=RECEIPT_CLOCK_SKEW_SECONDS
+        ) or issued - captured > __import__("datetime").timedelta(
+            seconds=EXTERNAL_COLLISION_MAX_AGE_SECONDS
+        ):
+            raise MissionAdmissionError("canonical_collision_snapshot_stale")
     if repository["repository"] != expected_repository:
         raise MissionAdmissionError("admission_repository_changed")
     if repository["base_sha"] != expected_base_sha:
@@ -513,6 +538,21 @@ def trusted_check_main(args, *, environ=None):
         if event_path.is_symlink() or not event_path.is_file() or not token:
             raise MissionAdmissionError("trusted_check_runtime_unavailable")
         event = json.loads(event_path.read_text(encoding="utf-8"))
+        try:
+            canonical_binding = json.loads(base64.b64decode(
+                str(environ.get(EXTERNAL_CANONICAL_BINDING_ENV) or ""),
+                validate=True,
+            ))
+        except Exception as exc:
+            raise MissionAdmissionError(
+                "canonical_admission_binding_unavailable"
+            ) from exc
+        if not isinstance(canonical_binding, dict) or set(canonical_binding) != {
+            "mission_id", "root_mission_id", "generation",
+            "authority_key_sha256", "latest_correction_digest",
+            "collision_snapshot_sha256",
+        }:
+            raise MissionAdmissionError("canonical_admission_binding_invalid")
         pull = event.get("pull_request") if isinstance(event, dict) else {}
         repository = event.get("repository") if isinstance(event, dict) else {}
         base_row = pull.get("base") if isinstance(pull, dict) else {}
@@ -578,6 +618,7 @@ def trusted_check_main(args, *, environ=None):
             expected_base_sha=base,
             expected_head_sha=head,
             expected_changed_files=changed_files,
+            expected_canonical_binding=canonical_binding,
         )
         _verify_governance_reads(receipt, head)
         if receipt["candidate"]["diff_sha256"] != diff_sha256:

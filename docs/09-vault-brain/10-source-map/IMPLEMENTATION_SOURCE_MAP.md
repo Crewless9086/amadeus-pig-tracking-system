@@ -121,16 +121,19 @@
   `ci-external` verifies its detached Ed25519 signature, freshness,
   repository, mission lineage, base, head, complete binary diff, paths, effects,
   governance reads and non-business acceptance. Missing or changed admission
-  fails closed. Pull-request jobs contain only public verification material: the
-  existing symmetric validation authority remains external and cannot be read
-  by candidate code. CI does not synthesize canonical production mission state.
+  fails closed. Pull-request jobs contain only public verification material;
+  the legacy repository-wide symmetric secret is removed. A separately rotated
+  Ed25519 signing key and the exact canonical mission/correction/collision
+  binding exist only in the protected validator environment. CI does not
+  synthesize canonical production mission state.
   `.github/workflows/mission-admission-trusted.yml` is the non-candidate check
   producer: `pull_request_target` loads only the protected base, fetches the head
   as inert Git object data, uses no candidate cache/artifact/code, and publishes
   the exact `mission-admission` Check Run through the repository-only CHARLIE
-  Admission Guard App. Its credentials exist only in the protected-main
-  `charlie-admission-validator` environment. The ordinary pull-request workflow
-  emits only `mission-admission-candidate-diagnostic`.
+  Admission Guard App. Its App and receipt-signing credentials and canonical
+  binding exist only in the protected-main `charlie-admission-validator`
+  environment. The ordinary pull-request workflow emits only
+  `mission-admission-candidate-diagnostic`.
   `modules/charlie/mission_store.py` reads current mission/correction/collision
   evidence and appends admission, consume, revoke and invalidation lifecycle
   events through existing `charlie_missions`, `charlie_mission_events` and

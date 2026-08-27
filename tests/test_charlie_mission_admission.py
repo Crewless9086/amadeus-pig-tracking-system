@@ -40,6 +40,7 @@ from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_REQUIRED_TESTS,
     _is_read_only_shell,
     _tool_target_path,
+    _validate_external_receipt_envelope,
     _validate_paths_and_effects,
     ci_external_main,
     ci_main,
@@ -664,6 +665,33 @@ class MissionAdmissionGuardTests(unittest.TestCase):
 
 
 class MissionAdmissionExternalCiTests(unittest.TestCase):
+    @staticmethod
+    def _test_public_key_b64():
+        seed = hashlib.sha256(
+            b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+        ).digest()
+        return base64.b64encode(
+            Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+                Encoding.Raw, PublicFormat.Raw
+            )
+        ).decode("ascii")
+
+    @staticmethod
+    def _canonical_binding(envelope):
+        receipt = envelope["receipt"]
+        return {
+            "mission_id": receipt["mission"]["mission_id"],
+            "root_mission_id": receipt["mission"]["root_mission_id"],
+            "generation": receipt["mission"]["generation"],
+            "authority_key_sha256": receipt["authority_key_sha256"],
+            "latest_correction_digest": receipt["owner_instruction_chain"][
+                "latest_correction_digest"
+            ],
+            "collision_snapshot_sha256": receipt["collision_snapshot"][
+                "snapshot_sha256"
+            ],
+        }
+
     def test_workflow_external_receipt_heredoc_is_shell_aligned(self):
         workflow = (ROOT / ".github/workflows/charlie-core-tests.yml").read_text(
             encoding="utf-8"
@@ -753,6 +781,11 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             ALLOWED_FILES, patch_bytes
         )
         issued = datetime.now(timezone.utc) - timedelta(seconds=1)
+        captured_at = issued.isoformat().replace("+00:00", "Z")
+        payload["collision_snapshot"]["captured_at"] = captured_at
+        payload["collision_snapshot"]["snapshot_sha256"] = collision_snapshot_digest(
+            captured_at, payload["collision_snapshot"]["active_claims"]
+        )
         receipt = sign_mission_admission_receipt(
             payload,
             KEY,
@@ -792,6 +825,77 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         code, result = self._run(receipt=envelope)
         self.assertEqual(code, 2)
         self.assertEqual(result["reason_code"], "external_admission_signature_invalid")
+
+    def test_canonical_binding_rejects_every_changed_authority_identity(self):
+        envelope = self._signed()
+        binding = self._canonical_binding(envelope)
+        for field in binding:
+            changed = dict(binding)
+            changed[field] = "different"
+            with self.subTest(field=field):
+                with (
+                    patch(
+                        "scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64",
+                        self._test_public_key_b64(),
+                    ),
+                    self.assertRaisesRegex(
+                        MissionAdmissionError, "canonical_admission_authority_changed"
+                    ),
+                ):
+                    _validate_external_receipt_envelope(
+                        envelope,
+                        expected_repository="Crewless9086/amadeus-pig-tracking-system",
+                        expected_base_sha=BASE,
+                        expected_head_sha=HEAD,
+                        expected_changed_files=ALLOWED_FILES,
+                        expected_canonical_binding=changed,
+                    )
+
+    def test_trusted_path_rejects_stale_collision_snapshot(self):
+        envelope = self._signed()
+        receipt = envelope["receipt"]
+        issued = datetime.fromisoformat(receipt["issued_at"].replace("Z", "+00:00"))
+        stale = (issued - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+        payload = {key: value for key, value in receipt.items() if key not in {
+            "receipt_id", "content_sha256", "signature_hmac_sha256"
+        }}
+        payload["collision_snapshot"] = dict(payload["collision_snapshot"])
+        payload["collision_snapshot"]["captured_at"] = stale
+        payload["collision_snapshot"]["snapshot_sha256"] = collision_snapshot_digest(
+            stale, payload["collision_snapshot"]["active_claims"]
+        )
+        stale_receipt = sign_mission_admission_receipt(
+            payload, KEY, issued_at=receipt["issued_at"], expires_at=receipt["expires_at"]
+        )
+        seed = hashlib.sha256(
+            b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
+        ).digest()
+        stale_envelope = {
+            "version": "mission_admission_ci_envelope_v1",
+            "receipt": stale_receipt,
+            "signature_ed25519": base64.b64encode(
+                Ed25519PrivateKey.from_private_bytes(seed).sign(
+                    canonical_json(stale_receipt)
+                )
+            ).decode("ascii"),
+        }
+        with (
+            patch(
+                "scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64",
+                self._test_public_key_b64(),
+            ),
+            self.assertRaisesRegex(
+                MissionAdmissionError, "canonical_collision_snapshot_stale"
+            ),
+        ):
+            _validate_external_receipt_envelope(
+                stale_envelope,
+                expected_repository="Crewless9086/amadeus-pig-tracking-system",
+                expected_base_sha=BASE,
+                expected_head_sha=HEAD,
+                expected_changed_files=ALLOWED_FILES,
+                expected_canonical_binding=self._canonical_binding(stale_envelope),
+            )
 
     def test_trusted_check_publishes_success_for_exact_event_without_candidate_execution(self):
         envelope = self._signed()
@@ -834,11 +938,33 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             ):
                 code = trusted_check_main(
                     SimpleNamespace(event=str(path)),
-                    environ={"CHARLIE_ADMISSION_APP_TOKEN": "installation-token"},
+                    environ={
+                        "CHARLIE_ADMISSION_APP_TOKEN": "installation-token",
+                        "CHARLIE_ADMISSION_CANONICAL_BINDING_B64": base64.b64encode(
+                            canonical_json(self._canonical_binding(envelope))
+                        ).decode("ascii"),
+                    },
                 )
         self.assertEqual(code, 0, output.getvalue())
         self.assertEqual(calls[0][0], "POST")
         self.assertEqual(calls[-1][2]["conclusion"], "success")
+
+    def test_trusted_check_fails_closed_without_protected_canonical_binding(self):
+        import contextlib
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "event.json"
+            path.write_text("{}", encoding="utf-8")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = trusted_check_main(
+                    SimpleNamespace(event=str(path)),
+                    environ={"CHARLIE_ADMISSION_APP_TOKEN": "installation-token"},
+                )
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            json.loads(output.getvalue())["reason_code"],
+            "canonical_admission_binding_unavailable",
+        )
 
 
 class MissionAdmissionStoreTests(unittest.TestCase):
