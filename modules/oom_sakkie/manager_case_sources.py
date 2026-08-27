@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 import hashlib
 import json
 import os
@@ -11,6 +11,8 @@ from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+
+COLLECTOR_DEADLINE_SECONDS = 20
 
 
 def collect_manager_candidates(*, now: datetime, collectors=None):
@@ -34,9 +36,25 @@ def collect_manager_candidates(*, now: datetime, collectors=None):
     if len(selected) <= 1:
         groups = [collect(value) for value in selected]
     else:
-        with ThreadPoolExecutor(max_workers=min(6, len(selected)),
-                                thread_name_prefix="oom-manager-read") as executor:
-            groups = list(executor.map(collect, selected))
+        executor = ThreadPoolExecutor(max_workers=min(6, len(selected)),
+                                      thread_name_prefix="oom-manager-read")
+        futures = [executor.submit(collect, value) for value in selected]
+        wait(futures, timeout=COLLECTOR_DEADLINE_SECONDS)
+        groups = []
+        for collector, future in zip(selected, futures):
+            if future.done():
+                groups.append(future.result())
+                continue
+            name = getattr(collector, "__name__", "collector").strip("_") or "collector"
+            groups.append([_candidate(
+                dedupe_key=f"runtime:collector:{name}", specialist="RUNTIME",
+                urgency="urgent", refs=[f"collector:{name}:TimeoutError"],
+                unknowns=[f"current_{name}_specialist_evidence"],
+                summary=f"Oom Sakkie could not load current {name} evidence.",
+                next_action=(f"Retry the canonical {name} collector; retain the case "
+                             "until evidence loads or one precise dependency is recorded."),
+                next_at=now + timedelta(minutes=5))])
+        executor.shutdown(wait=False, cancel_futures=True)
     result = []
     for group in groups:
         result.extend(group)
@@ -72,6 +90,42 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
     return next((row for row in rows
                  if str(row.get("dedupe_key") or "") == str(dedupe_key)
                  and str(row.get("specialist") or "").upper() == claimed_specialist), None)
+
+
+def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
+    """Refresh every claimed case from one read per owning specialist.
+
+    A manager cohort can contain many cases from one specialist. Re-running the
+    complete specialist collector for every case serializes the same canonical
+    reads and can exhaust the provider request window. This snapshot keeps the
+    existing per-collector containment and parallel collection behavior while
+    returning only exact claimed identities.
+    """
+    requested = {
+        (str(case.get("dedupe_key") or ""), str(case.get("specialist") or "").upper())
+        for case in cases or ()
+    }
+    requested.discard(("", ""))
+    if not requested:
+        return {}
+    available = tuple(collectors or (
+        _rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime))
+    wanted = set()
+    for dedupe_key, _specialist in requested:
+        prefix = dedupe_key.split(":", 1)[0].casefold()
+        if prefix in {"rootline", "herdmaster", "sam", "beacon", "runtime"}:
+            wanted.add(prefix)
+        elif prefix == "delivery":
+            wanted.add("delivery_gaps")
+    selected = tuple(collector for collector in available
+        if (getattr(collector, "__name__", "").strip("_").casefold() in wanted))
+    rows = collect_manager_candidates(now=now, collectors=selected) if selected else []
+    return {
+        (str(row.get("dedupe_key") or ""), str(row.get("specialist") or "").upper()): row
+        for row in rows
+        if (str(row.get("dedupe_key") or ""),
+            str(row.get("specialist") or "").upper()) in requested
+    }
 
 
 def _rootline(now):

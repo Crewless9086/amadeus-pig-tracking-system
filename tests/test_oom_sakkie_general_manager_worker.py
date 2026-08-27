@@ -1,10 +1,12 @@
 import json
 from datetime import datetime, timedelta, timezone
+import time
 
 import pytest
 
 from modules.oom_sakkie.general_manager_worker import (
-    ManagerCaseError, PostgresManagerCaseStore, build_scheduled_brain_guard_audit,
+    CLAIM_LIMIT, ManagerCaseError, PostgresManagerCaseStore,
+    build_scheduled_brain_guard_audit,
     normalize_candidate, run_general_manager_cycle)
 
 
@@ -108,6 +110,40 @@ def test_cycle_wrapper_supplies_current_brain_guard_audit_to_store():
     assert audit["source_revision"] == "abc123"
     assert audit["passed"] is True
     assert audit["checked_count"] > 0
+
+
+def test_cycle_wrapper_refreshes_claimed_specialists_as_one_batch(monkeypatch):
+    calls = []
+    cases = [
+        {"case_id": "CASE-ONE", "dedupe_key": "herdmaster:first",
+         "specialist": "HERDMASTER"},
+        {"case_id": "CASE-TWO", "dedupe_key": "herdmaster:second",
+         "specialist": "HERDMASTER"},
+    ]
+    snapshot = {
+        ("herdmaster:first", "HERDMASTER"): {"dedupe_key": "herdmaster:first"},
+        ("herdmaster:second", "HERDMASTER"): {"dedupe_key": "herdmaster:second"},
+    }
+    monkeypatch.setattr(
+        "modules.oom_sakkie.manager_case_sources.collect_manager_candidates",
+        lambda **_kwargs: [])
+    monkeypatch.setattr(
+        "modules.oom_sakkie.manager_case_sources.collect_manager_refresh_snapshot",
+        lambda **kwargs: (calls.append(tuple(kwargs["cases"])) or snapshot))
+
+    class Store:
+        def run_cycle(self, _candidates, **kwargs):
+            return kwargs["refresh_batch"](cases)
+
+    result = run_general_manager_cycle(
+        now=NOW, source_revision="abc123", store=Store(),
+        collectors=(lambda _now: [],))
+
+    assert calls == [tuple(cases)]
+    assert result == {
+        "CASE-ONE": snapshot[("herdmaster:first", "HERDMASTER")],
+        "CASE-TWO": snapshot[("herdmaster:second", "HERDMASTER")],
+    }
 
 
 def test_failed_brain_guard_is_persisted_and_blocks_case_delivery():
@@ -224,8 +260,148 @@ def test_due_selection_orders_then_locks_with_skip_locked_and_limit():
         [], now=NOW, source_revision="abc", brain_guard_audit=audit)
     assert result["success"] is True
     selection = next(sql for sql, _ in commands if "join eligible" in sql)
-    assert "for update of m skip locked limit 20" in selection
+    assert "for update of m skip locked limit %s" in selection
+    selection_params = next(params for sql, params in commands if "join eligible" in sql)
+    assert selection_params[-1] == CLAIM_LIMIT
     assert "partition by specialist" in selection
+
+
+def test_expired_cycle_budget_defers_claim_without_specialist_or_provider_call():
+    delivered = []
+    case_row = ("OOM-CASE-BUDGET", "herdmaster:budget", "HERDMASTER", "urgent",
+        "delegated", "d" * 64, ["event:one"], ["current_fact"],
+        "Current case.", "Reassess.", NOW, 1, None)
+
+    class Cursor:
+        def __init__(self):
+            self.last_sql = ""
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, _params): self.last_sql = sql
+        def fetchall(self):
+            return [case_row] if "join eligible" in self.last_sql else []
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+        def close(self): pass
+
+    store = PostgresManagerCaseStore(connect_factory=Connection)
+    deferred = []
+    store._defer_claims = lambda cases, *_args, **_kwargs: (
+        deferred.extend(case["case_id"] for case in cases)
+        or {case["case_id"] for case in cases})
+    audit = build_scheduled_brain_guard_audit(
+        source_revision="abc", now=NOW,
+        alignment_result={"version":"v1","passed":True,
+                          "findings":[],"checked_files":[]})
+
+    result = store.run_cycle([], now=NOW, source_revision="abc",
+        deliver=lambda case: delivered.append(case),
+        refresh=lambda case: (_ for _ in ()).throw(AssertionError()),
+        deadline_monotonic=time.monotonic(),
+        brain_guard_audit=audit)
+
+    assert result["success"] is False
+    assert result["status"] == "general_manager_cycle_deadline_contained"
+    assert delivered == []
+    assert deferred == ["OOM-CASE-BUDGET"]
+    assert result["case_results"][0]["outcome_status"] == \
+        "manager_cycle_deadline_deferred"
+
+
+def test_bulk_deadline_release_requires_exact_lease_generation_and_digest():
+    commands = []
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchall(self): return [("CASE-A",), ("CASE-B",)]
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+    cases = [
+        {"case_id":"CASE-A","generation":1,"evidence_digest":"a"*64},
+        {"case_id":"CASE-B","generation":2,"evidence_digest":"b"*64},
+    ]
+
+    released = PostgresManagerCaseStore(
+        connect_factory=Connection)._defer_claims(
+            cases, NOW, "CYCLE-ONE",
+            outcome_status="manager_cycle_deadline_deferred")
+
+    sql, params = commands[0]
+    assert released == {"CASE-A", "CASE-B"}
+    assert "m.generation=e.generation" in sql
+    assert "m.evidence_digest=e.evidence_digest" in sql
+    assert "m.assigned_worker_id=%s" in sql and "m.lease_until>=%s" in sql
+    assert params[4] == "CYCLE-ONE"
+    expected = json.loads(params[0])
+    assert [(row["case_id"], row["generation"], row["evidence_digest"])
+            for row in expected] == [
+        ("CASE-A", 1, "a"*64), ("CASE-B", 2, "b"*64)]
+
+
+def test_slow_first_delivery_cannot_cross_deadline_or_starve_unrelated_case(monkeypatch):
+    from modules.oom_sakkie import general_manager_worker as worker
+    clock = [35.0]
+    monkeypatch.setattr(worker.time, "monotonic", lambda: clock[0])
+    rows = [
+        (f"OOM-CASE-{index}", f"herdmaster:deadline:{index}", "HERDMASTER",
+         "urgent", "open", str(index) * 64, [f"event:{index}"],
+         ["current_fact"], f"Case {index}.", "Reassess.", NOW, 1, None)
+        for index in range(1, 4)
+    ]
+
+    class Cursor:
+        def __init__(self): self.last_sql = ""
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, _params): self.last_sql = sql
+        def fetchall(self): return rows if "join eligible" in self.last_sql else []
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+        def close(self): pass
+
+    effects = []
+    store = PostgresManagerCaseStore(connect_factory=Connection)
+    store._refresh_claim = lambda case, *_args: case
+    store._finish_claim = lambda *_args: True
+    deferred = []
+    store._defer_claims = lambda cases, *_args, **_kwargs: (
+        deferred.extend(case["case_id"] for case in cases)
+        or {case["case_id"] for case in cases})
+    audit = build_scheduled_brain_guard_audit(
+        source_revision="abc", now=NOW,
+        alignment_result={"version":"v1","passed":True,
+                          "findings":[],"checked_files":[]})
+
+    def cooperative_delivery(case, *, deadline_monotonic):
+        clock[0] += 10
+        assert clock[0] <= deadline_monotonic
+        effects.append(case["case_id"])
+        return {"success": True, "status": "delivery_confirmed",
+                "delivery_confirmed": True}
+
+    result = store.run_cycle([], now=NOW, source_revision="abc",
+        deliver=cooperative_delivery,
+        refresh_batch=lambda cases: {
+            case["case_id"]: case for case in cases},
+        deadline_monotonic=80.0, brain_guard_audit=audit)
+
+    assert effects == ["OOM-CASE-1", "OOM-CASE-2"]
+    assert deferred == ["OOM-CASE-3"]
+    assert result["success"] is False
+    assert result["status"] == "general_manager_cycle_deadline_contained"
+    assert result["deadline_deferrals"] == 1
+    assert [row["outcome_status"] for row in result["case_results"]] == [
+        "delivery_confirmed", "delivery_confirmed",
+        "manager_cycle_deadline_deferred"]
 
 
 def _candidate(**changes):

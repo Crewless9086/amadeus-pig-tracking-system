@@ -6,12 +6,14 @@ Those effects remain owned by the existing protected and specialist rails.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 import hashlib
 import html
 import json
 import os
 import re
+import time
 import uuid
 from typing import Any, Callable, Iterable, Mapping
 
@@ -23,6 +25,10 @@ WORKER_ID = "oom-sakkie-general-manager-v1"
 TRIGGER_IDENTITY = "oom-sakkie-morning-scheduler:general-manager"
 CADENCE = timedelta(minutes=5)
 LEASE = timedelta(minutes=4)
+GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS = 80
+CASE_COMPLETION_RESERVE_SECONDS = 30
+REFRESH_SNAPSHOT_DEADLINE_SECONDS = 20
+CLAIM_LIMIT = 5
 SPECIALISTS = frozenset({"ROOTLINE", "HERDMASTER", "SAM", "BEACON", "RUNTIME"})
 URGENCIES = frozenset({"critical", "urgent", "due", "planned", "watch"})
 OPEN_STATES = frozenset({"open", "delegated", "waiting_reassessment", "exception"})
@@ -117,6 +123,9 @@ class PostgresManagerCaseStore:
     def run_cycle(self, candidates: Iterable[Mapping[str, Any]], *, now: datetime,
                   source_revision: str, deliver: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
                   refresh: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
+                  refresh_batch: Callable[[Iterable[Mapping[str, Any]]],
+                                          Mapping[str, Any]] | None = None,
+                  deadline_monotonic: float | None = None,
                   brain_guard_audit: Mapping[str, Any] | None = None):
         now = _aware(now)
         brain_guard = dict(brain_guard_audit or build_scheduled_brain_guard_audit(
@@ -171,7 +180,8 @@ class PostgresManagerCaseStore:
                             when 'due' then 2 when 'planned' then 3 else 4 end,
                             case when e.specialist='BEACON' then 0 else 1 end,
                             e.next_reassessment_at,e.case_id
-                        for update of m skip locked limit 20""", (now, now))
+                        for update of m skip locked limit %s""",
+                        (now, now, CLAIM_LIMIT))
                     for row in cur.fetchall():
                         case = _case_row(row)
                         cur.execute("""update app_private.oom_manager_cases set
@@ -182,16 +192,51 @@ class PostgresManagerCaseStore:
                         self._event(cur, case, "delegated", now, cycle_id=cycle_id,
                                     specialist=case["specialist"])
                         claimed.append(case)
-            delivered = suppressed = exceptions = 0
+            delivered = suppressed = exceptions = deadline_deferrals = 0
             case_results = []
-            for case in claimed:
+            batch_refreshes = {}
+            if deliver and refresh_batch and claimed:
+                batch_refreshes = dict(refresh_batch(tuple(claimed)) or {})
+            for case_index, case in enumerate(claimed):
                 current_case = case
                 specialist_failure = None
                 refresh_eligible = case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
-                if (deliver and refresh_eligible
+                deadline_deferred = bool(deadline_monotonic is not None
+                    and time.monotonic() >= (
+                        deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS))
+                if deadline_deferred:
+                    untouched = claimed[case_index:]
+                    released = self._defer_claims(
+                        untouched, now, cycle_id,
+                        outcome_status="manager_cycle_deadline_deferred")
+                    if released != {item["case_id"] for item in untouched}:
+                        raise ManagerCaseError(
+                            "manager_deadline_claim_release_unproven")
+                    for deferred_case in untouched:
+                        suppressed += 1
+                        deadline_deferrals += 1
+                        case_results.append({
+                            "case_id": deferred_case["case_id"],
+                            "specialist": deferred_case["specialist"],
+                            "urgency": deferred_case["urgency"],
+                            "summary": deferred_case["summary"],
+                            "next_action": deferred_case["next_action"],
+                            "unknowns": deferred_case["unknowns"],
+                            "outcome_status": "manager_cycle_deadline_deferred",
+                            "delivery_confirmed": False,
+                            "next_reassessment_at": (now + CADENCE).isoformat(),
+                        })
+                    break
+                if (not deadline_deferred and deliver and refresh_eligible
                         and case.get("last_delivery_digest") != case["evidence_digest"]):
                     refreshed = None
-                    if refresh:
+                    if refresh_batch:
+                        refreshed = batch_refreshes.get(case["case_id"])
+                        if isinstance(refreshed, (ValueError, RuntimeError, OSError)):
+                            if isinstance(refreshed, ManagerCaseError):
+                                raise refreshed
+                            specialist_failure = refreshed
+                    elif refresh:
                         try:
                             refreshed = refresh(case)
                         except (ValueError, RuntimeError, OSError) as exc:
@@ -205,7 +250,12 @@ class PostgresManagerCaseStore:
                             _aware(datetime.now(timezone.utc)), cycle_id)
                     else:
                         current_case = case
-                if specialist_failure is not None:
+                if deadline_deferred:
+                    outcome = {"success": True,
+                        "status": "manager_cycle_deadline_deferred",
+                        "delivery_confirmed": False, "telegram_sends": 0,
+                        "next_reassessment_at": (now + CADENCE).isoformat()}
+                elif specialist_failure is not None:
                     outcome = {"success": False,
                         "status": "manager_specialist_processing_exception_contained",
                         "failure_kind": specialist_failure.__class__.__name__,
@@ -222,18 +272,30 @@ class PostgresManagerCaseStore:
                         "delivery_confirmed": False, "telegram_sends": 0}
                 elif (deliver and current_case.get("last_delivery_digest")
                         != current_case["evidence_digest"]):
-                    try:
-                        delivered_outcome = deliver(current_case)
-                    except (ValueError, RuntimeError, OSError) as exc:
-                        if isinstance(exc, ManagerCaseError):
-                            raise
-                        outcome = {"success": False,
-                            "status": "manager_specialist_processing_exception_contained",
-                            "failure_kind": exc.__class__.__name__,
+                    if (deadline_monotonic is not None
+                            and time.monotonic() >= (
+                                deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS)):
+                        outcome = {"success": True,
+                            "status": "manager_cycle_deadline_deferred",
                             "delivery_confirmed": False, "telegram_sends": 0,
                             "next_reassessment_at": (now + CADENCE).isoformat()}
                     else:
-                        outcome = dict(delivered_outcome or {})
+                        try:
+                            delivered_outcome = (
+                                deliver(current_case,
+                                    deadline_monotonic=deadline_monotonic)
+                                if deadline_monotonic is not None
+                                else deliver(current_case))
+                        except (ValueError, RuntimeError, OSError) as exc:
+                            if isinstance(exc, ManagerCaseError):
+                                raise
+                            outcome = {"success": False,
+                                "status": "manager_specialist_processing_exception_contained",
+                                "failure_kind": exc.__class__.__name__,
+                                "delivery_confirmed": False, "telegram_sends": 0,
+                                "next_reassessment_at": (now + CADENCE).isoformat()}
+                        else:
+                            outcome = dict(delivered_outcome or {})
                 else:
                     duplicate = (current_case.get("last_delivery_digest")
                                  == current_case["evidence_digest"])
@@ -255,6 +317,10 @@ class PostgresManagerCaseStore:
                 delivered += confirmed
                 suppressed += not confirmed
                 exceptions += outcome.get("success") is False
+                deadline_deferrals += (
+                    outcome.get("status") in {
+                        "manager_cycle_deadline_deferred",
+                        "family_message_cycle_deadline_deferred"})
                 case_results.append({"case_id": current_case["case_id"],
                     "specialist": current_case["specialist"], "urgency": current_case["urgency"],
                     "summary": current_case["summary"], "next_action": current_case["next_action"],
@@ -265,13 +331,18 @@ class PostgresManagerCaseStore:
             counts = {"candidates_created": created, "candidates_changed": changed,
                 "candidate_replays": replayed, "cases_claimed": len(claimed),
                 "deliveries_confirmed": delivered, "deliveries_suppressed": suppressed,
-                "exceptions": exceptions, "brain_guard": brain_guard}
+                "exceptions": exceptions, "deadline_deferrals": deadline_deferrals,
+                "brain_guard": brain_guard}
             with self.connect_factory() as cycle_connection:
                 with cycle_connection.cursor() as cur:
                     cur.execute("""update app_private.oom_manager_worker_cycles set heartbeat_at=%s,
-                        next_cycle_at=%s,status='completed',case_counts=%s::jsonb,completed_at=%s
-                        where cycle_id=%s""", (now, next_cycle, json.dumps(counts), now, cycle_id))
-            return {"success": True, "status": "general_manager_cycle_completed",
+                        next_cycle_at=%s,status=%s,case_counts=%s::jsonb,completed_at=%s
+                        where cycle_id=%s""", (now, next_cycle,
+                        "failed" if deadline_deferrals else "completed",
+                        json.dumps(counts), now, cycle_id))
+            return {"success": not deadline_deferrals,
+                "status": ("general_manager_cycle_deadline_contained"
+                           if deadline_deferrals else "general_manager_cycle_completed"),
                 "contract_version": CONTRACT_VERSION, "worker_id": WORKER_ID,
                 "cycle_id": cycle_id, "heartbeat_at": now.isoformat(),
                 "next_cycle_at": next_cycle.isoformat(), "case_results": case_results,
@@ -502,6 +573,57 @@ class PostgresManagerCaseStore:
                             next_reassessment_at=next_at.isoformat())
         return True
 
+    def _defer_claims(self, cases, now, cycle_id, *, outcome_status):
+        """Release untouched exact claims in one bounded authority-checked write."""
+        next_at = now + CADENCE
+        expected = []
+        for case in cases:
+            payload = {
+                "case_id": case["case_id"],
+                "generation": int(case["generation"]),
+                "event_type": "reassessment_scheduled",
+                "occurred_at": now.isoformat(),
+                "next_reassessment_at": next_at.isoformat(),
+                "outcome_status": outcome_status,
+                "cycle_id": cycle_id,
+            }
+            expected.append({
+                "case_id": case["case_id"],
+                "generation": int(case["generation"]),
+                "evidence_digest": case["evidence_digest"],
+                "event_id": "OOM-MANAGER-EVENT-" + _digest(payload)[:32].upper(),
+                "event_payload": payload,
+            })
+        if not expected:
+            return set()
+        with self.connect_factory() as connection:
+            with connection.cursor() as cur:
+                cur.execute("""with expected as (
+                        select * from jsonb_to_recordset(%s::jsonb) as e(
+                            case_id text,generation integer,evidence_digest text,
+                            event_id text,event_payload jsonb)
+                    ), released as (
+                        update app_private.oom_manager_cases m set
+                            status='waiting_reassessment',next_reassessment_at=%s,
+                            assigned_worker_id=null,lease_until=null,
+                            last_heartbeat_at=%s,updated_at=%s
+                        from expected e
+                        where m.case_id=e.case_id and m.generation=e.generation
+                          and m.evidence_digest=e.evidence_digest
+                          and m.assigned_worker_id=%s and m.lease_until>=%s
+                        returning m.case_id,m.generation
+                    ), inserted as (
+                        insert into app_private.oom_manager_case_events(
+                            event_id,case_id,generation,event_type,event_payload,occurred_at)
+                        select e.event_id,e.case_id,e.generation,
+                            'reassessment_scheduled',e.event_payload,%s
+                        from expected e join released r using(case_id,generation)
+                        on conflict(event_id) do nothing returning case_id
+                    )
+                    select case_id from released""",
+                    (json.dumps(expected), next_at, now, now, cycle_id, now, now))
+                return {str(row[0]) for row in cur.fetchall()}
+
     def _refresh_claim(self, claimed, raw, now, cycle_id):
         """Bind delivery to the newest canonical generation under the case lock."""
         if raw is None:
@@ -558,29 +680,48 @@ class PostgresManagerCaseStore:
 
 def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None,
                               store=None, collectors=None, deliver=None):
+    deadline_monotonic = time.monotonic() + GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS
     now = _aware(now or datetime.now(timezone.utc))
     refresh = None
+    refresh_batch = None
     if candidates is None:
         from modules.oom_sakkie.manager_case_sources import (
-            collect_manager_candidate, collect_manager_candidates)
-        candidates = collect_manager_candidates(now=now, collectors=collectors)
+            collect_manager_candidate, collect_manager_candidates,
+            collect_manager_refresh_snapshot)
         if collectors is None:
             from modules.telemetry.rootline_mixer_readiness_observer import (
                 collect_mixer_readiness,
             )
+            source_started = time.monotonic()
+            source_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="oom-manager-mixer-read")
+            mixer_future = source_executor.submit(collect_mixer_readiness, now=now)
+            candidates = collect_manager_candidates(now=now)
+            remaining = max(0.0, REFRESH_SNAPSHOT_DEADLINE_SECONDS
+                            - (time.monotonic() - source_started))
+            completed, _ = wait((mixer_future,), timeout=remaining)
             try:
-                candidates.extend(collect_mixer_readiness(now=now))
+                mixer_rows = mixer_future.result() if completed else None
             except Exception as exc:
+                mixer_failure_kind = exc.__class__.__name__
+            else:
+                mixer_failure_kind = "" if mixer_rows is not None else "TimeoutError"
+            if mixer_failure_kind:
                 candidates.append({
                     "dedupe_key": "rootline-readiness:fertilizer-mixer-ch2",
                     "specialist": "ROOTLINE", "urgency": "urgent",
-                    "evidence_refs": [f"collector:mixer_readiness:{exc.__class__.__name__}"],
+                    "evidence_refs": [f"collector:mixer_readiness:{mixer_failure_kind}"],
                     "unknowns": ["current_provider_mixer_readiness"],
                     "summary": "ROOTLINE fertilizer mixer readiness could not be observed.",
                     "next_action": ("Keep mixer execution fail-closed and retry the existing "
                                     "zero-control-call readback on the next manager cycle."),
                     "next_reassessment_at": (now + CADENCE).isoformat(),
                 })
+            else:
+                candidates.extend(mixer_rows or ())
+            source_executor.shutdown(wait=False, cancel_futures=True)
+        else:
+            candidates = collect_manager_candidates(now=now, collectors=collectors)
         def refresh(case):
             if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"):
                 from modules.telemetry.rootline_mixer_readiness_observer import (
@@ -592,15 +733,81 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
             return collect_manager_candidate(now=datetime.now(timezone.utc),
                 dedupe_key=case["dedupe_key"], specialist=case["specialist"],
                 collectors=collectors)
+        def refresh_batch(cases):
+            cases = tuple(cases)
+            regular = tuple(case for case in cases
+                if not str(case.get("dedupe_key") or "").startswith("rootline-readiness:"))
+            readiness = tuple(case for case in cases
+                if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"))
+            results = {}
+
+            def collect_regular():
+                return collect_manager_refresh_snapshot(
+                    now=datetime.now(timezone.utc), cases=regular, collectors=collectors)
+
+            def collect_readiness():
+                from modules.telemetry.rootline_mixer_readiness_observer import (
+                    collect_mixer_readiness,
+                )
+                return collect_mixer_readiness(now=datetime.now(timezone.utc))
+
+            jobs = {}
+            executor = ThreadPoolExecutor(
+                max_workers=2, thread_name_prefix="oom-manager-refresh")
+            if regular:
+                jobs["regular"] = executor.submit(collect_regular)
+            if readiness:
+                jobs["readiness"] = executor.submit(collect_readiness)
+            completed, _ = wait(tuple(jobs.values()),
+                timeout=max(0.0, min(REFRESH_SNAPSHOT_DEADLINE_SECONDS,
+                    deadline_monotonic - time.monotonic()
+                    - CASE_COMPLETION_RESERVE_SECONDS)))
+            if "regular" in jobs:
+                if jobs["regular"] not in completed:
+                    for case in regular:
+                        results[case["case_id"]] = TimeoutError(
+                            "manager_regular_refresh_deadline_exceeded")
+                else:
+                    try:
+                        snapshot = jobs["regular"].result()
+                    except (ValueError, RuntimeError, OSError) as exc:
+                        for case in regular:
+                            results[case["case_id"]] = exc
+                    else:
+                        for case in regular:
+                            results[case["case_id"]] = snapshot.get((
+                                str(case.get("dedupe_key") or ""),
+                                str(case.get("specialist") or "").upper()))
+            if "readiness" in jobs:
+                if jobs["readiness"] not in completed:
+                    for case in readiness:
+                        results[case["case_id"]] = TimeoutError(
+                            "manager_readiness_refresh_deadline_exceeded")
+                else:
+                    try:
+                        rows = jobs["readiness"].result()
+                    except (ValueError, RuntimeError, OSError) as exc:
+                        for case in readiness:
+                            results[case["case_id"]] = exc
+                    else:
+                        by_key = {str(row.get("dedupe_key") or ""): row
+                                  for row in rows or ()}
+                        for case in readiness:
+                            results[case["case_id"]] = by_key.get(
+                                str(case.get("dedupe_key") or ""))
+            executor.shutdown(wait=False, cancel_futures=True)
+            return results
     revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
     brain_guard = build_scheduled_brain_guard_audit(source_revision=revision, now=now)
     return (store or PostgresManagerCaseStore()).run_cycle(
         candidates, now=now, source_revision=revision, deliver=deliver,
-        refresh=refresh, brain_guard_audit=brain_guard)
+        refresh=refresh, refresh_batch=refresh_batch,
+        deadline_monotonic=deadline_monotonic, brain_guard_audit=brain_guard)
 
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None,
-                              retained_recovery=_PRODUCTION_RETAINED_RECOVERY):
+                              retained_recovery=_PRODUCTION_RETAINED_RECOVERY,
+                              deadline_monotonic=None):
     """Present changed farm cases through the existing owner-only lifecycle."""
     if str(case.get("dedupe_key") or "").startswith("rootline-readiness:"):
         return {"success": True, "status": "readiness_attention_only",
@@ -683,8 +890,16 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     if deliver is None:
         from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
         deliver = deliver_family_result
+    if (deadline_monotonic is not None
+            and time.monotonic() >= (
+                deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS)):
+        return {"success": False, "status": "manager_cycle_deadline_deferred",
+                "delivery_confirmed": False, "telegram_sends": 0,
+                "customer_sends": 0, "provider_actions": 0,
+                "hardware_commands": 0, "writes_farm_data": False}
     outcome = dict(deliver(parsed, result, specialist=specialist,
-                           mission_id=mission_id, card_mission_id=case["case_id"]) or {})
+                           mission_id=mission_id, card_mission_id=case["case_id"],
+                           deadline_monotonic=deadline_monotonic) or {})
     if result.get("callback_token") and outcome.get("telegram_message_id"):
         from modules.oom_sakkie.protected_action_claims import bind_claim_card
         if not bind_claim_card(result["callback_token"], outcome["telegram_message_id"]):

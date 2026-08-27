@@ -123,6 +123,38 @@ def test_morning_failure_propagates_to_scheduler_exit(monkeypatch):
     assert code==1 and result["success"] is False
 
 
+def test_manager_timeout_is_contained_without_blocking_beacon_or_morning(monkeypatch):
+    module=_script_module(monkeypatch); calls=[]
+    def call(url,payload):
+        calls.append(url)
+        if url.endswith("protected-payment-recovery"):
+            return {"status":"payment_recovery_idle"}
+        if url.endswith("green-print-recovery"):
+            return {"status":"documents_green_recovery_idle"}
+        if url.endswith("general-manager-cycle"):
+            raise TimeoutError("manager exceeded bounded request window")
+        if url.endswith("beacon-publication-cycle"):
+            return {"success":True,"status":"beacon_publication_cycle_completed"}
+        return {"success":True,"status":"daily_manager_replay_suppressed"}
+
+    result,code=module.run_scheduler(
+        now=datetime(2026,8,26,14,45,tzinfo=timezone.utc),post_fn=call)
+
+    assert code==1 and result["success"] is False
+    assert result["manager_status"]=="general_manager_cycle_request_contained"
+    assert result["manager_failure_kind"]=="TimeoutError"
+    assert result["beacon_publication_status"]=="beacon_publication_cycle_completed"
+    assert result["morning_status"]=="daily_manager_replay_suppressed"
+    assert any(url.endswith("beacon-publication-cycle") for url in calls)
+    assert any(url.endswith("morning-schedule") for url in calls)
+    manager_position = next(index for index,url in enumerate(calls)
+                            if url.endswith("general-manager-cycle"))
+    assert next(index for index,url in enumerate(calls)
+                if url.endswith("beacon-publication-cycle")) < manager_position
+    assert next(index for index,url in enumerate(calls)
+                if url.endswith("morning-schedule")) < manager_position
+
+
 def test_multi_recipient_runtime_success_is_scheduler_success(monkeypatch):
     module=_script_module(monkeypatch); calls=[]
     result,code=module.run_scheduler(now=datetime(2026,8,26,5,12,tzinfo=timezone.utc),
