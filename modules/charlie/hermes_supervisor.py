@@ -101,8 +101,14 @@ class JsonHttpClient:
         try:
             with self.opener(request, timeout=self.timeout) as response:
                 result = json.loads(response.read().decode() or "{}")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 409:
+                return {"error": "conflict", "status_code": 409}
+            raise HermesBridgeError("transport_unavailable") from exc
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
             raise HermesBridgeError("transport_unavailable") from exc
+        if isinstance(result, list):
+            return {"items": result}
         if not isinstance(result, dict):
             raise HermesBridgeError("transport_response_invalid")
         return result
@@ -132,7 +138,14 @@ class CursorCloudV1:
         }
         if not payload["prompt"]["text"]:
             raise HermesBridgeError("cursor_prompt_required")
-        return self.client.request("POST", "/v1/agents", payload)
+        response = self.client.request("POST", "/v1/agents", payload)
+        if response.get("status_code") == 409:
+            # A crash may occur after Cursor accepted create but before canonical
+            # persistence. Recover the deterministic durable Agent, never fork it.
+            agent = self.get_agent(payload["agentId"])
+            run = self.get_latest_run(payload["agentId"])
+            return {"agent": agent, "run": run, "recovered_after_conflict": True}
+        return response
 
     def get_agent(self, agent_id):
         return self.client.request("GET", f"/v1/agents/{_cursor_id(agent_id, 'bc-')}")
@@ -161,6 +174,56 @@ class CursorCloudV1:
         return self.client.request("GET", "/v1/agents", query=query)
 
 
+class CanonicalCharlieApi:
+    """Only the bounded authenticated Hermes surface; no raw database access."""
+
+    def __init__(self, base_url, token, *, client=None):
+        self.client = client or JsonHttpClient(base_url, token)
+
+    def reconcile_mission(self, payload, idempotency_key):
+        return self.client.request("POST", "/charlie/hermes/missions",
+                                   {**payload, "idempotency_key": idempotency_key})
+
+    def get_mission(self, mission_id):
+        return self.client.request("GET", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}")
+
+    def get_dispatch(self, key):
+        result = self.client.request("GET", "/charlie/hermes/dispatch", query={"idempotency_key": key})
+        return result.get("dispatch") or {}
+
+    def running_writer_count(self):
+        return int(self.client.request("GET", "/charlie/hermes/writers").get("running") or 0)
+
+    def record_dispatch(self, key, value):
+        return self.client.request("POST", "/charlie/hermes/dispatch", {**value, "idempotency_key": key})
+
+    def record_progress(self, mission_id, value):
+        return self.client.request("POST", f"/charlie/hermes/missions/{mission_id}/progress", value)
+
+    def record_followup(self, mission_id, agent_id, run_id):
+        return self.record_progress(mission_id, {"event": "cursor_followup", "cursor_agent_id": agent_id, "cursor_run_id": run_id})
+
+
+class GitHubReadMonitor:
+    """Unauthenticated/read-token optional GitHub observation; never writes."""
+
+    def __init__(self, repository, *, client=None):
+        self.repository = str(repository or "").strip()
+        self.client = client or JsonHttpClient("https://api.github.com")
+
+    def pull_state(self, number):
+        pull = self.client.request("GET", f"/repos/{self.repository}/pulls/{int(number)}")
+        head = str((pull.get("head") or {}).get("sha") or "")
+        checks = self.client.request("GET", f"/repos/{self.repository}/commits/{head}/check-runs")
+        reviews = self.client.request("GET", f"/repos/{self.repository}/pulls/{int(number)}/reviews")
+        runs = list(checks.get("check_runs") or [])
+        required = {run.get("name"): run.get("conclusion") for run in runs}
+        verdicts = [str(item.get("body") or "").strip().upper() for item in reviews.get("items") or reviews if isinstance(item, dict)] if isinstance(reviews, (dict, list)) else []
+        return {"pr_number": int(number), "head_sha": head,
+                "branch": str((pull.get("head") or {}).get("ref") or ""),
+                "checks": required, "independent_review": "SEND_BACK" if "SEND_BACK" in verdicts else ("APPROVE" if "APPROVE" in verdicts else "WAIT")}
+
+
 class HermesSupervisor:
     """Low-cost deterministic supervisor over canonical CHARLIE APIs."""
 
@@ -168,10 +231,14 @@ class HermesSupervisor:
     MAX_FAILED_ATTEMPTS = 2
     AUTOMATIC_DECOMPOSITION = False
 
-    def __init__(self, canonical, cursor, *, owner_slack_user_id, clock=time.time):
+    def __init__(self, canonical, cursor, *, owner_slack_user_id, slack_signing_secret="",
+                 github=None, issuer=None, clock=time.time):
         self.canonical = canonical
         self.cursor = cursor
         self.owner_slack_user_id = str(owner_slack_user_id or "").strip()
+        self.slack_signing_secret = str(slack_signing_secret or "")
+        self.github = github
+        self.issuer = issuer
         self.clock = clock
         if not self.owner_slack_user_id:
             raise HermesBridgeError("slack_owner_id_required")
@@ -190,6 +257,21 @@ class HermesSupervisor:
             "source": "slack", "source_event_id": event_id, "owner_user_id": self.owner_slack_user_id,
             "channel_id": channel, "thread_ts": thread, "instruction": text,
         }, idempotency_key=f"slack:{event_id}")
+
+    def handle_slack_request(self, raw_body, headers, *, now=None):
+        headers = {str(key).lower(): value for key, value in dict(headers or {}).items()}
+        verify_slack_request(self.slack_signing_secret,
+                             headers.get("x-slack-request-timestamp"), raw_body,
+                             headers.get("x-slack-signature"), now=now)
+        try:
+            envelope = json.loads(raw_body.decode() if isinstance(raw_body, bytes) else str(raw_body))
+        except (TypeError, ValueError) as exc:
+            raise HermesBridgeError("slack_event_invalid") from exc
+        if envelope.get("type") == "url_verification":
+            return {"challenge": str(envelope.get("challenge") or "")}
+        event = dict(envelope.get("event") or {})
+        event["event_id"] = str(envelope.get("event_id") or "")
+        return self.reconcile_slack_event(event)
 
     def dispatch_cursor(self, mission):
         row = dict(mission or {})
@@ -221,8 +303,20 @@ class HermesSupervisor:
             raise HermesBridgeError("cursor_state_invalid")
         updated_at = _parse_epoch(run.get("updatedAt"))
         stalled = state == "ACTIVE" and updated_at and self.clock() - updated_at > 1800
-        result = {"agent_state": state, "run_state": run_state, "stalled": bool(stalled)}
+        git = dict(run.get("git") or {})
+        branches = list(git.get("branches") or [])
+        result = {"agent_state": state, "run_state": run_state, "stalled": bool(stalled),
+                  "cursor_agent_id": agent.get("id"), "cursor_run_id": run.get("id"),
+                  "branches": branches}
+        pr_number = int(dispatch.get("pr_number") or 0)
+        if self.github and pr_number:
+            result.update(self.github.pull_state(pr_number))
         return self.canonical.record_progress(row.get("mission_id"), result)
+
+    def issue_admission(self, mission_id, expected_head_sha):
+        if not self.issuer:
+            raise HermesBridgeError("protected_issuer_unavailable")
+        return self.issuer(mission_id=mission_id, expected_head_sha=expected_head_sha)
 
     def route_send_back(self, mission, verdict, correction):
         row = dict(mission or {})
@@ -245,6 +339,18 @@ class HermesSupervisor:
         return {"mission_id": row.get("mission_id"), "pr_number": row.get("pr_number"),
                 "head_sha": row.get("head_sha"), "channel": "owner-approvals",
                 "merge_or_deploy_performed": False}
+
+    def tools(self):
+        """Actual bounded Hermes handlers, not descriptive strings."""
+        return {
+            "charlie_reconcile_mission": self.reconcile_slack_event,
+            "charlie_dispatch_cursor": self.dispatch_cursor,
+            "charlie_get_mission_status": lambda value: self.canonical.get_mission(value["mission_id"]),
+            "charlie_get_cursor_status": self.poll,
+            "charlie_continue_cursor": lambda value: self.route_send_back(value["mission"], "SEND_BACK", value["correction"]),
+            "charlie_prepare_owner_decision": self.prepare_owner_decision,
+            "charlie_handle_slack_event": self.handle_slack_request,
+        }
 
     @staticmethod
     def _cursor_prompt(mission, admission):

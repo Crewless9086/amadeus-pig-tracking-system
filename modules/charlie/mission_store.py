@@ -1787,6 +1787,71 @@ def bind_external_supervisor_candidate(
             "head_sha": binding["head_sha"]}, 201
 
 
+def record_external_supervisor_state(mission_id, state, *, authenticated_principal,
+                                     database_url=None, connect_factory=None):
+    """Persist bounded Hermes linkage/progress in the canonical mission row."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    state = state if isinstance(state, dict) else {}
+    allowed = {"idempotency_key", "generation", "cursor_agent_id", "cursor_run_id",
+               "slack_channel_id", "slack_thread_ts", "branch", "pr_number",
+               "head_sha", "agent_state", "run_state", "stalled", "event",
+               "failed_attempts", "checks", "independent_review", "branches"}
+    if not mission_id or not principal or not state or set(state) - allowed:
+        return {"success": False, "status": "external_supervisor_state_invalid"}, 400
+    key = _clean_text(state.get("idempotency_key"), 300)
+    if key and not key.startswith(mission_id + ":"):
+        return {"success": False, "status": "external_supervisor_identity_conflict"}, 409
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb) from public.charlie_missions
+                    where mission_id=%(mission_id)s for update""", {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("external_supervisor_state") or {})
+                if key and current.get("idempotency_key") == key and current.get("cursor_agent_id"):
+                    if state.get("cursor_agent_id") and state["cursor_agent_id"] != current.get("cursor_agent_id"):
+                        return {"success": False, "status": "external_supervisor_dispatch_conflict"}, 409
+                merged = {**current, **state, "recorded_by": principal,
+                          "updated_at": datetime.now(timezone.utc).isoformat()}
+                metadata["external_supervisor_state"] = merged
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated", "External supervisor state recorded.",
+                              {key: merged.get(key) for key in ("cursor_agent_id", "cursor_run_id", "pr_number", "head_sha", "event")})
+    except Exception as exc:
+        return {"success": False, "status": "external_supervisor_state_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "external_supervisor_state_recorded",
+            "mission_id": mission_id, "dispatch": merged}, 201
+
+
+def read_external_supervisor_state(idempotency_key="", *, database_url=None, connect_factory=None):
+    key = _clean_text(idempotency_key, 300)
+    database_url = _database_url(database_url)
+    if not key or (not database_url and connect_factory is None):
+        return {"success": False, "status": "external_supervisor_identity_required"}, 400
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id,metadata_json->'external_supervisor_state'
+                    from public.charlie_missions where metadata_json->'external_supervisor_state'->>'idempotency_key'=%(key)s limit 1""",
+                    {"key": key})
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {"success": False, "status": "external_supervisor_state_read_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return ({"success": True, "status": "ok", "mission_id": row[0], "dispatch": row[1] or {}}, 200) \
+        if row else ({"success": True, "status": "not_found", "dispatch": {}}, 200)
+
+
 def invalidate_mission_admission_for_owner_correction(
     mission_id,
     new_generation,

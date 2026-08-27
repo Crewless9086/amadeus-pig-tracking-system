@@ -18,20 +18,27 @@ def admission():
 
 
 class FakeClient:
-    def __init__(self): self.calls = []; self.agent_state = "IDLE"
+    def __init__(self): self.calls = []; self.agent_state = "IDLE"; self.conflict_once = False
     def request(self, method, path, payload=None, headers=None, query=None):
         self.calls.append((method, path, payload, query))
         if path == "/v1/agents":
+            if self.conflict_once:
+                self.conflict_once = False
+                return {"error": "conflict", "status_code": 409}
             return {"agent": {"id": "bc-one"}, "run": {"id": "run-one"}}
         if path.endswith("/runs") and method == "POST": return {"run": {"id": "run-two"}}
         if path.endswith("/runs/run-one"): return {"id": "run-one", "status": "SUCCEEDED", "updatedAt": "2026-08-28T00:00:00Z"}
-        if path == "/v1/agents/bc-one": return {"id": "bc-one", "status": self.agent_state, "latestRunId": "run-one"}
+        if path.startswith("/v1/agents/bc-") and "/runs/" not in path:
+            return {"id": path.rsplit("/", 1)[-1], "status": self.agent_state, "latestRunId": "run-one"}
         return {"items": []}
 
 
 class Canonical:
-    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0
-    def reconcile_mission(self, payload, idempotency_key): self.reconciled += 1; return {"mission_id": "CMQ-X", "key": idempotency_key}
+    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}
+    def reconcile_mission(self, payload, idempotency_key):
+        if idempotency_key not in self.intake:
+            self.reconciled += 1; self.intake[idempotency_key] = {"mission_id": "CMQ-X", "key": idempotency_key}
+        return self.intake[idempotency_key]
     def get_dispatch(self, key): return self.dispatch.get(key)
     def running_writer_count(self): return self.running
     def record_dispatch(self, key, value): self.dispatch[key] = value; return value
@@ -42,7 +49,9 @@ class Canonical:
 class HermesSupervisorTests(unittest.TestCase):
     def setUp(self):
         self.client = FakeClient(); self.cursor = CursorCloudV1("secret", client=self.client)
-        self.canonical = Canonical(); self.supervisor = HermesSupervisor(self.canonical, self.cursor, owner_slack_user_id="UOWNER", clock=lambda: 0)
+        self.canonical = Canonical(); self.supervisor = HermesSupervisor(
+            self.canonical, self.cursor, owner_slack_user_id="UOWNER",
+            slack_signing_secret="s", clock=lambda: 0)
 
     def test_slack_signature_owner_and_duplicate_identity(self):
         body = b'{"ok":true}'; sig = "v0=" + hmac.new(b"s", b"v0:100:" + body, hashlib.sha256).hexdigest()
@@ -50,6 +59,7 @@ class HermesSupervisorTests(unittest.TestCase):
         event = {"event_id": "Ev1", "user": "UOWNER", "channel": "C1", "ts": "1.0", "text": "Build it"}
         first = self.supervisor.reconcile_slack_event(event); second = self.supervisor.reconcile_slack_event(event)
         self.assertEqual(first["key"], second["key"])
+        self.assertEqual(1, self.canonical.reconciled)
         with self.assertRaisesRegex(HermesBridgeError, "slack_owner_not_authorized"):
             self.supervisor.reconcile_slack_event({**event, "user": "UOTHER"})
 
@@ -69,6 +79,21 @@ class HermesSupervisorTests(unittest.TestCase):
         self.canonical.dispatch = {}; self.canonical.running = 1
         with self.assertRaisesRegex(HermesBridgeError, "writer_capacity_reached"):
             restarted.dispatch_cursor(mission)
+
+    def test_split_failure_recovers_deterministic_cursor_agent(self):
+        self.client.conflict_once = True
+        result = self.supervisor.dispatch_cursor({"admission": admission(), "instruction": "Bounded work"})
+        self.assertTrue(result["cursor_agent_id"].startswith("bc-"))
+        self.assertEqual("run-one", result["cursor_run_id"])
+
+    def test_slack_envelope_and_actual_tool_handlers(self):
+        body = json.dumps({"type": "event_callback", "event_id": "Ev2", "event": {
+            "user": "UOWNER", "channel": "C1", "ts": "2.0", "text": "Build it"}}).encode()
+        sig = "v0=" + hmac.new(b"s", b"v0:100:" + body, hashlib.sha256).hexdigest()
+        result = self.supervisor.handle_slack_request(body, {
+            "X-Slack-Request-Timestamp": "100", "X-Slack-Signature": sig}, now=100)
+        self.assertEqual("CMQ-X", result["mission_id"])
+        self.assertTrue(all(callable(value) for value in self.supervisor.tools().values()))
 
     def test_send_back_same_agent_busy_and_attempt_limit(self):
         mission = {"mission_id": "CMQ-X", "dispatch": {"cursor_agent_id": "bc-one", "failed_attempts": 0}}
