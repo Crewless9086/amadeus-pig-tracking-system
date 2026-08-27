@@ -39,12 +39,18 @@ from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_GENERATION,
     BOOTSTRAP_REQUIRED_TESTS,
     _is_read_only_shell,
+    _compare_current_authority,
+    _canonical_packet_digest,
+    _replace_receipt_marker,
+    _require_canonical_review_linkage,
+    _protected_database_url,
     _tool_target_path,
     _validate_external_receipt_envelope,
     _validate_paths_and_effects,
     ci_external_main,
     ci_main,
     hook_main,
+    issue_pr_main,
     trusted_check_main,
 )
 
@@ -725,8 +731,23 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", workflow)
         self.assertNotIn("github.event.pull_request.head", workflow)
         self.assertIn("trusted-check", workflow)
+        self.assertIn("CHARLIE_ADMISSION_READ_DATABASE_URL", workflow)
+        self.assertNotIn("CHARLIE_ADMISSION_CANONICAL_BINDING_B64", workflow)
         self.assertIn("mission-admission-candidate-diagnostic:", candidate)
         self.assertNotIn("\n  mission-admission:\n", candidate)
+        issuer = (ROOT / ".github/workflows/mission-admission-issuer.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("workflow_dispatch:", issuer)
+        self.assertIn("environment: charlie-admission-validator", issuer)
+        self.assertNotIn("pull_request_target:", issuer)
+        self.assertNotIn("pull_request:", issuer)
+        self.assertIn("ref: ${{ github.sha }}", issuer)
+        self.assertIn("github.ref == 'refs/heads/main'", issuer)
+        guard = (ROOT / "scripts/charlie_mission_admission_guard.py").read_text(encoding="utf-8")
+        for option in ("--no-ext-diff", "--no-textconv", "--binary", "--full-index"):
+            self.assertIn(option, guard)
+        self.assertNotIn("checkout", "\n".join(line for line in issuer.splitlines() if "github.event.pull_request.head" in line))
 
     def _run(self, *, receipt, patch_bytes=b"external patch", head=HEAD):
         import contextlib
@@ -888,7 +909,7 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             "pull_request": {
                 "body": f"Mission-Admission-Receipt-B64: {marker}\r\n",
                 "base": {"ref": "main", "sha": BASE},
-                "head": {"sha": HEAD},
+                "head": {"ref": "cursor/mission-admission-test", "sha": HEAD},
             },
         }
         calls = []
@@ -909,6 +930,7 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                 )
             ).decode("ascii")
             with (
+                patch("scripts.charlie_mission_admission_guard._protected_database_url", return_value="postgres://readonly?sslmode=require"),
                 patch("scripts.charlie_mission_admission_guard._app_check_request", side_effect=publish),
                 patch("scripts.charlie_mission_admission_guard.subprocess.run"),
                 patch("scripts.charlie_mission_admission_guard._commit", side_effect=[BASE, HEAD]),
@@ -916,22 +938,57 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                 patch("scripts.charlie_mission_admission_guard._git_bytes", return_value=b"external patch"),
                 patch("scripts.charlie_mission_admission_guard._verify_governance_reads"),
                 patch("scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64", public_key_b64),
+                patch("scripts.charlie_mission_admission_guard.get_mission", return_value=({
+                    "success": True,
+                    "mission": {"metadata": {
+                        "mission_family": {"generation": GENERATION},
+                        "review_packet": {
+                            "pr_number": 1310,
+                            "candidate_revision": HEAD,
+                            "branch_name": "cursor/mission-admission-test",
+                            "candidate_diff_sha256": canonical_candidate_diff(ALLOWED_FILES, b"external patch"),
+                            "changed_files": ALLOWED_FILES,
+                        },
+                        "mission_admission_contract": {
+                            "allowed_files": ALLOWED_FILES,
+                            "forbidden_files": envelope["receipt"]["scope"]["forbidden_files"],
+                            "allowed_effects": ALLOWED_EFFECTS,
+                            "forbidden_effects": FORBIDDEN_EFFECTS,
+                            "required_tests": sorted(BOOTSTRAP_REQUIRED_TESTS),
+                            "operational_acceptance": envelope["receipt"]["operational_acceptance"]["requirements"],
+                        },
+                    }},
+                }, 200)),
+                patch("scripts.charlie_mission_admission_guard.read_current_mission_admission_authority", return_value=({
+                    "success": True,
+                    "mission_id": "CMQ-20260813-05",
+                    "root_mission_id": "CMQ-20260813-05",
+                    "admission": {
+                        "status": "valid", "mission_id": "CMQ-20260813-05",
+                        "root_mission_id": "CMQ-20260813-05", "generation": GENERATION,
+                        "base_sha": BASE, "head_sha": HEAD,
+                        "authority_key_sha256": envelope["receipt"]["authority_key_sha256"],
+                        "latest_correction_digest": envelope["receipt"]["owner_instruction_chain"]["latest_correction_digest"],
+                        "collision_snapshot_sha256": envelope["receipt"]["collision_snapshot"]["snapshot_sha256"],
+                    },
+                    "latest_correction_digest": envelope["receipt"]["owner_instruction_chain"]["latest_correction_digest"],
+                    "collision_snapshot_sha256": envelope["receipt"]["collision_snapshot"]["snapshot_sha256"],
+                }, 200)),
+                patch("scripts.charlie_mission_admission_guard._canonical_packet_digest", return_value=envelope["receipt"]["owner_instruction_chain"]["admission_packet_sha256"]),
                 contextlib.redirect_stdout(output),
             ):
                 code = trusted_check_main(
                     SimpleNamespace(event=str(path)),
                     environ={
                         "CHARLIE_ADMISSION_APP_TOKEN": "installation-token",
-                        "CHARLIE_ADMISSION_CANONICAL_BINDING_B64": base64.b64encode(
-                            canonical_json(self._canonical_binding(envelope))
-                        ).decode("ascii"),
+                        "CHARLIE_ADMISSION_READ_DATABASE_URL": "protected",
                     },
                 )
         self.assertEqual(code, 0, output.getvalue())
         self.assertEqual(calls[0][0], "POST")
         self.assertEqual(calls[-1][2]["conclusion"], "success")
 
-    def test_trusted_check_fails_closed_without_protected_canonical_binding(self):
+    def test_trusted_check_fails_closed_without_dynamic_canonical_database(self):
         import contextlib
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "event.json"
@@ -945,8 +1002,201 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(
             json.loads(output.getvalue())["reason_code"],
-            "canonical_admission_binding_unavailable",
+            "CANONICAL_AUTHORITY_UNAVAILABLE",
         )
+
+    def test_dynamic_authority_invalidates_owner_collision_and_lifecycle_changes(self):
+        receipt = self._signed()["receipt"]
+        contract = {
+            "allowed_files": receipt["scope"]["allowed_files"],
+            "forbidden_files": receipt["scope"]["forbidden_files"],
+            "allowed_effects": receipt["scope"]["allowed_effects"],
+            "forbidden_effects": receipt["scope"]["forbidden_effects"],
+            "required_tests": receipt["required_tests"],
+            "operational_acceptance": receipt["operational_acceptance"]["requirements"],
+        }
+        authority = {
+            "mission_id": receipt["mission"]["mission_id"],
+            "root_mission_id": receipt["mission"]["root_mission_id"],
+            "admission": {
+                "status": "valid",
+                "mission_id": receipt["mission"]["mission_id"],
+                "root_mission_id": receipt["mission"]["root_mission_id"],
+                "generation": receipt["mission"]["generation"],
+                "base_sha": receipt["repository"]["base_sha"],
+                "head_sha": receipt["candidate"]["head_sha"],
+                "authority_key_sha256": receipt["authority_key_sha256"],
+                "latest_correction_digest": receipt["owner_instruction_chain"]["latest_correction_digest"],
+                "collision_snapshot_sha256": receipt["collision_snapshot"]["snapshot_sha256"],
+            },
+            "latest_correction_digest": receipt["owner_instruction_chain"]["latest_correction_digest"],
+            "collision_snapshot_sha256": receipt["collision_snapshot"]["snapshot_sha256"],
+        }
+        receipt["owner_instruction_chain"]["admission_packet_sha256"] = _canonical_packet_digest(authority, contract)
+        _compare_current_authority(receipt, authority, contract)
+        cases = (
+            ("latest_correction_digest", "0" * 64, "owner_correction_changed"),
+            ("collision_snapshot_sha256", "0" * 64, "collision_snapshot_changed"),
+        )
+        for key, value, reason in cases:
+            changed = copy.deepcopy(authority)
+            changed[key] = value
+            with self.subTest(reason=reason), self.assertRaisesRegex(MissionAdmissionError, reason):
+                _compare_current_authority(receipt, changed, contract)
+        for status in ("revoked", "consumed"):
+            changed = copy.deepcopy(authority)
+            changed["admission"]["status"] = status
+            with self.subTest(status=status), self.assertRaisesRegex(MissionAdmissionError, f"admission_{status}"):
+                _compare_current_authority(receipt, changed, contract)
+
+    def test_issuer_uses_exact_canonical_linkage_preserves_body_and_is_idempotent(self):
+        seed = hashlib.sha256(b"issuer-test-seed").digest()
+        public = base64.b64encode(
+            Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+                Encoding.Raw, PublicFormat.Raw
+            )
+        ).decode()
+        captured_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        claims = []
+        contract = {
+            "base_sha": BASE,
+            "branch": "cursor/mission-admission-test",
+            "allowed_files": ALLOWED_FILES,
+            "forbidden_files": ["app.py"],
+            "allowed_effects": ALLOWED_EFFECTS,
+            "forbidden_effects": FORBIDDEN_EFFECTS,
+            "required_tests": sorted(BOOTSTRAP_REQUIRED_TESTS),
+            "operational_acceptance": ["Exact candidate CI passes."],
+        }
+        mission = {"mission_id": "CMQ-20260813-05", "raw_text": "owner instruction"}
+        family = {"generation": GENERATION}
+        correction = "1" * 64
+        collision = collision_snapshot_digest(captured_at, claims)
+        authority = {
+            "success": True,
+            "mission_id": mission["mission_id"],
+            "root_mission_id": mission["mission_id"],
+            "latest_correction_digest": correction,
+            "collision_observed_at": captured_at,
+            "collision_snapshot_sha256": collision,
+            "active_claims": claims,
+            "admission": {
+                "status": "valid", "mission_id": mission["mission_id"],
+                "root_mission_id": mission["mission_id"], "generation": GENERATION,
+                "base_sha": BASE, "head_sha": HEAD,
+                "authority_key_sha256": hashlib.sha256(KEY).hexdigest(),
+                "latest_correction_digest": correction,
+                "collision_snapshot_sha256": collision,
+                "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
+            },
+        }
+        pull = {
+            "state": "open", "merged_at": None, "body": "Preserve this text.\n",
+            "base": {"ref": "main", "sha": BASE},
+            "head": {"ref": contract["branch"], "sha": HEAD},
+        }
+        calls = []
+        def github(_number, _token, body=None):
+            if body is None:
+                return copy.deepcopy(pull)
+            calls.append(body)
+            pull["body"] = body
+            return copy.deepcopy(pull)
+        environ = {
+            "GITHUB_TOKEN": "not-logged",
+            "CHARLIE_VALIDATION_RECEIPT_KEY_B64": base64.b64encode(KEY).decode(),
+            "CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64": base64.b64encode(seed).decode(),
+        }
+        args = SimpleNamespace(pull_request_number=1312, expected_head_sha=HEAD, event_output=None)
+        import contextlib
+        governance = [_governance_row()]
+        for expected_writes in (1, 1):
+            output = io.StringIO()
+            with (
+                patch("scripts.charlie_mission_admission_guard._protected_database_url", return_value="postgres://readonly?sslmode=require"),
+                patch("scripts.charlie_mission_admission_guard._github_pull_request", side_effect=github),
+                patch("scripts.charlie_mission_admission_guard.subprocess.run"),
+                patch("scripts.charlie_mission_admission_guard._commit", side_effect=[BASE, HEAD]),
+                patch("scripts.charlie_mission_admission_guard._changed_files", return_value=ALLOWED_FILES),
+                patch("scripts.charlie_mission_admission_guard._git_bytes", return_value=b"external patch"),
+                patch("scripts.charlie_mission_admission_guard._canonical_contract_for_pull", return_value=(mission, {}, contract, family)),
+                patch("scripts.charlie_mission_admission_guard.read_current_mission_admission_authority", return_value=(authority, 200)),
+                patch("scripts.charlie_mission_admission_guard._governance_read_identities", return_value=governance),
+                patch("scripts.charlie_mission_admission_guard._repository_identity", return_value="Crewless9086/amadeus-pig-tracking-system"),
+                patch("scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64", public),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(issue_pr_main(args, environ=environ), 0, output.getvalue())
+            self.assertEqual(len(calls), expected_writes)
+        self.assertTrue(calls[0].startswith("Preserve this text."))
+        self.assertEqual(calls[0].count("Mission-Admission-Receipt-B64:"), 1)
+        self.assertNotIn("not-logged", output.getvalue())
+        self.assertNotIn(base64.b64encode(seed).decode(), output.getvalue())
+
+    def test_issuer_rejects_wrong_head_closed_pr_and_duplicate_markers(self):
+        cases = (
+            ({"state": "closed", "merged_at": None, "base": {}, "head": {}}, HEAD, "issuer_target_not_open"),
+            ({"state": "open", "merged_at": None, "base": {"ref": "main", "sha": BASE}, "head": {"ref": "x", "sha": "c" * 40}}, HEAD, "admission_candidate_changed"),
+        )
+        import contextlib
+        for pull, expected, reason in cases:
+            output = io.StringIO()
+            with (
+                patch("scripts.charlie_mission_admission_guard._protected_database_url", return_value="postgres://readonly?sslmode=require"),
+                patch("scripts.charlie_mission_admission_guard._github_pull_request", return_value=pull),
+                contextlib.redirect_stdout(output),
+            ):
+                code = issue_pr_main(SimpleNamespace(pull_request_number=1, expected_head_sha=expected, event_output=None), environ={"GITHUB_TOKEN": "token"})
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(output.getvalue())["reason_code"], reason)
+        with self.assertRaisesRegex(MissionAdmissionError, "duplicate_external_admission_receipts"):
+            _replace_receipt_marker(
+                "Mission-Admission-Receipt-B64: one\nMission-Admission-Receipt-B64: two\n",
+                "three",
+            )
+
+    def test_canonical_review_linkage_rejects_pr_branch_head_diff_and_files_transplant(self):
+        metadata = {"review_packet": {
+            "pr_number": 1312, "candidate_revision": HEAD,
+            "branch_name": "cursor/mission-admission-test",
+            "candidate_diff_sha256": "d" * 64, "changed_files": ALLOWED_FILES,
+        }}
+        _require_canonical_review_linkage(metadata, 1312, HEAD, "cursor/mission-admission-test", "d" * 64, ALLOWED_FILES)
+        cases = (
+            (1313, HEAD, "cursor/mission-admission-test", "d" * 64, ALLOWED_FILES),
+            (1312, HEAD, "other", "d" * 64, ALLOWED_FILES),
+            (1312, "c" * 40, "cursor/mission-admission-test", "d" * 64, ALLOWED_FILES),
+            (1312, HEAD, "cursor/mission-admission-test", "e" * 64, ALLOWED_FILES),
+            (1312, HEAD, "cursor/mission-admission-test", "d" * 64, ["other.py"]),
+        )
+        for args in cases:
+            with self.subTest(args=args), self.assertRaisesRegex(MissionAdmissionError, "canonical_candidate_linkage_changed"):
+                _require_canonical_review_linkage(metadata, *args)
+
+    def test_protected_database_rejects_timeout_and_admin_privilege(self):
+        class Cursor:
+            def __init__(self, mode): self.mode, self.sql = mode, ""
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, sql, params=None): self.sql = sql.lower()
+            def fetchone(self):
+                if "transaction_read_only" in self.sql: return ("on",)
+                if "statement_timeout" in self.sql: return (("0" if self.mode == "timeout" else "10s"),)
+                if "lock_timeout" in self.sql: return ("3s",)
+                if "idle_in_transaction" in self.sql: return ("10s",)
+                if "from pg_roles" in self.sql: return ((True, False, False, False, False) if self.mode == "admin" else (False,) * 5)
+                if "has_database_privilege" in self.sql: return (False, False)
+                if "has_table_privilege" in self.sql: return (True, False)
+                raise AssertionError(self.sql)
+        class Connection:
+            def __init__(self, mode): self.mode = mode
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return Cursor(self.mode)
+        for mode, reason in (("timeout", "canonical_database_timeout_invalid"), ("admin", "canonical_database_privilege_invalid")):
+            fake = SimpleNamespace(connect=lambda *_args, **_kwargs: Connection(mode))
+            with self.subTest(mode=mode), patch.dict(sys.modules, {"psycopg": fake}), self.assertRaisesRegex(MissionAdmissionError, reason):
+                _protected_database_url({"CHARLIE_ADMISSION_READ_DATABASE_URL": "postgres://redacted?sslmode=require"})
 
 
 class MissionAdmissionStoreTests(unittest.TestCase):

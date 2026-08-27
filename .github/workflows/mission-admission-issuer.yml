@@ -1,0 +1,70 @@
+name: Protected Mission Admission Issuer
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Exact pull request number
+        required: true
+        type: number
+      expected_head_sha:
+        description: Exact admitted pull request head
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: mission-admission-issuer-${{ inputs.pull_request_number }}
+  cancel-in-progress: false
+
+jobs:
+  issue:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: charlie-admission-validator
+    steps:
+      - name: Checkout protected default branch only
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Use protected-base Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install protected-base dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Issue exact canonical receipt
+        env:
+          CHARLIE_ADMISSION_READ_DATABASE_URL: ${{ secrets.CHARLIE_ADMISSION_READ_DATABASE_URL }}
+          CHARLIE_VALIDATION_RECEIPT_KEY_B64: ${{ secrets.CHARLIE_VALIDATION_RECEIPT_KEY_B64 }}
+          CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64: ${{ secrets.CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64 }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pull_request_number }}
+          EXPECTED_HEAD: ${{ inputs.expected_head_sha }}
+          TRUSTED_EVENT_PATH: ${{ runner.temp }}/mission-admission-event.json
+        run: >-
+          python scripts/charlie_mission_admission_guard.py issue-pr
+          --pull-request-number "$PR_NUMBER"
+          --expected-head-sha "$EXPECTED_HEAD"
+          --event-output "$TRUSTED_EVENT_PATH"
+      - name: Mint least-privilege App installation token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ secrets.CHARLIE_ADMISSION_APP_ID }}
+          private-key: ${{ secrets.CHARLIE_ADMISSION_APP_PRIVATE_KEY }}
+          owner: Crewless9086
+          repositories: amadeus-pig-tracking-system
+      - name: Independently verify and publish trusted App check
+        env:
+          CHARLIE_ADMISSION_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          CHARLIE_ADMISSION_READ_DATABASE_URL: ${{ secrets.CHARLIE_ADMISSION_READ_DATABASE_URL }}
+          TRUSTED_EVENT_PATH: ${{ runner.temp }}/mission-admission-event.json
+        run: >-
+          python scripts/charlie_mission_admission_guard.py trusted-check
+          --event "$TRUSTED_EVENT_PATH"
