@@ -677,7 +677,7 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         ).decode("ascii")
 
     @staticmethod
-    def _canonical_binding(envelope):
+    def _canonical_binding(envelope, *, observed_at=None):
         receipt = envelope["receipt"]
         return {
             "mission_id": receipt["mission"]["mission_id"],
@@ -690,6 +690,7 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             "collision_snapshot_sha256": receipt["collision_snapshot"][
                 "snapshot_sha256"
             ],
+            "canonical_observed_at": observed_at or receipt["issued_at"],
         }
 
     def test_workflow_external_receipt_heredoc_is_shell_aligned(self):
@@ -830,6 +831,8 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         envelope = self._signed()
         binding = self._canonical_binding(envelope)
         for field in binding:
+            if field == "canonical_observed_at":
+                continue
             changed = dict(binding)
             changed[field] = "different"
             with self.subTest(field=field):
@@ -851,50 +854,29 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                         expected_canonical_binding=changed,
                     )
 
-    def test_trusted_path_rejects_stale_collision_snapshot(self):
+    def test_trusted_path_rejects_stale_canonical_observation(self):
         envelope = self._signed()
         receipt = envelope["receipt"]
         issued = datetime.fromisoformat(receipt["issued_at"].replace("Z", "+00:00"))
         stale = (issued - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
-        payload = {key: value for key, value in receipt.items() if key not in {
-            "receipt_id", "content_sha256", "signature_hmac_sha256"
-        }}
-        payload["collision_snapshot"] = dict(payload["collision_snapshot"])
-        payload["collision_snapshot"]["captured_at"] = stale
-        payload["collision_snapshot"]["snapshot_sha256"] = collision_snapshot_digest(
-            stale, payload["collision_snapshot"]["active_claims"]
-        )
-        stale_receipt = sign_mission_admission_receipt(
-            payload, KEY, issued_at=receipt["issued_at"], expires_at=receipt["expires_at"]
-        )
-        seed = hashlib.sha256(
-            b"charlie-mission-admission-ci-ed25519-v1\0" + KEY
-        ).digest()
-        stale_envelope = {
-            "version": "mission_admission_ci_envelope_v1",
-            "receipt": stale_receipt,
-            "signature_ed25519": base64.b64encode(
-                Ed25519PrivateKey.from_private_bytes(seed).sign(
-                    canonical_json(stale_receipt)
-                )
-            ).decode("ascii"),
-        }
         with (
             patch(
                 "scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64",
                 self._test_public_key_b64(),
             ),
             self.assertRaisesRegex(
-                MissionAdmissionError, "canonical_collision_snapshot_stale"
+                MissionAdmissionError, "canonical_admission_observation_stale"
             ),
         ):
             _validate_external_receipt_envelope(
-                stale_envelope,
+                envelope,
                 expected_repository="Crewless9086/amadeus-pig-tracking-system",
                 expected_base_sha=BASE,
                 expected_head_sha=HEAD,
                 expected_changed_files=ALLOWED_FILES,
-                expected_canonical_binding=self._canonical_binding(stale_envelope),
+                expected_canonical_binding=self._canonical_binding(
+                    envelope, observed_at=stale
+                ),
             )
 
     def test_trusted_check_publishes_success_for_exact_event_without_candidate_execution(self):

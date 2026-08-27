@@ -494,15 +494,19 @@ def _validate_external_receipt_envelope(
                 "snapshot_sha256"
             ],
         }
-        if expected_canonical_binding != expected:
+        observed_at = expected_canonical_binding.get("canonical_observed_at")
+        if {
+            key: value for key, value in expected_canonical_binding.items()
+            if key != "canonical_observed_at"
+        } != expected:
             raise MissionAdmissionError("canonical_admission_authority_changed")
-        captured = _parse_timestamp(receipt["collision_snapshot"]["captured_at"])
-        if captured > issued + __import__("datetime").timedelta(
+        observed = _parse_timestamp(observed_at)
+        if observed > issued + __import__("datetime").timedelta(
             seconds=RECEIPT_CLOCK_SKEW_SECONDS
-        ) or issued - captured > __import__("datetime").timedelta(
+        ) or issued - observed > __import__("datetime").timedelta(
             seconds=EXTERNAL_COLLISION_MAX_AGE_SECONDS
         ):
-            raise MissionAdmissionError("canonical_collision_snapshot_stale")
+            raise MissionAdmissionError("canonical_admission_observation_stale")
     if repository["repository"] != expected_repository:
         raise MissionAdmissionError("admission_repository_changed")
     if repository["base_sha"] != expected_base_sha:
@@ -550,7 +554,7 @@ def trusted_check_main(args, *, environ=None):
         if not isinstance(canonical_binding, dict) or set(canonical_binding) != {
             "mission_id", "root_mission_id", "generation",
             "authority_key_sha256", "latest_correction_digest",
-            "collision_snapshot_sha256",
+            "collision_snapshot_sha256", "canonical_observed_at",
         }:
             raise MissionAdmissionError("canonical_admission_binding_invalid")
         pull = event.get("pull_request") if isinstance(event, dict) else {}
