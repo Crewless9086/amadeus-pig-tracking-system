@@ -4,7 +4,8 @@ import json
 import unittest
 
 from modules.charlie.hermes_supervisor import (
-    CursorCloudV1, HermesBridgeError, HermesSupervisor, verify_slack_request,
+    CursorCloudV1, GitHubReadMonitor, HermesBridgeError, HermesSupervisor, SlackBot,
+    verify_slack_request,
 )
 from modules.charlie.mission_store import bind_external_supervisor_candidate
 from tests.test_charlie_mission_store import FakeConnection
@@ -51,7 +52,8 @@ class HermesSupervisorTests(unittest.TestCase):
         self.client = FakeClient(); self.cursor = CursorCloudV1("secret", client=self.client)
         self.canonical = Canonical(); self.supervisor = HermesSupervisor(
             self.canonical, self.cursor, owner_slack_user_id="UOWNER",
-            slack_signing_secret="s", clock=lambda: 0)
+            slack_signing_secret="s", slack_command_channel_id="C1",
+            slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE", clock=lambda: 0)
 
     def test_slack_signature_owner_and_duplicate_identity(self):
         body = b'{"ok":true}'; sig = "v0=" + hmac.new(b"s", b"v0:100:" + body, hashlib.sha256).hexdigest()
@@ -62,6 +64,8 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual(1, self.canonical.reconciled)
         with self.assertRaisesRegex(HermesBridgeError, "slack_owner_not_authorized"):
             self.supervisor.reconcile_slack_event({**event, "user": "UOTHER"})
+        with self.assertRaisesRegex(HermesBridgeError, "slack_channel_not_authorized"):
+            self.supervisor.reconcile_slack_event({**event, "event_id": "Ev3", "channel": "COTHER"})
 
     def test_no_admission_no_agent_and_valid_dispatch_is_idempotent(self):
         with self.assertRaisesRegex(HermesBridgeError, "valid_mission_admission_required"):
@@ -74,7 +78,9 @@ class HermesSupervisorTests(unittest.TestCase):
     def test_restart_duplicate_and_writer_capacity(self):
         mission = {"admission": admission(), "instruction": "Bounded work"}
         self.supervisor.dispatch_cursor(mission)
-        restarted = HermesSupervisor(self.canonical, self.cursor, owner_slack_user_id="UOWNER")
+        restarted = HermesSupervisor(self.canonical, self.cursor, owner_slack_user_id="UOWNER",
+                                     slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+                                     slack_approval_channel_id="CAPPROVE")
         self.assertEqual("existing_dispatch", restarted.dispatch_cursor(mission)["status"])
         self.canonical.dispatch = {}; self.canonical.running = 1
         with self.assertRaisesRegex(HermesBridgeError, "writer_capacity_reached"):
@@ -112,7 +118,27 @@ class HermesSupervisorTests(unittest.TestCase):
                                                          "approved_head_sha": "a" * 40,
                                                          "all_required_checks_pass": True, "independent_review": "APPROVE"})
         self.assertFalse(packet["merge_or_deploy_performed"])
-        self.assertEqual("owner-approvals", packet["channel"])
+        self.assertEqual("CAPPROVE", packet["channel"])
+
+    def test_slack_bot_posts_as_bot_and_preserves_thread(self):
+        client = FakeClient(); client.request = lambda method, path, payload=None, **kwargs: {"ok": True, "ts": "2"}
+        bot = SlackBot("xoxb-secret", client=client)
+        result = bot.post("C1", "Acknowledged", thread_ts="1.0")
+        self.assertTrue(result["ok"])
+
+    def test_github_discovers_pull_and_detects_stalled_ci(self):
+        class GitHubClient:
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls"): return {"items": [{"number": 9}]}
+                if path.endswith("/pulls/9"): return {"head": {"sha": "d" * 40, "ref": "feature"}}
+                if path.endswith("/check-runs"): return {"check_runs": [{"name": "charlie-core", "status": "queued", "conclusion": None, "started_at": "2026-08-28T00:00:00Z"}]}
+                if path.endswith("/reviews"): return {"items": [{"body": "SEND_BACK"}]}
+                return {}
+        monitor = GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=GitHubClient())
+        self.assertEqual(9, monitor.find_pull("feature"))
+        state = monitor.pull_state(9, now=2_000_000_000)
+        self.assertTrue(state["ci_stalled"])
+        self.assertEqual("SEND_BACK", state["independent_review"])
 
     def test_candidate_change_invalidates_approval(self):
         with self.assertRaisesRegex(HermesBridgeError, "owner_decision_not_ready"):
@@ -123,7 +149,9 @@ class HermesSupervisorTests(unittest.TestCase):
     def test_stalled_cursor_run_is_escalated_without_llm(self):
         self.client.agent_state = "ACTIVE"
         supervisor = HermesSupervisor(self.canonical, self.cursor,
-                                      owner_slack_user_id="UOWNER", clock=lambda: 2_000_000_000)
+                                      owner_slack_user_id="UOWNER", slack_command_channel_id="C1",
+                                      slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE",
+                                      clock=lambda: 2_000_000_000)
         result = supervisor.poll({"mission_id": "CMQ-X", "dispatch": {"cursor_agent_id": "bc-one"}})
         self.assertTrue(result["stalled"])
 

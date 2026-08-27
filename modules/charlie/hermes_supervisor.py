@@ -204,6 +204,26 @@ class CanonicalCharlieApi:
         return self.record_progress(mission_id, {"event": "cursor_followup", "cursor_agent_id": agent_id, "cursor_run_id": run_id})
 
 
+class SlackBot:
+    """One-way bot posting surface; it cannot impersonate the owner."""
+
+    def __init__(self, bot_token, *, client=None):
+        if not str(bot_token or "").startswith("xoxb-"):
+            raise HermesBridgeError("slack_bot_token_required")
+        self.client = client or JsonHttpClient("https://slack.com/api", str(bot_token))
+
+    def post(self, channel, text, *, thread_ts=""):
+        payload = {"channel": str(channel or ""), "text": str(text or "").strip()}
+        if thread_ts:
+            payload["thread_ts"] = str(thread_ts)
+        if not payload["channel"] or not payload["text"]:
+            raise HermesBridgeError("slack_post_incomplete")
+        result = self.client.request("POST", "/chat.postMessage", payload)
+        if result.get("ok") is not True:
+            raise HermesBridgeError("slack_post_failed")
+        return result
+
+
 class GitHubReadMonitor:
     """Unauthenticated/read-token optional GitHub observation; never writes."""
 
@@ -211,17 +231,35 @@ class GitHubReadMonitor:
         self.repository = str(repository or "").strip()
         self.client = client or JsonHttpClient("https://api.github.com")
 
-    def pull_state(self, number):
+    def find_pull(self, branch):
+        owner = self.repository.split("/", 1)[0]
+        result = self.client.request("GET", f"/repos/{self.repository}/pulls",
+                                     query={"state": "open", "head": f"{owner}:{branch}"})
+        items = list(result.get("items") or [])
+        if len(items) > 1:
+            raise HermesBridgeError("duplicate_open_pull_requests")
+        return int(items[0].get("number") or 0) if items else 0
+
+    def pull_state(self, number, *, now=None, stall_seconds=1800):
         pull = self.client.request("GET", f"/repos/{self.repository}/pulls/{int(number)}")
         head = str((pull.get("head") or {}).get("sha") or "")
         checks = self.client.request("GET", f"/repos/{self.repository}/commits/{head}/check-runs")
         reviews = self.client.request("GET", f"/repos/{self.repository}/pulls/{int(number)}/reviews")
         runs = list(checks.get("check_runs") or [])
         required = {run.get("name"): run.get("conclusion") for run in runs}
-        verdicts = [str(item.get("body") or "").strip().upper() for item in reviews.get("items") or reviews if isinstance(item, dict)] if isinstance(reviews, (dict, list)) else []
+        review_items = list(reviews.get("items") or [])
+        verdicts = [str(item.get("body") or "").strip().upper()
+                    for item in review_items if isinstance(item, dict)]
+        observed_at = float(time.time() if now is None else now)
+        stalled_checks = [str(run.get("name") or "") for run in runs
+                          if run.get("status") in {"queued", "in_progress"}
+                          and (started := _parse_epoch(run.get("started_at")))
+                          and observed_at - started > stall_seconds]
         return {"pr_number": int(number), "head_sha": head,
                 "branch": str((pull.get("head") or {}).get("ref") or ""),
-                "checks": required, "independent_review": "SEND_BACK" if "SEND_BACK" in verdicts else ("APPROVE" if "APPROVE" in verdicts else "WAIT")}
+                "checks": required, "stalled_checks": stalled_checks,
+                "ci_stalled": bool(stalled_checks),
+                "independent_review": "SEND_BACK" if "SEND_BACK" in verdicts else ("APPROVE" if "APPROVE" in verdicts else "WAIT")}
 
 
 class HermesSupervisor:
@@ -232,16 +270,25 @@ class HermesSupervisor:
     AUTOMATIC_DECOMPOSITION = False
 
     def __init__(self, canonical, cursor, *, owner_slack_user_id, slack_signing_secret="",
+                 slack_command_channel_id="", slack_build_channel_id="",
+                 slack_approval_channel_id="", slack_bot=None,
                  github=None, issuer=None, clock=time.time):
         self.canonical = canonical
         self.cursor = cursor
         self.owner_slack_user_id = str(owner_slack_user_id or "").strip()
         self.slack_signing_secret = str(slack_signing_secret or "")
+        self.slack_command_channel_id = str(slack_command_channel_id or "")
+        self.slack_build_channel_id = str(slack_build_channel_id or "")
+        self.slack_approval_channel_id = str(slack_approval_channel_id or "")
+        self.slack_bot = slack_bot
         self.github = github
         self.issuer = issuer
         self.clock = clock
         if not self.owner_slack_user_id:
             raise HermesBridgeError("slack_owner_id_required")
+        if not all((self.slack_command_channel_id, self.slack_build_channel_id,
+                    self.slack_approval_channel_id)):
+            raise HermesBridgeError("slack_channel_ids_required")
 
     def reconcile_slack_event(self, event):
         row = dict(event or {})
@@ -253,10 +300,15 @@ class HermesSupervisor:
         text = str(row.get("text") or "").strip()
         if not all((event_id, channel, thread, text)):
             raise HermesBridgeError("slack_event_incomplete")
-        return self.canonical.reconcile_mission({
+        if channel != self.slack_command_channel_id:
+            raise HermesBridgeError("slack_channel_not_authorized")
+        result = self.canonical.reconcile_mission({
             "source": "slack", "source_event_id": event_id, "owner_user_id": self.owner_slack_user_id,
             "channel_id": channel, "thread_ts": thread, "instruction": text,
         }, idempotency_key=f"slack:{event_id}")
+        if self.slack_bot:
+            self.slack_bot.post(channel, f"Acknowledged as canonical mission {result.get('mission_id')}.", thread_ts=thread)
+        return result
 
     def handle_slack_request(self, raw_body, headers, *, now=None):
         headers = {str(key).lower(): value for key, value in dict(headers or {}).items()}
@@ -309,9 +361,23 @@ class HermesSupervisor:
                   "cursor_agent_id": agent.get("id"), "cursor_run_id": run.get("id"),
                   "branches": branches}
         pr_number = int(dispatch.get("pr_number") or 0)
+        if self.github and not pr_number and len(branches) == 1:
+            pr_number = self.github.find_pull(branches[0])
         if self.github and pr_number:
-            result.update(self.github.pull_state(pr_number))
+            result.update(self.github.pull_state(pr_number, now=self.clock()))
+        if self.slack_bot and (result.get("stalled") or result.get("ci_stalled")):
+            self.slack_bot.post(self.slack_build_channel_id,
+                                f"Mission {row.get('mission_id')} requires attention: monitored work is stalled.")
         return self.canonical.record_progress(row.get("mission_id"), result)
+
+    def supervise_once(self, mission, *, correction="Address the independent SEND_BACK review."):
+        observed = self.poll(mission)
+        if observed.get("independent_review") == "SEND_BACK":
+            current = {**dict(mission or {}), "dispatch": {
+                **dict((mission or {}).get("dispatch") or {}),
+                "cursor_agent_id": observed.get("cursor_agent_id")}}
+            return self.route_send_back(current, "SEND_BACK", correction)
+        return observed
 
     def issue_admission(self, mission_id, expected_head_sha):
         if not self.issuer:
@@ -337,7 +403,7 @@ class HermesSupervisor:
                 or row.get("approved_head_sha") != row.get("head_sha")):
             raise HermesBridgeError("owner_decision_not_ready")
         return {"mission_id": row.get("mission_id"), "pr_number": row.get("pr_number"),
-                "head_sha": row.get("head_sha"), "channel": "owner-approvals",
+                "head_sha": row.get("head_sha"), "channel": self.slack_approval_channel_id,
                 "merge_or_deploy_performed": False}
 
     def tools(self):
@@ -347,6 +413,7 @@ class HermesSupervisor:
             "charlie_dispatch_cursor": self.dispatch_cursor,
             "charlie_get_mission_status": lambda value: self.canonical.get_mission(value["mission_id"]),
             "charlie_get_cursor_status": self.poll,
+            "charlie_supervise_once": self.supervise_once,
             "charlie_continue_cursor": lambda value: self.route_send_back(value["mission"], "SEND_BACK", value["correction"]),
             "charlie_prepare_owner_decision": self.prepare_owner_decision,
             "charlie_handle_slack_event": self.handle_slack_request,
