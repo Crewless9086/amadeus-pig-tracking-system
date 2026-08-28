@@ -385,5 +385,77 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual(201, rebound_status, rebound)
         self.assertEqual(new_head, state["review_packet"]["candidate_revision"])
 
+    def test_protected_admission_callback_is_signed_exact_and_replay_safe(self):
+        from modules.charlie import routes
+        app = Flask(__name__); app.register_blueprint(routes.charlie_bp)
+        mission_id, base, head = "CMQ-X", "a" * 40, "b" * 40
+        receipt = {"receipt_id": "MAR-" + "A" * 64, "content_sha256": "c" * 64,
+            "authority_key_sha256": "d" * 64,
+            "mission": {"mission_id": mission_id, "root_mission_id": "CMQ-ROOT", "generation": "g1"},
+            "repository": {"base_sha": base},
+            "candidate": {"head_sha": head, "branch": "cursor/cmq-x-g1",
+                "diff_sha256": "e" * 64, "changed_files": ["a.py"]},
+            "owner_instruction_chain": {"latest_correction_digest": "f" * 64},
+            "collision_snapshot": {"snapshot_sha256": "1" * 64},
+            "scope": {"allowed_files": ["a.py"], "forbidden_files": ["*"],
+                "allowed_effects": ["source_edit"], "forbidden_effects": ["merge", "deploy"]},
+            "required_tests": ["mission-admission"],
+            "operational_acceptance": {"requirements": ["stop before merge"]}}
+        identity = {"mission_id": mission_id, "root_mission_id": "CMQ-ROOT", "generation": "g1",
+            "base_sha": base, "head_sha": head, "changed_files": ["a.py"],
+            "allowed_files": ["a.py"], "forbidden_files": ["*"],
+            "allowed_effects": ["source_edit"], "forbidden_effects": ["merge", "deploy"]}
+        metadata = {"review_packet": {"pr_number": 9, "candidate_revision": head,
+                "candidate_diff_sha256": "e" * 64, "changed_files": ["a.py"]},
+            "mission_admission_contract": {"base_sha": base, "branch": "cursor/cmq-x-g1",
+                "allowed_files": ["a.py"]}, "mission_family": {"generation": "g1"}}
+        authority = {"latest_correction_digest": "f" * 64, "collision_snapshot_sha256": "1" * 64}
+        body = {"envelope": {"receipt": receipt}, "pr_number": 9}
+        with patch("scripts.charlie_mission_admission_guard._validate_external_receipt_envelope",
+                   return_value=(receipt, identity)), \
+             patch.object(routes, "get_mission", return_value=({"mission": {"metadata": metadata}}, 200)), \
+             patch.object(routes, "read_current_mission_admission_authority", return_value=(authority, 200)), \
+             patch.object(routes, "append_mission_admission_event",
+                          side_effect=[({"success": True, "status": "mission_admission_recorded"}, 201),
+                                       ({"success": True, "status": "exact_replay"}, 200)]) as writer:
+            first = app.test_client().post(f"/charlie/hermes/missions/{mission_id}/protected-admission", json=body)
+            second = app.test_client().post(f"/charlie/hermes/missions/{mission_id}/protected-admission", json=body)
+        self.assertEqual(201, first.status_code)
+        self.assertEqual(200, second.status_code)
+        self.assertEqual(2, writer.call_count)
+        with patch("scripts.charlie_mission_admission_guard._validate_external_receipt_envelope",
+                   side_effect=ValueError("external_admission_signature_invalid")), \
+             patch.object(routes, "append_mission_admission_event") as rejected_writer:
+            rejected = app.test_client().post(f"/charlie/hermes/missions/{mission_id}/protected-admission", json=body)
+        self.assertEqual(409, rejected.status_code)
+        rejected_writer.assert_not_called()
+        with patch("scripts.charlie_mission_admission_guard._validate_external_receipt_envelope",
+                   return_value=(receipt, {**identity, "head_sha": "9" * 40})), \
+             patch.object(routes, "get_mission", return_value=({"mission": {"metadata": metadata}}, 200)), \
+             patch.object(routes, "read_current_mission_admission_authority", return_value=(authority, 200)), \
+             patch.object(routes, "append_mission_admission_event") as mismatch_writer:
+            mismatch = app.test_client().post(f"/charlie/hermes/missions/{mission_id}/protected-admission", json=body)
+        self.assertEqual(409, mismatch.status_code)
+        mismatch_writer.assert_not_called()
+
+    def test_owner_notification_requires_current_approved_head_and_all_checks(self):
+        class Monitor:
+            def pull_state(self, number, now=None):
+                return {"pr_number": number, "head_sha": "d" * 40, "branch": "cursor/cmq-x-g1",
+                    "checks": {}, "all_required_checks_pass": True, "approved_head_sha": "d" * 40,
+                    "ci_stalled": False, "independent_review": "APPROVE"}
+        class Bot:
+            def __init__(self): self.posts = []
+            def post(self, channel, message, **kwargs): self.posts.append((channel, message)); return {"ok": True}
+        bot = Bot(); self.client.run_branches = []
+        supervisor = HermesSupervisor(self.canonical, self.cursor, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=Monitor(), slack_bot=bot, clock=lambda: 0)
+        result = supervisor.supervise_once({"mission_id": "CMQ-X", "dispatch": {
+            "cursor_agent_id": "bc-one", "pr_number": 9, "admission_requested_head": "d" * 40}})
+        self.assertEqual("d" * 40, result["owner_notification_head"])
+        self.assertEqual("CAPPROVE", bot.posts[0][0])
+        self.assertIn("No merge or deployment", bot.posts[0][1])
+
 
 if __name__ == "__main__": unittest.main()
