@@ -2255,20 +2255,14 @@ def read_current_mission_admission_authority(
         separators=(",", ":"),
     ).encode("utf-8")).hexdigest()
     active_claims = _mission_admission_active_claims(claim_rows)
-    active_claim_ids = {claim["mission_id"] for claim in active_claims}
-    collision_observed_at = max(
-        [
-            _iso(row[3])
-            for row in claim_rows
-            if (
-                len(row) > 3
-                and row[3] is not None
-                and str(row[0]) in active_claim_ids
-            )
-        ]
-        or [str(correction_event.get("recorded_at") or _iso(mission_row[2]))]
+    # The claims themselves carry every collision-relevant path/effect/lease
+    # value.  Mission ``updated_at`` also changes when the admission projection
+    # is recorded, so using it as snapshot time makes a receipt invalidate
+    # itself without any collision change.  Anchor time to the authenticated
+    # owner correction; the claims digest still changes whenever claims change.
+    collision_observed_at = _mission_admission_collision_observed_at(
+        correction_event, mission_row[2]
     )
-    collision_observed_at = collision_observed_at.replace("+00:00", "Z")
     collision_digest = hashlib.sha256(json.dumps(
         {
             "captured_at": collision_observed_at,
@@ -2292,6 +2286,11 @@ def read_current_mission_admission_authority(
         "collision_observed_at": collision_observed_at,
         "collision_snapshot_sha256": collision_digest,
     }, 200
+
+
+def _mission_admission_collision_observed_at(correction_event, fallback):
+    value = str((correction_event or {}).get("recorded_at") or _iso(fallback))
+    return value.replace("+00:00", "Z")
 
 
 def _transition_mission_admission(

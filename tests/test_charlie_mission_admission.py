@@ -24,6 +24,7 @@ from modules.charlie.mission_admission import (
     validate_mission_admission_receipt,
 )
 from modules.charlie.mission_store import (
+    _mission_admission_collision_observed_at,
     append_mission_admission_event,
     consume_mission_admission,
     invalidate_mission_admission_for_owner_correction,
@@ -1296,6 +1297,21 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
 
 
 class MissionAdmissionStoreTests(unittest.TestCase):
+    def test_collision_snapshot_time_is_stable_across_projection_updates(self):
+        correction = {"recorded_at": "2026-08-28T09:00:00Z"}
+        self.assertEqual(
+            _mission_admission_collision_observed_at(
+                correction, "2026-08-28T09:01:00+00:00"
+            ),
+            "2026-08-28T09:00:00Z",
+        )
+        self.assertEqual(
+            _mission_admission_collision_observed_at(
+                correction, "2026-08-28T10:01:00+00:00"
+            ),
+            "2026-08-28T09:00:00Z",
+        )
+
     def test_append_uses_existing_event_fabric_and_updates_projection_transactionally(self):
         cursor = AdmissionStoreCursor()
         connection = AdmissionStoreConnection(cursor)
