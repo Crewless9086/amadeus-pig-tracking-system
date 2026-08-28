@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-28 - Portable Cursor admission hook recovery
+
+- Replaced direct `python` hook commands with a no-shell Node launcher that
+  selects the supported Windows or Linux Python executable while preserving
+  exact stdin, output, environment and fail-closed guard status.
+- Added canonical one-time binding for the sole branch reported by an existing
+  Cursor Agent and an evented, pre-candidate-only base refresh restricted to
+  the reviewed disjoint infrastructure correction. Neither rail creates a new
+  mission, Agent, branch, PR, merge or deployment authority.
+
 ## 2026-08-28 - Hermes Slack deterministic routing containment
 
 - The native `charlie-builder` plugin now intercepts the exact authorised

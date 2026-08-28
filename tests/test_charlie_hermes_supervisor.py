@@ -12,9 +12,11 @@ from modules.charlie.hermes_supervisor import (
     verify_slack_request,
 )
 from modules.charlie.mission_store import (
+    bind_external_supervisor_branch,
     bind_external_supervisor_candidate,
     invalidate_external_candidate_admission,
     prepare_external_dispatch_authorization,
+    refresh_external_dispatch_authorization_base,
 )
 from tests.test_charlie_mission_store import FakeConnection
 
@@ -43,7 +45,7 @@ class FakeClient:
 
 
 class Canonical:
-    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False; self.admission_requests = []
+    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False; self.admission_requests = []; self.branch_bindings = []; self.base_refreshes = []
     def reconcile_mission(self, payload, idempotency_key):
         if idempotency_key not in self.intake:
             self.reconciled += 1; self.intake[idempotency_key] = {"mission_id": "CMQ-X", "key": idempotency_key}
@@ -74,6 +76,10 @@ class Canonical:
     def request_admission(self, mission_id, expected_head_sha, pr_number=0):
         self.admission_requests.append((mission_id, expected_head_sha, pr_number))
         return {"status": "protected_issuer_dispatched"}
+    def bind_actual_branch(self, mission_id, **value):
+        self.branch_bindings.append((mission_id, value)); return {"status": "external_branch_bound"}
+    def refresh_dispatch_base(self, mission_id, **value):
+        self.base_refreshes.append((mission_id, value)); return {"status": "base_current"}
 
 
 class HermesSupervisorTests(unittest.TestCase):
@@ -202,10 +208,73 @@ class HermesSupervisorTests(unittest.TestCase):
         supervisor = HermesSupervisor(self.canonical, self.cursor, owner_slack_user_id="UOWNER",
             slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
             slack_approval_channel_id="CAPPROVE", github=Monitor(), clock=lambda: 0)
+        self.canonical.dispatch_authorized = True
         self.client.run_branches = [{"name": "cursor/cmq-x-g1"}]
         result = supervisor.poll({"mission_id": "CMQ-X", "dispatch": {"cursor_agent_id": "bc-one"}})
         self.assertEqual([("CMQ-X", "d" * 40, 9)], self.canonical.admission_requests)
         self.assertEqual("d" * 40, result["admission_requested_head"])
+        self.assertEqual("cursor/cmq-x-g1", self.canonical.branch_bindings[0][1]["branches"][0]["name"])
+        self.assertEqual("a" * 40, self.canonical.base_refreshes[0][1]["old_base_sha"])
+
+    def test_actual_cursor_branch_binds_once_to_existing_agent(self):
+        state = {"generation": "g1", "cursor_agent_id": "bc-one", "cursor_run_id": "run-one"}
+        authorization = {"status": "valid", "generation": "g1", "branch": "cursor/requested",
+            "base_sha": "a" * 40, "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]}
+        connection = FakeConnection([({"external_supervisor_state": state,
+            "dispatch_authorization": authorization},)])
+        result, status = bind_external_supervisor_branch(
+            "CMQ-X", generation="g1", cursor_agent_id="bc-one", cursor_run_id="run-one",
+            repository="Crewless9086/amadeus-pig-tracking-system",
+            branches=[{"name": "cursor/actual"}], authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit-test", connect_factory=lambda _: connection)
+        self.assertEqual(201, status, result)
+        written = [params for sql, params in connection.cursor_instance.executed
+                   if "update public.charlie_missions" in sql][0]
+        metadata = json.loads(written["metadata"])
+        self.assertEqual("cursor/actual", metadata["external_supervisor_state"]["branch"])
+        self.assertEqual("cursor/requested", metadata["dispatch_authorization"]["requested_branch"])
+        self.assertEqual("cursor/actual", metadata["dispatch_authorization"]["branch"])
+
+    def test_branch_binding_fails_closed_for_zero_multiple_or_wrong_agent(self):
+        kwargs = dict(mission_id="CMQ-X", generation="g1", cursor_agent_id="bc-one",
+            cursor_run_id="run-one", repository="Crewless9086/amadeus-pig-tracking-system",
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit-test")
+        for branches in ([], ["one", "two"]):
+            result, status = bind_external_supervisor_branch(
+                branches=branches, connect_factory=lambda _: FakeConnection(), **kwargs)
+            self.assertEqual(409, status, result)
+        metadata = {"external_supervisor_state": {"generation": "g1",
+            "cursor_agent_id": "bc-other", "cursor_run_id": "run-one"},
+            "dispatch_authorization": {"status": "valid", "generation": "g1"}}
+        result, status = bind_external_supervisor_branch(branches=["one"],
+            connect_factory=lambda _: FakeConnection([(metadata,)]), **kwargs)
+        self.assertEqual(409, status, result)
+
+    def test_disjoint_infrastructure_base_refresh_is_evented_and_bounded(self):
+        problem = "Documentation pilot"
+        metadata = {"mission_vault": {"problem_statement": problem},
+            "external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-one"},
+            "dispatch_authorization": {"status": "valid", "generation": "g1", "base_sha": "a" * 40,
+                "owner_instruction_digest": hashlib.sha256(problem.encode()).hexdigest(),
+                "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]}}
+        connection = FakeConnection([(metadata,)])
+        result, status = refresh_external_dispatch_authorization_base(
+            "CMQ-X", generation="g1", cursor_agent_id="bc-one", old_base_sha="a" * 40,
+            new_base_sha="b" * 40, changed_files=[".cursor/hooks.json"],
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit-test",
+            connect_factory=lambda _: connection)
+        self.assertEqual(201, status, result)
+        written = [params for sql, params in connection.cursor_instance.executed
+                   if "update public.charlie_missions" in sql][0]
+        refreshed = json.loads(written["metadata"])["dispatch_authorization"]
+        self.assertEqual("b" * 40, refreshed["base_sha"])
+        self.assertTrue(refreshed["authorization_id"].startswith("PDA-"))
+        conflict, conflict_status = refresh_external_dispatch_authorization_base(
+            "CMQ-X", generation="g1", cursor_agent_id="bc-one", old_base_sha="a" * 40,
+            new_base_sha="b" * 40, changed_files=["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([(metadata,)]))
+        self.assertEqual(400, conflict_status, conflict)
 
     def test_installable_factory_requires_and_consumes_protected_config(self):
         env = {
