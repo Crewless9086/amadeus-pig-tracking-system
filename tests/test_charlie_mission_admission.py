@@ -40,6 +40,7 @@ from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_REQUIRED_TESTS,
     _is_read_only_shell,
     _compare_current_authority,
+    _build_exact_candidate_payload,
     _canonical_packet_digest,
     _replace_receipt_marker,
     _require_canonical_review_linkage,
@@ -970,6 +971,8 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                         "authority_key_sha256": envelope["receipt"]["authority_key_sha256"],
                         "latest_correction_digest": envelope["receipt"]["owner_instruction_chain"]["latest_correction_digest"],
                         "collision_snapshot_sha256": envelope["receipt"]["collision_snapshot"]["snapshot_sha256"],
+                        "receipt_id": envelope["receipt"]["receipt_id"],
+                        "content_sha256": envelope["receipt"]["content_sha256"],
                     },
                     "latest_correction_digest": envelope["receipt"]["owner_instruction_chain"]["latest_correction_digest"],
                     "collision_snapshot_sha256": envelope["receipt"]["collision_snapshot"]["snapshot_sha256"],
@@ -1028,6 +1031,8 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                 "authority_key_sha256": receipt["authority_key_sha256"],
                 "latest_correction_digest": receipt["owner_instruction_chain"]["latest_correction_digest"],
                 "collision_snapshot_sha256": receipt["collision_snapshot"]["snapshot_sha256"],
+                "receipt_id": receipt["receipt_id"],
+                "content_sha256": receipt["content_sha256"],
             },
             "latest_correction_digest": receipt["owner_instruction_chain"]["latest_correction_digest"],
             "collision_snapshot_sha256": receipt["collision_snapshot"]["snapshot_sha256"],
@@ -1110,7 +1115,7 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         args = SimpleNamespace(pull_request_number=1312, expected_head_sha=HEAD, event_output=None)
         import contextlib
         governance = [_governance_row()]
-        for expected_writes in (1, 1):
+        for iteration, expected_writes in enumerate((1, 1)):
             output = io.StringIO()
             with (
                 patch("scripts.charlie_mission_admission_guard._protected_database_url", return_value="postgres://readonly?sslmode=require"),
@@ -1128,10 +1133,93 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             ):
                 self.assertEqual(issue_pr_main(args, environ=environ), 0, output.getvalue())
             self.assertEqual(len(calls), expected_writes)
+            if iteration == 0:
+                encoded = calls[0].split("Mission-Admission-Receipt-B64: ", 1)[1].strip()
+                issued = json.loads(base64.b64decode(encoded))["receipt"]
+                authority["admission"]["receipt_id"] = issued["receipt_id"]
+                authority["admission"]["content_sha256"] = issued["content_sha256"]
         self.assertTrue(calls[0].startswith("Preserve this text."))
         self.assertEqual(calls[0].count("Mission-Admission-Receipt-B64:"), 1)
         self.assertNotIn("not-logged", output.getvalue())
         self.assertNotIn(base64.b64encode(seed).decode(), output.getvalue())
+
+    def test_recording_and_issuer_share_deterministic_payload_and_receipt_identity(self):
+        captured_at = "2026-08-28T09:00:00Z"
+        contract = {
+            "allowed_files": ALLOWED_FILES, "forbidden_files": ["app.py"],
+            "allowed_effects": ALLOWED_EFFECTS, "forbidden_effects": FORBIDDEN_EFFECTS,
+            "required_tests": sorted(BOOTSTRAP_REQUIRED_TESTS),
+            "operational_acceptance": ["Exact candidate CI passes."],
+        }
+        authority = {
+            "root_mission_id": "CMQ-20260813-05", "latest_correction_digest": "1" * 64,
+            "collision_observed_at": captured_at, "active_claims": [],
+            "collision_snapshot_sha256": collision_snapshot_digest(captured_at, []),
+            "admission": {"status": "valid", "mission_id": "CMQ-20260813-05",
+                          "root_mission_id": "CMQ-20260813-05", "generation": GENERATION,
+                          "base_sha": BASE, "head_sha": HEAD,
+                          "authority_key_sha256": hashlib.sha256(KEY).hexdigest(),
+                          "latest_correction_digest": "1" * 64,
+                          "collision_snapshot_sha256": collision_snapshot_digest(captured_at, [])},
+        }
+        kwargs = dict(
+            mission={"mission_id": "CMQ-20260813-05", "raw_text": "owner"},
+            family={"generation": GENERATION}, authority=authority, contract=contract,
+            base=BASE, head=HEAD, branch="cursor/mission-admission-test",
+            diff_sha256="2" * 64, changed_files=ALLOWED_FILES,
+            governance_reads=[_governance_row()],
+            repository="Crewless9086/amadeus-pig-tracking-system",
+        )
+        recorded_payload = _build_exact_candidate_payload(**kwargs)
+        issued_payload = _build_exact_candidate_payload(**copy.deepcopy(kwargs))
+        self.assertEqual(recorded_payload, issued_payload)
+        issued_at = "2026-08-28T09:00:00Z"
+        expires_at = "2026-08-29T09:00:00Z"
+        recorded = sign_mission_admission_receipt(recorded_payload, KEY, issued_at=issued_at, expires_at=expires_at)
+        issued = sign_mission_admission_receipt(issued_payload, KEY, issued_at=issued_at, expires_at=expires_at)
+        self.assertEqual(recorded["receipt_id"], issued["receipt_id"])
+        self.assertEqual(recorded["content_sha256"], issued["content_sha256"])
+
+    def test_current_authority_reports_field_specific_mismatch_reasons(self):
+        receipt = self._signed()["receipt"]
+        contract = {
+            "allowed_files": receipt["scope"]["allowed_files"],
+            "forbidden_files": receipt["scope"]["forbidden_files"],
+            "allowed_effects": receipt["scope"]["allowed_effects"],
+            "forbidden_effects": receipt["scope"]["forbidden_effects"],
+            "required_tests": receipt["required_tests"],
+            "operational_acceptance": receipt["operational_acceptance"]["requirements"],
+        }
+        authority = {
+            "mission_id": receipt["mission"]["mission_id"],
+            "root_mission_id": receipt["mission"]["root_mission_id"],
+            "latest_correction_digest": receipt["owner_instruction_chain"]["latest_correction_digest"],
+            "collision_snapshot_sha256": receipt["collision_snapshot"]["snapshot_sha256"],
+            "admission": {
+                "status": "valid", "mission_id": receipt["mission"]["mission_id"],
+                "root_mission_id": receipt["mission"]["root_mission_id"],
+                "generation": receipt["mission"]["generation"],
+                "base_sha": receipt["repository"]["base_sha"],
+                "head_sha": receipt["candidate"]["head_sha"],
+                "authority_key_sha256": receipt["authority_key_sha256"],
+                "latest_correction_digest": receipt["owner_instruction_chain"]["latest_correction_digest"],
+                "collision_snapshot_sha256": receipt["collision_snapshot"]["snapshot_sha256"],
+                "receipt_id": receipt["receipt_id"], "content_sha256": receipt["content_sha256"],
+            },
+        }
+        receipt["owner_instruction_chain"]["admission_packet_sha256"] = _canonical_packet_digest(authority, contract)
+        cases = (
+            ("receipt_content_mismatch", lambda r, a, c: a["admission"].update(receipt_id="MAR-" + "0" * 64)),
+            ("admission_packet_mismatch", lambda r, a, c: r["owner_instruction_chain"].update(admission_packet_sha256="0" * 64)),
+            ("scope_mismatch", lambda r, a, c: c.update(allowed_files=["other.py"])),
+            ("required_test_mismatch", lambda r, a, c: c.update(required_tests=["other"])),
+            ("operational_acceptance_mismatch", lambda r, a, c: c.update(operational_acceptance=["other"])),
+        )
+        for reason, mutate in cases:
+            candidate, current, expected = copy.deepcopy(receipt), copy.deepcopy(authority), copy.deepcopy(contract)
+            mutate(candidate, current, expected)
+            with self.subTest(reason=reason), self.assertRaisesRegex(MissionAdmissionError, reason):
+                _compare_current_authority(candidate, current, expected)
 
     def test_issuer_rejects_wrong_head_closed_pr_and_duplicate_markers(self):
         cases = (
