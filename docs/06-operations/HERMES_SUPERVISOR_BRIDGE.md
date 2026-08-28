@@ -15,6 +15,11 @@ Hermes receives only bounded tools declared in
 credential, raw database credential, signing authority, arbitrary shell, merge,
 deployment, customer, farm, payment, printer, irrigation, or hardware authority.
 
+The installable Hermes surface is the native `plugin.yaml` plus `register(ctx)`
+package in that directory. Install it from the immutable reviewed repository
+commit and enable only the `charlie-builder` plugin. Slack uses Hermes' built-in
+Bolt adapter in Socket Mode; it does not require a public webhook URL.
+
 ## Deterministic loop
 
 1. Verify the Slack signature, exact owner user ID, and exact `#charlie`
