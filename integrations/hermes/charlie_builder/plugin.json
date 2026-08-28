@@ -1,0 +1,35 @@
+{
+  "name": "charlie-builder",
+  "display_name": "CHARLIE-BUILDER",
+  "version": "0.1.0",
+  "entrypoint": "modules.charlie.hermes_supervisor:build_plugin_from_environment",
+  "slack_event_handler": "charlie_handle_slack_event",
+  "canonical_api_env": "CHARLIE_CANONICAL_API_URL",
+  "canonical_gateway_token_env": "CHARLIE_HERMES_GATEWAY_TOKEN",
+  "cursor_api_key_env": "CURSOR_API_KEY",
+  "github_read_token_env": "CHARLIE_GITHUB_READ_TOKEN",
+  "slack_signing_secret_env": "SLACK_SIGNING_SECRET",
+  "slack_bot_token_env": "SLACK_BOT_TOKEN",
+  "slack_owner_user_id_env": "CHARLIE_SLACK_OWNER_USER_ID",
+  "slack_command_channel_id_env": "CHARLIE_SLACK_CHARLIE_CHANNEL_ID",
+  "slack_build_channel_id_env": "CHARLIE_SLACK_BUILD_CHANNEL_ID",
+  "slack_approval_channel_id_env": "CHARLIE_SLACK_APPROVAL_CHANNEL_ID",
+  "idempotency_key": "<mission_id>:<generation>",
+  "maximum_running_writers": 1,
+  "maximum_failed_attempts": 2,
+  "automatic_decomposition": false,
+  "tools": [
+    "charlie_reconcile_mission",
+    "charlie_dispatch_cursor",
+    "charlie_get_mission_status",
+    "charlie_get_cursor_status",
+    "charlie_issue_admission",
+    "charlie_supervise_once",
+    "charlie_continue_cursor",
+    "charlie_prepare_owner_decision"
+  ],
+  "forbidden_capabilities": [
+    "arbitrary_shell", "raw_database", "github_write", "merge", "deploy",
+    "mission_admission_signing", "secret_readback"
+  ]
+}

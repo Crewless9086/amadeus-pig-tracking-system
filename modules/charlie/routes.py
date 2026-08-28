@@ -1,6 +1,10 @@
+import hmac
 import os
 import re
 import time
+import json
+import urllib.error
+import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -24,6 +28,9 @@ from modules.charlie.mission_store import (
     get_mission,
     get_mission_review_packet,
     append_mission_control_event,
+    bind_external_supervisor_candidate,
+    read_external_supervisor_state,
+    record_external_supervisor_state,
     list_missions,
     list_owner_work_missions,
     create_owner_execution_hold,
@@ -107,6 +114,15 @@ MISSION_CONTROL_CACHE = {"expires_at": 0.0, "packet": None}
 MISSION_CONTROL_CACHE_SECONDS = 15
 PRIVATE_DASHBOARD_CACHE = {"expires_at": 0.0, "packet": None}
 PRIVATE_DASHBOARD_CACHE_SECONDS = 15
+
+
+def _require_hermes_gateway_access():
+    expected = str(env_value("CHARLIE_HERMES_GATEWAY_TOKEN") or "").strip()
+    supplied = str(request.headers.get("Authorization") or "")
+    supplied = supplied[7:].strip() if supplied.startswith("Bearer ") else ""
+    if len(expected) < 32 or not hmac.compare_digest(expected, supplied):
+        return jsonify({"success": False, "status": "hermes_gateway_unauthorized"}), 403
+    return None
 
 
 @charlie_bp.route("/charlie/build-relay/policy", methods=["GET"])
@@ -1004,6 +1020,132 @@ def charlie_build_relay_mission_detail_route(mission_id):
         return denied
     result, status_code = get_mission(mission_id)
     return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/external-candidate", methods=["POST"])
+def charlie_external_supervisor_candidate_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "status": "external_candidate_binding_invalid"}), 400
+    result, status_code = bind_external_supervisor_candidate(
+        mission_id, payload, authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/hermes/missions", methods=["POST"])
+def charlie_hermes_mission_reconcile_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    required = {"source", "source_event_id", "owner_user_id", "channel_id",
+                "thread_ts", "instruction", "idempotency_key"}
+    if set(payload) != required or payload.get("source") != "slack":
+        return jsonify({"success": False, "status": "hermes_mission_payload_invalid"}), 400
+    instruction = str(payload.get("instruction") or "").strip()
+    result, status = record_mission({
+        "raw_text": instruction, "title": instruction[:160], "urgency": "P2",
+        "mission_type": "feature build", "approval_level": "LEVEL 3",
+        "metadata": {"external_supervisor_state": {
+            "slack_event_id": str(payload["source_event_id"]),
+            "slack_owner_user_id": str(payload["owner_user_id"]),
+            "slack_channel_id": str(payload["channel_id"]),
+            "slack_thread_ts": str(payload["thread_ts"]),
+        }},
+    }, source_context={"source": "slack", "source_message_id": str(payload["source_event_id"]),
+                       "telegram_user_id": str(payload["owner_user_id"]),
+                       "telegram_chat_id": str(payload["channel_id"])})
+    mission_id = result.get("mission_id")
+    return jsonify({"success": status < 400, **result, "mission_id": mission_id}), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>", methods=["GET"])
+def charlie_hermes_mission_status_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = get_mission(mission_id)
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/progress", methods=["POST"])
+def charlie_hermes_mission_progress_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = record_external_supervisor_state(
+        mission_id, request.get_json(silent=True) or {},
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/admission", methods=["POST"])
+def charlie_hermes_mission_admission_route(mission_id):
+    """Trigger only the protected-main issuer for the canonical bound candidate."""
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    supplied = request.get_json(silent=True) or {}
+    if set(supplied) != {"expected_head_sha"} or not re.fullmatch(r"[0-9a-f]{40}", str(supplied.get("expected_head_sha") or "")):
+        return jsonify({"success": False, "status": "issuer_request_invalid"}), 400
+    loaded, status = get_mission(mission_id)
+    if status >= 400:
+        return jsonify(loaded), status
+    metadata = dict(((loaded.get("mission") or {}).get("metadata") or {}))
+    packet = dict(metadata.get("review_packet") or {})
+    expected_head = str(supplied["expected_head_sha"])
+    if packet.get("candidate_revision") != expected_head or not int(packet.get("pr_number") or 0):
+        return jsonify({"success": False, "status": "canonical_candidate_not_bound"}), 409
+    token = str(env_value("CHARLIE_ADMISSION_ISSUER_GITHUB_TOKEN") or "").strip()
+    if len(token) < 32:
+        return jsonify({"success": False, "status": "protected_issuer_unavailable"}), 503
+    body = json.dumps({"ref": "main", "inputs": {
+        "pull_request_number": str(int(packet["pr_number"])), "expected_head_sha": expected_head,
+    }}, separators=(",", ":")).encode()
+    issuer_request = urllib.request.Request(
+        "https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/actions/workflows/mission-admission-issuer.yml/dispatches",
+        data=body, method="POST", headers={"Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json", "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28"})
+    try:
+        with urllib.request.urlopen(issuer_request, timeout=15) as response:
+            if response.status != 204:
+                raise OSError("unexpected_status")
+    except (urllib.error.URLError, OSError):
+        return jsonify({"success": False, "status": "protected_issuer_unavailable"}), 503
+    return jsonify({"success": True, "status": "protected_issuer_dispatched",
+                    "mission_id": mission_id, "pr_number": int(packet["pr_number"]),
+                    "expected_head_sha": expected_head}), 202
+
+
+@charlie_bp.route("/charlie/hermes/dispatch", methods=["GET", "POST"])
+def charlie_hermes_dispatch_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    if request.method == "GET":
+        result, status = read_external_supervisor_state(request.args.get("idempotency_key", ""))
+        return jsonify(result), status
+    payload = request.get_json(silent=True) or {}
+    mission_id = str(payload.get("mission_id") or "")
+    state = {key: value for key, value in payload.items() if key != "mission_id"}
+    result, status = record_external_supervisor_state(
+        mission_id, state, authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/writers", methods=["GET"])
+def charlie_hermes_writer_count_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    missions, status = list_missions(status="in_progress", limit=100, compact=False)
+    running = sum(1 for row in missions.get("missions") or []
+                  if ((row.get("metadata") or {}).get("external_supervisor_state") or {}).get("agent_state") == "ACTIVE")
+    return jsonify({"success": status < 400, "running": running}), status
 
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/outcome-handover", methods=["POST"])
