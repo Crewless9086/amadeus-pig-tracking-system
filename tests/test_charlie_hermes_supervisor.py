@@ -11,7 +11,10 @@ from modules.charlie.hermes_supervisor import (
     HermesSupervisor, SlackBot, build_plugin_from_environment,
     verify_slack_request,
 )
-from modules.charlie.mission_store import bind_external_supervisor_candidate
+from modules.charlie.mission_store import (
+    bind_external_supervisor_candidate,
+    prepare_external_dispatch_authorization,
+)
 from tests.test_charlie_mission_store import FakeConnection
 
 
@@ -39,7 +42,7 @@ class FakeClient:
 
 
 class Canonical:
-    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True
+    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False
     def reconcile_mission(self, payload, idempotency_key):
         if idempotency_key not in self.intake:
             self.reconciled += 1; self.intake[idempotency_key] = {"mission_id": "CMQ-X", "key": idempotency_key}
@@ -47,12 +50,21 @@ class Canonical:
     def get_dispatch(self, key): return self.dispatch.get(key)
     def get_mission(self, mission_id):
         current = admission()
+        pre = {"status": "valid", "mission_id": mission_id, "generation": "g1",
+            "authorization_id": "PDA-" + "A" * 64,
+            "repository": "Crewless9086/amadeus-pig-tracking-system", "base_sha": "a" * 40,
+            "branch": "cursor/cmq-x-g1", "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_effects": ["create_feature_branch"], "owner_instruction_digest": "b" * 64}
         return {"mission": {"mission_id": mission_id, "raw_text": "Canonical bounded work", "metadata": {
             "mission_admission": {**current, "latest_correction_digest": current["owner_instruction_digest"],
                                   "status": "valid" if self.admitted else "revoked"},
             "mission_admission_contract": {"generation": current["generation"], "base_sha": current["base_sha"],
                 "allowed_files": current["allowed_files"], "allowed_effects": current["allowed_effects"],
-                "operational_acceptance": current["acceptance_requirements"]}}}}
+                "operational_acceptance": current["acceptance_requirements"]},
+            "dispatch_authorization": pre if self.dispatch_authorized else {}}}}
+    def prepare_dispatch_authorization(self, mission_id):
+        self.dispatch_authorized = True
+        return self.get_mission(mission_id)["mission"]["metadata"]["dispatch_authorization"]
     def running_writer_count(self): return self.running
     def record_dispatch(self, key, value): self.dispatch[key] = value; return value
     def record_progress(self, mission_id, value): return value
@@ -82,14 +94,18 @@ class HermesSupervisorTests(unittest.TestCase):
 
     def test_no_admission_no_agent_and_valid_dispatch_is_idempotent(self):
         self.canonical.admitted = False
-        with self.assertRaisesRegex(HermesBridgeError, "current_canonical_admission_required"):
+        with self.assertRaisesRegex(HermesBridgeError, "current_dispatch_authorization_required"):
             self.supervisor.dispatch_cursor({"mission_id": "CMQ-X"})
+        self.canonical.prepare_dispatch_authorization("CMQ-X")
+        pre = self.supervisor.dispatch_cursor({"mission_id": "CMQ-X"})
+        self.assertEqual("bc-one", pre["cursor_agent_id"])
+        self.canonical.dispatch = {}
         self.canonical.admitted = True
         mission = {"mission_id": "CMQ-X", "instruction": "Forged work", "admission": {"receipt_id": "MAR-FAKE"}}
         one = self.supervisor.dispatch_cursor(mission); two = self.supervisor.dispatch_cursor(mission)
         self.assertEqual(one["cursor_agent_id"], two["cursor_agent_id"])
-        self.assertEqual(1, len([call for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")]))
-        create_payload = [call[2] for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")][0]
+        self.assertEqual(2, len([call for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")]))
+        create_payload = [call[2] for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")][-1]
         self.assertIn("Canonical bounded work", create_payload["prompt"]["text"])
         self.assertNotIn("Forged work", create_payload["prompt"]["text"])
 
@@ -217,6 +233,44 @@ class HermesSupervisorTests(unittest.TestCase):
                 json={"expected_head_sha": "d" * 40})
         self.assertEqual(202, response.status_code)
         self.assertEqual("1313", captured["body"]["inputs"]["pull_request_number"])
+
+    def test_slack_reconcile_is_explicitly_charlie_software_plane(self):
+        from modules.charlie import routes
+        app = Flask(__name__); app.register_blueprint(routes.charlie_bp)
+        captured = {}
+        def record(mission, source_context=None):
+            captured.update(mission)
+            return {"mission_id": "CHARLIE-MISSION-ONE"}, 201
+        payload = {"source": "slack", "source_event_id": "1787929390.145099",
+            "owner_user_id": "UOWNER", "channel_id": "C1", "thread_ts": "1787929390.145099",
+            "instruction": "Documentation pilot; do not merge or deploy.",
+            "idempotency_key": "slack:C1:1787929390.145099"}
+        with patch.object(routes, "env_value", return_value="g" * 32), \
+             patch.object(routes, "record_mission", side_effect=record):
+            response = app.test_client().post("/charlie/hermes/missions",
+                headers={"Authorization": "Bearer " + "g" * 32}, json=payload)
+        self.assertEqual(201, response.status_code)
+        self.assertEqual("system improvement", captured["mission_type"])
+        self.assertEqual({"plane": "software", "coordinator": "CHARLIE", "executor": "Cursor Cloud",
+            "classification_source": "authenticated_slack_ingress"}, captured["metadata"]["mission_plane"])
+
+    def test_pre_dispatch_authorization_is_bounded_and_replay_safe(self):
+        state = {"slack_event_id": "1787929390.145099", "slack_owner_user_id": "UOWNER",
+            "slack_channel_id": "C1", "generation": "slack-1787929390.145099-g1"}
+        metadata = {"external_supervisor_state": state,
+            "mission_vault": {"problem_statement": "Documentation pilot"}}
+        connection = FakeConnection([("new", "slack", metadata)])
+        result, status = prepare_external_dispatch_authorization(
+            "CHARLIE-MISSION-13B47938FF65E2C1", authenticated_principal="hermes:charlie-builder",
+            repository="Crewless9086/amadeus-pig-tracking-system", base_sha="a" * 40,
+            owner_user_id="UOWNER", channel_id="C1", database_url="postgres://unit-test",
+            connect_factory=lambda _: connection)
+        self.assertEqual(201, status)
+        authorization = result["authorization"]
+        self.assertEqual(["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"], authorization["allowed_files"])
+        self.assertIn("merge", authorization["forbidden_effects"])
+        self.assertIn("deploy", authorization["forbidden_effects"])
+        self.assertTrue(authorization["authorization_id"].startswith("PDA-"))
 
     def test_candidate_change_invalidates_approval(self):
         with self.assertRaisesRegex(HermesBridgeError, "owner_decision_not_ready"):

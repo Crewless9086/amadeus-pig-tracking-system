@@ -1840,6 +1840,84 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
             "mission_id": mission_id, "dispatch": merged}, 201
 
 
+def prepare_external_dispatch_authorization(
+    mission_id, *, authenticated_principal, repository, base_sha,
+    owner_user_id, channel_id, database_url=None, connect_factory=None,
+):
+    """Create the narrow, replay-safe authorization that may precede a PR."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    if (not mission_id or principal != "hermes:charlie-builder"
+            or repository != "Crewless9086/amadeus-pig-tracking-system"
+            or not re.fullmatch(r"[0-9a-f]{40}", str(base_sha or ""))):
+        return {"success": False, "status": "dispatch_authorization_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select status,source,coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[2] or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                if (row[1] != "slack" or state.get("slack_owner_user_id") != owner_user_id
+                        or state.get("slack_channel_id") != channel_id):
+                    return {"success": False, "status": "dispatch_owner_context_invalid"}, 403
+                event_id = str(state.get("slack_event_id") or "").strip()
+                generation = str(state.get("generation") or f"slack-{event_id}-g1")
+                if not event_id:
+                    return {"success": False, "status": "dispatch_event_identity_missing"}, 409
+                contract = {
+                    "version": "charlie_pre_dispatch_authorization_v1",
+                    "mission_id": mission_id,
+                    "generation": generation,
+                    "repository": repository,
+                    "base_sha": base_sha,
+                    "branch": "cursor/" + mission_id.lower() + "-g1",
+                    "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+                    "allowed_effects": ["create_feature_branch", "edit_allowed_documentation",
+                        "run_tests", "commit_feature_branch", "push_feature_branch",
+                        "open_or_update_draft_pr", "request_independent_review"],
+                    "forbidden_effects": ["edit_other_file", "merge", "deploy", "credential_change",
+                        "branch_protection_change", "render_configuration_change",
+                        "supabase_configuration_change", "customer_action", "farm_action",
+                        "payment_action", "hardware_action"],
+                    "owner_instruction_digest": hashlib.sha256(
+                        str(metadata.get("mission_vault", {}).get("problem_statement") or "").encode()
+                    ).hexdigest(),
+                }
+                identity = "PDA-" + hashlib.sha256(json.dumps(
+                    contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                authorization = {**contract, "authorization_id": identity, "status": "valid"}
+                existing = metadata.get("dispatch_authorization")
+                if existing == authorization:
+                    return {"success": True, "status": "exact_replay",
+                            "authorization": existing}, 200
+                if isinstance(existing, dict) and existing:
+                    return {"success": False, "status": "dispatch_authorization_conflict"}, 409
+                metadata["dispatch_authorization"] = authorization
+                metadata["mission_plane"] = {"plane": "software", "coordinator": "CHARLIE",
+                    "executor": "Cursor Cloud", "classification_source": "authenticated_slack_ingress"}
+                cursor.execute("""update public.charlie_missions set status='in_progress',
+                    mission_type='system improvement',metadata_json=%(metadata)s::jsonb,updated_at=now()
+                    where mission_id=%(mission_id)s""",
+                    {"mission_id": mission_id, "metadata": json.dumps(metadata, sort_keys=True)})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Bounded pre-dispatch authorization recorded.",
+                    {"authorization_id": identity, "generation": generation,
+                     "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "dispatch_authorization_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "dispatch_authorization_recorded",
+            "mission_id": mission_id, "authorization": authorization}, 201
+
+
 def read_external_supervisor_state(idempotency_key="", *, database_url=None, connect_factory=None):
     key = _clean_text(idempotency_key, 300)
     database_url = _database_url(database_url)

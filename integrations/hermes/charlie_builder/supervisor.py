@@ -74,6 +74,7 @@ class CursorAdmission:
     allowed_effects: tuple[str, ...]
     owner_instruction_digest: str
     acceptance_requirements: tuple[str, ...]
+    branch: str = ""
 
     @classmethod
     def from_mapping(cls, value):
@@ -81,7 +82,7 @@ class CursorAdmission:
         required = ("mission_id", "generation", "receipt_id", "repository", "base_sha", "owner_instruction_digest")
         if any(not str(row.get(key) or "").strip() for key in required):
             raise HermesBridgeError("valid_mission_admission_required")
-        if not str(row["receipt_id"]).startswith("MAR-") or len(str(row["base_sha"])) != 40:
+        if not str(row["receipt_id"]).startswith(("MAR-", "PDA-")) or len(str(row["base_sha"])) != 40:
             raise HermesBridgeError("valid_mission_admission_required")
         files = tuple(sorted({str(item).strip() for item in row.get("allowed_files") or [] if str(item).strip()}))
         effects = tuple(sorted({str(item).strip() for item in row.get("allowed_effects") or [] if str(item).strip()}))
@@ -89,7 +90,8 @@ class CursorAdmission:
         if not files or not effects or not acceptance:
             raise HermesBridgeError("valid_mission_admission_required")
         return cls(*(str(row[key]).strip() for key in required[:5]), files, effects,
-                   str(row["owner_instruction_digest"]).strip(), acceptance)
+                   str(row["owner_instruction_digest"]).strip(), acceptance,
+                   str(row.get("branch") or "").strip())
 
 
 class JsonHttpClient:
@@ -218,6 +220,10 @@ class CanonicalCharlieApi:
     def record_progress(self, mission_id, value):
         result = self.client.request("POST", f"/charlie/hermes/missions/{mission_id}/progress", value)
         return result.get("dispatch") or result
+
+    def prepare_dispatch_authorization(self, mission_id):
+        result = self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/dispatch-authorization", {})
+        return result.get("authorization") or result
 
     def record_followup(self, mission_id, agent_id, run_id, failed_attempts):
         return self.record_progress(mission_id, {"event": "cursor_followup", "cursor_agent_id": agent_id,
@@ -367,18 +373,28 @@ class HermesSupervisor:
         metadata = dict(canonical.get("metadata") or {})
         current = dict(metadata.get("mission_admission") or {})
         contract = dict(metadata.get("mission_admission_contract") or {})
-        if (canonical.get("mission_id") != mission_id or current.get("status") != "valid"
-                or current.get("mission_id") != mission_id
-                or current.get("generation") != contract.get("generation")):
-            raise HermesBridgeError("current_canonical_admission_required")
+        dispatch_authorization = dict(metadata.get("dispatch_authorization") or {})
+        if current.get("status") == "valid" and current.get("mission_id") == mission_id:
+            authority_id = current.get("receipt_id")
+        elif (dispatch_authorization.get("status") == "valid"
+                and dispatch_authorization.get("mission_id") == mission_id):
+            current = dispatch_authorization
+            contract = dispatch_authorization
+            authority_id = dispatch_authorization.get("authorization_id")
+        else:
+            raise HermesBridgeError("current_dispatch_authorization_required")
+        if canonical.get("mission_id") != mission_id or current.get("generation") != contract.get("generation"):
+            raise HermesBridgeError("current_dispatch_authorization_required")
         admission = CursorAdmission.from_mapping({
             "mission_id": mission_id, "generation": current.get("generation"),
-            "receipt_id": current.get("receipt_id"),
-            "repository": "Crewless9086/amadeus-pig-tracking-system",
+            "receipt_id": authority_id,
+            "repository": contract.get("repository") or "Crewless9086/amadeus-pig-tracking-system",
             "base_sha": contract.get("base_sha"), "allowed_files": contract.get("allowed_files"),
             "allowed_effects": contract.get("allowed_effects"),
-            "owner_instruction_digest": current.get("latest_correction_digest"),
-            "acceptance_requirements": contract.get("operational_acceptance"),
+            "owner_instruction_digest": current.get("latest_correction_digest") or contract.get("owner_instruction_digest"),
+            "acceptance_requirements": contract.get("operational_acceptance") or [
+                "Open one draft PR; exact-candidate admission and review follow before merge."],
+            "branch": contract.get("branch"),
         })
         key = mission_idempotency_key(admission.mission_id, admission.generation)
         existing = self.canonical.get_dispatch(key)
@@ -481,9 +497,10 @@ class HermesSupervisor:
     @staticmethod
     def _cursor_prompt(mission, admission):
         return "\n".join([
-            "Implement this already-admitted CHARLIE mission. Do not merge or deploy.",
+            "Implement this bounded pre-dispatch-authorized CHARLIE mission. Do not merge or deploy.",
             f"Mission: {admission.mission_id}", f"Generation: {admission.generation}",
-            f"Admission: {admission.receipt_id}", f"Owner instruction digest: {admission.owner_instruction_digest}",
+            f"Authorization: {admission.receipt_id}", f"Owner instruction digest: {admission.owner_instruction_digest}",
+            f"Use deterministic branch: {admission.branch}",
             "Allowed files: " + ", ".join(admission.allowed_files),
             "Allowed effects: " + ", ".join(admission.allowed_effects),
             "Acceptance: " + "; ".join(admission.acceptance_requirements),

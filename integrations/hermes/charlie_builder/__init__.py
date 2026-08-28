@@ -139,6 +139,7 @@ def register(ctx):
             mission_id = str(reconciled.get("mission_id") or "").strip()
             if not mission_id:
                 raise RuntimeError("canonical_mission_unverified")
+            supervisor.canonical.prepare_dispatch_authorization(mission_id)
             supervisor.dispatch_cursor({"mission_id": mission_id})
         except Exception as exc:
             reason = _bounded_reason(exc)

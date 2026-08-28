@@ -31,6 +31,7 @@ from modules.charlie.mission_store import (
     bind_external_supervisor_candidate,
     read_external_supervisor_state,
     record_external_supervisor_state,
+    prepare_external_dispatch_authorization,
     list_missions,
     list_owner_work_missions,
     create_owner_execution_hold,
@@ -1048,8 +1049,11 @@ def charlie_hermes_mission_reconcile_route():
     instruction = str(payload.get("instruction") or "").strip()
     result, status = record_mission({
         "raw_text": instruction, "title": instruction[:160], "urgency": "P2",
-        "mission_type": "feature build", "approval_level": "LEVEL 3",
-        "metadata": {"external_supervisor_state": {
+        "mission_type": "system improvement", "approval_level": "LEVEL 3",
+        "metadata": {"mission_plane": {
+            "plane": "software", "coordinator": "CHARLIE", "executor": "Cursor Cloud",
+            "classification_source": "authenticated_slack_ingress",
+        }, "external_supervisor_state": {
             "slack_event_id": str(payload["source_event_id"]),
             "slack_owner_user_id": str(payload["owner_user_id"]),
             "slack_channel_id": str(payload["channel_id"]),
@@ -1079,6 +1083,25 @@ def charlie_hermes_mission_progress_route(mission_id):
     result, status = record_external_supervisor_state(
         mission_id, request.get_json(silent=True) or {},
         authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/dispatch-authorization", methods=["POST"])
+def charlie_hermes_dispatch_authorization_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    if (request.get_json(silent=True) or {}) != {}:
+        return jsonify({"success": False, "status": "dispatch_authorization_input_forbidden"}), 400
+    base_sha = str(env_value("RENDER_GIT_COMMIT") or "")
+    result, status = prepare_external_dispatch_authorization(
+        mission_id,
+        authenticated_principal="hermes:charlie-builder",
+        repository="Crewless9086/amadeus-pig-tracking-system",
+        base_sha=base_sha,
+        owner_user_id=str(env_value("CHARLIE_SLACK_OWNER_USER_ID") or ""),
+        channel_id=str(env_value("CHARLIE_SLACK_CHARLIE_CHANNEL_ID") or ""),
+    )
     return jsonify(result), status
 
 
