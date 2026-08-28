@@ -26,14 +26,35 @@ class HermesNativePluginTests(unittest.TestCase):
             "charlie_prepare_owner_decision": lambda value: value,
         }
         context = Context()
-        with patch.object(module, "build_plugin_from_environment", return_value=fake):
+        with patch.object(module, "build_plugin_from_environment", return_value=fake) as factory:
             module.register(context)
+        factory.assert_called_once_with(validate_live=False)
         self.assertEqual(set(fake), set(context.tools))
         self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
         for name, registered in context.tools.items():
             self.assertEqual(name, registered["schema"]["name"])
             self.assertFalse(registered["schema"]["parameters"]["additionalProperties"])
         self.assertTrue(Path("integrations/hermes/charlie_builder/supervisor.py").is_file())
+
+    def test_registration_never_requires_live_transports(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        fake = {name: (lambda value: value) for name in (
+            "charlie_reconcile_mission", "charlie_dispatch_cursor",
+            "charlie_get_mission_status", "charlie_get_cursor_status",
+            "charlie_supervise_once", "charlie_continue_cursor",
+            "charlie_issue_admission", "charlie_prepare_owner_decision")}
+        context = Context()
+
+        def build(*, validate_live):
+            if validate_live:
+                raise RuntimeError("external transport was contacted")
+            return fake
+
+        with patch.object(module, "build_plugin_from_environment", side_effect=build):
+            module.register(context)
+
+        self.assertEqual(set(fake), set(context.tools))
+        self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
 
     def test_wrappers_use_canonical_state_and_json_results(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")
