@@ -23,6 +23,22 @@ class HermesBridgeError(RuntimeError):
     """Stable fail-closed bridge error."""
 
 
+_PLACEHOLDER_VALUES = {
+    "changeme", "change-me", "dummy", "example", "none", "null",
+    "placeholder", "replace-me", "todo", "unset", "your-token-here",
+}
+
+
+def _protected_value(environ, name, *, required=True):
+    value = str((environ or {}).get(name) or "").strip()
+    folded = value.lower().replace("_", "-").replace(" ", "-")
+    if value and (folded in _PLACEHOLDER_VALUES or "placeholder" in folded):
+        raise HermesBridgeError(f"{name.lower()}_placeholder_rejected")
+    if required and not value:
+        raise HermesBridgeError("hermes_protected_configuration_incomplete")
+    return value
+
+
 def verify_slack_request(signing_secret, timestamp, raw_body, signature, *, now=None, tolerance=300):
     secret = str(signing_secret or "").encode()
     body = raw_body if isinstance(raw_body, bytes) else str(raw_body or "").encode()
@@ -270,6 +286,14 @@ class GitHubReadMonitor:
                 "independent_review": "SEND_BACK" if "SEND_BACK" in verdicts else ("APPROVE" if "APPROVE" in verdicts else "WAIT")}
 
 
+class PluginTools(dict):
+    """Hermes tool mapping with its non-model-visible supervisor runtime."""
+
+    def __init__(self, supervisor):
+        super().__init__(supervisor.tools())
+        self.supervisor = supervisor
+
+
 class HermesSupervisor:
     """Low-cost deterministic supervisor over canonical CHARLIE APIs."""
 
@@ -484,7 +508,7 @@ def _parse_epoch(value):
         return 0
 
 
-def build_plugin_from_environment(environ=None, *, opener=None):
+def build_plugin_from_environment(environ=None, *, opener=None, validate_live=False):
     """Construct the installable Hermes package exclusively from protected config."""
     env = dict(os.environ if environ is None else environ)
     required = (
@@ -492,26 +516,39 @@ def build_plugin_from_environment(environ=None, *, opener=None):
         "SLACK_SIGNING_SECRET", "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
         "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS",
         "CHARLIE_SLACK_CHARLIE_CHANNEL_ID", "CHARLIE_SLACK_BUILD_CHANNEL_ID",
-        "CHARLIE_SLACK_APPROVAL_CHANNEL_ID", "CHARLIE_GITHUB_READ_TOKEN",
+        "CHARLIE_SLACK_APPROVALS_CHANNEL_ID",
     )
-    if any(not str(env.get(key) or "").strip() for key in required):
-        raise HermesBridgeError("hermes_protected_configuration_incomplete")
-    allowed_users = {item.strip() for item in str(env["SLACK_ALLOWED_USERS"]).split(",") if item.strip()}
-    if env["CHARLIE_SLACK_OWNER_USER_ID"] not in allowed_users:
+    values = {key: _protected_value(env, key) for key in required}
+    github_token = _protected_value(env, "CHARLIE_GITHUB_READ_TOKEN", required=False)
+    if any(str(env.get(name) or "").strip() for name in (
+            "CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")):
+        raise HermesBridgeError("github_write_credential_forbidden")
+    allowed_users = {item.strip() for item in values["SLACK_ALLOWED_USERS"].split(",") if item.strip()}
+    if values["CHARLIE_SLACK_OWNER_USER_ID"] not in allowed_users:
         raise HermesBridgeError("slack_owner_missing_from_gateway_allowlist")
-    canonical_client = JsonHttpClient(env["CHARLIE_CANONICAL_API_URL"], env["CHARLIE_HERMES_GATEWAY_TOKEN"], opener=opener)
-    cursor_client = JsonHttpClient("https://api.cursor.com", env["CURSOR_API_KEY"], opener=opener)
-    slack_client = JsonHttpClient("https://slack.com/api", env["SLACK_BOT_TOKEN"], opener=opener)
-    github_client = JsonHttpClient("https://api.github.com", env["CHARLIE_GITHUB_READ_TOKEN"], opener=opener)
+    canonical_client = JsonHttpClient(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"], opener=opener)
+    cursor_client = JsonHttpClient("https://api.cursor.com", values["CURSOR_API_KEY"], opener=opener)
+    slack_client = JsonHttpClient("https://slack.com/api", values["SLACK_BOT_TOKEN"], opener=opener)
+    github_client = JsonHttpClient("https://api.github.com", github_token, opener=opener)
     supervisor = HermesSupervisor(
-        CanonicalCharlieApi(env["CHARLIE_CANONICAL_API_URL"], env["CHARLIE_HERMES_GATEWAY_TOKEN"], client=canonical_client),
-        CursorCloudV1(env["CURSOR_API_KEY"], client=cursor_client),
-        owner_slack_user_id=env["CHARLIE_SLACK_OWNER_USER_ID"],
-        slack_signing_secret=env["SLACK_SIGNING_SECRET"],
-        slack_command_channel_id=env["CHARLIE_SLACK_CHARLIE_CHANNEL_ID"],
-        slack_build_channel_id=env["CHARLIE_SLACK_BUILD_CHANNEL_ID"],
-        slack_approval_channel_id=env["CHARLIE_SLACK_APPROVAL_CHANNEL_ID"],
-        slack_bot=SlackBot(env["SLACK_BOT_TOKEN"], client=slack_client),
+        CanonicalCharlieApi(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"], client=canonical_client),
+        CursorCloudV1(values["CURSOR_API_KEY"], client=cursor_client),
+        owner_slack_user_id=values["CHARLIE_SLACK_OWNER_USER_ID"],
+        slack_signing_secret=values["SLACK_SIGNING_SECRET"],
+        slack_command_channel_id=values["CHARLIE_SLACK_CHARLIE_CHANNEL_ID"],
+        slack_build_channel_id=values["CHARLIE_SLACK_BUILD_CHANNEL_ID"],
+        slack_approval_channel_id=values["CHARLIE_SLACK_APPROVALS_CHANNEL_ID"],
+        slack_bot=SlackBot(values["SLACK_BOT_TOKEN"], client=slack_client),
         github=GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=github_client),
     )
-    return supervisor.tools()
+    if validate_live:
+        if cursor_client.request("GET", "/v1/me").get("error"):
+            raise HermesBridgeError("cursor_configuration_invalid")
+        if canonical_client.request("GET", "/charlie/hermes/writers").get("success") is not True:
+            raise HermesBridgeError("canonical_configuration_invalid")
+        if slack_client.request("POST", "/auth.test", {}).get("ok") is not True:
+            raise HermesBridgeError("slack_configuration_invalid")
+        repository = github_client.request("GET", "/repos/Crewless9086/amadeus-pig-tracking-system")
+        if repository.get("full_name") != "Crewless9086/amadeus-pig-tracking-system":
+            raise HermesBridgeError("github_read_monitor_unavailable")
+    return PluginTools(supervisor)

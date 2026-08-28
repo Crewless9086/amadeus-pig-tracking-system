@@ -6,6 +6,28 @@ import json
 from .supervisor import build_plugin_from_environment
 
 
+_BOUNDED_TOOLS = frozenset({
+    "charlie_reconcile_mission", "charlie_dispatch_cursor",
+    "charlie_get_mission_status", "charlie_get_cursor_status",
+    "charlie_issue_admission", "charlie_supervise_once",
+    "charlie_continue_cursor", "charlie_prepare_owner_decision",
+})
+
+
+def _source_value(source, name, default=""):
+    return str(getattr(source, name, default) or default).strip()
+
+
+def _is_slack(value):
+    platform = getattr(value, "value", value)
+    return str(platform or "").lower().split(".")[-1] == "slack"
+
+
+def _bounded_reason(exc):
+    reason = str(exc or "routing_unavailable").strip().lower()
+    return reason if reason.replace("_", "").isalnum() else "routing_unavailable"
+
+
 def _schema(name, description, properties, required):
     return {"name": name, "description": description, "parameters": {
         "type": "object", "properties": properties, "required": required,
@@ -25,7 +47,8 @@ def _json_handler(handler, adapt=lambda value: value):
 
 
 def register(ctx):
-    tools = build_plugin_from_environment()
+    tools = build_plugin_from_environment(validate_live=True)
+    supervisor = getattr(tools, "supervisor", None)
     text = {"type": "string"}
     schemas = {
         "charlie_reconcile_mission": _schema(
@@ -82,3 +105,58 @@ def register(ctx):
     for name, schema in schemas.items():
         ctx.register_tool(name=name, toolset="charlie_builder", schema=schema,
                           handler=_json_handler(tools[name], adapters[name]))
+
+    slack_sessions = set()
+
+    def pre_gateway_dispatch(event, **kwargs):
+        del kwargs
+        source = getattr(event, "source", None)
+        if not source or not _is_slack(getattr(source, "platform", "")):
+            return {"action": "allow"}
+        if getattr(event, "internal", False):
+            return {"action": "skip", "reason": "internal_slack_event"}
+        channel = _source_value(source, "chat_id")
+        owner = _source_value(source, "user_id")
+        message_id = str(getattr(event, "message_id", "") or "").strip()
+        thread_id = _source_value(source, "thread_id") or message_id
+        instruction = str(getattr(event, "text", "") or "").strip()
+        if (supervisor is None or owner != supervisor.owner_slack_user_id
+                or channel != supervisor.slack_command_channel_id):
+            return {"action": "skip", "reason": "slack_ingress_not_authorized"}
+        try:
+            try:
+                from gateway.session import build_session_key
+                slack_sessions.add(str(build_session_key(source)))
+            except Exception:
+                pass
+            reconciled = supervisor.reconcile_slack_event({
+                "text": instruction, "event_id": message_id, "user": owner,
+                "channel": channel, "thread_ts": thread_id,
+            })
+            mission_id = str(reconciled.get("mission_id") or "").strip()
+            if not mission_id:
+                raise RuntimeError("canonical_mission_unverified")
+            supervisor.dispatch_cursor({"mission_id": mission_id})
+        except Exception as exc:
+            reason = _bounded_reason(exc)
+            try:
+                if supervisor and supervisor.slack_bot and channel and thread_id:
+                    supervisor.slack_bot.post(
+                        channel, f"BLOCKED: CHARLIE routing unavailable ({reason}).",
+                        thread_ts=thread_id)
+            except Exception:
+                pass
+            return {"action": "skip", "reason": reason}
+        return {"action": "skip", "reason": "charlie_builder_dispatched"}
+
+    def pre_tool_call(tool_name="", task_id="", **kwargs):
+        session_id = str(kwargs.get("session_id") or "")
+        task_id = str(task_id or "")
+        slack_scoped = (session_id in slack_sessions or ":slack:" in session_id.lower()
+                        or ":slack:" in task_id.lower())
+        if slack_scoped and str(tool_name or "") not in _BOUNDED_TOOLS:
+            return {"action": "block", "message": "Slack CHARLIE-BUILDER exposes only bounded supervisor tools."}
+        return None
+
+    ctx.register_hook("pre_gateway_dispatch", pre_gateway_dispatch)
+    ctx.register_hook("pre_tool_call", pre_tool_call)

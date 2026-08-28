@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-28 - Hermes Slack deterministic routing containment
+
+- The native `charlie-builder` plugin now intercepts the exact authorised
+  `#charlie` owner event before the generic Hermes model/tool loop, routes it
+  through canonical reconciliation and admitted Cursor dispatch, and returns
+  `skip` on success or bounded failure.
+- Slack-scoped tool calls are restricted to the eight bounded supervisor tools;
+  public GitHub monitoring can operate without a token and rejects placeholder
+  or write-token configuration. No merge, deployment or business authority is
+  introduced.
+
 ## 2026-08-28 - Protected dynamic Mission Admission issuer
 
 - Added a protected-default-branch, manual-dispatch issuer that accepts only a
