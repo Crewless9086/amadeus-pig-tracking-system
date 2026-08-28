@@ -514,7 +514,7 @@ def build_plugin_from_environment(environ=None, *, opener=None, validate_live=Fa
     required = (
         "CHARLIE_CANONICAL_API_URL", "CHARLIE_HERMES_GATEWAY_TOKEN", "CURSOR_API_KEY",
         "SLACK_SIGNING_SECRET", "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
-        "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS",
+        "SLACK_APP_TOKEN",
         "CHARLIE_SLACK_CHARLIE_CHANNEL_ID", "CHARLIE_SLACK_BUILD_CHANNEL_ID",
         "CHARLIE_SLACK_APPROVALS_CHANNEL_ID",
     )
@@ -523,9 +523,6 @@ def build_plugin_from_environment(environ=None, *, opener=None, validate_live=Fa
     if any(str(env.get(name) or "").strip() for name in (
             "CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")):
         raise HermesBridgeError("github_write_credential_forbidden")
-    allowed_users = {item.strip() for item in values["SLACK_ALLOWED_USERS"].split(",") if item.strip()}
-    if values["CHARLIE_SLACK_OWNER_USER_ID"] not in allowed_users:
-        raise HermesBridgeError("slack_owner_missing_from_gateway_allowlist")
     canonical_client = JsonHttpClient(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"], opener=opener)
     cursor_client = JsonHttpClient("https://api.cursor.com", values["CURSOR_API_KEY"], opener=opener)
     slack_client = JsonHttpClient("https://slack.com/api", values["SLACK_BOT_TOKEN"], opener=opener)
