@@ -1095,6 +1095,20 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                 "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
             },
         }
+        governance = [_governance_row()]
+        canonical_payload = _build_exact_candidate_payload(
+            mission=mission, family=family, authority=authority, contract=contract,
+            base=BASE, head=HEAD, branch=contract["branch"],
+            diff_sha256=canonical_candidate_diff(ALLOWED_FILES, b"external patch"),
+            changed_files=ALLOWED_FILES, governance_reads=governance,
+            repository="Crewless9086/amadeus-pig-tracking-system",
+        )
+        canonical_receipt = sign_mission_admission_receipt(canonical_payload, KEY)
+        authority["admission"].update({
+            "receipt_id": canonical_receipt["receipt_id"],
+            "content_sha256": canonical_receipt["content_sha256"],
+            "signed_receipt": canonical_receipt,
+        })
         pull = {
             "state": "open", "merged_at": None, "body": "Preserve this text.\n",
             "base": {"ref": "main", "sha": BASE},
@@ -1114,7 +1128,6 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
         }
         args = SimpleNamespace(pull_request_number=1312, expected_head_sha=HEAD, event_output=None)
         import contextlib
-        governance = [_governance_row()]
         for iteration, expected_writes in enumerate((1, 1)):
             output = io.StringIO()
             with (
@@ -1133,11 +1146,6 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             ):
                 self.assertEqual(issue_pr_main(args, environ=environ), 0, output.getvalue())
             self.assertEqual(len(calls), expected_writes)
-            if iteration == 0:
-                encoded = calls[0].split("Mission-Admission-Receipt-B64: ", 1)[1].strip()
-                issued = json.loads(base64.b64decode(encoded))["receipt"]
-                authority["admission"]["receipt_id"] = issued["receipt_id"]
-                authority["admission"]["content_sha256"] = issued["content_sha256"]
         self.assertTrue(calls[0].startswith("Preserve this text."))
         self.assertEqual(calls[0].count("Mission-Admission-Receipt-B64:"), 1)
         self.assertNotIn("not-logged", output.getvalue())

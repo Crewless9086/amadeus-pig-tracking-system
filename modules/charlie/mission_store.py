@@ -1602,10 +1602,12 @@ def append_mission_admission_event(
         "latest_correction_digest",
         "collision_snapshot_sha256",
     }
+    optional = {"signed_receipt"}
     if (
         not mission_id
         or not principal
-        or set(admission) != required
+        or not required.issubset(admission)
+        or set(admission) - required - optional
         or not str(admission.get("receipt_id") or "").startswith("MAR-")
         or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("content_sha256") or ""))
         or not re.fullmatch(r"[0-9a-f]{40}", str(admission.get("base_sha") or ""))
@@ -1614,6 +1616,10 @@ def append_mission_admission_event(
         or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("latest_correction_digest") or ""))
         or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("collision_snapshot_sha256") or ""))
         or admission.get("mission_id") != mission_id
+        or (
+            "signed_receipt" in admission
+            and not isinstance(admission.get("signed_receipt"), dict)
+        )
         or not _clean_text(admission.get("root_mission_id"), 90)
         or not _clean_text(admission.get("generation"), 200)
     ):

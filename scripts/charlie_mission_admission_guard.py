@@ -834,7 +834,24 @@ def issue_pr_main(args, *, environ=None):
             except Exception:
                 receipt = None
         if receipt is None:
-            receipt = sign_mission_admission_receipt(payload, hmac_key)
+            receipt = admission_receipt = authority.get("admission", {}).get("signed_receipt")
+            if not isinstance(admission_receipt, dict):
+                raise MissionAdmissionError("receipt_content_mismatch")
+            validate_mission_admission_receipt(
+                admission_receipt, hmac_key,
+                expected_repository=_repository_identity(),
+                expected_base_sha=base, expected_head_sha=head,
+                expected_generation=str(family.get("generation") or ""),
+                expected_mission_id=mission["mission_id"],
+                expected_root_mission_id=authority["root_mission_id"],
+                expected_changed_files=changed_files,
+            )
+            if {
+                key: admission_receipt.get(key)
+                for key in payload
+            } != payload:
+                raise MissionAdmissionError("receipt_content_mismatch")
+            _compare_current_authority(admission_receipt, authority, contract)
             envelope = {"version": "mission_admission_ci_envelope_v1", "receipt": receipt, "signature_ed25519": base64.b64encode(Ed25519PrivateKey.from_private_bytes(signing_seed).sign(canonical_json(receipt))).decode()}
             marker = base64.b64encode(canonical_json(envelope)).decode()
         updated = _replace_receipt_marker(body, marker)
@@ -1215,6 +1232,7 @@ def issue_bootstrap_main(
             "collision_snapshot_sha256": authority[
                 "collision_snapshot_sha256"
             ],
+            "signed_receipt": receipt,
         }
         writer = admission_writer or append_mission_admission_event
         written, write_status = writer(
