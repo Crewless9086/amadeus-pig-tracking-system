@@ -74,6 +74,7 @@ class CursorAdmission:
     allowed_effects: tuple[str, ...]
     owner_instruction_digest: str
     acceptance_requirements: tuple[str, ...]
+    branch: str = ""
 
     @classmethod
     def from_mapping(cls, value):
@@ -81,7 +82,7 @@ class CursorAdmission:
         required = ("mission_id", "generation", "receipt_id", "repository", "base_sha", "owner_instruction_digest")
         if any(not str(row.get(key) or "").strip() for key in required):
             raise HermesBridgeError("valid_mission_admission_required")
-        if not str(row["receipt_id"]).startswith("MAR-") or len(str(row["base_sha"])) != 40:
+        if not str(row["receipt_id"]).startswith(("MAR-", "PDA-")) or len(str(row["base_sha"])) != 40:
             raise HermesBridgeError("valid_mission_admission_required")
         files = tuple(sorted({str(item).strip() for item in row.get("allowed_files") or [] if str(item).strip()}))
         effects = tuple(sorted({str(item).strip() for item in row.get("allowed_effects") or [] if str(item).strip()}))
@@ -89,7 +90,8 @@ class CursorAdmission:
         if not files or not effects or not acceptance:
             raise HermesBridgeError("valid_mission_admission_required")
         return cls(*(str(row[key]).strip() for key in required[:5]), files, effects,
-                   str(row["owner_instruction_digest"]).strip(), acceptance)
+                   str(row["owner_instruction_digest"]).strip(), acceptance,
+                   str(row.get("branch") or "").strip())
 
 
 class JsonHttpClient:
@@ -219,13 +221,17 @@ class CanonicalCharlieApi:
         result = self.client.request("POST", f"/charlie/hermes/missions/{mission_id}/progress", value)
         return result.get("dispatch") or result
 
+    def prepare_dispatch_authorization(self, mission_id):
+        result = self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/dispatch-authorization", {})
+        return result.get("authorization") or result
+
     def record_followup(self, mission_id, agent_id, run_id, failed_attempts):
         return self.record_progress(mission_id, {"event": "cursor_followup", "cursor_agent_id": agent_id,
                                                 "cursor_run_id": run_id, "failed_attempts": int(failed_attempts)})
 
-    def request_admission(self, mission_id, expected_head_sha):
+    def request_admission(self, mission_id, expected_head_sha, pr_number=0):
         return self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/admission",
-                                   {"expected_head_sha": str(expected_head_sha or "")})
+                                   {"expected_head_sha": str(expected_head_sha or ""), "pr_number": int(pr_number)})
 
 
 class SlackBot:
@@ -279,11 +285,19 @@ class GitHubReadMonitor:
                           if run.get("status") in {"queued", "in_progress"}
                           and (started := _parse_epoch(run.get("started_at")))
                           and observed_at - started > stall_seconds]
+        required_names = {"mission-admission", "charlie-core",
+            "Unit tests with disposable Postgres audit rails",
+            "Closed Render migration rail with disposable Postgres",
+            "Playwright real-browser behavior gate"}
+        review = next((verdict for verdict in reversed(verdicts)
+                       if verdict in {"SEND_BACK", "APPROVE"}), "WAIT")
         return {"pr_number": int(number), "head_sha": head,
                 "branch": str((pull.get("head") or {}).get("ref") or ""),
                 "checks": required, "stalled_checks": stalled_checks,
                 "ci_stalled": bool(stalled_checks),
-                "independent_review": "SEND_BACK" if "SEND_BACK" in verdicts else ("APPROVE" if "APPROVE" in verdicts else "WAIT")}
+                "all_required_checks_pass": all(required.get(name) == "success" for name in required_names),
+                "independent_review": review,
+                "approved_head_sha": head if review == "APPROVE" else ""}
 
 
 class PluginTools(dict):
@@ -367,18 +381,28 @@ class HermesSupervisor:
         metadata = dict(canonical.get("metadata") or {})
         current = dict(metadata.get("mission_admission") or {})
         contract = dict(metadata.get("mission_admission_contract") or {})
-        if (canonical.get("mission_id") != mission_id or current.get("status") != "valid"
-                or current.get("mission_id") != mission_id
-                or current.get("generation") != contract.get("generation")):
-            raise HermesBridgeError("current_canonical_admission_required")
+        dispatch_authorization = dict(metadata.get("dispatch_authorization") or {})
+        if current.get("status") == "valid" and current.get("mission_id") == mission_id:
+            authority_id = current.get("receipt_id")
+        elif (dispatch_authorization.get("status") == "valid"
+                and dispatch_authorization.get("mission_id") == mission_id):
+            current = dispatch_authorization
+            contract = dispatch_authorization
+            authority_id = dispatch_authorization.get("authorization_id")
+        else:
+            raise HermesBridgeError("current_dispatch_authorization_required")
+        if canonical.get("mission_id") != mission_id or current.get("generation") != contract.get("generation"):
+            raise HermesBridgeError("current_dispatch_authorization_required")
         admission = CursorAdmission.from_mapping({
             "mission_id": mission_id, "generation": current.get("generation"),
-            "receipt_id": current.get("receipt_id"),
-            "repository": "Crewless9086/amadeus-pig-tracking-system",
+            "receipt_id": authority_id,
+            "repository": contract.get("repository") or "Crewless9086/amadeus-pig-tracking-system",
             "base_sha": contract.get("base_sha"), "allowed_files": contract.get("allowed_files"),
             "allowed_effects": contract.get("allowed_effects"),
-            "owner_instruction_digest": current.get("latest_correction_digest"),
-            "acceptance_requirements": contract.get("operational_acceptance"),
+            "owner_instruction_digest": current.get("latest_correction_digest") or contract.get("owner_instruction_digest"),
+            "acceptance_requirements": contract.get("operational_acceptance") or [
+                "Open one draft PR; exact-candidate admission and review follow before merge."],
+            "branch": contract.get("branch"),
         })
         key = mission_idempotency_key(admission.mission_id, admission.generation)
         existing = self.canonical.get_dispatch(key)
@@ -421,6 +445,9 @@ class HermesSupervisor:
             pr_number = self.github.find_pull(branch)
         if self.github and pr_number:
             result.update(self.github.pull_state(pr_number, now=self.clock()))
+            if dispatch.get("admission_requested_head") != result.get("head_sha"):
+                self.issue_admission(row.get("mission_id"), result.get("head_sha"), pr_number)
+                result["admission_requested_head"] = result.get("head_sha")
         if self.slack_bot and (result.get("stalled") or result.get("ci_stalled")):
             self.slack_bot.post(self.slack_build_channel_id,
                                 f"Mission {row.get('mission_id')} requires attention: monitored work is stalled.")
@@ -433,12 +460,22 @@ class HermesSupervisor:
                 **dict((mission or {}).get("dispatch") or {}),
                 "cursor_agent_id": observed.get("cursor_agent_id")}}
             return self.route_send_back(current, "SEND_BACK", correction)
+        dispatch = dict((mission or {}).get("dispatch") or {})
+        if (observed.get("independent_review") == "APPROVE"
+                and observed.get("all_required_checks_pass") is True
+                and dispatch.get("owner_notification_head") != observed.get("head_sha")):
+            decision = self.prepare_owner_decision({**observed, "mission_id": (mission or {}).get("mission_id")})
+            if self.slack_bot:
+                self.slack_bot.post(self.slack_approval_channel_id,
+                    f"OWNER DECISION REQUIRED: mission {decision['mission_id']} PR #{decision['pr_number']} exact head {decision['head_sha']}. No merge or deployment has occurred.")
+            return self.canonical.record_progress((mission or {}).get("mission_id"),
+                {**observed, "owner_notification_head": observed.get("head_sha"), "event": "owner_decision_required"})
         return observed
 
-    def issue_admission(self, mission_id, expected_head_sha):
+    def issue_admission(self, mission_id, expected_head_sha, pr_number=0):
         if self.issuer:
-            return self.issuer(mission_id=mission_id, expected_head_sha=expected_head_sha)
-        return self.canonical.request_admission(mission_id, expected_head_sha)
+            return self.issuer(mission_id=mission_id, expected_head_sha=expected_head_sha, pr_number=pr_number)
+        return self.canonical.request_admission(mission_id, expected_head_sha, pr_number)
 
     def route_send_back(self, mission, verdict, correction):
         row = dict(mission or {})
@@ -471,7 +508,8 @@ class HermesSupervisor:
             "charlie_dispatch_cursor": self.dispatch_cursor,
             "charlie_get_mission_status": lambda value: self.canonical.get_mission(value["mission_id"]),
             "charlie_get_cursor_status": self.poll,
-            "charlie_issue_admission": lambda value: self.issue_admission(value["mission_id"], value["expected_head_sha"]),
+            "charlie_issue_admission": lambda value: self.issue_admission(
+                value["mission_id"], value["expected_head_sha"], value.get("pr_number", 0)),
             "charlie_supervise_once": self.supervise_once,
             "charlie_continue_cursor": lambda value: self.route_send_back(value["mission"], "SEND_BACK", value["correction"]),
             "charlie_prepare_owner_decision": self.prepare_owner_decision,
@@ -481,9 +519,10 @@ class HermesSupervisor:
     @staticmethod
     def _cursor_prompt(mission, admission):
         return "\n".join([
-            "Implement this already-admitted CHARLIE mission. Do not merge or deploy.",
+            "Implement this bounded pre-dispatch-authorized CHARLIE mission. Do not merge or deploy.",
             f"Mission: {admission.mission_id}", f"Generation: {admission.generation}",
-            f"Admission: {admission.receipt_id}", f"Owner instruction digest: {admission.owner_instruction_digest}",
+            f"Authorization: {admission.receipt_id}", f"Owner instruction digest: {admission.owner_instruction_digest}",
+            f"Use deterministic branch: {admission.branch}",
             "Allowed files: " + ", ".join(admission.allowed_files),
             "Allowed effects: " + ", ".join(admission.allowed_effects),
             "Acceptance: " + "; ".join(admission.acceptance_requirements),

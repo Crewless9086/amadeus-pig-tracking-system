@@ -47,6 +47,7 @@ jobs:
           PR_NUMBER: ${{ inputs.pull_request_number }}
           EXPECTED_HEAD: ${{ inputs.expected_head_sha }}
           TRUSTED_EVENT_PATH: ${{ runner.temp }}/mission-admission-event.json
+          CHARLIE_CANONICAL_API_URL: https://amadeus-pig-tracking-system.onrender.com
         run: >-
           python scripts/charlie_mission_admission_guard.py issue-pr
           --pull-request-number "$PR_NUMBER"

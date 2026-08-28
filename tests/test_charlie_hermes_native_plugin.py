@@ -101,14 +101,16 @@ class HermesNativePluginTests(unittest.TestCase):
             "charlie_get_cursor_status", "charlie_supervise_once", "charlie_continue_cursor",
             "charlie_issue_admission", "charlie_prepare_owner_decision")})
         tools.supervisor = supervisor
+        supervisor.canonical = SimpleNamespace(
+            prepare_dispatch_authorization=lambda mission_id: observed.append(("authorize", mission_id)) or {"mission_id": mission_id})
         context = Context()
         with patch.object(module, "build_plugin_from_environment", return_value=tools): module.register(context)
         event = SimpleNamespace(text="Pilot mission", message_id="1787904275.776069", internal=False,
             source=SimpleNamespace(platform="slack", user_id="UOWNER", chat_id="C1", thread_id=""))
         result = context.hooks["pre_gateway_dispatch"](event=event)
         self.assertEqual("skip", result["action"])
-        self.assertEqual(["reconcile", "dispatch"], [item[0] for item in observed])
-        self.assertEqual("CMQ-X", observed[1][1]["mission_id"])
+        self.assertEqual(["reconcile", "authorize", "dispatch"], [item[0] for item in observed])
+        self.assertEqual("CMQ-X", observed[2][1]["mission_id"])
 
     def test_wrong_owner_and_channel_are_skipped_without_dispatch(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")
@@ -124,6 +126,7 @@ class HermesNativePluginTests(unittest.TestCase):
             "charlie_get_cursor_status", "charlie_supervise_once", "charlie_continue_cursor",
             "charlie_issue_admission", "charlie_prepare_owner_decision")})
         tools.supervisor = supervisor
+        supervisor.canonical = SimpleNamespace(prepare_dispatch_authorization=lambda mission_id: {"mission_id": mission_id})
         context = Context()
         with patch.object(module, "build_plugin_from_environment", return_value=tools): module.register(context)
         for owner, channel in (("UOTHER", "C1"), ("UOWNER", "COTHER")):
