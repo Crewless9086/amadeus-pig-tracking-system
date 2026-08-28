@@ -2,9 +2,13 @@ import hashlib
 import hmac
 import json
 import unittest
+from unittest.mock import patch
+
+from flask import Flask
 
 from modules.charlie.hermes_supervisor import (
-    CursorCloudV1, GitHubReadMonitor, HermesBridgeError, HermesSupervisor, SlackBot,
+    CanonicalCharlieApi, CursorCloudV1, GitHubReadMonitor, HermesBridgeError,
+    HermesSupervisor, SlackBot, build_plugin_from_environment,
     verify_slack_request,
 )
 from modules.charlie.mission_store import bind_external_supervisor_candidate
@@ -75,6 +79,17 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual(one["cursor_agent_id"], two["cursor_agent_id"])
         self.assertEqual(1, len([call for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")]))
 
+    def test_canonical_dispatch_payload_matches_bounded_server_schema(self):
+        class ApiClient:
+            def __init__(self): self.payload = None
+            def request(self, method, path, payload=None, **kwargs):
+                self.payload = payload
+                return {"dispatch": {"cursor_agent_id": "bc-one"}}
+        client = ApiClient(); api = CanonicalCharlieApi("https://canonical", "t" * 32, client=client)
+        result = api.record_dispatch("CMQ-X:g1", {"generation": "g1", "cursor_agent_id": "bc-one"})
+        self.assertNotIn("mission_id", client.payload)
+        self.assertEqual("bc-one", result["cursor_agent_id"])
+
     def test_restart_duplicate_and_writer_capacity(self):
         mission = {"admission": admission(), "instruction": "Bounded work"}
         self.supervisor.dispatch_cursor(mission)
@@ -139,6 +154,45 @@ class HermesSupervisorTests(unittest.TestCase):
         state = monitor.pull_state(9, now=2_000_000_000)
         self.assertTrue(state["ci_stalled"])
         self.assertEqual("SEND_BACK", state["independent_review"])
+
+    def test_installable_factory_requires_and_consumes_protected_config(self):
+        env = {
+            "CHARLIE_CANONICAL_API_URL": "https://canonical.example", "CHARLIE_HERMES_GATEWAY_TOKEN": "g" * 32,
+            "CURSOR_API_KEY": "cursor", "SLACK_SIGNING_SECRET": "signing", "SLACK_BOT_TOKEN": "xoxb-bot",
+            "CHARLIE_SLACK_OWNER_USER_ID": "UOWNER", "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": "C1",
+            "CHARLIE_SLACK_BUILD_CHANNEL_ID": "CBUILD", "CHARLIE_SLACK_APPROVAL_CHANNEL_ID": "CAPPROVE",
+            "CHARLIE_GITHUB_READ_TOKEN": "github-read-only",
+        }
+        tools = build_plugin_from_environment(env)
+        self.assertIn("charlie_issue_admission", tools)
+        self.assertTrue(all(callable(handler) for handler in tools.values()))
+        with self.assertRaisesRegex(HermesBridgeError, "hermes_protected_configuration_incomplete"):
+            build_plugin_from_environment({})
+
+    def test_bounded_canonical_issuer_uses_bound_pr_not_caller_pr(self):
+        from modules.charlie import routes
+        app = Flask(__name__); app.register_blueprint(routes.charlie_bp)
+        class Response:
+            status = 204
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+        captured = {}
+        def open_request(request, timeout=0):
+            captured["body"] = json.loads(request.data)
+            return Response()
+        mission = {"mission": {"metadata": {"review_packet": {
+            "pr_number": 1313, "candidate_revision": "d" * 40}}}}
+        def env(name):
+            return "g" * 32 if name == "CHARLIE_HERMES_GATEWAY_TOKEN" else "i" * 32
+        with patch.object(routes, "env_value", side_effect=env), \
+             patch.object(routes, "get_mission", return_value=(mission, 200)), \
+             patch.object(routes.urllib.request, "urlopen", side_effect=open_request):
+            response = app.test_client().post(
+                "/charlie/hermes/missions/CMQ-X/admission",
+                headers={"Authorization": "Bearer " + "g" * 32},
+                json={"expected_head_sha": "d" * 40})
+        self.assertEqual(202, response.status_code)
+        self.assertEqual("1313", captured["body"]["inputs"]["pull_request_number"])
 
     def test_candidate_change_invalidates_approval(self):
         with self.assertRaisesRegex(HermesBridgeError, "owner_decision_not_ready"):

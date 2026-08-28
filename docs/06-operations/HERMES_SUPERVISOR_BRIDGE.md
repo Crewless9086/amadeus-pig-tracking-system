@@ -35,8 +35,15 @@ deployment, customer, farm, payment, printer, irrigation, or hardware authority.
 Hermes Cloud must protect `CURSOR_API_KEY`, `SLACK_SIGNING_SECRET`,
 `SLACK_BOT_TOKEN`, `CHARLIE_SLACK_OWNER_USER_ID`, `CHARLIE_CANONICAL_API_URL`,
 the three exact channel IDs, and a least-privilege CHARLIE API token. Values
-must never enter Git, Slack,
-mission rows, PR metadata, artifacts, logs, or Kanban task text.
+must never enter Git, Slack, mission rows, PR metadata, artifacts, logs, or
+Kanban task text.
+
+`CHARLIE_GITHUB_READ_TOKEN` is restricted to repository metadata, pull-request,
+check, and review reads. Hermes receives no GitHub write permission. The
+canonical CHARLIE service separately holds
+`CHARLIE_ADMISSION_ISSUER_GITHUB_TOKEN`, restricted to dispatching the protected
+issuer workflow; Hermes can request that bounded action only for the PR/head
+already bound in canonical mission authority.
 
 ## Remaining operational gates
 

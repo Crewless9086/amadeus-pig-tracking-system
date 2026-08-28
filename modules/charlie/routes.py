@@ -2,6 +2,9 @@ import hmac
 import os
 import re
 import time
+import json
+import urllib.error
+import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -1077,6 +1080,45 @@ def charlie_hermes_mission_progress_route(mission_id):
         mission_id, request.get_json(silent=True) or {},
         authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/admission", methods=["POST"])
+def charlie_hermes_mission_admission_route(mission_id):
+    """Trigger only the protected-main issuer for the canonical bound candidate."""
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    supplied = request.get_json(silent=True) or {}
+    if set(supplied) != {"expected_head_sha"} or not re.fullmatch(r"[0-9a-f]{40}", str(supplied.get("expected_head_sha") or "")):
+        return jsonify({"success": False, "status": "issuer_request_invalid"}), 400
+    loaded, status = get_mission(mission_id)
+    if status >= 400:
+        return jsonify(loaded), status
+    metadata = dict(((loaded.get("mission") or {}).get("metadata") or {}))
+    packet = dict(metadata.get("review_packet") or {})
+    expected_head = str(supplied["expected_head_sha"])
+    if packet.get("candidate_revision") != expected_head or not int(packet.get("pr_number") or 0):
+        return jsonify({"success": False, "status": "canonical_candidate_not_bound"}), 409
+    token = str(env_value("CHARLIE_ADMISSION_ISSUER_GITHUB_TOKEN") or "").strip()
+    if len(token) < 32:
+        return jsonify({"success": False, "status": "protected_issuer_unavailable"}), 503
+    body = json.dumps({"ref": "main", "inputs": {
+        "pull_request_number": str(int(packet["pr_number"])), "expected_head_sha": expected_head,
+    }}, separators=(",", ":")).encode()
+    issuer_request = urllib.request.Request(
+        "https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/actions/workflows/mission-admission-issuer.yml/dispatches",
+        data=body, method="POST", headers={"Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json", "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28"})
+    try:
+        with urllib.request.urlopen(issuer_request, timeout=15) as response:
+            if response.status != 204:
+                raise OSError("unexpected_status")
+    except (urllib.error.URLError, OSError):
+        return jsonify({"success": False, "status": "protected_issuer_unavailable"}), 503
+    return jsonify({"success": True, "status": "protected_issuer_dispatched",
+                    "mission_id": mission_id, "pr_number": int(packet["pr_number"]),
+                    "expected_head_sha": expected_head}), 202
 
 
 @charlie_bp.route("/charlie/hermes/dispatch", methods=["GET", "POST"])

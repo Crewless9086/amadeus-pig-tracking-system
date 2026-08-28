@@ -1796,7 +1796,8 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
     allowed = {"idempotency_key", "generation", "cursor_agent_id", "cursor_run_id",
                "slack_channel_id", "slack_thread_ts", "branch", "pr_number",
                "head_sha", "agent_state", "run_state", "stalled", "event",
-               "failed_attempts", "checks", "independent_review", "branches"}
+               "failed_attempts", "checks", "independent_review", "branches",
+               "ci_stalled", "stalled_checks"}
     if not mission_id or not principal or not state or set(state) - allowed:
         return {"success": False, "status": "external_supervisor_state_invalid"}, 400
     key = _clean_text(state.get("idempotency_key"), 300)

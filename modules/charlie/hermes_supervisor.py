@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -195,13 +196,18 @@ class CanonicalCharlieApi:
         return int(self.client.request("GET", "/charlie/hermes/writers").get("running") or 0)
 
     def record_dispatch(self, key, value):
-        return self.client.request("POST", "/charlie/hermes/dispatch", {**value, "idempotency_key": key})
+        result = self.client.request("POST", "/charlie/hermes/dispatch", {**value, "idempotency_key": key})
+        return result.get("dispatch") or result
 
     def record_progress(self, mission_id, value):
         return self.client.request("POST", f"/charlie/hermes/missions/{mission_id}/progress", value)
 
     def record_followup(self, mission_id, agent_id, run_id):
         return self.record_progress(mission_id, {"event": "cursor_followup", "cursor_agent_id": agent_id, "cursor_run_id": run_id})
+
+    def request_admission(self, mission_id, expected_head_sha):
+        return self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/admission",
+                                   {"expected_head_sha": str(expected_head_sha or "")})
 
 
 class SlackBot:
@@ -340,7 +346,7 @@ class HermesSupervisor:
         if not agent.get("id") or not run.get("id"):
             raise HermesBridgeError("cursor_dispatch_unverified")
         return self.canonical.record_dispatch(key, {
-            "mission_id": admission.mission_id, "generation": admission.generation,
+            "generation": admission.generation,
             "cursor_agent_id": agent["id"], "cursor_run_id": run["id"], "state": "ACTIVE",
         })
 
@@ -362,7 +368,9 @@ class HermesSupervisor:
                   "branches": branches}
         pr_number = int(dispatch.get("pr_number") or 0)
         if self.github and not pr_number and len(branches) == 1:
-            pr_number = self.github.find_pull(branches[0])
+            branch = branches[0].get("name") or branches[0].get("branch") \
+                if isinstance(branches[0], dict) else branches[0]
+            pr_number = self.github.find_pull(branch)
         if self.github and pr_number:
             result.update(self.github.pull_state(pr_number, now=self.clock()))
         if self.slack_bot and (result.get("stalled") or result.get("ci_stalled")):
@@ -380,9 +388,9 @@ class HermesSupervisor:
         return observed
 
     def issue_admission(self, mission_id, expected_head_sha):
-        if not self.issuer:
-            raise HermesBridgeError("protected_issuer_unavailable")
-        return self.issuer(mission_id=mission_id, expected_head_sha=expected_head_sha)
+        if self.issuer:
+            return self.issuer(mission_id=mission_id, expected_head_sha=expected_head_sha)
+        return self.canonical.request_admission(mission_id, expected_head_sha)
 
     def route_send_back(self, mission, verdict, correction):
         row = dict(mission or {})
@@ -413,6 +421,7 @@ class HermesSupervisor:
             "charlie_dispatch_cursor": self.dispatch_cursor,
             "charlie_get_mission_status": lambda value: self.canonical.get_mission(value["mission_id"]),
             "charlie_get_cursor_status": self.poll,
+            "charlie_issue_admission": lambda value: self.issue_admission(value["mission_id"], value["expected_head_sha"]),
             "charlie_supervise_once": self.supervise_once,
             "charlie_continue_cursor": lambda value: self.route_send_back(value["mission"], "SEND_BACK", value["correction"]),
             "charlie_prepare_owner_decision": self.prepare_owner_decision,
@@ -447,3 +456,32 @@ def _parse_epoch(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
     except ValueError:
         return 0
+
+
+def build_plugin_from_environment(environ=None, *, opener=None):
+    """Construct the installable Hermes package exclusively from protected config."""
+    env = dict(os.environ if environ is None else environ)
+    required = (
+        "CHARLIE_CANONICAL_API_URL", "CHARLIE_HERMES_GATEWAY_TOKEN", "CURSOR_API_KEY",
+        "SLACK_SIGNING_SECRET", "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
+        "CHARLIE_SLACK_CHARLIE_CHANNEL_ID", "CHARLIE_SLACK_BUILD_CHANNEL_ID",
+        "CHARLIE_SLACK_APPROVAL_CHANNEL_ID", "CHARLIE_GITHUB_READ_TOKEN",
+    )
+    if any(not str(env.get(key) or "").strip() for key in required):
+        raise HermesBridgeError("hermes_protected_configuration_incomplete")
+    canonical_client = JsonHttpClient(env["CHARLIE_CANONICAL_API_URL"], env["CHARLIE_HERMES_GATEWAY_TOKEN"], opener=opener)
+    cursor_client = JsonHttpClient("https://api.cursor.com", env["CURSOR_API_KEY"], opener=opener)
+    slack_client = JsonHttpClient("https://slack.com/api", env["SLACK_BOT_TOKEN"], opener=opener)
+    github_client = JsonHttpClient("https://api.github.com", env["CHARLIE_GITHUB_READ_TOKEN"], opener=opener)
+    supervisor = HermesSupervisor(
+        CanonicalCharlieApi(env["CHARLIE_CANONICAL_API_URL"], env["CHARLIE_HERMES_GATEWAY_TOKEN"], client=canonical_client),
+        CursorCloudV1(env["CURSOR_API_KEY"], client=cursor_client),
+        owner_slack_user_id=env["CHARLIE_SLACK_OWNER_USER_ID"],
+        slack_signing_secret=env["SLACK_SIGNING_SECRET"],
+        slack_command_channel_id=env["CHARLIE_SLACK_CHARLIE_CHANNEL_ID"],
+        slack_build_channel_id=env["CHARLIE_SLACK_BUILD_CHANNEL_ID"],
+        slack_approval_channel_id=env["CHARLIE_SLACK_APPROVAL_CHANNEL_ID"],
+        slack_bot=SlackBot(env["SLACK_BOT_TOKEN"], client=slack_client),
+        github=GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=github_client),
+    )
+    return supervisor.tools()
