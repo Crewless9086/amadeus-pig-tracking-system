@@ -11,6 +11,8 @@
   "github_read_token_env": "CHARLIE_GITHUB_READ_TOKEN",
   "slack_signing_secret_env": "SLACK_SIGNING_SECRET",
   "slack_bot_token_env": "SLACK_BOT_TOKEN",
+  "slack_app_token_env": "SLACK_APP_TOKEN",
+  "slack_gateway_allowed_users_env": "SLACK_ALLOWED_USERS",
   "slack_owner_user_id_env": "CHARLIE_SLACK_OWNER_USER_ID",
   "slack_command_channel_id_env": "CHARLIE_SLACK_CHARLIE_CHANNEL_ID",
   "slack_build_channel_id_env": "CHARLIE_SLACK_BUILD_CHANNEL_ID",

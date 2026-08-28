@@ -30,6 +30,7 @@ class HermesNativePluginTests(unittest.TestCase):
         for name, registered in context.tools.items():
             self.assertEqual(name, registered["schema"]["name"])
             self.assertFalse(registered["schema"]["parameters"]["additionalProperties"])
+        self.assertTrue(Path("integrations/hermes/charlie_builder/supervisor.py").is_file())
 
     def test_wrappers_use_canonical_state_and_json_results(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")
@@ -52,6 +53,9 @@ class HermesNativePluginTests(unittest.TestCase):
         self.assertIn("socket_mode_enabled: true", manifest)
         self.assertNotIn("request_url:", manifest)
         self.assertIn("message.channels", manifest)
+        plugin_manifest = Path("integrations/hermes/charlie_builder/plugin.yaml").read_text(encoding="utf-8")
+        self.assertIn("SLACK_APP_TOKEN", plugin_manifest)
+        self.assertIn("SLACK_ALLOWED_USERS", plugin_manifest)
 
 
 if __name__ == "__main__": unittest.main()

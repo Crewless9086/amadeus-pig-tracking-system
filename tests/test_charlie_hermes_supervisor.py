@@ -177,6 +177,7 @@ class HermesSupervisorTests(unittest.TestCase):
         env = {
             "CHARLIE_CANONICAL_API_URL": "https://canonical.example", "CHARLIE_HERMES_GATEWAY_TOKEN": "g" * 32,
             "CURSOR_API_KEY": "cursor", "SLACK_SIGNING_SECRET": "signing", "SLACK_BOT_TOKEN": "xoxb-bot",
+            "SLACK_APP_TOKEN": "xapp-app", "SLACK_ALLOWED_USERS": "UOWNER",
             "CHARLIE_SLACK_OWNER_USER_ID": "UOWNER", "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": "C1",
             "CHARLIE_SLACK_BUILD_CHANNEL_ID": "CBUILD", "CHARLIE_SLACK_APPROVAL_CHANNEL_ID": "CAPPROVE",
             "CHARLIE_GITHUB_READ_TOKEN": "github-read-only",
@@ -186,6 +187,8 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertTrue(all(callable(handler) for handler in tools.values()))
         with self.assertRaisesRegex(HermesBridgeError, "hermes_protected_configuration_incomplete"):
             build_plugin_from_environment({})
+        with self.assertRaisesRegex(HermesBridgeError, "slack_owner_missing_from_gateway_allowlist"):
+            build_plugin_from_environment({**env, "SLACK_ALLOWED_USERS": "UOTHER"})
 
     def test_bounded_canonical_issuer_uses_bound_pr_not_caller_pr(self):
         from modules.charlie import routes

@@ -19,6 +19,9 @@ The installable Hermes surface is the native `plugin.yaml` plus `register(ctx)`
 package in that directory. Install it from the immutable reviewed repository
 commit and enable only the `charlie-builder` plugin. Slack uses Hermes' built-in
 Bolt adapter in Socket Mode; it does not require a public webhook URL.
+Socket Mode requires the protected `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN`.
+Hermes' gateway-level `SLACK_ALLOWED_USERS` must contain the same exact member
+ID as `CHARLIE_SLACK_OWNER_USER_ID`; the plugin fails closed if they diverge.
 
 ## Deterministic loop
 

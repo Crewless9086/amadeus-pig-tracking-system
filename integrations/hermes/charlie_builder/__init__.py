@@ -3,15 +3,7 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from modules.charlie.hermes_supervisor import build_plugin_from_environment
+from .supervisor import build_plugin_from_environment
 
 
 def _schema(name, description, properties, required):
