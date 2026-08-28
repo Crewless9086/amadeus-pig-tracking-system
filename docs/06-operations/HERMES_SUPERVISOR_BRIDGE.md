@@ -1,6 +1,7 @@
 # Hermes CHARLIE Supervisor Bridge
 
-Status: source-stage commissioning; not deployed and not operationally proven.
+Status: merged bridge under routing correction; terminal-independent Slack pilot
+has not yet passed.
 
 Canonical mission: `CMQ-20260813-05-SLACK-GATEWAY`, under root `CMQ-20260813-05`.
 
@@ -38,6 +39,15 @@ ID as `CHARLIE_SLACK_OWNER_USER_ID`; the plugin fails closed if they diverge.
 8. Put only a green, independently approved exact candidate in
    `#owner-approvals`; never merge or deploy.
 
+The native plugin owns a `pre_gateway_dispatch` interception point for the exact
+Slack owner and `#charlie` identities. It reconciles and dispatches before the
+ordinary model loop, returns `skip` on both success and bounded failure, and
+therefore never falls through to generic terminal development. A
+`pre_tool_call` hook blocks every non-`charlie_builder` tool in a Slack-scoped
+session as defence in depth. The supported Hermes platform configuration is
+`platform_toolsets.slack: [charlie_builder]`; protected CLI commissioning keeps
+its separate tool surface.
+
 ## Protected configuration
 
 Hermes Cloud must protect `CURSOR_API_KEY`, `SLACK_SIGNING_SECRET`,
@@ -46,8 +56,10 @@ the three exact channel IDs, and a least-privilege CHARLIE API token. Values
 must never enter Git, Slack, mission rows, PR metadata, artifacts, logs, or
 Kanban task text.
 
-`CHARLIE_GITHUB_READ_TOKEN` is restricted to repository metadata, pull-request,
-check, and review reads. Hermes receives no GitHub write permission. The
+`CHARLIE_GITHUB_READ_TOKEN` is optional for this public repository. If absent,
+bounded GitHub monitoring is unauthenticated and read-only; placeholder values
+and known GitHub write-token environment names fail configuration. Hermes
+receives no GitHub write permission. The
 canonical CHARLIE service separately holds
 `CHARLIE_ADMISSION_ISSUER_GITHUB_TOKEN`, restricted to dispatching the protected
 issuer workflow; Hermes can request that bounded action only for the PR/head

@@ -640,7 +640,7 @@ def _compare_current_authority(receipt, authority, contract):
     if admission.get("status") in {"revoked", "consumed"}:
         raise MissionAdmissionError(f"admission_{admission['status']}")
     if admission.get("status") != "valid":
-        raise MissionAdmissionError("canonical_admission_changed")
+        raise MissionAdmissionError("projection_identity_mismatch")
     if receipt["owner_instruction_chain"]["latest_correction_digest"] != authority.get("latest_correction_digest"):
         raise MissionAdmissionError("owner_correction_changed")
     if receipt["collision_snapshot"]["snapshot_sha256"] != authority.get("collision_snapshot_sha256"):
@@ -656,9 +656,12 @@ def _compare_current_authority(receipt, authority, contract):
         "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
     }
     if any(admission.get(key) != value for key, value in expected_projection.items()):
-        raise MissionAdmissionError("canonical_admission_changed")
-    if receipt["owner_instruction_chain"]["admission_packet_sha256"] != _canonical_packet_digest(authority, contract):
-        raise MissionAdmissionError("canonical_admission_changed")
+        raise MissionAdmissionError("projection_identity_mismatch")
+    if (
+        admission.get("receipt_id") != receipt.get("receipt_id")
+        or admission.get("content_sha256") != receipt.get("content_sha256")
+    ):
+        raise MissionAdmissionError("receipt_content_mismatch")
     comparisons = {
         "allowed_files": receipt["scope"]["allowed_files"],
         "forbidden_files": receipt["scope"]["forbidden_files"],
@@ -668,10 +671,14 @@ def _compare_current_authority(receipt, authority, contract):
     }
     for key, value in comparisons.items():
         if sorted(value) != sorted(contract.get(key) or []):
-            raise MissionAdmissionError("canonical_admission_changed")
+            raise MissionAdmissionError(
+                "required_test_mismatch" if key == "required_tests" else "scope_mismatch"
+            )
     acceptance = receipt["operational_acceptance"]
     if acceptance.get("business_outcome_authorized") is not False or sorted(acceptance.get("requirements") or []) != sorted(contract.get("operational_acceptance") or []):
-        raise MissionAdmissionError("canonical_admission_changed")
+        raise MissionAdmissionError("operational_acceptance_mismatch")
+    if receipt["owner_instruction_chain"]["admission_packet_sha256"] != _canonical_packet_digest(authority, contract):
+        raise MissionAdmissionError("admission_packet_mismatch")
 
 
 def _canonical_packet_digest(authority, contract):
@@ -680,7 +687,7 @@ def _canonical_packet_digest(authority, contract):
         "admission": {
             key: admission.get(key)
             for key in (
-                "receipt_id", "content_sha256", "mission_id", "root_mission_id",
+                "mission_id", "root_mission_id",
                 "generation", "base_sha", "head_sha", "authority_key_sha256",
                 "latest_correction_digest", "collision_snapshot_sha256", "status",
             )
@@ -705,11 +712,30 @@ def _require_exact_admission_projection(authority, mission, family, base, head, 
         "latest_correction_digest": authority.get("latest_correction_digest"),
         "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
     }
-    if any(admission.get(key) != value for key, value in expected.items()):
+    mismatches = [key for key, value in expected.items() if admission.get(key) != value]
+    if mismatches:
         status = admission.get("status")
         if status in {"revoked", "consumed"}:
             raise MissionAdmissionError(f"admission_{status}")
-        raise MissionAdmissionError("canonical_admission_changed")
+        raise MissionAdmissionError("projection_identity_mismatch_" + mismatches[0])
+
+
+def _build_exact_candidate_payload(*, mission, family, authority, contract, base,
+                                   head, branch, diff_sha256, changed_files,
+                                   governance_reads, repository):
+    """Build the one canonical payload used by recording and protected issuance."""
+    return {
+        "mission": {"mission_id": mission["mission_id"], "root_mission_id": authority["root_mission_id"], "generation": str(family.get("generation") or "")},
+        "owner_instruction_chain": {"instruction_digests": [hashlib.sha256(str(mission.get("raw_text") or "").encode()).hexdigest(), authority["latest_correction_digest"]], "latest_correction_digest": authority["latest_correction_digest"], "admission_packet_sha256": _canonical_packet_digest(authority, contract)},
+        "repository": {"repository": repository, "base_ref": "main", "base_sha": base},
+        "governance_reads": governance_reads,
+        "existing_system_trace": {"smallest_genuine_gap": "Protected main lacked a dynamic canonical receipt issuer.", "reused_components": ["charlie_missions", "charlie_mission_events", "operational_events", "mission_admission_receipt_v1", "CHARLIE Admission Guard"], "implementation_sources": sorted(["modules/charlie/mission_admission.py", "modules/charlie/mission_store.py", "scripts/charlie_mission_admission_guard.py"])},
+        "scope": {key: sorted(contract.get(key) or []) for key in ("allowed_files", "forbidden_files", "allowed_effects", "forbidden_effects")},
+        "collision_snapshot": {"captured_at": authority["collision_observed_at"], "active_claims": list(authority["active_claims"]), "snapshot_sha256": authority["collision_snapshot_sha256"]},
+        "required_tests": sorted(contract.get("required_tests") or []),
+        "operational_acceptance": {"requirements": sorted(contract.get("operational_acceptance") or []), "business_outcome_authorized": False},
+        "candidate": {"candidate_id": f"{mission['mission_id']}:{family.get('generation')}:{head}", "branch": branch, "base_sha": base, "head_sha": head, "diff_sha256": diff_sha256, "changed_files": changed_files},
+    }
 
 
 def _github_pull_request(number, token, *, body=None):
@@ -758,19 +784,13 @@ def issue_pr_main(args, *, environ=None):
         collision_time, active_claims = authority["collision_observed_at"], list(authority["active_claims"])
         if collision_snapshot_digest(collision_time, active_claims) != authority.get("collision_snapshot_sha256"):
             raise MissionAdmissionError("canonical_collision_snapshot_invalid")
-        packet_digest = _canonical_packet_digest(authority, contract)
-        payload = {
-            "mission": {"mission_id": mission["mission_id"], "root_mission_id": authority["root_mission_id"], "generation": str(family.get("generation") or "")},
-            "owner_instruction_chain": {"instruction_digests": [hashlib.sha256(str(mission.get("raw_text") or "").encode()).hexdigest(), authority["latest_correction_digest"]], "latest_correction_digest": authority["latest_correction_digest"], "admission_packet_sha256": packet_digest},
-            "repository": {"repository": _repository_identity(), "base_ref": "main", "base_sha": base},
-            "governance_reads": _governance_read_identities(base),
-            "existing_system_trace": {"smallest_genuine_gap": "Protected main lacked a dynamic canonical receipt issuer.", "reused_components": ["charlie_missions", "charlie_mission_events", "operational_events", "mission_admission_receipt_v1", "CHARLIE Admission Guard"], "implementation_sources": sorted(["modules/charlie/mission_admission.py", "modules/charlie/mission_store.py", "scripts/charlie_mission_admission_guard.py"])},
-            "scope": {key: sorted(contract.get(key) or []) for key in ("allowed_files", "forbidden_files", "allowed_effects", "forbidden_effects")},
-            "collision_snapshot": {"captured_at": collision_time, "active_claims": active_claims, "snapshot_sha256": authority["collision_snapshot_sha256"]},
-            "required_tests": sorted(contract.get("required_tests") or []),
-            "operational_acceptance": {"requirements": sorted(contract.get("operational_acceptance") or []), "business_outcome_authorized": False},
-            "candidate": {"candidate_id": f"{mission['mission_id']}:{family.get('generation')}:{head}", "branch": branch, "base_sha": base, "head_sha": head, "diff_sha256": diff_sha256, "changed_files": changed_files},
-        }
+        payload = _build_exact_candidate_payload(
+            mission=mission, family=family, authority=authority, contract=contract,
+            base=base, head=head, branch=branch, diff_sha256=diff_sha256,
+            changed_files=changed_files,
+            governance_reads=_governance_read_identities(base),
+            repository=_repository_identity(),
+        )
         try:
             hmac_key = base64.b64decode(str(environ.get("CHARLIE_VALIDATION_RECEIPT_KEY_B64") or ""), validate=True)
             signing_seed = base64.b64decode(str(environ.get("CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64") or ""), validate=True)
@@ -814,7 +834,24 @@ def issue_pr_main(args, *, environ=None):
             except Exception:
                 receipt = None
         if receipt is None:
-            receipt = sign_mission_admission_receipt(payload, hmac_key)
+            receipt = admission_receipt = authority.get("admission", {}).get("signed_receipt")
+            if not isinstance(admission_receipt, dict):
+                raise MissionAdmissionError("receipt_content_mismatch")
+            validate_mission_admission_receipt(
+                admission_receipt, hmac_key,
+                expected_repository=_repository_identity(),
+                expected_base_sha=base, expected_head_sha=head,
+                expected_generation=str(family.get("generation") or ""),
+                expected_mission_id=mission["mission_id"],
+                expected_root_mission_id=authority["root_mission_id"],
+                expected_changed_files=changed_files,
+            )
+            if {
+                key: admission_receipt.get(key)
+                for key in payload
+            } != payload:
+                raise MissionAdmissionError("receipt_content_mismatch")
+            _compare_current_authority(admission_receipt, authority, contract)
             envelope = {"version": "mission_admission_ci_envelope_v1", "receipt": receipt, "signature_ed25519": base64.b64encode(Ed25519PrivateKey.from_private_bytes(signing_seed).sign(canonical_json(receipt))).decode()}
             marker = base64.b64encode(canonical_json(envelope)).decode()
         updated = _replace_receipt_marker(body, marker)
@@ -1195,6 +1232,7 @@ def issue_bootstrap_main(
             "collision_snapshot_sha256": authority[
                 "collision_snapshot_sha256"
             ],
+            "signed_receipt": receipt,
         }
         writer = admission_writer or append_mission_admission_event
         written, write_status = writer(

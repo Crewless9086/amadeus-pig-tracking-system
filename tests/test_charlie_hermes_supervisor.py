@@ -179,8 +179,7 @@ class HermesSupervisorTests(unittest.TestCase):
             "CURSOR_API_KEY": "cursor", "SLACK_SIGNING_SECRET": "signing", "SLACK_BOT_TOKEN": "xoxb-bot",
             "SLACK_APP_TOKEN": "xapp-app", "SLACK_ALLOWED_USERS": "UOWNER",
             "CHARLIE_SLACK_OWNER_USER_ID": "UOWNER", "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": "C1",
-            "CHARLIE_SLACK_BUILD_CHANNEL_ID": "CBUILD", "CHARLIE_SLACK_APPROVAL_CHANNEL_ID": "CAPPROVE",
-            "CHARLIE_GITHUB_READ_TOKEN": "github-read-only",
+            "CHARLIE_SLACK_BUILD_CHANNEL_ID": "CBUILD", "CHARLIE_SLACK_APPROVALS_CHANNEL_ID": "CAPPROVE",
         }
         tools = build_plugin_from_environment(env)
         self.assertIn("charlie_issue_admission", tools)
@@ -189,6 +188,10 @@ class HermesSupervisorTests(unittest.TestCase):
             build_plugin_from_environment({})
         with self.assertRaisesRegex(HermesBridgeError, "slack_owner_missing_from_gateway_allowlist"):
             build_plugin_from_environment({**env, "SLACK_ALLOWED_USERS": "UOTHER"})
+        with self.assertRaisesRegex(HermesBridgeError, "placeholder_rejected"):
+            build_plugin_from_environment({**env, "CHARLIE_GITHUB_READ_TOKEN": "placeholder"})
+        with self.assertRaisesRegex(HermesBridgeError, "github_write_credential_forbidden"):
+            build_plugin_from_environment({**env, "GITHUB_TOKEN": "write-capable"})
 
     def test_bounded_canonical_issuer_uses_bound_pr_not_caller_pr(self):
         from modules.charlie import routes

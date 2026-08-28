@@ -3,11 +3,13 @@ import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 
 class Context:
-    def __init__(self): self.tools = {}
+    def __init__(self): self.tools = {}; self.hooks = {}
     def register_tool(self, **kwargs): self.tools[kwargs["name"]] = kwargs
+    def register_hook(self, name, handler): self.hooks[name] = handler
 
 
 class HermesNativePluginTests(unittest.TestCase):
@@ -27,6 +29,7 @@ class HermesNativePluginTests(unittest.TestCase):
         with patch.object(module, "build_plugin_from_environment", return_value=fake):
             module.register(context)
         self.assertEqual(set(fake), set(context.tools))
+        self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
         for name, registered in context.tools.items():
             self.assertEqual(name, registered["schema"]["name"])
             self.assertFalse(registered["schema"]["parameters"]["additionalProperties"])
@@ -56,6 +59,59 @@ class HermesNativePluginTests(unittest.TestCase):
         plugin_manifest = Path("integrations/hermes/charlie_builder/plugin.yaml").read_text(encoding="utf-8")
         self.assertIn("SLACK_APP_TOKEN", plugin_manifest)
         self.assertIn("SLACK_ALLOWED_USERS", plugin_manifest)
+        self.assertIn("pre_gateway_dispatch", plugin_manifest)
+
+    def test_authorized_slack_event_is_deterministically_reconciled_and_dispatched(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        observed = []
+        class Bot:
+            def post(self, *args, **kwargs): observed.append(("post", args, kwargs))
+        supervisor = SimpleNamespace(
+            owner_slack_user_id="UOWNER", slack_command_channel_id="C1", slack_bot=Bot(),
+            reconcile_slack_event=lambda event: observed.append(("reconcile", event)) or {"mission_id": "CMQ-X"},
+            dispatch_cursor=lambda mission: observed.append(("dispatch", mission)) or {"cursor_agent_id": "bc-one"},
+        )
+        class ToolMap(dict): pass
+        tools = ToolMap({name: (lambda value: value) for name in (
+            "charlie_reconcile_mission", "charlie_dispatch_cursor", "charlie_get_mission_status",
+            "charlie_get_cursor_status", "charlie_supervise_once", "charlie_continue_cursor",
+            "charlie_issue_admission", "charlie_prepare_owner_decision")})
+        tools.supervisor = supervisor
+        context = Context()
+        with patch.object(module, "build_plugin_from_environment", return_value=tools): module.register(context)
+        event = SimpleNamespace(text="Pilot mission", message_id="1787904275.776069", internal=False,
+            source=SimpleNamespace(platform="slack", user_id="UOWNER", chat_id="C1", thread_id=""))
+        result = context.hooks["pre_gateway_dispatch"](event=event)
+        self.assertEqual("skip", result["action"])
+        self.assertEqual(["reconcile", "dispatch"], [item[0] for item in observed])
+        self.assertEqual("CMQ-X", observed[1][1]["mission_id"])
+
+    def test_slack_hook_failure_and_tool_boundary_fail_closed(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        posts = []
+        class Bot:
+            def post(self, *args, **kwargs): posts.append((args, kwargs))
+        supervisor = SimpleNamespace(
+            owner_slack_user_id="UOWNER", slack_command_channel_id="C1", slack_bot=Bot(),
+            reconcile_slack_event=lambda _event: {"mission_id": "CMQ-X"},
+            dispatch_cursor=lambda _mission: (_ for _ in ()).throw(RuntimeError("current_canonical_admission_required")),
+        )
+        class ToolMap(dict): pass
+        tools = ToolMap({name: (lambda value: value) for name in (
+            "charlie_reconcile_mission", "charlie_dispatch_cursor", "charlie_get_mission_status",
+            "charlie_get_cursor_status", "charlie_supervise_once", "charlie_continue_cursor",
+            "charlie_issue_admission", "charlie_prepare_owner_decision")})
+        tools.supervisor = supervisor
+        context = Context()
+        with patch.object(module, "build_plugin_from_environment", return_value=tools): module.register(context)
+        event = SimpleNamespace(text="Pilot", message_id="1.0", internal=False,
+            source=SimpleNamespace(platform="slack", user_id="UOWNER", chat_id="C1", thread_id="1.0"))
+        result = context.hooks["pre_gateway_dispatch"](event=event)
+        self.assertEqual("skip", result["action"])
+        self.assertEqual(1, len(posts))
+        blocked = context.hooks["pre_tool_call"]("terminal", session_id="agent:main:slack:channel:C1")
+        self.assertEqual("block", blocked["action"])
+        self.assertIsNone(context.hooks["pre_tool_call"]("terminal", session_id="agent:main:cli:local"))
 
 
 if __name__ == "__main__": unittest.main()
