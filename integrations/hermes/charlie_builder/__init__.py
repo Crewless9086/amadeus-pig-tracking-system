@@ -47,7 +47,10 @@ def _json_handler(handler, adapt=lambda value: value):
 
 
 def register(ctx):
-    tools = build_plugin_from_environment(validate_live=True)
+    # Registration establishes the bounded tool and hook safety surface.  Live
+    # dependencies are checked by the individual operations that use them; a
+    # transient provider outage must never remove the fail-closed Slack hooks.
+    tools = build_plugin_from_environment(validate_live=False)
     supervisor = getattr(tools, "supervisor", None)
     text = {"type": "string"}
     schemas = {
