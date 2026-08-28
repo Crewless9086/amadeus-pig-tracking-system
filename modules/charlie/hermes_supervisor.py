@@ -200,10 +200,12 @@ class CanonicalCharlieApi:
         return result.get("dispatch") or result
 
     def record_progress(self, mission_id, value):
-        return self.client.request("POST", f"/charlie/hermes/missions/{mission_id}/progress", value)
+        result = self.client.request("POST", f"/charlie/hermes/missions/{mission_id}/progress", value)
+        return result.get("dispatch") or result
 
-    def record_followup(self, mission_id, agent_id, run_id):
-        return self.record_progress(mission_id, {"event": "cursor_followup", "cursor_agent_id": agent_id, "cursor_run_id": run_id})
+    def record_followup(self, mission_id, agent_id, run_id, failed_attempts):
+        return self.record_progress(mission_id, {"event": "cursor_followup", "cursor_agent_id": agent_id,
+                                                "cursor_run_id": run_id, "failed_attempts": int(failed_attempts)})
 
     def request_admission(self, mission_id, expected_head_sha):
         return self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/admission",
@@ -333,21 +335,43 @@ class HermesSupervisor:
 
     def dispatch_cursor(self, mission):
         row = dict(mission or {})
-        admission = CursorAdmission.from_mapping(row.get("admission"))
+        mission_id = str(row.get("mission_id") or "").strip()
+        if not mission_id:
+            raise HermesBridgeError("canonical_mission_required")
+        loaded = self.canonical.get_mission(mission_id)
+        canonical = dict(loaded.get("mission") or {})
+        metadata = dict(canonical.get("metadata") or {})
+        current = dict(metadata.get("mission_admission") or {})
+        contract = dict(metadata.get("mission_admission_contract") or {})
+        if (canonical.get("mission_id") != mission_id or current.get("status") != "valid"
+                or current.get("mission_id") != mission_id
+                or current.get("generation") != contract.get("generation")):
+            raise HermesBridgeError("current_canonical_admission_required")
+        admission = CursorAdmission.from_mapping({
+            "mission_id": mission_id, "generation": current.get("generation"),
+            "receipt_id": current.get("receipt_id"),
+            "repository": "Crewless9086/amadeus-pig-tracking-system",
+            "base_sha": contract.get("base_sha"), "allowed_files": contract.get("allowed_files"),
+            "allowed_effects": contract.get("allowed_effects"),
+            "owner_instruction_digest": current.get("latest_correction_digest"),
+            "acceptance_requirements": contract.get("operational_acceptance"),
+        })
         key = mission_idempotency_key(admission.mission_id, admission.generation)
         existing = self.canonical.get_dispatch(key)
         if existing and existing.get("cursor_agent_id"):
             return {"status": "existing_dispatch", **existing}
         if self.canonical.running_writer_count() >= self.MAX_RUNNING_WRITERS:
             raise HermesBridgeError("writer_capacity_reached")
-        response = self.cursor.create_agent(admission, self._cursor_prompt(row, admission))
+        response = self.cursor.create_agent(
+            admission, self._cursor_prompt({**row, "instruction": canonical.get("raw_text")}, admission))
         agent = dict(response.get("agent") or {})
         run = dict(response.get("run") or {})
         if not agent.get("id") or not run.get("id"):
             raise HermesBridgeError("cursor_dispatch_unverified")
         return self.canonical.record_dispatch(key, {
+            "mission_id": admission.mission_id,
             "generation": admission.generation,
-            "cursor_agent_id": agent["id"], "cursor_run_id": run["id"], "state": "ACTIVE",
+            "cursor_agent_id": agent["id"], "cursor_run_id": run["id"], "agent_state": "ACTIVE",
         })
 
     def poll(self, mission):
@@ -401,7 +425,9 @@ class HermesSupervisor:
             raise HermesBridgeError("failed_attempt_limit_reached")
         response = self.cursor.continue_agent(dispatch.get("cursor_agent_id"), str(correction or "").strip())
         run = dict(response.get("run") or {})
-        return self.canonical.record_followup(row.get("mission_id"), dispatch.get("cursor_agent_id"), run.get("id"))
+        failed_attempts = int(dispatch.get("failed_attempts") or 0) + 1
+        return self.canonical.record_followup(row.get("mission_id"), dispatch.get("cursor_agent_id"),
+                                              run.get("id"), failed_attempts)
 
     def prepare_owner_decision(self, mission):
         row = dict(mission or {})

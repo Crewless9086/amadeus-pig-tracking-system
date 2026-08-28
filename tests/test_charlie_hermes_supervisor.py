@@ -39,16 +39,25 @@ class FakeClient:
 
 
 class Canonical:
-    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}
+    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True
     def reconcile_mission(self, payload, idempotency_key):
         if idempotency_key not in self.intake:
             self.reconciled += 1; self.intake[idempotency_key] = {"mission_id": "CMQ-X", "key": idempotency_key}
         return self.intake[idempotency_key]
     def get_dispatch(self, key): return self.dispatch.get(key)
+    def get_mission(self, mission_id):
+        current = admission()
+        return {"mission": {"mission_id": mission_id, "raw_text": "Canonical bounded work", "metadata": {
+            "mission_admission": {**current, "latest_correction_digest": current["owner_instruction_digest"],
+                                  "status": "valid" if self.admitted else "revoked"},
+            "mission_admission_contract": {"generation": current["generation"], "base_sha": current["base_sha"],
+                "allowed_files": current["allowed_files"], "allowed_effects": current["allowed_effects"],
+                "operational_acceptance": current["acceptance_requirements"]}}}}
     def running_writer_count(self): return self.running
     def record_dispatch(self, key, value): self.dispatch[key] = value; return value
     def record_progress(self, mission_id, value): return value
-    def record_followup(self, mission_id, agent_id, run_id): return {"agent_id": agent_id, "run_id": run_id}
+    def record_followup(self, mission_id, agent_id, run_id, failed_attempts):
+        return {"agent_id": agent_id, "run_id": run_id, "failed_attempts": failed_attempts}
 
 
 class HermesSupervisorTests(unittest.TestCase):
@@ -72,12 +81,17 @@ class HermesSupervisorTests(unittest.TestCase):
             self.supervisor.reconcile_slack_event({**event, "event_id": "Ev3", "channel": "COTHER"})
 
     def test_no_admission_no_agent_and_valid_dispatch_is_idempotent(self):
-        with self.assertRaisesRegex(HermesBridgeError, "valid_mission_admission_required"):
-            self.supervisor.dispatch_cursor({"admission": {}})
-        mission = {"admission": admission(), "instruction": "Bounded work"}
+        self.canonical.admitted = False
+        with self.assertRaisesRegex(HermesBridgeError, "current_canonical_admission_required"):
+            self.supervisor.dispatch_cursor({"mission_id": "CMQ-X"})
+        self.canonical.admitted = True
+        mission = {"mission_id": "CMQ-X", "instruction": "Forged work", "admission": {"receipt_id": "MAR-FAKE"}}
         one = self.supervisor.dispatch_cursor(mission); two = self.supervisor.dispatch_cursor(mission)
         self.assertEqual(one["cursor_agent_id"], two["cursor_agent_id"])
         self.assertEqual(1, len([call for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")]))
+        create_payload = [call[2] for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")][0]
+        self.assertIn("Canonical bounded work", create_payload["prompt"]["text"])
+        self.assertNotIn("Forged work", create_payload["prompt"]["text"])
 
     def test_canonical_dispatch_payload_matches_bounded_server_schema(self):
         class ApiClient:
@@ -89,9 +103,12 @@ class HermesSupervisorTests(unittest.TestCase):
         result = api.record_dispatch("CMQ-X:g1", {"generation": "g1", "cursor_agent_id": "bc-one"})
         self.assertNotIn("mission_id", client.payload)
         self.assertEqual("bc-one", result["cursor_agent_id"])
+        client.request = lambda *args, **kwargs: {"dispatch": {"independent_review": "SEND_BACK", "cursor_agent_id": "bc-one"}}
+        progress = api.record_progress("CMQ-X", {"event": "poll"})
+        self.assertEqual("SEND_BACK", progress["independent_review"])
 
     def test_restart_duplicate_and_writer_capacity(self):
-        mission = {"admission": admission(), "instruction": "Bounded work"}
+        mission = {"mission_id": "CMQ-X", "instruction": "Bounded work"}
         self.supervisor.dispatch_cursor(mission)
         restarted = HermesSupervisor(self.canonical, self.cursor, owner_slack_user_id="UOWNER",
                                      slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
@@ -103,7 +120,7 @@ class HermesSupervisorTests(unittest.TestCase):
 
     def test_split_failure_recovers_deterministic_cursor_agent(self):
         self.client.conflict_once = True
-        result = self.supervisor.dispatch_cursor({"admission": admission(), "instruction": "Bounded work"})
+        result = self.supervisor.dispatch_cursor({"mission_id": "CMQ-X", "instruction": "Bounded work"})
         self.assertTrue(result["cursor_agent_id"].startswith("bc-"))
         self.assertEqual("run-one", result["cursor_run_id"])
 
@@ -120,6 +137,7 @@ class HermesSupervisorTests(unittest.TestCase):
         mission = {"mission_id": "CMQ-X", "dispatch": {"cursor_agent_id": "bc-one", "failed_attempts": 0}}
         result = self.supervisor.route_send_back(mission, "SEND_BACK", "fix review")
         self.assertEqual("bc-one", result["agent_id"])
+        self.assertEqual(1, result["failed_attempts"])
         self.client.agent_state = "ACTIVE"
         with self.assertRaisesRegex(HermesBridgeError, "cursor_agent_busy"):
             self.supervisor.route_send_back(mission, "SEND_BACK", "fix review")

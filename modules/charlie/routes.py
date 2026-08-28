@@ -1131,8 +1131,9 @@ def charlie_hermes_dispatch_route():
         return jsonify(result), status
     payload = request.get_json(silent=True) or {}
     mission_id = str(payload.get("mission_id") or "")
+    state = {key: value for key, value in payload.items() if key != "mission_id"}
     result, status = record_external_supervisor_state(
-        mission_id, payload, authenticated_principal="hermes:charlie-builder")
+        mission_id, state, authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
 
 
