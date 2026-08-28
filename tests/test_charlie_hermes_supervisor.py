@@ -13,6 +13,7 @@ from modules.charlie.hermes_supervisor import (
 )
 from modules.charlie.mission_store import (
     bind_external_supervisor_candidate,
+    invalidate_external_candidate_admission,
     prepare_external_dispatch_authorization,
 )
 from tests.test_charlie_mission_store import FakeConnection
@@ -337,6 +338,52 @@ class HermesSupervisorTests(unittest.TestCase):
             connect_factory=lambda _: FakeConnection())
         self.assertEqual(400, status)
         self.assertEqual("external_candidate_binding_invalid", result["status"])
+
+    def test_changed_head_invalidates_then_rebinds_same_mission_branch(self):
+        old_head, new_head = "b" * 40, "d" * 40
+        authorization = {"status": "valid", "base_sha": "a" * 40,
+            "branch": "cursor/cmq-x-g1", "generation": "g1", "allowed_files": ["a.py"],
+            "allowed_effects": ["source_edit"], "forbidden_effects": ["merge", "deploy"]}
+        state = {"mission_admission": {"status": "valid", "head_sha": old_head,
+                "receipt_id": "MAR-" + "A" * 64},
+            "review_packet": {"pr_number": 1, "branch_name": "cursor/cmq-x-g1",
+                "candidate_revision": old_head, "candidate_diff_sha256": "c" * 64,
+                "changed_files": ["a.py"]},
+            "mission_admission_contract": {"generation": "g1", "branch": "cursor/cmq-x-g1",
+                "base_sha": "a" * 40, "allowed_files": ["a.py"]},
+            "dispatch_authorization": authorization}
+        class Cursor:
+            def __init__(self): self.sql = ""
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, sql, params=None):
+                self.sql = sql.lower(); params = params or {}
+                if "update public.charlie_missions" in self.sql and params.get("metadata"):
+                    state.clear(); state.update(json.loads(params["metadata"]))
+            def fetchone(self):
+                if "select status," in self.sql: return ("in_progress", dict(state))
+                if "select coalesce(metadata_json" in self.sql: return (dict(state),)
+                return ("inserted",)
+        class Connection:
+            def __init__(self): self.cursor_value = Cursor()
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return self.cursor_value
+        factory = lambda _: Connection()
+        invalidated, status = invalidate_external_candidate_admission("CMQ-X", old_head, new_head,
+            authenticated_principal="control_tower_isolated_validator_v2",
+            database_url="postgres://unit-test", connect_factory=factory)
+        self.assertEqual(201, status, invalidated)
+        binding = {"pr_number": 1, "branch_name": "cursor/cmq-x-g1", "base_sha": "a" * 40,
+            "head_sha": new_head, "candidate_diff_sha256": "e" * 64, "changed_files": ["a.py"],
+            "generation": "g1", "allowed_files": ["a.py"], "forbidden_files": ["*"],
+            "allowed_effects": ["source_edit"], "forbidden_effects": ["merge", "deploy"],
+            "required_tests": ["mission-admission"], "operational_acceptance": ["stop before merge"]}
+        rebound, rebound_status = bind_external_supervisor_candidate("CMQ-X", binding,
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit-test",
+            connect_factory=factory)
+        self.assertEqual(201, rebound_status, rebound)
+        self.assertEqual(new_head, state["review_packet"]["candidate_revision"])
 
 
 if __name__ == "__main__": unittest.main()
