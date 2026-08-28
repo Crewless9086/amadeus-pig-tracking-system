@@ -30,10 +30,12 @@ from modules.charlie.mission_store import (
     append_mission_admission_event,
     append_mission_control_event,
     bind_external_supervisor_candidate,
+    bind_external_supervisor_branch,
     invalidate_external_candidate_admission,
     read_external_supervisor_state,
     record_external_supervisor_state,
     prepare_external_dispatch_authorization,
+    refresh_external_dispatch_authorization_base,
     read_current_mission_admission_authority,
     list_missions,
     list_owner_work_missions,
@@ -1194,6 +1196,50 @@ def charlie_hermes_dispatch_authorization_route(mission_id):
         owner_user_id=str(env_value("CHARLIE_SLACK_OWNER_USER_ID") or ""),
         channel_id=str(env_value("CHARLIE_SLACK_CHARLIE_CHANNEL_ID") or ""),
     )
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/actual-branch", methods=["POST"])
+def charlie_hermes_actual_branch_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    if set(payload) != {"generation", "cursor_agent_id", "cursor_run_id", "repository", "branches"}:
+        return jsonify({"success": False, "status": "external_branch_binding_invalid"}), 400
+    result, status = bind_external_supervisor_branch(
+        mission_id, **payload, authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/refresh-dispatch-base", methods=["POST"])
+def charlie_hermes_refresh_dispatch_base_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    required = {"generation", "cursor_agent_id", "old_base_sha"}
+    if set(payload) != required:
+        return jsonify({"success": False, "status": "dispatch_base_refresh_invalid"}), 400
+    new_base = str(env_value("RENDER_GIT_COMMIT") or "")
+    old_base = str(payload.get("old_base_sha") or "")
+    try:
+        compare_request = urllib.request.Request(
+            f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/compare/{old_base}...{new_base}",
+            headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"})
+        with urllib.request.urlopen(compare_request, timeout=15) as response:
+            comparison = json.loads(response.read().decode("utf-8"))
+        if comparison.get("status") not in {"ahead", "identical"}:
+            raise ValueError("base_not_ancestor")
+        changed_files = [str(item.get("filename") or "") for item in comparison.get("files") or []]
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
+        return jsonify({"success": False, "status": "dispatch_base_comparison_unavailable"}), 503
+    if old_base == new_base:
+        return jsonify({"success": True, "status": "base_current"}), 200
+    result, status = refresh_external_dispatch_authorization_base(
+        mission_id, generation=payload["generation"], cursor_agent_id=payload["cursor_agent_id"],
+        old_base_sha=old_base, new_base_sha=new_base, changed_files=changed_files,
+        authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
 
 

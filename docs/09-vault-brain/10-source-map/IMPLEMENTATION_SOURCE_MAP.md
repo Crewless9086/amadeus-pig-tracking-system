@@ -162,6 +162,15 @@
   staged authority. This is reviewed source
   behavior; Windows/local Cursor and Linux Cloud target-runtime acceptance remain
   required before operational admission is claimed.
+  `.cursor/hooks/charlie_mission_admission_guard.cjs` is the portable, no-shell
+  launcher used by every Cursor hook stage. It prefers `python` on Windows and
+  `python3` on non-Windows platforms, falls back only when process creation
+  reports a missing executable, forwards the complete byte input and guard
+  output, and preserves every guard denial exit code. The external supervisor
+  binds the sole actual Cursor-produced branch once to the existing
+  mission/generation/Agent/run. Before any PR or exact candidate exists, it may
+  event a base refresh only across the reviewed, disjoint hook-recovery file
+  family; candidate admission continues to use the bound actual branch.
 - Legacy portfolio classification: `modules/charlie/portfolio_classification.py`
   implements the sealed exact-baseline/exact-set atomic operation documented in
   `docs/99-archive/vault-cutover/docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` and tested by

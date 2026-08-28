@@ -225,6 +225,19 @@ class CanonicalCharlieApi:
         result = self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/dispatch-authorization", {})
         return result.get("authorization") or result
 
+    def bind_actual_branch(self, mission_id, *, generation, cursor_agent_id, cursor_run_id, branches):
+        return self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/actual-branch", {
+            "generation": generation, "cursor_agent_id": cursor_agent_id,
+            "cursor_run_id": cursor_run_id,
+            "repository": "Crewless9086/amadeus-pig-tracking-system", "branches": branches,
+        })
+
+    def refresh_dispatch_base(self, mission_id, *, generation, cursor_agent_id, old_base_sha):
+        return self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/refresh-dispatch-base", {
+            "generation": generation, "cursor_agent_id": cursor_agent_id,
+            "old_base_sha": old_base_sha,
+        })
+
     def record_followup(self, mission_id, agent_id, run_id, failed_attempts):
         return self.record_progress(mission_id, {"event": "cursor_followup", "cursor_agent_id": agent_id,
                                                 "cursor_run_id": run_id, "failed_attempts": int(failed_attempts)})
@@ -435,6 +448,17 @@ class HermesSupervisor:
         stalled = state == "ACTIVE" and updated_at and self.clock() - updated_at > 1800
         git = dict(run.get("git") or {})
         branches = list(git.get("branches") or [])
+        loaded = self.canonical.get_mission(row.get("mission_id"))
+        metadata = dict((loaded.get("mission") or {}).get("metadata") or {})
+        authorization = dict(metadata.get("dispatch_authorization") or {})
+        if authorization.get("status") == "valid":
+            self.canonical.refresh_dispatch_base(
+                row.get("mission_id"), generation=authorization.get("generation"),
+                cursor_agent_id=agent.get("id"), old_base_sha=authorization.get("base_sha"))
+        if branches:
+            self.canonical.bind_actual_branch(
+                row.get("mission_id"), generation=authorization.get("generation"),
+                cursor_agent_id=agent.get("id"), cursor_run_id=run.get("id"), branches=branches)
         result = {"agent_state": state, "run_state": run_state, "stalled": bool(stalled),
                   "cursor_agent_id": agent.get("id"), "cursor_run_id": run.get("id"),
                   "branches": branches}

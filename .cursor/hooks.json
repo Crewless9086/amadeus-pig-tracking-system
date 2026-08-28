@@ -4,7 +4,7 @@
     "preToolUse": [
       {
         "type": "command",
-        "command": "python scripts/charlie_mission_admission_guard.py hook",
+        "command": "node .cursor/hooks/charlie_mission_admission_guard.cjs hook",
         "timeout": 10,
         "failClosed": true
       }
@@ -12,7 +12,7 @@
     "beforeShellExecution": [
       {
         "type": "command",
-        "command": "python scripts/charlie_mission_admission_guard.py hook",
+        "command": "node .cursor/hooks/charlie_mission_admission_guard.cjs hook",
         "timeout": 10,
         "failClosed": true
       }
@@ -20,7 +20,7 @@
     "afterFileEdit": [
       {
         "type": "command",
-        "command": "python scripts/charlie_mission_admission_guard.py hook --audit",
+        "command": "node .cursor/hooks/charlie_mission_admission_guard.cjs hook --audit",
         "matcher": "Write",
         "timeout": 10,
         "failClosed": true

@@ -1998,6 +1998,152 @@ def prepare_external_dispatch_authorization(
             "mission_id": mission_id, "authorization": authorization}, 201
 
 
+def bind_external_supervisor_branch(
+    mission_id, *, generation, cursor_agent_id, cursor_run_id, repository, branches,
+    authenticated_principal, database_url=None, connect_factory=None,
+):
+    """Bind the sole actual Cursor branch once, without creating another branch."""
+    mission_id = _clean_text(mission_id, 90)
+    generation = _clean_text(generation, 200)
+    agent_id = _clean_text(cursor_agent_id, 160)
+    run_id = _clean_text(cursor_run_id, 160)
+    principal = _clean_text(authenticated_principal, 200)
+    branch_values = [
+        _clean_text((item.get("name") or item.get("branch")) if isinstance(item, dict) else item, 240)
+        for item in (branches or [])
+    ]
+    branch_values = [value for value in branch_values if value]
+    if (not mission_id or not generation or not agent_id.startswith("bc-")
+            or not run_id.startswith("run-") or principal != "hermes:charlie-builder"
+            or repository != "Crewless9086/amadeus-pig-tracking-system"):
+        return {"success": False, "status": "external_branch_binding_invalid"}, 400
+    if len(branch_values) != 1:
+        return {"success": False, "status": "external_branch_count_invalid"}, 409
+    branch = branch_values[0]
+    if branch.startswith("refs/") or ".." in branch or branch.startswith("-"):
+        return {"success": False, "status": "external_branch_identity_invalid"}, 409
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                authorization = dict(metadata.get("dispatch_authorization") or {})
+                if (state.get("generation") != generation
+                        or state.get("cursor_agent_id") != agent_id
+                        or state.get("cursor_run_id") != run_id
+                        or authorization.get("generation") != generation
+                        or authorization.get("status") != "valid"):
+                    return {"success": False, "status": "external_branch_linkage_conflict"}, 409
+                if (state.get("pr_number") or state.get("head_sha")
+                        or metadata.get("review_packet") or metadata.get("mission_admission")):
+                    return {"success": False, "status": "external_branch_candidate_already_bound"}, 409
+                existing = str(state.get("branch") or "")
+                if existing:
+                    if existing != branch:
+                        return {"success": False, "status": "external_branch_binding_conflict"}, 409
+                    return {"success": True, "status": "exact_replay", "branch": branch}, 200
+                requested = str(authorization.get("branch") or "")
+                state.update({"branch": branch, "branches": branch_values})
+                authorization.update({"requested_branch": requested, "branch": branch})
+                metadata.update({"external_supervisor_state": state,
+                                 "dispatch_authorization": authorization})
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Actual Cursor branch bound to the existing supervised Agent.",
+                    {"generation": generation, "cursor_agent_id": agent_id,
+                     "cursor_run_id": run_id, "branch": branch, "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "external_branch_binding_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "external_branch_bound", "branch": branch}, 201
+
+
+def refresh_external_dispatch_authorization_base(
+    mission_id, *, generation, cursor_agent_id, old_base_sha, new_base_sha,
+    changed_files, authenticated_principal, database_url=None, connect_factory=None,
+):
+    """Refresh only a pre-candidate authorization across a disjoint infrastructure merge."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    files = sorted({_clean_text(item, 500) for item in (changed_files or []) if _clean_text(item, 500)})
+    infrastructure_files = {
+        ".cursor/hooks.json", ".cursor/hooks/charlie_mission_admission_guard.cjs",
+        "tests/test_cursor_mission_admission_hook_launcher.py",
+        "integrations/hermes/charlie_builder/supervisor.py", "modules/charlie/mission_store.py",
+        "modules/charlie/routes.py", "tests/test_charlie_hermes_supervisor.py",
+        "tests/test_charlie_mission_store.py",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/09-vault-brain/CHANGELOG.md",
+    }
+    if (not mission_id or principal != "hermes:charlie-builder"
+            or not re.fullmatch(r"[0-9a-f]{40}", str(old_base_sha or ""))
+            or not re.fullmatch(r"[0-9a-f]{40}", str(new_base_sha or ""))
+            or old_base_sha == new_base_sha or not files or set(files) - infrastructure_files):
+        return {"success": False, "status": "dispatch_base_refresh_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                authorization = dict(metadata.get("dispatch_authorization") or {})
+                current_owner_digest = hashlib.sha256(str(
+                    metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
+                if (authorization.get("base_sha") == new_base_sha
+                        and state.get("dispatch_base_sha") == new_base_sha):
+                    return {"success": True, "status": "exact_replay"}, 200
+                if (authorization.get("base_sha") != old_base_sha
+                        or authorization.get("generation") != generation
+                        or state.get("generation") != generation
+                        or state.get("cursor_agent_id") != cursor_agent_id
+                        or authorization.get("owner_instruction_digest") != current_owner_digest
+                        or state.get("pr_number") or state.get("head_sha")
+                        or metadata.get("review_packet") or metadata.get("mission_admission")
+                        or set(files) & set(authorization.get("allowed_files") or [])):
+                    return {"success": False, "status": "dispatch_base_refresh_conflict"}, 409
+                authorization["base_sha"] = new_base_sha
+                identity_contract = {key: value for key, value in authorization.items()
+                                     if key not in {"authorization_id", "status"}}
+                authorization["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                    identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                state["dispatch_base_sha"] = new_base_sha
+                metadata.update({"dispatch_authorization": authorization,
+                                 "external_supervisor_state": state})
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Pre-dispatch base refreshed after a disjoint protected infrastructure merge.",
+                    {"old_base_sha": old_base_sha, "new_base_sha": new_base_sha,
+                     "changed_files": files, "cursor_agent_id": cursor_agent_id,
+                     "generation": generation, "reason": "portable_cursor_admission_hook_recovery",
+                     "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "dispatch_base_refresh_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "dispatch_base_refreshed",
+            "old_base_sha": old_base_sha, "new_base_sha": new_base_sha}, 201
+
+
 def read_external_supervisor_state(idempotency_key="", *, database_url=None, connect_factory=None):
     key = _clean_text(idempotency_key, 300)
     database_url = _database_url(database_url)
