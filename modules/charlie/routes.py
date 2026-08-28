@@ -27,11 +27,14 @@ from modules.charlie.runner_control import runner_status as local_runner_status
 from modules.charlie.mission_store import (
     get_mission,
     get_mission_review_packet,
+    append_mission_admission_event,
     append_mission_control_event,
     bind_external_supervisor_candidate,
+    invalidate_external_candidate_admission,
     read_external_supervisor_state,
     record_external_supervisor_state,
     prepare_external_dispatch_authorization,
+    read_current_mission_admission_authority,
     list_missions,
     list_owner_work_missions,
     create_owner_execution_hold,
@@ -1036,6 +1039,95 @@ def charlie_external_supervisor_candidate_route(mission_id):
     return jsonify(result), status_code
 
 
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/protected-admission", methods=["POST"])
+def charlie_protected_admission_record_route(mission_id):
+    """Record only an exact receipt signed by the existing protected issuer."""
+    from scripts.charlie_mission_admission_guard import _validate_external_receipt_envelope
+    payload = request.get_json(silent=True) or {}
+    envelope = payload.get("envelope")
+    try:
+        pr_number = int(payload.get("pr_number") or 0)
+        if pr_number <= 0 or set(payload) != {"envelope", "pr_number"}:
+            raise ValueError("protected_admission_payload_invalid")
+        receipt = (envelope or {}).get("receipt") or {}
+        candidate = receipt.get("candidate") or {}
+        repository = receipt.get("repository") or {}
+        verified, identity = _validate_external_receipt_envelope(
+            envelope, expected_repository="Crewless9086/amadeus-pig-tracking-system",
+            expected_base_sha=str(repository.get("base_sha") or ""),
+            expected_head_sha=str(candidate.get("head_sha") or ""),
+            expected_changed_files=candidate.get("changed_files") or [])
+        if identity.get("mission_id") != mission_id:
+            raise ValueError("mission_identity_mismatch")
+        loaded, loaded_status = get_mission(mission_id)
+        authority, authority_status = read_current_mission_admission_authority(mission_id)
+        if loaded_status >= 400 or authority_status >= 400:
+            raise ValueError("canonical_authority_unavailable")
+        metadata = dict(((loaded.get("mission") or {}).get("metadata") or {}))
+        packet = dict(metadata.get("review_packet") or {})
+        contract = dict(metadata.get("mission_admission_contract") or {})
+        family = dict(metadata.get("mission_family") or {})
+        if packet and packet.get("candidate_revision") != identity["head_sha"]:
+            current_admission = dict(metadata.get("mission_admission") or {})
+            invalidated, invalidated_status = invalidate_external_candidate_admission(
+                mission_id, str(packet.get("candidate_revision") or ""), identity["head_sha"],
+                authenticated_principal="control_tower_isolated_validator_v2")
+            if invalidated_status >= 400:
+                raise ValueError(invalidated.get("status") or "candidate_invalidation_failed")
+            packet = {}
+        if not packet:
+            authorization = dict(metadata.get("dispatch_authorization") or {})
+            pull_request = urllib.request.Request(
+                f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/pulls/{pr_number}",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "CHARLIE-Canonical-Admission"})
+            with urllib.request.urlopen(pull_request, timeout=15) as response:
+                pull = json.loads(response.read(1048576))
+            if (pull.get("state") != "open" or (pull.get("head") or {}).get("sha") != identity["head_sha"]
+                    or (pull.get("head") or {}).get("ref") != candidate.get("branch")
+                    or (pull.get("base") or {}).get("sha") != identity["base_sha"]
+                    or authorization.get("status") != "valid"):
+                raise ValueError("protected_admission_pull_identity_changed")
+            binding = {"pr_number": pr_number, "branch_name": candidate["branch"],
+                "base_sha": identity["base_sha"], "head_sha": identity["head_sha"],
+                "candidate_diff_sha256": candidate["diff_sha256"],
+                "changed_files": identity["changed_files"], "generation": identity["generation"],
+                "allowed_files": identity["allowed_files"], "forbidden_files": verified["scope"]["forbidden_files"],
+                "allowed_effects": identity["allowed_effects"], "forbidden_effects": identity["forbidden_effects"],
+                "required_tests": verified["required_tests"],
+                "operational_acceptance": verified["operational_acceptance"]["requirements"]}
+            bound, bound_status = bind_external_supervisor_candidate(
+                mission_id, binding, authenticated_principal="hermes:charlie-builder")
+            if bound_status >= 400:
+                raise ValueError(bound.get("status") or "external_candidate_binding_failed")
+            loaded, loaded_status = get_mission(mission_id)
+            metadata = dict(((loaded.get("mission") or {}).get("metadata") or {}))
+            packet = dict(metadata.get("review_packet") or {})
+            contract = dict(metadata.get("mission_admission_contract") or {})
+            family = dict(metadata.get("mission_family") or {})
+        if (packet.get("candidate_revision") != identity["head_sha"]
+                or packet.get("candidate_diff_sha256") != candidate.get("diff_sha256")
+                or sorted(packet.get("changed_files") or []) != sorted(identity["changed_files"])
+                or contract.get("base_sha") != identity["base_sha"]
+                or contract.get("branch") != candidate.get("branch")
+                or sorted(contract.get("allowed_files") or []) != sorted(identity["allowed_files"])
+                or family.get("generation") != identity["generation"]
+                or authority.get("latest_correction_digest") != verified["owner_instruction_chain"]["latest_correction_digest"]
+                or authority.get("collision_snapshot_sha256") != verified["collision_snapshot"]["snapshot_sha256"]):
+            raise ValueError("canonical_candidate_linkage_changed")
+        admission = {"receipt_id": verified["receipt_id"], "content_sha256": verified["content_sha256"],
+            "mission_id": mission_id, "root_mission_id": identity["root_mission_id"],
+            "generation": identity["generation"], "base_sha": identity["base_sha"],
+            "head_sha": identity["head_sha"], "authority_key_sha256": verified["authority_key_sha256"],
+            "latest_correction_digest": verified["owner_instruction_chain"]["latest_correction_digest"],
+            "collision_snapshot_sha256": verified["collision_snapshot"]["snapshot_sha256"],
+            "signed_receipt": verified}
+        result, status = append_mission_admission_event(mission_id, admission,
+            authenticated_principal="control_tower_isolated_validator_v2")
+        return jsonify(result), status
+    except Exception:
+        return jsonify({"success": False, "status": "protected_admission_rejected"}), 409
+
+
 @charlie_bp.route("/charlie/hermes/missions", methods=["POST"])
 def charlie_hermes_mission_reconcile_route():
     denied = _require_hermes_gateway_access()
@@ -1112,7 +1204,9 @@ def charlie_hermes_mission_admission_route(mission_id):
     if denied:
         return denied
     supplied = request.get_json(silent=True) or {}
-    if set(supplied) != {"expected_head_sha"} or not re.fullmatch(r"[0-9a-f]{40}", str(supplied.get("expected_head_sha") or "")):
+    if (set(supplied) != {"expected_head_sha", "pr_number"}
+            or not re.fullmatch(r"[0-9a-f]{40}", str(supplied.get("expected_head_sha") or ""))
+            or not isinstance(supplied.get("pr_number"), int) or supplied["pr_number"] <= 0):
         return jsonify({"success": False, "status": "issuer_request_invalid"}), 400
     loaded, status = get_mission(mission_id)
     if status >= 400:
@@ -1120,13 +1214,18 @@ def charlie_hermes_mission_admission_route(mission_id):
     metadata = dict(((loaded.get("mission") or {}).get("metadata") or {}))
     packet = dict(metadata.get("review_packet") or {})
     expected_head = str(supplied["expected_head_sha"])
-    if packet.get("candidate_revision") != expected_head or not int(packet.get("pr_number") or 0):
+    authorization = dict(metadata.get("dispatch_authorization") or {})
+    if packet.get("candidate_revision") == expected_head and int(packet.get("pr_number") or 0):
+        pr_number = int(packet["pr_number"])
+    elif authorization.get("status") == "valid":
+        pr_number = supplied["pr_number"]
+    else:
         return jsonify({"success": False, "status": "canonical_candidate_not_bound"}), 409
     token = str(env_value("CHARLIE_ADMISSION_ISSUER_GITHUB_TOKEN") or "").strip()
     if len(token) < 32:
         return jsonify({"success": False, "status": "protected_issuer_unavailable"}), 503
     body = json.dumps({"ref": "main", "inputs": {
-        "pull_request_number": str(int(packet["pr_number"])), "expected_head_sha": expected_head,
+        "pull_request_number": str(pr_number), "expected_head_sha": expected_head,
     }}, separators=(",", ":")).encode()
     issuer_request = urllib.request.Request(
         "https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/actions/workflows/mission-admission-issuer.yml/dispatches",
@@ -1140,7 +1239,7 @@ def charlie_hermes_mission_admission_route(mission_id):
     except (urllib.error.URLError, OSError):
         return jsonify({"success": False, "status": "protected_issuer_unavailable"}), 503
     return jsonify({"success": True, "status": "protected_issuer_dispatched",
-                    "mission_id": mission_id, "pr_number": int(packet["pr_number"]),
+                    "mission_id": mission_id, "pr_number": pr_number,
                     "expected_head_sha": expected_head}), 202
 
 

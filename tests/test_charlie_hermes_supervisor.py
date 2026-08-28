@@ -26,7 +26,7 @@ def admission():
 
 
 class FakeClient:
-    def __init__(self): self.calls = []; self.agent_state = "IDLE"; self.conflict_once = False
+    def __init__(self): self.calls = []; self.agent_state = "IDLE"; self.conflict_once = False; self.run_branches = []
     def request(self, method, path, payload=None, headers=None, query=None):
         self.calls.append((method, path, payload, query))
         if path == "/v1/agents":
@@ -35,14 +35,14 @@ class FakeClient:
                 return {"error": "conflict", "status_code": 409}
             return {"agent": {"id": "bc-one"}, "run": {"id": "run-one"}}
         if path.endswith("/runs") and method == "POST": return {"run": {"id": "run-two"}}
-        if path.endswith("/runs/run-one"): return {"id": "run-one", "status": "SUCCEEDED", "updatedAt": "2026-08-28T00:00:00Z"}
+        if path.endswith("/runs/run-one"): return {"id": "run-one", "status": "SUCCEEDED", "updatedAt": "2026-08-28T00:00:00Z", "git": {"branches": self.run_branches}}
         if path.startswith("/v1/agents/bc-") and "/runs/" not in path:
             return {"id": path.rsplit("/", 1)[-1], "status": self.agent_state, "latestRunId": "run-one"}
         return {"items": []}
 
 
 class Canonical:
-    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False
+    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False; self.admission_requests = []
     def reconcile_mission(self, payload, idempotency_key):
         if idempotency_key not in self.intake:
             self.reconciled += 1; self.intake[idempotency_key] = {"mission_id": "CMQ-X", "key": idempotency_key}
@@ -70,6 +70,9 @@ class Canonical:
     def record_progress(self, mission_id, value): return value
     def record_followup(self, mission_id, agent_id, run_id, failed_attempts):
         return {"agent_id": agent_id, "run_id": run_id, "failed_attempts": failed_attempts}
+    def request_admission(self, mission_id, expected_head_sha, pr_number=0):
+        self.admission_requests.append((mission_id, expected_head_sha, pr_number))
+        return {"status": "protected_issuer_dispatched"}
 
 
 class HermesSupervisorTests(unittest.TestCase):
@@ -189,6 +192,20 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertTrue(state["ci_stalled"])
         self.assertEqual("SEND_BACK", state["independent_review"])
 
+    def test_poll_discovers_pr_and_invokes_protected_exact_candidate_admission_once(self):
+        class Monitor:
+            def find_pull(self, branch): return 9
+            def pull_state(self, number, now=None):
+                return {"pr_number": number, "head_sha": "d" * 40, "branch": "cursor/cmq-x-g1",
+                    "checks": {}, "ci_stalled": False, "independent_review": "WAIT"}
+        supervisor = HermesSupervisor(self.canonical, self.cursor, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=Monitor(), clock=lambda: 0)
+        self.client.run_branches = [{"name": "cursor/cmq-x-g1"}]
+        result = supervisor.poll({"mission_id": "CMQ-X", "dispatch": {"cursor_agent_id": "bc-one"}})
+        self.assertEqual([("CMQ-X", "d" * 40, 9)], self.canonical.admission_requests)
+        self.assertEqual("d" * 40, result["admission_requested_head"])
+
     def test_installable_factory_requires_and_consumes_protected_config(self):
         env = {
             "CHARLIE_CANONICAL_API_URL": "https://canonical.example", "CHARLIE_HERMES_GATEWAY_TOKEN": "g" * 32,
@@ -230,7 +247,7 @@ class HermesSupervisorTests(unittest.TestCase):
             response = app.test_client().post(
                 "/charlie/hermes/missions/CMQ-X/admission",
                 headers={"Authorization": "Bearer " + "g" * 32},
-                json={"expected_head_sha": "d" * 40})
+                json={"expected_head_sha": "d" * 40, "pr_number": 9999})
         self.assertEqual(202, response.status_code)
         self.assertEqual("1313", captured["body"]["inputs"]["pull_request_number"])
 

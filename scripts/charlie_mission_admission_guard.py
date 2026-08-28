@@ -12,6 +12,8 @@ import shlex
 import subprocess
 import sys
 from urllib import request as url_request
+from urllib import error as url_error
+from urllib import parse as url_parse
 from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
@@ -585,7 +587,7 @@ def _protected_database_url(environ):
     return database_url
 
 
-def _canonical_contract_for_pull(number, head, branch, diff_sha256, database_url):
+def _canonical_contract_for_pull(number, base, head, branch, diff_sha256, changed_files, database_url):
     result, status = list_missions(limit=100, database_url=database_url)
     if status >= 400 or not result.get("success"):
         raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
@@ -601,7 +603,31 @@ def _canonical_contract_for_pull(number, head, branch, diff_sha256, database_url
         ):
             matches.append((mission, metadata))
     if len(matches) != 1:
-        raise MissionAdmissionError("canonical_candidate_linkage_unavailable")
+        dispatch_matches = []
+        for mission in result.get("missions") or []:
+            metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+            authorization = metadata.get("dispatch_authorization") \
+                if isinstance(metadata.get("dispatch_authorization"), dict) else {}
+            if (authorization.get("status") == "valid"
+                    and authorization.get("base_sha") == base
+                    and authorization.get("branch") == branch
+                    and sorted(authorization.get("allowed_files") or []) == sorted(changed_files)):
+                contract = {"generation": authorization.get("generation"), "branch": branch,
+                    "base_sha": base, "allowed_files": sorted(changed_files), "forbidden_files": ["*"],
+                    "allowed_effects": sorted(authorization.get("allowed_effects") or []),
+                    "forbidden_effects": sorted(authorization.get("forbidden_effects") or []),
+                    "required_tests": ["mission-admission", "charlie-core",
+                        "Unit tests with disposable Postgres audit rails",
+                        "Closed Render migration rail with disposable Postgres",
+                        "Playwright real-browser behavior gate"],
+                    "operational_acceptance": ["Independent review completed; stop before merge or deployment"]}
+                family = dict(metadata.get("mission_family") or {})
+                family["root_mission_id"] = family.get("root_mission_id") or mission.get("mission_id")
+                family["generation"] = authorization.get("generation")
+                dispatch_matches.append((mission, metadata, contract, family))
+        if len(dispatch_matches) != 1:
+            raise MissionAdmissionError("canonical_candidate_linkage_unavailable")
+        return dispatch_matches[0]
     mission, metadata = matches[0]
     contract = metadata.get("mission_admission_contract")
     family = metadata.get("mission_family")
@@ -773,7 +799,8 @@ def issue_pr_main(args, *, environ=None):
         changed_files = _changed_files(base, head)
         patch = _git_bytes("diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", base, head, "--")
         diff_sha256 = canonical_candidate_diff(changed_files, patch)
-        mission, metadata, contract, family = _canonical_contract_for_pull(args.pull_request_number, head, branch, diff_sha256, database_url)
+        mission, metadata, contract, family = _canonical_contract_for_pull(
+            args.pull_request_number, base, head, branch, diff_sha256, changed_files, database_url)
         if sorted(changed_files) != sorted(contract.get("allowed_files") or []) or base != contract.get("base_sha") or branch != contract.get("branch"):
             raise MissionAdmissionError("canonical_candidate_linkage_changed")
         if not str(family.get("generation") or ""):
@@ -800,16 +827,56 @@ def issue_pr_main(args, *, environ=None):
             raise MissionAdmissionError("issuer_signing_authority_unavailable") from exc
         if not hmac_key:
             raise MissionAdmissionError("issuer_signing_authority_unavailable")
-        _require_exact_admission_projection(
-            authority, mission, family, base, head, hashlib.sha256(hmac_key).hexdigest()
-        )
+        authority_key_sha256 = hashlib.sha256(hmac_key).hexdigest()
+        protected_receipt, protected_marker = None, ""
+        try:
+            _require_exact_admission_projection(
+                authority, mission, family, base, head, authority_key_sha256)
+        except MissionAdmissionError as exc:
+            if not str(exc).startswith("projection_identity_mismatch_"):
+                raise
+            projected = dict(authority)
+            projected["admission"] = {"status": "valid", "mission_id": mission["mission_id"],
+                "root_mission_id": authority["root_mission_id"], "generation": family["generation"],
+                "base_sha": base, "head_sha": head, "authority_key_sha256": authority_key_sha256,
+                "latest_correction_digest": authority["latest_correction_digest"],
+                "collision_snapshot_sha256": authority["collision_snapshot_sha256"]}
+            payload = _build_exact_candidate_payload(
+                mission=mission, family=family, authority=projected, contract=contract,
+                base=base, head=head, branch=branch, diff_sha256=diff_sha256,
+                changed_files=changed_files, governance_reads=_governance_read_identities(base),
+                repository=_repository_identity())
+            protected_receipt = sign_mission_admission_receipt(payload, hmac_key)
+            envelope = {"version": "mission_admission_ci_envelope_v1", "receipt": protected_receipt,
+                "signature_ed25519": base64.b64encode(Ed25519PrivateKey.from_private_bytes(
+                    signing_seed).sign(canonical_json(protected_receipt))).decode()}
+            callback_base = str(environ.get("CHARLIE_CANONICAL_API_URL") or "").rstrip("/")
+            if not callback_base.startswith("https://"):
+                raise MissionAdmissionError("canonical_admission_callback_unavailable")
+            callback = url_request.Request(callback_base + "/charlie/hermes/missions/" +
+                url_parse.quote(mission["mission_id"], safe="") + "/protected-admission",
+                data=canonical_json({"envelope": envelope, "pr_number": args.pull_request_number}), method="POST",
+                headers={"Content-Type": "application/json", "User-Agent": "CHARLIE-Admission-Issuer"})
+            try:
+                with url_request.urlopen(callback, timeout=15) as response:
+                    if response.status not in {200, 201}:
+                        raise OSError("unexpected_status")
+            except (url_error.URLError, OSError) as callback_error:
+                raise MissionAdmissionError("canonical_admission_callback_unavailable") from callback_error
+            authority, status = read_current_mission_admission_authority(
+                mission["mission_id"], database_url=database_url)
+            if status >= 400 or not authority.get("success"):
+                raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+            _require_exact_admission_projection(
+                authority, mission, family, base, head, authority_key_sha256)
+            protected_marker = base64.b64encode(canonical_json(envelope)).decode()
         body = str(pull.get("body") or "")
         pattern = r"(?m)^Mission-Admission-Receipt-B64: .*(?:\r?\n|$)"
         existing = __import__("re").findall(pattern, body)
         if len(existing) > 1:
             raise MissionAdmissionError("duplicate_external_admission_receipts")
-        receipt = None
-        marker = ""
+        receipt = protected_receipt
+        marker = protected_marker
         encoded_existing = __import__("re").findall(
             r"(?m)^Mission-Admission-Receipt-B64: ([A-Za-z0-9+/]+={0,2})\r?$",
             body,
