@@ -58,8 +58,11 @@ class HermesNativePluginTests(unittest.TestCase):
         self.assertIn("message.channels", manifest)
         plugin_manifest = Path("integrations/hermes/charlie_builder/plugin.yaml").read_text(encoding="utf-8")
         self.assertIn("SLACK_APP_TOKEN", plugin_manifest)
-        self.assertIn("SLACK_ALLOWED_USERS", plugin_manifest)
+        self.assertNotIn("SLACK_ALLOWED_USERS", plugin_manifest)
         self.assertIn("pre_gateway_dispatch", plugin_manifest)
+        metadata = json.loads(Path("integrations/hermes/charlie_builder/plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual("channel-managed", metadata["slack_allowlist_authority"])
+        self.assertNotIn("slack_gateway_allowed_users_env", metadata)
 
     def test_authorized_slack_event_is_deterministically_reconciled_and_dispatched(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")
@@ -86,6 +89,29 @@ class HermesNativePluginTests(unittest.TestCase):
         self.assertEqual(["reconcile", "dispatch"], [item[0] for item in observed])
         self.assertEqual("CMQ-X", observed[1][1]["mission_id"])
 
+    def test_wrong_owner_and_channel_are_skipped_without_dispatch(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        observed = []
+        supervisor = SimpleNamespace(
+            owner_slack_user_id="UOWNER", slack_command_channel_id="C1", slack_bot=None,
+            reconcile_slack_event=lambda event: observed.append(("reconcile", event)),
+            dispatch_cursor=lambda mission: observed.append(("dispatch", mission)),
+        )
+        class ToolMap(dict): pass
+        tools = ToolMap({name: (lambda value: value) for name in (
+            "charlie_reconcile_mission", "charlie_dispatch_cursor", "charlie_get_mission_status",
+            "charlie_get_cursor_status", "charlie_supervise_once", "charlie_continue_cursor",
+            "charlie_issue_admission", "charlie_prepare_owner_decision")})
+        tools.supervisor = supervisor
+        context = Context()
+        with patch.object(module, "build_plugin_from_environment", return_value=tools): module.register(context)
+        for owner, channel in (("UOTHER", "C1"), ("UOWNER", "COTHER")):
+            event = SimpleNamespace(text="Pilot", message_id=f"{owner}:{channel}", internal=False,
+                source=SimpleNamespace(platform="slack", user_id=owner, chat_id=channel, thread_id=""))
+            result = context.hooks["pre_gateway_dispatch"](event=event)
+            self.assertEqual({"action": "skip", "reason": "slack_ingress_not_authorized"}, result)
+        self.assertEqual([], observed)
+
     def test_slack_hook_failure_and_tool_boundary_fail_closed(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")
         posts = []
@@ -111,6 +137,8 @@ class HermesNativePluginTests(unittest.TestCase):
         self.assertEqual(1, len(posts))
         blocked = context.hooks["pre_tool_call"]("terminal", session_id="agent:main:slack:channel:C1")
         self.assertEqual("block", blocked["action"])
+        self.assertEqual("block", context.hooks["pre_tool_call"]("file", session_id="agent:main:slack:channel:C1")["action"])
+        self.assertEqual("block", context.hooks["pre_tool_call"]("code_execution", session_id="agent:main:slack:channel:C1")["action"])
         self.assertIsNone(context.hooks["pre_tool_call"]("terminal", session_id="agent:main:cli:local"))
 
 
