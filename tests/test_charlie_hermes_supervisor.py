@@ -740,6 +740,7 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual(200, replay_status, replay)
         self.assertEqual("exact_replay", replay["status"])
         for field, changed in (("predecessor_run_id", "run-conflict"),
+                               ("predecessor_final_state", "CANCELLED"),
                                ("observed_main_sha", "b" * 40),
                                ("generation", "g2")):
             conflict = json.loads(json.dumps(result["succession"]))
