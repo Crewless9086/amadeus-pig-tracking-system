@@ -18,6 +18,7 @@ from modules.charlie.mission_store import (
     prepare_external_dispatch_authorization,
     prepare_external_execution_succession,
     refresh_external_dispatch_authorization_base,
+    record_external_supervisor_state,
 )
 from tests.test_charlie_mission_store import FakeConnection
 
@@ -543,17 +544,16 @@ class HermesSupervisorTests(unittest.TestCase):
         problem = "Documentation pilot"
         metadata = {"mission_vault": {"problem_statement": problem},
             "external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-old",
-                "cursor_run_id": "run-old", "agent_state": "IDLE", "slack_event_id": "Ev1",
-                "slack_thread_ts": "1.0"},
+                "cursor_run_id": "run-old", "agent_state": "ARCHIVED", "event": "predecessor_archived",
+                "repository_mutation": False, "slack_event_id": "Ev1", "slack_thread_ts": "1.0"},
             "dispatch_authorization": {"status": "valid", "generation": "g1",
-                "repository": "Crewless9086/amadeus-pig-tracking-system",
+                "repository": "Crewless9086/amadeus-pig-tracking-system", "base_sha": "a" * 40,
                 "owner_instruction_digest": hashlib.sha256(problem.encode()).hexdigest(),
                 "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]}}
         connection = FakeConnection([(metadata,)])
         result, status = prepare_external_execution_succession(
             "CMQ-X", generation="g1", predecessor_agent_id="bc-old", predecessor_run_id="run-old",
-            predecessor_state="IDLE", predecessor_archived=True,
-            repository_mutation=False, pilot_pr_exists=False, exact_candidate_exists=False,
+            predecessor_state="IDLE",
             replacement_reason="workspace_refresh_unsupported_after_hook_repair",
             observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
             database_url="postgres://unit-test", connect_factory=lambda _: connection)
@@ -562,6 +562,34 @@ class HermesSupervisorTests(unittest.TestCase):
         stored = json.loads([params for sql, params in connection.cursor_instance.executed
             if "update public.charlie_missions" in sql][0]["metadata"])
         self.assertEqual("ARCHIVED", stored["external_supervisor_state"]["agent_state"])
+        for field, value in (("agent_state", "IDLE"), ("repository_mutation", True)):
+            blocked = json.loads(json.dumps(metadata))
+            blocked["external_supervisor_state"][field] = value
+            rejected, rejected_status = prepare_external_execution_succession(
+                "CMQ-X", generation="g1", predecessor_agent_id="bc-old", predecessor_run_id="run-old",
+                predecessor_state="IDLE", replacement_reason="workspace_refresh_unsupported_after_hook_repair",
+                observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+                database_url="postgres://unit-test", connect_factory=lambda _, row=blocked: FakeConnection([(row,)]))
+            self.assertEqual(409, rejected_status, (field, rejected))
+        stale = json.loads(json.dumps(metadata))
+        stale["dispatch_authorization"]["base_sha"] = "b" * 40
+        rejected, rejected_status = prepare_external_execution_succession(
+            "CMQ-X", generation="g1", predecessor_agent_id="bc-old", predecessor_run_id="run-old",
+            predecessor_state="IDLE", replacement_reason="workspace_refresh_unsupported_after_hook_repair",
+            observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit-test", connect_factory=lambda _: FakeConnection([(stale,)]))
+        self.assertEqual(409, rejected_status, rejected)
+
+    def test_archived_predecessor_cannot_reactivate_via_partial_progress(self):
+        metadata = {"external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-old",
+            "cursor_run_id": "run-old", "agent_state": "ARCHIVED", "execution_attempt": 1},
+            "execution_succession": {"active_attempt": 2, "predecessor_agent_id": "bc-old",
+                "predecessor_archived": True, "successor_agent_id": ""}}
+        result, status = record_external_supervisor_state("CMQ-X", {"agent_state": "ACTIVE"},
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([(metadata,)]))
+        self.assertEqual(409, status, result)
+        self.assertEqual("predecessor_reactivation_forbidden", result["status"])
 
 
 if __name__ == "__main__": unittest.main()

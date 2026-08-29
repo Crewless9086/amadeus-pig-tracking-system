@@ -1207,8 +1207,7 @@ def charlie_hermes_execution_succession_route(mission_id):
         return denied
     payload = request.get_json(silent=True) or {}
     required = {"generation", "predecessor_agent_id", "predecessor_run_id",
-                "predecessor_state", "predecessor_archived", "replacement_reason",
-                "repository_mutation", "pilot_pr_exists", "exact_candidate_exists"}
+                "predecessor_state", "replacement_reason"}
     if set(payload) != required:
         return jsonify({"success": False, "status": "execution_succession_invalid"}), 400
     result, status = prepare_external_execution_succession(
