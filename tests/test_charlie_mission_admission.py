@@ -489,6 +489,26 @@ class MissionAdmissionGuardTests(unittest.TestCase):
                     _cursor_cloud_or_branch_authorization({"action": "after_file_edit"}, {})
                 fallback.assert_not_called()
 
+    def test_branch_fallback_preserves_cloud_protected_read_boundaries(self):
+        with patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket", return_value=""), \
+             patch("scripts.charlie_mission_admission_guard._branch_fallback_context", return_value=True):
+            for path in (".env", ".git/config", "/proc/self/environ"):
+                with self.subTest(path=path):
+                    _, result = self._hook({"hook_event_name": "preToolUse", "tool_name": "Read",
+                        "tool_input": {"path": path}}, os_name="posix")
+                    self.assertEqual("deny", result["permission"])
+            for tool in ("Grep", "Rg", "Glob", "Search"):
+                with self.subTest(tool=tool):
+                    _, result = self._hook({"hook_event_name": "preToolUse", "tool_name": tool,
+                        "tool_input": {"path": "."}}, os_name="posix")
+                    self.assertEqual("deny", result["permission"])
+            for command in ("git config --get remote.origin.url", "git diff -- .env",
+                            "cat /proc/self/environ"):
+                with self.subTest(command=command):
+                    _, result = self._hook({"hook_event_name": "beforeShellExecution",
+                        "command": command}, os_name="posix")
+                    self.assertEqual("deny", result["permission"])
+
     def test_oidc_mint_retries_transient_missing_socket_without_mar_fallback(self):
         responses = [FileNotFoundError("booting"), FileNotFoundError("booting"), None]
 

@@ -283,7 +283,7 @@ def hook_main(
             if _references_trusted_authority(command, environ):
                 raise MissionAdmissionError("trusted_admission_read_denied")
             if _is_read_only_shell(command, os_name=os_name):
-                if cloud_hook and not _cloud_read_only_shell_safe(command, os_name=os_name):
+                if (cloud_hook or branch_fallback) and not _cloud_read_only_shell_safe(command, os_name=os_name):
                     raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_shell")
             if cloud_hook or branch_fallback:
@@ -297,10 +297,10 @@ def hook_main(
             if normalized in READ_ONLY_TOOLS:
                 if _references_trusted_authority(packet, environ):
                     raise MissionAdmissionError("trusted_admission_read_denied")
-                if cloud_hook and normalized in {"read", "readfile"}:
+                if (cloud_hook or branch_fallback) and normalized in {"read", "readfile"}:
                     if not _cloud_repository_read_path_safe(_tool_target_path(packet), repo_root):
                         raise MissionAdmissionError("cloud_read_scope_denied")
-                elif cloud_hook and normalized in {"grep", "rg", "glob", "search"}:
+                elif (cloud_hook or branch_fallback) and normalized in {"grep", "rg", "glob", "search"}:
                     raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_tool")
             if normalized == "shell":
