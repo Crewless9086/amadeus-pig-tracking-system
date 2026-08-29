@@ -2736,6 +2736,22 @@ milestone remains available for audit. Source repair is active; **NO BUSINESS
 OUTCOME** and **OWNER ACTION: NONE** until deployed readback proves zero heat
 questions, tasks and reminders on a later natural cycle.
 
+## 2026-08-25 - DMQ-20260816-01 live registry activation receipt
+
+Owner Telegram message `4031` reached the deployed exact standing-print source
+through n8n executions `66641`/`66642`, but the backend contained it with 503
+before a job: the exact canonical GREEN registry row was still inactive and
+uncommissioned. Atomic rollback left zero standing claims, jobs and events; hold
+message `4032` was the only delivery. This was separate from PR #1256.
+
+Bounded canonical transaction `332093` activated only the existing exact
+commissioned farm/GREEN/printer/`weekly-a4` row and bound it to the merged 0.3.8
+commissioning receipt digest. Readback proves active plus commissioned, with
+zero claims/jobs/events and zero provider/printer calls. The failed owner request
+was not replayed and is not print acceptance. A later genuine request is the
+next acceptance trigger; the one-copy, fixed-queue and no-auto-reprint rules are
+unchanged. **NO PRINT OUTCOME. OWNER REPETITION IS NOT AUTOMATICALLY REQUESTED.**
+
 ## 2026-08-25 - DMQ-20260816-01 GREEN 0.3.8 device commissioning receipt
 
 The existing GREEN/DOCUMENTS mission advanced through release and real-device
