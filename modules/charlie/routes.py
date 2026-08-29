@@ -35,6 +35,7 @@ from modules.charlie.mission_store import (
     read_external_supervisor_state,
     record_external_supervisor_state,
     prepare_external_dispatch_authorization,
+    prepare_external_execution_succession,
     refresh_external_dispatch_authorization_base,
     read_current_mission_admission_authority,
     list_missions,
@@ -1196,6 +1197,22 @@ def charlie_hermes_dispatch_authorization_route(mission_id):
         owner_user_id=str(env_value("CHARLIE_SLACK_OWNER_USER_ID") or ""),
         channel_id=str(env_value("CHARLIE_SLACK_CHARLIE_CHANNEL_ID") or ""),
     )
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/execution-succession", methods=["POST"])
+def charlie_hermes_execution_succession_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    required = {"generation", "predecessor_agent_id", "predecessor_run_id",
+                "predecessor_state", "replacement_reason"}
+    if set(payload) != required:
+        return jsonify({"success": False, "status": "execution_succession_invalid"}), 400
+    result, status = prepare_external_execution_succession(
+        mission_id, **payload, observed_main_sha=str(env_value("RENDER_GIT_COMMIT") or ""),
+        authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
 
 

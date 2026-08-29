@@ -1860,7 +1860,8 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
                "head_sha", "agent_state", "run_state", "stalled", "event",
                "failed_attempts", "checks", "independent_review", "branches",
                "ci_stalled", "stalled_checks", "admission_requested_head",
-               "all_required_checks_pass", "approved_head_sha", "owner_notification_head"}
+               "all_required_checks_pass", "approved_head_sha", "owner_notification_head",
+               "execution_attempt", "repository_mutation"}
     if not mission_id or not principal or not state or set(state) - allowed:
         return {"success": False, "status": "external_supervisor_state_invalid"}, 400
     key = _clean_text(state.get("idempotency_key"), 300)
@@ -1879,6 +1880,25 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
                     return {"success": False, "status": "not_found"}, 404
                 metadata = dict(row[0] or {})
                 current = dict(metadata.get("external_supervisor_state") or {})
+                succession = dict(metadata.get("execution_succession") or {})
+                attempt = int(state.get("execution_attempt") or current.get("execution_attempt") or 1)
+                effective_agent = state.get("cursor_agent_id") or current.get("cursor_agent_id")
+                effective_state = state.get("agent_state") or current.get("agent_state")
+                if attempt == 2:
+                    if (succession.get("active_attempt") != 2
+                            or succession.get("predecessor_archived") is not True
+                            or state.get("cursor_agent_id") == succession.get("predecessor_agent_id")):
+                        return {"success": False, "status": "execution_succession_not_authorized"}, 409
+                    successor = str(succession.get("successor_agent_id") or "")
+                    if successor and state.get("cursor_agent_id") not in {None, successor}:
+                        return {"success": False, "status": "execution_successor_conflict"}, 409
+                    if state.get("cursor_agent_id"):
+                        succession["successor_agent_id"] = state["cursor_agent_id"]
+                        metadata["execution_succession"] = succession
+                elif (succession.get("active_attempt") == 2
+                        and effective_agent == succession.get("predecessor_agent_id")
+                        and effective_state == "ACTIVE"):
+                    return {"success": False, "status": "predecessor_reactivation_forbidden"}, 409
                 if key and current.get("idempotency_key") == key and current.get("cursor_agent_id"):
                     if state.get("cursor_agent_id") and state["cursor_agent_id"] != current.get("cursor_agent_id"):
                         return {"success": False, "status": "external_supervisor_dispatch_conflict"}, 409
@@ -1895,6 +1915,81 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
                 "error_type": exc.__class__.__name__}, 503
     return {"success": True, "status": "external_supervisor_state_recorded",
             "mission_id": mission_id, "dispatch": merged}, 201
+
+
+def prepare_external_execution_succession(
+    mission_id, *, generation, predecessor_agent_id, predecessor_run_id,
+    predecessor_state, replacement_reason, observed_main_sha,
+    authenticated_principal, database_url=None, connect_factory=None,
+):
+    """Authorize one serialized, zero-candidate worker replacement."""
+    mission_id = _clean_text(mission_id, 90)
+    generation = _clean_text(generation, 200)
+    agent_id = _clean_text(predecessor_agent_id, 160)
+    run_id = _clean_text(predecessor_run_id, 160)
+    final_state = _clean_text(predecessor_state, 40).upper()
+    principal = _clean_text(authenticated_principal, 200)
+    if (not mission_id or not generation or not agent_id.startswith("bc-")
+            or not run_id.startswith("run-") or final_state not in {"FAILED", "CANCELLED", "IDLE", "ARCHIVED"}
+            or replacement_reason != "workspace_refresh_unsupported_after_hook_repair"
+            or not re.fullmatch(r"[0-9a-f]{40}", str(observed_main_sha or ""))
+            or principal != "hermes:charlie-builder"):
+        return {"success": False, "status": "execution_succession_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                authorization = dict(metadata.get("dispatch_authorization") or {})
+                existing = dict(metadata.get("execution_succession") or {})
+                if existing:
+                    if existing.get("predecessor_agent_id") == agent_id and existing.get("active_attempt") == 2:
+                        return {"success": True, "status": "exact_replay", "succession": existing}, 200
+                    return {"success": False, "status": "execution_succession_limit_reached"}, 409
+                owner_digest = hashlib.sha256(str(metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
+                if (state.get("generation") != generation or state.get("cursor_agent_id") != agent_id
+                        or state.get("cursor_run_id") != run_id or state.get("agent_state") != "ARCHIVED"
+                        or state.get("event") != "predecessor_archived"
+                        or state.get("repository_mutation") is not False
+                        or state.get("pr_number") or state.get("head_sha")
+                        or metadata.get("review_packet") or metadata.get("mission_admission")
+                        or authorization.get("status") != "valid" or authorization.get("generation") != generation
+                        or authorization.get("base_sha") != observed_main_sha
+                        or authorization.get("owner_instruction_digest") != owner_digest
+                        or authorization.get("repository") != "Crewless9086/amadeus-pig-tracking-system"
+                        or authorization.get("allowed_files") != ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]):
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                succession = {"version": "charlie_execution_succession_v1", "mission_id": mission_id,
+                    "generation": generation, "active_attempt": 2, "maximum_attempts": 2,
+                    "predecessor_agent_id": agent_id, "predecessor_run_id": run_id,
+                    "predecessor_final_state": final_state, "predecessor_archived": True,
+                    "successor_agent_id": "", "replacement_reason": replacement_reason,
+                    "replacement_timestamp": datetime.now(timezone.utc).isoformat(),
+                    "replacement_principal": principal, "observed_main_sha": observed_main_sha,
+                    "owner_instruction_digest": owner_digest, "slack_event_id": state.get("slack_event_id"),
+                    "slack_thread_ts": state.get("slack_thread_ts")}
+                metadata["execution_succession"] = succession
+                state.update({"agent_state": "ARCHIVED", "run_state": final_state,
+                              "execution_attempt": 1, "event": "predecessor_archived"})
+                metadata["external_supervisor_state"] = state
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Serialized Cursor execution succession authorized.", succession)
+    except Exception as exc:
+        return {"success": False, "status": "execution_succession_write_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "execution_succession_authorized", "mission_id": mission_id,
+            "succession": succession}, 201
 
 
 def prepare_external_dispatch_authorization(
