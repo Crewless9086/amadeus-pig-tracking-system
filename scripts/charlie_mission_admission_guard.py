@@ -476,6 +476,13 @@ def _safe_cache_write(path, socket_identity, token, expires_at):
     directory = None
     directory_context = _verified_cache_directory(path.parent)
     directory = directory_context.__enter__()
+    try:
+        existing = (os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+                    if directory is not None else path.lstat())
+        if stat.S_ISLNK(existing.st_mode):
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    except FileNotFoundError:
+        pass
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(temporary if directory is not None else path.parent / temporary,
                          flags, 0o600, dir_fd=directory)
@@ -508,12 +515,18 @@ def _safe_cache_write(path, socket_identity, token, expires_at):
 
 @contextlib.contextmanager
 def _cursor_cache_lock(path, *, deadline, monotonic=time.monotonic, sleep=time.sleep):
-    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     try:
         directory_context = _verified_cache_directory(path.parent)
         directory = directory_context.__enter__()
-        descriptor = os.open(path.name if directory is not None else path,
-                             flags, 0o600, dir_fd=directory)
+        anchored_path = path.name if directory is not None else path
+        try:
+            descriptor = os.open(anchored_path, flags | os.O_CREAT | os.O_EXCL,
+                                 0o600, dir_fd=directory)
+            created = True
+        except FileExistsError:
+            descriptor = os.open(anchored_path, flags, 0o600, dir_fd=directory)
+            created = False
     except OSError as exc:
         raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
     locked = False
@@ -525,7 +538,7 @@ def _cursor_cache_lock(path, *, deadline, monotonic=time.monotonic, sleep=time.s
                 raise MissionAdmissionError("cursor_oidc_cache_unavailable")
         if os.name == "nt":
             import msvcrt
-            if os.fstat(descriptor).st_size == 0:
+            if created:
                 os.write(descriptor, b"\0")
             while monotonic() < deadline:
                 try:
