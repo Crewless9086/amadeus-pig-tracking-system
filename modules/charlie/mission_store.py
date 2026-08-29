@@ -1978,7 +1978,12 @@ def prepare_external_execution_succession(
                     "cursor_cloud_socket_detection_repaired": 4,
                 }[replacement_reason]
                 if existing and int(existing.get("active_attempt") or 0) == requested_attempt:
-                    if existing.get("predecessor_agent_id") == agent_id:
+                    if (existing.get("predecessor_agent_id") == agent_id
+                            and existing.get("predecessor_run_id") == run_id
+                            and existing.get("replacement_reason") == replacement_reason
+                            and existing.get("observed_main_sha") == observed_main_sha
+                            and existing.get("generation") == generation
+                            and existing.get("replacement_principal") == principal):
                         return {"success": True, "status": "exact_replay", "succession": existing}, 200
                     return {"success": False, "status": "execution_succession_limit_reached"}, 409
                 if requested_attempt == 2 and existing:

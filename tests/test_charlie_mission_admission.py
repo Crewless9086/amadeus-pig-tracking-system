@@ -42,6 +42,7 @@ from scripts.charlie_mission_admission_guard import (
     CURSOR_HOOK_ENDPOINT,
     PROTECTED_ADMISSION_ROUTE_PREFIX,
     _is_read_only_shell,
+    _mint_cursor_oidc,
     _compare_current_authority,
     _build_exact_candidate_payload,
     _canonical_packet_digest,
@@ -437,6 +438,33 @@ class MissionAdmissionGuardTests(unittest.TestCase):
         self.assertEqual("deny", result["permission"])
         self.assertEqual("READMISSION_REQUIRED: cursor_oidc_unavailable", result["agent_message"])
         mar.assert_not_called()
+
+    def test_oidc_mint_retries_transient_missing_socket_without_mar_fallback(self):
+        responses = [FileNotFoundError("booting"), FileNotFoundError("booting"), None]
+
+        class Response:
+            status = 200
+            def read(self, _limit):
+                return json.dumps({"token": "signed-token", "expires_at": 2000}).encode()
+
+        class Connection:
+            def __init__(self, _path):
+                self.outcome = responses.pop(0)
+            def request(self, *_args, **_kwargs):
+                if self.outcome:
+                    raise self.outcome
+            def getresponse(self):
+                return Response()
+            def close(self):
+                pass
+
+        with patch("scripts.charlie_mission_admission_guard._UnixHTTPConnection", Connection), \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
+                   return_value="/run/cursor/api.sock"), \
+             patch("scripts.charlie_mission_admission_guard.time.sleep") as sleep:
+            token = _mint_cursor_oidc({}, now=1000)
+        self.assertEqual("signed-token", token)
+        self.assertEqual(2, sleep.call_count)
 
     def test_invalid_input_and_unknown_tool_deny_instead_of_failing_open(self):
         _, unknown = self._hook({

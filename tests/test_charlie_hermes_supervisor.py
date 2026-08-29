@@ -731,6 +731,27 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual(4, result["succession"]["active_attempt"])
         self.assertEqual(4, result["succession"]["maximum_attempts"])
 
+        exact = metadata | {"execution_succession": result["succession"]}
+        replay, replay_status = prepare_external_execution_succession(
+            "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
+            predecessor_state="IDLE", replacement_reason="cursor_cloud_socket_detection_repaired",
+            observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(exact,)]))
+        self.assertEqual(200, replay_status, replay)
+        self.assertEqual("exact_replay", replay["status"])
+        for field, changed in (("predecessor_run_id", "run-conflict"),
+                               ("observed_main_sha", "b" * 40),
+                               ("generation", "g2")):
+            conflict = json.loads(json.dumps(result["succession"]))
+            conflict[field] = changed
+            rejected, rejected_status = prepare_external_execution_succession(
+                "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
+                predecessor_state="IDLE", replacement_reason="cursor_cloud_socket_detection_repaired",
+                observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+                database_url="postgres://unit", connect_factory=lambda _, value=conflict:
+                    FakeConnection([(metadata | {"execution_succession": value},)]))
+            self.assertEqual(409, rejected_status, (field, rejected))
+
     def test_archived_predecessor_cannot_reactivate_via_partial_progress(self):
         metadata = {"external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-old",
             "cursor_run_id": "run-old", "agent_state": "ARCHIVED", "execution_attempt": 1},

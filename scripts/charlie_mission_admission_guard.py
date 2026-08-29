@@ -356,18 +356,32 @@ def _mint_cursor_oidc(environ, *, now=None):
     observed = int(time.time() if now is None else now)
     if _CURSOR_OIDC_CACHE["token"] and observed < int(_CURSOR_OIDC_CACHE["expires_at"] or 0) - 30:
         return _CURSOR_OIDC_CACHE["token"]
-    connection = _UnixHTTPConnection(_cursor_cloud_socket(environ))
     body = json.dumps({"aud": CURSOR_HOOK_AUDIENCE}, separators=(",", ":")).encode()
-    try:
-        connection.request("POST", "/v1/tokens/oidc", body=body,
-                           headers={"Content-Type": "application/json", "Content-Length": str(len(body))})
-        response = connection.getresponse()
-        result = json.loads(response.read(16384))
-    except Exception as exc:
-        raise MissionAdmissionError("cursor_oidc_unavailable") from exc
-    finally:
-        connection.close()
-    if response.status != 200 or not str(result.get("token") or "") or int(result.get("expires_at") or 0) <= observed:
+    result = None
+    response_status = 0
+    last_error = None
+    for attempt in range(3):
+        connection = _UnixHTTPConnection(_cursor_cloud_socket(environ))
+        try:
+            connection.request("POST", "/v1/tokens/oidc", body=body,
+                               headers={"Content-Type": "application/json", "Content-Length": str(len(body))})
+            response = connection.getresponse()
+            response_status = int(response.status)
+            result = json.loads(response.read(16384))
+        except (FileNotFoundError, ConnectionRefusedError, TimeoutError, socket.timeout) as exc:
+            last_error = exc
+            result = None
+        except Exception as exc:
+            raise MissionAdmissionError("cursor_oidc_unavailable") from exc
+        finally:
+            connection.close()
+        if result is not None and response_status not in {429, 500, 502, 503, 504}:
+            break
+        if attempt < 2:
+            time.sleep((attempt + 1) * 0.1)
+    if result is None:
+        raise MissionAdmissionError("cursor_oidc_unavailable") from last_error
+    if response_status != 200 or not str(result.get("token") or "") or int(result.get("expires_at") or 0) <= observed:
         raise MissionAdmissionError("cursor_oidc_unavailable")
     _CURSOR_OIDC_CACHE.update({"token": result["token"], "expires_at": int(result["expires_at"])})
     return result["token"]
