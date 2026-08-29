@@ -39,7 +39,7 @@ from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_FORBIDDEN_EFFECTS,
     BOOTSTRAP_GENERATION,
     BOOTSTRAP_REQUIRED_TESTS,
-    CURSOR_HOOK_ENDPOINT,
+    CURSOR_HOOK_ENDPOINT, CURSOR_BRANCH_HOOK_ENDPOINT,
     CURSOR_HOOK_OPERATION_SECONDS,
     _CURSOR_OIDC_CACHE,
     _cursor_cache_paths,
@@ -346,6 +346,8 @@ class MissionAdmissionGuardTests(unittest.TestCase):
             CURSOR_HOOK_ENDPOINT,
             "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize",
         )
+        self.assertEqual(CURSOR_BRANCH_HOOK_ENDPOINT,
+                         "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize-branch")
         self.assertEqual(
             PROTECTED_ADMISSION_ROUTE_PREFIX,
             "/api/charlie/hermes/missions/",
@@ -435,6 +437,8 @@ class MissionAdmissionGuardTests(unittest.TestCase):
              patch("scripts.charlie_mission_admission_guard.Path.exists", return_value=False), \
              patch("scripts.charlie_mission_admission_guard._cursor_cloud_authorization",
                    side_effect=MissionAdmissionError("cursor_oidc_unavailable")), \
+             patch("scripts.charlie_mission_admission_guard._cursor_branch_authorization",
+                   side_effect=MissionAdmissionError("cursor_branch_binding_required")), \
              patch("scripts.charlie_mission_admission_guard._validated_trusted_identity") as mar:
             _, result = self._hook({
                 "hook_event_name": "preToolUse",
@@ -442,8 +446,68 @@ class MissionAdmissionGuardTests(unittest.TestCase):
                 "tool_input": {"path": "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"},
             }, environ=environ)
         self.assertEqual("deny", result["permission"])
-        self.assertEqual("READMISSION_REQUIRED: cursor_oidc_unavailable", result["agent_message"])
+        self.assertEqual("READMISSION_REQUIRED: cursor_branch_binding_required", result["agent_message"])
         mar.assert_not_called()
+
+    def test_oidc_unavailable_uses_branch_fallback_but_identity_rejection_does_not(self):
+        allowed = {"permission": "allow", "status": "cursor_branch_workspace_authorized"}
+        with patch("scripts.charlie_mission_admission_guard._cursor_cloud_authorization",
+                   side_effect=MissionAdmissionError("cursor_oidc_unavailable")), \
+             patch("scripts.charlie_mission_admission_guard._cursor_branch_authorization",
+                   return_value=allowed) as fallback:
+            from scripts.charlie_mission_admission_guard import _cursor_cloud_or_branch_authorization
+            self.assertEqual(allowed, _cursor_cloud_or_branch_authorization({"action": "after_file_edit"}, {}))
+            fallback.assert_called_once()
+        with patch("scripts.charlie_mission_admission_guard._cursor_cloud_authorization",
+                   side_effect=MissionAdmissionError("cursor_oidc_request_rejected")), \
+             patch("scripts.charlie_mission_admission_guard._cursor_branch_authorization") as fallback:
+            with self.assertRaisesRegex(MissionAdmissionError, "cursor_oidc_request_rejected"):
+                _cursor_cloud_or_branch_authorization({"action": "after_file_edit"}, {})
+            fallback.assert_not_called()
+
+    def test_linux_bound_cursor_branch_uses_fallback_when_socket_is_absent(self):
+        allowed = {"permission": "allow", "status": "cursor_branch_workspace_authorized"}
+        with patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket", return_value=""), \
+             patch("scripts.charlie_mission_admission_guard._branch_fallback_context", return_value=True), \
+             patch("scripts.charlie_mission_admission_guard._cursor_branch_authorization",
+                   return_value=allowed) as fallback, \
+             patch("scripts.charlie_mission_admission_guard._validated_trusted_identity") as mar:
+            _, result = self._hook({"hook_event_name": "preToolUse", "tool_name": "Write",
+                "tool_input": {"path": "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"}}, os_name="posix")
+        self.assertEqual("allow", result["permission"])
+        fallback.assert_called_once()
+        mar.assert_not_called()
+
+    def test_cache_integrity_rejection_never_uses_branch_fallback(self):
+        from scripts.charlie_mission_admission_guard import _cursor_cloud_or_branch_authorization
+        for reason in ("cursor_oidc_cache_rejected", "cursor_oidc_request_rejected"):
+            with self.subTest(reason=reason), \
+                 patch("scripts.charlie_mission_admission_guard._cursor_cloud_authorization",
+                       side_effect=MissionAdmissionError(reason)), \
+                 patch("scripts.charlie_mission_admission_guard._cursor_branch_authorization") as fallback:
+                with self.assertRaisesRegex(MissionAdmissionError, reason):
+                    _cursor_cloud_or_branch_authorization({"action": "after_file_edit"}, {})
+                fallback.assert_not_called()
+
+    def test_branch_fallback_preserves_cloud_protected_read_boundaries(self):
+        with patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket", return_value=""), \
+             patch("scripts.charlie_mission_admission_guard._branch_fallback_context", return_value=True):
+            for path in (".env", ".git/config", "/proc/self/environ"):
+                with self.subTest(path=path):
+                    _, result = self._hook({"hook_event_name": "preToolUse", "tool_name": "Read",
+                        "tool_input": {"path": path}}, os_name="posix")
+                    self.assertEqual("deny", result["permission"])
+            for tool in ("Grep", "Rg", "Glob", "Search"):
+                with self.subTest(tool=tool):
+                    _, result = self._hook({"hook_event_name": "preToolUse", "tool_name": tool,
+                        "tool_input": {"path": "."}}, os_name="posix")
+                    self.assertEqual("deny", result["permission"])
+            for command in ("git config --get remote.origin.url", "git diff -- .env",
+                            "cat /proc/self/environ"):
+                with self.subTest(command=command):
+                    _, result = self._hook({"hook_event_name": "beforeShellExecution",
+                        "command": command}, os_name="posix")
+                    self.assertEqual("deny", result["permission"])
 
     def test_oidc_mint_retries_transient_missing_socket_without_mar_fallback(self):
         responses = [FileNotFoundError("booting"), FileNotFoundError("booting"), None]
@@ -546,7 +610,7 @@ raise SystemExit(0 if token == "shared-test-token" else 3)
             except OSError:
                 self.skipTest("directory symlink creation unavailable")
             with self.assertRaisesRegex(MissionAdmissionError,
-                                        "cursor_oidc_cache_unavailable"):
+                                        "cursor_oidc_cache_rejected"):
                 _cursor_cache_paths({"XDG_RUNTIME_DIR": directory})
 
     def test_oidc_retry_after_and_fatal_status_contract(self):

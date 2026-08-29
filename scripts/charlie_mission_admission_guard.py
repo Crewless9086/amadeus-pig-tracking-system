@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import contextlib
+import errno
 import getpass
 import hashlib
 import json
@@ -108,6 +109,7 @@ INTERPRETERS = {
 } | WINDOWS_INTERPRETERS
 CURSOR_HOOK_AUDIENCE = "urn:amadeus:charlie:cursor-hook:v1"
 CURSOR_HOOK_ENDPOINT = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize"
+CURSOR_BRANCH_HOOK_ENDPOINT = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize-branch"
 CURSOR_HOOK_OPERATION_SECONDS = 8.0
 CURSOR_OIDC_CACHE_SCHEMA = "charlie_cursor_oidc_cache_v1"
 PROTECTED_ADMISSION_ROUTE_PREFIX = "/api/charlie/hermes/missions/"
@@ -258,11 +260,13 @@ def hook_main(
             _emit(_remote_authorization(packet, environ))
             return 0
         event = str(packet.get("hook_event_name") or "")
-        if cloud_hook and (audit or event == "afterFileEdit"):
+        branch_fallback = not cloud_hook and _branch_fallback_context(os_name=os_name)
+        if (cloud_hook or branch_fallback) and (audit or event == "afterFileEdit"):
             path = _tool_target_path(packet)
             if not path:
                 raise MissionAdmissionError("after_file_edit_path_missing")
-            _emit(_cursor_cloud_authorization({"action": "after_file_edit", "target_path": path}, environ))
+            authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+            _emit(authorize({"action": "after_file_edit", "target_path": path}, environ))
             return 0
         if audit or event == "afterFileEdit":
             _audit_after_file_edit(
@@ -279,11 +283,12 @@ def hook_main(
             if _references_trusted_authority(command, environ):
                 raise MissionAdmissionError("trusted_admission_read_denied")
             if _is_read_only_shell(command, os_name=os_name):
-                if cloud_hook and not _cloud_read_only_shell_safe(command, os_name=os_name):
+                if (cloud_hook or branch_fallback) and not _cloud_read_only_shell_safe(command, os_name=os_name):
                     raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_shell")
-            if cloud_hook:
-                _emit(_cursor_cloud_authorization({"action": "shell_verify", "command": command}, environ))
+            if cloud_hook or branch_fallback:
+                authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+                _emit(authorize({"action": "shell_verify", "command": command}, environ))
                 return 0
             raise MissionAdmissionError("stage1_shell_mutation_denied")
         if event == "preToolUse":
@@ -292,17 +297,17 @@ def hook_main(
             if normalized in READ_ONLY_TOOLS:
                 if _references_trusted_authority(packet, environ):
                     raise MissionAdmissionError("trusted_admission_read_denied")
-                if cloud_hook and normalized in {"read", "readfile"}:
+                if (cloud_hook or branch_fallback) and normalized in {"read", "readfile"}:
                     if not _cloud_repository_read_path_safe(_tool_target_path(packet), repo_root):
                         raise MissionAdmissionError("cloud_read_scope_denied")
-                elif cloud_hook and normalized in {"grep", "rg", "glob", "search"}:
+                elif (cloud_hook or branch_fallback) and normalized in {"grep", "rg", "glob", "search"}:
                     raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_tool")
             if normalized == "shell":
                 command = str((packet.get("tool_input") or {}).get("command") or "")
                 if _references_trusted_authority(command, environ):
                     raise MissionAdmissionError("trusted_admission_read_denied")
-                if cloud_hook:
+                if cloud_hook or branch_fallback:
                     return _allow("deferred_to_fail_closed_before_shell_execution")
                 if _is_read_only_shell(command, os_name=os_name):
                     return _allow("read_only_shell")
@@ -313,11 +318,12 @@ def hook_main(
                 raise MissionAdmissionError("stage1_mcp_execution_denied")
             effect = MUTATING_TOOL_EFFECTS.get(normalized)
             if effect:
-                if cloud_hook:
+                if cloud_hook or branch_fallback:
                     target = _tool_target_path(packet)
                     if not target:
                         raise MissionAdmissionError("mutation_target_path_required")
-                    _emit(_cursor_cloud_authorization({"action": effect, "target_path": target}, environ))
+                    authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+                    _emit(authorize({"action": effect, "target_path": target}, environ))
                     return 0
                 _require_admission(
                     packet,
@@ -348,6 +354,18 @@ def _cursor_cloud_socket(environ):
     return default if Path(default).exists() else ""
 
 
+def _branch_fallback_context(*, os_name=None):
+    """Select the canonical branch handshake on Linux without inventing Agent identity."""
+    platform = os.name if os_name is None else os_name
+    if platform == "nt":
+        return False
+    try:
+        return (_repository_identity() == "Crewless9086/amadeus-pig-tracking-system"
+                and _git_text("branch", "--show-current").startswith("cursor/"))
+    except (OSError, subprocess.SubprocessError, MissionAdmissionError):
+        return False
+
+
 class _UnixHTTPConnection(http.client.HTTPConnection):
     def __init__(self, socket_path, timeout=3):
         super().__init__("cursor-agent", timeout=timeout)
@@ -362,7 +380,7 @@ class _UnixHTTPConnection(http.client.HTTPConnection):
 def _cursor_cache_identity(environ):
     socket_path = os.path.normcase(os.path.abspath(_cursor_cloud_socket(environ)))
     if not socket_path:
-        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        raise MissionAdmissionError("cursor_oidc_cache_rejected")
     user = str(os.geteuid()) if hasattr(os, "geteuid") else getpass.getuser()
     digest = hashlib.sha256(
         f"{user}\0{socket_path}\0{CURSOR_HOOK_AUDIENCE}".encode("utf-8")
@@ -374,7 +392,7 @@ def _cursor_cache_paths(environ):
     user, socket_path, digest = _cursor_cache_identity(environ)
     runtime = str(environ.get("XDG_RUNTIME_DIR") or "").strip()
     if runtime and not Path(runtime).is_absolute():
-        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        raise MissionAdmissionError("cursor_oidc_cache_rejected")
     root = (Path(runtime) / "charlie-cursor-hook" if runtime
             else Path(tempfile.gettempdir()) / f"charlie-cursor-hook-{user}")
     # Inspect the spelling supplied by the runtime before resolving it.  A
@@ -392,19 +410,19 @@ def _cursor_cache_paths(environ):
     except OSError as exc:
         raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
     if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
-        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        raise MissionAdmissionError("cursor_oidc_cache_rejected")
     root = unresolved_root.resolve(strict=True)
     try:
         if root == REPO_ROOT.resolve() or root.is_relative_to(REPO_ROOT.resolve()):
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
     except AttributeError:  # pragma: no cover - Python < 3.9 compatibility
         if str(root).startswith(str(REPO_ROOT.resolve()) + os.sep):
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
     if os.name != "nt":
         os.chmod(root, 0o700)
         stat_result = root.stat()
         if stat_result.st_uid != os.geteuid() or stat_result.st_mode & 0o077:
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
     return root / f"token-{digest}.json", root / f"token-{digest}.lock", socket_path
 
 
@@ -414,19 +432,21 @@ def _verified_cache_directory(root):
     if os.name == "nt":
         root_stat = root.lstat()
         if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
         yield None
         return
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(root, flags)
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise MissionAdmissionError("cursor_oidc_cache_rejected") from exc
         raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
     try:
         root_stat = os.fstat(descriptor)
         if (not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_uid != os.geteuid()
                 or root_stat.st_mode & 0o077):
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
         yield descriptor
     finally:
         os.close(descriptor)
@@ -441,13 +461,15 @@ def _safe_cache_read(path, socket_identity, *, observed):
     except FileNotFoundError:
         return None
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise MissionAdmissionError("cursor_oidc_cache_rejected") from exc
         raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
     try:
         stat_result = os.fstat(descriptor)
         if not stat.S_ISREG(stat_result.st_mode):
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
         if os.name != "nt" and (stat_result.st_uid != os.geteuid() or stat_result.st_mode & 0o077):
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
         with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as handle:
             packet = json.loads(handle.read(32768))
     except (OSError, ValueError, json.JSONDecodeError):
@@ -480,7 +502,7 @@ def _safe_cache_write(path, socket_identity, token, expires_at):
         existing = (os.stat(path.name, dir_fd=directory, follow_symlinks=False)
                     if directory is not None else path.lstat())
         if stat.S_ISLNK(existing.st_mode):
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
     except FileNotFoundError:
         pass
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
@@ -500,6 +522,8 @@ def _safe_cache_write(path, socket_identity, token, expires_at):
                    src_dir_fd=directory, dst_dir_fd=directory)
         if os.name != "nt":
             os.chmod(path, 0o600)
+    except MissionAdmissionError:
+        raise
     except Exception as exc:
         raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
     finally:
@@ -528,6 +552,8 @@ def _cursor_cache_lock(path, *, deadline, monotonic=time.monotonic, sleep=time.s
             descriptor = os.open(anchored_path, flags, 0o600, dir_fd=directory)
             created = False
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise MissionAdmissionError("cursor_oidc_cache_rejected") from exc
         raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
     locked = False
     try:
@@ -535,7 +561,7 @@ def _cursor_cache_lock(path, *, deadline, monotonic=time.monotonic, sleep=time.s
             os.fchmod(descriptor, 0o600)
             lock_stat = os.fstat(descriptor)
             if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != os.geteuid():
-                raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+                raise MissionAdmissionError("cursor_oidc_cache_rejected")
         if os.name == "nt":
             import msvcrt
             if created:
@@ -673,6 +699,51 @@ def _cursor_cloud_authorization(payload, environ, *, opener=url_request.urlopen)
     if not isinstance(result, dict) or result.get("permission") not in {"allow", "deny"}:
         raise MissionAdmissionError("cursor_hook_authorization_invalid")
     return result
+
+
+def _cursor_branch_facts():
+    root = Path(_git_text("rev-parse", "--show-toplevel")).resolve()
+    if root != REPO_ROOT.resolve():
+        raise MissionAdmissionError("cursor_branch_repository_invalid")
+    repository = _repository_identity()
+    branch = _git_text("branch", "--show-current")
+    head = _commit("HEAD")
+    if repository != "Crewless9086/amadeus-pig-tracking-system":
+        raise MissionAdmissionError("cursor_branch_repository_invalid")
+    if not branch.startswith("cursor/") or branch in {"main", "master"}:
+        raise MissionAdmissionError("cursor_branch_binding_required")
+    return {"repository": repository, "branch": branch, "current_head": head,
+            "changed_files": _worktree_changed_files("HEAD")}
+
+
+def _cursor_branch_authorization(payload, environ, *, opener=url_request.urlopen):
+    body = {**dict(payload or {}), **_cursor_branch_facts()}
+    request = url_request.Request(
+        CURSOR_BRANCH_HOOK_ENDPOINT, data=json.dumps(body, separators=(",", ":")).encode(),
+        headers={"Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+    try:
+        with opener(request, timeout=3.0) as response:
+            result = json.loads(response.read(32768))
+    except url_error.HTTPError as exc:
+        try:
+            result = json.loads(exc.read(32768))
+        except Exception:
+            result = {"permission": "deny", "status": "cursor_branch_authorization_denied"}
+    except Exception as exc:
+        raise MissionAdmissionError("cursor_branch_authorization_unavailable") from exc
+    if not isinstance(result, dict) or result.get("permission") not in {"allow", "deny"}:
+        raise MissionAdmissionError("cursor_branch_authorization_invalid")
+    return result
+
+
+def _cursor_cloud_or_branch_authorization(payload, environ):
+    """Prefer signed OIDC; fallback only for bounded socket/cache availability failures."""
+    try:
+        return _cursor_cloud_authorization(payload, environ)
+    except MissionAdmissionError as exc:
+        if _reason(exc) not in {"cursor_oidc_unavailable", "cursor_oidc_cache_unavailable"}:
+            raise
+        return _cursor_branch_authorization(payload, environ)
 
 
 def ci_main(
