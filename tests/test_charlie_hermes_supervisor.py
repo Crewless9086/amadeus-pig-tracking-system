@@ -49,7 +49,7 @@ class FakeClient:
 
 
 class Canonical:
-    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False; self.admission_requests = []; self.branch_bindings = []; self.base_refreshes = []
+    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False; self.admission_requests = []; self.branch_bindings = []; self.base_refreshes = []; self.active_attempt = 1
     def reconcile_mission(self, payload, idempotency_key):
         if idempotency_key not in self.intake:
             self.reconciled += 1; self.intake[idempotency_key] = {"mission_id": "CMQ-X", "key": idempotency_key}
@@ -68,7 +68,8 @@ class Canonical:
             "mission_admission_contract": {"generation": current["generation"], "base_sha": current["base_sha"],
                 "allowed_files": current["allowed_files"], "allowed_effects": current["allowed_effects"],
                 "operational_acceptance": current["acceptance_requirements"]},
-            "dispatch_authorization": pre if self.dispatch_authorized else {}}}}
+            "dispatch_authorization": pre if self.dispatch_authorized else {},
+            "execution_succession": {"active_attempt": self.active_attempt}}}}
     def prepare_dispatch_authorization(self, mission_id):
         self.dispatch_authorized = True
         return self.get_mission(mission_id)["mission"]["metadata"]["dispatch_authorization"]
@@ -649,6 +650,76 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertIs(create["autoCreatePR"], True)
         self.assertIs(create["workOnCurrentBranch"], False)
 
+    def test_attempt_four_cursor_client_request_is_exact_and_attempt_five_fails(self):
+        expected = self.cursor.deterministic_agent_id("CMQ-X:g1:attempt-4")
+        result = self.cursor.create_agent(admission(), "bounded", execution_attempt=4)
+        create_calls = [call for call in self.client.calls
+                        if call[0:2] == ("POST", "/v1/agents")]
+        self.assertEqual(1, len(create_calls))
+        payload = create_calls[0][2]
+        self.assertEqual(expected, payload["agentId"])
+        self.assertEqual("https://github.com/Crewless9086/amadeus-pig-tracking-system",
+                         payload["repos"][0]["url"])
+        self.assertEqual("a" * 40, payload["repos"][0]["startingRef"])
+        self.assertIs(payload["autoCreatePR"], True)
+        self.assertIs(payload["workOnCurrentBranch"], False)
+        self.assertEqual("agent", payload["mode"])
+        self.assertEqual(expected, result["agent"]["id"])
+        with self.assertRaisesRegex(HermesBridgeError,
+                                    "cursor_execution_attempt_invalid"):
+            self.cursor.create_agent(admission(), "bounded", execution_attempt=5)
+        self.assertEqual(1, len([call for call in self.client.calls
+                                if call[0:2] == ("POST", "/v1/agents")]))
+
+    def test_attempt_four_dispatch_uses_real_client_once_and_replays_canonically(self):
+        self.canonical.active_attempt = 4
+        mission = self.supervisor.reconcile_slack_event({
+            "event_id": "1787929390.145099", "user": "UOWNER", "channel": "C1",
+            "ts": "1787929390.145099", "text": "Bounded documentation pilot",
+        })
+        self.canonical.prepare_dispatch_authorization(mission["mission_id"])
+        first = self.supervisor.dispatch_cursor(mission)
+        second = self.supervisor.dispatch_cursor(mission)
+        expected = self.cursor.deterministic_agent_id("CMQ-X:g1:attempt-4")
+        self.assertEqual(expected, first["cursor_agent_id"])
+        self.assertEqual("existing_dispatch", second["status"])
+        self.assertEqual(expected, second["cursor_agent_id"])
+        self.assertEqual(1, len([call for call in self.client.calls
+                                if call[0:2] == ("POST", "/v1/agents")]))
+        self.assertEqual("CMQ-X", mission["mission_id"])
+        self.assertEqual("slack:1787929390.145099", mission["key"])
+        metadata = self.canonical.get_mission("CMQ-X")["mission"]["metadata"]
+        self.assertEqual("g1", metadata["dispatch_authorization"]["generation"])
+        self.assertEqual(["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+                         metadata["dispatch_authorization"]["allowed_files"])
+
+        self.canonical.dispatch = {"CMQ-X:g1:attempt-4": {
+            "mission_id": "CMQ-X", "generation": "g1", "execution_attempt": 4,
+            "cursor_agent_id": "bc-conflicting", "agent_state": "RESERVED",
+        }}
+        with self.assertRaisesRegex(HermesBridgeError,
+                                    "cursor_dispatch_identity_conflict"):
+            self.supervisor.dispatch_cursor(mission)
+
+        self.canonical.dispatch = {"CMQ-X:g1:attempt-4": {
+            "mission_id": "CMQ-X", "generation": "g1", "execution_attempt": 4,
+            "cursor_agent_id": "bc-conflicting", "cursor_run_id": "run-conflicting",
+            "agent_state": "ACTIVE",
+        }}
+        with self.assertRaisesRegex(HermesBridgeError,
+                                    "cursor_dispatch_identity_conflict"):
+            self.supervisor.dispatch_cursor(mission)
+
+    def test_attempt_five_fails_before_reservation_or_cursor_request(self):
+        self.canonical.active_attempt = 5
+        self.canonical.prepare_dispatch_authorization("CMQ-X")
+        with self.assertRaisesRegex(HermesBridgeError,
+                                    "cursor_execution_attempt_invalid"):
+            self.supervisor.dispatch_cursor({"mission_id": "CMQ-X"})
+        self.assertEqual({}, self.canonical.dispatch)
+        self.assertEqual([], [call for call in self.client.calls
+                              if call[0:2] == ("POST", "/v1/agents")])
+
     def test_archived_zero_candidate_predecessor_permits_one_succession(self):
         problem = "Documentation pilot"
         metadata = {"mission_vault": {"problem_statement": problem},
@@ -708,7 +779,58 @@ class HermesSupervisorTests(unittest.TestCase):
             database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(metadata,)]))
         self.assertEqual(201, status, result)
         self.assertEqual(3, result["succession"]["active_attempt"])
-        self.assertEqual(3, result["succession"]["maximum_attempts"])
+        self.assertEqual(4, result["succession"]["maximum_attempts"])
+
+    def test_archived_attempt_three_permits_only_cloud_socket_recovery_attempt_four(self):
+        problem = "Documentation pilot"
+        metadata = {"mission_vault": {"problem_statement": problem},
+            "external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-three",
+                "cursor_run_id": "run-three", "agent_state": "ARCHIVED", "event": "predecessor_archived",
+                "repository_mutation": False},
+            "dispatch_authorization": {"status": "valid", "generation": "g1",
+                "repository": "Crewless9086/amadeus-pig-tracking-system", "base_sha": "a" * 40,
+                "owner_instruction_digest": hashlib.sha256(problem.encode()).hexdigest(),
+                "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]},
+            "execution_succession": {"active_attempt": 3, "predecessor_archived": True,
+                "predecessor_agent_id": "bc-two", "successor_agent_id": "bc-three"}}
+        result, status = prepare_external_execution_succession(
+            "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
+            predecessor_state="ARCHIVED", replacement_reason="cursor_cloud_socket_detection_repaired",
+            observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(metadata,)]))
+        self.assertEqual(201, status, result)
+        self.assertEqual(4, result["succession"]["active_attempt"])
+        self.assertEqual(4, result["succession"]["maximum_attempts"])
+
+        exact = metadata | {"execution_succession": result["succession"]}
+        replay, replay_status = prepare_external_execution_succession(
+            "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
+            predecessor_state="ARCHIVED", replacement_reason="cursor_cloud_socket_detection_repaired",
+            observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(exact,)]))
+        self.assertEqual(200, replay_status, replay)
+        self.assertEqual("exact_replay", replay["status"])
+        for field, changed in (("predecessor_run_id", "run-conflict"),
+                               ("predecessor_final_state", "CANCELLED"),
+                               ("observed_main_sha", "b" * 40),
+                               ("generation", "g2")):
+            conflict = json.loads(json.dumps(result["succession"]))
+            conflict[field] = changed
+            rejected, rejected_status = prepare_external_execution_succession(
+                "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
+                predecessor_state="ARCHIVED", replacement_reason="cursor_cloud_socket_detection_repaired",
+                observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+                database_url="postgres://unit", connect_factory=lambda _, value=conflict:
+                    FakeConnection([(metadata | {"execution_succession": value},)]))
+            self.assertEqual(409, rejected_status, (field, rejected))
+
+        for provider_state in ("IDLE", "ACTIVE", "FAILED", "CANCELLED"):
+            rejected, rejected_status = prepare_external_execution_succession(
+                "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
+                predecessor_state=provider_state, replacement_reason="cursor_cloud_socket_detection_repaired",
+                observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+                database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(metadata,)]))
+            self.assertIn(rejected_status, {400, 409}, (provider_state, rejected))
 
     def test_archived_predecessor_cannot_reactivate_via_partial_progress(self):
         metadata = {"external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-old",

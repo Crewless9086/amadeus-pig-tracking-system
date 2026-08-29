@@ -1,5 +1,8 @@
 import json
+import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -83,3 +86,47 @@ def test_launcher_has_no_shell_execution():
     source = LAUNCHER.read_text(encoding="utf-8")
     assert "shell: false" in source
     assert "shell: true" not in source
+
+
+def test_separate_node_launcher_invocations_share_one_oidc_mint():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        hooks, scripts = root / ".cursor" / "hooks", root / "scripts"
+        (root / "runtime").mkdir()
+        hooks.mkdir(parents=True)
+        scripts.mkdir()
+        copied_launcher = hooks / LAUNCHER.name
+        shutil.copyfile(LAUNCHER, copied_launcher)
+        counter = root / "mint-count.txt"
+        (scripts / "charlie_mission_admission_guard.py").write_text(r'''
+import os, time
+import scripts.charlie_mission_admission_guard as guard
+guard._cursor_cloud_socket = lambda env: env["CURSOR_AGENT_SOCKET"]
+class Response:
+    status = 200
+    def read(self, limit):
+        return ("{\"token\":\"node-shared-test-token\",\"expires_at\":%d}" % (int(time.time()) + 300)).encode()
+    def getheader(self, name): return None
+class Connection:
+    def __init__(self, path, timeout=None): pass
+    def request(self, *args, **kwargs):
+        path = os.environ["CHARLIE_TEST_MINT_COUNTER"]
+        current = int(open(path).read() or "0") if os.path.exists(path) else 0
+        with open(path, "w") as handle: handle.write(str(current + 1))
+    def getresponse(self): return Response()
+    def close(self): pass
+token = guard._mint_cursor_oidc(os.environ, connection_factory=Connection)
+raise SystemExit(0 if token == "node-shared-test-token" else 3)
+''', encoding="utf-8")
+        environment = dict(os.environ)
+        environment.update({"XDG_RUNTIME_DIR": str(root / "runtime"),
+                            "CURSOR_AGENT_SOCKET": "/run/cursor/node-test.sock",
+                            "CHARLIE_TEST_MINT_COUNTER": str(counter),
+                            "PYTHONPATH": str(ROOT)})
+        processes = [subprocess.Popen(["node", str(copied_launcher), "hook"], cwd=root,
+                     env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                     stderr=subprocess.PIPE, text=True) for _ in range(12)]
+        results = [process.communicate("{}", timeout=20) + (process.returncode,)
+                   for process in processes]
+        assert all(result[2] == 0 for result in results), results
+        assert counter.read_text(encoding="utf-8") == "1"

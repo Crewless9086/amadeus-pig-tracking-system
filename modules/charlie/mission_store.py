@@ -1951,7 +1951,8 @@ def prepare_external_execution_succession(
     if (not mission_id or not generation or not agent_id.startswith("bc-")
             or not run_id.startswith("run-") or final_state not in {"FAILED", "CANCELLED", "IDLE", "ARCHIVED"}
             or replacement_reason not in {"workspace_refresh_unsupported_after_hook_repair",
-                                          "cursor_workspace_authorization_state_machine_repaired"}
+                                          "cursor_workspace_authorization_state_machine_repaired",
+                                          "cursor_cloud_socket_detection_repaired"}
             or not re.fullmatch(r"[0-9a-f]{40}", str(observed_main_sha or ""))
             or principal != "hermes:charlie-builder"):
         return {"success": False, "status": "execution_succession_invalid"}, 400
@@ -1971,14 +1972,28 @@ def prepare_external_execution_succession(
                 state = dict(metadata.get("external_supervisor_state") or {})
                 authorization = dict(metadata.get("dispatch_authorization") or {})
                 existing = dict(metadata.get("execution_succession") or {})
-                requested_attempt = 3 if replacement_reason == "cursor_workspace_authorization_state_machine_repaired" else 2
+                requested_attempt = {
+                    "workspace_refresh_unsupported_after_hook_repair": 2,
+                    "cursor_workspace_authorization_state_machine_repaired": 3,
+                    "cursor_cloud_socket_detection_repaired": 4,
+                }[replacement_reason]
                 if existing and int(existing.get("active_attempt") or 0) == requested_attempt:
-                    if existing.get("predecessor_agent_id") == agent_id:
+                    if (existing.get("predecessor_agent_id") == agent_id
+                            and existing.get("predecessor_run_id") == run_id
+                            and existing.get("predecessor_final_state") == final_state
+                            and existing.get("replacement_reason") == replacement_reason
+                            and existing.get("observed_main_sha") == observed_main_sha
+                            and existing.get("generation") == generation
+                            and existing.get("replacement_principal") == principal):
                         return {"success": True, "status": "exact_replay", "succession": existing}, 200
                     return {"success": False, "status": "execution_succession_limit_reached"}, 409
                 if requested_attempt == 2 and existing:
                     return {"success": False, "status": "execution_succession_limit_reached"}, 409
                 if requested_attempt == 3 and int(existing.get("active_attempt") or 0) != 2:
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                if requested_attempt == 4 and int(existing.get("active_attempt") or 0) != 3:
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                if requested_attempt == 4 and final_state != "ARCHIVED":
                     return {"success": False, "status": "execution_succession_precondition_failed"}, 409
                 owner_digest = hashlib.sha256(str(metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
                 if (state.get("generation") != generation or state.get("cursor_agent_id") != agent_id
@@ -1999,7 +2014,7 @@ def prepare_external_execution_succession(
                         "active_attempt", "predecessor_agent_id", "predecessor_run_id",
                         "predecessor_final_state", "replacement_reason", "replacement_timestamp")})
                 succession = {"version": "charlie_execution_succession_v2", "mission_id": mission_id,
-                    "generation": generation, "active_attempt": requested_attempt, "maximum_attempts": 3,
+                    "generation": generation, "active_attempt": requested_attempt, "maximum_attempts": 4,
                     "predecessor_agent_id": agent_id, "predecessor_run_id": run_id,
                     "predecessor_final_state": final_state, "predecessor_archived": True,
                     "successor_agent_id": "", "replacement_reason": replacement_reason,

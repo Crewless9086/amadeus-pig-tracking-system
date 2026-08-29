@@ -1,5 +1,25 @@
 # Vault Brain Changelog
 
+## 2026-08-29 - Cursor managed-VM hook classification recovery
+
+- A configured `CURSOR_AGENT_SOCKET` now selects the OIDC-backed Cloud PDA path
+  even while the documented managed-VM socket is briefly unavailable. The hook
+  fails closed with `cursor_oidc_unavailable` instead of silently falling into
+  the local exact-candidate MAR path.
+- The five-minute Cursor OIDC token is cached across separate hook processes in
+  a per-user, outside-repository 0700/0600 runtime cache with an atomic write and
+  bounded process lock. Retryable socket and 429/5xx responses remain inside an
+  eight-second total authorization budget; fatal responses never retry.
+- Read-only attempt-3 runtime evidence at Unix time `1788000903` confirmed the
+  documented variable was present as `/run/cursor/api.sock` and the socket was
+  then ready. Three earlier hook denials produced no CHARLIE authorization
+  request, bounding the original incident to pre-request Cloud-mode selection.
+- Authorized one final serialized attempt-4 recovery only after the failed-safe
+  attempt-3 writer is provider- and canonically `ARCHIVED` with zero mutation,
+  PR, candidate, or MAR. The
+  original mission, generation, owner instruction, Slack thread, and one-active-
+  writer boundary remain unchanged.
+
 ## 2026-08-28 - Portable Cursor admission hook recovery
 
 - Replaced direct `python` hook commands with a no-shell Node launcher that
