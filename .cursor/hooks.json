@@ -21,7 +21,6 @@
       {
         "type": "command",
         "command": "node .cursor/hooks/charlie_mission_admission_guard.cjs hook --audit",
-        "matcher": "Write",
         "timeout": 10,
         "failClosed": true
       }

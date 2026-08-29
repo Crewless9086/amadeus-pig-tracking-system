@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from flask import Flask
@@ -12,6 +13,7 @@ from modules.charlie.hermes_supervisor import (
     verify_slack_request,
 )
 from modules.charlie.mission_store import (
+    authorize_cursor_workspace_hook,
     bind_external_supervisor_branch,
     bind_external_supervisor_candidate,
     invalidate_external_candidate_admission,
@@ -38,7 +40,7 @@ class FakeClient:
             if self.conflict_once:
                 self.conflict_once = False
                 return {"error": "conflict", "status_code": 409}
-            return {"agent": {"id": "bc-one"}, "run": {"id": "run-one"}}
+            return {"agent": {"id": payload["agentId"]}, "run": {"id": "run-one"}}
         if path.endswith("/runs") and method == "POST": return {"run": {"id": "run-two"}}
         if path.endswith("/runs/run-one"): return {"id": "run-one", "status": "SUCCEEDED", "updatedAt": "2026-08-28T00:00:00Z", "git": {"branches": self.run_branches}}
         if path.startswith("/v1/agents/bc-") and "/runs/" not in path:
@@ -110,7 +112,7 @@ class HermesSupervisorTests(unittest.TestCase):
             self.supervisor.dispatch_cursor({"mission_id": "CMQ-X"})
         self.canonical.prepare_dispatch_authorization("CMQ-X")
         pre = self.supervisor.dispatch_cursor({"mission_id": "CMQ-X"})
-        self.assertEqual("bc-one", pre["cursor_agent_id"])
+        self.assertEqual(self.cursor.deterministic_agent_id("CMQ-X:g1"), pre["cursor_agent_id"])
         self.canonical.dispatch = {}
         self.canonical.admitted = True
         mission = {"mission_id": "CMQ-X", "instruction": "Forged work", "admission": {"receipt_id": "MAR-FAKE"}}
@@ -120,6 +122,56 @@ class HermesSupervisorTests(unittest.TestCase):
         create_payload = [call[2] for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")][-1]
         self.assertIn("Canonical bounded work", create_payload["prompt"]["text"])
         self.assertNotIn("Forged work", create_payload["prompt"]["text"])
+
+    def test_oidc_workspace_pda_late_binds_once_and_enforces_scope_and_command(self):
+        pda = {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid",
+            "mission_id": "CMQ-X", "generation": "g1", "execution_attempt": 3,
+            "active_cursor_agent_id": "bc-three", "branch_binding_status": "unbound", "branch": "",
+            "authorization_id": "PDA-OLD", "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "owner_instruction_digest": hashlib.sha256(b"pilot").hexdigest(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            "allowed_effects": ["edit_allowed_documentation"],
+            "allowed_test_commands": ["python -m unittest tests.test_charlie_hermes_supervisor -q"]}
+        metadata = {"mission_vault": {"problem_statement": "pilot"}, "dispatch_authorization": pda, "execution_succession": {"active_attempt": 3},
+            "external_supervisor_state": {"cursor_agent_id": "bc-three", "generation": "g1",
+                                           "execution_attempt": 3}}
+        connection = FakeConnection([("CMQ-X", metadata)])
+        result, status = authorize_cursor_workspace_hook(
+            cloud_agent_id="bc-three", branch_name="cursor/generated", repository="github.com/Crewless9086/amadeus-pig-tracking-system",
+            action="repository_file_write", target_path="docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md",
+            database_url="postgres://unit", connect_factory=lambda _: connection)
+        self.assertEqual(200, status, result)
+        saved = json.loads([params["metadata"] for sql, params in connection.cursor_instance.executed
+                            if "update public.charlie_missions" in sql][0])
+        self.assertEqual("cursor/generated", saved["dispatch_authorization"]["branch"])
+        replay_connection = FakeConnection([("CMQ-X", saved)])
+        replay, replay_status = authorize_cursor_workspace_hook(
+            cloud_agent_id="bc-three", branch_name="cursor/generated", repository="github.com/Crewless9086/amadeus-pig-tracking-system",
+            action="shell_verify", command="py -3 -m unittest tests.test_charlie_hermes_supervisor -q",
+            database_url="postgres://unit", connect_factory=lambda _: replay_connection)
+        self.assertEqual(200, replay_status, replay)
+        denied, denied_status = authorize_cursor_workspace_hook(
+            cloud_agent_id="bc-three", branch_name="cursor/generated", repository="github.com/Crewless9086/amadeus-pig-tracking-system",
+            action="repository_file_write", target_path="app.py", database_url="postgres://unit",
+            connect_factory=lambda _: FakeConnection([("CMQ-X", saved)]))
+        self.assertEqual(403, denied_status)
+
+    def test_cursor_hook_route_requires_oidc_and_returns_bounded_packet(self):
+        from modules.charlie import routes
+        app = Flask(__name__); app.register_blueprint(routes.charlie_bp)
+        missing = app.test_client().post("/charlie/cursor/hooks/authorize", json={"action": "shell_verify"})
+        self.assertEqual(401, missing.status_code)
+        claims = {"cloud_agent_id": "bc-three", "branch_name": "cursor/generated"}
+        with patch.object(routes, "verify_cursor_oidc_token", return_value=claims), \
+             patch.object(routes, "authorize_cursor_workspace_hook",
+                          return_value=({"success": True, "permission": "allow", "status": "cursor_workspace_authorized",
+                                         "authorization_id": "PDA-X", "secret": "never"}, 200)):
+            response = app.test_client().post("/charlie/cursor/hooks/authorize",
+                headers={"Authorization": "Bearer signed"},
+                json={"action": "shell_verify", "command": "git diff --check"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("allow", response.json["permission"])
+        self.assertNotIn("secret", response.json)
 
     def test_canonical_dispatch_payload_matches_bounded_server_schema(self):
         class ApiClient:
@@ -528,6 +580,48 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual("CAPPROVE", bot.posts[0][0])
         self.assertIn("No merge or deployment", bot.posts[0][1])
 
+    def test_end_to_end_pda_candidate_send_back_fresh_mar_and_owner_notification(self):
+        class Monitor:
+            head = "d" * 40
+            verdict = "SEND_BACK"
+            def find_pull(self, branch): return 9
+            def pull_state(self, number, now=None):
+                approved = self.verdict == "APPROVE"
+                return {"pr_number": number, "head_sha": self.head,
+                    "branch": "cursor/generated", "checks": {},
+                    "all_required_checks_pass": approved,
+                    "approved_head_sha": self.head if approved else "",
+                    "ci_stalled": False, "independent_review": self.verdict}
+        class Bot:
+            def __init__(self): self.posts = []
+            def post(self, channel, message, **kwargs):
+                self.posts.append((channel, message, kwargs)); return {"ok": True}
+        monitor, bot = Monitor(), Bot()
+        supervisor = HermesSupervisor(self.canonical, self.cursor,
+            owner_slack_user_id="UOWNER", slack_signing_secret="s",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=monitor,
+            slack_bot=bot, clock=lambda: 0)
+        event = {"event_id": "Ev-lifecycle", "user": "UOWNER", "channel": "C1",
+                 "ts": "1.0", "text": "Bounded documentation pilot"}
+        mission = supervisor.reconcile_slack_event(event)
+        self.canonical.prepare_dispatch_authorization(mission["mission_id"])
+        dispatch = supervisor.dispatch_cursor(mission)
+        agent_id = dispatch["cursor_agent_id"]
+        self.client.run_branches = [{"name": "cursor/generated"}]
+        sent_back = supervisor.supervise_once({"mission_id": mission["mission_id"],
+            "dispatch": {**dispatch, "pr_number": 9}})
+        self.assertEqual(agent_id, sent_back["agent_id"])
+        self.assertEqual((mission["mission_id"], "d" * 40, 9), self.canonical.admission_requests[-1])
+        monitor.head, monitor.verdict = "e" * 40, "APPROVE"
+        completed = supervisor.supervise_once({"mission_id": mission["mission_id"],
+            "dispatch": {**dispatch, "pr_number": 9,
+                         "admission_requested_head": "d" * 40}})
+        self.assertEqual((mission["mission_id"], "e" * 40, 9), self.canonical.admission_requests[-1])
+        self.assertEqual("e" * 40, completed["owner_notification_head"])
+        self.assertEqual("CAPPROVE", bot.posts[-1][0])
+        self.assertIn("No merge or deployment", bot.posts[-1][1])
+
 
     def test_attempt_two_has_distinct_deterministic_agent_and_governed_archive(self):
         original = self.cursor.deterministic_agent_id("CMQ-X:g1")
@@ -539,6 +633,15 @@ class HermesSupervisorTests(unittest.TestCase):
         with self.assertRaisesRegex(HermesBridgeError, "governed_archive_required"):
             self.cursor.archive_agent("bc-old")
         self.cursor.archive_agent("bc-old", governed=True)
+
+    def test_attempt_three_has_distinct_identity_and_current_main_start(self):
+        third = self.cursor.deterministic_agent_id("CMQ-X:g1:attempt-3")
+        self.cursor.create_agent(admission(), "bounded", execution_attempt=3)
+        create = [call[2] for call in self.client.calls if call[:2] == ("POST", "/v1/agents")][-1]
+        self.assertEqual(third, create["agentId"])
+        self.assertEqual("a" * 40, create["repos"][0]["startingRef"])
+        self.assertIs(create["autoCreatePR"], True)
+        self.assertIs(create["workOnCurrentBranch"], False)
 
     def test_archived_zero_candidate_predecessor_permits_one_succession(self):
         problem = "Documentation pilot"
@@ -579,6 +682,27 @@ class HermesSupervisorTests(unittest.TestCase):
             observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
             database_url="postgres://unit-test", connect_factory=lambda _: FakeConnection([(stale,)]))
         self.assertEqual(409, rejected_status, rejected)
+
+    def test_archived_attempt_two_permits_only_bounded_attempt_three(self):
+        problem = "Documentation pilot"
+        metadata = {"mission_vault": {"problem_statement": problem},
+            "external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-two",
+                "cursor_run_id": "run-two", "agent_state": "ARCHIVED", "event": "predecessor_archived",
+                "repository_mutation": False},
+            "dispatch_authorization": {"status": "valid", "generation": "g1",
+                "repository": "Crewless9086/amadeus-pig-tracking-system", "base_sha": "a" * 40,
+                "owner_instruction_digest": hashlib.sha256(problem.encode()).hexdigest(),
+                "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]},
+            "execution_succession": {"active_attempt": 2, "predecessor_archived": True,
+                "predecessor_agent_id": "bc-one", "successor_agent_id": "bc-two"}}
+        result, status = prepare_external_execution_succession(
+            "CMQ-X", generation="g1", predecessor_agent_id="bc-two", predecessor_run_id="run-two",
+            predecessor_state="IDLE", replacement_reason="cursor_workspace_authorization_state_machine_repaired",
+            observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(metadata,)]))
+        self.assertEqual(201, status, result)
+        self.assertEqual(3, result["succession"]["active_attempt"])
+        self.assertEqual(3, result["succession"]["maximum_attempts"])
 
     def test_archived_predecessor_cannot_reactivate_via_partial_progress(self):
         metadata = {"external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-old",

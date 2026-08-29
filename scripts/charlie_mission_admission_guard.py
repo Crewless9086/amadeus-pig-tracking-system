@@ -7,10 +7,13 @@ import argparse
 import base64
 import hashlib
 import json
+import http.client
 import os
+import socket
 import shlex
 import subprocess
 import sys
+import time
 from urllib import request as url_request
 from urllib import error as url_error
 from urllib import parse as url_parse
@@ -98,6 +101,10 @@ INTERPRETERS = {
     "python", "python3", "py", "node", "ruby", "perl", "php",
     "bash", "sh", "zsh", "fish",
 } | WINDOWS_INTERPRETERS
+CURSOR_HOOK_AUDIENCE = "urn:amadeus:charlie:cursor-hook:v1"
+CURSOR_HOOK_ENDPOINT = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize"
+PROTECTED_ADMISSION_ROUTE_PREFIX = "/api/charlie/hermes/missions/"
+_CURSOR_OIDC_CACHE = {"token": "", "expires_at": 0}
 
 EXTERNAL_ADMISSION_PUBLIC_KEY_B64 = "ZAY5VaAnbWY2hrgxXivez5eLaNX4RjiRxjqYmPkoG9o="
 EXTERNAL_CANONICAL_BINDING_ENV = "CHARLIE_ADMISSION_CANONICAL_BINDING_B64"
@@ -239,10 +246,17 @@ def hook_main(
         packet = json.load(stdin or sys.stdin)
         if not isinstance(packet, dict):
             raise MissionAdmissionError("hook_input_invalid")
-        if environ.get("CHARLIE_MISSION_ADMISSION_GUARD_URL"):
+        cloud_hook = _cursor_cloud_socket(environ)
+        if environ.get("CHARLIE_MISSION_ADMISSION_GUARD_URL") and not cloud_hook:
             _emit(_remote_authorization(packet, environ))
             return 0
         event = str(packet.get("hook_event_name") or "")
+        if cloud_hook and (audit or event == "afterFileEdit"):
+            path = _tool_target_path(packet)
+            if not path:
+                raise MissionAdmissionError("after_file_edit_path_missing")
+            _emit(_cursor_cloud_authorization({"action": "after_file_edit", "target_path": path}, environ))
+            return 0
         if audit or event == "afterFileEdit":
             _audit_after_file_edit(
                 packet,
@@ -258,7 +272,12 @@ def hook_main(
             if _references_trusted_authority(command, environ):
                 raise MissionAdmissionError("trusted_admission_read_denied")
             if _is_read_only_shell(command, os_name=os_name):
+                if cloud_hook and not _cloud_read_only_shell_safe(command, os_name=os_name):
+                    raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_shell")
+            if cloud_hook:
+                _emit(_cursor_cloud_authorization({"action": "shell_verify", "command": command}, environ))
+                return 0
             raise MissionAdmissionError("stage1_shell_mutation_denied")
         if event == "preToolUse":
             tool_name = str(packet.get("tool_name") or "").strip()
@@ -266,11 +285,18 @@ def hook_main(
             if normalized in READ_ONLY_TOOLS:
                 if _references_trusted_authority(packet, environ):
                     raise MissionAdmissionError("trusted_admission_read_denied")
+                if cloud_hook and normalized in {"read", "readfile"}:
+                    if not _cloud_repository_read_path_safe(_tool_target_path(packet), repo_root):
+                        raise MissionAdmissionError("cloud_read_scope_denied")
+                elif cloud_hook and normalized in {"grep", "rg", "glob", "search"}:
+                    raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_tool")
             if normalized == "shell":
                 command = str((packet.get("tool_input") or {}).get("command") or "")
                 if _references_trusted_authority(command, environ):
                     raise MissionAdmissionError("trusted_admission_read_denied")
+                if cloud_hook:
+                    return _allow("deferred_to_fail_closed_before_shell_execution")
                 if _is_read_only_shell(command, os_name=os_name):
                     return _allow("read_only_shell")
                 raise MissionAdmissionError("stage1_shell_mutation_denied")
@@ -280,6 +306,12 @@ def hook_main(
                 raise MissionAdmissionError("stage1_mcp_execution_denied")
             effect = MUTATING_TOOL_EFFECTS.get(normalized)
             if effect:
+                if cloud_hook:
+                    target = _tool_target_path(packet)
+                    if not target:
+                        raise MissionAdmissionError("mutation_target_path_required")
+                    _emit(_cursor_cloud_authorization({"action": effect, "target_path": target}, environ))
+                    return 0
                 _require_admission(
                     packet,
                     effect,
@@ -293,6 +325,66 @@ def hook_main(
         raise MissionAdmissionError("unsupported_hook_event_denied")
     except (OSError, ValueError, json.JSONDecodeError, MissionAdmissionError) as exc:
         return _deny(_reason(exc))
+
+
+def _cursor_cloud_socket(environ):
+    value = str(environ.get("CURSOR_AGENT_SOCKET") or "/run/cursor/api.sock")
+    return value if os.name != "nt" and Path(value).exists() else ""
+
+
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, socket_path, timeout=3):
+        super().__init__("cursor-agent", timeout=timeout)
+        self.socket_path = socket_path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.socket_path)
+
+
+def _mint_cursor_oidc(environ, *, now=None):
+    observed = int(time.time() if now is None else now)
+    if _CURSOR_OIDC_CACHE["token"] and observed < int(_CURSOR_OIDC_CACHE["expires_at"] or 0) - 30:
+        return _CURSOR_OIDC_CACHE["token"]
+    connection = _UnixHTTPConnection(_cursor_cloud_socket(environ))
+    body = json.dumps({"aud": CURSOR_HOOK_AUDIENCE}, separators=(",", ":")).encode()
+    try:
+        connection.request("POST", "/v1/tokens/oidc", body=body,
+                           headers={"Content-Type": "application/json", "Content-Length": str(len(body))})
+        response = connection.getresponse()
+        result = json.loads(response.read(16384))
+    except Exception as exc:
+        raise MissionAdmissionError("cursor_oidc_unavailable") from exc
+    finally:
+        connection.close()
+    if response.status != 200 or not str(result.get("token") or "") or int(result.get("expires_at") or 0) <= observed:
+        raise MissionAdmissionError("cursor_oidc_unavailable")
+    _CURSOR_OIDC_CACHE.update({"token": result["token"], "expires_at": int(result["expires_at"])})
+    return result["token"]
+
+
+def _cursor_cloud_authorization(payload, environ, *, opener=url_request.urlopen):
+    payload = dict(payload or {})
+    if payload.get("action") in {"repository_file_write", "repository_file_delete", "after_file_edit"}:
+        payload["changed_files"] = _worktree_changed_files("HEAD")
+    request = url_request.Request(
+        CURSOR_HOOK_ENDPOINT, data=json.dumps(payload, separators=(",", ":")).encode(),
+        headers={"Authorization": "Bearer " + _mint_cursor_oidc(environ),
+                 "Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+    try:
+        with opener(request, timeout=5) as response:
+            result = json.loads(response.read(32768))
+    except url_error.HTTPError as exc:
+        try:
+            result = json.loads(exc.read(32768))
+        except Exception:
+            result = {"permission": "deny", "status": "cursor_hook_authorization_denied"}
+    except Exception as exc:
+        raise MissionAdmissionError("cursor_hook_authorization_unavailable") from exc
+    if not isinstance(result, dict) or result.get("permission") not in {"allow", "deny"}:
+        raise MissionAdmissionError("cursor_hook_authorization_invalid")
+    return result
 
 
 def ci_main(
@@ -853,7 +945,7 @@ def issue_pr_main(args, *, environ=None):
             callback_base = str(environ.get("CHARLIE_CANONICAL_API_URL") or "").rstrip("/")
             if not callback_base.startswith("https://"):
                 raise MissionAdmissionError("canonical_admission_callback_unavailable")
-            callback = url_request.Request(callback_base + "/charlie/hermes/missions/" +
+            callback = url_request.Request(callback_base + PROTECTED_ADMISSION_ROUTE_PREFIX +
                 url_parse.quote(mission["mission_id"], safe="") + "/protected-admission",
                 data=canonical_json({"envelope": envelope, "pr_number": args.pull_request_number}), method="POST",
                 headers={"Content-Type": "application/json", "User-Agent": "CHARLIE-Admission-Issuer"})
@@ -1468,6 +1560,27 @@ def _references_trusted_authority(value, environ=None):
     environ = os.environ if environ is None else environ
     serialized = json.dumps(value, default=str).replace("\\", "/").lower()
     protected = {
+        "/.aws/",
+        "/.config/gh/",
+        "/.ssh/",
+        "/.charlie_runner/",
+        "/.env",
+        "/.git/config",
+        "/.git/credentials",
+        "/.netrc",
+        "/.npmrc",
+        "/.pypirc",
+        ".aws/",
+        ".config/gh/",
+        ".docker/config.json",
+        ".ssh/",
+        ".charlie_runner/",
+        ".env",
+        ".git/config",
+        ".git/credentials",
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
         "validation-receipt.key",
         "mission-admission-receipts",
     }
@@ -1475,6 +1588,56 @@ def _references_trusted_authority(value, environ=None):
     if delivered:
         protected.add(str(Path(delivered).resolve()).replace("\\", "/").lower())
     return any(item and item in serialized for item in protected)
+
+
+def _cloud_repository_read_path_safe(path, repo_root=REPO_ROOT):
+    """Allow Cloud file reads only for tracked, non-secret repository files."""
+    raw = str(path or "").strip().replace("\\", "/")
+    if not raw or _references_trusted_authority(raw):
+        return False
+    root = Path(repo_root).resolve()
+    candidate = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+    try:
+        relative = candidate.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    if not relative or candidate.is_symlink():
+        return False
+    completed = subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", "ls-files", "--error-unmatch", "--", relative],
+        cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=3, check=False,
+    )
+    return completed.returncode == 0
+
+
+def _cloud_read_only_shell_safe(command, *, os_name=None):
+    """Narrow managed-VM discovery to Git operations scoped by repository objects."""
+    if not _is_read_only_shell(command, os_name=os_name) or _references_trusted_authority(command):
+        return False
+    try:
+        words = [word.strip("\"'") for word in shlex.split(
+            str(command), posix=(os_name or os.name) != "nt")]
+    except ValueError:
+        return False
+    executable = _executable_name(words[0])
+    normalized = tuple(word.lower() for word in words)
+    if normalized == ("pwd",):
+        return True
+    return normalized in {
+        ("git", "status"),
+        ("git", "status", "--short"),
+        ("git", "status", "--porcelain"),
+        ("git", "diff"),
+        ("git", "diff", "--check"),
+        ("git", "diff", "--stat"),
+        ("git", "diff", "--name-only"),
+        ("git", "diff", "--cached"),
+        ("git", "diff", "--staged"),
+        ("git", "rev-parse", "head"),
+        ("git", "rev-parse", "--show-toplevel"),
+        ("git", "ls-files"),
+    }
 
 
 def _remote_authorization(packet, environ):
