@@ -92,6 +92,7 @@ def test_separate_node_launcher_invocations_share_one_oidc_mint():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         hooks, scripts = root / ".cursor" / "hooks", root / "scripts"
+        (root / "runtime").mkdir()
         hooks.mkdir(parents=True)
         scripts.mkdir()
         copied_launcher = hooks / LAUNCHER.name

@@ -11,6 +11,7 @@ import hashlib
 import json
 import http.client
 import os
+import secrets
 import socket
 import stat
 import shlex
@@ -376,16 +377,29 @@ def _cursor_cache_paths(environ):
         raise MissionAdmissionError("cursor_oidc_cache_unavailable")
     root = (Path(runtime) / "charlie-cursor-hook" if runtime
             else Path(tempfile.gettempdir()) / f"charlie-cursor-hook-{user}")
-    root = root.resolve(strict=False)
+    # Inspect the spelling supplied by the runtime before resolving it.  A
+    # resolve-first check follows a hostile cache-root symlink and makes the
+    # subsequent is_symlink test meaningless.
+    unresolved_root = root
+    try:
+        root_stat = unresolved_root.lstat()
+    except FileNotFoundError:
+        try:
+            unresolved_root.mkdir(mode=0o700, parents=False)
+        except FileExistsError:
+            pass
+        root_stat = unresolved_root.lstat()
+    except OSError as exc:
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    root = unresolved_root.resolve(strict=True)
     try:
         if root == REPO_ROOT.resolve() or root.is_relative_to(REPO_ROOT.resolve()):
             raise MissionAdmissionError("cursor_oidc_cache_unavailable")
     except AttributeError:  # pragma: no cover - Python < 3.9 compatibility
         if str(root).startswith(str(REPO_ROOT.resolve()) + os.sep):
             raise MissionAdmissionError("cursor_oidc_cache_unavailable")
-    if root.exists() and root.is_symlink():
-        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
     if os.name != "nt":
         os.chmod(root, 0o700)
         stat_result = root.stat()
@@ -394,12 +408,36 @@ def _cursor_cache_paths(environ):
     return root / f"token-{digest}.json", root / f"token-{digest}.lock", socket_path
 
 
+@contextlib.contextmanager
+def _verified_cache_directory(root):
+    """Anchor cache operations to one verified, non-symlink directory."""
+    if os.name == "nt":
+        root_stat = root.lstat()
+        if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        yield None
+        return
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(root, flags)
+    except OSError as exc:
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    try:
+        root_stat = os.fstat(descriptor)
+        if (not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_uid != os.geteuid()
+                or root_stat.st_mode & 0o077):
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
 def _safe_cache_read(path, socket_identity, *, observed):
     try:
-        if path.is_symlink():
-            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(path, flags)
+        with _verified_cache_directory(path.parent) as directory:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(path.name if directory is not None else path,
+                                 flags, dir_fd=directory)
     except FileNotFoundError:
         return None
     except OSError as exc:
@@ -431,12 +469,16 @@ def _safe_cache_read(path, socket_identity, *, observed):
 
 
 def _safe_cache_write(path, socket_identity, token, expires_at):
-    if path.exists() and path.is_symlink():
-        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
     packet = {"schema": CURSOR_OIDC_CACHE_SCHEMA, "token": token,
               "expires_at": int(expires_at), "audience": CURSOR_HOOK_AUDIENCE,
               "socket_identity": socket_identity}
-    descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    temporary = path.name + "." + secrets.token_hex(16)
+    directory = None
+    directory_context = _verified_cache_directory(path.parent)
+    directory = directory_context.__enter__()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(temporary if directory is not None else path.parent / temporary,
+                         flags, 0o600, dir_fd=directory)
     try:
         if os.name != "nt":
             os.fchmod(descriptor, 0o600)
@@ -446,7 +488,9 @@ def _safe_cache_write(path, socket_identity, token, expires_at):
             os.fsync(descriptor)
         os.close(descriptor)
         descriptor = -1
-        os.replace(temporary, path)
+        os.replace(temporary if directory is not None else path.parent / temporary,
+                   path.name if directory is not None else path,
+                   src_dir_fd=directory, dst_dir_fd=directory)
         if os.name != "nt":
             os.chmod(path, 0o600)
     except Exception as exc:
@@ -455,18 +499,21 @@ def _safe_cache_write(path, socket_identity, token, expires_at):
         if descriptor >= 0:
             os.close(descriptor)
         try:
-            os.unlink(temporary)
+            os.unlink(temporary if directory is not None else path.parent / temporary,
+                      dir_fd=directory)
         except FileNotFoundError:
             pass
+        directory_context.__exit__(None, None, None)
 
 
 @contextlib.contextmanager
 def _cursor_cache_lock(path, *, deadline, monotonic=time.monotonic, sleep=time.sleep):
-    if path.exists() and path.is_symlink():
-        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(path, flags, 0o600)
+        directory_context = _verified_cache_directory(path.parent)
+        directory = directory_context.__enter__()
+        descriptor = os.open(path.name if directory is not None else path,
+                             flags, 0o600, dir_fd=directory)
     except OSError as exc:
         raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
     locked = False
@@ -510,6 +557,7 @@ def _cursor_cache_lock(path, *, deadline, monotonic=time.monotonic, sleep=time.s
                 import fcntl
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
+        directory_context.__exit__(None, None, None)
 
 
 def _retry_after_seconds(response, remaining):

@@ -535,6 +535,20 @@ raise SystemExit(0 if token == "shared-test-token" else 3)
             with self.assertRaises(MissionAdmissionError):
                 _safe_cache_write(cache, socket_identity, "test-token", 2000)
 
+    def test_cache_rejects_symlinked_cache_root_before_resolution(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             tempfile.TemporaryDirectory() as target, \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
+                   return_value="/run/cursor/api.sock"):
+            root = Path(directory) / "charlie-cursor-hook"
+            try:
+                root.symlink_to(target, target_is_directory=True)
+            except OSError:
+                self.skipTest("directory symlink creation unavailable")
+            with self.assertRaisesRegex(MissionAdmissionError,
+                                        "cursor_oidc_cache_unavailable"):
+                _cursor_cache_paths({"XDG_RUNTIME_DIR": directory})
+
     def test_oidc_retry_after_and_fatal_status_contract(self):
         class Clock:
             def __init__(self): self.value, self.sleeps = 10.0, []
