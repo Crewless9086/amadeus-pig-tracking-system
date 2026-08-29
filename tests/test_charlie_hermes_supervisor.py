@@ -314,7 +314,13 @@ class HermesSupervisorTests(unittest.TestCase):
         connection = FakeConnection([(metadata,)])
         result, status = refresh_external_dispatch_authorization_base(
             "CMQ-X", generation="g1", cursor_agent_id="bc-one", old_base_sha="a" * 40,
-            new_base_sha="b" * 40, changed_files=[".cursor/hooks.json"],
+            new_base_sha="b" * 40, changed_files=[
+                ".cursor/hooks.json",
+                "modules/charlie/cursor_cloud_identity.py",
+                "scripts/charlie_mission_admission_guard.py",
+                "tests/test_charlie_cursor_cloud_identity.py",
+                "tests/test_charlie_mission_admission.py",
+            ],
             authenticated_principal="hermes:charlie-builder", database_url="postgres://unit-test",
             connect_factory=lambda _: connection)
         self.assertEqual(201, status, result)
