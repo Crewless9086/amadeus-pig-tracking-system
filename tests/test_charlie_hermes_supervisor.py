@@ -701,6 +701,25 @@ class HermesSupervisorTests(unittest.TestCase):
                                     "cursor_dispatch_identity_conflict"):
             self.supervisor.dispatch_cursor(mission)
 
+        self.canonical.dispatch = {"CMQ-X:g1:attempt-4": {
+            "mission_id": "CMQ-X", "generation": "g1", "execution_attempt": 4,
+            "cursor_agent_id": "bc-conflicting", "cursor_run_id": "run-conflicting",
+            "agent_state": "ACTIVE",
+        }}
+        with self.assertRaisesRegex(HermesBridgeError,
+                                    "cursor_dispatch_identity_conflict"):
+            self.supervisor.dispatch_cursor(mission)
+
+    def test_attempt_five_fails_before_reservation_or_cursor_request(self):
+        self.canonical.active_attempt = 5
+        self.canonical.prepare_dispatch_authorization("CMQ-X")
+        with self.assertRaisesRegex(HermesBridgeError,
+                                    "cursor_execution_attempt_invalid"):
+            self.supervisor.dispatch_cursor({"mission_id": "CMQ-X"})
+        self.assertEqual({}, self.canonical.dispatch)
+        self.assertEqual([], [call for call in self.client.calls
+                              if call[0:2] == ("POST", "/v1/agents")])
+
     def test_archived_zero_candidate_predecessor_permits_one_succession(self):
         problem = "Documentation pilot"
         metadata = {"mission_vault": {"problem_statement": problem},

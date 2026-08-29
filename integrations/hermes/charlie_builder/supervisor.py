@@ -433,15 +433,21 @@ class HermesSupervisor:
         })
         succession = dict(metadata.get("execution_succession") or {})
         attempt = int(succession.get("active_attempt") or 1)
+        if attempt not in (1, 2, 3, 4):
+            raise HermesBridgeError("cursor_execution_attempt_invalid")
         key = mission_idempotency_key(admission.mission_id, admission.generation)
         if attempt > 1:
             key += f":attempt-{attempt}"
         existing = self.canonical.get_dispatch(key)
         expected_agent_id = self.cursor.deterministic_agent_id(key)
-        if existing and existing.get("cursor_agent_id") and existing.get("cursor_run_id"):
-            return {"status": "existing_dispatch", **existing}
-        if existing and existing.get("cursor_agent_id") not in {None, expected_agent_id}:
-            raise HermesBridgeError("cursor_dispatch_identity_conflict")
+        if existing:
+            if (existing.get("mission_id") != admission.mission_id
+                    or existing.get("generation") != admission.generation
+                    or int(existing.get("execution_attempt") or 0) != attempt
+                    or existing.get("cursor_agent_id") != expected_agent_id):
+                raise HermesBridgeError("cursor_dispatch_identity_conflict")
+            if existing.get("cursor_run_id"):
+                return {"status": "existing_dispatch", **existing}
         if self.canonical.running_writer_count() >= self.MAX_RUNNING_WRITERS:
             raise HermesBridgeError("writer_capacity_reached")
         if not existing:
