@@ -328,8 +328,17 @@ def hook_main(
 
 
 def _cursor_cloud_socket(environ):
-    value = str(environ.get("CURSOR_AGENT_SOCKET") or "/run/cursor/api.sock")
-    return value if os.name != "nt" and Path(value).exists() else ""
+    if os.name == "nt":
+        return ""
+    configured = str(environ.get("CURSOR_AGENT_SOCKET") or "").strip()
+    if configured:
+        # Cursor documents this variable as the managed-VM socket contract.  Do
+        # not silently fall back to the local MAR path merely because the socket
+        # is momentarily absent while the VM finishes starting; the OIDC mint
+        # will then fail closed with its specific bounded reason instead.
+        return configured
+    default = "/run/cursor/api.sock"
+    return default if Path(default).exists() else ""
 
 
 class _UnixHTTPConnection(http.client.HTTPConnection):

@@ -708,7 +708,28 @@ class HermesSupervisorTests(unittest.TestCase):
             database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(metadata,)]))
         self.assertEqual(201, status, result)
         self.assertEqual(3, result["succession"]["active_attempt"])
-        self.assertEqual(3, result["succession"]["maximum_attempts"])
+        self.assertEqual(4, result["succession"]["maximum_attempts"])
+
+    def test_archived_attempt_three_permits_only_cloud_socket_recovery_attempt_four(self):
+        problem = "Documentation pilot"
+        metadata = {"mission_vault": {"problem_statement": problem},
+            "external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-three",
+                "cursor_run_id": "run-three", "agent_state": "ARCHIVED", "event": "predecessor_archived",
+                "repository_mutation": False},
+            "dispatch_authorization": {"status": "valid", "generation": "g1",
+                "repository": "Crewless9086/amadeus-pig-tracking-system", "base_sha": "a" * 40,
+                "owner_instruction_digest": hashlib.sha256(problem.encode()).hexdigest(),
+                "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]},
+            "execution_succession": {"active_attempt": 3, "predecessor_archived": True,
+                "predecessor_agent_id": "bc-two", "successor_agent_id": "bc-three"}}
+        result, status = prepare_external_execution_succession(
+            "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
+            predecessor_state="IDLE", replacement_reason="cursor_cloud_socket_detection_repaired",
+            observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(metadata,)]))
+        self.assertEqual(201, status, result)
+        self.assertEqual(4, result["succession"]["active_attempt"])
+        self.assertEqual(4, result["succession"]["maximum_attempts"])
 
     def test_archived_predecessor_cannot_reactivate_via_partial_progress(self):
         metadata = {"external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-old",

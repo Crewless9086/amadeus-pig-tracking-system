@@ -405,6 +405,39 @@ class MissionAdmissionGuardTests(unittest.TestCase):
         self.assertEqual("repository_file_write", remote.call_args_list[0].args[0]["action"])
         self.assertEqual("shell_verify", remote.call_args_list[1].args[0]["action"])
 
+    def test_configured_cursor_socket_selects_cloud_mode_before_socket_is_ready(self):
+        environ = {"CURSOR_AGENT_SOCKET": "/run/cursor/not-ready-yet.sock"}
+        allowed = {"permission": "allow", "status": "cursor_workspace_authorized"}
+        with patch("scripts.charlie_mission_admission_guard.os.name", "posix"), \
+             patch("scripts.charlie_mission_admission_guard.Path.exists", return_value=False), \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_authorization",
+                   return_value=allowed) as remote, \
+             patch("scripts.charlie_mission_admission_guard._validated_trusted_identity") as mar:
+            _, result = self._hook({
+                "hook_event_name": "preToolUse",
+                "tool_name": "Write",
+                "tool_input": {"path": "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"},
+            }, environ=environ)
+        self.assertEqual("allow", result["permission"])
+        self.assertEqual("repository_file_write", remote.call_args.args[0]["action"])
+        mar.assert_not_called()
+
+    def test_missing_configured_cursor_socket_fails_cloud_hook_closed_not_into_mar(self):
+        environ = {"CURSOR_AGENT_SOCKET": "/run/cursor/not-ready-yet.sock"}
+        with patch("scripts.charlie_mission_admission_guard.os.name", "posix"), \
+             patch("scripts.charlie_mission_admission_guard.Path.exists", return_value=False), \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_authorization",
+                   side_effect=MissionAdmissionError("cursor_oidc_unavailable")), \
+             patch("scripts.charlie_mission_admission_guard._validated_trusted_identity") as mar:
+            _, result = self._hook({
+                "hook_event_name": "preToolUse",
+                "tool_name": "Write",
+                "tool_input": {"path": "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"},
+            }, environ=environ)
+        self.assertEqual("deny", result["permission"])
+        self.assertEqual("READMISSION_REQUIRED: cursor_oidc_unavailable", result["agent_message"])
+        mar.assert_not_called()
+
     def test_invalid_input_and_unknown_tool_deny_instead_of_failing_open(self):
         _, unknown = self._hook({
             "hook_event_name": "preToolUse",
