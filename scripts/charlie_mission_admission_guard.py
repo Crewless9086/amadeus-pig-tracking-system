@@ -5,14 +5,18 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
+import getpass
 import hashlib
 import json
 import http.client
 import os
 import socket
+import stat
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from urllib import request as url_request
 from urllib import error as url_error
@@ -103,8 +107,10 @@ INTERPRETERS = {
 } | WINDOWS_INTERPRETERS
 CURSOR_HOOK_AUDIENCE = "urn:amadeus:charlie:cursor-hook:v1"
 CURSOR_HOOK_ENDPOINT = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize"
+CURSOR_HOOK_OPERATION_SECONDS = 8.0
+CURSOR_OIDC_CACHE_SCHEMA = "charlie_cursor_oidc_cache_v1"
 PROTECTED_ADMISSION_ROUTE_PREFIX = "/api/charlie/hermes/missions/"
-_CURSOR_OIDC_CACHE = {"token": "", "expires_at": 0}
+_CURSOR_OIDC_CACHE = {"token": "", "expires_at": 0, "audience": "", "socket_identity": ""}
 
 EXTERNAL_ADMISSION_PUBLIC_KEY_B64 = "ZAY5VaAnbWY2hrgxXivez5eLaNX4RjiRxjqYmPkoG9o="
 EXTERNAL_CANONICAL_BINDING_ENV = "CHARLIE_ADMISSION_CANONICAL_BINDING_B64"
@@ -352,51 +358,249 @@ class _UnixHTTPConnection(http.client.HTTPConnection):
         self.sock.connect(self.socket_path)
 
 
-def _mint_cursor_oidc(environ, *, now=None):
-    observed = int(time.time() if now is None else now)
-    if _CURSOR_OIDC_CACHE["token"] and observed < int(_CURSOR_OIDC_CACHE["expires_at"] or 0) - 30:
-        return _CURSOR_OIDC_CACHE["token"]
-    body = json.dumps({"aud": CURSOR_HOOK_AUDIENCE}, separators=(",", ":")).encode()
-    result = None
-    response_status = 0
-    last_error = None
-    for attempt in range(3):
-        connection = _UnixHTTPConnection(_cursor_cloud_socket(environ))
+def _cursor_cache_identity(environ):
+    socket_path = os.path.normcase(os.path.abspath(_cursor_cloud_socket(environ)))
+    if not socket_path:
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    user = str(os.geteuid()) if hasattr(os, "geteuid") else getpass.getuser()
+    digest = hashlib.sha256(
+        f"{user}\0{socket_path}\0{CURSOR_HOOK_AUDIENCE}".encode("utf-8")
+    ).hexdigest()
+    return user, socket_path, digest
+
+
+def _cursor_cache_paths(environ):
+    user, socket_path, digest = _cursor_cache_identity(environ)
+    runtime = str(environ.get("XDG_RUNTIME_DIR") or "").strip()
+    if runtime and not Path(runtime).is_absolute():
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    root = (Path(runtime) / "charlie-cursor-hook" if runtime
+            else Path(tempfile.gettempdir()) / f"charlie-cursor-hook-{user}")
+    root = root.resolve(strict=False)
+    try:
+        if root == REPO_ROOT.resolve() or root.is_relative_to(REPO_ROOT.resolve()):
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    except AttributeError:  # pragma: no cover - Python < 3.9 compatibility
+        if str(root).startswith(str(REPO_ROOT.resolve()) + os.sep):
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    if root.exists() and root.is_symlink():
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name != "nt":
+        os.chmod(root, 0o700)
+        stat_result = root.stat()
+        if stat_result.st_uid != os.geteuid() or stat_result.st_mode & 0o077:
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    return root / f"token-{digest}.json", root / f"token-{digest}.lock", socket_path
+
+
+def _safe_cache_read(path, socket_identity, *, observed):
+    try:
+        if path.is_symlink():
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    try:
+        stat_result = os.fstat(descriptor)
+        if not stat.S_ISREG(stat_result.st_mode):
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        if os.name != "nt" and (stat_result.st_uid != os.geteuid() or stat_result.st_mode & 0o077):
+            raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as handle:
+            packet = json.loads(handle.read(32768))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    finally:
+        os.close(descriptor)
+    expected = {"schema", "token", "expires_at", "audience", "socket_identity"}
+    if (not isinstance(packet, dict) or set(packet) != expected
+            or packet.get("schema") != CURSOR_OIDC_CACHE_SCHEMA
+            or packet.get("audience") != CURSOR_HOOK_AUDIENCE
+            or packet.get("socket_identity") != socket_identity
+            or not str(packet.get("token") or "")):
+        return None
+    try:
+        expires_at = int(packet.get("expires_at") or 0)
+    except (TypeError, ValueError):
+        return None
+    return packet if expires_at > observed + 30 else None
+
+
+def _safe_cache_write(path, socket_identity, token, expires_at):
+    if path.exists() and path.is_symlink():
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    packet = {"schema": CURSOR_OIDC_CACHE_SCHEMA, "token": token,
+              "expires_at": int(expires_at), "audience": CURSOR_HOOK_AUDIENCE,
+              "socket_identity": socket_identity}
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        if os.name != "nt":
+            os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8", closefd=False) as handle:
+            json.dump(packet, handle, sort_keys=True, separators=(",", ":"))
+            handle.flush()
+            os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary, path)
+        if os.name != "nt":
+            os.chmod(path, 0o600)
+    except Exception as exc:
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
         try:
-            connection.request("POST", "/v1/tokens/oidc", body=body,
-                               headers={"Content-Type": "application/json", "Content-Length": str(len(body))})
-            response = connection.getresponse()
-            response_status = int(response.status)
-            result = json.loads(response.read(16384))
-        except (FileNotFoundError, ConnectionRefusedError, TimeoutError, socket.timeout) as exc:
-            last_error = exc
-            result = None
-        except Exception as exc:
-            raise MissionAdmissionError("cursor_oidc_unavailable") from exc
-        finally:
-            connection.close()
-        if result is not None and response_status not in {429, 500, 502, 503, 504}:
-            break
-        if attempt < 2:
-            time.sleep((attempt + 1) * 0.1)
-    if result is None:
-        raise MissionAdmissionError("cursor_oidc_unavailable") from last_error
-    if response_status != 200 or not str(result.get("token") or "") or int(result.get("expires_at") or 0) <= observed:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+@contextlib.contextmanager
+def _cursor_cache_lock(path, *, deadline, monotonic=time.monotonic, sleep=time.sleep):
+    if path.exists() and path.is_symlink():
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    locked = False
+    try:
+        if os.name != "nt":
+            os.fchmod(descriptor, 0o600)
+            lock_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != os.geteuid():
+                raise MissionAdmissionError("cursor_oidc_cache_unavailable")
+        if os.name == "nt":
+            import msvcrt
+            if os.fstat(descriptor).st_size == 0:
+                os.write(descriptor, b"\0")
+            while monotonic() < deadline:
+                try:
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                    locked = True
+                    break
+                except OSError:
+                    sleep(min(0.05, max(0.0, deadline - monotonic())))
+        else:
+            import fcntl
+            while monotonic() < deadline:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = True
+                    break
+                except BlockingIOError:
+                    sleep(min(0.05, max(0.0, deadline - monotonic())))
+        if not locked:
+            raise MissionAdmissionError("cursor_oidc_cache_lock_timeout")
+        yield
+    finally:
+        if locked:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def _retry_after_seconds(response, remaining):
+    try:
+        value = float(str(response.getheader("Retry-After") or "0").strip())
+    except (TypeError, ValueError):
+        value = 0.0
+    return min(max(0.0, value), max(0.0, remaining))
+
+
+def _mint_cursor_oidc(environ, *, now=None, deadline=None, monotonic=time.monotonic,
+                      sleep=time.sleep, connection_factory=None):
+    observed = int(time.time() if now is None else now)
+    deadline = float(deadline if deadline is not None else monotonic() + 4.0)
+    connection_factory = connection_factory or _UnixHTTPConnection
+    cache_path, lock_path, socket_identity = _cursor_cache_paths(environ)
+    if (_CURSOR_OIDC_CACHE["token"]
+            and _CURSOR_OIDC_CACHE.get("audience") == CURSOR_HOOK_AUDIENCE
+            and _CURSOR_OIDC_CACHE.get("socket_identity") == socket_identity
+            and observed < int(_CURSOR_OIDC_CACHE["expires_at"] or 0) - 30):
+        return _CURSOR_OIDC_CACHE["token"]
+    cached = _safe_cache_read(cache_path, socket_identity, observed=observed)
+    if cached:
+        _CURSOR_OIDC_CACHE.update({"token": cached["token"], "expires_at": cached["expires_at"],
+                                   "audience": CURSOR_HOOK_AUDIENCE, "socket_identity": socket_identity})
+        return cached["token"]
+    body = json.dumps({"aud": CURSOR_HOOK_AUDIENCE}, separators=(",", ":")).encode()
+    retryable_errors = (FileNotFoundError, ConnectionRefusedError, ConnectionResetError,
+                        BrokenPipeError, TimeoutError, socket.timeout)
+    with _cursor_cache_lock(lock_path, deadline=deadline, monotonic=monotonic, sleep=sleep):
+        cached = _safe_cache_read(cache_path, socket_identity, observed=observed)
+        if cached:
+            _CURSOR_OIDC_CACHE.update({"token": cached["token"], "expires_at": cached["expires_at"],
+                                       "audience": CURSOR_HOOK_AUDIENCE, "socket_identity": socket_identity})
+            return cached["token"]
+        attempt = 0
+        while monotonic() < deadline and attempt < 4:
+            attempt += 1
+            remaining = max(0.0, deadline - monotonic())
+            connection = connection_factory(socket_identity, timeout=max(0.1, min(1.0, remaining)))
+            response = None
+            try:
+                connection.request("POST", "/v1/tokens/oidc", body=body,
+                                   headers={"Content-Type": "application/json", "Content-Length": str(len(body))})
+                response = connection.getresponse()
+                status = int(response.status)
+                raw = response.read(16384)
+            except retryable_errors:
+                status, raw = 0, b""
+            except Exception as exc:
+                raise MissionAdmissionError("cursor_oidc_unavailable") from exc
+            finally:
+                connection.close()
+            if status == 200:
+                try:
+                    result = json.loads(raw)
+                    token = str(result.get("token") or "")
+                    expires_at = int(result.get("expires_at") or 0)
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise MissionAdmissionError("cursor_oidc_response_invalid") from exc
+                if not token or expires_at <= observed + 30:
+                    raise MissionAdmissionError("cursor_oidc_response_invalid")
+                _safe_cache_write(cache_path, socket_identity, token, expires_at)
+                _CURSOR_OIDC_CACHE.update({"token": token, "expires_at": expires_at,
+                                           "audience": CURSOR_HOOK_AUDIENCE,
+                                           "socket_identity": socket_identity})
+                return token
+            if status in {400, 403, 404, 405, 413, 415}:
+                raise MissionAdmissionError("cursor_oidc_request_rejected")
+            if status not in {0, 429, 500, 502, 503, 504}:
+                raise MissionAdmissionError("cursor_oidc_unavailable")
+            remaining = max(0.0, deadline - monotonic())
+            delay = (_retry_after_seconds(response, remaining)
+                     if response is not None and status in {429, 503}
+                     else min(0.1 * attempt, remaining))
+            if delay > 0:
+                sleep(delay)
         raise MissionAdmissionError("cursor_oidc_unavailable")
-    _CURSOR_OIDC_CACHE.update({"token": result["token"], "expires_at": int(result["expires_at"])})
-    return result["token"]
 
 
 def _cursor_cloud_authorization(payload, environ, *, opener=url_request.urlopen):
+    deadline = time.monotonic() + CURSOR_HOOK_OPERATION_SECONDS
     payload = dict(payload or {})
     if payload.get("action") in {"repository_file_write", "repository_file_delete", "after_file_edit"}:
         payload["changed_files"] = _worktree_changed_files("HEAD")
     request = url_request.Request(
         CURSOR_HOOK_ENDPOINT, data=json.dumps(payload, separators=(",", ":")).encode(),
-        headers={"Authorization": "Bearer " + _mint_cursor_oidc(environ),
+        headers={"Authorization": "Bearer " + _mint_cursor_oidc(environ, deadline=deadline),
                  "Content-Type": "application/json", "Accept": "application/json"}, method="POST")
     try:
-        with opener(request, timeout=5) as response:
+        with opener(request, timeout=max(0.1, min(3.0, deadline - time.monotonic()))) as response:
             result = json.loads(response.read(32768))
     except url_error.HTTPError as exc:
         try:

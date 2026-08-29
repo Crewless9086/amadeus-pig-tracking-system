@@ -724,7 +724,7 @@ class HermesSupervisorTests(unittest.TestCase):
                 "predecessor_agent_id": "bc-two", "successor_agent_id": "bc-three"}}
         result, status = prepare_external_execution_succession(
             "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
-            predecessor_state="IDLE", replacement_reason="cursor_cloud_socket_detection_repaired",
+            predecessor_state="ARCHIVED", replacement_reason="cursor_cloud_socket_detection_repaired",
             observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
             database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(metadata,)]))
         self.assertEqual(201, status, result)
@@ -734,7 +734,7 @@ class HermesSupervisorTests(unittest.TestCase):
         exact = metadata | {"execution_succession": result["succession"]}
         replay, replay_status = prepare_external_execution_succession(
             "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
-            predecessor_state="IDLE", replacement_reason="cursor_cloud_socket_detection_repaired",
+            predecessor_state="ARCHIVED", replacement_reason="cursor_cloud_socket_detection_repaired",
             observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
             database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(exact,)]))
         self.assertEqual(200, replay_status, replay)
@@ -747,11 +747,19 @@ class HermesSupervisorTests(unittest.TestCase):
             conflict[field] = changed
             rejected, rejected_status = prepare_external_execution_succession(
                 "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
-                predecessor_state="IDLE", replacement_reason="cursor_cloud_socket_detection_repaired",
+                predecessor_state="ARCHIVED", replacement_reason="cursor_cloud_socket_detection_repaired",
                 observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
                 database_url="postgres://unit", connect_factory=lambda _, value=conflict:
                     FakeConnection([(metadata | {"execution_succession": value},)]))
             self.assertEqual(409, rejected_status, (field, rejected))
+
+        for provider_state in ("IDLE", "ACTIVE", "FAILED", "CANCELLED"):
+            rejected, rejected_status = prepare_external_execution_succession(
+                "CMQ-X", generation="g1", predecessor_agent_id="bc-three", predecessor_run_id="run-three",
+                predecessor_state=provider_state, replacement_reason="cursor_cloud_socket_detection_repaired",
+                observed_main_sha="a" * 40, authenticated_principal="hermes:charlie-builder",
+                database_url="postgres://unit", connect_factory=lambda _: FakeConnection([(metadata,)]))
+            self.assertIn(rejected_status, {400, 409}, (provider_state, rejected))
 
     def test_archived_predecessor_cannot_reactivate_via_partial_progress(self):
         metadata = {"external_supervisor_state": {"generation": "g1", "cursor_agent_id": "bc-old",

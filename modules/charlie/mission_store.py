@@ -1993,6 +1993,8 @@ def prepare_external_execution_succession(
                     return {"success": False, "status": "execution_succession_precondition_failed"}, 409
                 if requested_attempt == 4 and int(existing.get("active_attempt") or 0) != 3:
                     return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                if requested_attempt == 4 and final_state != "ARCHIVED":
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
                 owner_digest = hashlib.sha256(str(metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
                 if (state.get("generation") != generation or state.get("cursor_agent_id") != agent_id
                         or state.get("cursor_run_id") != run_id or state.get("agent_state") != "ARCHIVED"

@@ -40,6 +40,12 @@ from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_GENERATION,
     BOOTSTRAP_REQUIRED_TESTS,
     CURSOR_HOOK_ENDPOINT,
+    CURSOR_HOOK_OPERATION_SECONDS,
+    _CURSOR_OIDC_CACHE,
+    _cursor_cache_paths,
+    _cursor_cloud_socket,
+    _safe_cache_read,
+    _safe_cache_write,
     PROTECTED_ADMISSION_ROUTE_PREFIX,
     _is_read_only_shell,
     _mint_cursor_oidc,
@@ -448,7 +454,7 @@ class MissionAdmissionGuardTests(unittest.TestCase):
                 return json.dumps({"token": "signed-token", "expires_at": 2000}).encode()
 
         class Connection:
-            def __init__(self, _path):
+            def __init__(self, _path, timeout=None):
                 self.outcome = responses.pop(0)
             def request(self, *_args, **_kwargs):
                 if self.outcome:
@@ -458,13 +464,194 @@ class MissionAdmissionGuardTests(unittest.TestCase):
             def close(self):
                 pass
 
-        with patch("scripts.charlie_mission_admission_guard._UnixHTTPConnection", Connection), \
+        with tempfile.TemporaryDirectory() as directory, \
              patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
                    return_value="/run/cursor/api.sock"), \
              patch("scripts.charlie_mission_admission_guard.time.sleep") as sleep:
-            token = _mint_cursor_oidc({}, now=1000)
+            _CURSOR_OIDC_CACHE.update({"token": "", "expires_at": 0})
+            token = _mint_cursor_oidc({"XDG_RUNTIME_DIR": directory}, now=1000,
+                                      connection_factory=Connection, sleep=sleep)
         self.assertEqual("signed-token", token)
         self.assertEqual(2, sleep.call_count)
+
+    def test_cross_process_cache_serializes_twelve_rapid_mints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            counter = Path(directory) / "mint-count.txt"
+            code = r'''
+import os, time
+import scripts.charlie_mission_admission_guard as guard
+guard._cursor_cloud_socket = lambda env: env["CURSOR_AGENT_SOCKET"]
+class Response:
+    status = 200
+    def read(self, limit):
+        return ("{\"token\":\"shared-test-token\",\"expires_at\":%d}" % (int(time.time()) + 300)).encode()
+    def getheader(self, name): return None
+class Connection:
+    def __init__(self, path, timeout=None): pass
+    def request(self, *args, **kwargs):
+        path = os.environ["CHARLIE_TEST_MINT_COUNTER"]
+        current = int(open(path).read() or "0") if os.path.exists(path) else 0
+        with open(path, "w") as handle: handle.write(str(current + 1))
+    def getresponse(self): return Response()
+    def close(self): pass
+token = guard._mint_cursor_oidc(os.environ, connection_factory=Connection)
+raise SystemExit(0 if token == "shared-test-token" else 3)
+'''
+            environment = dict(os.environ)
+            environment.update({"XDG_RUNTIME_DIR": directory,
+                                "CURSOR_AGENT_SOCKET": "/run/cursor/test-api.sock",
+                                "CHARLIE_TEST_MINT_COUNTER": str(counter)})
+            processes = [subprocess.Popen([sys.executable, "-c", code], cwd=ROOT,
+                         env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                         for _ in range(12)]
+            results = [process.communicate(timeout=15) + (process.returncode,) for process in processes]
+            self.assertTrue(all(result[2] == 0 for result in results), results)
+            self.assertEqual("1", counter.read_text(encoding="utf-8"))
+
+    def test_cache_rejects_wrong_identity_malformed_and_symlink_state(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
+                   return_value="/run/cursor/api.sock"):
+            environ = {"XDG_RUNTIME_DIR": directory}
+            cache, _lock, socket_identity = _cursor_cache_paths(environ)
+            _safe_cache_write(cache, socket_identity, "test-token", 2000)
+            self.assertEqual({"schema", "token", "expires_at", "audience", "socket_identity"},
+                             set(json.loads(cache.read_text(encoding="utf-8"))))
+            self.assertIsNotNone(_safe_cache_read(cache, socket_identity, observed=1000))
+            self.assertIsNone(_safe_cache_read(cache, socket_identity + "-other", observed=1000))
+            wrong_audience = json.loads(cache.read_text(encoding="utf-8"))
+            wrong_audience["audience"] = "wrong-audience"
+            cache.write_text(json.dumps(wrong_audience), encoding="utf-8")
+            self.assertIsNone(_safe_cache_read(cache, socket_identity, observed=1000))
+            cache.write_text("{malformed", encoding="utf-8")
+            self.assertIsNone(_safe_cache_read(cache, socket_identity, observed=1000))
+            cache.unlink()
+            target = Path(directory) / "target"
+            target.write_text("{}", encoding="utf-8")
+            try:
+                cache.symlink_to(target)
+            except OSError:
+                self.skipTest("symlink creation unavailable")
+            with self.assertRaises(MissionAdmissionError):
+                _safe_cache_write(cache, socket_identity, "test-token", 2000)
+
+    def test_oidc_retry_after_and_fatal_status_contract(self):
+        class Clock:
+            def __init__(self): self.value, self.sleeps = 10.0, []
+            def monotonic(self): return self.value
+            def sleep(self, value): self.sleeps.append(value); self.value += value
+
+        class Response:
+            def __init__(self, status, retry_after=None):
+                self.status, self.retry_after = status, retry_after
+            def read(self, _limit):
+                if self.status == 200:
+                    return b'{"token":"fresh-test-token","expires_at":2000}'
+                return b''
+            def getheader(self, name):
+                return self.retry_after if name == "Retry-After" else None
+
+        def exercise(outcomes, *, expect="fresh-test-token"):
+            clock, calls = Clock(), []
+            class Connection:
+                def __init__(self, path, timeout=None): calls.append(timeout)
+                def request(self, *args, **kwargs): pass
+                def getresponse(self): return outcomes.pop(0)
+                def close(self): pass
+            with tempfile.TemporaryDirectory() as directory, \
+                 patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
+                       return_value="/run/cursor/api.sock"):
+                _CURSOR_OIDC_CACHE.update({"token": "", "expires_at": 0})
+                result = _mint_cursor_oidc({"XDG_RUNTIME_DIR": directory}, now=1000,
+                    deadline=clock.monotonic() + 3, monotonic=clock.monotonic,
+                    sleep=clock.sleep, connection_factory=Connection)
+            self.assertEqual(expect, result)
+            return clock, calls
+
+        for status in (429, 503):
+            clock, calls = exercise([Response(status, "0.25"), Response(200)])
+            self.assertEqual([0.25], clock.sleeps)
+            self.assertEqual(2, len(calls))
+        for status in (500, 502, 504):
+            clock, calls = exercise([Response(status), Response(200)])
+            self.assertEqual(2, len(calls))
+            self.assertGreater(clock.sleeps[0], 0)
+        class FatalConnection:
+            calls = 0
+            def __init__(self, path, timeout=None): pass
+            def request(self, *args, **kwargs): FatalConnection.calls += 1
+            def getresponse(self): return Response(403)
+            def close(self): pass
+        with tempfile.TemporaryDirectory() as directory, \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
+                   return_value="/run/cursor/api.sock"):
+            _CURSOR_OIDC_CACHE.update({"token": "", "expires_at": 0})
+            with self.assertRaisesRegex(MissionAdmissionError, "cursor_oidc_request_rejected"):
+                _mint_cursor_oidc({"XDG_RUNTIME_DIR": directory}, now=1000,
+                                  connection_factory=FatalConnection)
+        self.assertEqual(1, FatalConnection.calls)
+        class MalformedConnection(FatalConnection):
+            calls = 0
+            def request(self, *args, **kwargs): MalformedConnection.calls += 1
+            def getresponse(self): return Response(200)
+        class MalformedResponse(Response):
+            def read(self, _limit): return b'{malformed'
+        MalformedConnection.getresponse = lambda self: MalformedResponse(200)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
+                   return_value="/run/cursor/api.sock"):
+            _CURSOR_OIDC_CACHE.update({"token": "", "expires_at": 0})
+            with self.assertRaisesRegex(MissionAdmissionError, "cursor_oidc_response_invalid"):
+                _mint_cursor_oidc({"XDG_RUNTIME_DIR": directory}, now=1000,
+                                  connection_factory=MalformedConnection)
+        self.assertEqual(1, MalformedConnection.calls)
+
+    def test_expired_cache_mints_once_and_persistent_missing_socket_meets_deadline(self):
+        class Clock:
+            def __init__(self): self.value = 20.0
+            def monotonic(self): return self.value
+            def sleep(self, value): self.value += value
+        class ReadyResponse:
+            status = 200
+            def read(self, _limit): return b'{"token":"replacement-token","expires_at":2000}'
+            def getheader(self, _name): return None
+        class ReadyConnection:
+            calls = 0
+            def __init__(self, path, timeout=None): pass
+            def request(self, *args, **kwargs): ReadyConnection.calls += 1
+            def getresponse(self): return ReadyResponse()
+            def close(self): pass
+        with tempfile.TemporaryDirectory() as directory, \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
+                   return_value="/run/cursor/api.sock"):
+            environ = {"XDG_RUNTIME_DIR": directory}
+            cache, _lock, identity = _cursor_cache_paths(environ)
+            _safe_cache_write(cache, identity, "expired-token", 1020)
+            _CURSOR_OIDC_CACHE.update({"token": "", "expires_at": 0})
+            token = _mint_cursor_oidc(environ, now=1000, connection_factory=ReadyConnection)
+            self.assertEqual("replacement-token", token)
+            self.assertEqual(1, ReadyConnection.calls)
+
+            class MissingConnection:
+                def __init__(self, path, timeout=None): pass
+                def request(self, *args, **kwargs): raise FileNotFoundError("not ready")
+                def close(self): pass
+            cache.unlink()
+            _CURSOR_OIDC_CACHE.update({"token": "", "expires_at": 0})
+            clock = Clock()
+            with self.assertRaisesRegex(MissionAdmissionError, "cursor_oidc_unavailable"):
+                _mint_cursor_oidc(environ, now=1000, deadline=clock.monotonic() + 0.5,
+                    monotonic=clock.monotonic, sleep=clock.sleep,
+                    connection_factory=MissingConnection)
+            self.assertLessEqual(clock.monotonic(), 20.5)
+
+    def test_local_non_cloud_detection_remains_local(self):
+        with patch("scripts.charlie_mission_admission_guard.os.name", "posix"), \
+             patch("scripts.charlie_mission_admission_guard.Path.exists", return_value=False):
+            self.assertEqual("", _cursor_cloud_socket({}))
+        with patch("scripts.charlie_mission_admission_guard.os.name", "nt"):
+            self.assertEqual("", _cursor_cloud_socket(
+                {"CURSOR_AGENT_SOCKET": "/run/cursor/api.sock"}))
 
     def test_invalid_input_and_unknown_tool_deny_instead_of_failing_open(self):
         _, unknown = self._hook({
@@ -622,6 +809,7 @@ class MissionAdmissionGuardTests(unittest.TestCase):
             for hook in config["hooks"][event]:
                 self.assertIs(hook["failClosed"], True)
                 self.assertGreater(hook["timeout"], 0)
+                self.assertGreaterEqual(hook["timeout"] - CURSOR_HOOK_OPERATION_SECONDS, 2)
         self.assertNotIn("matcher", config["hooks"]["preToolUse"][0])
         self.assertIn("afterFileEdit", config["hooks"])
         self.assertNotIn("matcher", config["hooks"]["afterFileEdit"][0])
