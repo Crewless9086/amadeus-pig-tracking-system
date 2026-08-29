@@ -2342,6 +2342,10 @@ def refresh_external_dispatch_authorization_base(
     files = sorted({_clean_text(item, 500) for item in (changed_files or []) if _clean_text(item, 500)})
     infrastructure_files = {
         ".cursor/hooks.json", ".cursor/hooks/charlie_mission_admission_guard.cjs",
+        "modules/charlie/cursor_cloud_identity.py",
+        "scripts/charlie_mission_admission_guard.py",
+        "tests/test_charlie_cursor_cloud_identity.py",
+        "tests/test_charlie_mission_admission.py",
         "tests/test_cursor_mission_admission_hook_launcher.py",
         "integrations/hermes/charlie_builder/supervisor.py", "modules/charlie/mission_store.py",
         "modules/charlie/routes.py", "tests/test_charlie_hermes_supervisor.py",
