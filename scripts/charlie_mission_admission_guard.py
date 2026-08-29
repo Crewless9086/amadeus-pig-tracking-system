@@ -108,6 +108,7 @@ INTERPRETERS = {
 } | WINDOWS_INTERPRETERS
 CURSOR_HOOK_AUDIENCE = "urn:amadeus:charlie:cursor-hook:v1"
 CURSOR_HOOK_ENDPOINT = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize"
+CURSOR_BRANCH_HOOK_ENDPOINT = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize-branch"
 CURSOR_HOOK_OPERATION_SECONDS = 8.0
 CURSOR_OIDC_CACHE_SCHEMA = "charlie_cursor_oidc_cache_v1"
 PROTECTED_ADMISSION_ROUTE_PREFIX = "/api/charlie/hermes/missions/"
@@ -258,11 +259,13 @@ def hook_main(
             _emit(_remote_authorization(packet, environ))
             return 0
         event = str(packet.get("hook_event_name") or "")
-        if cloud_hook and (audit or event == "afterFileEdit"):
+        branch_fallback = not cloud_hook and _branch_fallback_context(os_name=os_name)
+        if (cloud_hook or branch_fallback) and (audit or event == "afterFileEdit"):
             path = _tool_target_path(packet)
             if not path:
                 raise MissionAdmissionError("after_file_edit_path_missing")
-            _emit(_cursor_cloud_authorization({"action": "after_file_edit", "target_path": path}, environ))
+            authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+            _emit(authorize({"action": "after_file_edit", "target_path": path}, environ))
             return 0
         if audit or event == "afterFileEdit":
             _audit_after_file_edit(
@@ -282,8 +285,9 @@ def hook_main(
                 if cloud_hook and not _cloud_read_only_shell_safe(command, os_name=os_name):
                     raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_shell")
-            if cloud_hook:
-                _emit(_cursor_cloud_authorization({"action": "shell_verify", "command": command}, environ))
+            if cloud_hook or branch_fallback:
+                authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+                _emit(authorize({"action": "shell_verify", "command": command}, environ))
                 return 0
             raise MissionAdmissionError("stage1_shell_mutation_denied")
         if event == "preToolUse":
@@ -313,11 +317,12 @@ def hook_main(
                 raise MissionAdmissionError("stage1_mcp_execution_denied")
             effect = MUTATING_TOOL_EFFECTS.get(normalized)
             if effect:
-                if cloud_hook:
+                if cloud_hook or branch_fallback:
                     target = _tool_target_path(packet)
                     if not target:
                         raise MissionAdmissionError("mutation_target_path_required")
-                    _emit(_cursor_cloud_authorization({"action": effect, "target_path": target}, environ))
+                    authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+                    _emit(authorize({"action": effect, "target_path": target}, environ))
                     return 0
                 _require_admission(
                     packet,
@@ -346,6 +351,18 @@ def _cursor_cloud_socket(environ):
         return configured
     default = "/run/cursor/api.sock"
     return default if Path(default).exists() else ""
+
+
+def _branch_fallback_context(*, os_name=None):
+    """Select the canonical branch handshake on Linux without inventing Agent identity."""
+    platform = os.name if os_name is None else os_name
+    if platform == "nt":
+        return False
+    try:
+        return (_repository_identity() == "Crewless9086/amadeus-pig-tracking-system"
+                and _git_text("branch", "--show-current").startswith("cursor/"))
+    except (OSError, subprocess.SubprocessError, MissionAdmissionError):
+        return False
 
 
 class _UnixHTTPConnection(http.client.HTTPConnection):
@@ -673,6 +690,51 @@ def _cursor_cloud_authorization(payload, environ, *, opener=url_request.urlopen)
     if not isinstance(result, dict) or result.get("permission") not in {"allow", "deny"}:
         raise MissionAdmissionError("cursor_hook_authorization_invalid")
     return result
+
+
+def _cursor_branch_facts():
+    root = Path(_git_text("rev-parse", "--show-toplevel")).resolve()
+    if root != REPO_ROOT.resolve():
+        raise MissionAdmissionError("cursor_branch_repository_invalid")
+    repository = _repository_identity()
+    branch = _git_text("branch", "--show-current")
+    head = _commit("HEAD")
+    if repository != "Crewless9086/amadeus-pig-tracking-system":
+        raise MissionAdmissionError("cursor_branch_repository_invalid")
+    if not branch.startswith("cursor/") or branch in {"main", "master"}:
+        raise MissionAdmissionError("cursor_branch_binding_required")
+    return {"repository": repository, "branch": branch, "current_head": head,
+            "changed_files": _worktree_changed_files("HEAD")}
+
+
+def _cursor_branch_authorization(payload, environ, *, opener=url_request.urlopen):
+    body = {**dict(payload or {}), **_cursor_branch_facts()}
+    request = url_request.Request(
+        CURSOR_BRANCH_HOOK_ENDPOINT, data=json.dumps(body, separators=(",", ":")).encode(),
+        headers={"Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+    try:
+        with opener(request, timeout=3.0) as response:
+            result = json.loads(response.read(32768))
+    except url_error.HTTPError as exc:
+        try:
+            result = json.loads(exc.read(32768))
+        except Exception:
+            result = {"permission": "deny", "status": "cursor_branch_authorization_denied"}
+    except Exception as exc:
+        raise MissionAdmissionError("cursor_branch_authorization_unavailable") from exc
+    if not isinstance(result, dict) or result.get("permission") not in {"allow", "deny"}:
+        raise MissionAdmissionError("cursor_branch_authorization_invalid")
+    return result
+
+
+def _cursor_cloud_or_branch_authorization(payload, environ):
+    """Prefer signed OIDC; fallback only for bounded socket/cache availability failures."""
+    try:
+        return _cursor_cloud_authorization(payload, environ)
+    except MissionAdmissionError as exc:
+        if _reason(exc) not in {"cursor_oidc_unavailable", "cursor_oidc_cache_unavailable"}:
+            raise
+        return _cursor_branch_authorization(payload, environ)
 
 
 def ci_main(

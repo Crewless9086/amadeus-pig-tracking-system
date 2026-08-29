@@ -32,6 +32,7 @@ from modules.charlie.mission_store import (
     bind_external_supervisor_candidate,
     bind_external_supervisor_branch,
     authorize_cursor_workspace_hook,
+    authorize_cursor_branch_workspace_hook,
     invalidate_external_candidate_admission,
     read_external_supervisor_state,
     record_external_supervisor_state,
@@ -1244,6 +1245,41 @@ def charlie_cursor_hook_authorize_route():
     )
     bounded = {key: result.get(key) for key in
                ("success", "permission", "status", "authorization_id", "branch", "allowed_path", "command")
+               if result.get(key) is not None}
+    if status >= 400:
+        bounded["permission"] = "deny"
+    return jsonify(bounded), status
+
+
+_CURSOR_BRANCH_RATE = {}
+
+
+@charlie_bp.route("/charlie/cursor/hooks/authorize-branch", methods=["POST"])
+def charlie_cursor_hook_authorize_branch_route():
+    """Bounded policy decision for an already authenticated Hermes-bound branch."""
+    if request.content_length is not None and request.content_length > 16384:
+        return jsonify({"success": False, "permission": "deny",
+                        "status": "cursor_branch_request_too_large"}), 413
+    now = time.monotonic()
+    peer = str(request.remote_addr or "unknown")
+    recent = [stamp for stamp in _CURSOR_BRANCH_RATE.get(peer, []) if now - stamp < 60]
+    if len(recent) >= 60:
+        return jsonify({"success": False, "permission": "deny",
+                        "status": "cursor_branch_rate_limited"}), 429
+    recent.append(now)
+    _CURSOR_BRANCH_RATE[peer] = recent
+    payload = request.get_json(silent=True) or {}
+    allowed = {"repository", "branch", "current_head", "action", "target_path", "command", "changed_files"}
+    if not isinstance(payload, dict) or set(payload) - allowed or not {"repository", "branch", "current_head", "action"}.issubset(payload):
+        return jsonify({"success": False, "permission": "deny",
+                        "status": "cursor_branch_request_invalid"}), 400
+    result, status = authorize_cursor_branch_workspace_hook(
+        repository=str(payload.get("repository") or ""), branch=str(payload.get("branch") or ""),
+        current_head=str(payload.get("current_head") or ""), action=str(payload.get("action") or ""),
+        target_path=str(payload.get("target_path") or ""), command=str(payload.get("command") or ""),
+        changed_files=payload.get("changed_files") if isinstance(payload.get("changed_files"), list) else [],
+    )
+    bounded = {key: result.get(key) for key in ("success", "permission", "status", "authorization_id")
                if result.get(key) is not None}
     if status >= 400:
         bounded["permission"] = "deny"

@@ -148,7 +148,7 @@ class CursorCloudV1:
     def create_agent(self, admission, prompt, *, execution_attempt=1):
         admission = admission if isinstance(admission, CursorAdmission) else CursorAdmission.from_mapping(admission)
         attempt = int(execution_attempt)
-        if attempt not in (1, 2, 3, 4):
+        if attempt not in (1, 2, 3, 4, 5):
             raise HermesBridgeError("cursor_execution_attempt_invalid")
         key = mission_idempotency_key(admission.mission_id, admission.generation)
         if attempt > 1:
@@ -433,7 +433,7 @@ class HermesSupervisor:
         })
         succession = dict(metadata.get("execution_succession") or {})
         attempt = int(succession.get("active_attempt") or 1)
-        if attempt not in (1, 2, 3, 4):
+        if attempt not in (1, 2, 3, 4, 5):
             raise HermesBridgeError("cursor_execution_attempt_invalid")
         key = mission_idempotency_key(admission.mission_id, admission.generation)
         if attempt > 1:
@@ -461,7 +461,7 @@ class HermesSupervisor:
             if existing.get("cursor_agent_id") != expected_agent_id:
                 raise HermesBridgeError("cursor_dispatch_reservation_failed")
         response = self.cursor.create_agent(
-            admission, self._cursor_prompt({**row, "instruction": canonical.get("raw_text")}, admission),
+            admission, self._cursor_bootstrap_prompt(admission),
             execution_attempt=attempt)
         agent = dict(response.get("agent") or {})
         run = dict(response.get("run") or {})
@@ -496,10 +496,39 @@ class HermesSupervisor:
             self.canonical.refresh_dispatch_base(
                 row.get("mission_id"), generation=authorization.get("generation"),
                 cursor_agent_id=agent.get("id"), old_base_sha=authorization.get("base_sha"))
+        branch_binding = {}
         if branches:
-            self.canonical.bind_actual_branch(
+            if len(branches) != 1:
+                raise HermesBridgeError("cursor_branch_count_invalid")
+            branch_binding = self.canonical.bind_actual_branch(
                 row.get("mission_id"), generation=authorization.get("generation"),
                 cursor_agent_id=agent.get("id"), cursor_run_id=run.get("id"), branches=branches)
+            if isinstance(branch_binding, dict) and branch_binding.get("success") is False:
+                raise HermesBridgeError("cursor_branch_binding_failed")
+        if (len(branches) == 1 and state == "IDLE"
+                and isinstance(branch_binding, dict) and branch_binding.get("success") is True
+                and not dispatch.get("implementation_run_id")):
+            admission = CursorAdmission.from_mapping({
+                "mission_id": row.get("mission_id"), "generation": authorization.get("generation"),
+                "receipt_id": authorization.get("authorization_id"),
+                "repository": authorization.get("repository"), "base_sha": authorization.get("base_sha"),
+                "allowed_files": authorization.get("allowed_files"),
+                "allowed_effects": authorization.get("allowed_effects"),
+                "owner_instruction_digest": authorization.get("owner_instruction_digest"),
+                "acceptance_requirements": ["Open one draft PR; do not merge or deploy."],
+                "branch": branch_binding.get("branch") or authorization.get("branch"),
+            })
+            followup = self.cursor.continue_agent(agent.get("id"), self._cursor_prompt(
+                {"instruction": (loaded.get("mission") or {}).get("raw_text")}, admission))
+            followup_run = dict(followup.get("run") or {})
+            if not followup_run.get("id"):
+                raise HermesBridgeError("cursor_implementation_followup_unverified")
+            result = self.canonical.record_progress(row.get("mission_id"), {
+                "event": "cursor_implementation_started", "cursor_agent_id": agent.get("id"),
+                "cursor_run_id": followup_run["id"], "implementation_run_id": followup_run["id"],
+                "branch": branch_binding.get("branch") or authorization.get("branch"),
+            })
+            return result
         result = {"agent_state": state, "run_state": run_state, "stalled": bool(stalled),
                   "cursor_agent_id": agent.get("id"), "cursor_run_id": run.get("id"),
                   "branches": branches}
@@ -580,6 +609,15 @@ class HermesSupervisor:
             "charlie_prepare_owner_decision": self.prepare_owner_decision,
             "charlie_handle_slack_event": self.handle_slack_request,
         }
+
+    @staticmethod
+    def _cursor_bootstrap_prompt(admission):
+        return "\n".join([
+            "Prepare this CHARLIE workspace without modifying files, committing, pushing, or opening a PR.",
+            "Perform read-only repository discovery only so Cursor reports its generated cursor/ branch.",
+            f"Mission: {admission.mission_id}", f"Generation: {admission.generation}",
+            "Wait for CHARLIE to bind the reported branch before implementation.",
+        ])
 
     @staticmethod
     def _cursor_prompt(mission, admission):
