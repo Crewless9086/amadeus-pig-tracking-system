@@ -308,6 +308,18 @@ safe terminal feedback boundary unless immediate delivery is genuinely needed
 and explicitly classified. Control Tower must not rely on conversation memory
 as the dispatch record.
 
+Displaying `SEND NOW` and a complete prompt records that prompt as
+`delivered_assumed_active` for owner-relayed terminals. Control Tower must not
+display another prompt for that terminal until Charl explicitly states that the
+prompt was not sent or exact terminal feedback proves completion, release,
+rejection or another safe dispatch boundary. Negative process scanning never
+proves an owner-visible terminal idle. If terminal state is not freshly known,
+use `HOLD — VERIFY TERMINAL STATE` and display no sendable prompt.
+
+Current correction: the OOM SAKKIE family-access continuation displayed after
+ROOTLINE PR #995 is `delivered_assumed_active`. No second OOM SAKKIE prompt may
+be issued until its latest terminal feedback is reconciled.
+
 Before assigning or reporting any autonomous specialist mission, Control Tower
 must also apply the Agent Operational Reality Gate. Record web/API state,
 background-worker state, autonomous trigger, heartbeat, last independent cycle,
