@@ -148,7 +148,7 @@ class CursorCloudV1:
     def create_agent(self, admission, prompt, *, execution_attempt=1):
         admission = admission if isinstance(admission, CursorAdmission) else CursorAdmission.from_mapping(admission)
         attempt = int(execution_attempt)
-        if attempt not in (1, 2, 3):
+        if attempt not in (1, 2, 3, 4):
             raise HermesBridgeError("cursor_execution_attempt_invalid")
         key = mission_idempotency_key(admission.mission_id, admission.generation)
         if attempt > 1:
