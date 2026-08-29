@@ -145,9 +145,14 @@ class CursorCloudV1:
     def deterministic_agent_id(idempotency_key):
         return "bc-" + str(uuid.uuid5(uuid.NAMESPACE_URL, "charlie:" + idempotency_key))
 
-    def create_agent(self, admission, prompt):
+    def create_agent(self, admission, prompt, *, execution_attempt=1):
         admission = admission if isinstance(admission, CursorAdmission) else CursorAdmission.from_mapping(admission)
+        attempt = int(execution_attempt)
+        if attempt not in (1, 2):
+            raise HermesBridgeError("cursor_execution_attempt_invalid")
         key = mission_idempotency_key(admission.mission_id, admission.generation)
+        if attempt > 1:
+            key += f":attempt-{attempt}"
         payload = {
             "agentId": self.deterministic_agent_id(key),
             "prompt": {"text": str(prompt or "").strip()},
@@ -185,6 +190,11 @@ class CursorCloudV1:
         if governed is not True:
             raise HermesBridgeError("governed_cancel_required")
         return self.client.request("POST", f"/v1/agents/{_cursor_id(agent_id, 'bc-')}/runs/{_cursor_id(run_id, 'run-')}/cancel")
+
+    def archive_agent(self, agent_id, *, governed=False):
+        if governed is not True:
+            raise HermesBridgeError("governed_archive_required")
+        return self.client.request("POST", f"/v1/agents/{_cursor_id(agent_id, 'bc-')}/archive")
 
     def list_agents(self, *, pr_url="", include_archived=True):
         query = {"limit": 100, "includeArchived": str(bool(include_archived)).lower()}
@@ -245,6 +255,9 @@ class CanonicalCharlieApi:
     def request_admission(self, mission_id, expected_head_sha, pr_number=0):
         return self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/admission",
                                    {"expected_head_sha": str(expected_head_sha or ""), "pr_number": int(pr_number)})
+
+    def prepare_successor(self, mission_id, payload):
+        return self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/execution-succession", payload)
 
 
 class SlackBot:
@@ -417,14 +430,19 @@ class HermesSupervisor:
                 "Open one draft PR; exact-candidate admission and review follow before merge."],
             "branch": contract.get("branch"),
         })
+        succession = dict(metadata.get("execution_succession") or {})
+        attempt = int(succession.get("active_attempt") or 1)
         key = mission_idempotency_key(admission.mission_id, admission.generation)
+        if attempt > 1:
+            key += f":attempt-{attempt}"
         existing = self.canonical.get_dispatch(key)
         if existing and existing.get("cursor_agent_id"):
             return {"status": "existing_dispatch", **existing}
         if self.canonical.running_writer_count() >= self.MAX_RUNNING_WRITERS:
             raise HermesBridgeError("writer_capacity_reached")
         response = self.cursor.create_agent(
-            admission, self._cursor_prompt({**row, "instruction": canonical.get("raw_text")}, admission))
+            admission, self._cursor_prompt({**row, "instruction": canonical.get("raw_text")}, admission),
+            execution_attempt=attempt)
         agent = dict(response.get("agent") or {})
         run = dict(response.get("run") or {})
         if not agent.get("id") or not run.get("id"):
@@ -432,6 +450,7 @@ class HermesSupervisor:
         return self.canonical.record_dispatch(key, {
             "mission_id": admission.mission_id,
             "generation": admission.generation,
+            "execution_attempt": attempt,
             "cursor_agent_id": agent["id"], "cursor_run_id": run["id"], "agent_state": "ACTIVE",
         })
 
