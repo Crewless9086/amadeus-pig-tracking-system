@@ -478,6 +478,17 @@ class MissionAdmissionGuardTests(unittest.TestCase):
         fallback.assert_called_once()
         mar.assert_not_called()
 
+    def test_cache_integrity_rejection_never_uses_branch_fallback(self):
+        from scripts.charlie_mission_admission_guard import _cursor_cloud_or_branch_authorization
+        for reason in ("cursor_oidc_cache_rejected", "cursor_oidc_request_rejected"):
+            with self.subTest(reason=reason), \
+                 patch("scripts.charlie_mission_admission_guard._cursor_cloud_authorization",
+                       side_effect=MissionAdmissionError(reason)), \
+                 patch("scripts.charlie_mission_admission_guard._cursor_branch_authorization") as fallback:
+                with self.assertRaisesRegex(MissionAdmissionError, reason):
+                    _cursor_cloud_or_branch_authorization({"action": "after_file_edit"}, {})
+                fallback.assert_not_called()
+
     def test_oidc_mint_retries_transient_missing_socket_without_mar_fallback(self):
         responses = [FileNotFoundError("booting"), FileNotFoundError("booting"), None]
 
@@ -579,7 +590,7 @@ raise SystemExit(0 if token == "shared-test-token" else 3)
             except OSError:
                 self.skipTest("directory symlink creation unavailable")
             with self.assertRaisesRegex(MissionAdmissionError,
-                                        "cursor_oidc_cache_unavailable"):
+                                        "cursor_oidc_cache_rejected"):
                 _cursor_cache_paths({"XDG_RUNTIME_DIR": directory})
 
     def test_oidc_retry_after_and_fatal_status_contract(self):

@@ -492,6 +492,7 @@ class HermesSupervisor:
         loaded = self.canonical.get_mission(row.get("mission_id"))
         metadata = dict((loaded.get("mission") or {}).get("metadata") or {})
         authorization = dict(metadata.get("dispatch_authorization") or {})
+        canonical_state = dict(metadata.get("external_supervisor_state") or {})
         if authorization.get("status") == "valid":
             self.canonical.refresh_dispatch_base(
                 row.get("mission_id"), generation=authorization.get("generation"),
@@ -507,7 +508,7 @@ class HermesSupervisor:
                 raise HermesBridgeError("cursor_branch_binding_failed")
         if (len(branches) == 1 and state == "IDLE"
                 and isinstance(branch_binding, dict) and branch_binding.get("success") is True
-                and not dispatch.get("implementation_run_id")):
+                and not canonical_state.get("implementation_run_id")):
             admission = CursorAdmission.from_mapping({
                 "mission_id": row.get("mission_id"), "generation": authorization.get("generation"),
                 "receipt_id": authorization.get("authorization_id"),

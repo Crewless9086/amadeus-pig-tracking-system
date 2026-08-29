@@ -50,7 +50,7 @@ class FakeClient:
 
 
 class Canonical:
-    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False; self.admission_requests = []; self.branch_bindings = []; self.base_refreshes = []; self.active_attempt = 1
+    def __init__(self): self.dispatch = {}; self.reconciled = 0; self.running = 0; self.intake = {}; self.admitted = True; self.dispatch_authorized = False; self.admission_requests = []; self.branch_bindings = []; self.base_refreshes = []; self.active_attempt = 1; self.progress = {}
     def reconcile_mission(self, payload, idempotency_key):
         if idempotency_key not in self.intake:
             self.reconciled += 1; self.intake[idempotency_key] = {"mission_id": "CMQ-X", "key": idempotency_key}
@@ -70,13 +70,14 @@ class Canonical:
                 "allowed_files": current["allowed_files"], "allowed_effects": current["allowed_effects"],
                 "operational_acceptance": current["acceptance_requirements"]},
             "dispatch_authorization": pre if self.dispatch_authorized else {},
+            "external_supervisor_state": dict(self.progress),
             "execution_succession": {"active_attempt": self.active_attempt}}}}
     def prepare_dispatch_authorization(self, mission_id):
         self.dispatch_authorized = True
         return self.get_mission(mission_id)["mission"]["metadata"]["dispatch_authorization"]
     def running_writer_count(self): return self.running
     def record_dispatch(self, key, value): self.dispatch[key] = value; return value
-    def record_progress(self, mission_id, value): return value
+    def record_progress(self, mission_id, value): self.progress.update(value); return value
     def record_followup(self, mission_id, agent_id, run_id, failed_attempts):
         return {"agent_id": agent_id, "run_id": run_id, "failed_attempts": failed_attempts}
     def request_admission(self, mission_id, expected_head_sha, pr_number=0):
@@ -311,6 +312,7 @@ class HermesSupervisorTests(unittest.TestCase):
             slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
             slack_approval_channel_id="CAPPROVE", github=Monitor(), clock=lambda: 0)
         self.canonical.dispatch_authorized = True
+        self.canonical.progress["implementation_run_id"] = "run-implementation"
         self.client.run_branches = [{"name": "cursor/cmq-x-g1"}]
         result = supervisor.poll({"mission_id": "CMQ-X", "dispatch": {
             "cursor_agent_id": "bc-one", "implementation_run_id": "run-implementation"}})
@@ -664,6 +666,7 @@ class HermesSupervisorTests(unittest.TestCase):
         dispatch = supervisor.dispatch_cursor(mission)
         agent_id = dispatch["cursor_agent_id"]
         self.client.run_branches = [{"name": "cursor/generated"}]
+        self.canonical.progress["implementation_run_id"] = "run-implementation"
         sent_back = supervisor.supervise_once({"mission_id": mission["mission_id"],
             "dispatch": {**dispatch, "pr_number": 9, "implementation_run_id": "run-implementation"}})
         self.assertEqual(agent_id, sent_back["agent_id"])
@@ -774,6 +777,10 @@ class HermesSupervisorTests(unittest.TestCase):
         followups = [call for call in self.client.calls if call[0] == "POST" and call[1].endswith("/runs")]
         self.assertEqual(1, len(followups))
         self.assertIn("Implement this bounded", followups[0][2]["prompt"]["text"])
+        self.supervisor.poll({"mission_id": "CMQ-X", "dispatch": {
+            "cursor_agent_id": "bc-one", "cursor_run_id": "run-one"}})
+        repeated = [call for call in self.client.calls if call[0] == "POST" and call[1].endswith("/runs")]
+        self.assertEqual(1, len(repeated))
 
     def test_attempt_six_fails_before_reservation_or_cursor_request(self):
         self.canonical.active_attempt = 6
