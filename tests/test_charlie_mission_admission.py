@@ -39,6 +39,8 @@ from scripts.charlie_mission_admission_guard import (
     BOOTSTRAP_FORBIDDEN_EFFECTS,
     BOOTSTRAP_GENERATION,
     BOOTSTRAP_REQUIRED_TESTS,
+    CURSOR_HOOK_ENDPOINT,
+    PROTECTED_ADMISSION_ROUTE_PREFIX,
     _is_read_only_shell,
     _compare_current_authority,
     _build_exact_candidate_payload,
@@ -332,6 +334,16 @@ class MissionAdmissionReceiptTests(unittest.TestCase):
 
 
 class MissionAdmissionGuardTests(unittest.TestCase):
+    def test_protected_runtime_routes_include_registered_api_prefix(self):
+        self.assertEqual(
+            CURSOR_HOOK_ENDPOINT,
+            "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize",
+        )
+        self.assertEqual(
+            PROTECTED_ADMISSION_ROUTE_PREFIX,
+            "/api/charlie/hermes/missions/",
+        )
+
     def _hook(
         self,
         packet,
@@ -377,6 +389,21 @@ class MissionAdmissionGuardTests(unittest.TestCase):
         self.assertEqual(write["permission"], "deny")
         self.assertEqual(shell_write["permission"], "deny")
         self.assertEqual(write["user_message"], "READMISSION_REQUIRED")
+
+    def test_cloud_hook_uses_pda_without_loading_mar_and_keeps_shell_bounded(self):
+        allowed = {"permission": "allow", "status": "cursor_workspace_authorized"}
+        with patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket", return_value="/run/cursor/api.sock"), \
+             patch("scripts.charlie_mission_admission_guard._cursor_cloud_authorization", return_value=allowed) as remote, \
+             patch("scripts.charlie_mission_admission_guard._validated_trusted_identity") as mar:
+            _, write = self._hook({"hook_event_name": "preToolUse", "tool_name": "Write",
+                                   "tool_input": {"path": "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"}})
+            _, shell = self._hook({"hook_event_name": "beforeShellExecution",
+                                   "command": "python3 -m unittest tests.test_charlie_hermes_supervisor -q"})
+        self.assertEqual("allow", write["permission"])
+        self.assertEqual("allow", shell["permission"])
+        mar.assert_not_called()
+        self.assertEqual("repository_file_write", remote.call_args_list[0].args[0]["action"])
+        self.assertEqual("shell_verify", remote.call_args_list[1].args[0]["action"])
 
     def test_invalid_input_and_unknown_tool_deny_instead_of_failing_open(self):
         _, unknown = self._hook({
@@ -536,6 +563,39 @@ class MissionAdmissionGuardTests(unittest.TestCase):
                 self.assertGreater(hook["timeout"], 0)
         self.assertNotIn("matcher", config["hooks"]["preToolUse"][0])
         self.assertIn("afterFileEdit", config["hooks"])
+        self.assertNotIn("matcher", config["hooks"]["afterFileEdit"][0])
+
+    def test_cloud_read_tools_deny_credential_and_protected_state_paths(self):
+        environ = {"CURSOR_AGENT_SOCKET": "/run/cursor/api.sock"}
+        with patch("scripts.charlie_mission_admission_guard._cursor_cloud_socket",
+                   return_value="/run/cursor/api.sock"):
+            for path in (".env", ".git/config", ".npmrc", ".ssh/id_ed25519",
+                         ".config/gh/hosts.yml", ".docker/config.json", "/proc/self/environ"):
+                with self.subTest(path=path):
+                    _, result = self._hook({
+                        "hook_event_name": "preToolUse", "tool_name": "Read",
+                        "tool_input": {"path": path},
+                    }, environ=environ)
+                    self.assertEqual("deny", result["permission"])
+            _, denied_rg = self._hook({
+                "hook_event_name": "beforeShellExecution",
+                "command": "rg token /proc/self/environ",
+            }, environ=environ)
+            _, allowed_status = self._hook({
+                "hook_event_name": "beforeShellExecution", "command": "git status",
+            }, environ=environ)
+            for unsafe_command in (
+                "git diff --no-index /proc/self/environ /dev/null",
+                "git grep --open-files-in-pager=cat token",
+                "git -c core.pager=cat log",
+            ):
+                with self.subTest(command=unsafe_command):
+                    _, unsafe = self._hook({
+                        "hook_event_name": "beforeShellExecution", "command": unsafe_command,
+                    }, environ=environ)
+                    self.assertEqual("deny", unsafe["permission"])
+        self.assertEqual("deny", denied_rg["permission"])
+        self.assertEqual("allow", allowed_status["permission"])
 
     def test_host_process_hook_contract_emits_valid_allow_and_deny_json(self):
         script = ROOT / "scripts/charlie_mission_admission_guard.py"

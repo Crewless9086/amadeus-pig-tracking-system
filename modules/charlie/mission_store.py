@@ -2,7 +2,8 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
+import shlex
+from datetime import datetime, timedelta, timezone
 
 from services.database_service import DATABASE_URL_ENV
 from modules.charlie.core_workflow import (
@@ -1789,6 +1790,13 @@ def bind_external_supervisor_candidate(
                 metadata.update({"review_packet": packet, "mission_admission_contract": contract,
                                  "mission_family": family, "external_supervisor": {
                                      "principal": principal, "transport": "hermes_cursor_cloud_v1"}})
+                if dispatch_authorization:
+                    dispatch_authorization["active_pr_number"] = binding["pr_number"]
+                    identity_contract = {key: value for key, value in dispatch_authorization.items()
+                                         if key not in {"authorization_id", "status"}}
+                    dispatch_authorization["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                        identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                    metadata["dispatch_authorization"] = dispatch_authorization
                 cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
                     updated_at=now() where mission_id=%(mission_id)s""",
                     {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
@@ -1884,8 +1892,8 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
                 attempt = int(state.get("execution_attempt") or current.get("execution_attempt") or 1)
                 effective_agent = state.get("cursor_agent_id") or current.get("cursor_agent_id")
                 effective_state = state.get("agent_state") or current.get("agent_state")
-                if attempt == 2:
-                    if (succession.get("active_attempt") != 2
+                if attempt >= 2:
+                    if (succession.get("active_attempt") != attempt
                             or succession.get("predecessor_archived") is not True
                             or state.get("cursor_agent_id") == succession.get("predecessor_agent_id")):
                         return {"success": False, "status": "execution_succession_not_authorized"}, 409
@@ -1895,7 +1903,18 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
                     if state.get("cursor_agent_id"):
                         succession["successor_agent_id"] = state["cursor_agent_id"]
                         metadata["execution_succession"] = succession
-                elif (succession.get("active_attempt") == 2
+                        authorization = dict(metadata.get("dispatch_authorization") or {})
+                        if authorization.get("status") == "valid":
+                            authorization.update({"execution_attempt": attempt,
+                                                  "active_cursor_agent_id": state["cursor_agent_id"],
+                                                  "branch": "", "branch_binding_status": "unbound",
+                                                  "active_pr_number": 0})
+                            identity_contract = {key: value for key, value in authorization.items()
+                                                 if key not in {"authorization_id", "status"}}
+                            authorization["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                                identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                            metadata["dispatch_authorization"] = authorization
+                elif (int(succession.get("active_attempt") or 0) >= 2
                         and effective_agent == succession.get("predecessor_agent_id")
                         and effective_state == "ACTIVE"):
                     return {"success": False, "status": "predecessor_reactivation_forbidden"}, 409
@@ -1931,7 +1950,8 @@ def prepare_external_execution_succession(
     principal = _clean_text(authenticated_principal, 200)
     if (not mission_id or not generation or not agent_id.startswith("bc-")
             or not run_id.startswith("run-") or final_state not in {"FAILED", "CANCELLED", "IDLE", "ARCHIVED"}
-            or replacement_reason != "workspace_refresh_unsupported_after_hook_repair"
+            or replacement_reason not in {"workspace_refresh_unsupported_after_hook_repair",
+                                          "cursor_workspace_authorization_state_machine_repaired"}
             or not re.fullmatch(r"[0-9a-f]{40}", str(observed_main_sha or ""))
             or principal != "hermes:charlie-builder"):
         return {"success": False, "status": "execution_succession_invalid"}, 400
@@ -1951,10 +1971,15 @@ def prepare_external_execution_succession(
                 state = dict(metadata.get("external_supervisor_state") or {})
                 authorization = dict(metadata.get("dispatch_authorization") or {})
                 existing = dict(metadata.get("execution_succession") or {})
-                if existing:
-                    if existing.get("predecessor_agent_id") == agent_id and existing.get("active_attempt") == 2:
+                requested_attempt = 3 if replacement_reason == "cursor_workspace_authorization_state_machine_repaired" else 2
+                if existing and int(existing.get("active_attempt") or 0) == requested_attempt:
+                    if existing.get("predecessor_agent_id") == agent_id:
                         return {"success": True, "status": "exact_replay", "succession": existing}, 200
                     return {"success": False, "status": "execution_succession_limit_reached"}, 409
+                if requested_attempt == 2 and existing:
+                    return {"success": False, "status": "execution_succession_limit_reached"}, 409
+                if requested_attempt == 3 and int(existing.get("active_attempt") or 0) != 2:
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
                 owner_digest = hashlib.sha256(str(metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
                 if (state.get("generation") != generation or state.get("cursor_agent_id") != agent_id
                         or state.get("cursor_run_id") != run_id or state.get("agent_state") != "ARCHIVED"
@@ -1968,18 +1993,23 @@ def prepare_external_execution_succession(
                         or authorization.get("repository") != "Crewless9086/amadeus-pig-tracking-system"
                         or authorization.get("allowed_files") != ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]):
                     return {"success": False, "status": "execution_succession_precondition_failed"}, 409
-                succession = {"version": "charlie_execution_succession_v1", "mission_id": mission_id,
-                    "generation": generation, "active_attempt": 2, "maximum_attempts": 2,
+                history = list(existing.get("history") or [])
+                if existing:
+                    history.append({key: existing.get(key) for key in (
+                        "active_attempt", "predecessor_agent_id", "predecessor_run_id",
+                        "predecessor_final_state", "replacement_reason", "replacement_timestamp")})
+                succession = {"version": "charlie_execution_succession_v2", "mission_id": mission_id,
+                    "generation": generation, "active_attempt": requested_attempt, "maximum_attempts": 3,
                     "predecessor_agent_id": agent_id, "predecessor_run_id": run_id,
                     "predecessor_final_state": final_state, "predecessor_archived": True,
                     "successor_agent_id": "", "replacement_reason": replacement_reason,
                     "replacement_timestamp": datetime.now(timezone.utc).isoformat(),
                     "replacement_principal": principal, "observed_main_sha": observed_main_sha,
                     "owner_instruction_digest": owner_digest, "slack_event_id": state.get("slack_event_id"),
-                    "slack_thread_ts": state.get("slack_thread_ts")}
+                    "slack_thread_ts": state.get("slack_thread_ts"), "history": history}
                 metadata["execution_succession"] = succession
                 state.update({"agent_state": "ARCHIVED", "run_state": final_state,
-                              "execution_attempt": 1, "event": "predecessor_archived"})
+                              "execution_attempt": requested_attempt - 1, "event": "predecessor_archived"})
                 metadata["external_supervisor_state"] = state
                 cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
                     updated_at=now() where mission_id=%(mission_id)s""",
@@ -2047,13 +2077,21 @@ def prepare_external_dispatch_authorization(
                         "metadata": json.dumps(governed_event, sort_keys=True),
                         "created_at": governed_event["recorded_at"],
                     })
+                succession = dict(metadata.get("execution_succession") or {})
+                execution_attempt = int(succession.get("active_attempt") or 1)
                 contract = {
-                    "version": "charlie_pre_dispatch_authorization_v1",
+                    "version": "charlie_pre_dispatch_authorization_v2",
                     "mission_id": mission_id,
                     "generation": generation,
+                    "execution_attempt": execution_attempt,
+                    "active_cursor_agent_id": str(succession.get("successor_agent_id") or state.get("cursor_agent_id") or ""),
                     "repository": repository,
+                    "starting_main_sha": base_sha,
                     "base_sha": base_sha,
-                    "branch": "cursor/" + mission_id.lower() + "-g1",
+                    "branch_binding_status": "unbound",
+                    "requested_branch": "cursor/" + mission_id.lower() + f"-attempt-{execution_attempt}",
+                    "branch": "",
+                    "active_pr_number": 0,
                     "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
                     "allowed_effects": ["create_feature_branch", "edit_allowed_documentation",
                         "run_tests", "commit_feature_branch", "push_feature_branch",
@@ -2062,18 +2100,36 @@ def prepare_external_dispatch_authorization(
                         "branch_protection_change", "render_configuration_change",
                         "supabase_configuration_change", "customer_action", "farm_action",
                         "payment_action", "hardware_action"],
+                    "allowed_test_commands": ["git status", "git diff", "git diff --check",
+                        "python -m unittest tests.test_charlie_hermes_supervisor -q"],
+                    "forbidden_files": ["*"],
                     "owner_instruction_digest": hashlib.sha256(
                         str(metadata.get("mission_vault", {}).get("problem_statement") or "").encode()
                     ).hexdigest(),
+                    "issued_at": datetime.now(timezone.utc).isoformat(),
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
                 }
                 identity = "PDA-" + hashlib.sha256(json.dumps(
                     contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
                 authorization = {**contract, "authorization_id": identity, "status": "valid"}
                 existing = metadata.get("dispatch_authorization")
+                if (isinstance(existing, dict)
+                        and existing.get("version") == "charlie_pre_dispatch_authorization_v2"
+                        and existing.get("status") == "valid"
+                        and existing.get("mission_id") == mission_id
+                        and existing.get("generation") == generation
+                        and int(existing.get("execution_attempt") or 0) == execution_attempt
+                        and existing.get("base_sha") == base_sha):
+                    return {"success": True, "status": "exact_replay",
+                            "authorization": existing}, 200
                 if existing == authorization:
                     return {"success": True, "status": "exact_replay",
                             "authorization": existing}, 200
-                if isinstance(existing, dict) and existing:
+                if (isinstance(existing, dict) and existing
+                        and (existing.get("version") != "charlie_pre_dispatch_authorization_v1"
+                             and int(existing.get("execution_attempt") or 0) >= execution_attempt
+                             or state.get("pr_number") or state.get("head_sha")
+                             or metadata.get("review_packet") or metadata.get("mission_admission"))):
                     return {"success": False, "status": "dispatch_authorization_conflict"}, 409
                 metadata["dispatch_authorization"] = authorization
                 metadata["mission_plane"] = {"plane": "software", "coordinator": "CHARLIE",
@@ -2146,9 +2202,14 @@ def bind_external_supervisor_branch(
                     if existing != branch:
                         return {"success": False, "status": "external_branch_binding_conflict"}, 409
                     return {"success": True, "status": "exact_replay", "branch": branch}, 200
-                requested = str(authorization.get("branch") or "")
+                requested = str(authorization.get("requested_branch") or authorization.get("branch") or "")
                 state.update({"branch": branch, "branches": branch_values})
-                authorization.update({"requested_branch": requested, "branch": branch})
+                authorization.update({"requested_branch": requested, "branch": branch,
+                                      "branch_binding_status": "bound"})
+                identity_contract = {key: value for key, value in authorization.items()
+                                     if key not in {"authorization_id", "status"}}
+                authorization["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                    identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
                 metadata.update({"external_supervisor_state": state,
                                  "dispatch_authorization": authorization})
                 cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
@@ -2162,6 +2223,113 @@ def bind_external_supervisor_branch(
         return {"success": False, "status": "external_branch_binding_failed",
                 "error_type": exc.__class__.__name__}, 503
     return {"success": True, "status": "external_branch_bound", "branch": branch}, 201
+
+
+def authorize_cursor_workspace_hook(
+    *, cloud_agent_id, branch_name, repository, action, target_path="", command="", changed_files=None,
+    authenticated_principal="cursor:oidc", database_url=None, connect_factory=None,
+):
+    """Resolve a signed Cursor Agent to one current PDA and authorize one hook action."""
+    agent_id = _clean_text(cloud_agent_id, 160)
+    branch = _clean_text(branch_name, 240)
+    action = _clean_text(action, 80)
+    target = _clean_text(target_path, 500).replace("\\", "/")
+    changed = sorted({_clean_text(item, 500).replace("\\", "/") for item in (changed_files or [])
+                      if _clean_text(item, 500)})
+    command = _clean_text(command, 1000)
+    if (not agent_id.startswith("bc-") or repository != "github.com/Crewless9086/amadeus-pig-tracking-system"
+            or not branch.startswith("cursor/") or branch in {"main", "master"}
+            or action not in {"repository_file_write", "repository_file_delete", "shell_verify", "after_file_edit"}):
+        return {"success": False, "status": "cursor_workspace_identity_invalid"}, 403
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id,coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions
+                    where metadata_json->'external_supervisor_state'->>'cursor_agent_id'=%(agent_id)s
+                       or metadata_json->'execution_succession'->>'successor_agent_id'=%(agent_id)s
+                    for update""", {"agent_id": agent_id})
+                rows = cursor.fetchall()
+                if len(rows) != 1:
+                    return {"success": False, "status": "cursor_agent_mission_resolution_invalid"}, 409
+                mission_id, raw_metadata = rows[0]
+                metadata = dict(raw_metadata or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                succession = dict(metadata.get("execution_succession") or {})
+                pda = dict(metadata.get("dispatch_authorization") or {})
+                attempt = int(succession.get("active_attempt") or state.get("execution_attempt") or 1)
+                try:
+                    expires_at = datetime.fromisoformat(str(pda.get("expires_at") or "").replace("Z", "+00:00"))
+                except ValueError:
+                    expires_at = datetime.min.replace(tzinfo=timezone.utc)
+                owner_digest = hashlib.sha256(str(
+                    metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
+                if (pda.get("version") != "charlie_pre_dispatch_authorization_v2"
+                        or pda.get("status") != "valid" or pda.get("mission_id") != mission_id
+                        or int(pda.get("execution_attempt") or 0) != attempt
+                        or pda.get("active_cursor_agent_id") != agent_id
+                        or state.get("cursor_agent_id") != agent_id
+                        or state.get("generation") != pda.get("generation")
+                        or pda.get("owner_instruction_digest") != owner_digest
+                        or expires_at <= datetime.now(timezone.utc)
+                        or (isinstance(metadata.get("mission_admission"), dict)
+                            and metadata["mission_admission"].get("status") in {"consumed", "revoked"})):
+                    return {"success": False, "status": "cursor_workspace_authorization_invalid"}, 409
+                allowed_files = list(pda.get("allowed_files") or [])
+                if set(changed) - set(allowed_files):
+                    return {"success": False, "status": "cursor_workspace_scope_drift"}, 403
+                if action in {"repository_file_write", "repository_file_delete", "after_file_edit"}:
+                    if target not in allowed_files or (action == "repository_file_delete" and "delete_allowed_file" not in pda.get("allowed_effects", [])):
+                        return {"success": False, "status": "cursor_workspace_scope_denied"}, 403
+                elif _normalize_pda_command(command) not in set(pda.get("allowed_test_commands") or []):
+                    return {"success": False, "status": "cursor_workspace_command_denied"}, 403
+                bound = str(pda.get("branch") or "")
+                if bound and bound != branch:
+                    return {"success": False, "status": "cursor_workspace_branch_conflict"}, 409
+                if not bound:
+                    if state.get("pr_number") or state.get("head_sha") or metadata.get("review_packet"):
+                        return {"success": False, "status": "cursor_workspace_candidate_conflict"}, 409
+                    pda.update({"branch": branch, "branch_binding_status": "bound"})
+                    identity_contract = {key: value for key, value in pda.items()
+                                         if key not in {"authorization_id", "status"}}
+                    pda["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                        identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                    state.update({"branch": branch, "branches": [branch]})
+                    metadata.update({"dispatch_authorization": pda, "external_supervisor_state": state})
+                    cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                        updated_at=now() where mission_id=%(mission_id)s""",
+                        {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                    _insert_event(cursor, mission_id, "workflow_updated",
+                        "Cursor OIDC branch bound to active workspace authorization.",
+                        {"authorization_id": pda.get("authorization_id"), "generation": pda.get("generation"),
+                         "execution_attempt": attempt, "cursor_agent_id": agent_id, "branch": branch,
+                         "recorded_by": authenticated_principal})
+    except Exception as exc:
+        return {"success": False, "status": "cursor_workspace_authorization_unavailable",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "cursor_workspace_authorized", "permission": "allow",
+            "authorization_id": pda.get("authorization_id"), "branch": branch,
+            "allowed_path": target if target else None, "command": command if command else None}, 200
+
+
+def _normalize_pda_command(command):
+    value = str(command or "").strip()
+    if not value or any(token in value for token in ("\n", "\r", ">", "<", "|", ";", "&&", "||", "`", "$(", "\x00")):
+        return ""
+    try:
+        words = shlex.split(value, posix=True)
+    except ValueError:
+        return ""
+    if not words:
+        return ""
+    if words[:2] == ["py", "-3"]:
+        words = ["python", *words[2:]]
+    elif words[0] in {"python3", "python"}:
+        words[0] = "python"
+    return " ".join(words)
 
 
 def refresh_external_dispatch_authorization_base(

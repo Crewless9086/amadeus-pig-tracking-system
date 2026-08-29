@@ -148,7 +148,7 @@ class CursorCloudV1:
     def create_agent(self, admission, prompt, *, execution_attempt=1):
         admission = admission if isinstance(admission, CursorAdmission) else CursorAdmission.from_mapping(admission)
         attempt = int(execution_attempt)
-        if attempt not in (1, 2):
+        if attempt not in (1, 2, 3):
             raise HermesBridgeError("cursor_execution_attempt_invalid")
         key = mission_idempotency_key(admission.mission_id, admission.generation)
         if attempt > 1:
@@ -158,6 +158,7 @@ class CursorCloudV1:
             "prompt": {"text": str(prompt or "").strip()},
             "repos": [{"url": f"https://github.com/{admission.repository}", "startingRef": admission.base_sha}],
             "autoCreatePR": True,
+            "workOnCurrentBranch": False,
             "mode": "agent",
         }
         if not payload["prompt"]["text"]:
@@ -436,10 +437,23 @@ class HermesSupervisor:
         if attempt > 1:
             key += f":attempt-{attempt}"
         existing = self.canonical.get_dispatch(key)
-        if existing and existing.get("cursor_agent_id"):
+        expected_agent_id = self.cursor.deterministic_agent_id(key)
+        if existing and existing.get("cursor_agent_id") and existing.get("cursor_run_id"):
             return {"status": "existing_dispatch", **existing}
+        if existing and existing.get("cursor_agent_id") not in {None, expected_agent_id}:
+            raise HermesBridgeError("cursor_dispatch_identity_conflict")
         if self.canonical.running_writer_count() >= self.MAX_RUNNING_WRITERS:
             raise HermesBridgeError("writer_capacity_reached")
+        if not existing:
+            existing = self.canonical.record_dispatch(key, {
+                "mission_id": admission.mission_id,
+                "generation": admission.generation,
+                "execution_attempt": attempt,
+                "cursor_agent_id": expected_agent_id,
+                "agent_state": "RESERVED",
+            })
+            if existing.get("cursor_agent_id") != expected_agent_id:
+                raise HermesBridgeError("cursor_dispatch_reservation_failed")
         response = self.cursor.create_agent(
             admission, self._cursor_prompt({**row, "instruction": canonical.get("raw_text")}, admission),
             execution_attempt=attempt)
@@ -447,6 +461,8 @@ class HermesSupervisor:
         run = dict(response.get("run") or {})
         if not agent.get("id") or not run.get("id"):
             raise HermesBridgeError("cursor_dispatch_unverified")
+        if agent["id"] != expected_agent_id:
+            raise HermesBridgeError("cursor_dispatch_identity_conflict")
         return self.canonical.record_dispatch(key, {
             "mission_id": admission.mission_id,
             "generation": admission.generation,
@@ -565,7 +581,7 @@ class HermesSupervisor:
             "Implement this bounded pre-dispatch-authorized CHARLIE mission. Do not merge or deploy.",
             f"Mission: {admission.mission_id}", f"Generation: {admission.generation}",
             f"Authorization: {admission.receipt_id}", f"Owner instruction digest: {admission.owner_instruction_digest}",
-            f"Use deterministic branch: {admission.branch}",
+            "Cursor may choose one generated cursor/ branch; CHARLIE will bind the signed runtime branch once.",
             "Allowed files: " + ", ".join(admission.allowed_files),
             "Allowed effects: " + ", ".join(admission.allowed_effects),
             "Acceptance: " + "; ".join(admission.acceptance_requirements),

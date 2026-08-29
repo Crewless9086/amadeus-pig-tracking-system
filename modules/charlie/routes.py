@@ -31,6 +31,7 @@ from modules.charlie.mission_store import (
     append_mission_control_event,
     bind_external_supervisor_candidate,
     bind_external_supervisor_branch,
+    authorize_cursor_workspace_hook,
     invalidate_external_candidate_admission,
     read_external_supervisor_state,
     record_external_supervisor_state,
@@ -53,6 +54,11 @@ from modules.charlie.mission_store import (
     update_mission_workflow_step,
     update_mission_status,
     update_mission_vault,
+)
+from modules.charlie.cursor_cloud_identity import (
+    APPROVED_REPOSITORY,
+    CursorIdentityError,
+    verify_cursor_oidc_token,
 )
 from modules.charlie.core_workflow import (
     CHARLIE_CORE_VERSION,
@@ -1214,6 +1220,34 @@ def charlie_hermes_execution_succession_route(mission_id):
         mission_id, **payload, observed_main_sha=str(env_value("RENDER_GIT_COMMIT") or ""),
         authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/cursor/hooks/authorize", methods=["POST"])
+def charlie_cursor_hook_authorize_route():
+    """Authorize one managed Cursor hook operation from signed runtime identity."""
+    header = str(request.headers.get("Authorization") or "")
+    if not header.startswith("Bearer "):
+        return jsonify({"success": False, "permission": "deny", "status": "cursor_oidc_required"}), 401
+    try:
+        claims = verify_cursor_oidc_token(header[7:].strip())
+    except CursorIdentityError as exc:
+        return jsonify({"success": False, "permission": "deny", "status": str(exc)}), 401
+    payload = request.get_json(silent=True) or {}
+    allowed = {"action", "target_path", "command", "changed_files"}
+    if not isinstance(payload, dict) or set(payload) - allowed:
+        return jsonify({"success": False, "permission": "deny", "status": "cursor_hook_request_invalid"}), 400
+    result, status = authorize_cursor_workspace_hook(
+        cloud_agent_id=claims["cloud_agent_id"], branch_name=str(claims.get("branch_name") or ""),
+        repository=APPROVED_REPOSITORY, action=str(payload.get("action") or ""),
+        target_path=str(payload.get("target_path") or ""), command=str(payload.get("command") or ""),
+        changed_files=payload.get("changed_files") if isinstance(payload.get("changed_files"), list) else [],
+    )
+    bounded = {key: result.get(key) for key in
+               ("success", "permission", "status", "authorization_id", "branch", "allowed_path", "command")
+               if result.get(key) is not None}
+    if status >= 400:
+        bounded["permission"] = "deny"
+    return jsonify(bounded), status
 
 
 @charlie_bp.route("/charlie/hermes/missions/<mission_id>/actual-branch", methods=["POST"])
