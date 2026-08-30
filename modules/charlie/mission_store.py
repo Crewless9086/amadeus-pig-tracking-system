@@ -1985,6 +1985,7 @@ def retire_cursor_provider_execution(mission_id, evidence, *, authenticated_prin
                 current = dict(metadata.get("external_supervisor_state") or {})
                 dispatch = dict(metadata.get("dispatch_authorization") or {})
                 admission = dict(metadata.get("mission_admission") or {})
+                review_packet = dict(metadata.get("review_packet") or {})
                 retirement = dict(metadata.get("cursor_provider_retirement") or {})
                 if retirement:
                     exact = (retirement.get("agent_id") == evidence["cursor_agent_id"]
@@ -1996,9 +1997,13 @@ def retire_cursor_provider_execution(mission_id, evidence, *, authenticated_prin
                         or current.get("cursor_run_id") != evidence["cursor_run_id"]
                         or current.get("generation") != evidence["generation"]
                         or int(current.get("execution_attempt") or 0) != 5
+                        or current.get("branch") != evidence["branch"]
                         or current.get("repository_mutation") is not False
+                        or current.get("remote_branch_created") is True
                         or int(current.get("pr_number") or 0) != 0
                         or str(current.get("head_sha") or "")
+                        or current.get("exact_candidate") not in {None, "", "absent"}
+                        or bool(review_packet)
                         or dispatch.get("generation") != evidence["generation"]
                         or admission.get("status") == "valid"):
                     return {"success": False, "status": "cursor_retirement_identity_conflict"}, 409

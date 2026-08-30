@@ -351,6 +351,7 @@ class NativeExecutorTests(unittest.TestCase):
                     "owner_instruction_digest": "b" * 64, "allowed_files": [ALLOWED]}
         current = {"generation": "g1", "execution_attempt": 5,
                    "cursor_agent_id": "bc-five", "cursor_run_id": "run-five",
+                   "branch": "cursor/charlie-mission-setup-fb0a",
                    "agent_state": "ACTIVE", "run_state": "RUNNING",
                    "repository_mutation": False, "pr_number": 0, "head_sha": "",
                    "event": "cursor_implementation_started"}
@@ -385,6 +386,19 @@ class NativeExecutorTests(unittest.TestCase):
             authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
             connect_factory=lambda _: FakeConnection([(metadata,)]))
         self.assertEqual(409, conflict_status, conflict)
+        for conflict_metadata in (
+            {"external_supervisor_state": {**current, "branch": "cursor/other"},
+             "dispatch_authorization": dispatch},
+            {"external_supervisor_state": {**current, "remote_branch_created": True},
+             "dispatch_authorization": dispatch},
+            {"external_supervisor_state": current, "dispatch_authorization": dispatch,
+             "review_packet": {"candidate_revision": "d" * 40}},
+        ):
+            denied, denied_status = retire_cursor_provider_execution(
+                "CHARLIE-MISSION-X", evidence, authenticated_principal="hermes:charlie-builder",
+                database_url="postgres://unit",
+                connect_factory=lambda _, row=conflict_metadata: FakeConnection([(row,)]))
+            self.assertEqual(409, denied_status, denied)
 
     def test_gateway_restart_recovers_only_unfinished_canonical_native_execution(self):
         rows = [

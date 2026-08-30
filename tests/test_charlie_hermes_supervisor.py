@@ -184,6 +184,20 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertFalse(canonical.evidence["remote_branch_created"])
         self.assertEqual([{"mission_id": "CMQ-X"}], native)
 
+    def test_cursor_retirement_requires_explicit_provider_agent_identity(self):
+        state = {"generation": "g1", "execution_attempt": 5,
+                 "cursor_agent_id": "bc-five", "cursor_run_id": "run-five",
+                 "branch": "cursor/charlie-mission-setup-fb0a"}
+        cursor = SimpleNamespace(
+            get_agent=lambda _agent: {"status": "ARCHIVED"},
+            get_run=lambda _agent, run: {"id": run, "status": "SUCCEEDED"})
+        supervisor = HermesSupervisor(SimpleNamespace(), cursor,
+            owner_slack_user_id="UOWNER", slack_command_channel_id="C1",
+            slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE",
+            github=SimpleNamespace())
+        with self.assertRaisesRegex(HermesBridgeError, "cursor_retirement_provider_identity_conflict"):
+            supervisor._retire_cursor_provider("CMQ-X", state)
+
     def test_missing_repository_fails_before_canonical_or_model_activity(self):
         self.supervisor.native_repository_root = "C:/definitely/missing/repository"
         self.supervisor.native_worktree_base = "C:/native"

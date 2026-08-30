@@ -523,7 +523,7 @@ class HermesSupervisor:
             raise HermesBridgeError("cursor_retirement_identity_incomplete")
         agent = self.cursor.get_agent(expected_agent)
         run = self.cursor.get_run(expected_agent, expected_run)
-        if str(agent.get("id") or expected_agent) != expected_agent or str(run.get("id") or "") != expected_run:
+        if str(agent.get("id") or "") != expected_agent or str(run.get("id") or "") != expected_run:
             raise HermesBridgeError("cursor_retirement_provider_identity_conflict")
         run_state = str(run.get("status") or "").upper()
         if run_state not in {"FINISHED", "SUCCEEDED", "FAILED", "CANCELLED"}:
