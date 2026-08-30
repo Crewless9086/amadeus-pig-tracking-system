@@ -2075,7 +2075,7 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
     allowed = {"native_execution_id", "execution_status", "commit_sha", "pr_number", "head_sha",
                "changed_files", "review_verdict", "checks", "event", "failure_reason",
                "correction_rounds", "worker_claim_id", "claim_expires_at", "release_claim_id",
-               "admission_requested_head", "owner_notification_head", "review_security",
+               "admission_requested_head", "owner_notification_head", "candidate_diff_sha256", "review_security",
                "review_functional", "review_request_roles", "runner_stage", "stage_artifact"}
     if not mission_id or not principal or not state or set(state) - allowed:
         return {"success": False, "status": "native_execution_state_invalid"}, 400

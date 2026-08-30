@@ -306,7 +306,17 @@ class HermesStructuredPatchWorker:
             max_tokens=6000,
             timeout=120,
         )
-        return validate_native_response(getattr(result, "parsed", None))
+        response = validate_native_response(getattr(result, "parsed", None))
+        provider = str(getattr(result, "provider", "") or "").strip()
+        model = str(getattr(result, "model", "") or "").strip()
+        agent_id = str(getattr(result, "agent_id", "") or "").strip()
+        if not provider or not model or not agent_id:
+            raise NativeExecutionError("native_builder_runtime_identity_missing")
+        material = json.dumps({"task": "charlie_native_builder", "provider": provider,
+                               "model": model, "agent_id": agent_id},
+                              sort_keys=True, separators=(",", ":"))
+        response["worker_identity"] = "HNW-" + hashlib.sha256(material.encode()).hexdigest()
+        return response
 
 
 class HermesIndependentReviewer:
@@ -331,8 +341,32 @@ class HermesIndependentReviewer:
             task=f"charlie_native_{role.lower()}_reviewer",
             max_tokens=3000, timeout=120,
         )
-        return {"role": role, "reviewer_identity": f"hermes-native-{role.lower()}-reviewer-v1",
-                **validate_native_review(getattr(result, "parsed", None))}
+        provider = str(getattr(result, "provider", "") or "").strip()
+        model = str(getattr(result, "model", "") or "").strip()
+        agent_id = str(getattr(result, "agent_id", "") or "").strip()
+        audit = getattr(result, "audit", None)
+        audit = dict(audit) if isinstance(audit, dict) else {}
+        task = f"charlie_native_{role.lower()}_reviewer"
+        if not provider or not model or not agent_id:
+            raise NativeExecutionError("native_reviewer_runtime_identity_missing")
+        binding = dict((packet or {}).get("candidate") or {})
+        required = {"pr_number", "base_sha", "head_sha", "candidate_diff_sha256", "changed_files"}
+        if not required.issubset(binding):
+            raise NativeExecutionError("native_review_candidate_binding_missing")
+        identity_material = json.dumps({
+            "task": task, "provider": provider, "model": model, "agent_id": agent_id,
+            "audit_profile": audit.get("profile"), "audit_plugin_id": audit.get("plugin_id"),
+        }, sort_keys=True, separators=(",", ":"))
+        return {
+            "role": role,
+            "reviewer_identity": "HNR-" + hashlib.sha256(identity_material.encode()).hexdigest(),
+            "reviewer_task": task,
+            "reviewer_provider": provider,
+            "reviewer_model": model,
+            "reviewer_agent_id": agent_id,
+            "candidate_binding": {key: binding[key] for key in sorted(required)},
+            **validate_native_review(getattr(result, "parsed", None)),
+        }
 
 
 class NativeExecutionEngine:

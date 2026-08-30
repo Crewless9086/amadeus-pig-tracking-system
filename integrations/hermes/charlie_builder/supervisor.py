@@ -574,11 +574,15 @@ class HermesSupervisor:
             ).package(row.get("title") or "CHARLIE native mission", "Native structured patch; no merge or deployment authority.")
             heartbeat()
             self._bind_native_candidate(mission_id, authorization, packaged)
-            reviews = self._run_native_reviews(authorization, packaged, evidence, mission=row)
+            reviews = self._run_native_reviews(
+                authorization, packaged, evidence, mission=row,
+                builder_identity=built.get("worker_identity"),
+            )
             return self.canonical.record_native_progress(mission_id, {
                 "native_execution_id": native_id, "execution_status": "DRAFT_PR_OPEN",
                 "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
                 "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
+                "candidate_diff_sha256": packaged["candidate_diff_sha256"],
                 "worker_claim_id": claim_id, "runner_stage": "reviewer",
                 "review_request_roles": ["SECURITY", "FUNCTIONAL"],
                 "review_security": reviews["SECURITY"],
@@ -608,6 +612,24 @@ class HermesSupervisor:
         observed = self.github.pull_state(pr_number, now=self.clock())
         security = dict(native.get("review_security") or {})
         functional = dict(native.get("review_functional") or {})
+        expected_binding = {
+            "pr_number": pr_number,
+            "base_sha": str(native.get("starting_main_sha") or ""),
+            "head_sha": str(observed.get("head_sha") or ""),
+            "candidate_diff_sha256": str(native.get("candidate_diff_sha256") or ""),
+            "changed_files": list(native.get("changed_files") or []),
+        }
+        reviews_bound = all(
+            dict(review.get("candidate_binding") or {}) == expected_binding
+            for review in (security, functional)
+        )
+        reviewers_independent = bool(
+            security.get("reviewer_identity") and functional.get("reviewer_identity")
+            and security.get("reviewer_identity") != functional.get("reviewer_identity")
+            and security.get("reviewer_task") != functional.get("reviewer_task")
+        )
+        if not reviews_bound or not reviewers_independent:
+            security = functional = {}
         if (observed.get("independent_review") != "SEND_BACK"
                 and "SEND_BACK" in {security.get("verdict"), functional.get("verdict")}):
             observed["independent_review"] = "SEND_BACK"
@@ -615,8 +637,12 @@ class HermesSupervisor:
                 item for review in (security, functional) for item in review.get("findings") or [])[:4000]
         elif (observed.get("independent_review") == "WAIT"
                 and security.get("verdict") == functional.get("verdict") == "APPROVE"):
-            observed["independent_review"] = "APPROVE"
-            observed["security_review"], observed["functional_review"] = security, functional
+            if int(native.get("correction_rounds") or 0) < 1:
+                observed["independent_review"] = "WAIT"
+                observed["independent_review_findings"] = "commissioning_genuine_send_back_required"
+            else:
+                observed["independent_review"] = "APPROVE"
+                observed["security_review"], observed["functional_review"] = security, functional
         admission_requested_head = str(native.get("admission_requested_head") or "")
         if admission_requested_head != observed.get("head_sha"):
             self.issue_admission(mission_id, observed.get("head_sha"), pr_number)
@@ -900,12 +926,16 @@ class HermesSupervisor:
             )
             heartbeat()
             self._bind_native_candidate(mission["mission_id"], authorization, packaged)
-            reviews = self._run_native_reviews(authorization, packaged, evidence, mission=mission)
+            reviews = self._run_native_reviews(
+                authorization, packaged, evidence, mission=mission,
+                builder_identity=built.get("worker_identity"),
+            )
             return self.canonical.record_native_progress(mission["mission_id"], {
                 "native_execution_id": authorization["native_execution_id"],
                 "execution_status": "SEND_BACK_CORRECTED",
                 "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
                 "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
+                "candidate_diff_sha256": packaged["candidate_diff_sha256"],
                 "worker_claim_id": claim_id, "admission_requested_head": "",
                 "review_security": reviews["SECURITY"],
                 "review_functional": reviews["FUNCTIONAL"],
@@ -946,7 +976,8 @@ class HermesSupervisor:
             raise HermesBridgeError(str(result.get("status") or "native_candidate_binding_failed"))
         return result
 
-    def _run_native_reviews(self, authorization, packaged, verification, *, mission):
+    def _run_native_reviews(self, authorization, packaged, verification, *, mission,
+                            builder_identity=None):
         worktree = (Path(self.native_worktree_base) / authorization["mission_id"]
                     / authorization["generation"] / "native-1")
         diff = run_argv([
@@ -957,8 +988,10 @@ class HermesSupervisor:
             raise HermesBridgeError("native_review_diff_unavailable")
         packet = {
             "protocol": "charlie_hermes_native_independent_review_v1",
-            "candidate": {"base_sha": authorization["starting_main_sha"],
+            "candidate": {"pr_number": int(packaged["pr_number"]),
+                          "base_sha": authorization["starting_main_sha"],
                           "head_sha": packaged["commit_sha"],
+                          "candidate_diff_sha256": packaged["candidate_diff_sha256"],
                           "changed_files": packaged["changed_files"],
                           "diff": diff.stdout},
             "scope": {"allowed_files": list(authorization["allowed_files"]),
@@ -978,7 +1011,11 @@ class HermesSupervisor:
             "verification": list(verification or []),
         }
         reviewer = HermesIndependentReviewer(self.native_llm)
-        return {role: reviewer.review(role, packet) for role in ("SECURITY", "FUNCTIONAL")}
+        reviews = {role: reviewer.review(role, packet) for role in ("SECURITY", "FUNCTIONAL")}
+        identities = {reviews[role]["reviewer_identity"] for role in reviews}
+        if len(identities) != 2 or (builder_identity and builder_identity in identities):
+            raise HermesBridgeError("native_review_principal_not_independent")
+        return reviews
 
     def prepare_owner_decision(self, mission):
         row = dict(mission or {})

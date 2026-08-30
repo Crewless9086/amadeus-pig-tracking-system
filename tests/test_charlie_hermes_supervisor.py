@@ -204,9 +204,11 @@ class HermesSupervisorTests(unittest.TestCase):
         def complete(**kwargs):
             llm.calls.append(kwargs)
             index = len(llm.calls)
-            return SimpleNamespace(parsed=(
-                {"verdict": "SEND_BACK", "findings": ["Clarify the boundary."]}
-                if index == 1 else {"verdict": "APPROVE", "findings": []}))
+            return SimpleNamespace(
+                parsed=({"verdict": "SEND_BACK", "findings": ["Clarify the boundary."]}
+                        if index == 1 else {"verdict": "APPROVE", "findings": []}),
+                provider="test-provider", model="test-model", agent_id=f"review-{index}",
+                audit={"profile": "test", "plugin_id": "charlie-builder"})
         llm.complete_structured = complete
         canonical, monitor, bot = CanonicalNative(), Monitor(), Bot()
         supervisor = HermesSupervisor(canonical, None, owner_slack_user_id="UOWNER",

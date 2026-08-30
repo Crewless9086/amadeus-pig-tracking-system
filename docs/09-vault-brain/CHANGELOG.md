@@ -15,6 +15,11 @@
   admitted feature-branch push and draft-PR API call. Exact-candidate Mission
   Admission, independent review, five required checks and the no-merge/no-
   deployment boundary remain unchanged.
+- Structured SECURITY and FUNCTIONAL review evidence is bound to the exact PR,
+  base, head, binary-diff digest and file set, and records the host-reported
+  provider/model/Agent identity for distinct auxiliary task routes. Stale or
+  non-independent review packets cannot advance supervision, and the pilot's
+  genuine SEND_BACK correction remains an explicit release prerequisite.
 
 ## 2026-08-29 - Cursor managed-VM hook classification recovery
 

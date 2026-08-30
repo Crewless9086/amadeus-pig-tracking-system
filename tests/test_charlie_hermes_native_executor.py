@@ -34,7 +34,14 @@ def git(cwd, *args):
 
 
 class Result:
-    def __init__(self, parsed): self.parsed = parsed
+    _sequence = 0
+    def __init__(self, parsed):
+        Result._sequence += 1
+        self.parsed = parsed
+        self.provider = "test-provider"
+        self.model = "test-model"
+        self.agent_id = f"test-agent-{Result._sequence}"
+        self.audit = {"profile": "test", "plugin_id": "charlie-builder"}
 
 
 class Llm:
@@ -120,6 +127,7 @@ class NativeExecutorTests(unittest.TestCase):
         packet = json.loads(call["input"][0]["text"])
         self.assertNotIn("environment", packet)
         self.assertNotIn("credentials", packet)
+        self.assertTrue(result["worker_identity"].startswith("HNW-"))
 
     def test_independent_role_reviewers_receive_fresh_bounded_packets(self):
         llm = Llm([
@@ -127,12 +135,16 @@ class NativeExecutorTests(unittest.TestCase):
             {"verdict": "APPROVE", "findings": []},
         ])
         reviewer = HermesIndependentReviewer(llm)
-        packet = {"candidate": {"head_sha": "a" * 40, "diff": "bounded"}}
+        packet = {"candidate": {"pr_number": 9, "base_sha": "b" * 40,
+            "head_sha": "a" * 40, "candidate_diff_sha256": "c" * 64,
+            "changed_files": [ALLOWED], "diff": "bounded"}}
         security = reviewer.review("SECURITY", packet)
         functional = reviewer.review("FUNCTIONAL", packet)
         self.assertEqual("SEND_BACK", security["verdict"])
         self.assertEqual("APPROVE", functional["verdict"])
         self.assertNotEqual(security["reviewer_identity"], functional["reviewer_identity"])
+        self.assertEqual(packet["candidate"]["head_sha"],
+                         security["candidate_binding"]["head_sha"])
         self.assertTrue(all("tools" not in call for call in llm.calls))
         self.assertEqual(["charlie_native_security_reviewer", "charlie_native_functional_reviewer"],
                          [call["task"] for call in llm.calls])
