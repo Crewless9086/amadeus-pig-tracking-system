@@ -155,6 +155,7 @@ class HermesSupervisorTests(unittest.TestCase):
             "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
             "allowed_commands": ["git diff --check"], "allowed_effects": ["edit_allowed_files"],
             "forbidden_effects": ["merge", "deploy"], "pr_number": 0,
+            "builder_identity": "HNW-builder", "builder_agent_id": "builder-agent",
         }
         class CanonicalNative:
             def __init__(self): self.native = dict(authorization); self.admissions = []; self.bindings = []
@@ -187,7 +188,9 @@ class HermesSupervisorTests(unittest.TestCase):
             def post(self, channel, message, **kwargs): self.posts.append((channel, message, kwargs)); return {"ok": True}
         class Engine:
             def __init__(self, *_args, **_kwargs): self.worktree = SimpleNamespace(ensure=lambda: Path("C:/native"))
-            def build_patch(self, *_args, **_kwargs): return {"state": "PATCH_READY", "changed_files": authorization["allowed_files"]}
+            def build_patch(self, *_args, **_kwargs): return {"state": "PATCH_READY",
+                "changed_files": authorization["allowed_files"],
+                "worker_identity": "HNW-builder", "worker_agent_id": "builder-agent"}
             def verify(self): return [{"command": "git diff --check", "returncode": 0}]
         packages = [
             {"commit_sha": head_one, "pr_number": 9, "changed_files": authorization["allowed_files"], "candidate_diff_sha256": "1" * 64},
@@ -233,6 +236,30 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual("OWNER_DECISION_REQUIRED", ready["execution_status"])
         self.assertEqual("CAPPROVE", bot.posts[-1][0])
         self.assertEqual([], self.client.calls)
+
+    def test_native_review_rejects_same_host_agent_across_roles(self):
+        authorization = {"mission_id": "CMQ-X", "generation": "g1",
+            "starting_main_sha": "a" * 40, "allowed_files": [
+                "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "forbidden_effects": ["merge", "deploy"],
+            "owner_instruction_digest": "b" * 64, "correction_rounds": 0}
+        packaged = {"pr_number": 9, "commit_sha": "d" * 40,
+            "candidate_diff_sha256": "e" * 64,
+            "changed_files": authorization["allowed_files"]}
+        def complete(**kwargs):
+            return SimpleNamespace(parsed={"verdict": "APPROVE", "findings": []},
+                provider="test-provider", model="test-model", agent_id="same-host-agent",
+                audit={"profile": "test", "plugin_id": "charlie-builder"})
+        supervisor = HermesSupervisor(self.canonical, self.cursor,
+            owner_slack_user_id="UOWNER", slack_command_channel_id="C1",
+            slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE",
+            native_llm=SimpleNamespace(complete_structured=complete),
+            native_worktree_base="C:/native")
+        command = SimpleNamespace(returncode=0, stdout="bounded diff", stderr="")
+        with patch("integrations.hermes.charlie_builder.supervisor.run_argv", return_value=command):
+            with self.assertRaisesRegex(HermesBridgeError, "native_review_principal_not_independent"):
+                supervisor._run_native_reviews(authorization, packaged, [],
+                    mission={"raw_text": "bounded"}, builder_agent_id="builder-agent")
 
     def test_oidc_workspace_pda_late_binds_once_and_enforces_scope_and_command(self):
         pda = {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid",

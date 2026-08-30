@@ -539,7 +539,9 @@ class HermesSupervisor:
             head_before = run_argv(["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
             dirty_before = bool(run_argv(["git", "status", "--porcelain"], cwd=root).stdout.strip())
             if dirty_before or head_before != authorization["starting_main_sha"]:
-                built = {"state": "PATCH_READY", "changed_files": list(authorization["allowed_files"])}
+                built = {"state": "PATCH_READY", "changed_files": list(authorization["allowed_files"]),
+                         "worker_identity": authorization.get("builder_identity"),
+                         "worker_agent_id": authorization.get("builder_agent_id")}
             else:
                 built = engine.build_patch(
                     row.get("raw_text") or row.get("title"),
@@ -551,9 +553,13 @@ class HermesSupervisor:
                         "failure_reason": built.get("reason"), "worker_claim_id": claim_id,
                         "event": "native_model_blocked",
                     })
+            if not built.get("worker_agent_id"):
+                raise HermesBridgeError("native_builder_runtime_identity_missing")
             progress = self.canonical.record_native_progress(mission_id, {
                 "native_execution_id": native_id, "execution_status": "PATCH_APPLIED",
                 "changed_files": built.get("changed_files"), "worker_claim_id": claim_id,
+                "builder_identity": built.get("worker_identity"),
+                "builder_agent_id": built.get("worker_agent_id"),
                 "runner_stage": "builder", "stage_artifact": {
                     "kind": "validated_structured_patch", "changed_files": built.get("changed_files")},
                 "event": "native_patch_applied",
@@ -577,6 +583,7 @@ class HermesSupervisor:
             reviews = self._run_native_reviews(
                 authorization, packaged, evidence, mission=row,
                 builder_identity=built.get("worker_identity"),
+                builder_agent_id=built.get("worker_agent_id"),
             )
             return self.canonical.record_native_progress(mission_id, {
                 "native_execution_id": native_id, "execution_status": "DRAFT_PR_OPEN",
@@ -587,6 +594,7 @@ class HermesSupervisor:
                 "review_request_roles": ["SECURITY", "FUNCTIONAL"],
                 "review_security": reviews["SECURITY"],
                 "review_functional": reviews["FUNCTIONAL"],
+                "review_challenge": reviews.get("CHALLENGE"),
                 "stage_artifact": {"kind": "draft_pr_candidate", "head_sha": packaged["commit_sha"]},
                 "event": "native_draft_pr_opened",
             })
@@ -612,6 +620,7 @@ class HermesSupervisor:
         observed = self.github.pull_state(pr_number, now=self.clock())
         security = dict(native.get("review_security") or {})
         functional = dict(native.get("review_functional") or {})
+        challenge = dict(native.get("review_challenge") or {})
         expected_binding = {
             "pr_number": pr_number,
             "base_sha": str(native.get("starting_main_sha") or ""),
@@ -619,22 +628,23 @@ class HermesSupervisor:
             "candidate_diff_sha256": str(native.get("candidate_diff_sha256") or ""),
             "changed_files": list(native.get("changed_files") or []),
         }
+        active_reviews = [security, functional] + ([challenge] if challenge else [])
         reviews_bound = all(
             dict(review.get("candidate_binding") or {}) == expected_binding
-            for review in (security, functional)
+            for review in active_reviews
         )
-        reviewers_independent = bool(
-            security.get("reviewer_identity") and functional.get("reviewer_identity")
-            and security.get("reviewer_identity") != functional.get("reviewer_identity")
-            and security.get("reviewer_task") != functional.get("reviewer_task")
-        )
+        raw_agent_ids = [review.get("reviewer_agent_id") for review in active_reviews]
+        reviewers_independent = bool(all(raw_agent_ids)
+            and len(set(raw_agent_ids)) == len(raw_agent_ids)
+            and native.get("builder_agent_id") not in set(raw_agent_ids))
         if not reviews_bound or not reviewers_independent:
-            security = functional = {}
+            security = functional = challenge = {}
         if (observed.get("independent_review") != "SEND_BACK"
-                and "SEND_BACK" in {security.get("verdict"), functional.get("verdict")}):
+                and "SEND_BACK" in {security.get("verdict"), functional.get("verdict"),
+                                    challenge.get("verdict")}):
             observed["independent_review"] = "SEND_BACK"
             observed["independent_review_findings"] = "\n".join(
-                item for review in (security, functional) for item in review.get("findings") or [])[:4000]
+                item for review in active_reviews for item in review.get("findings") or [])[:4000]
         elif (observed.get("independent_review") == "WAIT"
                 and security.get("verdict") == functional.get("verdict") == "APPROVE"):
             if int(native.get("correction_rounds") or 0) < 1:
@@ -929,6 +939,7 @@ class HermesSupervisor:
             reviews = self._run_native_reviews(
                 authorization, packaged, evidence, mission=mission,
                 builder_identity=built.get("worker_identity"),
+                builder_agent_id=built.get("worker_agent_id"), require_challenge=False,
             )
             return self.canonical.record_native_progress(mission["mission_id"], {
                 "native_execution_id": authorization["native_execution_id"],
@@ -939,6 +950,7 @@ class HermesSupervisor:
                 "worker_claim_id": claim_id, "admission_requested_head": "",
                 "review_security": reviews["SECURITY"],
                 "review_functional": reviews["FUNCTIONAL"],
+                "review_challenge": reviews.get("CHALLENGE"),
                 "event": "native_send_back_corrected",
             })
         finally:
@@ -977,7 +989,7 @@ class HermesSupervisor:
         return result
 
     def _run_native_reviews(self, authorization, packaged, verification, *, mission,
-                            builder_identity=None):
+                            builder_identity=None, builder_agent_id=None, require_challenge=True):
         worktree = (Path(self.native_worktree_base) / authorization["mission_id"]
                     / authorization["generation"] / "native-1")
         diff = run_argv([
@@ -1011,9 +1023,13 @@ class HermesSupervisor:
             "verification": list(verification or []),
         }
         reviewer = HermesIndependentReviewer(self.native_llm)
-        reviews = {role: reviewer.review(role, packet) for role in ("SECURITY", "FUNCTIONAL")}
+        roles = ("SECURITY", "FUNCTIONAL", "CHALLENGE") if require_challenge else ("SECURITY", "FUNCTIONAL")
+        reviews = {role: reviewer.review(role, packet) for role in roles}
         identities = {reviews[role]["reviewer_identity"] for role in reviews}
-        if len(identities) != 2 or (builder_identity and builder_identity in identities):
+        agent_ids = {reviews[role]["reviewer_agent_id"] for role in reviews}
+        if (len(identities) != len(roles) or len(agent_ids) != len(roles)
+                or (builder_identity and builder_identity in identities)
+                or (builder_agent_id and builder_agent_id in agent_ids)):
             raise HermesBridgeError("native_review_principal_not_independent")
         return reviews
 

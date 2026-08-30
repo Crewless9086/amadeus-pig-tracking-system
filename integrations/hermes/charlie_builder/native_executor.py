@@ -316,6 +316,7 @@ class HermesStructuredPatchWorker:
                                "model": model, "agent_id": agent_id},
                               sort_keys=True, separators=(",", ":"))
         response["worker_identity"] = "HNW-" + hashlib.sha256(material.encode()).hexdigest()
+        response["worker_agent_id"] = agent_id
         return response
 
 
@@ -329,7 +330,7 @@ class HermesIndependentReviewer:
 
     def review(self, role, packet):
         role = str(role or "").upper()
-        if role not in {"SECURITY", "FUNCTIONAL"}:
+        if role not in {"SECURITY", "FUNCTIONAL", "CHALLENGE"}:
             raise NativeExecutionError("native_review_role_invalid")
         result = self.llm.complete_structured(
             instructions=(f"Act as an independent {role} reviewer with no tools. Review only the exact "

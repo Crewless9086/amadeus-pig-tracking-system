@@ -57,6 +57,7 @@ def register(ctx):
         ("charlie_native_builder", "CHARLIE Native Builder"),
         ("charlie_native_security_reviewer", "CHARLIE Native Security Reviewer"),
         ("charlie_native_functional_reviewer", "CHARLIE Native Functional Reviewer"),
+        ("charlie_native_challenge_reviewer", "CHARLIE Native Commissioning Challenge Reviewer"),
     ):
         ctx.register_auxiliary_task(
             task, display_name=label,

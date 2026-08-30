@@ -128,6 +128,7 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertNotIn("environment", packet)
         self.assertNotIn("credentials", packet)
         self.assertTrue(result["worker_identity"].startswith("HNW-"))
+        self.assertTrue(result["worker_agent_id"].startswith("test-agent-"))
 
     def test_independent_role_reviewers_receive_fresh_bounded_packets(self):
         llm = Llm([
