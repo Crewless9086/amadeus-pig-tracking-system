@@ -1,5 +1,21 @@
 # Vault Brain Changelog
 
+## 2026-08-30 - Hermes-native structured-patch executor
+
+- Cursor Cloud is retained as failed-safe audit history but removed from the
+  critical-path builder contract after its managed commit/PR handoff could not
+  satisfy repository hooks. The canonical mission and Slack thread remain the
+  source of truth.
+- The existing CHARLIE execution bridge now supplies governance and stage
+  context to a host-owned Hermes structured model call with no tools or
+  credentials. A trusted parent validates bounded tracked context and unified
+  diffs, owns one deterministic isolated worktree, and permits only the
+  admitted branch, file and verification commands.
+- Parent-only packaging uses one repository-scoped credential solely for the
+  admitted feature-branch push and draft-PR API call. Exact-candidate Mission
+  Admission, independent review, five required checks and the no-merge/no-
+  deployment boundary remain unchanged.
+
 ## 2026-08-29 - Cursor managed-VM hook classification recovery
 
 - A configured `CURSOR_AGENT_SOCKET` now selects the OIDC-backed Cloud PDA path

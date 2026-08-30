@@ -1936,6 +1936,161 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
             "mission_id": mission_id, "dispatch": merged}, 201
 
 
+def _native_sha(value, length):
+    value = str(value or "").strip().lower()
+    return value if re.fullmatch(rf"[0-9a-f]{{{int(length)}}}", value) else ""
+
+
+def prepare_hermes_native_execution(mission_id, *, worktree_digest,
+                                    authenticated_principal, database_url=None,
+                                    connect_factory=None):
+    """Create or replay one provider-neutral native execution authorization.
+
+    Cursor history is preserved.  The native execution is admitted only after
+    the final Cursor writer is archived with zero candidate and zero mutation.
+    """
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    worktree_digest = _native_sha(worktree_digest, 64)
+    if not mission_id or not principal or not worktree_digest:
+        return {"success": False, "status": "native_execution_input_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb), raw_text
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("hermes_native_execution") or {})
+                if current:
+                    if current.get("worktree_digest") != worktree_digest:
+                        return {"success": False, "status": "native_execution_identity_conflict"}, 409
+                    return {"success": True, "status": "exact_replay", "authorization": current}, 200
+                state = dict(metadata.get("external_supervisor_state") or {})
+                dispatch = dict(metadata.get("dispatch_authorization") or {})
+                admission = dict(metadata.get("mission_admission") or {})
+                if (
+                    state.get("agent_state") != "ARCHIVED"
+                    or state.get("run_state") not in {"FINISHED", "FAILED", "CANCELLED"}
+                    or state.get("repository_mutation") is not False
+                    or int(state.get("pr_number") or 0) != 0
+                    or str(state.get("head_sha") or "")
+                    or admission.get("status") == "valid"
+                ):
+                    return {"success": False, "status": "cursor_retirement_not_proven"}, 409
+                generation = _clean_text(dispatch.get("generation") or state.get("generation"), 200)
+                base_sha = _native_sha(dispatch.get("base_sha"), 40)
+                owner_digest = _native_sha(dispatch.get("owner_instruction_digest"), 64)
+                allowed_files = sorted({_clean_text(item, 500) for item in dispatch.get("allowed_files") or [] if _clean_text(item, 500)})
+                if not generation or not base_sha or not owner_digest or not allowed_files:
+                    return {"success": False, "status": "native_execution_authority_unavailable"}, 409
+                identity_material = f"{mission_id}:{generation}:native-1"
+                native_id = "HNX-" + hashlib.sha256(identity_material.encode()).hexdigest().upper()
+                branch = f"charlie/{mission_id.lower()}-native-1"
+                authorization = {
+                    "version": "charlie_native_workspace_authorization_v1",
+                    "status": "valid",
+                    "mission_id": mission_id,
+                    "generation": generation,
+                    "executor_provider": "hermes_native",
+                    "native_execution_id": native_id,
+                    "native_attempt": 1,
+                    "repository": "Crewless9086/amadeus-pig-tracking-system",
+                    "starting_main_sha": base_sha,
+                    "branch": branch,
+                    "worktree_digest": worktree_digest,
+                    "owner_instruction_digest": owner_digest,
+                    "allowed_files": allowed_files,
+                    "allowed_commands": ["git status", "git diff", "git diff --check"],
+                    "forbidden_effects": [
+                        "edit any other file", "write main or master", "merge", "deploy",
+                        "change credentials or branch protection", "mutate Supabase outside canonical mission events",
+                        "customer farm payment or hardware action",
+                    ],
+                    "created_by": principal,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(),
+                    "forbidden_files": [
+                        ".git/**", ".github/**", ".cursor/**", ".env*",
+                        "credentials/**", "secrets/**",
+                    ],
+                    "pr_number": 0,
+                }
+                metadata["cursor_provider_retirement"] = {
+                    "provider": "cursor_cloud",
+                    "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+                    "agent_id": state.get("cursor_agent_id"),
+                    "run_id": state.get("cursor_run_id"),
+                    "repository_mutation": False,
+                    "remote_branch_created": False,
+                    "recorded_by": principal,
+                }
+                metadata["hermes_native_execution"] = authorization
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                              "Cursor Cloud retired; one Hermes-native execution authorized.",
+                              {"native_execution_id": native_id, "generation": generation,
+                               "provider": "hermes_native", "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "native_execution_prepare_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "native_execution_authorized",
+            "authorization": authorization}, 201
+
+
+def record_hermes_native_execution_state(mission_id, state, *, authenticated_principal,
+                                         database_url=None, connect_factory=None):
+    """Record bounded native progress without introducing another ledger."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    state = state if isinstance(state, dict) else {}
+    allowed = {"native_execution_id", "execution_status", "commit_sha", "pr_number", "head_sha",
+               "changed_files", "review_verdict", "checks", "event", "failure_reason",
+               "correction_rounds"}
+    if not mission_id or not principal or not state or set(state) - allowed:
+        return {"success": False, "status": "native_execution_state_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb) from public.charlie_missions
+                    where mission_id=%(mission_id)s for update""", {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("hermes_native_execution") or {})
+                if not current or state.get("native_execution_id") != current.get("native_execution_id"):
+                    return {"success": False, "status": "native_execution_identity_conflict"}, 409
+                merged = {**current, **state, "updated_by": principal,
+                          "updated_at": datetime.now(timezone.utc).isoformat()}
+                if state.get("event") == "native_send_back_corrected":
+                    merged["correction_rounds"] = int(current.get("correction_rounds") or 0) + 1
+                metadata["hermes_native_execution"] = merged
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated", "Hermes-native execution state recorded.",
+                              {"native_execution_id": merged.get("native_execution_id"),
+                               "status": merged.get("execution_status"), "event": merged.get("event"),
+                               "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "native_execution_state_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "native_execution_state_recorded",
+            "authorization": merged}, 201
+
+
 def prepare_external_execution_succession(
     mission_id, *, generation, predecessor_agent_id, predecessor_run_id,
     predecessor_state, replacement_reason, observed_main_sha,

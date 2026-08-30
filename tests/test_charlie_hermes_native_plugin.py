@@ -2,6 +2,7 @@ import importlib
 import json
 from pathlib import Path
 import unittest
+import time
 from unittest.mock import patch
 from types import SimpleNamespace
 
@@ -109,6 +110,10 @@ class HermesNativePluginTests(unittest.TestCase):
             source=SimpleNamespace(platform="slack", user_id="UOWNER", chat_id="C1", thread_id=""))
         result = context.hooks["pre_gateway_dispatch"](event=event)
         self.assertEqual("skip", result["action"])
+        for _ in range(100):
+            if any(item[0] == "dispatch" for item in observed):
+                break
+            time.sleep(0.01)
         self.assertEqual(["reconcile", "authorize", "dispatch"], [item[0] for item in observed])
         self.assertEqual("CMQ-X", observed[2][1]["mission_id"])
 

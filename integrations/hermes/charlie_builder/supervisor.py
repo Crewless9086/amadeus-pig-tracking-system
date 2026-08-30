@@ -17,6 +17,13 @@ import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
+
+from .native_executor import (
+    HermesStructuredPatchWorker, NativeExecutionEngine, NativeExecutionError,
+    NativePackager, content_identity, execution_lock,
+)
+from modules.charlie.execution_bridge import build_hermes_native_execution_context
 
 
 class HermesBridgeError(RuntimeError):
@@ -260,6 +267,20 @@ class CanonicalCharlieApi:
     def prepare_successor(self, mission_id, payload):
         return self.client.request("POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/execution-succession", payload)
 
+    def prepare_native_execution(self, mission_id, worktree_digest):
+        result = self.client.request(
+            "POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/native-execution",
+            {"worktree_digest": str(worktree_digest)},
+        )
+        return result.get("authorization") or result
+
+    def record_native_progress(self, mission_id, value):
+        result = self.client.request(
+            "POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/native-execution/progress",
+            value,
+        )
+        return result.get("authorization") or result
+
 
 class SlackBot:
     """One-way bot posting surface; it cannot impersonate the owner."""
@@ -345,7 +366,9 @@ class HermesSupervisor:
     def __init__(self, canonical, cursor, *, owner_slack_user_id, slack_signing_secret="",
                  slack_command_channel_id="", slack_build_channel_id="",
                  slack_approval_channel_id="", slack_bot=None,
-                 github=None, issuer=None, clock=time.time):
+                 github=None, issuer=None, clock=time.time, native_llm=None,
+                 native_repository_root="", native_worktree_base="",
+                 github_packager_token=""):
         self.canonical = canonical
         self.cursor = cursor
         self.owner_slack_user_id = str(owner_slack_user_id or "").strip()
@@ -357,6 +380,10 @@ class HermesSupervisor:
         self.github = github
         self.issuer = issuer
         self.clock = clock
+        self.native_llm = native_llm
+        self.native_repository_root = str(native_repository_root or "")
+        self.native_worktree_base = str(native_worktree_base or "")
+        self.github_packager_token = str(github_packager_token or "")
         if not self.owner_slack_user_id:
             raise HermesBridgeError("slack_owner_id_required")
         if not all((self.slack_command_channel_id, self.slack_build_channel_id,
@@ -397,6 +424,99 @@ class HermesSupervisor:
         event = dict(envelope.get("event") or {})
         event["event_id"] = str(envelope.get("event_id") or "")
         return self.reconcile_slack_event(event)
+
+    def dispatch_builder(self, mission):
+        mission_id = str(dict(mission or {}).get("mission_id") or "").strip()
+        loaded = self.canonical.get_mission(mission_id)
+        metadata = dict((loaded.get("mission") or {}).get("metadata") or {})
+        retired = dict(metadata.get("cursor_provider_retirement") or {})
+        state = dict(metadata.get("external_supervisor_state") or {})
+        if (
+            retired.get("provider_status") == "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"
+            or state.get("event") == "cursor_provider_retired"
+            or self.cursor is None
+        ):
+            return self.dispatch_native({"mission_id": mission_id})
+        return self.dispatch_cursor({"mission_id": mission_id})
+
+    def dispatch_native(self, mission):
+        mission_id = str(dict(mission or {}).get("mission_id") or "").strip()
+        if not mission_id or not self.native_repository_root or not self.native_worktree_base:
+            raise HermesBridgeError("native_execution_not_configured")
+        loaded = self.canonical.get_mission(mission_id)
+        row = dict(loaded.get("mission") or {})
+        metadata = dict(row.get("metadata") or {})
+        dispatch = dict(metadata.get("dispatch_authorization") or {})
+        generation = str(dispatch.get("generation") or "").strip()
+        if self.canonical.running_writer_count() != 0:
+            raise HermesBridgeError("native_writer_claim_not_released")
+        native_id, branch = content_identity(mission_id, generation, 1)
+        worktree = Path(self.native_worktree_base) / mission_id / generation / "native-1"
+        worktree_digest = hashlib.sha256(str(worktree.resolve(strict=False)).encode()).hexdigest()
+        authorization = self.canonical.prepare_native_execution(mission_id, worktree_digest)
+        if authorization.get("native_execution_id") != native_id or authorization.get("branch") != branch:
+            raise HermesBridgeError("native_execution_identity_conflict")
+        if authorization.get("execution_status") == "DRAFT_PR_OPEN":
+            return self.poll_native({"mission_id": mission_id})
+        if not execution_lock().acquire(blocking=False):
+            raise HermesBridgeError("native_writer_capacity_reached")
+        try:
+            engine = NativeExecutionEngine(
+                HermesStructuredPatchWorker(self.native_llm), self.native_repository_root,
+                worktree, authorization,
+            )
+            built = engine.build_patch(
+                row.get("raw_text") or row.get("title"),
+                governance_context=build_hermes_native_execution_context(row),
+            )
+            if built.get("state") == "BLOCKED":
+                return self.canonical.record_native_progress(mission_id, {
+                    "native_execution_id": native_id, "execution_status": "BLOCKED",
+                    "failure_reason": built.get("reason"), "event": "native_model_blocked",
+                })
+            evidence = engine.verify()
+            progress = self.canonical.record_native_progress(mission_id, {
+                "native_execution_id": native_id, "execution_status": "PATCH_APPLIED",
+                "changed_files": built.get("changed_files"), "event": "native_patch_applied",
+            })
+            if not self.github_packager_token:
+                return {**progress, "status": "PACKAGER_CREDENTIAL_REQUIRED", "verification": evidence}
+            packaged = NativePackager(
+                worktree, authorization, self.github_packager_token,
+            ).package(row.get("title") or "CHARLIE native mission", "Native structured patch; no merge or deployment authority.")
+            return self.canonical.record_native_progress(mission_id, {
+                "native_execution_id": native_id, "execution_status": "DRAFT_PR_OPEN",
+                "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
+                "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
+                "event": "native_draft_pr_opened",
+            })
+        except NativeExecutionError as exc:
+            raise HermesBridgeError(str(exc)) from exc
+        finally:
+            execution_lock().release()
+
+    def poll_native(self, mission):
+        mission_id = str(dict(mission or {}).get("mission_id") or "").strip()
+        loaded = self.canonical.get_mission(mission_id)
+        native = dict(((loaded.get("mission") or {}).get("metadata") or {}).get("hermes_native_execution") or {})
+        pr_number = int(native.get("pr_number") or 0)
+        if not pr_number or not self.github:
+            return {"mission_id": mission_id, **native}
+        observed = self.github.pull_state(pr_number, now=self.clock())
+        if native.get("head_sha") != observed.get("head_sha"):
+            self.issue_admission(mission_id, observed.get("head_sha"), pr_number)
+        recorded = self.canonical.record_native_progress(mission_id, {
+            "native_execution_id": native.get("native_execution_id"),
+            "execution_status": "SUPERVISING",
+            "pr_number": pr_number,
+            "head_sha": observed.get("head_sha"),
+            "checks": observed.get("checks"),
+            "review_verdict": observed.get("independent_review"),
+            "event": "native_candidate_supervised",
+        })
+        if isinstance(recorded, dict) and recorded.get("success") is False:
+            raise HermesBridgeError("native_progress_record_failed")
+        return {"mission_id": mission_id, **native, **observed}
 
     def dispatch_cursor(self, mission):
         row = dict(mission or {})
@@ -478,6 +598,10 @@ class HermesSupervisor:
 
     def poll(self, mission):
         row = dict(mission or {})
+        loaded = self.canonical.get_mission(row.get("mission_id"))
+        metadata = dict((loaded.get("mission") or {}).get("metadata") or {})
+        if metadata.get("hermes_native_execution"):
+            return self.poll_native(row)
         dispatch = dict(row.get("dispatch") or {})
         agent = self.cursor.get_agent(dispatch.get("cursor_agent_id"))
         run = self.cursor.get_latest_run(agent.get("id"))
@@ -576,6 +700,11 @@ class HermesSupervisor:
         row = dict(mission or {})
         if str(verdict or "").upper() != "SEND_BACK":
             raise HermesBridgeError("send_back_verdict_required")
+        loaded = self.canonical.get_mission(row.get("mission_id"))
+        canonical_row = dict(loaded.get("mission") or {})
+        native = dict((canonical_row.get("metadata") or {}).get("hermes_native_execution") or {})
+        if native:
+            return self._continue_native(canonical_row, native, correction)
         dispatch = dict(row.get("dispatch") or {})
         if int(dispatch.get("failed_attempts") or 0) >= self.MAX_FAILED_ATTEMPTS:
             raise HermesBridgeError("failed_attempt_limit_reached")
@@ -584,6 +713,42 @@ class HermesSupervisor:
         failed_attempts = int(dispatch.get("failed_attempts") or 0) + 1
         return self.canonical.record_followup(row.get("mission_id"), dispatch.get("cursor_agent_id"),
                                               run.get("id"), failed_attempts)
+
+    def _continue_native(self, mission, authorization, correction):
+        rounds = int(authorization.get("correction_rounds") or 0)
+        if rounds >= 2:
+            raise HermesBridgeError("native_correction_round_limit")
+        worktree = (Path(self.native_worktree_base) / mission["mission_id"]
+                    / authorization["generation"] / "native-1")
+        if not execution_lock().acquire(blocking=False):
+            raise HermesBridgeError("native_writer_capacity_reached")
+        try:
+            engine = NativeExecutionEngine(
+                HermesStructuredPatchWorker(self.native_llm), self.native_repository_root,
+                worktree, authorization,
+            )
+            built = engine.build_patch(
+                "Apply only this independent SEND_BACK correction: " + str(correction or "").strip(),
+                governance_context=build_hermes_native_execution_context(mission),
+            )
+            if built.get("state") != "PATCH_READY":
+                raise HermesBridgeError("native_correction_not_ready")
+            engine.verify()
+            if not self.github_packager_token:
+                raise HermesBridgeError("github_packager_token_required")
+            packaged = NativePackager(worktree, authorization, self.github_packager_token).package(
+                "fix(charlie): address independent native review",
+                "Same native execution and worktree correction; no merge or deployment authority.",
+            )
+            return self.canonical.record_native_progress(mission["mission_id"], {
+                "native_execution_id": authorization["native_execution_id"],
+                "execution_status": "SEND_BACK_CORRECTED",
+                "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
+                "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
+                "event": "native_send_back_corrected",
+            })
+        finally:
+            execution_lock().release()
 
     def prepare_owner_decision(self, mission):
         row = dict(mission or {})
@@ -600,7 +765,7 @@ class HermesSupervisor:
         """Actual bounded Hermes handlers, not descriptive strings."""
         return {
             "charlie_reconcile_mission": self.reconcile_slack_event,
-            "charlie_dispatch_cursor": self.dispatch_cursor,
+            "charlie_dispatch_cursor": self.dispatch_builder,
             "charlie_get_mission_status": lambda value: self.canonical.get_mission(value["mission_id"]),
             "charlie_get_cursor_status": self.poll,
             "charlie_issue_admission": lambda value: self.issue_admission(
@@ -655,24 +820,26 @@ def build_plugin_from_environment(environ=None, *, opener=None, validate_live=Fa
     """Construct the installable Hermes package exclusively from protected config."""
     env = dict(os.environ if environ is None else environ)
     required = (
-        "CHARLIE_CANONICAL_API_URL", "CHARLIE_HERMES_GATEWAY_TOKEN", "CURSOR_API_KEY",
+        "CHARLIE_CANONICAL_API_URL", "CHARLIE_HERMES_GATEWAY_TOKEN",
         "SLACK_SIGNING_SECRET", "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
         "SLACK_APP_TOKEN",
         "CHARLIE_SLACK_CHARLIE_CHANNEL_ID", "CHARLIE_SLACK_BUILD_CHANNEL_ID",
         "CHARLIE_SLACK_APPROVALS_CHANNEL_ID",
     )
     values = {key: _protected_value(env, key) for key in required}
+    cursor_key = _protected_value(env, "CURSOR_API_KEY", required=False)
+    packager_token = _protected_value(env, "CHARLIE_GITHUB_PACKAGER_TOKEN", required=False)
     github_token = _protected_value(env, "CHARLIE_GITHUB_READ_TOKEN", required=False)
     if any(str(env.get(name) or "").strip() for name in (
             "CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")):
         raise HermesBridgeError("github_write_credential_forbidden")
     canonical_client = JsonHttpClient(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"], opener=opener)
-    cursor_client = JsonHttpClient("https://api.cursor.com", values["CURSOR_API_KEY"], opener=opener)
+    cursor_client = JsonHttpClient("https://api.cursor.com", cursor_key, opener=opener) if cursor_key else None
     slack_client = JsonHttpClient("https://slack.com/api", values["SLACK_BOT_TOKEN"], opener=opener)
     github_client = JsonHttpClient("https://api.github.com", github_token, opener=opener)
     supervisor = HermesSupervisor(
         CanonicalCharlieApi(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"], client=canonical_client),
-        CursorCloudV1(values["CURSOR_API_KEY"], client=cursor_client),
+        CursorCloudV1(cursor_key, client=cursor_client) if cursor_key else None,
         owner_slack_user_id=values["CHARLIE_SLACK_OWNER_USER_ID"],
         slack_signing_secret=values["SLACK_SIGNING_SECRET"],
         slack_command_channel_id=values["CHARLIE_SLACK_CHARLIE_CHANNEL_ID"],
@@ -680,9 +847,12 @@ def build_plugin_from_environment(environ=None, *, opener=None, validate_live=Fa
         slack_approval_channel_id=values["CHARLIE_SLACK_APPROVALS_CHANNEL_ID"],
         slack_bot=SlackBot(values["SLACK_BOT_TOKEN"], client=slack_client),
         github=GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=github_client),
+        native_repository_root=str(env.get("CHARLIE_REPOSITORY_PATH") or "/opt/data/amadeus-pig-tracking-system"),
+        native_worktree_base=str(env.get("CHARLIE_NATIVE_WORKTREE_BASE") or "/opt/data/worktrees/charlie"),
+        github_packager_token=packager_token,
     )
     if validate_live:
-        if cursor_client.request("GET", "/v1/me").get("error"):
+        if cursor_client and cursor_client.request("GET", "/v1/me").get("error"):
             raise HermesBridgeError("cursor_configuration_invalid")
         if canonical_client.request("GET", "/charlie/hermes/writers").get("success") is not True:
             raise HermesBridgeError("canonical_configuration_invalid")

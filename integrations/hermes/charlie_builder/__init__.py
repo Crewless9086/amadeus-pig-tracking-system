@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from .supervisor import build_plugin_from_environment
 
 
@@ -52,6 +53,9 @@ def register(ctx):
     # transient provider outage must never remove the fail-closed Slack hooks.
     tools = build_plugin_from_environment(validate_live=False)
     supervisor = getattr(tools, "supervisor", None)
+    if supervisor is not None:
+        supervisor.native_llm = getattr(ctx, "llm", None)
+    native_jobs = ThreadPoolExecutor(max_workers=1, thread_name_prefix="charlie-native")
     text = {"type": "string"}
     schemas = {
         "charlie_reconcile_mission": _schema(
@@ -60,18 +64,18 @@ def register(ctx):
              "channel_id": text, "thread_ts": text},
             ["instruction", "event_id", "owner_user_id", "channel_id", "thread_ts"]),
         "charlie_dispatch_cursor": _schema(
-            "charlie_dispatch_cursor", "Dispatch Cursor only from the mission's current canonical admission.",
+            "charlie_dispatch_cursor", "Dispatch the one canonically selected bounded builder provider.",
             {"mission_id": text}, ["mission_id"]),
         "charlie_get_mission_status": _schema(
             "charlie_get_mission_status", "Read one canonical mission.", {"mission_id": text}, ["mission_id"]),
         "charlie_get_cursor_status": _schema(
-            "charlie_get_cursor_status", "Poll the canonically linked Cursor Agent, PR, checks, and review.",
+            "charlie_get_cursor_status", "Poll the canonical execution, PR, checks, and independent review.",
             {"mission_id": text}, ["mission_id"]),
         "charlie_supervise_once": _schema(
             "charlie_supervise_once", "Run one deterministic supervision poll and route SEND_BACK to the same Agent.",
             {"mission_id": text}, ["mission_id"]),
         "charlie_continue_cursor": _schema(
-            "charlie_continue_cursor", "Continue the same idle Cursor Agent after an independent SEND_BACK.",
+            "charlie_continue_cursor", "Continue the same canonical execution workspace after SEND_BACK.",
             {"mission_id": text, "correction": text}, ["mission_id", "correction"]),
         "charlie_issue_admission": _schema(
             "charlie_issue_admission", "Request the protected issuer for the canonically bound exact PR head.",
@@ -111,6 +115,21 @@ def register(ctx):
 
     slack_sessions = set()
 
+    def run_native(mission_id, channel, thread_id):
+        try:
+            dispatch = getattr(supervisor, "dispatch_builder", supervisor.dispatch_cursor)
+            dispatch({"mission_id": mission_id})
+        except Exception as exc:
+            try:
+                if supervisor and supervisor.slack_bot:
+                    supervisor.slack_bot.post(
+                        channel,
+                        f"BLOCKED: CHARLIE native execution unavailable ({_bounded_reason(exc)}).",
+                        thread_ts=thread_id,
+                    )
+            except Exception:
+                pass
+
     def pre_gateway_dispatch(event, **kwargs):
         del kwargs
         source = getattr(event, "source", None)
@@ -140,7 +159,7 @@ def register(ctx):
             if not mission_id:
                 raise RuntimeError("canonical_mission_unverified")
             supervisor.canonical.prepare_dispatch_authorization(mission_id)
-            supervisor.dispatch_cursor({"mission_id": mission_id})
+            native_jobs.submit(run_native, mission_id, channel, thread_id)
         except Exception as exc:
             reason = _bounded_reason(exc)
             try:

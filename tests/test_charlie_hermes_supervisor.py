@@ -129,6 +129,17 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertIn("read-only repository discovery", create_payload["prompt"]["text"])
         self.assertNotIn("Forged work", create_payload["prompt"]["text"])
 
+    def test_retired_cursor_provider_selects_native_without_cursor_api_call(self):
+        calls = []
+        self.canonical.get_mission = lambda mission_id: {"mission": {"mission_id": mission_id,
+            "metadata": {"cursor_provider_retirement": {
+                "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"}}}}
+        self.supervisor.dispatch_native = lambda mission: calls.append(mission) or {"status": "native"}
+        result = self.supervisor.dispatch_builder({"mission_id": "CMQ-X"})
+        self.assertEqual("native", result["status"])
+        self.assertEqual([{"mission_id": "CMQ-X"}], calls)
+        self.assertEqual([], self.client.calls)
+
     def test_oidc_workspace_pda_late_binds_once_and_enforces_scope_and_command(self):
         pda = {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid",
             "mission_id": "CMQ-X", "generation": "g1", "execution_attempt": 3,
@@ -449,8 +460,29 @@ class HermesSupervisorTests(unittest.TestCase):
                 headers={"Authorization": "Bearer " + "g" * 32}, json=payload)
         self.assertEqual(201, response.status_code)
         self.assertEqual("system improvement", captured["mission_type"])
-        self.assertEqual({"plane": "software", "coordinator": "CHARLIE", "executor": "Cursor Cloud",
+        self.assertEqual({"plane": "software", "coordinator": "CHARLIE", "executor": "Hermes Native",
             "classification_source": "authenticated_slack_ingress"}, captured["metadata"]["mission_plane"])
+
+    def test_native_execution_routes_are_gateway_authenticated_and_bounded(self):
+        from modules.charlie import routes
+        app = Flask(__name__); app.register_blueprint(routes.charlie_bp)
+        captured = {}
+        def prepare(mission_id, **kwargs):
+            captured.update({"mission_id": mission_id, **kwargs})
+            return {"success": True, "authorization": {"native_execution_id": "HNX-X"}}, 201
+        with patch.object(routes, "env_value", return_value="g" * 32), \
+             patch.object(routes, "prepare_hermes_native_execution", side_effect=prepare):
+            denied = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
+                                             json={"worktree_digest": "a" * 64})
+            allowed = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
+                headers={"Authorization": "Bearer " + "g" * 32}, json={"worktree_digest": "a" * 64})
+            extra = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
+                headers={"Authorization": "Bearer " + "g" * 32},
+                json={"worktree_digest": "a" * 64, "mission_id": "forged"})
+        self.assertEqual(403, denied.status_code)
+        self.assertEqual(201, allowed.status_code)
+        self.assertEqual(400, extra.status_code)
+        self.assertEqual("CMQ-X", captured["mission_id"])
 
     def test_pre_dispatch_authorization_is_bounded_and_replay_safe(self):
         state = {"slack_event_id": "1787929390.145099", "slack_owner_user_id": "UOWNER",

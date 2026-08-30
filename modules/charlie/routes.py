@@ -38,6 +38,8 @@ from modules.charlie.mission_store import (
     record_external_supervisor_state,
     prepare_external_dispatch_authorization,
     prepare_external_execution_succession,
+    prepare_hermes_native_execution,
+    record_hermes_native_execution_state,
     refresh_external_dispatch_authorization_base,
     read_current_mission_admission_authority,
     list_missions,
@@ -1153,7 +1155,7 @@ def charlie_hermes_mission_reconcile_route():
         "raw_text": instruction, "title": instruction[:160], "urgency": "P2",
         "mission_type": "system improvement", "approval_level": "LEVEL 3",
         "metadata": {"mission_plane": {
-            "plane": "software", "coordinator": "CHARLIE", "executor": "Cursor Cloud",
+            "plane": "software", "coordinator": "CHARLIE", "executor": "Hermes Native",
             "classification_source": "authenticated_slack_ingress",
         }, "external_supervisor_state": {
             "slack_event_id": str(payload["source_event_id"]),
@@ -1219,6 +1221,31 @@ def charlie_hermes_execution_succession_route(mission_id):
         return jsonify({"success": False, "status": "execution_succession_invalid"}), 400
     result, status = prepare_external_execution_succession(
         mission_id, **payload, observed_main_sha=str(env_value("RENDER_GIT_COMMIT") or ""),
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-execution", methods=["POST"])
+def charlie_hermes_native_execution_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    if set(payload) != {"worktree_digest"}:
+        return jsonify({"success": False, "status": "native_execution_input_invalid"}), 400
+    result, status = prepare_hermes_native_execution(
+        mission_id, worktree_digest=str(payload.get("worktree_digest") or ""),
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-execution/progress", methods=["POST"])
+def charlie_hermes_native_execution_progress_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = record_hermes_native_execution_state(
+        mission_id, request.get_json(silent=True) or {},
         authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
 
