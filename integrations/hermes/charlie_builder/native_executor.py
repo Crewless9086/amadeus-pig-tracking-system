@@ -26,6 +26,29 @@ MAX_CONTEXT_ROUNDS = 3
 DENIED_CONTEXT_PARTS = frozenset({".git", ".charlie_runner", "credentials", "secrets"})
 DENIED_CONTEXT_PREFIXES = (".env",)
 DENIED_PATCH_PREFIXES = (".github/", ".cursor/")
+PLUGIN_ID = "charlie-builder"
+
+
+def _host_role_identity(result, *, task, purpose, schema_name, prefix):
+    provider = str(getattr(result, "provider", "") or "").strip()
+    model = str(getattr(result, "model", "") or "").strip()
+    agent_id = str(getattr(result, "agent_id", "") or "").strip()
+    audit = getattr(result, "audit", None)
+    audit = dict(audit) if isinstance(audit, dict) else {}
+    if not provider or not model or not agent_id:
+        raise NativeExecutionError("native_runtime_identity_missing")
+    if (audit.get("plugin_id") != PLUGIN_ID or audit.get("task") != task
+            or audit.get("purpose") != purpose or audit.get("schema_name") != schema_name):
+        raise NativeExecutionError("native_runtime_role_audit_invalid")
+    material = json.dumps({
+        "plugin_id": PLUGIN_ID, "task": task, "provider": provider,
+        "model": model, "profile": str(audit.get("profile") or ""),
+        "purpose": purpose, "schema_name": schema_name,
+    }, sort_keys=True, separators=(",", ":"))
+    return prefix + hashlib.sha256(material.encode()).hexdigest(), {
+        "task": task, "provider": provider, "model": model,
+        "profile": str(audit.get("profile") or ""), "agent_id": agent_id,
+    }
 
 
 class NativeExecutionError(RuntimeError):
@@ -314,6 +337,8 @@ class HermesStructuredPatchWorker:
         self.llm = llm
 
     def complete(self, packet, *, purpose="charlie.native.builder"):
+        task = "charlie_native_builder"
+        schema_name = "charlie.native.patch.v1"
         result = self.llm.complete_structured(
             instructions=(
                 "Act only as a no-tool patch author. Return NEEDS_CONTEXT, PATCH_READY, or BLOCKED. "
@@ -322,24 +347,19 @@ class HermesStructuredPatchWorker:
             ),
             input=[{"type": "text", "text": json.dumps(packet, sort_keys=True)}],
             json_schema=NATIVE_PATCH_SCHEMA,
-            schema_name="charlie.native.patch.v1",
+            schema_name=schema_name,
             purpose=purpose,
-            task="charlie_native_builder",
+            task=task,
             temperature=0.0,
             max_tokens=6000,
             timeout=120,
         )
         response = validate_native_response(getattr(result, "parsed", None))
-        provider = str(getattr(result, "provider", "") or "").strip()
-        model = str(getattr(result, "model", "") or "").strip()
-        agent_id = str(getattr(result, "agent_id", "") or "").strip()
-        if not provider or not model or not agent_id:
-            raise NativeExecutionError("native_builder_runtime_identity_missing")
-        material = json.dumps({"task": "charlie_native_builder", "provider": provider,
-                               "model": model, "agent_id": agent_id},
-                              sort_keys=True, separators=(",", ":"))
-        response["worker_identity"] = "HNW-" + hashlib.sha256(material.encode()).hexdigest()
-        response["worker_agent_id"] = agent_id
+        identity, runtime = _host_role_identity(
+            result, task=task, purpose=purpose, schema_name=schema_name, prefix="HNW-")
+        response["worker_identity"] = identity
+        response["worker_agent_id"] = runtime["agent_id"]
+        response["worker_task"] = runtime["task"]
         return response
 
 
@@ -356,6 +376,9 @@ class HermesIndependentReviewer:
         if role not in {"SECURITY", "FUNCTIONAL", "CHALLENGE"}:
             raise NativeExecutionError("native_review_role_invalid")
         challenge = role == "CHALLENGE"
+        task = f"charlie_native_{role.lower()}_reviewer"
+        purpose = f"charlie.native.{role.lower()}_reviewer"
+        schema_name = f"charlie.native.{role.lower()}.review.v1"
         result = self.llm.complete_structured(
             instructions=(("Act as an independent commissioning challenge reviewer with no tools. "
                            "Find one genuine, concrete, correctable weakness in this exact candidate and "
@@ -367,34 +390,24 @@ class HermesIndependentReviewer:
                           "SEND_BACK must include concrete findings. ") +
                           "Never perform repository actions."),
             input=[{"type": "text", "text": json.dumps(packet, sort_keys=True)}],
-            json_schema=NATIVE_REVIEW_SCHEMA, schema_name=f"charlie.native.{role.lower()}.review.v1",
-            purpose=f"charlie.native.{role.lower()}_reviewer", temperature=0.0,
-            task=f"charlie_native_{role.lower()}_reviewer",
+            json_schema=NATIVE_REVIEW_SCHEMA, schema_name=schema_name,
+            purpose=purpose, temperature=0.0,
+            task=task,
             max_tokens=3000, timeout=120,
         )
-        provider = str(getattr(result, "provider", "") or "").strip()
-        model = str(getattr(result, "model", "") or "").strip()
-        agent_id = str(getattr(result, "agent_id", "") or "").strip()
-        audit = getattr(result, "audit", None)
-        audit = dict(audit) if isinstance(audit, dict) else {}
-        task = f"charlie_native_{role.lower()}_reviewer"
-        if not provider or not model or not agent_id:
-            raise NativeExecutionError("native_reviewer_runtime_identity_missing")
+        identity, runtime = _host_role_identity(
+            result, task=task, purpose=purpose, schema_name=schema_name, prefix="HNR-")
         binding = dict((packet or {}).get("candidate") or {})
         required = {"pr_number", "base_sha", "head_sha", "candidate_diff_sha256", "changed_files"}
         if not required.issubset(binding):
             raise NativeExecutionError("native_review_candidate_binding_missing")
-        identity_material = json.dumps({
-            "task": task, "provider": provider, "model": model, "agent_id": agent_id,
-            "audit_profile": audit.get("profile"), "audit_plugin_id": audit.get("plugin_id"),
-        }, sort_keys=True, separators=(",", ":"))
         return {
             "role": role,
-            "reviewer_identity": "HNR-" + hashlib.sha256(identity_material.encode()).hexdigest(),
+            "reviewer_identity": identity,
             "reviewer_task": task,
-            "reviewer_provider": provider,
-            "reviewer_model": model,
-            "reviewer_agent_id": agent_id,
+            "reviewer_provider": runtime["provider"],
+            "reviewer_model": runtime["model"],
+            "reviewer_agent_id": runtime["agent_id"],
             "candidate_binding": {key: binding[key] for key in sorted(required)},
             **validate_native_review(getattr(result, "parsed", None)),
         }

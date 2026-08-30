@@ -19,7 +19,7 @@ from integrations.hermes.charlie_builder.schemas import validate_native_response
 from modules.charlie.mission_store import prepare_hermes_native_execution
 from modules.charlie.mission_store import (
     bind_external_supervisor_candidate, list_resumable_hermes_native_executions,
-    record_hermes_native_execution_state,
+    record_hermes_native_execution_state, retire_cursor_provider_execution,
 )
 from tests.test_charlie_mission_store import FakeConnection
 
@@ -36,20 +36,23 @@ def git(cwd, *args):
 
 class Result:
     _sequence = 0
-    def __init__(self, parsed):
+    def __init__(self, parsed, *, task="charlie_native_builder",
+                 purpose="charlie.native.builder", schema_name="charlie.native.patch.v1"):
         Result._sequence += 1
         self.parsed = parsed
         self.provider = "test-provider"
         self.model = "test-model"
-        self.agent_id = f"test-agent-{Result._sequence}"
-        self.audit = {"profile": "test", "plugin_id": "charlie-builder"}
+        self.agent_id = "default"
+        self.audit = {"profile": "", "plugin_id": "charlie-builder", "task": task,
+                      "purpose": purpose, "schema_name": schema_name}
 
 
 class Llm:
     def __init__(self, responses): self.responses = list(responses); self.calls = []
     def complete_structured(self, **kwargs):
         self.calls.append(kwargs)
-        return Result(self.responses.pop(0))
+        return Result(self.responses.pop(0), task=kwargs.get("task", ""),
+                      purpose=kwargs.get("purpose", ""), schema_name=kwargs.get("schema_name", ""))
 
 
 class NativeExecutorTests(unittest.TestCase):
@@ -142,7 +145,7 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertNotIn("environment", packet)
         self.assertNotIn("credentials", packet)
         self.assertTrue(result["worker_identity"].startswith("HNW-"))
-        self.assertTrue(result["worker_agent_id"].startswith("test-agent-"))
+        self.assertEqual("default", result["worker_agent_id"])
 
     def test_independent_role_reviewers_receive_fresh_bounded_packets(self):
         llm = Llm([
@@ -158,11 +161,33 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual("SEND_BACK", security["verdict"])
         self.assertEqual("APPROVE", functional["verdict"])
         self.assertNotEqual(security["reviewer_identity"], functional["reviewer_identity"])
+        self.assertEqual("default", security["reviewer_agent_id"])
+        self.assertEqual("default", functional["reviewer_agent_id"])
         self.assertEqual(packet["candidate"]["head_sha"],
                          security["candidate_binding"]["head_sha"])
         self.assertTrue(all("tools" not in call for call in llm.calls))
         self.assertEqual(["charlie_native_security_reviewer", "charlie_native_functional_reviewer"],
                          [call["task"] for call in llm.calls])
+
+    def test_host_role_audit_identity_fails_closed_on_wrong_contract(self):
+        packet = {"candidate": {"pr_number": 9, "base_sha": "b" * 40,
+            "head_sha": "a" * 40, "candidate_diff_sha256": "c" * 64,
+            "changed_files": [ALLOWED], "diff": "bounded"}}
+        for field, value in (
+            ("task", "charlie_native_builder"), ("task", ""),
+            ("plugin_id", "other-plugin"), ("purpose", "wrong"),
+            ("schema_name", "wrong.schema"),
+        ):
+            class BadLlm:
+                def complete_structured(self, **kwargs):
+                    result = Result({"verdict": "APPROVE", "findings": []},
+                                    task=kwargs["task"], purpose=kwargs["purpose"],
+                                    schema_name=kwargs["schema_name"])
+                    result.audit[field] = value
+                    return result
+            with self.subTest(field=field, value=value), self.assertRaisesRegex(
+                    NativeExecutionError, "native_runtime_role_audit_invalid"):
+                HermesIndependentReviewer(BadLlm()).review("SECURITY", packet)
 
     def test_context_and_patch_security_fail_closed(self):
         NativeWorktree(self.root, self.worktree, self.authorization).ensure()
@@ -320,6 +345,46 @@ class NativeExecutorTests(unittest.TestCase):
         )
         self.assertEqual(409, denied_status, denied)
         self.assertEqual("cursor_retirement_not_proven", denied["status"])
+
+    def test_active_running_attempt_five_retires_once_after_verified_evidence(self):
+        dispatch = {"status": "valid", "generation": "g1", "base_sha": "a" * 40,
+                    "owner_instruction_digest": "b" * 64, "allowed_files": [ALLOWED]}
+        current = {"generation": "g1", "execution_attempt": 5,
+                   "cursor_agent_id": "bc-five", "cursor_run_id": "run-five",
+                   "agent_state": "ACTIVE", "run_state": "RUNNING",
+                   "repository_mutation": False, "pr_number": 0, "head_sha": "",
+                   "event": "cursor_implementation_started"}
+        evidence = {"generation": "g1", "cursor_agent_id": "bc-five",
+                    "cursor_run_id": "run-five", "execution_attempt": 5,
+                    "provider_agent_state": "ARCHIVED", "provider_run_state": "FINISHED",
+                    "branch": "cursor/charlie-mission-setup-fb0a",
+                    "repository_mutation": False, "remote_branch_created": False,
+                    "pr_number": 0, "head_sha": "", "exact_candidate": "absent"}
+        connection = FakeConnection([({"dispatch_authorization": dispatch,
+                                      "external_supervisor_state": current},)])
+        result, status = retire_cursor_provider_execution(
+            "CHARLIE-MISSION-X", evidence, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit", connect_factory=lambda _: connection)
+        self.assertEqual(201, status, result)
+        self.assertEqual("cursor_provider_retired", result["status"])
+        written = [params for sql, params in connection.cursor_instance.executed
+                   if "update public.charlie_missions" in sql][0]
+        metadata = json.loads(written["metadata"])
+        self.assertEqual("ARCHIVED", metadata["external_supervisor_state"]["agent_state"])
+        self.assertFalse(metadata["external_supervisor_state"]["remote_branch_created"])
+        self.assertEqual("UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+                         metadata["cursor_provider_retirement"]["provider_status"])
+        replay_connection = FakeConnection([(metadata,)])
+        replay, replay_status = retire_cursor_provider_execution(
+            "CHARLIE-MISSION-X", evidence, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit", connect_factory=lambda _: replay_connection)
+        self.assertEqual(200, replay_status, replay)
+        self.assertEqual("exact_replay", replay["status"])
+        conflict, conflict_status = retire_cursor_provider_execution(
+            "CHARLIE-MISSION-X", {**evidence, "cursor_run_id": "run-other"},
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
+            connect_factory=lambda _: FakeConnection([(metadata,)]))
+        self.assertEqual(409, conflict_status, conflict)
 
     def test_gateway_restart_recovers_only_unfinished_canonical_native_execution(self):
         rows = [

@@ -143,6 +143,47 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual("native", result["status"])
         self.assertEqual([{"mission_id": "CMQ-X"}], calls)
 
+    def test_verified_attempt_five_retirement_selects_native_once(self):
+        class CursorRetirement:
+            def __init__(self): self.cancelled = 0; self.archived = 0
+            def get_agent(self, agent_id):
+                return {"id": agent_id, "status": "IDLE" if not self.archived else "ARCHIVED"}
+            def get_run(self, agent_id, run_id):
+                return {"id": run_id, "status": "SUCCEEDED"}
+            def cancel_run(self, *_args, **_kwargs): self.cancelled += 1
+            def archive_agent(self, *_args, **_kwargs): self.archived += 1
+        class Monitor:
+            def branch_exists(self, _branch): return False
+            def find_pull(self, _branch): return 0
+        state = {"generation": "g1", "execution_attempt": 5,
+                 "cursor_agent_id": "bc-five", "cursor_run_id": "run-five",
+                 "branch": "cursor/charlie-mission-setup-fb0a",
+                 "agent_state": "ACTIVE", "run_state": "RUNNING",
+                 "repository_mutation": False, "pr_number": 0, "head_sha": "",
+                 "event": "cursor_implementation_started"}
+        class CanonicalRetirement:
+            def __init__(self): self.retirements = 0
+            def get_mission(self, _mission_id):
+                return {"mission": {"metadata": {"external_supervisor_state": state}}}
+            def retire_cursor_provider(self, _mission_id, evidence):
+                self.retirements += 1
+                self.evidence = evidence
+                return {"provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"}
+            def running_writer_count(self): return 0
+        canonical, cursor = CanonicalRetirement(), CursorRetirement()
+        supervisor = HermesSupervisor(canonical, cursor, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=Monitor())
+        native = []
+        supervisor.dispatch_native = lambda mission: native.append(mission) or {"status": "native"}
+        result = supervisor.dispatch_builder({"mission_id": "CMQ-X"})
+        self.assertEqual("native", result["status"])
+        self.assertEqual(1, canonical.retirements)
+        self.assertEqual(1, cursor.archived)
+        self.assertEqual(0, cursor.cancelled)
+        self.assertFalse(canonical.evidence["remote_branch_created"])
+        self.assertEqual([{"mission_id": "CMQ-X"}], native)
+
     def test_missing_repository_fails_before_canonical_or_model_activity(self):
         self.supervisor.native_repository_root = "C:/definitely/missing/repository"
         self.supervisor.native_worktree_base = "C:/native"
@@ -220,8 +261,9 @@ class HermesSupervisorTests(unittest.TestCase):
                 parsed=({"verdict": "SEND_BACK", "findings": ["Clarify the boundary."]}
                         if kwargs.get("task") == "charlie_native_challenge_reviewer"
                         else {"verdict": "APPROVE", "findings": []}),
-                provider="test-provider", model="test-model", agent_id=f"review-{index}",
-                audit={"profile": "test", "plugin_id": "charlie-builder"})
+                provider="test-provider", model="test-model", agent_id="default",
+                audit={"profile": "", "plugin_id": "charlie-builder", "task": kwargs["task"],
+                       "purpose": kwargs["purpose"], "schema_name": kwargs["schema_name"]})
         llm.complete_structured = complete
         canonical, monitor, bot = CanonicalNative(), Monitor(), Bot()
         supervisor = HermesSupervisor(canonical, None, owner_slack_user_id="UOWNER",
@@ -250,7 +292,7 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual("CAPPROVE", bot.posts[-1][0])
         self.assertEqual([], self.client.calls)
 
-    def test_native_review_rejects_same_host_agent_across_roles(self):
+    def test_native_review_accepts_default_agent_with_distinct_auxiliary_tasks(self):
         authorization = {"mission_id": "CMQ-X", "generation": "g1",
             "starting_main_sha": "a" * 40, "allowed_files": [
                 "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
@@ -264,8 +306,9 @@ class HermesSupervisorTests(unittest.TestCase):
                       if kwargs.get("task") == "charlie_native_challenge_reviewer"
                       else {"verdict": "APPROVE", "findings": []})
             return SimpleNamespace(parsed=parsed,
-                provider="test-provider", model="test-model", agent_id="same-host-agent",
-                audit={"profile": "test", "plugin_id": "charlie-builder"})
+                provider="test-provider", model="test-model", agent_id="default",
+                audit={"profile": "", "plugin_id": "charlie-builder", "task": kwargs["task"],
+                       "purpose": kwargs["purpose"], "schema_name": kwargs["schema_name"]})
         supervisor = HermesSupervisor(self.canonical, self.cursor,
             owner_slack_user_id="UOWNER", slack_command_channel_id="C1",
             slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE",
@@ -273,9 +316,11 @@ class HermesSupervisorTests(unittest.TestCase):
             native_worktree_base="C:/native")
         command = SimpleNamespace(returncode=0, stdout="bounded diff", stderr="")
         with patch("integrations.hermes.charlie_builder.supervisor.run_argv", return_value=command):
-            with self.assertRaisesRegex(HermesBridgeError, "native_review_principal_not_independent"):
-                supervisor._run_native_reviews(authorization, packaged, [],
-                    mission={"raw_text": "bounded"}, builder_agent_id="builder-agent")
+            reviews = supervisor._run_native_reviews(authorization, packaged, [],
+                mission={"raw_text": "bounded"}, builder_agent_id="default")
+        self.assertEqual({"SECURITY", "FUNCTIONAL", "CHALLENGE"}, set(reviews))
+        self.assertEqual({"default"}, {item["reviewer_agent_id"] for item in reviews.values()})
+        self.assertEqual(3, len({item["reviewer_task"] for item in reviews.values()}))
 
     def test_native_commissioning_challenge_two_approvals_fail_closed(self):
         authorization = {"mission_id": "CMQ-X", "generation": "g1",
@@ -290,8 +335,9 @@ class HermesSupervisorTests(unittest.TestCase):
         def complete(**kwargs):
             calls.append(kwargs.get("task"))
             return SimpleNamespace(parsed={"verdict": "APPROVE", "findings": []},
-                provider="test-provider", model="test-model", agent_id=f"agent-{len(calls)}",
-                audit={"profile": "test", "plugin_id": "charlie-builder"})
+                provider="test-provider", model="test-model", agent_id="default",
+                audit={"profile": "", "plugin_id": "charlie-builder", "task": kwargs["task"],
+                       "purpose": kwargs["purpose"], "schema_name": kwargs["schema_name"]})
         supervisor = HermesSupervisor(self.canonical, self.cursor,
             owner_slack_user_id="UOWNER", slack_command_channel_id="C1",
             slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE",

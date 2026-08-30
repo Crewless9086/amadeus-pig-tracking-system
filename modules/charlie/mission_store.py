@@ -1949,6 +1949,91 @@ def record_external_supervisor_state(mission_id, state, *, authenticated_princip
             "mission_id": mission_id, "dispatch": merged}, 201
 
 
+def retire_cursor_provider_execution(mission_id, evidence, *, authenticated_principal,
+                                     database_url=None, connect_factory=None):
+    """Atomically retire one provider-verified zero-candidate Cursor execution."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    evidence = evidence if isinstance(evidence, dict) else {}
+    required = {"generation", "cursor_agent_id", "cursor_run_id", "execution_attempt",
+                "provider_agent_state", "provider_run_state", "branch",
+                "repository_mutation", "remote_branch_created", "pr_number",
+                "head_sha", "exact_candidate"}
+    if (not mission_id or principal != "hermes:charlie-builder" or set(evidence) != required
+            or int(evidence.get("execution_attempt") or 0) != 5
+            or evidence.get("provider_agent_state") != "ARCHIVED"
+            or evidence.get("provider_run_state") not in {"FINISHED", "CANCELLED"}
+            or evidence.get("repository_mutation") is not False
+            or evidence.get("remote_branch_created") is not False
+            or int(evidence.get("pr_number") or 0) != 0
+            or str(evidence.get("head_sha") or "")
+            or evidence.get("exact_candidate") != "absent"):
+        return {"success": False, "status": "cursor_retirement_evidence_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("external_supervisor_state") or {})
+                dispatch = dict(metadata.get("dispatch_authorization") or {})
+                admission = dict(metadata.get("mission_admission") or {})
+                retirement = dict(metadata.get("cursor_provider_retirement") or {})
+                if retirement:
+                    exact = (retirement.get("agent_id") == evidence["cursor_agent_id"]
+                             and retirement.get("run_id") == evidence["cursor_run_id"]
+                             and retirement.get("generation") == evidence["generation"])
+                    return ({"success": exact, "status": "exact_replay" if exact else "cursor_retirement_conflict",
+                             "retirement": retirement}, 200 if exact else 409)
+                if (current.get("cursor_agent_id") != evidence["cursor_agent_id"]
+                        or current.get("cursor_run_id") != evidence["cursor_run_id"]
+                        or current.get("generation") != evidence["generation"]
+                        or int(current.get("execution_attempt") or 0) != 5
+                        or current.get("repository_mutation") is not False
+                        or int(current.get("pr_number") or 0) != 0
+                        or str(current.get("head_sha") or "")
+                        or dispatch.get("generation") != evidence["generation"]
+                        or admission.get("status") == "valid"):
+                    return {"success": False, "status": "cursor_retirement_identity_conflict"}, 409
+                retired_state = {**current,
+                    "agent_state": "ARCHIVED", "run_state": evidence["provider_run_state"],
+                    "repository_mutation": False, "remote_branch_created": False,
+                    "pr_number": 0, "head_sha": "", "exact_candidate": "absent",
+                    "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+                    "event": "cursor_provider_retired", "recorded_by": principal,
+                    "updated_at": datetime.now(timezone.utc).isoformat()}
+                retirement = {
+                    "provider": "cursor_cloud", "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+                    "generation": evidence["generation"], "agent_id": evidence["cursor_agent_id"],
+                    "run_id": evidence["cursor_run_id"], "agent_state": "ARCHIVED",
+                    "run_state": evidence["provider_run_state"], "repository_mutation": False,
+                    "remote_branch_created": False, "pr_number": 0, "head_sha": "",
+                    "exact_candidate": "absent", "valid_mission_admission": False,
+                    "event": "cursor_provider_retired", "recorded_by": principal,
+                }
+                metadata["external_supervisor_state"] = retired_state
+                metadata["cursor_provider_retirement"] = retirement
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated", "Cursor provider retired after verified zero-candidate containment.",
+                              {"generation": evidence["generation"], "cursor_agent_id": evidence["cursor_agent_id"],
+                               "cursor_run_id": evidence["cursor_run_id"], "event": "cursor_provider_retired",
+                               "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "cursor_retirement_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "cursor_provider_retired",
+            "mission_id": mission_id, "retirement": retirement}, 201
+
+
 def _native_sha(value, length):
     value = str(value or "").strip().lower()
     return value if re.fullmatch(rf"[0-9a-f]{{{int(length)}}}", value) else ""

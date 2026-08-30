@@ -130,8 +130,9 @@ class JsonHttpClient:
             with self.opener(request, timeout=self.timeout) as response:
                 result = json.loads(response.read().decode() or "{}")
         except urllib.error.HTTPError as exc:
-            if exc.code == 409:
-                return {"error": "conflict", "status_code": 409}
+            if exc.code in {404, 409}:
+                return {"error": "not_found" if exc.code == 404 else "conflict",
+                        "status_code": exc.code}
             raise HermesBridgeError("transport_unavailable") from exc
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
             raise HermesBridgeError("transport_unavailable") from exc
@@ -188,6 +189,10 @@ class CursorCloudV1:
         agent = self.get_agent(agent_id)
         run_id = _cursor_id(agent.get("latestRunId"), "run-")
         return self.client.request("GET", f"/v1/agents/{_cursor_id(agent_id, 'bc-')}/runs/{run_id}")
+
+    def get_run(self, agent_id, run_id):
+        return self.client.request(
+            "GET", f"/v1/agents/{_cursor_id(agent_id, 'bc-')}/runs/{_cursor_id(run_id, 'run-')}")
 
     def continue_agent(self, agent_id, prompt):
         agent = self.get_agent(agent_id)
@@ -277,6 +282,13 @@ class CanonicalCharlieApi:
         )
         return result.get("authorization") or result
 
+    def retire_cursor_provider(self, mission_id, evidence):
+        result = self.client.request(
+            "POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/cursor-retirement",
+            evidence,
+        )
+        return result.get("retirement") or result
+
     def record_native_progress(self, mission_id, value):
         result = self.client.request(
             "POST", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/native-execution/progress",
@@ -330,6 +342,15 @@ class GitHubReadMonitor:
         if len(items) > 1:
             raise HermesBridgeError("duplicate_open_pull_requests")
         return int(items[0].get("number") or 0) if items else 0
+
+    def branch_exists(self, branch):
+        result = self.client.request(
+            "GET", f"/repos/{self.repository}/git/ref/heads/{urllib.parse.quote(str(branch), safe='')}")
+        if result.get("status_code") == 404:
+            return False
+        if result.get("ref") != f"refs/heads/{branch}":
+            raise HermesBridgeError("github_branch_identity_unavailable")
+        return True
 
     def pull_state(self, number, *, now=None, stall_seconds=1800):
         pull = self.client.request("GET", f"/repos/{self.repository}/pulls/{int(number)}")
@@ -479,6 +500,10 @@ class HermesSupervisor:
         metadata = dict((loaded.get("mission") or {}).get("metadata") or {})
         retired = dict(metadata.get("cursor_provider_retirement") or {})
         state = dict(metadata.get("external_supervisor_state") or {})
+        if not state.get("generation"):
+            state["generation"] = dict(metadata.get("dispatch_authorization") or {}).get("generation")
+        if not retired and state.get("execution_attempt") == 5:
+            retired = self._retire_cursor_provider(mission_id, state)
         if (
             retired.get("provider_status") == "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"
             or state.get("event") == "cursor_provider_retired"
@@ -486,6 +511,49 @@ class HermesSupervisor:
         ):
             return self.dispatch_native({"mission_id": mission_id})
         return self.dispatch_cursor({"mission_id": mission_id})
+
+    def _retire_cursor_provider(self, mission_id, state):
+        if self.cursor is None or self.github is None:
+            raise HermesBridgeError("cursor_retirement_provider_verification_unavailable")
+        expected_agent = str(state.get("cursor_agent_id") or "")
+        expected_run = str(state.get("cursor_run_id") or "")
+        generation = str(state.get("generation") or "")
+        branch = str(state.get("branch") or "")
+        if not all((expected_agent, expected_run, generation, branch)):
+            raise HermesBridgeError("cursor_retirement_identity_incomplete")
+        agent = self.cursor.get_agent(expected_agent)
+        run = self.cursor.get_run(expected_agent, expected_run)
+        if str(agent.get("id") or expected_agent) != expected_agent or str(run.get("id") or "") != expected_run:
+            raise HermesBridgeError("cursor_retirement_provider_identity_conflict")
+        run_state = str(run.get("status") or "").upper()
+        if run_state not in {"FINISHED", "SUCCEEDED", "FAILED", "CANCELLED"}:
+            self.cursor.cancel_run(expected_agent, expected_run, governed=True)
+            run = self.cursor.get_run(expected_agent, expected_run)
+            run_state = str(run.get("status") or "").upper()
+        if run_state not in {"FINISHED", "SUCCEEDED", "FAILED", "CANCELLED"}:
+            raise HermesBridgeError("cursor_retirement_run_not_terminal")
+        agent_state = str(agent.get("status") or "").upper()
+        if agent_state != "ARCHIVED":
+            self.cursor.archive_agent(expected_agent, governed=True)
+            agent = self.cursor.get_agent(expected_agent)
+            agent_state = str(agent.get("status") or "").upper()
+        if agent_state != "ARCHIVED":
+            raise HermesBridgeError("cursor_retirement_archive_unconfirmed")
+        if self.github.branch_exists(branch) or self.github.find_pull(branch):
+            raise HermesBridgeError("cursor_retirement_github_effect_exists")
+        retirement = self.canonical.retire_cursor_provider(mission_id, {
+            "generation": generation, "cursor_agent_id": expected_agent,
+            "cursor_run_id": expected_run, "execution_attempt": 5,
+            "provider_agent_state": "ARCHIVED",
+            "provider_run_state": "CANCELLED" if run_state == "CANCELLED" else "FINISHED",
+            "branch": branch, "remote_branch_created": False, "pr_number": 0,
+            "head_sha": "", "exact_candidate": "absent", "repository_mutation": False,
+        })
+        if retirement.get("provider_status") != "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT":
+            raise HermesBridgeError(str(retirement.get("status") or "cursor_retirement_record_failed"))
+        if self.canonical.running_writer_count() != 0:
+            raise HermesBridgeError("cursor_writer_claim_not_released")
+        return retirement
 
     def dispatch_native(self, mission):
         mission_id = str(dict(mission or {}).get("mission_id") or "").strip()
@@ -766,10 +834,10 @@ class HermesSupervisor:
             dict(review.get("candidate_binding") or {}) == expected_binding
             for review in active_reviews
         )
-        raw_agent_ids = [review.get("reviewer_agent_id") for review in active_reviews]
-        reviewers_independent = bool(all(raw_agent_ids)
-            and len(set(raw_agent_ids)) == len(raw_agent_ids)
-            and native.get("builder_agent_id") not in set(raw_agent_ids))
+        reviewer_tasks = [review.get("reviewer_task") for review in active_reviews]
+        reviewers_independent = bool(all(reviewer_tasks)
+            and len(set(reviewer_tasks)) == len(reviewer_tasks)
+            and "charlie_native_builder" not in set(reviewer_tasks))
         if not reviews_bound or not reviewers_independent:
             security = functional = challenge = {}
         if (observed.get("independent_review") != "SEND_BACK"
@@ -1187,10 +1255,10 @@ class HermesSupervisor:
             if "CHALLENGE" not in reviews:
                 raise HermesBridgeError("native_commissioning_challenge_not_obtained")
         identities = {reviews[role]["reviewer_identity"] for role in reviews}
-        agent_ids = {reviews[role]["reviewer_agent_id"] for role in reviews}
-        if (len(identities) != len(roles) or len(agent_ids) != len(roles)
+        tasks = {reviews[role]["reviewer_task"] for role in reviews}
+        if (len(identities) != len(roles) or len(tasks) != len(roles)
                 or (builder_identity and builder_identity in identities)
-                or (builder_agent_id and builder_agent_id in agent_ids)):
+                or "charlie_native_builder" in tasks):
             raise HermesBridgeError("native_review_principal_not_independent")
         return reviews
 

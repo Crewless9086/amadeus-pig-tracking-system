@@ -36,6 +36,7 @@ from modules.charlie.mission_store import (
     invalidate_external_candidate_admission,
     read_external_supervisor_state,
     record_external_supervisor_state,
+    retire_cursor_provider_execution,
     prepare_external_dispatch_authorization,
     prepare_external_execution_succession,
     prepare_hermes_native_execution,
@@ -1266,6 +1267,17 @@ def charlie_hermes_native_execution_route(mission_id):
     result, status = prepare_hermes_native_execution(
         mission_id, worktree_digest=str(payload.get("worktree_digest") or ""),
         starting_main_sha=requested_sha,
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/cursor-retirement", methods=["POST"])
+def charlie_hermes_cursor_retirement_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = retire_cursor_provider_execution(
+        mission_id, request.get_json(silent=True) or {},
         authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
 
