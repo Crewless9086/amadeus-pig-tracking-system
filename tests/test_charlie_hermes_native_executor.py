@@ -13,6 +13,7 @@ from integrations.hermes.charlie_builder.native_executor import (
     HermesIndependentReviewer,
     NativeExecutionEngine, NativeExecutionError, NativePackager,
     NativeWorktree, PatchValidator, content_identity, run_argv,
+    validate_primary_repository,
 )
 from integrations.hermes.charlie_builder.schemas import validate_native_response
 from modules.charlie.mission_store import prepare_hermes_native_execution
@@ -91,6 +92,19 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual(self.branch, git(first, "branch", "--show-current"))
         self.assertEqual(self.base, git(first, "rev-parse", "HEAD"))
         self.assertEqual(first, NativeWorktree(self.root, self.worktree, self.authorization).ensure())
+
+    def test_commissioned_repository_identity_is_verified_before_execution(self):
+        root, base, head = validate_primary_repository(self.root, self.worktree.parent)
+        self.assertEqual(self.root.resolve(), root)
+        self.assertEqual(self.worktree.parent.resolve(), base)
+        self.assertEqual(self.base, head)
+
+    def test_missing_or_wrong_repository_fails_closed(self):
+        with self.assertRaisesRegex(NativeExecutionError, "native_repository_missing"):
+            validate_primary_repository(self.root / "obsolete", self.worktree.parent)
+        git(self.root, "remote", "set-url", "origin", "https://github.com/example/wrong.git")
+        with self.assertRaisesRegex(NativeExecutionError, "native_repository_identity_invalid"):
+            validate_primary_repository(self.root, self.worktree.parent)
 
     def test_restart_reuses_same_dirty_and_committed_worktree(self):
         first = NativeWorktree(self.root, self.worktree, self.authorization).ensure()
@@ -269,6 +283,7 @@ class NativeExecutorTests(unittest.TestCase):
         }
         state = {"agent_state": "ARCHIVED", "run_state": "FINISHED",
                  "repository_mutation": False, "pr_number": 0, "head_sha": "",
+                 "remote_branch_created": False, "exact_candidate": "absent",
                  "cursor_agent_id": "bc-five", "cursor_run_id": "run-five"}
         connection = FakeConnection([({"dispatch_authorization": dispatch,
                                       "external_supervisor_state": state}, "Pilot")])
@@ -283,6 +298,18 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual("d" * 40, result["authorization"]["starting_main_sha"])
         self.assertEqual("a" * 40, result["authorization"]["prior_cursor_authorization_base_sha"])
         self.assertEqual([ALLOWED], result["authorization"]["allowed_files"])
+        written = [params for sql, params in connection.cursor_instance.executed
+                   if "update public.charlie_missions" in sql][0]
+        retirement = json.loads(written["metadata"])["cursor_provider_retirement"]
+        self.assertEqual("ARCHIVED", retirement["agent_state"])
+        self.assertEqual("FINISHED", retirement["run_state"])
+        self.assertEqual("UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT", retirement["provider_status"])
+        self.assertFalse(retirement["remote_branch_created"])
+        self.assertEqual(0, retirement["pr_number"])
+        self.assertEqual("", retirement["head_sha"])
+        self.assertEqual("absent", retirement["exact_candidate"])
+        self.assertFalse(retirement["valid_mission_admission"])
+        self.assertEqual("cursor_provider_retired", retirement["event"])
         active_connection = FakeConnection([({"dispatch_authorization": dispatch,
                                              "external_supervisor_state": {**state, "agent_state": "ACTIVE"}}, "Pilot")])
         denied, denied_status = prepare_hermes_native_execution(

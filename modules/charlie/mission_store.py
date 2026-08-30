@@ -1993,8 +1993,10 @@ def prepare_hermes_native_execution(mission_id, *, worktree_digest, starting_mai
                     state.get("agent_state") != "ARCHIVED"
                     or state.get("run_state") not in {"FINISHED", "FAILED", "CANCELLED"}
                     or state.get("repository_mutation") is not False
+                    or state.get("remote_branch_created") is not False
                     or int(state.get("pr_number") or 0) != 0
                     or str(state.get("head_sha") or "")
+                    or state.get("exact_candidate") not in {None, "", "absent"}
                     or admission.get("status") == "valid"
                 ):
                     return {"success": False, "status": "cursor_retirement_not_proven"}, 409
@@ -2047,8 +2049,15 @@ def prepare_hermes_native_execution(mission_id, *, worktree_digest, starting_mai
                     "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
                     "agent_id": state.get("cursor_agent_id"),
                     "run_id": state.get("cursor_run_id"),
+                    "agent_state": "ARCHIVED",
+                    "run_state": state.get("run_state"),
                     "repository_mutation": False,
                     "remote_branch_created": False,
+                    "pr_number": 0,
+                    "head_sha": "",
+                    "exact_candidate": "absent",
+                    "valid_mission_admission": False,
+                    "event": "cursor_provider_retired",
                     "recorded_by": principal,
                 }
                 metadata["hermes_native_execution"] = authorization

@@ -119,6 +119,29 @@ def run_argv(argv, *, cwd, timeout=120, env=None, input_text=None):
         raise NativeExecutionError("native_command_failed") from exc
 
 
+def validate_primary_repository(repository_root, worktree_base, *, runner=run_argv):
+    """Validate the commissioned clone before any model or packaging action."""
+    try:
+        root = Path(repository_root).resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise NativeExecutionError("native_repository_missing") from exc
+    lowered = str(root).replace("\\", "/").casefold()
+    if "/onedrive/1. amadeus/agents/amadeus-pig-tracking-system" in lowered:
+        raise NativeExecutionError("quarantined_repository_forbidden")
+    probe = runner(["git", "rev-parse", "--is-inside-work-tree"], cwd=root)
+    origin = runner(["git", "remote", "get-url", "origin"], cwd=root)
+    head = runner(["git", "rev-parse", "HEAD"], cwd=root)
+    head_sha = str(head.stdout or "").strip().lower()
+    if (probe.returncode != 0 or str(probe.stdout or "").strip() != "true"
+            or origin.returncode != 0 or str(origin.stdout or "").strip() != REMOTE
+            or head.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", head_sha)):
+        raise NativeExecutionError("native_repository_identity_invalid")
+    base = Path(worktree_base).absolute().resolve(strict=False)
+    if base == root or root in base.parents:
+        raise NativeExecutionError("native_worktree_not_isolated")
+    return root, base, head_sha
+
+
 def _resolved_inside(path, root):
     resolved = Path(path).resolve(strict=False)
     base = Path(root).resolve(strict=True)

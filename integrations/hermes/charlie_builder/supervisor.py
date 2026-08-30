@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .native_executor import (
     HermesIndependentReviewer, HermesStructuredPatchWorker, NativeExecutionEngine, NativeExecutionError,
-    NativePackager, content_identity, execution_lock, run_argv,
+    NativePackager, content_identity, execution_lock, run_argv, validate_primary_repository,
 )
 from modules.charlie.execution_bridge import build_hermes_native_execution_context
 from modules.charlie.mission_admission import canonical_candidate_diff
@@ -491,6 +491,8 @@ class HermesSupervisor:
         mission_id = str(dict(mission or {}).get("mission_id") or "").strip()
         if not mission_id or not self.native_repository_root or not self.native_worktree_base:
             raise HermesBridgeError("native_execution_not_configured")
+        repository_root, _, starting_main_sha = validate_primary_repository(
+            self.native_repository_root, self.native_worktree_base)
         loaded = self.canonical.get_mission(mission_id)
         row = dict(loaded.get("mission") or {})
         metadata = dict(row.get("metadata") or {})
@@ -501,9 +503,6 @@ class HermesSupervisor:
         native_id, branch = content_identity(mission_id, generation, 1)
         worktree = Path(self.native_worktree_base) / mission_id / generation / "native-1"
         worktree_digest = hashlib.sha256(str(worktree.resolve(strict=False)).encode()).hexdigest()
-        starting_main_sha = run_argv(
-            ["git", "rev-parse", "HEAD"], cwd=self.native_repository_root,
-        ).stdout.strip().lower()
         authorization = self.canonical.prepare_native_execution(
             mission_id, worktree_digest, starting_main_sha)
         if authorization.get("native_execution_id") != native_id or authorization.get("branch") != branch:
@@ -533,7 +532,7 @@ class HermesSupervisor:
                 if isinstance(renewed, dict) and renewed.get("success") is False:
                     raise HermesBridgeError(str(renewed.get("status") or "native_writer_claim_failed"))
             engine = NativeExecutionEngine(
-                HermesStructuredPatchWorker(self.native_llm), self.native_repository_root,
+                HermesStructuredPatchWorker(self.native_llm), repository_root,
                 worktree, authorization, heartbeat=heartbeat,
             )
             root = engine.worktree.ensure()
@@ -1292,7 +1291,7 @@ def build_plugin_from_environment(environ=None, *, opener=None, validate_live=Fa
         slack_approval_channel_id=values["CHARLIE_SLACK_APPROVALS_CHANNEL_ID"],
         slack_bot=SlackBot(values["SLACK_BOT_TOKEN"], client=slack_client),
         github=GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=github_client),
-        native_repository_root=str(env.get("CHARLIE_REPOSITORY_PATH") or "/opt/data/amadeus-pig-tracking-system"),
+        native_repository_root=str(env.get("CHARLIE_REPOSITORY_PATH") or "/opt/data/workspaces/amadeus-pig-tracking-system"),
         native_worktree_base=str(env.get("CHARLIE_NATIVE_WORKTREE_BASE") or "/opt/data/worktrees/charlie"),
         github_packager_token=packager_token,
     )

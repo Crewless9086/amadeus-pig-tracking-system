@@ -15,6 +15,7 @@ from modules.charlie.hermes_supervisor import (
     HermesSupervisor, SlackBot, build_plugin_from_environment,
     verify_slack_request,
 )
+from integrations.hermes.charlie_builder.native_executor import NativeExecutionError
 from modules.charlie.mission_store import (
     authorize_cursor_workspace_hook,
     authorize_cursor_branch_workspace_hook,
@@ -142,6 +143,14 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual("native", result["status"])
         self.assertEqual([{"mission_id": "CMQ-X"}], calls)
 
+    def test_missing_repository_fails_before_canonical_or_model_activity(self):
+        self.supervisor.native_repository_root = "C:/definitely/missing/repository"
+        self.supervisor.native_worktree_base = "C:/native"
+        self.supervisor.native_llm = SimpleNamespace(complete_structured=lambda **_: self.fail("model called"))
+        self.canonical.get_mission = lambda _mission_id: self.fail("canonical execution started")
+        with self.assertRaisesRegex(NativeExecutionError, "native_repository_missing"):
+            self.supervisor.dispatch_native({"mission_id": "CMQ-X"})
+
     def test_native_closed_loop_dispatch_send_back_fresh_mar_checks_and_owner_notification(self):
         native_id, branch = ("HNX-" + "A" * 64, "charlie/cmq-x-native-1")
         head_one, head_two = "d" * 40, "e" * 40
@@ -226,6 +235,8 @@ class HermesSupervisorTests(unittest.TestCase):
         with patch("integrations.hermes.charlie_builder.supervisor.content_identity", return_value=(native_id, branch)), \
              patch("integrations.hermes.charlie_builder.supervisor.NativeExecutionEngine", Engine), \
              patch("integrations.hermes.charlie_builder.supervisor.NativePackager", Packager), \
+             patch("integrations.hermes.charlie_builder.supervisor.validate_primary_repository",
+                   return_value=(Path("C:/repo"), Path("C:/native"), "a" * 40)), \
              patch("integrations.hermes.charlie_builder.supervisor.run_argv", side_effect=command):
             supervisor.dispatch_native({"mission_id": "CMQ-X"})
             corrected = supervisor.supervise_once({"mission_id": "CMQ-X"})
@@ -758,6 +769,13 @@ class HermesSupervisorTests(unittest.TestCase):
         tools = build_plugin_from_environment(env)
         self.assertIn("charlie_issue_admission", tools)
         self.assertTrue(all(callable(handler) for handler in tools.values()))
+        self.assertEqual("/opt/data/workspaces/amadeus-pig-tracking-system",
+                         tools.supervisor.native_repository_root)
+        explicit = build_plugin_from_environment({**env,
+            "CHARLIE_REPOSITORY_PATH": "/srv/commissioned/repository"})
+        self.assertEqual("/srv/commissioned/repository", explicit.supervisor.native_repository_root)
+        self.assertNotEqual("/opt/data/amadeus-pig-tracking-system",
+                            tools.supervisor.native_repository_root)
         with self.assertRaisesRegex(HermesBridgeError, "hermes_protected_configuration_incomplete"):
             build_plugin_from_environment({})
         tools_without_process_allowlist = build_plugin_from_environment({**env, "SLACK_ALLOWED_USERS": ""})
