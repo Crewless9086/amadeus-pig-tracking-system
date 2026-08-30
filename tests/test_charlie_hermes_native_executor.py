@@ -344,6 +344,26 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual(409, status, result)
         self.assertEqual("native_writer_claim_conflict", result["status"])
 
+    def test_canonical_recovery_progress_requires_and_accepts_matching_writer_claim(self):
+        current = {"native_execution_id": self.execution_id, "status": "valid",
+                   "worker_claim_id": "HNC-recovery",
+                   "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()}
+        accepted, accepted_status = record_hermes_native_execution_state(
+            "CHARLIE-MISSION-X", {"native_execution_id": self.execution_id,
+                "execution_status": "CORRECTION_PACKAGED", "head_sha": "d" * 40,
+                "worker_claim_id": "HNC-recovery", "event": "native_correction_packaged_recovered"},
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
+            connect_factory=lambda _: FakeConnection([({"hermes_native_execution": current},)]))
+        self.assertEqual(201, accepted_status, accepted)
+        denied, denied_status = record_hermes_native_execution_state(
+            "CHARLIE-MISSION-X", {"native_execution_id": self.execution_id,
+                "execution_status": "CORRECTION_PACKAGED", "head_sha": "d" * 40,
+                "event": "native_correction_packaged_recovered"},
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
+            connect_factory=lambda _: FakeConnection([({"hermes_native_execution": current},)]))
+        self.assertEqual(409, denied_status, denied)
+        self.assertEqual("native_writer_claim_required", denied["status"])
+
 
 if __name__ == "__main__":
     unittest.main()
