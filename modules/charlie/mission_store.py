@@ -2075,7 +2075,8 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
     allowed = {"native_execution_id", "execution_status", "commit_sha", "pr_number", "head_sha",
                "changed_files", "review_verdict", "checks", "event", "failure_reason",
                "correction_rounds", "worker_claim_id", "claim_expires_at", "release_claim_id",
-               "admission_requested_head", "owner_notification_head"}
+               "admission_requested_head", "owner_notification_head", "review_security",
+               "review_functional", "review_request_roles", "runner_stage", "stage_artifact"}
     if not mission_id or not principal or not state or set(state) - allowed:
         return {"success": False, "status": "native_execution_state_invalid"}, 400
     database_url = _database_url(database_url)
@@ -2136,6 +2137,41 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
                 "error_type": exc.__class__.__name__}, 503
     return {"success": True, "status": "native_execution_state_recorded",
             "authorization": merged}, 201
+
+
+def list_resumable_hermes_native_executions(*, authenticated_principal,
+                                             database_url=None, connect_factory=None):
+    """Recover unfinished native executions from canonical mission truth."""
+    if _clean_text(authenticated_principal, 200) != "hermes:charlie-builder":
+        return {"success": False, "status": "native_recovery_not_authorized"}, 403
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id, coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions
+                    where metadata_json ? 'hermes_native_execution'
+                    order by mission_id""")
+                rows = cursor.fetchall() or []
+    except Exception as exc:
+        return {"success": False, "status": "native_recovery_unavailable",
+                "error_type": exc.__class__.__name__}, 503
+    executions = []
+    terminal = {"OWNER_DECISION_REQUIRED", "BLOCKED", "COMPLETED", "CANCELLED", "REVOKED"}
+    for mission_id, metadata_value in rows:
+        metadata = dict(metadata_value or {})
+        native = dict(metadata.get("hermes_native_execution") or {})
+        state = dict(metadata.get("external_supervisor_state") or {})
+        if native.get("status") == "valid" and native.get("execution_status") not in terminal:
+            executions.append({
+                "mission_id": str(mission_id),
+                "native_execution_id": native.get("native_execution_id"),
+                "slack_channel_id": state.get("slack_channel_id"),
+                "slack_thread_ts": state.get("slack_thread_ts"),
+            })
+    return {"success": True, "status": "native_recovery_ready", "executions": executions}, 200
 
 
 def prepare_external_execution_succession(

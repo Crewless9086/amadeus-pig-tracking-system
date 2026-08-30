@@ -131,7 +131,11 @@ def _resolved_inside(path, root):
 class NativeWorktree:
     def __init__(self, repository_root, worktree_root, authorization, *, runner=run_argv):
         self.repository_root = Path(repository_root).resolve(strict=True)
-        self.worktree_root = Path(worktree_root).resolve(strict=False)
+        requested_worktree = Path(worktree_root).absolute()
+        for candidate in (requested_worktree, *requested_worktree.parents):
+            if candidate.is_symlink():
+                raise NativeExecutionError("native_worktree_symlink_rejected")
+        self.worktree_root = requested_worktree.resolve(strict=False)
         self.authorization = authorization if isinstance(authorization, NativeAuthorization) else NativeAuthorization.from_mapping(authorization)
         self.runner = runner
         digest = hashlib.sha256(str(self.worktree_root).encode()).hexdigest()
@@ -188,12 +192,14 @@ class ContextBroker:
         self.worktree = Path(worktree).resolve(strict=True)
         self.allowed_files = frozenset(normalize_repo_path(path) for path in allowed_files)
         self.max_bytes = int(max_bytes)
+        self._seen = set()
+        self._total = 0
 
     def read(self, paths):
         unique = list(dict.fromkeys(normalize_repo_path(path) for path in paths))
-        if len(unique) > 20:
+        if len(self._seen.union(unique)) > 20:
             raise NativeExecutionError("native_context_file_limit")
-        payload, total = [], 0
+        payload = []
         for relative in unique:
             parts = PurePosixPath(relative).parts
             if any(part in DENIED_CONTEXT_PARTS for part in parts) or any(
@@ -212,8 +218,10 @@ class ContextBroker:
             raw = target.read_bytes()
             if b"\x00" in raw:
                 raise NativeExecutionError("native_context_binary_rejected")
-            total += len(raw)
-            if total > self.max_bytes:
+            if relative not in self._seen:
+                self._total += len(raw)
+                self._seen.add(relative)
+            if self._total > self.max_bytes:
                 raise NativeExecutionError("native_context_size_limit")
             payload.append({"path": relative, "content": raw.decode("utf-8")})
         return payload
@@ -300,10 +308,11 @@ class HermesStructuredPatchWorker:
 
 
 class NativeExecutionEngine:
-    def __init__(self, worker, repository_root, worktree_root, authorization):
+    def __init__(self, worker, repository_root, worktree_root, authorization, *, heartbeat=None):
         self.worker = worker
         self.authorization = authorization if isinstance(authorization, NativeAuthorization) else NativeAuthorization.from_mapping(authorization)
         self.worktree = NativeWorktree(repository_root, worktree_root, self.authorization)
+        self.heartbeat = heartbeat or (lambda: None)
 
     def build_patch(self, instruction, governance_context=None):
         root = self.worktree.ensure()
@@ -322,7 +331,9 @@ class NativeExecutionEngine:
         }
         requested = set(self.authorization.allowed_files)
         for _ in range(MAX_CONTEXT_ROUNDS + 1):
+            self.heartbeat()
             response = self.worker.complete(packet)
+            self.heartbeat()
             if response["state"] == "BLOCKED":
                 return response
             if response["state"] == "PATCH_READY":
@@ -343,12 +354,14 @@ class NativeExecutionEngine:
             "git diff --check": ["git", "diff", "--check"],
         }
         for command in self.authorization.allowed_commands:
+            self.heartbeat()
             if command not in admitted:
                 raise NativeExecutionError("native_verification_command_not_admitted")
             result = run_argv(admitted[command], cwd=self.worktree.worktree_root)
             evidence.append({"command": command, "returncode": result.returncode})
             if result.returncode != 0:
                 raise NativeExecutionError("native_verification_failed")
+        self.heartbeat()
         return evidence
 
 

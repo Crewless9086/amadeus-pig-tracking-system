@@ -283,6 +283,10 @@ class CanonicalCharlieApi:
         )
         return result.get("authorization") or result
 
+    def resumable_native_executions(self):
+        result = self.client.request("GET", "/charlie/hermes/native-executions/resumable")
+        return list(result.get("executions") or [])
+
     def bind_native_candidate(self, mission_id, binding):
         return self.client.request(
             "POST", f"/charlie/build-relay/missions/{urllib.parse.quote(str(mission_id), safe='')}/external-candidate",
@@ -337,13 +341,24 @@ class GitHubReadMonitor:
         current_reviews = [item for item in review_items if isinstance(item, dict)
                            and str(item.get("commit_id") or head) == head]
         verdicts = []
+        role_verdicts = {}
         for item in current_reviews:
             body = str(item.get("body") or "").strip()
             state = str(item.get("state") or "").strip().upper()
-            if state == "CHANGES_REQUESTED" or body.upper().startswith("SEND_BACK"):
+            reviewer = str((item.get("user") or {}).get("login") or "").strip().lower()
+            role = ("SECURITY" if body.upper().startswith(("SECURITY:", "[SECURITY]"))
+                    else "FUNCTIONAL" if body.upper().startswith(("FUNCTIONAL:", "[FUNCTIONAL]"))
+                    else "")
+            # Only GitHub's authenticated review state is authoritative.  A
+            # COMMENTED review body is untrusted text and can never satisfy the
+            # independent review gate.
+            if state == "CHANGES_REQUESTED":
                 verdicts.append(("SEND_BACK", body))
-            elif state == "APPROVED" or body.upper().startswith("APPROVE"):
-                verdicts.append(("APPROVE", body))
+                if role and reviewer:
+                    role_verdicts[role] = {"verdict": "SEND_BACK", "reviewer": reviewer, "findings": body}
+            elif state == "APPROVED":
+                if role and reviewer:
+                    role_verdicts[role] = {"verdict": "APPROVE", "reviewer": reviewer, "findings": body}
         observed_at = float(time.time() if now is None else now)
         stalled_checks = [str(run.get("name") or "") for run in runs
                           if run.get("status") in {"queued", "in_progress"}
@@ -354,6 +369,11 @@ class GitHubReadMonitor:
             "Closed Render migration rail with disposable Postgres",
             "Playwright real-browser behavior gate"}
         review, findings = next(iter(reversed(verdicts)), ("WAIT", ""))
+        security = role_verdicts.get("SECURITY") or {}
+        functional = role_verdicts.get("FUNCTIONAL") or {}
+        if (security.get("verdict") == functional.get("verdict") == "APPROVE"
+                and security.get("reviewer") != functional.get("reviewer")):
+            review, findings = "APPROVE", "independent security and functional reviews approved"
         return {"pr_number": int(number), "head_sha": head,
                 "branch": str((pull.get("head") or {}).get("ref") or ""),
                 "checks": required, "stalled_checks": stalled_checks,
@@ -361,6 +381,7 @@ class GitHubReadMonitor:
                 "all_required_checks_pass": all(required.get(name) == "success" for name in required_names),
                 "independent_review": review,
                 "independent_review_findings": findings[:4000],
+                "security_review": security, "functional_review": functional,
                 "approved_head_sha": head if review == "APPROVE" else ""}
 
 
@@ -481,19 +502,28 @@ class HermesSupervisor:
         if not execution_lock().acquire(blocking=False):
             raise HermesBridgeError("native_writer_capacity_reached")
         claim_id = "HNC-" + uuid.uuid4().hex
-        claim_expiry = datetime.now(timezone.utc) + timedelta(minutes=5)
+        claim_expiry = datetime.now(timezone.utc) + timedelta(minutes=10)
         claimed = self.canonical.record_native_progress(mission_id, {
             "native_execution_id": native_id, "execution_status": "RUNNING",
             "worker_claim_id": claim_id, "claim_expires_at": claim_expiry.isoformat(),
-            "event": "native_writer_claimed",
+            "runner_stage": "planner", "event": "native_writer_claimed",
         })
         if isinstance(claimed, dict) and claimed.get("success") is False:
             execution_lock().release()
             raise HermesBridgeError(str(claimed.get("status") or "native_writer_claim_failed"))
         try:
+            def heartbeat():
+                renewed = self.canonical.record_native_progress(mission_id, {
+                    "native_execution_id": native_id, "execution_status": "RUNNING",
+                    "worker_claim_id": claim_id,
+                    "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+                    "event": "native_writer_claimed",
+                })
+                if isinstance(renewed, dict) and renewed.get("success") is False:
+                    raise HermesBridgeError(str(renewed.get("status") or "native_writer_claim_failed"))
             engine = NativeExecutionEngine(
                 HermesStructuredPatchWorker(self.native_llm), self.native_repository_root,
-                worktree, authorization,
+                worktree, authorization, heartbeat=heartbeat,
             )
             root = engine.worktree.ensure()
             head_before = run_argv(["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
@@ -511,23 +541,37 @@ class HermesSupervisor:
                         "failure_reason": built.get("reason"), "worker_claim_id": claim_id,
                         "event": "native_model_blocked",
                     })
-            evidence = engine.verify()
             progress = self.canonical.record_native_progress(mission_id, {
                 "native_execution_id": native_id, "execution_status": "PATCH_APPLIED",
                 "changed_files": built.get("changed_files"), "worker_claim_id": claim_id,
+                "runner_stage": "builder", "stage_artifact": {
+                    "kind": "validated_structured_patch", "changed_files": built.get("changed_files")},
                 "event": "native_patch_applied",
+            })
+            evidence = engine.verify()
+            heartbeat()
+            progress = self.canonical.record_native_progress(mission_id, {
+                "native_execution_id": native_id, "execution_status": "VERIFIED",
+                "changed_files": built.get("changed_files"), "worker_claim_id": claim_id,
+                "runner_stage": "tester", "stage_artifact": {
+                    "kind": "bounded_verification", "commands": evidence},
+                "event": "native_verification_completed",
             })
             if not self.github_packager_token:
                 return {**progress, "status": "PACKAGER_CREDENTIAL_REQUIRED", "verification": evidence}
             packaged = NativePackager(
                 worktree, authorization, self.github_packager_token,
             ).package(row.get("title") or "CHARLIE native mission", "Native structured patch; no merge or deployment authority.")
+            heartbeat()
             self._bind_native_candidate(mission_id, authorization, packaged)
             return self.canonical.record_native_progress(mission_id, {
                 "native_execution_id": native_id, "execution_status": "DRAFT_PR_OPEN",
                 "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
                 "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
-                "worker_claim_id": claim_id, "event": "native_draft_pr_opened",
+                "worker_claim_id": claim_id, "runner_stage": "reviewer",
+                "review_request_roles": ["SECURITY", "FUNCTIONAL"],
+                "stage_artifact": {"kind": "draft_pr_candidate", "head_sha": packaged["commit_sha"]},
+                "event": "native_draft_pr_opened",
             })
         except NativeExecutionError as exc:
             raise HermesBridgeError(str(exc)) from exc
@@ -560,6 +604,8 @@ class HermesSupervisor:
             "head_sha": observed.get("head_sha"),
             "checks": observed.get("checks"),
             "review_verdict": observed.get("independent_review"),
+            "review_security": observed.get("security_review"),
+            "review_functional": observed.get("functional_review"),
             "admission_requested_head": admission_requested_head,
             "event": "native_candidate_supervised",
         })
@@ -736,6 +782,7 @@ class HermesSupervisor:
         dispatch = native or dict((mission or {}).get("dispatch") or {})
         if (observed.get("independent_review") == "APPROVE"
                 and observed.get("all_required_checks_pass") is True
+                and (not native or int(native.get("correction_rounds") or 0) >= 1)
                 and dispatch.get("owner_notification_head") != observed.get("head_sha")):
             decision = self.prepare_owner_decision({**observed, "mission_id": (mission or {}).get("mission_id")})
             if self.slack_bot:
@@ -792,16 +839,25 @@ class HermesSupervisor:
         claimed = self.canonical.record_native_progress(mission["mission_id"], {
             "native_execution_id": authorization["native_execution_id"],
             "execution_status": "CORRECTING", "worker_claim_id": claim_id,
-            "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+            "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
             "event": "native_writer_claimed",
         })
         if isinstance(claimed, dict) and claimed.get("success") is False:
             execution_lock().release()
             raise HermesBridgeError(str(claimed.get("status") or "native_writer_claim_failed"))
         try:
+            def heartbeat():
+                renewed = self.canonical.record_native_progress(mission["mission_id"], {
+                    "native_execution_id": authorization["native_execution_id"],
+                    "execution_status": "CORRECTING", "worker_claim_id": claim_id,
+                    "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+                    "event": "native_writer_claimed",
+                })
+                if isinstance(renewed, dict) and renewed.get("success") is False:
+                    raise HermesBridgeError(str(renewed.get("status") or "native_writer_claim_failed"))
             engine = NativeExecutionEngine(
                 HermesStructuredPatchWorker(self.native_llm), self.native_repository_root,
-                worktree, authorization,
+                worktree, authorization, heartbeat=heartbeat,
             )
             built = engine.build_patch(
                 "Apply only this independent SEND_BACK correction: " + str(correction or "").strip(),
@@ -811,12 +867,14 @@ class HermesSupervisor:
             if built.get("state") != "PATCH_READY":
                 raise HermesBridgeError("native_correction_not_ready")
             engine.verify()
+            heartbeat()
             if not self.github_packager_token:
                 raise HermesBridgeError("github_packager_token_required")
             packaged = NativePackager(worktree, authorization, self.github_packager_token).package(
                 "fix(charlie): address independent native review",
                 "Same native execution and worktree correction; no merge or deployment authority.",
             )
+            heartbeat()
             self._bind_native_candidate(mission["mission_id"], authorization, packaged)
             return self.canonical.record_native_progress(mission["mission_id"], {
                 "native_execution_id": authorization["native_execution_id"],

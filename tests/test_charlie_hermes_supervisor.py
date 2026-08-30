@@ -303,15 +303,50 @@ class HermesSupervisorTests(unittest.TestCase):
         class GitHubClient:
             def request(self, method, path, payload=None, headers=None, query=None):
                 if path.endswith("/pulls"): return {"items": [{"number": 9}]}
-                if path.endswith("/pulls/9"): return {"head": {"sha": "d" * 40, "ref": "feature"}}
+                if path.endswith("/pulls/9"): return {"head": {"sha": "d" * 40, "ref": "feature"},
+                                                       "user": {"login": "builder"}}
                 if path.endswith("/check-runs"): return {"check_runs": [{"name": "charlie-core", "status": "queued", "conclusion": None, "started_at": "2026-08-28T00:00:00Z"}]}
-                if path.endswith("/reviews"): return {"items": [{"body": "SEND_BACK"}]}
+                if path.endswith("/reviews"): return {"items": [{"body": "bounded finding",
+                    "state": "CHANGES_REQUESTED", "commit_id": "d" * 40,
+                    "user": {"login": "independent-reviewer"}}]}
                 return {}
         monitor = GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=GitHubClient())
         self.assertEqual(9, monitor.find_pull("feature"))
         state = monitor.pull_state(9, now=2_000_000_000)
         self.assertTrue(state["ci_stalled"])
         self.assertEqual("SEND_BACK", state["independent_review"])
+
+    def test_commented_review_text_cannot_spoof_independent_verdict(self):
+        class GitHubClient:
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls/9"):
+                    return {"head": {"sha": "d" * 40, "ref": "feature"}, "user": {"login": "builder"}}
+                if path.endswith("/check-runs"): return {"check_runs": []}
+                if path.endswith("/reviews"): return {"items": [{"body": "APPROVE SECURITY",
+                    "state": "COMMENTED", "commit_id": "d" * 40,
+                    "user": {"login": "attacker"}}]}
+                return {}
+        state = GitHubReadMonitor(
+            "Crewless9086/amadeus-pig-tracking-system", client=GitHubClient()).pull_state(9)
+        self.assertEqual("WAIT", state["independent_review"])
+
+    def test_two_distinct_exact_head_role_reviews_are_required_for_approve(self):
+        class GitHubClient:
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls/9"):
+                    return {"head": {"sha": "d" * 40, "ref": "feature"}, "user": {"login": "builder"}}
+                if path.endswith("/check-runs"): return {"check_runs": []}
+                if path.endswith("/reviews"): return {"items": [
+                    {"body": "SECURITY: bounded", "state": "APPROVED", "commit_id": "d" * 40,
+                     "user": {"login": "security-reviewer"}},
+                    {"body": "FUNCTIONAL: bounded", "state": "APPROVED", "commit_id": "d" * 40,
+                     "user": {"login": "functional-reviewer"}},
+                ]}
+                return {}
+        state = GitHubReadMonitor(
+            "Crewless9086/amadeus-pig-tracking-system", client=GitHubClient()).pull_state(9)
+        self.assertEqual("APPROVE", state["independent_review"])
+        self.assertNotEqual(state["security_review"]["reviewer"], state["functional_review"]["reviewer"])
 
     def test_poll_discovers_pr_and_invokes_protected_exact_candidate_admission_once(self):
         class Monitor:

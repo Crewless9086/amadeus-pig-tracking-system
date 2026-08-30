@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import atexit
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from .supervisor import build_plugin_from_environment
@@ -115,8 +116,14 @@ def register(ctx):
                           handler=_json_handler(tools[name], adapters[name]))
 
     slack_sessions = set()
+    active_native = set()
+    active_native_lock = threading.Lock()
 
     def run_native(mission_id, channel, thread_id):
+        with active_native_lock:
+            if mission_id in active_native:
+                return
+            active_native.add(mission_id)
         try:
             dispatch = getattr(supervisor, "dispatch_builder", supervisor.dispatch_cursor)
             result = dispatch({"mission_id": mission_id})
@@ -138,6 +145,9 @@ def register(ctx):
                     )
             except Exception:
                 pass
+        finally:
+            with active_native_lock:
+                active_native.discard(mission_id)
 
     def pre_gateway_dispatch(event, **kwargs):
         del kwargs
@@ -192,3 +202,17 @@ def register(ctx):
 
     ctx.register_hook("pre_gateway_dispatch", pre_gateway_dispatch)
     ctx.register_hook("pre_tool_call", pre_tool_call)
+    # Canonical mission truth, not Slack replay, restarts unfinished work after
+    # a gateway process replacement.
+    try:
+        for execution in supervisor.canonical.resumable_native_executions():
+            mission_id = str(execution.get("mission_id") or "").strip()
+            if mission_id:
+                native_jobs.submit(
+                    run_native, mission_id,
+                    str(execution.get("slack_channel_id") or ""),
+                    str(execution.get("slack_thread_ts") or ""),
+                )
+    except Exception:
+        pass
+    atexit.register(native_jobs.shutdown, wait=False, cancel_futures=True)

@@ -39,6 +39,7 @@ from modules.charlie.mission_store import (
     prepare_external_dispatch_authorization,
     prepare_external_execution_succession,
     prepare_hermes_native_execution,
+    list_resumable_hermes_native_executions,
     record_hermes_native_execution_state,
     refresh_external_dispatch_authorization_base,
     read_current_mission_admission_authority,
@@ -1265,6 +1266,16 @@ def charlie_hermes_native_execution_route(mission_id):
     result, status = prepare_hermes_native_execution(
         mission_id, worktree_digest=str(payload.get("worktree_digest") or ""),
         starting_main_sha=requested_sha,
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/native-executions/resumable", methods=["GET"])
+def charlie_hermes_native_recovery_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = list_resumable_hermes_native_executions(
         authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
 

@@ -2050,3 +2050,8 @@
 - Added one-ON, deterministic claim, bounded OFF, final readback and restart
   recovery source using the existing ROOTLINE transport and execution store.
 - No provider, configuration, canonical or farm effect occurred.
+## 2026-08-30 — Hermes-native executor release hardening
+
+- Added canonical restart discovery and renewable cross-process writer claims so one native execution resumes its exact worktree after a gateway replacement without overlapping writers.
+- Bound native execution to the authenticated deployed `RENDER_GIT_COMMIT`, enforced cumulative context limits, rejected symlinked worktree paths before resolution, and expanded packager credential-separation tests.
+- Required authenticated exact-head SECURITY and FUNCTIONAL review roles from distinct GitHub reviewers; comment text cannot spoof a verdict, and native owner notification remains blocked until a genuine SEND_BACK correction has occurred.

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -15,7 +16,8 @@ from integrations.hermes.charlie_builder.native_executor import (
 from integrations.hermes.charlie_builder.schemas import validate_native_response
 from modules.charlie.mission_store import prepare_hermes_native_execution
 from modules.charlie.mission_store import (
-    bind_external_supervisor_candidate, record_hermes_native_execution_state,
+    bind_external_supervisor_candidate, list_resumable_hermes_native_executions,
+    record_hermes_native_execution_state,
 )
 from tests.test_charlie_mission_store import FakeConnection
 
@@ -144,6 +146,26 @@ class NativeExecutorTests(unittest.TestCase):
         with self.assertRaisesRegex(NativeExecutionError, "native_context_file_invalid"):
             ContextBroker(self.worktree, [ALLOWED]).read(["linked.txt"])
 
+    def test_symlinked_worktree_path_is_rejected_before_resolution(self):
+        real_parent = Path(self.temp.name) / "real-worktrees"
+        real_parent.mkdir()
+        linked_parent = Path(self.temp.name) / "linked-worktrees"
+        try:
+            linked_parent.symlink_to(real_parent, target_is_directory=True)
+        except OSError as exc:
+            self.skipTest(f"symlinks unavailable: {exc}")
+        requested = linked_parent / "mission" / "g1" / "native-1"
+        mapping = {**self.authorization.__dict__,
+                   "worktree_digest": hashlib.sha256(str(requested.resolve()).encode()).hexdigest()}
+        with self.assertRaisesRegex(NativeExecutionError, "native_worktree_symlink_rejected"):
+            NativeWorktree(self.root, requested, mapping)
+
+    def test_context_limits_are_cumulative_across_rounds(self):
+        NativeWorktree(self.root, self.worktree, self.authorization).ensure()
+        broker = ContextBroker(self.worktree, [ALLOWED], max_bytes=10)
+        with self.assertRaisesRegex(NativeExecutionError, "native_context_size_limit"):
+            broker.read([ALLOWED])
+
     def test_protocol_limits_context_and_blocked_shapes(self):
         self.assertEqual("BLOCKED", validate_native_response({
             "state": "BLOCKED", "context_paths": [], "unified_diff": "",
@@ -180,6 +202,23 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual(64, len(result["candidate_diff_sha256"]))
         self.assertNotIn("protected-token", json.dumps(observed_argv))
 
+    def test_packager_token_is_not_in_child_environment_or_persisted_after_failure(self):
+        root = NativeWorktree(self.root, self.worktree, self.authorization).ensure()
+        packager = NativePackager(root, self.authorization, "protected-token")
+        observed = {}
+        def fail_push(argv, **kwargs):
+            observed.update({"argv": argv, "env": kwargs.get("env") or {}})
+            return subprocess.CompletedProcess(argv, 1, "", "bounded failure")
+        with patch("integrations.hermes.charlie_builder.native_executor.run_argv", side_effect=fail_push):
+            with self.assertRaisesRegex(NativeExecutionError, "native_packaging_push_failed") as caught:
+                packager._push_with_ephemeral_askpass()
+        serialized = json.dumps(observed, sort_keys=True)
+        self.assertNotIn("protected-token", serialized)
+        self.assertNotIn("protected-token", str(caught.exception))
+        helper = Path(observed["env"]["GIT_ASKPASS"])
+        self.assertFalse(helper.exists())
+        self.assertFalse(helper.parent.exists())
+
     def test_canonical_native_authorization_requires_archived_zero_candidate_cursor(self):
         dispatch = {
             "status": "valid", "generation": "g1", "base_sha": "a" * 40,
@@ -211,6 +250,20 @@ class NativeExecutorTests(unittest.TestCase):
         )
         self.assertEqual(409, denied_status, denied)
         self.assertEqual("cursor_retirement_not_proven", denied["status"])
+
+    def test_gateway_restart_recovers_only_unfinished_canonical_native_execution(self):
+        rows = [
+            ("CMQ-A", {"hermes_native_execution": {"status": "valid",
+                "native_execution_id": "HNX-A", "execution_status": "SUPERVISING"},
+                "external_supervisor_state": {"slack_channel_id": "C1", "slack_thread_ts": "1.0"}}),
+            ("CMQ-B", {"hermes_native_execution": {"status": "valid",
+                "native_execution_id": "HNX-B", "execution_status": "OWNER_DECISION_REQUIRED"}}),
+        ]
+        result, status = list_resumable_hermes_native_executions(
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
+            connect_factory=lambda _: FakeConnection(rows))
+        self.assertEqual(200, status, result)
+        self.assertEqual(["CMQ-A"], [item["mission_id"] for item in result["executions"]])
 
     def test_native_candidate_binding_uses_native_not_cursor_branch_authority(self):
         native = {
