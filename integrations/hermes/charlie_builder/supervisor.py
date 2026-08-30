@@ -619,8 +619,43 @@ class HermesSupervisor:
         if not pr_number or not self.github:
             return {"mission_id": mission_id, **native}
         observed = self.github.pull_state(pr_number, now=self.clock())
+        if native.get("execution_status") == "CORRECTION_PATCH_VERIFIED":
+            prior_send_back = (native.get("review_verdict") == "SEND_BACK"
+                or any(dict(native.get(key) or {}).get("verdict") == "SEND_BACK"
+                       for key in ("review_security", "review_functional", "review_challenge")))
+            if not prior_send_back:
+                raise HermesBridgeError("native_correction_authority_missing")
+            recovery_worktree = (Path(self.native_worktree_base) / mission_id
+                                 / native.get("generation", "") / "native-1")
+            if observed.get("head_sha") == native.get("head_sha"):
+                if not self.github_packager_token:
+                    raise HermesBridgeError("github_packager_token_required")
+                if not execution_lock().acquire(blocking=False):
+                    raise HermesBridgeError("native_writer_capacity_reached")
+                try:
+                    packaged = NativePackager(
+                        recovery_worktree, native, self.github_packager_token).package(
+                        "fix(charlie): address independent native review",
+                        "Recovered same native execution correction; no merge or deployment authority.")
+                finally:
+                    execution_lock().release()
+                self.canonical.record_native_progress(mission_id, {
+                    "native_execution_id": native.get("native_execution_id"),
+                    "execution_status": "CORRECTION_PACKAGED",
+                    "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
+                    "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
+                    "candidate_diff_sha256": packaged["candidate_diff_sha256"],
+                    "builder_identity": native.get("builder_identity"),
+                    "builder_agent_id": native.get("builder_agent_id"),
+                    "stage_artifact": native.get("stage_artifact"),
+                    "admission_requested_head": "", "event": "native_correction_packaged_recovered",
+                })
+                observed = self.github.pull_state(pr_number, now=self.clock())
+                loaded = self.canonical.get_mission(mission_id)
+                native = dict(((loaded.get("mission") or {}).get("metadata") or {}).get("hermes_native_execution") or {})
+            else:
+                packaged = None
         if (native.get("execution_status") == "CORRECTION_PATCH_VERIFIED"
-                and observed.get("independent_review") == "SEND_BACK"
                 and observed.get("head_sha") != native.get("head_sha")):
             recovery_worktree = (Path(self.native_worktree_base) / mission_id
                                  / native.get("generation", "") / "native-1")
