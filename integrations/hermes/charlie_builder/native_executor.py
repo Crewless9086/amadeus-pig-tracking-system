@@ -457,7 +457,9 @@ class NativePackager:
     def package(self, title, body):
         branch = self._git("branch", "--show-current")
         origin = self._git("remote", "get-url", "origin")
-        changed = tuple(sorted(filter(None, self._git("diff", "--name-only").splitlines())))
+        unstaged = set(filter(None, self._git("diff", "--name-only").splitlines()))
+        staged = set(filter(None, self._git("diff", "--cached", "--name-only").splitlines()))
+        changed = tuple(sorted(unstaged | staged))
         if (
             branch != self.authorization.branch or branch in {"main", "master"}
             or origin != REMOTE

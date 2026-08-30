@@ -231,6 +231,20 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual(64, len(result["candidate_diff_sha256"]))
         self.assertNotIn("protected-token", json.dumps(observed_argv))
 
+    def test_parent_packager_recovers_allowed_patch_already_staged_before_crash(self):
+        root = NativeWorktree(self.root, self.worktree, self.authorization).ensure()
+        (root / ALLOWED).write_text("# Bridge\n\nStaged recovery.\n", encoding="utf-8")
+        git(root, "add", ALLOWED)
+        packager = NativePackager(root, self.authorization, "protected-token")
+        packager._push_with_ephemeral_askpass = lambda: None
+        packager._find_pull = lambda _branch: None
+        packager._github = lambda *_args: {"number": 7, "draft": True,
+            "html_url": "https://example.invalid/7",
+            "head": {"sha": git(root, "rev-parse", "HEAD")}}
+        result = packager.package("docs: recover staged correction", "bounded")
+        self.assertEqual([ALLOWED], result["changed_files"])
+        self.assertNotEqual(self.base, result["commit_sha"])
+
     def test_packager_token_is_not_in_child_environment_or_persisted_after_failure(self):
         root = NativeWorktree(self.root, self.worktree, self.authorization).ensure()
         packager = NativePackager(root, self.authorization, "protected-token")

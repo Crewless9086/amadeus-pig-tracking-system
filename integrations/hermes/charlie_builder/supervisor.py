@@ -630,7 +630,20 @@ class HermesSupervisor:
             if observed.get("head_sha") == native.get("head_sha"):
                 if not self.github_packager_token:
                     raise HermesBridgeError("github_packager_token_required")
+                recovery_claim = "HNC-" + uuid.uuid4().hex
+                claimed = self.canonical.record_native_progress(mission_id, {
+                    "native_execution_id": native.get("native_execution_id"),
+                    "execution_status": "CORRECTION_PATCH_VERIFIED",
+                    "worker_claim_id": recovery_claim,
+                    "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+                    "event": "native_writer_claimed",
+                })
+                if isinstance(claimed, dict) and claimed.get("success") is False:
+                    raise HermesBridgeError(str(claimed.get("status") or "native_writer_claim_failed"))
                 if not execution_lock().acquire(blocking=False):
+                    self.canonical.record_native_progress(mission_id, {
+                        "native_execution_id": native.get("native_execution_id"),
+                        "release_claim_id": recovery_claim, "event": "native_writer_released"})
                     raise HermesBridgeError("native_writer_capacity_reached")
                 try:
                     packaged = NativePackager(
@@ -639,6 +652,9 @@ class HermesSupervisor:
                         "Recovered same native execution correction; no merge or deployment authority.")
                 finally:
                     execution_lock().release()
+                    self.canonical.record_native_progress(mission_id, {
+                        "native_execution_id": native.get("native_execution_id"),
+                        "release_claim_id": recovery_claim, "event": "native_writer_released"})
                 self.canonical.record_native_progress(mission_id, {
                     "native_execution_id": native.get("native_execution_id"),
                     "execution_status": "CORRECTION_PACKAGED",

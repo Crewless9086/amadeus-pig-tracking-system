@@ -306,11 +306,14 @@ class HermesSupervisorTests(unittest.TestCase):
             "stage_artifact": {"kind": "bounded_verification",
                                "commands": [{"command": "git diff --check", "returncode": 0}]}}
         class RecoveryCanonical:
-            def __init__(self): self.native = dict(native); self.events = []; self.admissions = []
+            def __init__(self):
+                self.native = dict(native); self.events = []; self.admissions = []; self.deny_claim = False
             def get_mission(self, _mission_id):
                 return {"mission": {"mission_id": "CMQ-X", "raw_text": "bounded",
                     "metadata": {"hermes_native_execution": dict(self.native)}}}
             def record_native_progress(self, _mission_id, value):
+                if self.deny_claim and value.get("event") == "native_writer_claimed":
+                    return {"success": False, "status": "native_writer_claim_conflict"}
                 self.events.append(value.get("event")); self.native.update(value)
                 if value.get("event") == "native_send_back_corrected": self.native["correction_rounds"] = 1
                 return dict(self.native)
@@ -356,11 +359,14 @@ class HermesSupervisorTests(unittest.TestCase):
             "builder_agent_id": "builder-correction", "review_verdict": "SEND_BACK",
             "stage_artifact": {"kind": "bounded_verification", "commands": []}}
         class RecoveryCanonical:
-            def __init__(self): self.native = dict(native); self.events = []; self.admissions = []
+            def __init__(self):
+                self.native = dict(native); self.events = []; self.admissions = []; self.deny_claim = False
             def get_mission(self, _mission_id):
                 return {"mission": {"mission_id": "CMQ-X", "raw_text": "bounded",
                     "metadata": {"hermes_native_execution": dict(self.native)}}}
             def record_native_progress(self, _mission_id, value):
+                if self.deny_claim and value.get("event") == "native_writer_claimed":
+                    return {"success": False, "status": "native_writer_claim_conflict"}
                 self.events.append(value.get("event")); self.native.update(value)
                 if value.get("event") == "native_send_back_corrected": self.native["correction_rounds"] = 1
                 return dict(self.native)
@@ -396,6 +402,15 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertIn("native_correction_packaged_recovered", canonical.events)
         self.assertIn("native_send_back_corrected", canonical.events)
         self.assertEqual(new_head, canonical.admissions[-1][1])
+        blocked = RecoveryCanonical(); blocked.deny_claim = True
+        blocked_supervisor = HermesSupervisor(blocked, None, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=Monitor(), native_llm=object(),
+            native_worktree_base="C:/native", github_packager_token="protected")
+        with patch("integrations.hermes.charlie_builder.supervisor.NativePackager") as blocked_packager:
+            with self.assertRaisesRegex(HermesBridgeError, "native_writer_claim_conflict"):
+                blocked_supervisor.poll_native({"mission_id": "CMQ-X"})
+        blocked_packager.assert_not_called()
 
     def test_oidc_workspace_pda_late_binds_once_and_enforces_scope_and_command(self):
         pda = {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid",
