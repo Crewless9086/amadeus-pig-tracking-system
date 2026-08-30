@@ -1,10 +1,9 @@
 name: charlie-builder
 version: "1.0.0"
-description: Bounded CHARLIE mission supervisor; Cursor Cloud remains the admitted writer.
+description: Bounded CHARLIE mission supervisor with one native structured-patch executor.
 requires_env:
   - CHARLIE_CANONICAL_API_URL
   - CHARLIE_HERMES_GATEWAY_TOKEN
-  - CURSOR_API_KEY
   - SLACK_SIGNING_SECRET
   - SLACK_BOT_TOKEN
   - SLACK_APP_TOKEN

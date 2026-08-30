@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from .schemas import NATIVE_PATCH_SCHEMA, validate_native_response
+from modules.charlie.mission_admission import canonical_candidate_diff
 
 REPOSITORY = "Crewless9086/amadeus-pig-tracking-system"
 REMOTE = "https://github.com/Crewless9086/amadeus-pig-tracking-system.git"
@@ -43,6 +44,7 @@ class NativeAuthorization:
     owner_instruction_digest: str
     allowed_files: tuple[str, ...]
     allowed_commands: tuple[str, ...]
+    allowed_effects: tuple[str, ...]
     forbidden_effects: tuple[str, ...]
     expires_at: str
     status: str = "valid"
@@ -58,6 +60,7 @@ class NativeAuthorization:
             raise NativeExecutionError("native_authorization_incomplete")
         files = tuple(sorted({normalize_repo_path(path) for path in row.get("allowed_files") or []}))
         commands = tuple(str(item).strip() for item in row.get("allowed_commands") or [] if str(item).strip())
+        allowed_effects = tuple(str(item).strip() for item in row.get("allowed_effects") or [] if str(item).strip())
         effects = tuple(str(item).strip() for item in row.get("forbidden_effects") or [] if str(item).strip())
         try:
             expires_at = datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00"))
@@ -67,7 +70,7 @@ class NativeAuthorization:
             row.get("status") != "valid" or not str(row["native_execution_id"]).startswith("HNX-")
             or int(row.get("native_attempt") or 0) != 1 or row["repository"] != REPOSITORY
             or len(str(row["starting_main_sha"])) != 40 or not str(row["branch"]).startswith("charlie/")
-            or not files or not commands or not effects
+            or not files or not commands or not allowed_effects or not effects
             or expires_at <= datetime.now(timezone.utc)
         ):
             raise NativeExecutionError("native_authorization_invalid")
@@ -76,7 +79,7 @@ class NativeAuthorization:
             str(row["native_execution_id"]).strip(), int(row["native_attempt"]),
             str(row["repository"]).strip(), str(row["starting_main_sha"]).strip(),
             str(row["branch"]).strip(), str(row["worktree_digest"]).strip(),
-            str(row["owner_instruction_digest"]).strip(), files, commands, effects,
+            str(row["owner_instruction_digest"]).strip(), files, commands, allowed_effects, effects,
             expires_at.isoformat(),
         )
 
@@ -200,8 +203,11 @@ class ContextBroker:
             tracked = run_argv(["git", "ls-files", "--error-unmatch", "--", relative], cwd=self.worktree)
             if tracked.returncode != 0:
                 raise NativeExecutionError("native_context_not_tracked")
-            target = _resolved_inside(self.worktree / relative, self.worktree)
-            if target.is_symlink() or not target.is_file():
+            unresolved = self.worktree / relative
+            if unresolved.is_symlink() or any(parent.is_symlink() for parent in unresolved.parents if parent != self.worktree):
+                raise NativeExecutionError("native_context_file_invalid")
+            target = _resolved_inside(unresolved, self.worktree)
+            if not target.is_file():
                 raise NativeExecutionError("native_context_file_invalid")
             raw = target.read_bytes()
             if b"\x00" in raw:
@@ -236,9 +242,10 @@ class PatchValidator:
             relative = normalize_repo_path(raw.split("\t", 1)[0])
             if relative.startswith(DENIED_PATCH_PREFIXES) or relative not in self.allowed_files:
                 raise NativeExecutionError("native_patch_scope_violation")
-            target = _resolved_inside(self.worktree / relative, self.worktree)
-            if target.exists() and target.is_symlink():
+            unresolved = self.worktree / relative
+            if unresolved.is_symlink() or any(parent.is_symlink() for parent in unresolved.parents if parent != self.worktree):
                 raise NativeExecutionError("native_patch_symlink_rejected")
+            target = _resolved_inside(unresolved, self.worktree)
             paths.append(relative)
         if not paths or not set(paths).issubset(self.allowed_files):
             raise NativeExecutionError("native_patch_paths_invalid")
@@ -370,8 +377,8 @@ class NativePackager:
         changed = tuple(sorted(filter(None, self._git("diff", "--name-only").splitlines())))
         if (
             branch != self.authorization.branch or branch in {"main", "master"}
-            or origin != REMOTE or not changed
-            or not set(changed).issubset(self.authorization.allowed_files)
+            or origin != REMOTE
+            or (changed and not set(changed).issubset(self.authorization.allowed_files))
         ):
             raise NativeExecutionError("native_packaging_identity_invalid")
         if self._git("rev-parse", f"{self.authorization.starting_main_sha}^{{commit}}") != self.authorization.starting_main_sha:
@@ -382,13 +389,19 @@ class NativePackager:
         )
         if ancestor.returncode != 0:
             raise NativeExecutionError("native_packaging_base_invalid")
-        added = run_argv(["git", "add", "--", *changed], cwd=self.worktree)
-        if added.returncode != 0:
-            raise NativeExecutionError("native_packaging_add_failed")
-        committed = run_argv(["git", "commit", "-m", str(title)[:72]], cwd=self.worktree)
-        if committed.returncode != 0:
-            raise NativeExecutionError("native_packaging_commit_failed")
+        if changed:
+            added = run_argv(["git", "add", "--", *changed], cwd=self.worktree)
+            if added.returncode != 0:
+                raise NativeExecutionError("native_packaging_add_failed")
+            committed = run_argv([
+                "git", "-c", "user.name=CHARLIE Native Packager",
+                "-c", "user.email=charlie-native@users.noreply.github.com",
+                "commit", "-m", str(title)[:72]], cwd=self.worktree)
+            if committed.returncode != 0:
+                raise NativeExecutionError("native_packaging_commit_failed")
         head = self._git("rev-parse", "HEAD")
+        if head == self.authorization.starting_main_sha:
+            raise NativeExecutionError("native_packaging_no_candidate")
         self._push_with_ephemeral_askpass()
         pull = self._find_pull(branch)
         if not pull:
@@ -398,9 +411,22 @@ class NativePackager:
             })
         if not pull.get("draft") or (pull.get("head") or {}).get("sha") != head:
             raise NativeExecutionError("native_packaging_pr_unverified")
+        diff = subprocess.run(
+            ["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index",
+             self.authorization.starting_main_sha, head, "--"],
+            cwd=str(self.worktree), env=_safe_env(), capture_output=True, check=False, shell=False,
+        )
+        if diff.returncode != 0:
+            raise NativeExecutionError("native_candidate_diff_failed")
+        candidate_files = tuple(sorted(filter(None, self._git(
+            "diff", "--no-ext-diff", "--no-textconv", "--name-only",
+            self.authorization.starting_main_sha, head, "--").splitlines())))
+        if candidate_files != tuple(sorted(self.authorization.allowed_files)):
+            raise NativeExecutionError("native_candidate_scope_mismatch")
         return {"commit_sha": head, "pr_number": int(pull["number"]),
                 "pr_url": pull.get("html_url"), "branch": branch,
-                "changed_files": list(changed)}
+                "changed_files": list(candidate_files),
+                "candidate_diff_sha256": canonical_candidate_diff(list(candidate_files), diff.stdout)}
 
     def _git(self, *args):
         result = run_argv(["git", *args], cwd=self.worktree)

@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 from pathlib import Path
 
 from integrations.hermes.charlie_builder.native_executor import (
@@ -13,6 +14,9 @@ from integrations.hermes.charlie_builder.native_executor import (
 )
 from integrations.hermes.charlie_builder.schemas import validate_native_response
 from modules.charlie.mission_store import prepare_hermes_native_execution
+from modules.charlie.mission_store import (
+    bind_external_supervisor_candidate, record_hermes_native_execution_state,
+)
 from tests.test_charlie_mission_store import FakeConnection
 
 
@@ -63,6 +67,7 @@ class NativeExecutorTests(unittest.TestCase):
             "worktree_digest": hashlib.sha256(str(self.worktree.resolve()).encode()).hexdigest(),
             "owner_instruction_digest": "a" * 64, "allowed_files": [ALLOWED],
             "allowed_commands": ["git status", "git diff", "git diff --check"],
+            "allowed_effects": ["edit_allowed_files", "open_draft_pull_request"],
             "forbidden_effects": ["merge", "deploy"], "status": "valid",
             "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
         })
@@ -126,6 +131,19 @@ class NativeExecutorTests(unittest.TestCase):
             with self.assertRaises(NativeExecutionError):
                 PatchValidator(self.worktree, [ALLOWED]).validate(bad)
 
+    def test_real_symlink_context_is_rejected_before_resolution(self):
+        NativeWorktree(self.root, self.worktree, self.authorization).ensure()
+        secret = Path(self.temp.name) / "outside.txt"
+        secret.write_text("outside", encoding="utf-8")
+        link = self.worktree / "linked.txt"
+        try:
+            link.symlink_to(secret)
+        except OSError as exc:
+            self.skipTest(f"symlinks unavailable: {exc}")
+        git(self.worktree, "add", "linked.txt")
+        with self.assertRaisesRegex(NativeExecutionError, "native_context_file_invalid"):
+            ContextBroker(self.worktree, [ALLOWED]).read(["linked.txt"])
+
     def test_protocol_limits_context_and_blocked_shapes(self):
         self.assertEqual("BLOCKED", validate_native_response({
             "state": "BLOCKED", "context_paths": [], "unified_diff": "",
@@ -144,6 +162,24 @@ class NativeExecutorTests(unittest.TestCase):
         with self.assertRaisesRegex(NativeExecutionError, "github_packager_token_required"):
             NativePackager(self.worktree, self.authorization, "")
 
+    def test_parent_packager_commits_and_binds_complete_candidate_without_token_in_argv(self):
+        root = NativeWorktree(self.root, self.worktree, self.authorization).ensure()
+        (root / ALLOWED).write_text("# Bridge\n\nPackaged.\n", encoding="utf-8")
+        packager = NativePackager(root, self.authorization, "protected-token")
+        observed_argv = []
+        def push():
+            observed_argv.append(["git", "push", "-u", "origin", self.branch])
+        packager._push_with_ephemeral_askpass = push
+        packager._find_pull = lambda _branch: None
+        def github(_method, _path, _payload=None):
+            return {"number": 7, "draft": True, "html_url": "https://example.invalid/7",
+                    "head": {"sha": git(root, "rev-parse", "HEAD")}}
+        packager._github = github
+        result = packager.package("docs: clarify boundary", "bounded")
+        self.assertEqual([ALLOWED], result["changed_files"])
+        self.assertEqual(64, len(result["candidate_diff_sha256"]))
+        self.assertNotIn("protected-token", json.dumps(observed_argv))
+
     def test_canonical_native_authorization_requires_archived_zero_candidate_cursor(self):
         dispatch = {
             "status": "valid", "generation": "g1", "base_sha": "a" * 40,
@@ -156,21 +192,61 @@ class NativeExecutorTests(unittest.TestCase):
                                       "external_supervisor_state": state}, "Pilot")])
         result, status = prepare_hermes_native_execution(
             "CHARLIE-MISSION-X", worktree_digest="c" * 64,
+            starting_main_sha="d" * 40,
             authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
             connect_factory=lambda _: connection,
         )
         self.assertEqual(201, status, result)
         self.assertEqual("hermes_native", result["authorization"]["executor_provider"])
+        self.assertEqual("d" * 40, result["authorization"]["starting_main_sha"])
+        self.assertEqual("a" * 40, result["authorization"]["prior_cursor_authorization_base_sha"])
         self.assertEqual([ALLOWED], result["authorization"]["allowed_files"])
         active_connection = FakeConnection([({"dispatch_authorization": dispatch,
                                              "external_supervisor_state": {**state, "agent_state": "ACTIVE"}}, "Pilot")])
         denied, denied_status = prepare_hermes_native_execution(
             "CHARLIE-MISSION-X", worktree_digest="c" * 64,
+            starting_main_sha="d" * 40,
             authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
             connect_factory=lambda _: active_connection,
         )
         self.assertEqual(409, denied_status, denied)
         self.assertEqual("cursor_retirement_not_proven", denied["status"])
+
+    def test_native_candidate_binding_uses_native_not_cursor_branch_authority(self):
+        native = {
+            "status": "valid", "generation": "g1", "starting_main_sha": "a" * 40,
+            "branch": self.branch, "allowed_files": [ALLOWED],
+            "allowed_effects": ["edit_allowed_files"], "forbidden_effects": ["merge", "deploy"],
+        }
+        binding = {
+            "pr_number": 7, "branch_name": self.branch, "base_sha": "a" * 40,
+            "head_sha": "b" * 40, "candidate_diff_sha256": "c" * 64,
+            "changed_files": [ALLOWED], "generation": "g1", "allowed_files": [ALLOWED],
+            "forbidden_files": ["*"], "allowed_effects": ["edit_allowed_files"],
+            "forbidden_effects": ["merge", "deploy"], "required_tests": ["mission-admission"],
+            "operational_acceptance": ["no merge"],
+        }
+        connection = FakeConnection([("in_progress", {"hermes_native_execution": native})])
+        result, status = bind_external_supervisor_candidate(
+            "CHARLIE-MISSION-X", binding, authenticated_principal="hermes:charlie-builder",
+            database_url="postgres://unit", connect_factory=lambda _: connection)
+        self.assertEqual(201, status, result)
+        self.assertEqual("external_candidate_bound", result["status"])
+
+    def test_canonical_writer_claim_rejects_another_live_process(self):
+        current = {"native_execution_id": self.execution_id, "status": "valid",
+                   "worker_claim_id": "HNC-first",
+                   "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()}
+        connection = FakeConnection([({"hermes_native_execution": current},)])
+        result, status = record_hermes_native_execution_state(
+            "CHARLIE-MISSION-X", {"native_execution_id": self.execution_id,
+                "execution_status": "RUNNING", "worker_claim_id": "HNC-second",
+                "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
+                "event": "native_writer_claimed"},
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
+            connect_factory=lambda _: connection)
+        self.assertEqual(409, status, result)
+        self.assertEqual("native_writer_claim_conflict", result["status"])
 
 
 if __name__ == "__main__":

@@ -1046,6 +1046,31 @@ def charlie_external_supervisor_candidate_route(mission_id):
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"success": False, "status": "external_candidate_binding_invalid"}), 400
+    loaded, loaded_status = get_mission(mission_id)
+    metadata = dict(((loaded.get("mission") or {}).get("metadata") or {})) if loaded_status < 400 else {}
+    native = dict(metadata.get("hermes_native_execution") or {})
+    packet = dict(metadata.get("review_packet") or {})
+    if native and packet and packet.get("candidate_revision") != payload.get("head_sha"):
+        try:
+            pr_number = int(payload.get("pr_number") or 0)
+            pull_request = urllib.request.Request(
+                f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/pulls/{pr_number}",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "CHARLIE-Native-Candidate"})
+            with urllib.request.urlopen(pull_request, timeout=15) as response:
+                pull = json.loads(response.read(1048576))
+            if (pull.get("state") != "open" or (pull.get("head") or {}).get("sha") != payload.get("head_sha")
+                    or (pull.get("head") or {}).get("ref") != payload.get("branch_name")
+                    or (pull.get("base") or {}).get("sha") != payload.get("base_sha")
+                    or int(packet.get("pr_number") or 0) != pr_number
+                    or packet.get("branch_name") != payload.get("branch_name")):
+                raise ValueError("native_candidate_github_identity_changed")
+            invalidated, invalidated_status = invalidate_external_candidate_admission(
+                mission_id, str(packet.get("candidate_revision") or ""), str(payload.get("head_sha") or ""),
+                authenticated_principal="control_tower_isolated_validator_v2")
+            if invalidated_status >= 400:
+                return jsonify(invalidated), invalidated_status
+        except (OSError, ValueError, urllib.error.URLError):
+            return jsonify({"success": False, "status": "native_candidate_github_identity_changed"}), 409
     result, status_code = bind_external_supervisor_candidate(
         mission_id, payload, authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status_code
@@ -1231,10 +1256,15 @@ def charlie_hermes_native_execution_route(mission_id):
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
-    if set(payload) != {"worktree_digest"}:
+    if set(payload) != {"worktree_digest", "starting_main_sha"}:
         return jsonify({"success": False, "status": "native_execution_input_invalid"}), 400
+    runtime_sha = str(env_value("RENDER_GIT_COMMIT") or "").strip().lower()
+    requested_sha = str(payload.get("starting_main_sha") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", runtime_sha) or requested_sha != runtime_sha:
+        return jsonify({"success": False, "status": "native_execution_runtime_revision_mismatch"}), 409
     result, status = prepare_hermes_native_execution(
         mission_id, worktree_digest=str(payload.get("worktree_digest") or ""),
+        starting_main_sha=requested_sha,
         authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
 

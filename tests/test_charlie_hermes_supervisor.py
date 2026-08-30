@@ -470,12 +470,16 @@ class HermesSupervisorTests(unittest.TestCase):
         def prepare(mission_id, **kwargs):
             captured.update({"mission_id": mission_id, **kwargs})
             return {"success": True, "authorization": {"native_execution_id": "HNX-X"}}, 201
-        with patch.object(routes, "env_value", return_value="g" * 32), \
+        def env(name):
+            return "a" * 40 if name == "RENDER_GIT_COMMIT" else "g" * 32
+        with patch.object(routes, "env_value", side_effect=env), \
              patch.object(routes, "prepare_hermes_native_execution", side_effect=prepare):
             denied = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
-                                             json={"worktree_digest": "a" * 64})
+                                             json={"worktree_digest": "a" * 64,
+                                                   "starting_main_sha": "a" * 40})
             allowed = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
-                headers={"Authorization": "Bearer " + "g" * 32}, json={"worktree_digest": "a" * 64})
+                headers={"Authorization": "Bearer " + "g" * 32},
+                json={"worktree_digest": "a" * 64, "starting_main_sha": "a" * 40})
             extra = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
                 headers={"Authorization": "Bearer " + "g" * 32},
                 json={"worktree_digest": "a" * 64, "mission_id": "forged"})

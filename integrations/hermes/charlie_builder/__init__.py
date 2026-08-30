@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from .supervisor import build_plugin_from_environment
 
@@ -118,7 +119,15 @@ def register(ctx):
     def run_native(mission_id, channel, thread_id):
         try:
             dispatch = getattr(supervisor, "dispatch_builder", supervisor.dispatch_cursor)
-            dispatch({"mission_id": mission_id})
+            result = dispatch({"mission_id": mission_id})
+            if str((result or {}).get("status") or "") == "PACKAGER_CREDENTIAL_REQUIRED":
+                raise RuntimeError("github_packager_token_required")
+            for _ in range(2160):
+                observed = supervisor.supervise_once({"mission_id": mission_id})
+                status = str((observed or {}).get("execution_status") or (observed or {}).get("status") or "")
+                if status in {"OWNER_DECISION_REQUIRED", "BLOCKED"}:
+                    break
+                threading.Event().wait(10)
         except Exception as exc:
             try:
                 if supervisor and supervisor.slack_bot:

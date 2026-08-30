@@ -1767,7 +1767,18 @@ def bind_external_supervisor_candidate(
                 metadata = dict(row[1] or {})
                 dispatch_authorization = metadata.get("dispatch_authorization") \
                     if isinstance(metadata.get("dispatch_authorization"), dict) else {}
-                if dispatch_authorization:
+                native_authorization = metadata.get("hermes_native_execution") \
+                    if isinstance(metadata.get("hermes_native_execution"), dict) else {}
+                if native_authorization:
+                    if (native_authorization.get("status") != "valid"
+                            or binding["base_sha"] != native_authorization.get("starting_main_sha")
+                            or binding["branch_name"] != native_authorization.get("branch")
+                            or binding["generation"] != native_authorization.get("generation")
+                            or paths != sorted(native_authorization.get("allowed_files") or [])
+                            or sorted(binding["allowed_effects"]) != sorted(native_authorization.get("allowed_effects") or [])
+                            or sorted(binding["forbidden_effects"]) != sorted(native_authorization.get("forbidden_effects") or [])):
+                        return {"success": False, "status": "external_candidate_native_authorization_mismatch"}, 409
+                elif dispatch_authorization:
                     if (dispatch_authorization.get("status") != "valid"
                             or binding["base_sha"] != dispatch_authorization.get("base_sha")
                             or binding["branch_name"] != dispatch_authorization.get("branch")
@@ -1789,7 +1800,9 @@ def bind_external_supervisor_candidate(
                 family["generation"] = binding["generation"]
                 metadata.update({"review_packet": packet, "mission_admission_contract": contract,
                                  "mission_family": family, "external_supervisor": {
-                                     "principal": principal, "transport": "hermes_cursor_cloud_v1"}})
+                                     "principal": principal, "transport": (
+                                         "hermes_native_structured_patch_v1" if native_authorization
+                                         else "hermes_cursor_cloud_v1")}})
                 if dispatch_authorization:
                     dispatch_authorization["active_pr_number"] = binding["pr_number"]
                     identity_contract = {key: value for key, value in dispatch_authorization.items()
@@ -1941,7 +1954,7 @@ def _native_sha(value, length):
     return value if re.fullmatch(rf"[0-9a-f]{{{int(length)}}}", value) else ""
 
 
-def prepare_hermes_native_execution(mission_id, *, worktree_digest,
+def prepare_hermes_native_execution(mission_id, *, worktree_digest, starting_main_sha,
                                     authenticated_principal, database_url=None,
                                     connect_factory=None):
     """Create or replay one provider-neutral native execution authorization.
@@ -1952,7 +1965,8 @@ def prepare_hermes_native_execution(mission_id, *, worktree_digest,
     mission_id = _clean_text(mission_id, 90)
     principal = _clean_text(authenticated_principal, 200)
     worktree_digest = _native_sha(worktree_digest, 64)
-    if not mission_id or not principal or not worktree_digest:
+    starting_main_sha = _native_sha(starting_main_sha, 40)
+    if not mission_id or not principal or not worktree_digest or not starting_main_sha:
         return {"success": False, "status": "native_execution_input_invalid"}, 400
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -1985,10 +1999,10 @@ def prepare_hermes_native_execution(mission_id, *, worktree_digest,
                 ):
                     return {"success": False, "status": "cursor_retirement_not_proven"}, 409
                 generation = _clean_text(dispatch.get("generation") or state.get("generation"), 200)
-                base_sha = _native_sha(dispatch.get("base_sha"), 40)
+                prior_base_sha = _native_sha(dispatch.get("base_sha"), 40)
                 owner_digest = _native_sha(dispatch.get("owner_instruction_digest"), 64)
                 allowed_files = sorted({_clean_text(item, 500) for item in dispatch.get("allowed_files") or [] if _clean_text(item, 500)})
-                if not generation or not base_sha or not owner_digest or not allowed_files:
+                if not generation or not prior_base_sha or not owner_digest or not allowed_files:
                     return {"success": False, "status": "native_execution_authority_unavailable"}, 409
                 identity_material = f"{mission_id}:{generation}:native-1"
                 native_id = "HNX-" + hashlib.sha256(identity_material.encode()).hexdigest().upper()
@@ -2002,12 +2016,18 @@ def prepare_hermes_native_execution(mission_id, *, worktree_digest,
                     "native_execution_id": native_id,
                     "native_attempt": 1,
                     "repository": "Crewless9086/amadeus-pig-tracking-system",
-                    "starting_main_sha": base_sha,
+                    "starting_main_sha": starting_main_sha,
+                    "prior_cursor_authorization_base_sha": prior_base_sha,
                     "branch": branch,
                     "worktree_digest": worktree_digest,
                     "owner_instruction_digest": owner_digest,
                     "allowed_files": allowed_files,
                     "allowed_commands": ["git status", "git diff", "git diff --check"],
+                    "allowed_effects": [
+                        "create_feature_branch", "edit_allowed_files", "run_tests",
+                        "commit_feature_branch", "push_feature_branch", "open_draft_pull_request",
+                        "request_independent_review",
+                    ],
                     "forbidden_effects": [
                         "edit any other file", "write main or master", "merge", "deploy",
                         "change credentials or branch protection", "mutate Supabase outside canonical mission events",
@@ -2054,7 +2074,8 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
     state = state if isinstance(state, dict) else {}
     allowed = {"native_execution_id", "execution_status", "commit_sha", "pr_number", "head_sha",
                "changed_files", "review_verdict", "checks", "event", "failure_reason",
-               "correction_rounds"}
+               "correction_rounds", "worker_claim_id", "claim_expires_at", "release_claim_id",
+               "admission_requested_head", "owner_notification_head"}
     if not mission_id or not principal or not state or set(state) - allowed:
         return {"success": False, "status": "native_execution_state_invalid"}, 400
     database_url = _database_url(database_url)
@@ -2072,8 +2093,34 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
                 current = dict(metadata.get("hermes_native_execution") or {})
                 if not current or state.get("native_execution_id") != current.get("native_execution_id"):
                     return {"success": False, "status": "native_execution_identity_conflict"}, 409
+                claim_id = _clean_text(state.get("worker_claim_id"), 120)
+                release_id = _clean_text(state.get("release_claim_id"), 120)
+                existing_claim = _clean_text(current.get("worker_claim_id"), 120)
+                try:
+                    existing_expiry = datetime.fromisoformat(
+                        str(current.get("claim_expires_at") or "").replace("Z", "+00:00"))
+                except ValueError:
+                    existing_expiry = datetime.min.replace(tzinfo=timezone.utc)
+                if state.get("event") == "native_writer_claimed":
+                    try:
+                        requested_expiry = datetime.fromisoformat(
+                            str(state.get("claim_expires_at") or "").replace("Z", "+00:00"))
+                    except ValueError:
+                        return {"success": False, "status": "native_writer_claim_invalid"}, 400
+                    if (not claim_id or requested_expiry <= datetime.now(timezone.utc)
+                            or requested_expiry > datetime.now(timezone.utc) + timedelta(minutes=10)):
+                        return {"success": False, "status": "native_writer_claim_invalid"}, 400
+                    if existing_claim and existing_claim != claim_id and existing_expiry > datetime.now(timezone.utc):
+                        return {"success": False, "status": "native_writer_claim_conflict"}, 409
+                elif state.get("event") == "native_writer_released":
+                    if not release_id or release_id != existing_claim:
+                        return {"success": False, "status": "native_writer_claim_conflict"}, 409
+                    state = {**state, "worker_claim_id": "", "claim_expires_at": ""}
+                elif existing_claim and claim_id != existing_claim:
+                    return {"success": False, "status": "native_writer_claim_required"}, 409
                 merged = {**current, **state, "updated_by": principal,
                           "updated_at": datetime.now(timezone.utc).isoformat()}
+                merged.pop("release_claim_id", None)
                 if state.get("event") == "native_send_back_corrected":
                     merged["correction_rounds"] = int(current.get("correction_rounds") or 0) + 1
                 metadata["hermes_native_execution"] = merged

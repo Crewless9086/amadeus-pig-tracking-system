@@ -80,11 +80,14 @@ class HermesNativePluginTests(unittest.TestCase):
         self.assertIn("message.channels", manifest)
         plugin_manifest = Path("integrations/hermes/charlie_builder/plugin.yaml").read_text(encoding="utf-8")
         self.assertIn("SLACK_APP_TOKEN", plugin_manifest)
+        self.assertNotIn("  - CURSOR_API_KEY", plugin_manifest)
         self.assertNotIn("SLACK_ALLOWED_USERS", plugin_manifest)
         self.assertIn("pre_gateway_dispatch", plugin_manifest)
         metadata = json.loads(Path("integrations/hermes/charlie_builder/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual("channel-managed", metadata["slack_allowlist_authority"])
         self.assertNotIn("slack_gateway_allowed_users_env", metadata)
+        self.assertEqual("CHARLIE_GITHUB_PACKAGER_TOKEN", metadata["native_packager_token_env"])
+        self.assertEqual("hermes_native", metadata["primary_builder_provider"])
 
     def test_authorized_slack_event_is_deterministically_reconciled_and_dispatched(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")
@@ -114,7 +117,7 @@ class HermesNativePluginTests(unittest.TestCase):
             if any(item[0] == "dispatch" for item in observed):
                 break
             time.sleep(0.01)
-        self.assertEqual(["reconcile", "authorize", "dispatch"], [item[0] for item in observed])
+        self.assertEqual(["reconcile", "authorize", "dispatch"], [item[0] for item in observed[:3]])
         self.assertEqual("CMQ-X", observed[2][1]["mission_id"])
 
     def test_wrong_owner_and_channel_are_skipped_without_dispatch(self):
