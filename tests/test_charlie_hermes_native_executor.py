@@ -106,8 +106,7 @@ class NativeExecutorTests(unittest.TestCase):
 +++ b/docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md
 @@ -1,3 +1,3 @@
  # Bridge
- 
--Old text.
+""" + " \n" + """-Old text.
 +Hermes supervises development but cannot merge or deploy.
 """
         llm = Llm([{"state": "PATCH_READY", "context_paths": [], "unified_diff": patch,
