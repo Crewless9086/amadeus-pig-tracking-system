@@ -619,6 +619,18 @@ class HermesSupervisor:
         if not pr_number or not self.github:
             return {"mission_id": mission_id, **native}
         observed = self.github.pull_state(pr_number, now=self.clock())
+        recovery_claim = ""
+        if native.get("execution_status") in {"CORRECTION_PATCH_VERIFIED", "CORRECTION_PACKAGED"}:
+            recovery_claim = "HNC-" + uuid.uuid4().hex
+            claimed = self.canonical.record_native_progress(mission_id, {
+                "native_execution_id": native.get("native_execution_id"),
+                "execution_status": native.get("execution_status"),
+                "worker_claim_id": recovery_claim,
+                "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+                "event": "native_writer_claimed",
+            })
+            if isinstance(claimed, dict) and claimed.get("success") is False:
+                raise HermesBridgeError(str(claimed.get("status") or "native_writer_claim_failed"))
         if native.get("execution_status") == "CORRECTION_PATCH_VERIFIED":
             prior_send_back = (native.get("review_verdict") == "SEND_BACK"
                 or any(dict(native.get(key) or {}).get("verdict") == "SEND_BACK"
@@ -630,16 +642,6 @@ class HermesSupervisor:
             if observed.get("head_sha") == native.get("head_sha"):
                 if not self.github_packager_token:
                     raise HermesBridgeError("github_packager_token_required")
-                recovery_claim = "HNC-" + uuid.uuid4().hex
-                claimed = self.canonical.record_native_progress(mission_id, {
-                    "native_execution_id": native.get("native_execution_id"),
-                    "execution_status": "CORRECTION_PATCH_VERIFIED",
-                    "worker_claim_id": recovery_claim,
-                    "claim_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
-                    "event": "native_writer_claimed",
-                })
-                if isinstance(claimed, dict) and claimed.get("success") is False:
-                    raise HermesBridgeError(str(claimed.get("status") or "native_writer_claim_failed"))
                 if not execution_lock().acquire(blocking=False):
                     self.canonical.record_native_progress(mission_id, {
                         "native_execution_id": native.get("native_execution_id"),
@@ -652,9 +654,6 @@ class HermesSupervisor:
                         "Recovered same native execution correction; no merge or deployment authority.")
                 finally:
                     execution_lock().release()
-                    self.canonical.record_native_progress(mission_id, {
-                        "native_execution_id": native.get("native_execution_id"),
-                        "release_claim_id": recovery_claim, "event": "native_writer_released"})
                 self.canonical.record_native_progress(mission_id, {
                     "native_execution_id": native.get("native_execution_id"),
                     "execution_status": "CORRECTION_PACKAGED",
@@ -721,6 +720,16 @@ class HermesSupervisor:
             })
             loaded = self.canonical.get_mission(mission_id)
             native = dict(((loaded.get("mission") or {}).get("metadata") or {}).get("hermes_native_execution") or {})
+            if recovery_claim:
+                self.canonical.record_native_progress(mission_id, {
+                    "native_execution_id": native.get("native_execution_id"),
+                    "release_claim_id": recovery_claim, "event": "native_writer_released"})
+                recovery_claim = ""
+        elif recovery_claim:
+            self.canonical.record_native_progress(mission_id, {
+                "native_execution_id": native.get("native_execution_id"),
+                "release_claim_id": recovery_claim, "event": "native_writer_released"})
+            raise HermesBridgeError("native_correction_recovery_conflict")
         security = dict(native.get("review_security") or {})
         functional = dict(native.get("review_functional") or {})
         challenge = dict(native.get("review_challenge") or {})
