@@ -332,10 +332,17 @@ class HermesIndependentReviewer:
         role = str(role or "").upper()
         if role not in {"SECURITY", "FUNCTIONAL", "CHALLENGE"}:
             raise NativeExecutionError("native_review_role_invalid")
+        challenge = role == "CHALLENGE"
         result = self.llm.complete_structured(
-            instructions=(f"Act as an independent {role} reviewer with no tools. Review only the exact "
+            instructions=(("Act as an independent commissioning challenge reviewer with no tools. "
+                           "Find one genuine, concrete, correctable weakness in this exact candidate and "
+                           "return SEND_BACK with that finding; never invent a finding or approve the candidate. "
+                           "Return BLOCKED is not available: inability to identify a real weakness fails the "
+                           "bounded commissioning challenge. " if challenge else
+                          f"Act as an independent {role} reviewer with no tools. Review only the exact "
                           "candidate diff and evidence in this fresh packet. Return APPROVE or SEND_BACK; "
-                          "SEND_BACK must include concrete findings. Never perform repository actions."),
+                          "SEND_BACK must include concrete findings. ") +
+                          "Never perform repository actions."),
             input=[{"type": "text", "text": json.dumps(packet, sort_keys=True)}],
             json_schema=NATIVE_REVIEW_SCHEMA, schema_name=f"charlie.native.{role.lower()}.review.v1",
             purpose=f"charlie.native.{role.lower()}_reviewer", temperature=0.0,

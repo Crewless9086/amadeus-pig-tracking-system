@@ -209,7 +209,8 @@ class HermesSupervisorTests(unittest.TestCase):
             index = len(llm.calls)
             return SimpleNamespace(
                 parsed=({"verdict": "SEND_BACK", "findings": ["Clarify the boundary."]}
-                        if index == 1 else {"verdict": "APPROVE", "findings": []}),
+                        if kwargs.get("task") == "charlie_native_challenge_reviewer"
+                        else {"verdict": "APPROVE", "findings": []}),
                 provider="test-provider", model="test-model", agent_id=f"review-{index}",
                 audit={"profile": "test", "plugin_id": "charlie-builder"})
         llm.complete_structured = complete
@@ -247,7 +248,10 @@ class HermesSupervisorTests(unittest.TestCase):
             "candidate_diff_sha256": "e" * 64,
             "changed_files": authorization["allowed_files"]}
         def complete(**kwargs):
-            return SimpleNamespace(parsed={"verdict": "APPROVE", "findings": []},
+            parsed = ({"verdict": "SEND_BACK", "findings": ["Concrete challenge."]}
+                      if kwargs.get("task") == "charlie_native_challenge_reviewer"
+                      else {"verdict": "APPROVE", "findings": []})
+            return SimpleNamespace(parsed=parsed,
                 provider="test-provider", model="test-model", agent_id="same-host-agent",
                 audit={"profile": "test", "plugin_id": "charlie-builder"})
         supervisor = HermesSupervisor(self.canonical, self.cursor,

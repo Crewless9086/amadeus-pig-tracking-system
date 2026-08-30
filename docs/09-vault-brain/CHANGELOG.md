@@ -20,6 +20,11 @@
   provider/model/Agent identity for distinct auxiliary task routes. Stale or
   non-independent review packets cannot advance supervision, and the pilot's
   genuine SEND_BACK correction remains an explicit release prerequisite.
+- Native builder and reviewer separation now compares and durably records the
+  host-reported Agent principals, not role-derived labels. A bounded third
+  commissioning challenge must return a concrete SEND_BACK, and correction
+  packaging is checkpointed before candidate binding so restart can finish the
+  same head's reviews rather than strand the journey.
 
 ## 2026-08-29 - Cursor managed-VM hook classification recovery
 

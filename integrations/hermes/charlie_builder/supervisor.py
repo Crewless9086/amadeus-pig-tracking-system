@@ -618,6 +618,27 @@ class HermesSupervisor:
         if not pr_number or not self.github:
             return {"mission_id": mission_id, **native}
         observed = self.github.pull_state(pr_number, now=self.clock())
+        if (native.get("execution_status") == "CORRECTION_PACKAGED"
+                and native.get("head_sha") == observed.get("head_sha")):
+            packaged = {"pr_number": pr_number, "commit_sha": native.get("head_sha"),
+                "candidate_diff_sha256": native.get("candidate_diff_sha256"),
+                "changed_files": list(native.get("changed_files") or [])}
+            self._bind_native_candidate(mission_id, native, packaged)
+            recovered_reviews = self._run_native_reviews(
+                native, packaged, [], mission=loaded.get("mission") or {},
+                builder_identity=native.get("builder_identity"),
+                builder_agent_id=native.get("builder_agent_id"), require_challenge=False)
+            self.canonical.record_native_progress(mission_id, {
+                "native_execution_id": native.get("native_execution_id"),
+                "execution_status": "SEND_BACK_CORRECTED", "head_sha": native.get("head_sha"),
+                "pr_number": pr_number, "changed_files": native.get("changed_files"),
+                "candidate_diff_sha256": native.get("candidate_diff_sha256"),
+                "review_security": recovered_reviews["SECURITY"],
+                "review_functional": recovered_reviews["FUNCTIONAL"],
+                "admission_requested_head": "", "event": "native_send_back_corrected",
+            })
+            loaded = self.canonical.get_mission(mission_id)
+            native = dict(((loaded.get("mission") or {}).get("metadata") or {}).get("hermes_native_execution") or {})
         security = dict(native.get("review_security") or {})
         functional = dict(native.get("review_functional") or {})
         challenge = dict(native.get("review_challenge") or {})
@@ -935,6 +956,15 @@ class HermesSupervisor:
                 "Same native execution and worktree correction; no merge or deployment authority.",
             )
             heartbeat()
+            self.canonical.record_native_progress(mission["mission_id"], {
+                "native_execution_id": authorization["native_execution_id"],
+                "execution_status": "CORRECTION_PACKAGED",
+                "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
+                "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
+                "candidate_diff_sha256": packaged["candidate_diff_sha256"],
+                "worker_claim_id": claim_id, "admission_requested_head": "",
+                "event": "native_correction_packaged",
+            })
             self._bind_native_candidate(mission["mission_id"], authorization, packaged)
             reviews = self._run_native_reviews(
                 authorization, packaged, evidence, mission=mission,
@@ -1024,7 +1054,15 @@ class HermesSupervisor:
         }
         reviewer = HermesIndependentReviewer(self.native_llm)
         roles = ("SECURITY", "FUNCTIONAL", "CHALLENGE") if require_challenge else ("SECURITY", "FUNCTIONAL")
-        reviews = {role: reviewer.review(role, packet) for role in roles}
+        reviews = {role: reviewer.review(role, packet) for role in roles if role != "CHALLENGE"}
+        if require_challenge:
+            for _ in range(2):
+                challenge = reviewer.review("CHALLENGE", packet)
+                if challenge.get("verdict") == "SEND_BACK":
+                    reviews["CHALLENGE"] = challenge
+                    break
+            if "CHALLENGE" not in reviews:
+                raise HermesBridgeError("native_commissioning_challenge_not_obtained")
         identities = {reviews[role]["reviewer_identity"] for role in reviews}
         agent_ids = {reviews[role]["reviewer_agent_id"] for role in reviews}
         if (len(identities) != len(roles) or len(agent_ids) != len(roles)
