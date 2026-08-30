@@ -574,7 +574,7 @@ class HermesSupervisor:
             ).package(row.get("title") or "CHARLIE native mission", "Native structured patch; no merge or deployment authority.")
             heartbeat()
             self._bind_native_candidate(mission_id, authorization, packaged)
-            reviews = self._run_native_reviews(authorization, packaged, evidence)
+            reviews = self._run_native_reviews(authorization, packaged, evidence, mission=row)
             return self.canonical.record_native_progress(mission_id, {
                 "native_execution_id": native_id, "execution_status": "DRAFT_PR_OPEN",
                 "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
@@ -608,11 +608,13 @@ class HermesSupervisor:
         observed = self.github.pull_state(pr_number, now=self.clock())
         security = dict(native.get("review_security") or {})
         functional = dict(native.get("review_functional") or {})
-        if "SEND_BACK" in {security.get("verdict"), functional.get("verdict")}:
+        if (observed.get("independent_review") != "SEND_BACK"
+                and "SEND_BACK" in {security.get("verdict"), functional.get("verdict")}):
             observed["independent_review"] = "SEND_BACK"
             observed["independent_review_findings"] = "\n".join(
                 item for review in (security, functional) for item in review.get("findings") or [])[:4000]
-        elif security.get("verdict") == functional.get("verdict") == "APPROVE":
+        elif (observed.get("independent_review") == "WAIT"
+                and security.get("verdict") == functional.get("verdict") == "APPROVE"):
             observed["independent_review"] = "APPROVE"
             observed["security_review"], observed["functional_review"] = security, functional
         admission_requested_head = str(native.get("admission_requested_head") or "")
@@ -898,7 +900,7 @@ class HermesSupervisor:
             )
             heartbeat()
             self._bind_native_candidate(mission["mission_id"], authorization, packaged)
-            reviews = self._run_native_reviews(authorization, packaged, evidence)
+            reviews = self._run_native_reviews(authorization, packaged, evidence, mission=mission)
             return self.canonical.record_native_progress(mission["mission_id"], {
                 "native_execution_id": authorization["native_execution_id"],
                 "execution_status": "SEND_BACK_CORRECTED",
@@ -944,7 +946,7 @@ class HermesSupervisor:
             raise HermesBridgeError(str(result.get("status") or "native_candidate_binding_failed"))
         return result
 
-    def _run_native_reviews(self, authorization, packaged, verification):
+    def _run_native_reviews(self, authorization, packaged, verification, *, mission):
         worktree = (Path(self.native_worktree_base) / authorization["mission_id"]
                     / authorization["generation"] / "native-1")
         diff = run_argv([
@@ -961,6 +963,18 @@ class HermesSupervisor:
                           "diff": diff.stdout},
             "scope": {"allowed_files": list(authorization["allowed_files"]),
                       "forbidden_effects": list(authorization["forbidden_effects"])},
+            "mission": {
+                "mission_id": authorization["mission_id"],
+                "generation": authorization["generation"],
+                "owner_instruction_digest": authorization["owner_instruction_digest"],
+                "instruction": str((mission or {}).get("raw_text") or (mission or {}).get("title") or "")[:8000],
+                "operational_acceptance": [
+                    "same native execution worktree branch and draft PR survive SEND_BACK",
+                    "fresh exact-head MAR and all five protected checks pass",
+                    "owner notification is exact-head bound; no merge or deployment occurs",
+                ],
+                "correction_rounds": int(authorization.get("correction_rounds") or 0),
+            },
             "verification": list(verification or []),
         }
         reviewer = HermesIndependentReviewer(self.native_llm)

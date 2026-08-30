@@ -1,9 +1,12 @@
 import hashlib
 import hmac
 import json
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+from pathlib import Path
+from types import SimpleNamespace
 
 from flask import Flask
 
@@ -138,6 +141,95 @@ class HermesSupervisorTests(unittest.TestCase):
         result = self.supervisor.dispatch_builder({"mission_id": "CMQ-X"})
         self.assertEqual("native", result["status"])
         self.assertEqual([{"mission_id": "CMQ-X"}], calls)
+
+    def test_native_closed_loop_dispatch_send_back_fresh_mar_checks_and_owner_notification(self):
+        native_id, branch = ("HNX-" + "A" * 64, "charlie/cmq-x-native-1")
+        head_one, head_two = "d" * 40, "e" * 40
+        authorization = {
+            "status": "valid", "mission_id": "CMQ-X", "generation": "g1",
+            "native_execution_id": native_id, "native_attempt": 1,
+            "repository": "Crewless9086/amadeus-pig-tracking-system",
+            "starting_main_sha": "a" * 40, "branch": branch,
+            "worktree_digest": hashlib.sha256(str(Path("C:/native/CMQ-X/g1/native-1").resolve()).encode()).hexdigest(),
+            "owner_instruction_digest": "b" * 64,
+            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_commands": ["git diff --check"], "allowed_effects": ["edit_allowed_files"],
+            "forbidden_effects": ["merge", "deploy"], "pr_number": 0,
+        }
+        class CanonicalNative:
+            def __init__(self): self.native = dict(authorization); self.admissions = []; self.bindings = []
+            def running_writer_count(self): return 0
+            def get_mission(self, _mission_id):
+                return {"mission": {"mission_id": "CMQ-X", "raw_text": "Clarify no merge or deploy.",
+                    "metadata": {"dispatch_authorization": {"generation": "g1"},
+                    "hermes_native_execution": dict(self.native),
+                    "external_supervisor_state": {"slack_channel_id": "C1", "slack_thread_ts": "1.0"}}}}
+            def prepare_native_execution(self, *_args): return dict(self.native)
+            def record_native_progress(self, _mission_id, value):
+                if value.get("event") == "native_writer_released":
+                    self.native["worker_claim_id"] = ""; return dict(self.native)
+                self.native.update(value)
+                if value.get("event") == "native_send_back_corrected": self.native["correction_rounds"] = 1
+                return dict(self.native)
+            def bind_native_candidate(self, _mission_id, value): self.bindings.append(value); return {"success": True}
+            def request_admission(self, mission_id, head, pr):
+                self.admissions.append((mission_id, head, pr)); return {"status": "issued"}
+        class Monitor:
+            head = head_one
+            def pull_state(self, number, now=None):
+                return {"pr_number": number, "head_sha": self.head, "branch": branch,
+                    "checks": {name: "success" for name in ("mission-admission", "charlie-core")},
+                    "all_required_checks_pass": self.head == head_two,
+                    "approved_head_sha": self.head if self.head == head_two else "",
+                    "ci_stalled": False, "independent_review": "WAIT"}
+        class Bot:
+            def __init__(self): self.posts = []
+            def post(self, channel, message, **kwargs): self.posts.append((channel, message, kwargs)); return {"ok": True}
+        class Engine:
+            def __init__(self, *_args, **_kwargs): self.worktree = SimpleNamespace(ensure=lambda: Path("C:/native"))
+            def build_patch(self, *_args, **_kwargs): return {"state": "PATCH_READY", "changed_files": authorization["allowed_files"]}
+            def verify(self): return [{"command": "git diff --check", "returncode": 0}]
+        packages = [
+            {"commit_sha": head_one, "pr_number": 9, "changed_files": authorization["allowed_files"], "candidate_diff_sha256": "1" * 64},
+            {"commit_sha": head_two, "pr_number": 9, "changed_files": authorization["allowed_files"], "candidate_diff_sha256": "2" * 64},
+        ]
+        class Packager:
+            def __init__(self, *_args, **_kwargs): pass
+            def package(self, *_args, **_kwargs): return packages.pop(0)
+        llm = SimpleNamespace(complete_structured=lambda **kwargs: SimpleNamespace(parsed=(
+            {"verdict": "SEND_BACK", "findings": ["Clarify the boundary."]}
+            if len([1 for call in getattr(llm, "calls", []) if call]) == 0
+            else {"verdict": "APPROVE", "findings": []})))
+        llm.calls = []
+        def complete(**kwargs):
+            llm.calls.append(kwargs)
+            index = len(llm.calls)
+            return SimpleNamespace(parsed=(
+                {"verdict": "SEND_BACK", "findings": ["Clarify the boundary."]}
+                if index == 1 else {"verdict": "APPROVE", "findings": []}))
+        llm.complete_structured = complete
+        canonical, monitor, bot = CanonicalNative(), Monitor(), Bot()
+        supervisor = HermesSupervisor(canonical, None, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=monitor, slack_bot=bot,
+            native_llm=llm, native_repository_root="C:/repo",
+            native_worktree_base="C:/native", github_packager_token="protected")
+        def command(argv, **kwargs):
+            output = "a" * 40 if argv[:3] == ["git", "rev-parse", "HEAD"] else "bounded diff"
+            return SimpleNamespace(returncode=0, stdout=output, stderr="")
+        with patch("integrations.hermes.charlie_builder.supervisor.content_identity", return_value=(native_id, branch)), \
+             patch("integrations.hermes.charlie_builder.supervisor.NativeExecutionEngine", Engine), \
+             patch("integrations.hermes.charlie_builder.supervisor.NativePackager", Packager), \
+             patch("integrations.hermes.charlie_builder.supervisor.run_argv", side_effect=command):
+            supervisor.dispatch_native({"mission_id": "CMQ-X"})
+            corrected = supervisor.supervise_once({"mission_id": "CMQ-X"})
+            self.assertEqual(head_two, corrected["head_sha"])
+            monitor.head = head_two
+            ready = supervisor.supervise_once({"mission_id": "CMQ-X"})
+        self.assertEqual([head_one, head_two], [item[1] for item in canonical.admissions])
+        self.assertEqual(2, len(canonical.bindings))
+        self.assertEqual("OWNER_DECISION_REQUIRED", ready["execution_status"])
+        self.assertEqual("CAPPROVE", bot.posts[-1][0])
         self.assertEqual([], self.client.calls)
 
     def test_oidc_workspace_pda_late_binds_once_and_enforces_scope_and_command(self):

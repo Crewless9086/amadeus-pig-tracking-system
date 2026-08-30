@@ -135,6 +135,8 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual("APPROVE", functional["verdict"])
         self.assertNotEqual(security["reviewer_identity"], functional["reviewer_identity"])
         self.assertTrue(all("tools" not in call for call in llm.calls))
+        self.assertEqual(["charlie_native_security_reviewer", "charlie_native_functional_reviewer"],
+                         [call["task"] for call in llm.calls])
 
     def test_context_and_patch_security_fail_closed(self):
         NativeWorktree(self.root, self.worktree, self.authorization).ensure()

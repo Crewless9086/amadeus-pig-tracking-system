@@ -8,9 +8,10 @@ from types import SimpleNamespace
 
 
 class Context:
-    def __init__(self): self.tools = {}; self.hooks = {}
+    def __init__(self): self.tools = {}; self.hooks = {}; self.auxiliary_tasks = []
     def register_tool(self, **kwargs): self.tools[kwargs["name"]] = kwargs
     def register_hook(self, name, handler): self.hooks[name] = handler
+    def register_auxiliary_task(self, name, **kwargs): self.auxiliary_tasks.append((name, kwargs))
 
 
 class HermesNativePluginTests(unittest.TestCase):
@@ -56,6 +57,9 @@ class HermesNativePluginTests(unittest.TestCase):
 
         self.assertEqual(set(fake), set(context.tools))
         self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
+        self.assertEqual({"charlie_native_builder", "charlie_native_security_reviewer",
+                          "charlie_native_functional_reviewer"},
+                         {item[0] for item in context.auxiliary_tasks})
 
     def test_registration_resumes_one_canonical_native_execution_without_slack_replay(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")

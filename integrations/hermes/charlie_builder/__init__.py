@@ -53,6 +53,14 @@ def register(ctx):
     # Registration establishes the bounded tool and hook safety surface.  Live
     # dependencies are checked by the individual operations that use them; a
     # transient provider outage must never remove the fail-closed Slack hooks.
+    for task, label in (
+        ("charlie_native_builder", "CHARLIE Native Builder"),
+        ("charlie_native_security_reviewer", "CHARLIE Native Security Reviewer"),
+        ("charlie_native_functional_reviewer", "CHARLIE Native Functional Reviewer"),
+    ):
+        ctx.register_auxiliary_task(
+            task, display_name=label,
+            description="No-tool host-owned structured execution role with isolated task routing.")
     tools = build_plugin_from_environment(validate_live=False)
     supervisor = getattr(tools, "supervisor", None)
     if supervisor is not None:

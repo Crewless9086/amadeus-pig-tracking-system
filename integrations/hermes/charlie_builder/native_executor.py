@@ -301,6 +301,7 @@ class HermesStructuredPatchWorker:
             json_schema=NATIVE_PATCH_SCHEMA,
             schema_name="charlie.native.patch.v1",
             purpose=purpose,
+            task="charlie_native_builder",
             temperature=0.0,
             max_tokens=6000,
             timeout=120,
@@ -327,6 +328,7 @@ class HermesIndependentReviewer:
             input=[{"type": "text", "text": json.dumps(packet, sort_keys=True)}],
             json_schema=NATIVE_REVIEW_SCHEMA, schema_name=f"charlie.native.{role.lower()}.review.v1",
             purpose=f"charlie.native.{role.lower()}_reviewer", temperature=0.0,
+            task=f"charlie_native_{role.lower()}_reviewer",
             max_tokens=3000, timeout=120,
         )
         return {"role": role, "reviewer_identity": f"hermes-native-{role.lower()}-reviewer-v1",
