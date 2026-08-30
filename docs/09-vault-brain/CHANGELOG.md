@@ -22,9 +22,10 @@
   genuine SEND_BACK correction remains an explicit release prerequisite.
 - Native builder and reviewer separation now compares and durably records the
   host-reported Agent principals, not role-derived labels. A bounded third
-  commissioning challenge must return a concrete SEND_BACK, and correction
-  packaging is checkpointed before candidate binding so restart can finish the
-  same head's reviews rather than strand the journey.
+  commissioning challenge must return a concrete SEND_BACK. Correction worker
+  identity and verification are checkpointed before packaging; restart safely
+  reconciles an already-pushed same-worktree head and then completes candidate
+  binding and fresh reviews rather than stranding the journey.
 
 ## 2026-08-29 - Cursor managed-VM hook classification recovery
 

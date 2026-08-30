@@ -25,6 +25,7 @@ from .native_executor import (
     NativePackager, content_identity, execution_lock, run_argv,
 )
 from modules.charlie.execution_bridge import build_hermes_native_execution_context
+from modules.charlie.mission_admission import canonical_candidate_diff
 
 
 class HermesBridgeError(RuntimeError):
@@ -618,6 +619,35 @@ class HermesSupervisor:
         if not pr_number or not self.github:
             return {"mission_id": mission_id, **native}
         observed = self.github.pull_state(pr_number, now=self.clock())
+        if (native.get("execution_status") == "CORRECTION_PATCH_VERIFIED"
+                and observed.get("independent_review") == "SEND_BACK"
+                and observed.get("head_sha") != native.get("head_sha")):
+            recovery_worktree = (Path(self.native_worktree_base) / mission_id
+                                 / native.get("generation", "") / "native-1")
+            local_head = run_argv(["git", "rev-parse", "HEAD"], cwd=recovery_worktree)
+            names = run_argv(["git", "diff", "--name-only", native.get("starting_main_sha"),
+                              observed.get("head_sha"), "--"], cwd=recovery_worktree)
+            diff = run_argv(["git", "diff", "--no-ext-diff", "--no-textconv", "--binary",
+                             "--full-index", native.get("starting_main_sha"),
+                             observed.get("head_sha"), "--"], cwd=recovery_worktree)
+            changed = sorted(item for item in names.stdout.splitlines() if item)
+            if (local_head.returncode or local_head.stdout.strip() != observed.get("head_sha")
+                    or names.returncode or diff.returncode or not changed
+                    or not set(changed).issubset(set(native.get("allowed_files") or []))):
+                raise HermesBridgeError("native_correction_recovery_conflict")
+            self.canonical.record_native_progress(mission_id, {
+                "native_execution_id": native.get("native_execution_id"),
+                "execution_status": "CORRECTION_PACKAGED", "head_sha": observed.get("head_sha"),
+                "commit_sha": observed.get("head_sha"), "pr_number": pr_number,
+                "changed_files": changed,
+                "candidate_diff_sha256": canonical_candidate_diff(changed, diff.stdout),
+                "builder_identity": native.get("builder_identity"),
+                "builder_agent_id": native.get("builder_agent_id"),
+                "stage_artifact": native.get("stage_artifact"),
+                "admission_requested_head": "", "event": "native_correction_packaged_recovered",
+            })
+            loaded = self.canonical.get_mission(mission_id)
+            native = dict(((loaded.get("mission") or {}).get("metadata") or {}).get("hermes_native_execution") or {})
         if (native.get("execution_status") == "CORRECTION_PACKAGED"
                 and native.get("head_sha") == observed.get("head_sha")):
             packaged = {"pr_number": pr_number, "commit_sha": native.get("head_sha"),
@@ -625,7 +655,8 @@ class HermesSupervisor:
                 "changed_files": list(native.get("changed_files") or [])}
             self._bind_native_candidate(mission_id, native, packaged)
             recovered_reviews = self._run_native_reviews(
-                native, packaged, [], mission=loaded.get("mission") or {},
+                native, packaged, list((native.get("stage_artifact") or {}).get("commands") or []),
+                mission=loaded.get("mission") or {},
                 builder_identity=native.get("builder_identity"),
                 builder_agent_id=native.get("builder_agent_id"), require_challenge=False)
             self.canonical.record_native_progress(mission_id, {
@@ -949,6 +980,14 @@ class HermesSupervisor:
                 raise HermesBridgeError("native_correction_not_ready")
             evidence = engine.verify()
             heartbeat()
+            self.canonical.record_native_progress(mission["mission_id"], {
+                "native_execution_id": authorization["native_execution_id"],
+                "execution_status": "CORRECTION_PATCH_VERIFIED",
+                "builder_identity": built.get("worker_identity"),
+                "builder_agent_id": built.get("worker_agent_id"),
+                "stage_artifact": {"kind": "bounded_verification", "commands": evidence},
+                "worker_claim_id": claim_id, "event": "native_correction_patch_verified",
+            })
             if not self.github_packager_token:
                 raise HermesBridgeError("github_packager_token_required")
             packaged = NativePackager(worktree, authorization, self.github_packager_token).package(
@@ -962,6 +1001,9 @@ class HermesSupervisor:
                 "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
                 "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
                 "candidate_diff_sha256": packaged["candidate_diff_sha256"],
+                "builder_identity": built.get("worker_identity"),
+                "builder_agent_id": built.get("worker_agent_id"),
+                "stage_artifact": {"kind": "bounded_verification", "commands": evidence},
                 "worker_claim_id": claim_id, "admission_requested_head": "",
                 "event": "native_correction_packaged",
             })
