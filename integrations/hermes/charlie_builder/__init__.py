@@ -149,6 +149,21 @@ def register(ctx):
             with active_native_lock:
                 active_native.discard(mission_id)
 
+    def recover_native(mission_id, channel, thread_id):
+        # A replacement gateway may observe the dead process's still-valid
+        # canonical lease. Retry from canonical truth until that bounded lease
+        # expires; do not create a second execution or worktree.
+        for _ in range(50):
+            run_native(mission_id, channel, thread_id)
+            try:
+                remaining = {str(item.get("mission_id") or "")
+                             for item in supervisor.canonical.resumable_native_executions()}
+            except Exception:
+                remaining = {mission_id}
+            if mission_id not in remaining:
+                return
+            threading.Event().wait(15)
+
     def pre_gateway_dispatch(event, **kwargs):
         del kwargs
         source = getattr(event, "source", None)
@@ -209,7 +224,7 @@ def register(ctx):
             mission_id = str(execution.get("mission_id") or "").strip()
             if mission_id:
                 native_jobs.submit(
-                    run_native, mission_id,
+                    recover_native, mission_id,
                     str(execution.get("slack_channel_id") or ""),
                     str(execution.get("slack_thread_ts") or ""),
                 )

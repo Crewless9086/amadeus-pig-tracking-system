@@ -10,6 +10,7 @@ from pathlib import Path
 
 from integrations.hermes.charlie_builder.native_executor import (
     ContextBroker, HermesStructuredPatchWorker, NativeAuthorization,
+    HermesIndependentReviewer,
     NativeExecutionEngine, NativeExecutionError, NativePackager,
     NativeWorktree, PatchValidator, content_identity, run_argv,
 )
@@ -120,6 +121,20 @@ class NativeExecutorTests(unittest.TestCase):
         packet = json.loads(call["input"][0]["text"])
         self.assertNotIn("environment", packet)
         self.assertNotIn("credentials", packet)
+
+    def test_independent_role_reviewers_receive_fresh_bounded_packets(self):
+        llm = Llm([
+            {"verdict": "SEND_BACK", "findings": ["Clarify the no-deploy boundary."]},
+            {"verdict": "APPROVE", "findings": []},
+        ])
+        reviewer = HermesIndependentReviewer(llm)
+        packet = {"candidate": {"head_sha": "a" * 40, "diff": "bounded"}}
+        security = reviewer.review("SECURITY", packet)
+        functional = reviewer.review("FUNCTIONAL", packet)
+        self.assertEqual("SEND_BACK", security["verdict"])
+        self.assertEqual("APPROVE", functional["verdict"])
+        self.assertNotEqual(security["reviewer_identity"], functional["reviewer_identity"])
+        self.assertTrue(all("tools" not in call for call in llm.calls))
 
     def test_context_and_patch_security_fail_closed(self):
         NativeWorktree(self.root, self.worktree, self.authorization).ensure()

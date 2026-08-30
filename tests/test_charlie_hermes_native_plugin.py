@@ -57,6 +57,35 @@ class HermesNativePluginTests(unittest.TestCase):
         self.assertEqual(set(fake), set(context.tools))
         self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
 
+    def test_registration_resumes_one_canonical_native_execution_without_slack_replay(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        observed = []
+        recoveries = [[{"mission_id": "CMQ-NATIVE", "slack_channel_id": "C1",
+                        "slack_thread_ts": "1.0"}], []]
+        canonical = SimpleNamespace(
+            resumable_native_executions=lambda: recoveries.pop(0) if recoveries else [])
+        supervisor = SimpleNamespace(
+            native_llm=None, canonical=canonical, slack_bot=None,
+            dispatch_builder=lambda mission: observed.append(("dispatch", mission)) or {"pr_number": 9},
+            dispatch_cursor=lambda mission: mission,
+            supervise_once=lambda mission: observed.append(("supervise", mission)) or {
+                "execution_status": "OWNER_DECISION_REQUIRED"},
+        )
+        class ToolMap(dict): pass
+        tools = ToolMap({name: (lambda value: value) for name in (
+            "charlie_reconcile_mission", "charlie_dispatch_cursor", "charlie_get_mission_status",
+            "charlie_get_cursor_status", "charlie_supervise_once", "charlie_continue_cursor",
+            "charlie_issue_admission", "charlie_prepare_owner_decision")})
+        tools.supervisor = supervisor
+        context = Context()
+        with patch.object(module, "build_plugin_from_environment", return_value=tools):
+            module.register(context)
+        for _ in range(100):
+            if any(item[0] == "supervise" for item in observed): break
+            time.sleep(0.01)
+        self.assertEqual(1, len([item for item in observed if item[0] == "dispatch"]))
+        self.assertEqual("CMQ-NATIVE", observed[0][1]["mission_id"])
+
     def test_wrappers_use_canonical_state_and_json_results(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")
         observed = {}

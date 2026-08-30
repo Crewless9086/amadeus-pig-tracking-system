@@ -24,6 +24,16 @@ NATIVE_PATCH_SCHEMA = {
     "required": ["state", "context_paths", "unified_diff", "test_proposal", "reason"],
 }
 
+NATIVE_REVIEW_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "properties": {
+        "verdict": {"type": "string", "enum": ["APPROVE", "SEND_BACK"]},
+        "findings": {"type": "array", "maxItems": 20,
+                     "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+    },
+    "required": ["verdict", "findings"],
+}
+
 
 class NativeSchemaError(ValueError):
     """The model response does not match the bounded protocol."""
@@ -67,3 +77,16 @@ def validate_native_response(value):
         "test_proposal": list(tests),
         "reason": reason.strip(),
     }
+
+
+def validate_native_review(value):
+    if not isinstance(value, dict) or set(value) != {"verdict", "findings"}:
+        raise NativeSchemaError("native_review_schema_invalid")
+    verdict, findings = value.get("verdict"), value.get("findings")
+    if verdict not in {"APPROVE", "SEND_BACK"} or not isinstance(findings, list):
+        raise NativeSchemaError("native_review_verdict_invalid")
+    if len(findings) > 20 or not all(isinstance(item, str) and 0 < len(item) <= 1000 for item in findings):
+        raise NativeSchemaError("native_review_findings_invalid")
+    if verdict == "SEND_BACK" and not findings:
+        raise NativeSchemaError("native_review_findings_required")
+    return {"verdict": verdict, "findings": list(findings)}

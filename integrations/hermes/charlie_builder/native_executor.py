@@ -15,7 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from .schemas import NATIVE_PATCH_SCHEMA, validate_native_response
+from .schemas import (NATIVE_PATCH_SCHEMA, NATIVE_REVIEW_SCHEMA,
+                      validate_native_response, validate_native_review)
 from modules.charlie.mission_admission import canonical_candidate_diff
 
 REPOSITORY = "Crewless9086/amadeus-pig-tracking-system"
@@ -305,6 +306,31 @@ class HermesStructuredPatchWorker:
             timeout=120,
         )
         return validate_native_response(getattr(result, "parsed", None))
+
+
+class HermesIndependentReviewer:
+    """Fresh no-tool role-scoped reviewer; it never receives builder state or credentials."""
+
+    def __init__(self, llm):
+        if llm is None or not hasattr(llm, "complete_structured"):
+            raise NativeExecutionError("hermes_structured_reviewer_unavailable")
+        self.llm = llm
+
+    def review(self, role, packet):
+        role = str(role or "").upper()
+        if role not in {"SECURITY", "FUNCTIONAL"}:
+            raise NativeExecutionError("native_review_role_invalid")
+        result = self.llm.complete_structured(
+            instructions=(f"Act as an independent {role} reviewer with no tools. Review only the exact "
+                          "candidate diff and evidence in this fresh packet. Return APPROVE or SEND_BACK; "
+                          "SEND_BACK must include concrete findings. Never perform repository actions."),
+            input=[{"type": "text", "text": json.dumps(packet, sort_keys=True)}],
+            json_schema=NATIVE_REVIEW_SCHEMA, schema_name=f"charlie.native.{role.lower()}.review.v1",
+            purpose=f"charlie.native.{role.lower()}_reviewer", temperature=0.0,
+            max_tokens=3000, timeout=120,
+        )
+        return {"role": role, "reviewer_identity": f"hermes-native-{role.lower()}-reviewer-v1",
+                **validate_native_review(getattr(result, "parsed", None))}
 
 
 class NativeExecutionEngine:

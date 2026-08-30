@@ -308,6 +308,7 @@ class HermesSupervisorTests(unittest.TestCase):
                 if path.endswith("/check-runs"): return {"check_runs": [{"name": "charlie-core", "status": "queued", "conclusion": None, "started_at": "2026-08-28T00:00:00Z"}]}
                 if path.endswith("/reviews"): return {"items": [{"body": "bounded finding",
                     "state": "CHANGES_REQUESTED", "commit_id": "d" * 40,
+                    "author_association": "COLLABORATOR",
                     "user": {"login": "independent-reviewer"}}]}
                 return {}
         monitor = GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=GitHubClient())
@@ -324,6 +325,7 @@ class HermesSupervisorTests(unittest.TestCase):
                 if path.endswith("/check-runs"): return {"check_runs": []}
                 if path.endswith("/reviews"): return {"items": [{"body": "APPROVE SECURITY",
                     "state": "COMMENTED", "commit_id": "d" * 40,
+                    "author_association": "NONE",
                     "user": {"login": "attacker"}}]}
                 return {}
         state = GitHubReadMonitor(
@@ -338,8 +340,10 @@ class HermesSupervisorTests(unittest.TestCase):
                 if path.endswith("/check-runs"): return {"check_runs": []}
                 if path.endswith("/reviews"): return {"items": [
                     {"body": "SECURITY: bounded", "state": "APPROVED", "commit_id": "d" * 40,
+                     "author_association": "COLLABORATOR",
                      "user": {"login": "security-reviewer"}},
                     {"body": "FUNCTIONAL: bounded", "state": "APPROVED", "commit_id": "d" * 40,
+                     "author_association": "MEMBER",
                      "user": {"login": "functional-reviewer"}},
                 ]}
                 return {}
@@ -347,6 +351,44 @@ class HermesSupervisorTests(unittest.TestCase):
             "Crewless9086/amadeus-pig-tracking-system", client=GitHubClient()).pull_state(9)
         self.assertEqual("APPROVE", state["independent_review"])
         self.assertNotEqual(state["security_review"]["reviewer"], state["functional_review"]["reviewer"])
+
+    def test_pr_author_and_untrusted_accounts_cannot_satisfy_review_roles(self):
+        class GitHubClient:
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls/9"):
+                    return {"head": {"sha": "d" * 40, "ref": "feature"}, "user": {"login": "builder"}}
+                if path.endswith("/check-runs"): return {"check_runs": []}
+                if path.endswith("/reviews"): return {"items": [
+                    {"body": "SECURITY: self", "state": "APPROVED", "commit_id": "d" * 40,
+                     "author_association": "OWNER", "user": {"login": "builder"}},
+                    {"body": "FUNCTIONAL: outsider", "state": "APPROVED", "commit_id": "d" * 40,
+                     "author_association": "NONE", "user": {"login": "outsider"}},
+                ]}
+                return {}
+        state = GitHubReadMonitor(
+            "Crewless9086/amadeus-pig-tracking-system", client=GitHubClient()).pull_state(9)
+        self.assertEqual("WAIT", state["independent_review"])
+
+    def test_required_mission_admission_must_be_from_app_4742997(self):
+        names = ["mission-admission", "charlie-core",
+            "Unit tests with disposable Postgres audit rails",
+            "Closed Render migration rail with disposable Postgres",
+            "Playwright real-browser behavior gate"]
+        class GitHubClient:
+            app_id = 1
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls/9"):
+                    return {"head": {"sha": "d" * 40, "ref": "feature"}, "user": {"login": "builder"}}
+                if path.endswith("/check-runs"):
+                    return {"check_runs": [{"name": name, "status": "completed", "conclusion": "success",
+                        "app": {"id": self.app_id}} for name in names]}
+                if path.endswith("/reviews"): return {"items": []}
+                return {}
+        client = GitHubClient(); monitor = GitHubReadMonitor(
+            "Crewless9086/amadeus-pig-tracking-system", client=client)
+        self.assertFalse(monitor.pull_state(9)["all_required_checks_pass"])
+        client.app_id = 4742997
+        self.assertTrue(monitor.pull_state(9)["all_required_checks_pass"])
 
     def test_poll_discovers_pr_and_invokes_protected_exact_candidate_admission_once(self):
         class Monitor:

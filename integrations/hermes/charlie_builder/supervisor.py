@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .native_executor import (
-    HermesStructuredPatchWorker, NativeExecutionEngine, NativeExecutionError,
+    HermesIndependentReviewer, HermesStructuredPatchWorker, NativeExecutionEngine, NativeExecutionError,
     NativePackager, content_identity, execution_lock, run_argv,
 )
 from modules.charlie.execution_bridge import build_hermes_native_execution_context
@@ -337,26 +337,34 @@ class GitHubReadMonitor:
         reviews = self.client.request("GET", f"/repos/{self.repository}/pulls/{int(number)}/reviews")
         runs = list(checks.get("check_runs") or [])
         required = {run.get("name"): run.get("conclusion") for run in runs}
+        trusted_admission = any(
+            run.get("name") == "mission-admission" and run.get("conclusion") == "success"
+            and int((run.get("app") or {}).get("id") or 0) == 4742997 for run in runs)
         review_items = list(reviews.get("items") or [])
         current_reviews = [item for item in review_items if isinstance(item, dict)
                            and str(item.get("commit_id") or head) == head]
+        pull_author = str((pull.get("user") or {}).get("login") or "").strip().lower()
         verdicts = []
         role_verdicts = {}
         for item in current_reviews:
             body = str(item.get("body") or "").strip()
             state = str(item.get("state") or "").strip().upper()
             reviewer = str((item.get("user") or {}).get("login") or "").strip().lower()
+            association = str(item.get("author_association") or "").strip().upper()
             role = ("SECURITY" if body.upper().startswith(("SECURITY:", "[SECURITY]"))
                     else "FUNCTIONAL" if body.upper().startswith(("FUNCTIONAL:", "[FUNCTIONAL]"))
                     else "")
             # Only GitHub's authenticated review state is authoritative.  A
             # COMMENTED review body is untrusted text and can never satisfy the
             # independent review gate.
-            if state == "CHANGES_REQUESTED":
+            trusted_reviewer = bool(
+                reviewer and reviewer != pull_author
+                and association in {"COLLABORATOR", "MEMBER", "OWNER"})
+            if state == "CHANGES_REQUESTED" and trusted_reviewer:
                 verdicts.append(("SEND_BACK", body))
                 if role and reviewer:
                     role_verdicts[role] = {"verdict": "SEND_BACK", "reviewer": reviewer, "findings": body}
-            elif state == "APPROVED":
+            elif state == "APPROVED" and trusted_reviewer:
                 if role and reviewer:
                     role_verdicts[role] = {"verdict": "APPROVE", "reviewer": reviewer, "findings": body}
         observed_at = float(time.time() if now is None else now)
@@ -378,7 +386,9 @@ class GitHubReadMonitor:
                 "branch": str((pull.get("head") or {}).get("ref") or ""),
                 "checks": required, "stalled_checks": stalled_checks,
                 "ci_stalled": bool(stalled_checks),
-                "all_required_checks_pass": all(required.get(name) == "success" for name in required_names),
+                "all_required_checks_pass": (trusted_admission and all(
+                    required.get(name) == "success" for name in required_names - {"mission-admission"})),
+                "mission_admission_app_id": 4742997 if trusted_admission else 0,
                 "independent_review": review,
                 "independent_review_findings": findings[:4000],
                 "security_review": security, "functional_review": functional,
@@ -564,12 +574,15 @@ class HermesSupervisor:
             ).package(row.get("title") or "CHARLIE native mission", "Native structured patch; no merge or deployment authority.")
             heartbeat()
             self._bind_native_candidate(mission_id, authorization, packaged)
+            reviews = self._run_native_reviews(authorization, packaged, evidence)
             return self.canonical.record_native_progress(mission_id, {
                 "native_execution_id": native_id, "execution_status": "DRAFT_PR_OPEN",
                 "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
                 "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
                 "worker_claim_id": claim_id, "runner_stage": "reviewer",
                 "review_request_roles": ["SECURITY", "FUNCTIONAL"],
+                "review_security": reviews["SECURITY"],
+                "review_functional": reviews["FUNCTIONAL"],
                 "stage_artifact": {"kind": "draft_pr_candidate", "head_sha": packaged["commit_sha"]},
                 "event": "native_draft_pr_opened",
             })
@@ -593,6 +606,15 @@ class HermesSupervisor:
         if not pr_number or not self.github:
             return {"mission_id": mission_id, **native}
         observed = self.github.pull_state(pr_number, now=self.clock())
+        security = dict(native.get("review_security") or {})
+        functional = dict(native.get("review_functional") or {})
+        if "SEND_BACK" in {security.get("verdict"), functional.get("verdict")}:
+            observed["independent_review"] = "SEND_BACK"
+            observed["independent_review_findings"] = "\n".join(
+                item for review in (security, functional) for item in review.get("findings") or [])[:4000]
+        elif security.get("verdict") == functional.get("verdict") == "APPROVE":
+            observed["independent_review"] = "APPROVE"
+            observed["security_review"], observed["functional_review"] = security, functional
         admission_requested_head = str(native.get("admission_requested_head") or "")
         if admission_requested_head != observed.get("head_sha"):
             self.issue_admission(mission_id, observed.get("head_sha"), pr_number)
@@ -866,7 +888,7 @@ class HermesSupervisor:
             )
             if built.get("state") != "PATCH_READY":
                 raise HermesBridgeError("native_correction_not_ready")
-            engine.verify()
+            evidence = engine.verify()
             heartbeat()
             if not self.github_packager_token:
                 raise HermesBridgeError("github_packager_token_required")
@@ -876,12 +898,15 @@ class HermesSupervisor:
             )
             heartbeat()
             self._bind_native_candidate(mission["mission_id"], authorization, packaged)
+            reviews = self._run_native_reviews(authorization, packaged, evidence)
             return self.canonical.record_native_progress(mission["mission_id"], {
                 "native_execution_id": authorization["native_execution_id"],
                 "execution_status": "SEND_BACK_CORRECTED",
                 "commit_sha": packaged["commit_sha"], "head_sha": packaged["commit_sha"],
                 "pr_number": packaged["pr_number"], "changed_files": packaged["changed_files"],
                 "worker_claim_id": claim_id, "admission_requested_head": "",
+                "review_security": reviews["SECURITY"],
+                "review_functional": reviews["FUNCTIONAL"],
                 "event": "native_send_back_corrected",
             })
         finally:
@@ -918,6 +943,28 @@ class HermesSupervisor:
         if isinstance(result, dict) and result.get("success") is False:
             raise HermesBridgeError(str(result.get("status") or "native_candidate_binding_failed"))
         return result
+
+    def _run_native_reviews(self, authorization, packaged, verification):
+        worktree = (Path(self.native_worktree_base) / authorization["mission_id"]
+                    / authorization["generation"] / "native-1")
+        diff = run_argv([
+            "git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index",
+            authorization["starting_main_sha"], packaged["commit_sha"], "--",
+        ], cwd=worktree)
+        if diff.returncode != 0:
+            raise HermesBridgeError("native_review_diff_unavailable")
+        packet = {
+            "protocol": "charlie_hermes_native_independent_review_v1",
+            "candidate": {"base_sha": authorization["starting_main_sha"],
+                          "head_sha": packaged["commit_sha"],
+                          "changed_files": packaged["changed_files"],
+                          "diff": diff.stdout},
+            "scope": {"allowed_files": list(authorization["allowed_files"]),
+                      "forbidden_effects": list(authorization["forbidden_effects"])},
+            "verification": list(verification or []),
+        }
+        reviewer = HermesIndependentReviewer(self.native_llm)
+        return {role: reviewer.review(role, packet) for role in ("SECURITY", "FUNCTIONAL")}
 
     def prepare_owner_decision(self, mission):
         row = dict(mission or {})
