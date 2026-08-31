@@ -36,8 +36,12 @@ from modules.charlie.mission_store import (
     invalidate_external_candidate_admission,
     read_external_supervisor_state,
     record_external_supervisor_state,
+    retire_cursor_provider_execution,
     prepare_external_dispatch_authorization,
     prepare_external_execution_succession,
+    prepare_hermes_native_execution,
+    list_resumable_hermes_native_executions,
+    record_hermes_native_execution_state,
     refresh_external_dispatch_authorization_base,
     read_current_mission_admission_authority,
     list_missions,
@@ -1044,6 +1048,31 @@ def charlie_external_supervisor_candidate_route(mission_id):
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"success": False, "status": "external_candidate_binding_invalid"}), 400
+    loaded, loaded_status = get_mission(mission_id)
+    metadata = dict(((loaded.get("mission") or {}).get("metadata") or {})) if loaded_status < 400 else {}
+    native = dict(metadata.get("hermes_native_execution") or {})
+    packet = dict(metadata.get("review_packet") or {})
+    if native and packet and packet.get("candidate_revision") != payload.get("head_sha"):
+        try:
+            pr_number = int(payload.get("pr_number") or 0)
+            pull_request = urllib.request.Request(
+                f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/pulls/{pr_number}",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "CHARLIE-Native-Candidate"})
+            with urllib.request.urlopen(pull_request, timeout=15) as response:
+                pull = json.loads(response.read(1048576))
+            if (pull.get("state") != "open" or (pull.get("head") or {}).get("sha") != payload.get("head_sha")
+                    or (pull.get("head") or {}).get("ref") != payload.get("branch_name")
+                    or (pull.get("base") or {}).get("sha") != payload.get("base_sha")
+                    or int(packet.get("pr_number") or 0) != pr_number
+                    or packet.get("branch_name") != payload.get("branch_name")):
+                raise ValueError("native_candidate_github_identity_changed")
+            invalidated, invalidated_status = invalidate_external_candidate_admission(
+                mission_id, str(packet.get("candidate_revision") or ""), str(payload.get("head_sha") or ""),
+                authenticated_principal="control_tower_isolated_validator_v2")
+            if invalidated_status >= 400:
+                return jsonify(invalidated), invalidated_status
+        except (OSError, ValueError, urllib.error.URLError):
+            return jsonify({"success": False, "status": "native_candidate_github_identity_changed"}), 409
     result, status_code = bind_external_supervisor_candidate(
         mission_id, payload, authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status_code
@@ -1153,7 +1182,7 @@ def charlie_hermes_mission_reconcile_route():
         "raw_text": instruction, "title": instruction[:160], "urgency": "P2",
         "mission_type": "system improvement", "approval_level": "LEVEL 3",
         "metadata": {"mission_plane": {
-            "plane": "software", "coordinator": "CHARLIE", "executor": "Cursor Cloud",
+            "plane": "software", "coordinator": "CHARLIE", "executor": "Hermes Native",
             "classification_source": "authenticated_slack_ingress",
         }, "external_supervisor_state": {
             "slack_event_id": str(payload["source_event_id"]),
@@ -1219,6 +1248,57 @@ def charlie_hermes_execution_succession_route(mission_id):
         return jsonify({"success": False, "status": "execution_succession_invalid"}), 400
     result, status = prepare_external_execution_succession(
         mission_id, **payload, observed_main_sha=str(env_value("RENDER_GIT_COMMIT") or ""),
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-execution", methods=["POST"])
+def charlie_hermes_native_execution_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    if set(payload) != {"worktree_digest", "starting_main_sha"}:
+        return jsonify({"success": False, "status": "native_execution_input_invalid"}), 400
+    runtime_sha = str(env_value("RENDER_GIT_COMMIT") or "").strip().lower()
+    requested_sha = str(payload.get("starting_main_sha") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", runtime_sha) or requested_sha != runtime_sha:
+        return jsonify({"success": False, "status": "native_execution_runtime_revision_mismatch"}), 409
+    result, status = prepare_hermes_native_execution(
+        mission_id, worktree_digest=str(payload.get("worktree_digest") or ""),
+        starting_main_sha=requested_sha,
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/cursor-retirement", methods=["POST"])
+def charlie_hermes_cursor_retirement_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = retire_cursor_provider_execution(
+        mission_id, request.get_json(silent=True) or {},
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/native-executions/resumable", methods=["GET"])
+def charlie_hermes_native_recovery_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = list_resumable_hermes_native_executions(
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-execution/progress", methods=["POST"])
+def charlie_hermes_native_execution_progress_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = record_hermes_native_execution_state(
+        mission_id, request.get_json(silent=True) or {},
         authenticated_principal="hermes:charlie-builder")
     return jsonify(result), status
 

@@ -1,9 +1,12 @@
 import hashlib
 import hmac
 import json
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+from pathlib import Path
+from types import SimpleNamespace
 
 from flask import Flask
 
@@ -12,6 +15,7 @@ from modules.charlie.hermes_supervisor import (
     HermesSupervisor, SlackBot, build_plugin_from_environment,
     verify_slack_request,
 )
+from integrations.hermes.charlie_builder.native_executor import NativeExecutionError
 from modules.charlie.mission_store import (
     authorize_cursor_workspace_hook,
     authorize_cursor_branch_workspace_hook,
@@ -128,6 +132,411 @@ class HermesSupervisorTests(unittest.TestCase):
         create_payload = [call[2] for call in self.client.calls if call[0:2] == ("POST", "/v1/agents")][-1]
         self.assertIn("read-only repository discovery", create_payload["prompt"]["text"])
         self.assertNotIn("Forged work", create_payload["prompt"]["text"])
+
+    def test_retired_cursor_provider_selects_native_without_cursor_api_call(self):
+        calls = []
+        self.canonical.get_mission = lambda mission_id: {"mission": {"mission_id": mission_id,
+            "metadata": {"cursor_provider_retirement": {
+                "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"}}}}
+        self.supervisor.dispatch_native = lambda mission: calls.append(mission) or {"status": "native"}
+        result = self.supervisor.dispatch_builder({"mission_id": "CMQ-X"})
+        self.assertEqual("native", result["status"])
+        self.assertEqual([{"mission_id": "CMQ-X"}], calls)
+
+    def test_verified_attempt_five_retirement_selects_native_once(self):
+        class CursorRetirement:
+            def __init__(self): self.cancelled = 0; self.archived = 0
+            def get_agent(self, agent_id):
+                return {"id": agent_id, "status": "IDLE" if not self.archived else "ARCHIVED"}
+            def get_run(self, agent_id, run_id):
+                return {"id": run_id, "status": "SUCCEEDED"}
+            def cancel_run(self, *_args, **_kwargs): self.cancelled += 1
+            def archive_agent(self, *_args, **_kwargs): self.archived += 1
+        class Monitor:
+            def branch_exists(self, _branch): return False
+            def find_pull(self, _branch): return 0
+        state = {"generation": "g1", "execution_attempt": 5,
+                 "cursor_agent_id": "bc-five", "cursor_run_id": "run-five",
+                 "branch": "cursor/charlie-mission-setup-fb0a",
+                 "agent_state": "ACTIVE", "run_state": "RUNNING",
+                 "repository_mutation": False, "pr_number": 0, "head_sha": "",
+                 "event": "cursor_implementation_started"}
+        class CanonicalRetirement:
+            def __init__(self): self.retirements = 0
+            def get_mission(self, _mission_id):
+                return {"mission": {"metadata": {"external_supervisor_state": state}}}
+            def retire_cursor_provider(self, _mission_id, evidence):
+                self.retirements += 1
+                self.evidence = evidence
+                return {"provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"}
+            def running_writer_count(self): return 0
+        canonical, cursor = CanonicalRetirement(), CursorRetirement()
+        supervisor = HermesSupervisor(canonical, cursor, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=Monitor())
+        native = []
+        supervisor.dispatch_native = lambda mission: native.append(mission) or {"status": "native"}
+        result = supervisor.dispatch_builder({"mission_id": "CMQ-X"})
+        self.assertEqual("native", result["status"])
+        self.assertEqual(1, canonical.retirements)
+        self.assertEqual(1, cursor.archived)
+        self.assertEqual(0, cursor.cancelled)
+        self.assertFalse(canonical.evidence["remote_branch_created"])
+        self.assertEqual([{"mission_id": "CMQ-X"}], native)
+
+    def test_cursor_retirement_requires_explicit_provider_agent_identity(self):
+        state = {"generation": "g1", "execution_attempt": 5,
+                 "cursor_agent_id": "bc-five", "cursor_run_id": "run-five",
+                 "branch": "cursor/charlie-mission-setup-fb0a"}
+        cursor = SimpleNamespace(
+            get_agent=lambda _agent: {"status": "ARCHIVED"},
+            get_run=lambda _agent, run: {"id": run, "status": "SUCCEEDED"})
+        supervisor = HermesSupervisor(SimpleNamespace(), cursor,
+            owner_slack_user_id="UOWNER", slack_command_channel_id="C1",
+            slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE",
+            github=SimpleNamespace())
+        with self.assertRaisesRegex(HermesBridgeError, "cursor_retirement_provider_identity_conflict"):
+            supervisor._retire_cursor_provider("CMQ-X", state)
+
+    def test_missing_repository_fails_before_canonical_or_model_activity(self):
+        self.supervisor.native_repository_root = "C:/definitely/missing/repository"
+        self.supervisor.native_worktree_base = "C:/native"
+        self.supervisor.native_llm = SimpleNamespace(complete_structured=lambda **_: self.fail("model called"))
+        self.canonical.get_mission = lambda _mission_id: self.fail("canonical execution started")
+        with self.assertRaisesRegex(NativeExecutionError, "native_repository_missing"):
+            self.supervisor.dispatch_native({"mission_id": "CMQ-X"})
+
+    def test_native_closed_loop_dispatch_send_back_fresh_mar_checks_and_owner_notification(self):
+        native_id, branch = ("HNX-" + "A" * 64, "charlie/cmq-x-native-1")
+        head_one, head_two = "d" * 40, "e" * 40
+        authorization = {
+            "status": "valid", "mission_id": "CMQ-X", "generation": "g1",
+            "native_execution_id": native_id, "native_attempt": 1,
+            "repository": "Crewless9086/amadeus-pig-tracking-system",
+            "starting_main_sha": "a" * 40, "branch": branch,
+            "worktree_digest": hashlib.sha256(str(Path("C:/native/CMQ-X/g1/native-1").resolve()).encode()).hexdigest(),
+            "owner_instruction_digest": "b" * 64,
+            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_commands": ["git diff --check"], "allowed_effects": ["edit_allowed_files"],
+            "forbidden_effects": ["merge", "deploy"], "pr_number": 0,
+            "builder_identity": "HNW-builder", "builder_agent_id": "builder-agent",
+        }
+        class CanonicalNative:
+            def __init__(self): self.native = dict(authorization); self.admissions = []; self.bindings = []
+            def running_writer_count(self): return 0
+            def get_mission(self, _mission_id):
+                return {"mission": {"mission_id": "CMQ-X", "raw_text": "Clarify no merge or deploy.",
+                    "metadata": {"dispatch_authorization": {"generation": "g1"},
+                    "hermes_native_execution": dict(self.native),
+                    "external_supervisor_state": {"slack_channel_id": "C1", "slack_thread_ts": "1.0"}}}}
+            def prepare_native_execution(self, *_args): return dict(self.native)
+            def record_native_progress(self, _mission_id, value):
+                if value.get("event") == "native_writer_released":
+                    self.native["worker_claim_id"] = ""; return dict(self.native)
+                self.native.update(value)
+                if value.get("event") == "native_send_back_corrected": self.native["correction_rounds"] = 1
+                return dict(self.native)
+            def bind_native_candidate(self, _mission_id, value): self.bindings.append(value); return {"success": True}
+            def request_admission(self, mission_id, head, pr):
+                self.admissions.append((mission_id, head, pr)); return {"status": "issued"}
+        class Monitor:
+            head = head_one
+            def pull_state(self, number, now=None):
+                return {"pr_number": number, "head_sha": self.head, "branch": branch,
+                    "checks": {name: "success" for name in ("mission-admission", "charlie-core")},
+                    "all_required_checks_pass": self.head == head_two,
+                    "approved_head_sha": "",
+                    "ci_stalled": False, "independent_review": "WAIT"}
+        class Bot:
+            def __init__(self): self.posts = []
+            def post(self, channel, message, **kwargs): self.posts.append((channel, message, kwargs)); return {"ok": True}
+        class Engine:
+            def __init__(self, *_args, **_kwargs): self.worktree = SimpleNamespace(ensure=lambda: Path("C:/native"))
+            def build_patch(self, *_args, **_kwargs): return {"state": "PATCH_READY",
+                "changed_files": authorization["allowed_files"],
+                "worker_identity": "HNW-builder", "worker_agent_id": "builder-agent"}
+            def verify(self): return [{"command": "git diff --check", "returncode": 0}]
+        packages = [
+            {"commit_sha": head_one, "pr_number": 9, "changed_files": authorization["allowed_files"], "candidate_diff_sha256": "1" * 64},
+            {"commit_sha": head_two, "pr_number": 9, "changed_files": authorization["allowed_files"], "candidate_diff_sha256": "2" * 64},
+        ]
+        class Packager:
+            def __init__(self, *_args, **_kwargs): pass
+            def package(self, *_args, **_kwargs): return packages.pop(0)
+        llm = SimpleNamespace(complete_structured=lambda **kwargs: SimpleNamespace(parsed=(
+            {"verdict": "SEND_BACK", "findings": ["Clarify the boundary."]}
+            if len([1 for call in getattr(llm, "calls", []) if call]) == 0
+            else {"verdict": "APPROVE", "findings": []})))
+        llm.calls = []
+        def complete(**kwargs):
+            llm.calls.append(kwargs)
+            index = len(llm.calls)
+            return SimpleNamespace(
+                parsed=({"verdict": "SEND_BACK", "findings": ["Clarify the boundary."]}
+                        if kwargs.get("task") == "charlie_native_challenge_reviewer"
+                        else {"verdict": "APPROVE", "findings": []}),
+                provider="test-provider", model="test-model", agent_id="default",
+                audit={"profile": "", "plugin_id": "charlie-builder", "task": kwargs["task"],
+                       "purpose": kwargs["purpose"], "schema_name": kwargs["schema_name"]})
+        llm.complete_structured = complete
+        canonical, monitor, bot = CanonicalNative(), Monitor(), Bot()
+        supervisor = HermesSupervisor(canonical, None, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=monitor, slack_bot=bot,
+            native_llm=llm, native_repository_root="C:/repo",
+            native_worktree_base="C:/native", github_packager_token="protected")
+        def command(argv, **kwargs):
+            output = "a" * 40 if argv[:3] == ["git", "rev-parse", "HEAD"] else "bounded diff"
+            return SimpleNamespace(returncode=0, stdout=output, stderr="")
+        with patch("integrations.hermes.charlie_builder.supervisor.content_identity", return_value=(native_id, branch)), \
+             patch("integrations.hermes.charlie_builder.supervisor.NativeExecutionEngine", Engine), \
+             patch("integrations.hermes.charlie_builder.supervisor.NativePackager", Packager), \
+             patch("integrations.hermes.charlie_builder.supervisor.validate_primary_repository",
+                   return_value=(Path("C:/repo"), Path("C:/native"), "a" * 40)), \
+             patch("integrations.hermes.charlie_builder.supervisor.run_argv", side_effect=command):
+            supervisor.dispatch_native({"mission_id": "CMQ-X"})
+            corrected = supervisor.supervise_once({"mission_id": "CMQ-X"})
+            self.assertEqual(head_two, corrected["head_sha"])
+            monitor.head = head_two
+            ready = supervisor.supervise_once({"mission_id": "CMQ-X"})
+        self.assertEqual([head_one, head_two], [item[1] for item in canonical.admissions])
+        self.assertEqual(2, len(canonical.bindings))
+        self.assertEqual("builder-agent", canonical.native["builder_agent_id"])
+        self.assertEqual("OWNER_DECISION_REQUIRED", ready["execution_status"])
+        self.assertEqual("CAPPROVE", bot.posts[-1][0])
+        self.assertTrue(any(post[0] == "C1" and post[2].get("thread_ts") == "1.0"
+                            for post in bot.posts))
+
+    def test_native_role_approval_is_derived_only_for_exact_current_head(self):
+        head, base, digest = "d" * 40, "a" * 40, "c" * 64
+        files = ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]
+        binding = {"pr_number": 9, "base_sha": base, "head_sha": head,
+                   "candidate_diff_sha256": digest, "changed_files": files}
+        def review(role, *, verdict="APPROVE", bound=None):
+            return {"role": role, "verdict": verdict, "findings": [],
+                    "reviewer_identity": f"HNR-{role}",
+                    "reviewer_task": f"charlie_native_{role.lower()}_reviewer",
+                    "reviewer_agent_id": "default", "candidate_binding": bound or dict(binding)}
+        class CanonicalApproval:
+            def __init__(self, native): self.native = native; self.admissions = []
+            def get_mission(self, _mission_id):
+                return {"mission": {"mission_id": "CMQ-X", "metadata": {
+                    "hermes_native_execution": self.native}}}
+            def record_native_progress(self, _mission_id, value): self.native.update(value); return dict(self.native)
+            def request_admission(self, mission_id, expected_head_sha, pr_number):
+                self.admissions.append((mission_id, expected_head_sha, pr_number)); return {"status": "issued"}
+        class MonitorApproval:
+            def __init__(self, observed_head): self.observed_head = observed_head
+            def pull_state(self, _number, now=None):
+                return {"pr_number": 9, "head_sha": self.observed_head, "branch": "charlie/cmq-x-native-1",
+                        "checks": {}, "all_required_checks_pass": True,
+                        "approved_head_sha": "", "ci_stalled": False, "independent_review": "WAIT"}
+        def observe(*, correction_rounds=1, security=None, functional=None, observed_head=head):
+            native = {"native_execution_id": "HNX-X", "generation": "g1", "pr_number": 9,
+                      "starting_main_sha": base, "head_sha": head,
+                      "candidate_diff_sha256": digest, "changed_files": files,
+                      "correction_rounds": correction_rounds,
+                      "review_security": security or review("SECURITY"),
+                      "review_functional": functional or review("FUNCTIONAL"),
+                      "execution_status": "SEND_BACK_CORRECTED"}
+            canonical = CanonicalApproval(native)
+            supervisor = HermesSupervisor(canonical, None, owner_slack_user_id="UOWNER",
+                slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+                slack_approval_channel_id="CAPPROVE", github=MonitorApproval(observed_head))
+            return supervisor.poll_native({"mission_id": "CMQ-X"})
+        approved = observe()
+        self.assertEqual("APPROVE", approved["independent_review"])
+        self.assertEqual(head, approved["approved_head_sha"])
+        stale = observe(security=review("SECURITY", bound={**binding, "head_sha": "e" * 40}))
+        self.assertEqual("", stale["approved_head_sha"])
+        wrong_diff = observe(functional=review("FUNCTIONAL", bound={**binding,
+                                                                    "candidate_diff_sha256": "e" * 64}))
+        self.assertEqual("", wrong_diff["approved_head_sha"])
+        changed = observe(observed_head="e" * 40)
+        self.assertEqual("", changed["approved_head_sha"])
+        no_correction = observe(correction_rounds=0)
+        self.assertEqual("", no_correction["approved_head_sha"])
+        sent_back = observe(security=review("SECURITY", verdict="SEND_BACK"))
+        self.assertEqual("SEND_BACK", sent_back["independent_review"])
+        self.assertEqual("", sent_back["approved_head_sha"])
+        self.assertEqual([], self.client.calls)
+
+    def test_native_review_accepts_default_agent_with_distinct_auxiliary_tasks(self):
+        authorization = {"mission_id": "CMQ-X", "generation": "g1",
+            "starting_main_sha": "a" * 40, "allowed_files": [
+                "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "forbidden_effects": ["merge", "deploy"],
+            "owner_instruction_digest": "b" * 64, "correction_rounds": 0}
+        packaged = {"pr_number": 9, "commit_sha": "d" * 40,
+            "candidate_diff_sha256": "e" * 64,
+            "changed_files": authorization["allowed_files"]}
+        def complete(**kwargs):
+            parsed = ({"verdict": "SEND_BACK", "findings": ["Concrete challenge."]}
+                      if kwargs.get("task") == "charlie_native_challenge_reviewer"
+                      else {"verdict": "APPROVE", "findings": []})
+            return SimpleNamespace(parsed=parsed,
+                provider="test-provider", model="test-model", agent_id="default",
+                audit={"profile": "", "plugin_id": "charlie-builder", "task": kwargs["task"],
+                       "purpose": kwargs["purpose"], "schema_name": kwargs["schema_name"]})
+        supervisor = HermesSupervisor(self.canonical, self.cursor,
+            owner_slack_user_id="UOWNER", slack_command_channel_id="C1",
+            slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE",
+            native_llm=SimpleNamespace(complete_structured=complete),
+            native_worktree_base="C:/native")
+        command = SimpleNamespace(returncode=0, stdout="bounded diff", stderr="")
+        with patch("integrations.hermes.charlie_builder.supervisor.run_argv", return_value=command):
+            reviews = supervisor._run_native_reviews(authorization, packaged, [],
+                mission={"raw_text": "bounded"}, builder_agent_id="default")
+        self.assertEqual({"SECURITY", "FUNCTIONAL", "CHALLENGE"}, set(reviews))
+        self.assertEqual({"default"}, {item["reviewer_agent_id"] for item in reviews.values()})
+        self.assertEqual(3, len({item["reviewer_task"] for item in reviews.values()}))
+
+    def test_native_commissioning_challenge_two_approvals_fail_closed(self):
+        authorization = {"mission_id": "CMQ-X", "generation": "g1",
+            "starting_main_sha": "a" * 40, "allowed_files": [
+                "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "forbidden_effects": ["merge", "deploy"],
+            "owner_instruction_digest": "b" * 64, "correction_rounds": 0}
+        packaged = {"pr_number": 9, "commit_sha": "d" * 40,
+            "candidate_diff_sha256": "e" * 64,
+            "changed_files": authorization["allowed_files"]}
+        calls = []
+        def complete(**kwargs):
+            calls.append(kwargs.get("task"))
+            return SimpleNamespace(parsed={"verdict": "APPROVE", "findings": []},
+                provider="test-provider", model="test-model", agent_id="default",
+                audit={"profile": "", "plugin_id": "charlie-builder", "task": kwargs["task"],
+                       "purpose": kwargs["purpose"], "schema_name": kwargs["schema_name"]})
+        supervisor = HermesSupervisor(self.canonical, self.cursor,
+            owner_slack_user_id="UOWNER", slack_command_channel_id="C1",
+            slack_build_channel_id="CBUILD", slack_approval_channel_id="CAPPROVE",
+            native_llm=SimpleNamespace(complete_structured=complete),
+            native_worktree_base="C:/native")
+        with patch("integrations.hermes.charlie_builder.supervisor.run_argv",
+                   return_value=SimpleNamespace(returncode=0, stdout="bounded diff", stderr="")):
+            with self.assertRaisesRegex(HermesBridgeError,
+                                        "native_commissioning_challenge_not_obtained"):
+                supervisor._run_native_reviews(authorization, packaged, [],
+                    mission={"raw_text": "bounded"}, builder_agent_id="builder-agent")
+        self.assertEqual(2, calls.count("charlie_native_challenge_reviewer"))
+
+    def test_native_correction_restart_recovers_remote_head_before_checkpoint(self):
+        old_head, new_head = "d" * 40, "e" * 40
+        native = {"native_execution_id": "HNX-X", "execution_status": "CORRECTION_PATCH_VERIFIED",
+            "generation": "g1", "starting_main_sha": "a" * 40, "head_sha": old_head,
+            "pr_number": 9, "branch": "charlie/cmq-x-native-1",
+            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_effects": ["edit_allowed_files"], "forbidden_effects": ["merge", "deploy"],
+            "owner_instruction_digest": "b" * 64, "builder_identity": "HNW-correction",
+            "builder_agent_id": "builder-correction", "review_verdict": "SEND_BACK",
+            "stage_artifact": {"kind": "bounded_verification",
+                               "commands": [{"command": "git diff --check", "returncode": 0}]}}
+        class RecoveryCanonical:
+            def __init__(self):
+                self.native = dict(native); self.events = []; self.admissions = []; self.deny_claim = False
+            def get_mission(self, _mission_id):
+                return {"mission": {"mission_id": "CMQ-X", "raw_text": "bounded",
+                    "metadata": {"hermes_native_execution": dict(self.native)}}}
+            def record_native_progress(self, _mission_id, value):
+                if self.deny_claim and value.get("event") == "native_writer_claimed":
+                    return {"success": False, "status": "native_writer_claim_conflict"}
+                self.events.append(value.get("event")); self.native.update(value)
+                if value.get("event") == "native_send_back_corrected": self.native["correction_rounds"] = 1
+                return dict(self.native)
+            def request_admission(self, mission_id, head, pr):
+                self.admissions.append((mission_id, head, pr)); return {"status": "issued"}
+        class Monitor:
+            def pull_state(self, number, now=None):
+                return {"pr_number": number, "head_sha": new_head,
+                    "independent_review": "SEND_BACK", "checks": {},
+                    "all_required_checks_pass": False, "ci_stalled": False}
+        canonical = RecoveryCanonical()
+        supervisor = HermesSupervisor(canonical, None, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=Monitor(), native_llm=object(),
+            native_worktree_base="C:/native")
+        results = [SimpleNamespace(returncode=0, stdout=new_head, stderr=""),
+            SimpleNamespace(returncode=0, stdout="docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md\n", stderr=""),
+            SimpleNamespace(returncode=0, stdout="bounded binary diff", stderr="")]
+        binding = {"pr_number": 9, "base_sha": "a" * 40, "head_sha": new_head,
+            "candidate_diff_sha256": "f" * 64,
+            "changed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]}
+        reviews = {role: {"role": role, "verdict": "APPROVE", "findings": [],
+            "reviewer_identity": f"HNR-{role}", "reviewer_task": f"task-{role}",
+            "reviewer_agent_id": f"reviewer-{role}", "candidate_binding": binding}
+            for role in ("SECURITY", "FUNCTIONAL")}
+        with patch("integrations.hermes.charlie_builder.supervisor.run_argv", side_effect=results), \
+             patch.object(supervisor, "_bind_native_candidate"), \
+             patch.object(supervisor, "_run_native_reviews", return_value=reviews):
+            supervisor.poll_native({"mission_id": "CMQ-X"})
+        self.assertIn("native_correction_packaged_recovered", canonical.events)
+        self.assertIn("native_send_back_corrected", canonical.events)
+        self.assertEqual(1, canonical.native["correction_rounds"])
+        self.assertEqual(new_head, canonical.admissions[-1][1])
+
+    def test_native_correction_restart_resumes_packaging_before_remote_push(self):
+        old_head, new_head = "d" * 40, "e" * 40
+        native = {"native_execution_id": "HNX-X", "execution_status": "CORRECTION_PATCH_VERIFIED",
+            "generation": "g1", "starting_main_sha": "a" * 40, "head_sha": old_head,
+            "pr_number": 9, "branch": "charlie/cmq-x-native-1",
+            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_effects": ["edit_allowed_files"], "forbidden_effects": ["merge", "deploy"],
+            "owner_instruction_digest": "b" * 64, "builder_identity": "HNW-correction",
+            "builder_agent_id": "builder-correction", "review_verdict": "SEND_BACK",
+            "stage_artifact": {"kind": "bounded_verification", "commands": []}}
+        class RecoveryCanonical:
+            def __init__(self):
+                self.native = dict(native); self.events = []; self.admissions = []; self.deny_claim = False
+            def get_mission(self, _mission_id):
+                return {"mission": {"mission_id": "CMQ-X", "raw_text": "bounded",
+                    "metadata": {"hermes_native_execution": dict(self.native)}}}
+            def record_native_progress(self, _mission_id, value):
+                if self.deny_claim and value.get("event") == "native_writer_claimed":
+                    return {"success": False, "status": "native_writer_claim_conflict"}
+                self.events.append(value.get("event")); self.native.update(value)
+                if value.get("event") == "native_send_back_corrected": self.native["correction_rounds"] = 1
+                return dict(self.native)
+            def request_admission(self, mission_id, head, pr):
+                self.admissions.append((mission_id, head, pr)); return {"status": "issued"}
+        class Monitor:
+            calls = 0
+            def pull_state(self, number, now=None):
+                self.calls += 1
+                head = old_head if self.calls == 1 else new_head
+                return {"pr_number": number, "head_sha": head, "independent_review": "WAIT",
+                    "checks": {}, "all_required_checks_pass": False, "ci_stalled": False}
+        canonical = RecoveryCanonical()
+        supervisor = HermesSupervisor(canonical, None, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=Monitor(), native_llm=object(),
+            native_worktree_base="C:/native", github_packager_token="protected")
+        package = {"pr_number": 9, "commit_sha": new_head,
+            "candidate_diff_sha256": "f" * 64,
+            "changed_files": native["allowed_files"]}
+        reviews = {role: {"role": role, "verdict": "APPROVE", "findings": [],
+            "reviewer_identity": f"HNR-{role}", "reviewer_task": f"task-{role}",
+            "reviewer_agent_id": f"reviewer-{role}", "candidate_binding": {
+                "pr_number": 9, "base_sha": "a" * 40, "head_sha": new_head,
+                "candidate_diff_sha256": "f" * 64, "changed_files": native["allowed_files"]}}
+            for role in ("SECURITY", "FUNCTIONAL")}
+        with patch("integrations.hermes.charlie_builder.supervisor.NativePackager") as packager, \
+             patch.object(supervisor, "_bind_native_candidate"), \
+             patch.object(supervisor, "_run_native_reviews", return_value=reviews):
+            packager.return_value.package.return_value = package
+            supervisor.poll_native({"mission_id": "CMQ-X"})
+        packager.return_value.package.assert_called_once()
+        self.assertIn("native_correction_packaged_recovered", canonical.events)
+        self.assertIn("native_send_back_corrected", canonical.events)
+        self.assertEqual(new_head, canonical.admissions[-1][1])
+        blocked = RecoveryCanonical(); blocked.deny_claim = True
+        blocked_supervisor = HermesSupervisor(blocked, None, owner_slack_user_id="UOWNER",
+            slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+            slack_approval_channel_id="CAPPROVE", github=Monitor(), native_llm=object(),
+            native_worktree_base="C:/native", github_packager_token="protected")
+        with patch("integrations.hermes.charlie_builder.supervisor.NativePackager") as blocked_packager:
+            with self.assertRaisesRegex(HermesBridgeError, "native_writer_claim_conflict"):
+                blocked_supervisor.poll_native({"mission_id": "CMQ-X"})
+        blocked_packager.assert_not_called()
 
     def test_oidc_workspace_pda_late_binds_once_and_enforces_scope_and_command(self):
         pda = {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid",
@@ -292,15 +701,93 @@ class HermesSupervisorTests(unittest.TestCase):
         class GitHubClient:
             def request(self, method, path, payload=None, headers=None, query=None):
                 if path.endswith("/pulls"): return {"items": [{"number": 9}]}
-                if path.endswith("/pulls/9"): return {"head": {"sha": "d" * 40, "ref": "feature"}}
+                if path.endswith("/pulls/9"): return {"head": {"sha": "d" * 40, "ref": "feature"},
+                                                       "user": {"login": "builder"}}
                 if path.endswith("/check-runs"): return {"check_runs": [{"name": "charlie-core", "status": "queued", "conclusion": None, "started_at": "2026-08-28T00:00:00Z"}]}
-                if path.endswith("/reviews"): return {"items": [{"body": "SEND_BACK"}]}
+                if path.endswith("/reviews"): return {"items": [{"body": "bounded finding",
+                    "state": "CHANGES_REQUESTED", "commit_id": "d" * 40,
+                    "author_association": "COLLABORATOR",
+                    "user": {"login": "independent-reviewer"}}]}
                 return {}
         monitor = GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=GitHubClient())
         self.assertEqual(9, monitor.find_pull("feature"))
         state = monitor.pull_state(9, now=2_000_000_000)
         self.assertTrue(state["ci_stalled"])
         self.assertEqual("SEND_BACK", state["independent_review"])
+
+    def test_commented_review_text_cannot_spoof_independent_verdict(self):
+        class GitHubClient:
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls/9"):
+                    return {"head": {"sha": "d" * 40, "ref": "feature"}, "user": {"login": "builder"}}
+                if path.endswith("/check-runs"): return {"check_runs": []}
+                if path.endswith("/reviews"): return {"items": [{"body": "APPROVE SECURITY",
+                    "state": "COMMENTED", "commit_id": "d" * 40,
+                    "author_association": "NONE",
+                    "user": {"login": "attacker"}}]}
+                return {}
+        state = GitHubReadMonitor(
+            "Crewless9086/amadeus-pig-tracking-system", client=GitHubClient()).pull_state(9)
+        self.assertEqual("WAIT", state["independent_review"])
+        self.assertEqual("", state["approved_head_sha"])
+
+    def test_two_distinct_exact_head_role_reviews_are_required_for_approve(self):
+        class GitHubClient:
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls/9"):
+                    return {"head": {"sha": "d" * 40, "ref": "feature"}, "user": {"login": "builder"}}
+                if path.endswith("/check-runs"): return {"check_runs": []}
+                if path.endswith("/reviews"): return {"items": [
+                    {"body": "SECURITY: bounded", "state": "APPROVED", "commit_id": "d" * 40,
+                     "author_association": "COLLABORATOR",
+                     "user": {"login": "security-reviewer"}},
+                    {"body": "FUNCTIONAL: bounded", "state": "APPROVED", "commit_id": "d" * 40,
+                     "author_association": "MEMBER",
+                     "user": {"login": "functional-reviewer"}},
+                ]}
+                return {}
+        state = GitHubReadMonitor(
+            "Crewless9086/amadeus-pig-tracking-system", client=GitHubClient()).pull_state(9)
+        self.assertEqual("APPROVE", state["independent_review"])
+        self.assertNotEqual(state["security_review"]["reviewer"], state["functional_review"]["reviewer"])
+
+    def test_pr_author_and_untrusted_accounts_cannot_satisfy_review_roles(self):
+        class GitHubClient:
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls/9"):
+                    return {"head": {"sha": "d" * 40, "ref": "feature"}, "user": {"login": "builder"}}
+                if path.endswith("/check-runs"): return {"check_runs": []}
+                if path.endswith("/reviews"): return {"items": [
+                    {"body": "SECURITY: self", "state": "APPROVED", "commit_id": "d" * 40,
+                     "author_association": "OWNER", "user": {"login": "builder"}},
+                    {"body": "FUNCTIONAL: outsider", "state": "APPROVED", "commit_id": "d" * 40,
+                     "author_association": "NONE", "user": {"login": "outsider"}},
+                ]}
+                return {}
+        state = GitHubReadMonitor(
+            "Crewless9086/amadeus-pig-tracking-system", client=GitHubClient()).pull_state(9)
+        self.assertEqual("WAIT", state["independent_review"])
+
+    def test_required_mission_admission_must_be_from_app_4742997(self):
+        names = ["mission-admission", "charlie-core",
+            "Unit tests with disposable Postgres audit rails",
+            "Closed Render migration rail with disposable Postgres",
+            "Playwright real-browser behavior gate"]
+        class GitHubClient:
+            app_id = 1
+            def request(self, method, path, payload=None, headers=None, query=None):
+                if path.endswith("/pulls/9"):
+                    return {"head": {"sha": "d" * 40, "ref": "feature"}, "user": {"login": "builder"}}
+                if path.endswith("/check-runs"):
+                    return {"check_runs": [{"name": name, "status": "completed", "conclusion": "success",
+                        "app": {"id": self.app_id}} for name in names]}
+                if path.endswith("/reviews"): return {"items": []}
+                return {}
+        client = GitHubClient(); monitor = GitHubReadMonitor(
+            "Crewless9086/amadeus-pig-tracking-system", client=client)
+        self.assertFalse(monitor.pull_state(9)["all_required_checks_pass"])
+        client.app_id = 4742997
+        self.assertTrue(monitor.pull_state(9)["all_required_checks_pass"])
 
     def test_poll_discovers_pr_and_invokes_protected_exact_candidate_admission_once(self):
         class Monitor:
@@ -398,6 +885,13 @@ class HermesSupervisorTests(unittest.TestCase):
         tools = build_plugin_from_environment(env)
         self.assertIn("charlie_issue_admission", tools)
         self.assertTrue(all(callable(handler) for handler in tools.values()))
+        self.assertEqual("/opt/data/workspaces/amadeus-pig-tracking-system",
+                         tools.supervisor.native_repository_root)
+        explicit = build_plugin_from_environment({**env,
+            "CHARLIE_REPOSITORY_PATH": "/srv/commissioned/repository"})
+        self.assertEqual("/srv/commissioned/repository", explicit.supervisor.native_repository_root)
+        self.assertNotEqual("/opt/data/amadeus-pig-tracking-system",
+                            tools.supervisor.native_repository_root)
         with self.assertRaisesRegex(HermesBridgeError, "hermes_protected_configuration_incomplete"):
             build_plugin_from_environment({})
         tools_without_process_allowlist = build_plugin_from_environment({**env, "SLACK_ALLOWED_USERS": ""})
@@ -449,8 +943,33 @@ class HermesSupervisorTests(unittest.TestCase):
                 headers={"Authorization": "Bearer " + "g" * 32}, json=payload)
         self.assertEqual(201, response.status_code)
         self.assertEqual("system improvement", captured["mission_type"])
-        self.assertEqual({"plane": "software", "coordinator": "CHARLIE", "executor": "Cursor Cloud",
+        self.assertEqual({"plane": "software", "coordinator": "CHARLIE", "executor": "Hermes Native",
             "classification_source": "authenticated_slack_ingress"}, captured["metadata"]["mission_plane"])
+
+    def test_native_execution_routes_are_gateway_authenticated_and_bounded(self):
+        from modules.charlie import routes
+        app = Flask(__name__); app.register_blueprint(routes.charlie_bp)
+        captured = {}
+        def prepare(mission_id, **kwargs):
+            captured.update({"mission_id": mission_id, **kwargs})
+            return {"success": True, "authorization": {"native_execution_id": "HNX-X"}}, 201
+        def env(name):
+            return "a" * 40 if name == "RENDER_GIT_COMMIT" else "g" * 32
+        with patch.object(routes, "env_value", side_effect=env), \
+             patch.object(routes, "prepare_hermes_native_execution", side_effect=prepare):
+            denied = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
+                                             json={"worktree_digest": "a" * 64,
+                                                   "starting_main_sha": "a" * 40})
+            allowed = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
+                headers={"Authorization": "Bearer " + "g" * 32},
+                json={"worktree_digest": "a" * 64, "starting_main_sha": "a" * 40})
+            extra = app.test_client().post("/charlie/hermes/missions/CMQ-X/native-execution",
+                headers={"Authorization": "Bearer " + "g" * 32},
+                json={"worktree_digest": "a" * 64, "mission_id": "forged"})
+        self.assertEqual(403, denied.status_code)
+        self.assertEqual(201, allowed.status_code)
+        self.assertEqual(400, extra.status_code)
+        self.assertEqual("CMQ-X", captured["mission_id"])
 
     def test_pre_dispatch_authorization_is_bounded_and_replay_safe(self):
         state = {"slack_event_id": "1787929390.145099", "slack_owner_user_id": "UOWNER",

@@ -298,6 +298,31 @@ def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None
     }, 200
 
 
+def build_hermes_native_execution_context(mission):
+    """Reuse the existing governance/stage contract without invoking Codex CLI.
+
+    The Hermes native worker receives this deterministic, credential-free
+    packet.  Worktree mutation and packaging remain parent-owned.
+    """
+    row = dict(mission or {})
+    if not str(row.get("mission_id") or "").strip():
+        raise ValueError("canonical_mission_required")
+    governance = ensure_acceptance_matrix(row)
+    return {
+        "version": "charlie_hermes_native_execution_context_v1",
+        "mission_id": row["mission_id"],
+        "title": str(row.get("title") or ""),
+        "mission_governance": governance,
+        "pre_builder_scope": analyze_pre_builder_scope(row),
+        "builder_stage_prompt": build_agent_stage_prompt(row, "builder", artifacts={}, ledger={}),
+        "runner_reuse": [
+            "canonical mission loading", "governance context", "stage artifact contract",
+            "builder concurrency", "deterministic packaging", "review and admission supervision",
+        ],
+        "auto_merge": False,
+    }
+
+
 def run_codex_execution_bridge(
     mission_id="",
     status="in_progress",

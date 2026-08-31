@@ -1,5 +1,32 @@
 # Vault Brain Changelog
 
+## 2026-08-30 - Hermes-native structured-patch executor
+
+- Cursor Cloud is retained as failed-safe audit history but removed from the
+  critical-path builder contract after its managed commit/PR handoff could not
+  satisfy repository hooks. The canonical mission and Slack thread remain the
+  source of truth.
+- The existing CHARLIE execution bridge now supplies governance and stage
+  context to a host-owned Hermes structured model call with no tools or
+  credentials. A trusted parent validates bounded tracked context and unified
+  diffs, owns one deterministic isolated worktree, and permits only the
+  admitted branch, file and verification commands.
+- Parent-only packaging uses one repository-scoped credential solely for the
+  admitted feature-branch push and draft-PR API call. Exact-candidate Mission
+  Admission, independent review, five required checks and the no-merge/no-
+  deployment boundary remain unchanged.
+- Structured SECURITY and FUNCTIONAL review evidence is bound to the exact PR,
+  base, head, binary-diff digest and file set, and records the host-reported
+  provider/model/Agent identity for distinct auxiliary task routes. Stale or
+  non-independent review packets cannot advance supervision, and the pilot's
+  genuine SEND_BACK correction remains an explicit release prerequisite.
+- Native builder and reviewer separation now compares and durably records the
+  host-reported Agent principals, not role-derived labels. A bounded third
+  commissioning challenge must return a concrete SEND_BACK. Correction worker
+  identity and verification are checkpointed before packaging; restart safely
+  reconciles an already-pushed same-worktree head and then completes candidate
+  binding and fresh reviews rather than stranding the journey.
+
 ## 2026-08-29 - Cursor managed-VM hook classification recovery
 
 - A configured `CURSOR_AGENT_SOCKET` now selects the OIDC-backed Cloud PDA path
@@ -2034,3 +2061,8 @@
 - Added one-ON, deterministic claim, bounded OFF, final readback and restart
   recovery source using the existing ROOTLINE transport and execution store.
 - No provider, configuration, canonical or farm effect occurred.
+## 2026-08-30 — Hermes-native executor release hardening
+
+- Added canonical restart discovery and renewable cross-process writer claims so one native execution resumes its exact worktree after a gateway replacement without overlapping writers.
+- Bound native execution to the authenticated deployed `RENDER_GIT_COMMIT`, enforced cumulative context limits, rejected symlinked worktree paths before resolution, and expanded packager credential-separation tests.
+- Required authenticated exact-head SECURITY and FUNCTIONAL review roles from distinct GitHub reviewers; comment text cannot spoof a verdict, and native owner notification remains blocked until a genuine SEND_BACK correction has occurred.

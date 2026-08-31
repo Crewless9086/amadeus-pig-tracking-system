@@ -8,6 +8,10 @@
   "canonical_api_env": "CHARLIE_CANONICAL_API_URL",
   "canonical_gateway_token_env": "CHARLIE_HERMES_GATEWAY_TOKEN",
   "cursor_api_key_env": "CURSOR_API_KEY",
+  "cursor_api_key_optional_historical": true,
+  "native_packager_token_env": "CHARLIE_GITHUB_PACKAGER_TOKEN",
+  "native_packager_token_optional_until_dispatch": true,
+  "primary_builder_provider": "hermes_native",
   "github_read_token_env": "CHARLIE_GITHUB_READ_TOKEN",
   "slack_signing_secret_env": "SLACK_SIGNING_SECRET",
   "slack_bot_token_env": "SLACK_BOT_TOKEN",
@@ -34,7 +38,7 @@
     "charlie_prepare_owner_decision"
   ],
   "forbidden_capabilities": [
-    "arbitrary_shell", "raw_database", "github_write", "merge", "deploy",
+    "arbitrary_shell", "raw_database", "model_github_access", "merge", "deploy",
     "mission_admission_signing", "secret_readback"
   ]
 }

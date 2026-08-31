@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import atexit
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from .supervisor import build_plugin_from_environment
 
 
@@ -50,8 +53,20 @@ def register(ctx):
     # Registration establishes the bounded tool and hook safety surface.  Live
     # dependencies are checked by the individual operations that use them; a
     # transient provider outage must never remove the fail-closed Slack hooks.
+    for task, label in (
+        ("charlie_native_builder", "CHARLIE Native Builder"),
+        ("charlie_native_security_reviewer", "CHARLIE Native Security Reviewer"),
+        ("charlie_native_functional_reviewer", "CHARLIE Native Functional Reviewer"),
+        ("charlie_native_challenge_reviewer", "CHARLIE Native Commissioning Challenge Reviewer"),
+    ):
+        ctx.register_auxiliary_task(
+            task, display_name=label,
+            description="No-tool host-owned structured execution role with isolated task routing.")
     tools = build_plugin_from_environment(validate_live=False)
     supervisor = getattr(tools, "supervisor", None)
+    if supervisor is not None:
+        supervisor.native_llm = getattr(ctx, "llm", None)
+    native_jobs = ThreadPoolExecutor(max_workers=1, thread_name_prefix="charlie-native")
     text = {"type": "string"}
     schemas = {
         "charlie_reconcile_mission": _schema(
@@ -60,18 +75,18 @@ def register(ctx):
              "channel_id": text, "thread_ts": text},
             ["instruction", "event_id", "owner_user_id", "channel_id", "thread_ts"]),
         "charlie_dispatch_cursor": _schema(
-            "charlie_dispatch_cursor", "Dispatch Cursor only from the mission's current canonical admission.",
+            "charlie_dispatch_cursor", "Dispatch the one canonically selected bounded builder provider.",
             {"mission_id": text}, ["mission_id"]),
         "charlie_get_mission_status": _schema(
             "charlie_get_mission_status", "Read one canonical mission.", {"mission_id": text}, ["mission_id"]),
         "charlie_get_cursor_status": _schema(
-            "charlie_get_cursor_status", "Poll the canonically linked Cursor Agent, PR, checks, and review.",
+            "charlie_get_cursor_status", "Poll the canonical execution, PR, checks, and independent review.",
             {"mission_id": text}, ["mission_id"]),
         "charlie_supervise_once": _schema(
             "charlie_supervise_once", "Run one deterministic supervision poll and route SEND_BACK to the same Agent.",
             {"mission_id": text}, ["mission_id"]),
         "charlie_continue_cursor": _schema(
-            "charlie_continue_cursor", "Continue the same idle Cursor Agent after an independent SEND_BACK.",
+            "charlie_continue_cursor", "Continue the same canonical execution workspace after SEND_BACK.",
             {"mission_id": text, "correction": text}, ["mission_id", "correction"]),
         "charlie_issue_admission": _schema(
             "charlie_issue_admission", "Request the protected issuer for the canonically bound exact PR head.",
@@ -110,6 +125,53 @@ def register(ctx):
                           handler=_json_handler(tools[name], adapters[name]))
 
     slack_sessions = set()
+    active_native = set()
+    active_native_lock = threading.Lock()
+
+    def run_native(mission_id, channel, thread_id):
+        with active_native_lock:
+            if mission_id in active_native:
+                return
+            active_native.add(mission_id)
+        try:
+            dispatch = getattr(supervisor, "dispatch_builder", supervisor.dispatch_cursor)
+            result = dispatch({"mission_id": mission_id})
+            if str((result or {}).get("status") or "") == "PACKAGER_CREDENTIAL_REQUIRED":
+                raise RuntimeError("github_packager_token_required")
+            for _ in range(2160):
+                observed = supervisor.supervise_once({"mission_id": mission_id})
+                status = str((observed or {}).get("execution_status") or (observed or {}).get("status") or "")
+                if status in {"OWNER_DECISION_REQUIRED", "BLOCKED"}:
+                    break
+                threading.Event().wait(10)
+        except Exception as exc:
+            try:
+                if supervisor and supervisor.slack_bot:
+                    supervisor.slack_bot.post(
+                        channel,
+                        f"BLOCKED: CHARLIE native execution unavailable ({_bounded_reason(exc)}).",
+                        thread_ts=thread_id,
+                    )
+            except Exception:
+                pass
+        finally:
+            with active_native_lock:
+                active_native.discard(mission_id)
+
+    def recover_native(mission_id, channel, thread_id):
+        # A replacement gateway may observe the dead process's still-valid
+        # canonical lease. Retry from canonical truth until that bounded lease
+        # expires; do not create a second execution or worktree.
+        for _ in range(50):
+            run_native(mission_id, channel, thread_id)
+            try:
+                remaining = {str(item.get("mission_id") or "")
+                             for item in supervisor.canonical.resumable_native_executions()}
+            except Exception:
+                remaining = {mission_id}
+            if mission_id not in remaining:
+                return
+            threading.Event().wait(15)
 
     def pre_gateway_dispatch(event, **kwargs):
         del kwargs
@@ -140,7 +202,7 @@ def register(ctx):
             if not mission_id:
                 raise RuntimeError("canonical_mission_unverified")
             supervisor.canonical.prepare_dispatch_authorization(mission_id)
-            supervisor.dispatch_cursor({"mission_id": mission_id})
+            native_jobs.submit(run_native, mission_id, channel, thread_id)
         except Exception as exc:
             reason = _bounded_reason(exc)
             try:
@@ -164,3 +226,17 @@ def register(ctx):
 
     ctx.register_hook("pre_gateway_dispatch", pre_gateway_dispatch)
     ctx.register_hook("pre_tool_call", pre_tool_call)
+    # Canonical mission truth, not Slack replay, restarts unfinished work after
+    # a gateway process replacement.
+    try:
+        for execution in supervisor.canonical.resumable_native_executions():
+            mission_id = str(execution.get("mission_id") or "").strip()
+            if mission_id:
+                native_jobs.submit(
+                    recover_native, mission_id,
+                    str(execution.get("slack_channel_id") or ""),
+                    str(execution.get("slack_thread_ts") or ""),
+                )
+    except Exception:
+        pass
+    atexit.register(native_jobs.shutdown, wait=False, cancel_futures=True)
