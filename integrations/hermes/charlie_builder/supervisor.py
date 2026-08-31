@@ -25,8 +25,7 @@ from .native_executor import (
     HermesIndependentReviewer, HermesStructuredPatchWorker, NativeExecutionEngine, NativeExecutionError,
     NativePackager, content_identity, execution_lock, run_argv, validate_primary_repository,
 )
-from modules.charlie.execution_bridge import build_hermes_native_execution_context
-from modules.charlie.mission_admission import canonical_candidate_diff
+from .protocol import canonical_candidate_diff
 
 
 class HermesBridgeError(RuntimeError):
@@ -231,6 +230,16 @@ class CanonicalCharlieApi:
 
     def get_mission(self, mission_id):
         return self.client.request("GET", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}")
+
+    def get_native_execution_context(self, mission_id):
+        result = self.client.request(
+            "GET",
+            f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/native-context",
+        )
+        context = result.get("context")
+        if not isinstance(context, dict):
+            raise HermesBridgeError("native_execution_context_unavailable")
+        return context
 
     def get_dispatch(self, key):
         result = self.client.request("GET", "/charlie/hermes/dispatch", query={"idempotency_key": key})
@@ -614,7 +623,7 @@ class HermesSupervisor:
             else:
                 built = engine.build_patch(
                     row.get("raw_text") or row.get("title"),
-                    governance_context=build_hermes_native_execution_context(row),
+                    governance_context=self.canonical.get_native_execution_context(mission_id),
                 )
                 if built.get("state") == "BLOCKED":
                     return self.canonical.record_native_progress(mission_id, {
@@ -1143,7 +1152,7 @@ class HermesSupervisor:
             )
             built = engine.build_patch(
                 "Apply only this independent SEND_BACK correction: " + str(correction or "").strip(),
-                governance_context={**build_hermes_native_execution_context(mission),
+                governance_context={**self.canonical.get_native_execution_context(mission["mission_id"]),
                     "independent_review": {"verdict": "SEND_BACK", "findings": str(correction or "").strip()}},
             )
             if built.get("state") != "PATCH_READY":

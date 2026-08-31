@@ -76,6 +76,9 @@ class Canonical:
             "dispatch_authorization": pre if self.dispatch_authorized else {},
             "external_supervisor_state": dict(self.progress),
             "execution_succession": {"active_attempt": self.active_attempt}}}}
+    def get_native_execution_context(self, mission_id):
+        return {"version": "charlie_hermes_native_execution_context_v1",
+                "mission_id": mission_id, "auto_merge": False}
     def prepare_dispatch_authorization(self, mission_id):
         self.dispatch_authorized = True
         return self.get_mission(mission_id)["mission"]["metadata"]["dispatch_authorization"]
@@ -229,6 +232,9 @@ class HermesSupervisorTests(unittest.TestCase):
                     "metadata": {"dispatch_authorization": {"generation": "g1"},
                     "hermes_native_execution": dict(self.native),
                     "external_supervisor_state": {"slack_channel_id": "C1", "slack_thread_ts": "1.0"}}}}
+            def get_native_execution_context(self, mission_id):
+                return {"version": "charlie_hermes_native_execution_context_v1",
+                        "mission_id": mission_id, "auto_merge": False}
             def prepare_native_execution(self, *_args): return dict(self.native)
             def record_native_progress(self, _mission_id, value):
                 if value.get("event") == "native_writer_released":
@@ -587,6 +593,23 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("allow", response.json["permission"])
         self.assertNotIn("secret", response.json)
+
+    def test_native_context_route_is_authenticated_bounded_and_server_owned(self):
+        from modules.charlie import routes
+        app = Flask(__name__); app.register_blueprint(routes.charlie_bp)
+        mission = {"mission_id": "CMQ-X", "metadata": {"cursor_provider_retirement": {
+            "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"}}}
+        context = {"version": "charlie_hermes_native_execution_context_v1",
+                   "mission_id": "CMQ-X", "auto_merge": False}
+        headers = {"Authorization": "Bearer " + "x" * 32}
+        with patch.object(routes, "env_value", return_value="x" * 32), \
+             patch.object(routes, "get_mission", return_value=({"mission": mission}, 200)), \
+             patch.object(routes, "build_hermes_native_execution_context", return_value=context):
+            response = app.test_client().get(
+                "/charlie/hermes/missions/CMQ-X/native-context", headers=headers)
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(context, response.json["context"])
+        self.assertNotIn("metadata", response.json["context"])
 
     def test_branch_fallback_route_rejects_caller_authority_and_returns_bounded_packet(self):
         from modules.charlie import routes

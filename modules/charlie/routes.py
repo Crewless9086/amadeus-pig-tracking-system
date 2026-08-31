@@ -72,6 +72,7 @@ from modules.charlie.core_workflow import (
     build_core_plan,
     evaluate_core_readiness,
 )
+from modules.charlie.execution_bridge import build_hermes_native_execution_context
 from modules.charlie.vault_store import vault_tables_health
 from modules.charlie.model_registry import choose_model, estimate_model_cost, model_registry_packet
 from modules.charlie.mission_memory import (
@@ -1204,6 +1205,32 @@ def charlie_hermes_mission_status_route(mission_id):
         return denied
     result, status = get_mission(mission_id)
     return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-context", methods=["GET"])
+def charlie_hermes_native_context_route(mission_id):
+    """Return the credential-free native-builder context from canonical truth."""
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = get_mission(mission_id)
+    if status >= 400:
+        return jsonify(result), status
+    mission = dict(result.get("mission") or {})
+    metadata = dict(mission.get("metadata") or {})
+    authorization = dict(metadata.get("hermes_native_execution") or {})
+    retirement = dict(metadata.get("cursor_provider_retirement") or {})
+    if (authorization.get("status") != "valid"
+            and retirement.get("provider_status") != "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"):
+        return jsonify({"success": False, "status": "native_context_mission_ineligible"}), 409
+    try:
+        context = build_hermes_native_execution_context(mission)
+        encoded = json.dumps(context, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "status": "native_context_unavailable"}), 409
+    if len(encoded) > 262144:
+        return jsonify({"success": False, "status": "native_context_too_large"}), 413
+    return jsonify({"success": True, "status": "native_context_ready", "context": context}), 200
 
 
 @charlie_bp.route("/charlie/hermes/missions/<mission_id>/progress", methods=["POST"])

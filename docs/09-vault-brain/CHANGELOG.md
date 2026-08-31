@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-08-31 - Self-contained CHARLIE-BUILDER plugin recovery
+
+- Removed application-root imports from the installed Hermes plugin. Native
+  governance context now crosses the existing authenticated CHARLIE API, while
+  candidate-diff identity is reproduced by a small pure plugin protocol with
+  compatibility tests against the authoritative backend implementation.
+- Hermes' static directory-plugin environment preflight no longer masks the
+  profile-owned runtime validation. Isolated-package tests load and register
+  all eight bounded tools, both safety hooks and all auxiliary review tasks
+  with the application root absent from `sys.path`.
+- Startup recovery can now discover the single exact Cursor attempt-5
+  retirement boundary and dispatch it through the existing idempotent native
+  builder path without a second dashboard or Slack instruction.
+
 ## 2026-08-30 - Hermes-native structured-patch executor
 
 - Cursor Cloud is retained as failed-safe audit history but removed from the

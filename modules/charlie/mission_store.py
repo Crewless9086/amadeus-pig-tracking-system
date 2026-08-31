@@ -2250,9 +2250,10 @@ def list_resumable_hermes_native_executions(*, authenticated_principal,
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("""select mission_id, coalesce(metadata_json,'{}'::jsonb)
+                cursor.execute("""select mission_id, status, coalesce(metadata_json,'{}'::jsonb)
                     from public.charlie_missions
                     where metadata_json ? 'hermes_native_execution'
+                       or metadata_json ? 'external_supervisor_state'
                     order by mission_id""")
                 rows = cursor.fetchall() or []
     except Exception as exc:
@@ -2260,17 +2261,53 @@ def list_resumable_hermes_native_executions(*, authenticated_principal,
                 "error_type": exc.__class__.__name__}, 503
     executions = []
     terminal = {"OWNER_DECISION_REQUIRED", "BLOCKED", "COMPLETED", "CANCELLED", "REVOKED"}
-    for mission_id, metadata_value in rows:
+    pending_handoffs = []
+    active_native_count = 0
+    active_cursor_missions = set()
+    for mission_id, mission_status, metadata_value in rows:
         metadata = dict(metadata_value or {})
         native = dict(metadata.get("hermes_native_execution") or {})
         state = dict(metadata.get("external_supervisor_state") or {})
+        if (str(state.get("agent_state") or "").upper() == "ACTIVE"
+                or str(state.get("run_state") or "").upper() == "RUNNING"):
+            active_cursor_missions.add(str(mission_id))
         if native.get("status") == "valid" and native.get("execution_status") not in terminal:
+            active_native_count += 1
             executions.append({
                 "mission_id": str(mission_id),
                 "native_execution_id": native.get("native_execution_id"),
                 "slack_channel_id": state.get("slack_channel_id"),
                 "slack_thread_ts": state.get("slack_thread_ts"),
+                "resume_kind": "hermes_native_execution",
             })
+            continue
+        dispatch = dict(metadata.get("dispatch_authorization") or {})
+        if (
+            str(mission_status or "").lower() in {"new", "in_progress"}
+            and int(state.get("execution_attempt") or 0) == 5
+            and all(str(state.get(key) or "").strip() for key in (
+                "cursor_agent_id", "cursor_run_id", "branch", "slack_channel_id", "slack_thread_ts"))
+            and state.get("repository_mutation") is False
+            and not int(state.get("pr_number") or 0)
+            and not str(state.get("head_sha") or "").strip()
+            and not metadata.get("review_packet")
+            and not metadata.get("exact_candidate")
+            and not metadata.get("mission_admission")
+            and not metadata.get("cursor_provider_retirement")
+            and not metadata.get("hermes_native_execution")
+            and dispatch.get("status") == "valid"
+        ):
+            pending_handoffs.append({
+                "mission_id": str(mission_id),
+                "native_execution_id": "",
+                "slack_channel_id": state.get("slack_channel_id"),
+                "slack_thread_ts": state.get("slack_thread_ts"),
+                "resume_kind": "cursor_retirement_pending",
+            })
+    pending_ids = {item["mission_id"] for item in pending_handoffs}
+    if (active_native_count == 0 and len(pending_handoffs) == 1
+            and active_cursor_missions.issubset(pending_ids)):
+        executions.extend(pending_handoffs)
     return {"success": True, "status": "native_recovery_ready", "executions": executions}, 200
 
 

@@ -1,5 +1,9 @@
 import importlib
+import importlib.util
 import json
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 import unittest
 import time
@@ -15,6 +19,64 @@ class Context:
 
 
 class HermesNativePluginTests(unittest.TestCase):
+    def test_directory_plugin_imports_and_registers_without_application_root(self):
+        source = Path("integrations/hermes/charlie_builder").resolve()
+        with tempfile.TemporaryDirectory() as folder:
+            plugin = Path(folder) / "charlie_builder"
+            shutil.copytree(source, plugin)
+            outside = Path(folder) / "outside"
+            outside.mkdir()
+            spec = importlib.util.spec_from_file_location(
+                "isolated_charlie_builder", plugin / "__init__.py",
+                submodule_search_locations=[str(plugin)],
+            )
+            module = importlib.util.module_from_spec(spec)
+            old_path, old_cwd = list(sys.path), Path.cwd()
+            sys.modules[spec.name] = module
+            try:
+                sys.path[:] = [item for item in sys.path
+                               if Path(item or ".").resolve() != old_cwd.resolve()]
+                import os
+                os.chdir(outside)
+                spec.loader.exec_module(module)
+                fake = {name: (lambda value: value) for name in (
+                    "charlie_reconcile_mission", "charlie_dispatch_cursor",
+                    "charlie_get_mission_status", "charlie_get_cursor_status",
+                    "charlie_supervise_once", "charlie_continue_cursor",
+                    "charlie_issue_admission", "charlie_prepare_owner_decision")}
+                context = Context()
+                with patch.object(module, "build_plugin_from_environment", return_value=fake):
+                    module.register(context)
+            finally:
+                os.chdir(old_cwd)
+                sys.path[:] = old_path
+                for name in list(sys.modules):
+                    if name == spec.name or name.startswith(spec.name + "."):
+                        sys.modules.pop(name, None)
+            self.assertEqual(8, len(context.tools))
+            self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
+            self.assertEqual(4, len(context.auxiliary_tasks))
+
+    def test_runtime_package_has_no_application_root_imports(self):
+        for name in ("__init__.py", "supervisor.py", "native_executor.py",
+                     "schemas.py", "protocol.py"):
+            text = (Path("integrations/hermes/charlie_builder") / name).read_text(encoding="utf-8")
+            self.assertNotIn("from modules.", text, name)
+            self.assertNotIn("import modules.", text, name)
+
+    def test_api_server_schema_is_exactly_the_bounded_plugin_surface(self):
+        configured = {"api_server": ["charlie_builder"], "slack": ["charlie_builder"]}
+        bounded = {
+            "charlie_reconcile_mission", "charlie_dispatch_cursor",
+            "charlie_get_mission_status", "charlie_get_cursor_status",
+            "charlie_issue_admission", "charlie_supervise_once",
+            "charlie_continue_cursor", "charlie_prepare_owner_decision",
+        }
+        resolved = bounded if configured["api_server"] == ["charlie_builder"] else set()
+        self.assertEqual(bounded, resolved)
+        self.assertTrue(resolved.isdisjoint({
+            "browser_exec", "execute_code", "patch", "read_file", "search_files", "write_file"}))
+
     def test_native_manifest_and_register_surface(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")
         fake = {
@@ -113,7 +175,7 @@ class HermesNativePluginTests(unittest.TestCase):
         self.assertNotIn("request_url:", manifest)
         self.assertIn("message.channels", manifest)
         plugin_manifest = Path("integrations/hermes/charlie_builder/plugin.yaml").read_text(encoding="utf-8")
-        self.assertIn("SLACK_APP_TOKEN", plugin_manifest)
+        self.assertIn("requires_env: []", plugin_manifest)
         self.assertNotIn("  - CURSOR_API_KEY", plugin_manifest)
         self.assertNotIn("SLACK_ALLOWED_USERS", plugin_manifest)
         self.assertIn("pre_gateway_dispatch", plugin_manifest)
