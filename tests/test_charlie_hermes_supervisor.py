@@ -245,7 +245,7 @@ class HermesSupervisorTests(unittest.TestCase):
                 return {"pr_number": number, "head_sha": self.head, "branch": branch,
                     "checks": {name: "success" for name in ("mission-admission", "charlie-core")},
                     "all_required_checks_pass": self.head == head_two,
-                    "approved_head_sha": self.head if self.head == head_two else "",
+                    "approved_head_sha": "",
                     "ci_stalled": False, "independent_review": "WAIT"}
         class Bot:
             def __init__(self): self.posts = []
@@ -304,6 +304,61 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual("builder-agent", canonical.native["builder_agent_id"])
         self.assertEqual("OWNER_DECISION_REQUIRED", ready["execution_status"])
         self.assertEqual("CAPPROVE", bot.posts[-1][0])
+        self.assertTrue(any(post[0] == "C1" and post[2].get("thread_ts") == "1.0"
+                            for post in bot.posts))
+
+    def test_native_role_approval_is_derived_only_for_exact_current_head(self):
+        head, base, digest = "d" * 40, "a" * 40, "c" * 64
+        files = ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]
+        binding = {"pr_number": 9, "base_sha": base, "head_sha": head,
+                   "candidate_diff_sha256": digest, "changed_files": files}
+        def review(role, *, verdict="APPROVE", bound=None):
+            return {"role": role, "verdict": verdict, "findings": [],
+                    "reviewer_identity": f"HNR-{role}",
+                    "reviewer_task": f"charlie_native_{role.lower()}_reviewer",
+                    "reviewer_agent_id": "default", "candidate_binding": bound or dict(binding)}
+        class CanonicalApproval:
+            def __init__(self, native): self.native = native; self.admissions = []
+            def get_mission(self, _mission_id):
+                return {"mission": {"mission_id": "CMQ-X", "metadata": {
+                    "hermes_native_execution": self.native}}}
+            def record_native_progress(self, _mission_id, value): self.native.update(value); return dict(self.native)
+            def request_admission(self, mission_id, expected_head_sha, pr_number):
+                self.admissions.append((mission_id, expected_head_sha, pr_number)); return {"status": "issued"}
+        class MonitorApproval:
+            def __init__(self, observed_head): self.observed_head = observed_head
+            def pull_state(self, _number, now=None):
+                return {"pr_number": 9, "head_sha": self.observed_head, "branch": "charlie/cmq-x-native-1",
+                        "checks": {}, "all_required_checks_pass": True,
+                        "approved_head_sha": "", "ci_stalled": False, "independent_review": "WAIT"}
+        def observe(*, correction_rounds=1, security=None, functional=None, observed_head=head):
+            native = {"native_execution_id": "HNX-X", "generation": "g1", "pr_number": 9,
+                      "starting_main_sha": base, "head_sha": head,
+                      "candidate_diff_sha256": digest, "changed_files": files,
+                      "correction_rounds": correction_rounds,
+                      "review_security": security or review("SECURITY"),
+                      "review_functional": functional or review("FUNCTIONAL"),
+                      "execution_status": "SEND_BACK_CORRECTED"}
+            canonical = CanonicalApproval(native)
+            supervisor = HermesSupervisor(canonical, None, owner_slack_user_id="UOWNER",
+                slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
+                slack_approval_channel_id="CAPPROVE", github=MonitorApproval(observed_head))
+            return supervisor.poll_native({"mission_id": "CMQ-X"})
+        approved = observe()
+        self.assertEqual("APPROVE", approved["independent_review"])
+        self.assertEqual(head, approved["approved_head_sha"])
+        stale = observe(security=review("SECURITY", bound={**binding, "head_sha": "e" * 40}))
+        self.assertEqual("", stale["approved_head_sha"])
+        wrong_diff = observe(functional=review("FUNCTIONAL", bound={**binding,
+                                                                    "candidate_diff_sha256": "e" * 64}))
+        self.assertEqual("", wrong_diff["approved_head_sha"])
+        changed = observe(observed_head="e" * 40)
+        self.assertEqual("", changed["approved_head_sha"])
+        no_correction = observe(correction_rounds=0)
+        self.assertEqual("", no_correction["approved_head_sha"])
+        sent_back = observe(security=review("SECURITY", verdict="SEND_BACK"))
+        self.assertEqual("SEND_BACK", sent_back["independent_review"])
+        self.assertEqual("", sent_back["approved_head_sha"])
         self.assertEqual([], self.client.calls)
 
     def test_native_review_accepts_default_agent_with_distinct_auxiliary_tasks(self):
@@ -674,6 +729,7 @@ class HermesSupervisorTests(unittest.TestCase):
         state = GitHubReadMonitor(
             "Crewless9086/amadeus-pig-tracking-system", client=GitHubClient()).pull_state(9)
         self.assertEqual("WAIT", state["independent_review"])
+        self.assertEqual("", state["approved_head_sha"])
 
     def test_two_distinct_exact_head_role_reviews_are_required_for_approve(self):
         class GitHubClient:

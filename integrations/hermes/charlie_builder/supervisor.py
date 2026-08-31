@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -829,7 +830,8 @@ class HermesSupervisor:
             "candidate_diff_sha256": str(native.get("candidate_diff_sha256") or ""),
             "changed_files": list(native.get("changed_files") or []),
         }
-        active_reviews = [security, functional] + ([challenge] if challenge else [])
+        corrected = int(native.get("correction_rounds") or 0) >= 1
+        active_reviews = [security, functional] + ([challenge] if challenge and not corrected else [])
         reviews_bound = all(
             dict(review.get("candidate_binding") or {}) == expected_binding
             for review in active_reviews
@@ -840,20 +842,39 @@ class HermesSupervisor:
             and "charlie_native_builder" not in set(reviewer_tasks))
         if not reviews_bound or not reviewers_independent:
             security = functional = challenge = {}
+        github_exact_approval = bool(
+            observed.get("independent_review") == "APPROVE"
+            and observed.get("approved_head_sha") == observed.get("head_sha"))
         if (observed.get("independent_review") != "SEND_BACK"
                 and "SEND_BACK" in {security.get("verdict"), functional.get("verdict"),
                                     challenge.get("verdict")}):
             observed["independent_review"] = "SEND_BACK"
+            observed["approved_head_sha"] = ""
             observed["independent_review_findings"] = "\n".join(
                 item for review in active_reviews for item in review.get("findings") or [])[:4000]
         elif (observed.get("independent_review") == "WAIT"
                 and security.get("verdict") == functional.get("verdict") == "APPROVE"):
-            if int(native.get("correction_rounds") or 0) < 1:
+            exact_role_tasks = {
+                security.get("reviewer_task"), functional.get("reviewer_task")
+            } == {"charlie_native_security_reviewer", "charlie_native_functional_reviewer"}
+            candidate_complete = bool(
+                pr_number > 0 and re.fullmatch(r"[0-9a-f]{40}", expected_binding["base_sha"])
+                and re.fullmatch(r"[0-9a-f]{40}", expected_binding["head_sha"])
+                and re.fullmatch(r"[0-9a-f]{64}", expected_binding["candidate_diff_sha256"])
+                and expected_binding["changed_files"]
+                and observed.get("head_sha") == native.get("head_sha"))
+            if not corrected:
                 observed["independent_review"] = "WAIT"
+                observed["approved_head_sha"] = ""
                 observed["independent_review_findings"] = "commissioning_genuine_send_back_required"
-            else:
+            elif reviews_bound and reviewers_independent and exact_role_tasks and candidate_complete:
                 observed["independent_review"] = "APPROVE"
+                observed["approved_head_sha"] = observed["head_sha"]
                 observed["security_review"], observed["functional_review"] = security, functional
+            else:
+                observed["approved_head_sha"] = ""
+        elif not github_exact_approval:
+            observed["approved_head_sha"] = ""
         admission_requested_head = str(native.get("admission_requested_head") or "")
         if admission_requested_head != observed.get("head_sha"):
             self.issue_admission(mission_id, observed.get("head_sha"), pr_number)
