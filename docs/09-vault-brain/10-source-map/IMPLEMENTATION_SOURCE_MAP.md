@@ -1089,20 +1089,3 @@ Current Stage 4 surface:
   to cover packaging, security, digest and fixed-policy binding, replay,
   two-ledger canonical claiming, rebinding, identities/denials, Continue/Cancel,
   restore/corruption/disk failure, queue/provider binding and Hold liveness.
-## CHARLIE Hermes native builder boundary
-
-- `integrations/hermes/charlie_builder/` is a self-contained Hermes directory
-  plugin. It may depend on Hermes and its declared dependencies, but never on
-  the application repository being importable or present on `sys.path`.
-- `integrations/hermes/charlie_builder/protocol.py` owns only the pure,
-  backend-compatible candidate-diff identity used by the plugin. The
-  authoritative Mission Admission verifier remains in
-  `modules/charlie/mission_admission.py`.
-- `GET /charlie/hermes/missions/<mission_id>/native-context` returns the
-  bounded credential-free execution context through the existing authenticated
-  Hermes gateway rail. Governance construction stays server-side.
-- The resumable-native mission query also exposes one exact
-  `cursor_retirement_pending` handoff when attempt 5 has zero candidate or
-  repository effect and no other writer exists. Plugin registration submits
-  that canonical mission to the existing single-worker recovery path; restart
-  replay reuses the same retirement, native execution and worktree.
