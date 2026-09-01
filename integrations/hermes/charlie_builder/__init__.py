@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import atexit
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from .supervisor import build_plugin_from_environment
@@ -15,6 +16,9 @@ _BOUNDED_TOOLS = frozenset({
     "charlie_issue_admission", "charlie_supervise_once",
     "charlie_continue_cursor", "charlie_prepare_owner_decision",
 })
+_RECOVERY_DISCOVERY_ATTEMPTS = 12
+_RECOVERY_DISCOVERY_DELAY_SECONDS = 5
+_LOG = logging.getLogger("hermes_cli.plugins.charlie_builder")
 
 
 def _source_value(source, name, default=""):
@@ -226,17 +230,44 @@ def register(ctx):
 
     ctx.register_hook("pre_gateway_dispatch", pre_gateway_dispatch)
     ctx.register_hook("pre_tool_call", pre_tool_call)
-    # Canonical mission truth, not Slack replay, restarts unfinished work after
-    # a gateway process replacement.
-    try:
-        for execution in supervisor.canonical.resumable_native_executions():
-            mission_id = str(execution.get("mission_id") or "").strip()
-            if mission_id:
-                native_jobs.submit(
-                    recover_native, mission_id,
-                    str(execution.get("slack_channel_id") or ""),
-                    str(execution.get("slack_thread_ts") or ""),
+    def discover_and_recover_native():
+        # Discovery itself is retryable.  A transient canonical outage at the
+        # instant the directory plugin registers must not permanently abandon
+        # an otherwise resumable provider handoff.  The single-worker executor
+        # serializes discovery and recovery, while canonical idempotency owns
+        # the execution/worktree uniqueness invariant.
+        discovery = getattr(getattr(supervisor, "canonical", None),
+                            "resumable_native_executions", None)
+        if not callable(discovery):
+            return
+        for attempt in range(_RECOVERY_DISCOVERY_ATTEMPTS):
+            try:
+                executions = list(discovery())
+            except Exception as exc:
+                _LOG.warning(
+                    "charlie_native_recovery_discovery_failed reason=%s attempt=%s",
+                    _bounded_reason(exc), attempt + 1,
                 )
-    except Exception:
-        pass
+                if attempt + 1 < _RECOVERY_DISCOVERY_ATTEMPTS:
+                    threading.Event().wait(_RECOVERY_DISCOVERY_DELAY_SECONDS)
+                continue
+            for execution in executions:
+                mission_id = str(execution.get("mission_id") or "").strip()
+                if mission_id:
+                    native_jobs.submit(
+                        recover_native, mission_id,
+                        str(execution.get("slack_channel_id") or ""),
+                        str(execution.get("slack_thread_ts") or ""),
+                    )
+            return
+        _LOG.error("charlie_native_recovery_discovery_exhausted")
+
+    # Canonical mission truth, not Slack replay, restarts unfinished work after
+    # a gateway process replacement. Discovery is asynchronous so registration
+    # and its fail-closed hooks are never held hostage by network availability.
+    threading.Thread(
+        target=discover_and_recover_native,
+        name="charlie-native-discovery",
+        daemon=True,
+    ).start()
     atexit.register(native_jobs.shutdown, wait=False, cancel_futures=True)

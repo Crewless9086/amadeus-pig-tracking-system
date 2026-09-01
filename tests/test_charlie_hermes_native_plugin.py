@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 import unittest
 import time
+import os
 from unittest.mock import patch
 from types import SimpleNamespace
 
@@ -57,6 +58,51 @@ class HermesNativePluginTests(unittest.TestCase):
             self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
             self.assertEqual(4, len(context.auxiliary_tasks))
 
+    def test_isolated_directory_plugin_uses_real_environment_factory(self):
+        source = Path("integrations/hermes/charlie_builder").resolve()
+        protected = {
+            "CHARLIE_CANONICAL_API_URL": "https://canonical.invalid",
+            "CHARLIE_HERMES_GATEWAY_TOKEN": "test-gateway-value-1326",
+            "SLACK_SIGNING_SECRET": "test-signing-value-1326",
+            "SLACK_BOT_TOKEN": "xoxb-test-value-1326",
+            "CHARLIE_SLACK_OWNER_USER_ID": "U0BSRQJASRG",
+            "SLACK_APP_TOKEN": "xapp-test-value-1326",
+            "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": "C0BSRQJ60KC",
+            "CHARLIE_SLACK_BUILD_CHANNEL_ID": "C-BUILD",
+            "CHARLIE_SLACK_APPROVALS_CHANNEL_ID": "C-APPROVALS",
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            plugin = Path(folder) / "charlie_builder"
+            shutil.copytree(source, plugin)
+            outside = Path(folder) / "outside"
+            outside.mkdir()
+            spec = importlib.util.spec_from_file_location(
+                "isolated_charlie_builder_real", plugin / "__init__.py",
+                submodule_search_locations=[str(plugin)],
+            )
+            module = importlib.util.module_from_spec(spec)
+            old_path, old_cwd = list(sys.path), Path.cwd()
+            sys.modules[spec.name] = module
+            try:
+                sys.path[:] = [item for item in sys.path
+                               if Path(item or ".").resolve() != old_cwd.resolve()]
+                os.chdir(outside)
+                spec.loader.exec_module(module)
+                module._RECOVERY_DISCOVERY_ATTEMPTS = 1
+                module._RECOVERY_DISCOVERY_DELAY_SECONDS = 0
+                context = Context()
+                with patch.dict(os.environ, protected, clear=True):
+                    module.register(context)
+            finally:
+                os.chdir(old_cwd)
+                sys.path[:] = old_path
+                for name in list(sys.modules):
+                    if name == spec.name or name.startswith(spec.name + "."):
+                        sys.modules.pop(name, None)
+            self.assertEqual(module._BOUNDED_TOOLS, frozenset(context.tools))
+            self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
+            self.assertEqual(4, len(context.auxiliary_tasks))
+
     def test_runtime_package_has_no_application_root_imports(self):
         for name in ("__init__.py", "supervisor.py", "native_executor.py",
                      "schemas.py", "protocol.py"):
@@ -64,18 +110,59 @@ class HermesNativePluginTests(unittest.TestCase):
             self.assertNotIn("from modules.", text, name)
             self.assertNotIn("import modules.", text, name)
 
-    def test_api_server_schema_is_exactly_the_bounded_plugin_surface(self):
+    def test_api_server_schema_is_exactly_the_registered_bounded_plugin_surface(self):
         configured = {"api_server": ["charlie_builder"], "slack": ["charlie_builder"]}
-        bounded = {
-            "charlie_reconcile_mission", "charlie_dispatch_cursor",
-            "charlie_get_mission_status", "charlie_get_cursor_status",
-            "charlie_issue_admission", "charlie_supervise_once",
-            "charlie_continue_cursor", "charlie_prepare_owner_decision",
-        }
-        resolved = bounded if configured["api_server"] == ["charlie_builder"] else set()
-        self.assertEqual(bounded, resolved)
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        class Tools(dict):
+            pass
+        fake = Tools({name: (lambda value: value) for name in module._BOUNDED_TOOLS})
+        context = Context()
+        with patch.object(module, "build_plugin_from_environment", return_value=fake):
+            with patch.object(module, "_RECOVERY_DISCOVERY_ATTEMPTS", 1):
+                module.register(context)
+        registry = {}
+        for name, entry in context.tools.items():
+            registry.setdefault(entry["toolset"], set()).add(name)
+        resolved = set().union(*(registry.get(toolset, set())
+                                 for toolset in configured["api_server"]))
+        self.assertEqual(module._BOUNDED_TOOLS, frozenset(resolved))
         self.assertTrue(resolved.isdisjoint({
             "browser_exec", "execute_code", "patch", "read_file", "search_files", "write_file"}))
+
+    def test_failed_plugin_registration_cannot_resolve_generic_api_tools(self):
+        configured = {"api_server": ["charlie_builder"]}
+        registry = {"generic-coding": {"browser_exec", "execute_code", "write_file"}}
+        resolved = set().union(*(registry.get(toolset, set())
+                                 for toolset in configured["api_server"]))
+        self.assertEqual(set(), resolved)
+
+    def test_startup_discovery_retries_after_transient_canonical_failure(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        calls = {"discovery": 0, "dispatch": 0}
+        class Canonical:
+            def resumable_native_executions(self):
+                calls["discovery"] += 1
+                if calls["discovery"] == 1:
+                    raise RuntimeError("canonical_authority_unavailable")
+                return []
+        class Tools(dict):
+            pass
+        fake = Tools({name: (lambda value: value) for name in module._BOUNDED_TOOLS})
+        fake_supervisor = SimpleNamespace(
+            canonical=Canonical(), native_llm=None, slack_bot=None,
+            dispatch_cursor=lambda value: value,
+        )
+        fake.supervisor = fake_supervisor
+        context = Context()
+        with patch.object(module, "build_plugin_from_environment", return_value=fake):
+            with patch.object(module, "_RECOVERY_DISCOVERY_ATTEMPTS", 2), \
+                    patch.object(module, "_RECOVERY_DISCOVERY_DELAY_SECONDS", 0):
+                module.register(context)
+                for _ in range(100):
+                    if calls["discovery"] == 2:
+                        break
+                    time.sleep(0.01)
+        self.assertEqual(2, calls["discovery"])
 
     def test_native_manifest_and_register_surface(self):
         module = importlib.import_module("integrations.hermes.charlie_builder")

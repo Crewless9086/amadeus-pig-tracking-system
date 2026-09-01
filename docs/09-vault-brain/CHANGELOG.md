@@ -12,7 +12,10 @@
   with the application root absent from `sys.path`.
 - Startup recovery can now discover the single exact Cursor attempt-5
   retirement boundary and dispatch it through the existing idempotent native
-  builder path without a second dashboard or Slack instruction.
+  builder path without a second dashboard or Slack instruction. Canonical
+  discovery retries asynchronously with bounded diagnostics, so a transient
+  startup outage cannot silently abandon the handoff or delay registration of
+  the fail-closed tool and hook surface.
 
 ## 2026-08-30 - Hermes-native structured-patch executor
 
