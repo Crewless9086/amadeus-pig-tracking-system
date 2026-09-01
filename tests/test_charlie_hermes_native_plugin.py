@@ -9,18 +9,171 @@ from pathlib import Path
 import unittest
 import time
 import os
+import threading
 from unittest.mock import patch
 from types import SimpleNamespace
+from contextlib import contextmanager
 
 
 class Context:
-    def __init__(self): self.tools = {}; self.hooks = {}; self.auxiliary_tasks = []
+    def __init__(self):
+        self.tools = {}; self.hooks = {}; self.auxiliary_tasks = []
+        self.plugin_id = "charlie-builder"; self.profile_name = "default"
     def register_tool(self, **kwargs): self.tools[kwargs["name"]] = kwargs
     def register_hook(self, name, handler): self.hooks[name] = handler
     def register_auxiliary_task(self, name, **kwargs): self.auxiliary_tasks.append((name, kwargs))
 
 
 class HermesNativePluginTests(unittest.TestCase):
+    def setUp(self):
+        self._hermes_home = tempfile.TemporaryDirectory()
+        home = Path(self._hermes_home.name).resolve()
+        (home / "plugins" / "charlie-builder").mkdir(parents=True)
+        hermes_pkg = type(sys)("hermes_cli"); hermes_pkg.__path__ = []
+        plugins = type(sys)("hermes_cli.plugins")
+        manager = SimpleNamespace(home_path=home, scope_key=str(home))
+        plugins.get_plugin_manager = lambda: manager
+        @contextmanager
+        def home_scope(selected):
+            self.assertEqual(home, Path(selected).resolve())
+            yield
+        plugins._plugin_home_scope = home_scope
+        self._hermes_modules = {
+            name: sys.modules.get(name) for name in ("hermes_cli", "hermes_cli.plugins")
+        }
+        sys.modules["hermes_cli"] = hermes_pkg
+        sys.modules["hermes_cli.plugins"] = plugins
+
+    def tearDown(self):
+        for name, prior in self._hermes_modules.items():
+            if prior is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = prior
+        self._hermes_home.cleanup()
+
+    def test_registration_defers_only_temporarily_unavailable_profile_scope(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        class Tools(dict):
+            pass
+        resolved = Tools({name: (lambda value: {"success": True})
+                          for name in module._BOUNDED_TOOLS})
+        resolved.supervisor = SimpleNamespace(
+            native_llm=None,
+            canonical=SimpleNamespace(resumable_native_executions=lambda: []),
+        )
+        context = Context()
+        calls = {"count": 0}
+        def factory(**kwargs):
+            self.assertFalse(kwargs.get("validate_live"))
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise RuntimeError("profile_scope_temporarily_unavailable")
+            return resolved
+        with patch.object(module, "build_plugin_from_environment", side_effect=factory):
+            module.register(context)
+            self.assertEqual(module._BOUNDED_TOOLS, frozenset(context.tools))
+            self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
+            result = json.loads(context.tools["charlie_get_mission_status"]["handler"](
+                {"mission_id": "CHARLIE-MISSION-TEST"}))
+        self.assertTrue(result["success"])
+        self.assertGreaterEqual(calls["count"], 2)
+
+    def test_profile_bound_background_recovery_uses_exact_home_without_input(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        profile_home = Path(self._hermes_home.name).resolve()
+        required = {
+            "CHARLIE_CANONICAL_API_URL": "https://current.invalid",
+            "CHARLIE_HERMES_GATEWAY_TOKEN": "current-gateway",
+            "SLACK_BOT_TOKEN": "current-slack",
+            "CHARLIE_SLACK_OWNER_USER_ID": "U-CURRENT",
+            "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": "C-CURRENT",
+            "CHARLIE_SLACK_BUILD_CHANNEL_ID": "CB-CURRENT",
+            "CHARLIE_SLACK_APPROVALS_CHANNEL_ID": "CA-CURRENT",
+        }
+        (profile_home / ".env").write_text(
+            "".join(f"{key}={value}\n" for key, value in required.items()),
+            encoding="utf-8")
+        thread_home = threading.local()
+        factory_calls = {"count": 0}
+        dispatched = threading.Event()
+        class Tools(dict):
+            pass
+        discovery_calls = {"count": 0}
+        def discovery():
+            discovery_calls["count"] += 1
+            if discovery_calls["count"] == 1:
+                return [{"mission_id": "CHARLIE-MISSION-TEST",
+                         "slack_channel_id": "C-CURRENT", "slack_thread_ts": "1"}]
+            return []
+        supervisor = SimpleNamespace(
+            native_llm=None, slack_bot=None,
+            canonical=SimpleNamespace(resumable_native_executions=discovery),
+            dispatch_cursor=lambda value: {"status": "BLOCKED"},
+            dispatch_builder=lambda value: dispatched.set() or {"status": "BLOCKED"},
+            supervise_once=lambda value: {"status": "BLOCKED"},
+        )
+        resolved = Tools({name: (lambda value: {"success": True})
+                          for name in module._BOUNDED_TOOLS})
+        resolved.supervisor = supervisor
+        def factory(**kwargs):
+            self.assertFalse(kwargs.get("validate_live"))
+            factory_calls["count"] += 1
+            self.assertEqual(profile_home, getattr(thread_home, "path", None))
+            rows = (thread_home.path / ".env").read_text(encoding="utf-8").splitlines()
+            names = {row.split("=", 1)[0] for row in rows if "=" in row}
+            self.assertEqual(set(required), names)
+            return resolved
+        @contextmanager
+        def exact_scope(home):
+            old = getattr(thread_home, "path", None)
+            thread_home.path = Path(home).resolve()
+            try:
+                yield
+            finally:
+                thread_home.path = old
+        context = Context()
+        with patch.object(module, "build_plugin_from_environment", side_effect=factory), \
+                patch.object(module, "_bound_profile_home", exact_scope), \
+                patch.object(module, "_RECOVERY_DISCOVERY_ATTEMPTS", 1):
+            module.register(context)
+            self.assertTrue(dispatched.wait(2))
+            result = json.loads(context.tools["charlie_get_mission_status"]["handler"](
+                {"mission_id": "CHARLIE-MISSION-TEST"}))
+        self.assertTrue(result["success"])
+        self.assertEqual(1, factory_calls["count"])
+        self.assertEqual(module._BOUNDED_TOOLS, frozenset(context.tools))
+        self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
+        self.assertEqual(4, len(context.auxiliary_tasks))
+
+    def test_profile_bound_factory_initializes_once_under_concurrency(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        calls = {"count": 0}
+        resolved = {"charlie_get_mission_status": lambda value: value}
+        def factory(**kwargs):
+            calls["count"] += 1
+            time.sleep(0.02)
+            return resolved
+        tools = module._ProfileBoundPluginTools(self._hermes_home.name, factory=factory)
+        results = []
+        workers = [threading.Thread(target=lambda: results.append(tools._tools()))
+                   for _ in range(8)]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join()
+        self.assertEqual(1, calls["count"])
+        self.assertTrue(all(item is resolved for item in results))
+
+    def test_missing_configuration_is_not_deferred(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        context = Context()
+        with patch.object(
+                module, "build_plugin_from_environment",
+                side_effect=RuntimeError(
+                    "hermes_protected_configuration_incomplete:SLACK_BOT_TOKEN")):
+            with self.assertRaisesRegex(
+                    RuntimeError, "^protected_configuration_missing:SLACK_BOT_TOKEN$"):
+                module.register(context)
+
     def test_directory_plugin_imports_and_registers_without_application_root(self):
         source = Path("integrations/hermes/charlie_builder").resolve()
         with tempfile.TemporaryDirectory() as folder:

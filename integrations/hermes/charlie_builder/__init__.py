@@ -6,7 +6,9 @@ import json
 import atexit
 import logging
 import threading
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from .supervisor import build_plugin_from_environment
 
 
@@ -53,6 +55,82 @@ def _json_handler(handler, adapt=lambda value: value):
     return invoke
 
 
+def _capture_plugin_manager_home(ctx):
+    """Capture the exact v0.20.6 PluginManager home owning this plugin."""
+    try:
+        from hermes_cli.plugins import get_plugin_manager
+        manager = get_plugin_manager()
+        home = Path(manager.home_path).resolve(strict=True)
+    except (FileNotFoundError, OSError) as exc:
+        raise RuntimeError("profile_scope_temporarily_unavailable") from exc
+    except Exception as exc:
+        raise RuntimeError(
+            f"plugin_source_or_runtime_defect:{type(exc).__name__}"
+        ) from exc
+    if not home.is_dir() or Path(str(manager.scope_key)).resolve(strict=False) != home:
+        raise RuntimeError("profile_scope_temporarily_unavailable")
+    plugin_id = str(getattr(ctx, "plugin_id", "charlie-builder") or "").strip()
+    installed = (home / "plugins" / plugin_id).resolve(strict=False)
+    if plugin_id != "charlie-builder" or not installed.is_dir():
+        raise RuntimeError("plugin_source_or_runtime_defect:PluginHomeMismatch")
+    profile_name = str(getattr(ctx, "profile_name", "") or "").strip()
+    if profile_name and profile_name != "default":
+        raise RuntimeError("plugin_source_or_runtime_defect:ProfileIdentityMismatch")
+    return home
+
+
+@contextmanager
+def _bound_profile_home(home):
+    """Enter Hermes' own home override in the current worker thread."""
+    try:
+        from hermes_cli.plugins import _plugin_home_scope
+    except Exception as exc:
+        raise RuntimeError(
+            f"plugin_source_or_runtime_defect:{type(exc).__name__}"
+        ) from exc
+    with _plugin_home_scope(home):
+        yield
+
+
+def _initialization_reason(exc):
+    reason = str(exc or "").strip()
+    if reason == "profile_scope_temporarily_unavailable":
+        return reason
+    prefix = "hermes_protected_configuration_incomplete:"
+    if reason.startswith(prefix):
+        names = [name for name in reason[len(prefix):].split(",")
+                 if name.replace("_", "").isalnum()]
+        return "protected_configuration_missing:" + ",".join(names)
+    return f"plugin_source_or_runtime_defect:{type(exc).__name__}"
+
+
+class _ProfileBoundPluginTools:
+    """Initialize one supervisor under one captured profile home."""
+
+    def __init__(self, home, factory=None):
+        self.profile_home = Path(home)
+        self._factory = factory or build_plugin_from_environment
+        self._resolved = None
+        self._lock = threading.Lock()
+
+    def _tools(self):
+        if self._resolved is None:
+            with self._lock:
+                if self._resolved is None:
+                    with _bound_profile_home(self.profile_home):
+                        self._resolved = self._factory(validate_live=False)
+        return self._resolved
+
+    def __getitem__(self, name):
+        def invoke(value):
+            return self._tools()[name](value)
+        return invoke
+
+    @property
+    def supervisor(self):
+        return getattr(self._resolved, "supervisor", None)
+
+
 def register(ctx):
     # Registration establishes the bounded tool and hook safety surface.  Live
     # dependencies are checked by the individual operations that use them; a
@@ -66,10 +144,24 @@ def register(ctx):
         ctx.register_auxiliary_task(
             task, display_name=label,
             description="No-tool host-owned structured execution role with isolated task routing.")
-    tools = build_plugin_from_environment(validate_live=False)
+    profile_home = _capture_plugin_manager_home(ctx)
+    tools = _ProfileBoundPluginTools(profile_home)
+    try:
+        tools._tools()
+    except Exception as exc:
+        reason = _initialization_reason(exc)
+        if reason != "profile_scope_temporarily_unavailable":
+            raise RuntimeError(reason) from exc
+        _LOG.warning("CHARLIE protected configuration deferred: %s", reason)
     supervisor = getattr(tools, "supervisor", None)
     if supervisor is not None:
         supervisor.native_llm = getattr(ctx, "llm", None)
+    def current_supervisor():
+        nonlocal supervisor
+        if supervisor is None:
+            supervisor = tools._tools().supervisor
+            supervisor.native_llm = getattr(ctx, "llm", None)
+        return supervisor
     native_jobs = ThreadPoolExecutor(max_workers=1, thread_name_prefix="charlie-native")
     text = {"type": "string"}
     schemas = {
@@ -138,20 +230,22 @@ def register(ctx):
                 return
             active_native.add(mission_id)
         try:
-            dispatch = getattr(supervisor, "dispatch_builder", supervisor.dispatch_cursor)
+            active_supervisor = current_supervisor()
+            dispatch = getattr(active_supervisor, "dispatch_builder", active_supervisor.dispatch_cursor)
             result = dispatch({"mission_id": mission_id})
             if str((result or {}).get("status") or "") == "PACKAGER_CREDENTIAL_REQUIRED":
                 raise RuntimeError("github_packager_token_required")
             for _ in range(2160):
-                observed = supervisor.supervise_once({"mission_id": mission_id})
+                observed = active_supervisor.supervise_once({"mission_id": mission_id})
                 status = str((observed or {}).get("execution_status") or (observed or {}).get("status") or "")
                 if status in {"OWNER_DECISION_REQUIRED", "BLOCKED"}:
                     break
                 threading.Event().wait(10)
         except Exception as exc:
             try:
-                if supervisor and supervisor.slack_bot:
-                    supervisor.slack_bot.post(
+                active_supervisor = current_supervisor()
+                if active_supervisor.slack_bot:
+                    active_supervisor.slack_bot.post(
                         channel,
                         f"BLOCKED: CHARLIE native execution unavailable ({_bounded_reason(exc)}).",
                         thread_ts=thread_id,
@@ -169,8 +263,9 @@ def register(ctx):
         for _ in range(50):
             run_native(mission_id, channel, thread_id)
             try:
+                active_supervisor = current_supervisor()
                 remaining = {str(item.get("mission_id") or "")
-                             for item in supervisor.canonical.resumable_native_executions()}
+                             for item in active_supervisor.canonical.resumable_native_executions()}
             except Exception:
                 remaining = {mission_id}
             if mission_id not in remaining:
@@ -189,8 +284,12 @@ def register(ctx):
         message_id = str(getattr(event, "message_id", "") or "").strip()
         thread_id = _source_value(source, "thread_id") or message_id
         instruction = str(getattr(event, "text", "") or "").strip()
-        if (supervisor is None or owner != supervisor.owner_slack_user_id
-                or channel != supervisor.slack_command_channel_id):
+        try:
+            active_supervisor = current_supervisor()
+        except Exception as exc:
+            return {"action": "skip", "reason": _bounded_reason(exc)}
+        if (owner != active_supervisor.owner_slack_user_id
+                or channel != active_supervisor.slack_command_channel_id):
             return {"action": "skip", "reason": "slack_ingress_not_authorized"}
         try:
             try:
@@ -198,20 +297,20 @@ def register(ctx):
                 slack_sessions.add(str(build_session_key(source)))
             except Exception:
                 pass
-            reconciled = supervisor.reconcile_slack_event({
+            reconciled = active_supervisor.reconcile_slack_event({
                 "text": instruction, "event_id": message_id, "user": owner,
                 "channel": channel, "thread_ts": thread_id,
             })
             mission_id = str(reconciled.get("mission_id") or "").strip()
             if not mission_id:
                 raise RuntimeError("canonical_mission_unverified")
-            supervisor.canonical.prepare_dispatch_authorization(mission_id)
+            active_supervisor.canonical.prepare_dispatch_authorization(mission_id)
             native_jobs.submit(run_native, mission_id, channel, thread_id)
         except Exception as exc:
             reason = _bounded_reason(exc)
             try:
-                if supervisor and supervisor.slack_bot and channel and thread_id:
-                    supervisor.slack_bot.post(
+                if active_supervisor.slack_bot and channel and thread_id:
+                    active_supervisor.slack_bot.post(
                         channel, f"BLOCKED: CHARLIE routing unavailable ({reason}).",
                         thread_ts=thread_id)
             except Exception:
@@ -236,12 +335,10 @@ def register(ctx):
         # an otherwise resumable provider handoff.  The single-worker executor
         # serializes discovery and recovery, while canonical idempotency owns
         # the execution/worktree uniqueness invariant.
-        discovery = getattr(getattr(supervisor, "canonical", None),
-                            "resumable_native_executions", None)
-        if not callable(discovery):
-            return
         for attempt in range(_RECOVERY_DISCOVERY_ATTEMPTS):
             try:
+                active_supervisor = current_supervisor()
+                discovery = active_supervisor.canonical.resumable_native_executions
                 executions = list(discovery())
             except Exception as exc:
                 _LOG.warning(
