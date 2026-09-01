@@ -39,6 +39,7 @@ class HermesNativePluginTests(unittest.TestCase):
             return dict(row.split("=", 1) for row in
                         path.read_text(encoding="utf-8").splitlines() if "=" in row)
         config.load_env = load_env
+        config.get_env_value_prefer_dotenv = lambda name: load_env().get(name)
         manager = SimpleNamespace(home_path=home, scope_key=str(home))
         plugins.get_plugin_manager = lambda: manager
         @contextmanager
@@ -143,8 +144,15 @@ class HermesNativePluginTests(unittest.TestCase):
             finally:
                 thread_home.path = old
         context = Context()
+        config_module = sys.modules["hermes_cli.config"]
+        def dotenv_preferred(name):
+            rows = (thread_home.path / ".env").read_text(encoding="utf-8").splitlines()
+            return dict(row.split("=", 1) for row in rows if "=" in row).get(name)
         with patch.object(module, "build_plugin_from_environment", side_effect=factory), \
                 patch.object(module, "_bound_profile_home", exact_scope), \
+                patch.object(config_module, "load_env", return_value={}), \
+                patch.object(config_module, "get_env_value_prefer_dotenv",
+                             side_effect=dotenv_preferred), \
                 patch.object(module, "_RECOVERY_DISCOVERY_ATTEMPTS", 1):
             module.register(context)
             self.assertTrue(dispatched.wait(2))
@@ -183,6 +191,11 @@ class HermesNativePluginTests(unittest.TestCase):
             with self.assertRaisesRegex(
                     RuntimeError, "^protected_configuration_missing:SLACK_BOT_TOKEN$"):
                 module.register(context)
+
+    def test_profile_capture_includes_forbidden_github_write_names(self):
+        module = importlib.import_module("integrations.hermes.charlie_builder")
+        self.assertTrue({"CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"}
+                        <= set(module._PROFILE_CONFIGURATION_NAMES))
 
     def test_directory_plugin_imports_and_registers_without_application_root(self):
         source = Path("integrations/hermes/charlie_builder").resolve()
@@ -438,7 +451,10 @@ class HermesNativePluginTests(unittest.TestCase):
         context = Context()
         with patch.object(module, "build_plugin_from_environment", return_value=fake) as factory:
             module.register(context)
-        factory.assert_called_once_with(environ={}, validate_live=False)
+        called = factory.call_args.kwargs
+        self.assertFalse(called["validate_live"])
+        self.assertEqual(set(module._PROFILE_CONFIGURATION_NAMES), set(called["environ"]))
+        self.assertTrue(all(value is None for value in called["environ"].values()))
         self.assertEqual(set(fake), set(context.tools))
         self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
         for name, registered in context.tools.items():
@@ -456,7 +472,8 @@ class HermesNativePluginTests(unittest.TestCase):
         context = Context()
 
         def build(*, environ, validate_live):
-            self.assertEqual({}, environ)
+            self.assertEqual(set(module._PROFILE_CONFIGURATION_NAMES), set(environ))
+            self.assertTrue(all(value is None for value in environ.values()))
             if validate_live:
                 raise RuntimeError("external transport was contacted")
             return fake

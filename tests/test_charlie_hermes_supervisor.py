@@ -1002,8 +1002,11 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertIn("charlie_dispatch_cursor", tools_without_process_allowlist)
         with self.assertRaisesRegex(HermesBridgeError, "placeholder_rejected"):
             build_plugin_from_environment({**env, "CHARLIE_GITHUB_READ_TOKEN": "placeholder"})
-        with self.assertRaisesRegex(HermesBridgeError, "github_write_credential_forbidden"):
-            build_plugin_from_environment({**env, "GITHUB_TOKEN": "write-capable"})
+        for forbidden_name in (
+                "CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
+            with self.subTest(forbidden_name=forbidden_name), self.assertRaisesRegex(
+                    HermesBridgeError, "github_write_credential_forbidden"):
+                build_plugin_from_environment({**env, forbidden_name: "write-capable"})
 
     def test_bounded_canonical_issuer_uses_bound_pr_not_caller_pr(self):
         from modules.charlie import routes

@@ -21,6 +21,15 @@ _BOUNDED_TOOLS = frozenset({
 _RECOVERY_DISCOVERY_ATTEMPTS = 12
 _RECOVERY_DISCOVERY_DELAY_SECONDS = 5
 _LOG = logging.getLogger("hermes_cli.plugins.charlie_builder")
+_PROFILE_CONFIGURATION_NAMES = (
+    "CHARLIE_CANONICAL_API_URL", "CHARLIE_HERMES_GATEWAY_TOKEN",
+    "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
+    "CHARLIE_SLACK_CHARLIE_CHANNEL_ID", "CHARLIE_SLACK_BUILD_CHANNEL_ID",
+    "CHARLIE_SLACK_APPROVALS_CHANNEL_ID", "CURSOR_API_KEY",
+    "CHARLIE_GITHUB_PACKAGER_TOKEN", "CHARLIE_GITHUB_READ_TOKEN",
+    "SLACK_SIGNING_SECRET", "CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN",
+    "GITHUB_TOKEN",
+)
 
 
 def _source_value(source, name, default=""):
@@ -119,8 +128,11 @@ class _ProfileBoundPluginTools:
                 if self._resolved is None:
                     with _bound_profile_home(self.profile_home):
                         try:
-                            from hermes_cli.config import load_env
-                            profile_values = dict(load_env())
+                            from hermes_cli.config import get_env_value_prefer_dotenv
+                            profile_values = {
+                                name: get_env_value_prefer_dotenv(name)
+                                for name in _PROFILE_CONFIGURATION_NAMES
+                            }
                         except Exception as exc:
                             raise RuntimeError(
                                 "profile_scope_temporarily_unavailable"
