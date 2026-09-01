@@ -31,6 +31,14 @@ class HermesNativePluginTests(unittest.TestCase):
         (home / "plugins" / "charlie-builder").mkdir(parents=True)
         hermes_pkg = type(sys)("hermes_cli"); hermes_pkg.__path__ = []
         plugins = type(sys)("hermes_cli.plugins")
+        config = type(sys)("hermes_cli.config")
+        def load_env():
+            path = home / ".env"
+            if not path.exists():
+                return {}
+            return dict(row.split("=", 1) for row in
+                        path.read_text(encoding="utf-8").splitlines() if "=" in row)
+        config.load_env = load_env
         manager = SimpleNamespace(home_path=home, scope_key=str(home))
         plugins.get_plugin_manager = lambda: manager
         @contextmanager
@@ -39,10 +47,12 @@ class HermesNativePluginTests(unittest.TestCase):
             yield
         plugins._plugin_home_scope = home_scope
         self._hermes_modules = {
-            name: sys.modules.get(name) for name in ("hermes_cli", "hermes_cli.plugins")
+            name: sys.modules.get(name) for name in
+            ("hermes_cli", "hermes_cli.plugins", "hermes_cli.config")
         }
         sys.modules["hermes_cli"] = hermes_pkg
         sys.modules["hermes_cli.plugins"] = plugins
+        sys.modules["hermes_cli.config"] = config
 
     def tearDown(self):
         for name, prior in self._hermes_modules.items():
@@ -267,6 +277,11 @@ class HermesNativePluginTests(unittest.TestCase):
                 dotenv = dict(row.split("=", 1) for row in rows if "=" in row)
                 return dotenv[name] if name in dotenv else scoped_secret(name)
             config.get_env_value_prefer_dotenv = profile_value
+            config.load_env = lambda: {
+                row.split("=", 1)[0]: row.split("=", 1)[1]
+                for row in (active_home["path"] / ".env").read_text(
+                    encoding="utf-8").splitlines() if "=" in row
+            }
             injected = {"agent": agent_pkg, "agent.secret_scope": secret_scope,
                         "hermes_cli": hermes_pkg, "hermes_cli.config": config}
             previous = {name: sys.modules.get(name) for name in injected}
@@ -423,7 +438,7 @@ class HermesNativePluginTests(unittest.TestCase):
         context = Context()
         with patch.object(module, "build_plugin_from_environment", return_value=fake) as factory:
             module.register(context)
-        factory.assert_called_once_with(validate_live=False)
+        factory.assert_called_once_with(environ={}, validate_live=False)
         self.assertEqual(set(fake), set(context.tools))
         self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
         for name, registered in context.tools.items():
@@ -440,7 +455,8 @@ class HermesNativePluginTests(unittest.TestCase):
             "charlie_issue_admission", "charlie_prepare_owner_decision")}
         context = Context()
 
-        def build(*, validate_live):
+        def build(*, environ, validate_live):
+            self.assertEqual({}, environ)
             if validate_live:
                 raise RuntimeError("external transport was contacted")
             return fake

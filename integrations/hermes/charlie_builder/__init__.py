@@ -118,7 +118,15 @@ class _ProfileBoundPluginTools:
             with self._lock:
                 if self._resolved is None:
                     with _bound_profile_home(self.profile_home):
-                        self._resolved = self._factory(validate_live=False)
+                        try:
+                            from hermes_cli.config import load_env
+                            profile_values = dict(load_env())
+                        except Exception as exc:
+                            raise RuntimeError(
+                                "profile_scope_temporarily_unavailable"
+                            ) from exc
+                        self._resolved = self._factory(
+                            environ=profile_values, validate_live=False)
         return self._resolved
 
     def __getitem__(self, name):
