@@ -15,6 +15,10 @@ from integrations.hermes.charlie_builder.native_executor import (
     NativeWorktree, PatchValidator, content_identity, run_argv,
     validate_primary_repository,
 )
+from integrations.hermes.charlie_builder.protocol import (
+    ProtocolError, canonical_candidate_diff as plugin_candidate_diff,
+)
+from modules.charlie.mission_admission import canonical_candidate_diff as backend_candidate_diff
 from integrations.hermes.charlie_builder.schemas import validate_native_response
 from modules.charlie.mission_store import prepare_hermes_native_execution
 from modules.charlie.mission_store import (
@@ -56,6 +60,24 @@ class Llm:
 
 
 class NativeExecutorTests(unittest.TestCase):
+    def test_isolated_candidate_diff_protocol_matches_backend(self):
+        cases = [
+            (["docs/a.md"], b"diff --git a/docs/a.md b/docs/a.md\n"),
+            (["tests/b.py", "docs/a.md"], "unicode: vark\u2713\n"),
+            (["docs/a.md"], "line one\r\nline two\r\n"),
+            (["docs/a.md"], "line one\nline two\n"),
+        ]
+        for files, patch_bytes in cases:
+            normalized = sorted(files)
+            self.assertEqual(
+                backend_candidate_diff(normalized, patch_bytes),
+                plugin_candidate_diff(files, patch_bytes),
+            )
+        with self.assertRaises(ProtocolError):
+            plugin_candidate_diff([], b"")
+        with self.assertRaises(ProtocolError):
+            plugin_candidate_diff(["../secret"], b"")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / "repo"
@@ -302,16 +324,31 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertFalse(helper.parent.exists())
 
     def test_canonical_native_authorization_requires_archived_zero_candidate_cursor(self):
+        problem = "Pilot"
         dispatch = {
-            "status": "valid", "generation": "g1", "base_sha": "a" * 40,
-            "owner_instruction_digest": "b" * 64, "allowed_files": [ALLOWED],
+            "version": "charlie_pre_dispatch_authorization_v2", "status": "valid",
+            "mission_id": "CHARLIE-MISSION-X", "generation": "g1", "execution_attempt": 5,
+            "repository": "Crewless9086/amadeus-pig-tracking-system",
+            "base_sha": "d" * 40, "authorization_id": "PDA-" + "A" * 64,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            "owner_instruction_digest": hashlib.sha256(problem.encode()).hexdigest(),
+            "allowed_files": [ALLOWED],
+            "allowed_effects": ["create_feature_branch", "edit_allowed_documentation", "run_tests",
+                "commit_feature_branch", "push_feature_branch", "open_or_update_draft_pr",
+                "request_independent_review"],
         }
         state = {"agent_state": "ARCHIVED", "run_state": "FINISHED",
                  "repository_mutation": False, "pr_number": 0, "head_sha": "",
                  "remote_branch_created": False, "exact_candidate": "absent",
                  "cursor_agent_id": "bc-five", "cursor_run_id": "run-five"}
-        connection = FakeConnection([({"dispatch_authorization": dispatch,
-                                      "external_supervisor_state": state}, "Pilot")])
+        retirement = {"provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+            "agent_state": "ARCHIVED", "repository_mutation": False,
+            "remote_branch_created": False, "pr_number": 0, "head_sha": "",
+            "exact_candidate": "absent"}
+        metadata = {"dispatch_authorization": dispatch, "external_supervisor_state": state,
+                    "cursor_provider_retirement": retirement,
+                    "mission_vault": {"problem_statement": problem}}
+        connection = FakeConnection([(metadata, problem)])
         result, status = prepare_hermes_native_execution(
             "CHARLIE-MISSION-X", worktree_digest="c" * 64,
             starting_main_sha="d" * 40,
@@ -321,7 +358,8 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual(201, status, result)
         self.assertEqual("hermes_native", result["authorization"]["executor_provider"])
         self.assertEqual("d" * 40, result["authorization"]["starting_main_sha"])
-        self.assertEqual("a" * 40, result["authorization"]["prior_cursor_authorization_base_sha"])
+        self.assertEqual("d" * 40, result["authorization"]["prior_cursor_authorization_base_sha"])
+        self.assertEqual(dispatch["authorization_id"], result["authorization"]["dispatch_authorization_id"])
         self.assertEqual([ALLOWED], result["authorization"]["allowed_files"])
         written = [params for sql, params in connection.cursor_instance.executed
                    if "update public.charlie_missions" in sql][0]
@@ -335,8 +373,8 @@ class NativeExecutorTests(unittest.TestCase):
         self.assertEqual("absent", retirement["exact_candidate"])
         self.assertFalse(retirement["valid_mission_admission"])
         self.assertEqual("cursor_provider_retired", retirement["event"])
-        active_connection = FakeConnection([({"dispatch_authorization": dispatch,
-                                             "external_supervisor_state": {**state, "agent_state": "ACTIVE"}}, "Pilot")])
+        active_connection = FakeConnection([({**metadata,
+            "external_supervisor_state": {**state, "agent_state": "ACTIVE"}}, problem)])
         denied, denied_status = prepare_hermes_native_execution(
             "CHARLIE-MISSION-X", worktree_digest="c" * 64,
             starting_main_sha="d" * 40,
@@ -345,6 +383,22 @@ class NativeExecutorTests(unittest.TestCase):
         )
         self.assertEqual(409, denied_status, denied)
         self.assertEqual("cursor_retirement_not_proven", denied["status"])
+        for invalid_dispatch in (
+            {**dispatch, "expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()},
+            {**dispatch, "base_sha": "e" * 40},
+        ):
+            invalid_connection = FakeConnection([({**metadata,
+                "dispatch_authorization": invalid_dispatch}, problem)])
+            rejected, rejected_status = prepare_hermes_native_execution(
+                "CHARLIE-MISSION-X", worktree_digest="c" * 64,
+                starting_main_sha="d" * 40,
+                authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
+                connect_factory=lambda _, connection=invalid_connection: connection,
+            )
+            self.assertEqual(409, rejected_status, rejected)
+            self.assertEqual("native_execution_authority_unavailable", rejected["status"])
+            self.assertFalse(any("update public.charlie_missions" in sql
+                                 for sql, _params in invalid_connection.cursor_instance.executed))
 
     def test_active_running_attempt_five_retires_once_after_verified_evidence(self):
         dispatch = {"status": "valid", "generation": "g1", "base_sha": "a" * 40,
@@ -402,10 +456,10 @@ class NativeExecutorTests(unittest.TestCase):
 
     def test_gateway_restart_recovers_only_unfinished_canonical_native_execution(self):
         rows = [
-            ("CMQ-A", {"hermes_native_execution": {"status": "valid",
+            ("CMQ-A", "in_progress", {"hermes_native_execution": {"status": "valid",
                 "native_execution_id": "HNX-A", "execution_status": "SUPERVISING"},
                 "external_supervisor_state": {"slack_channel_id": "C1", "slack_thread_ts": "1.0"}}),
-            ("CMQ-B", {"hermes_native_execution": {"status": "valid",
+            ("CMQ-B", "in_progress", {"hermes_native_execution": {"status": "valid",
                 "native_execution_id": "HNX-B", "execution_status": "OWNER_DECISION_REQUIRED"}}),
         ]
         result, status = list_resumable_hermes_native_executions(
@@ -413,6 +467,29 @@ class NativeExecutorTests(unittest.TestCase):
             connect_factory=lambda _: FakeConnection(rows))
         self.assertEqual(200, status, result)
         self.assertEqual(["CMQ-A"], [item["mission_id"] for item in result["executions"]])
+
+    def test_gateway_restart_discovers_one_pending_cursor_retirement(self):
+        metadata = {
+            "external_supervisor_state": {
+                "execution_attempt": 5, "cursor_agent_id": "bc-five",
+                "cursor_run_id": "run-five", "branch": "cursor/pilot",
+                "slack_channel_id": "C1", "slack_thread_ts": "1.0",
+                "repository_mutation": False, "pr_number": 0, "head_sha": "",
+            },
+            "dispatch_authorization": {"status": "valid"},
+        }
+        result, status = list_resumable_hermes_native_executions(
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
+            connect_factory=lambda _: FakeConnection([("CMQ-PILOT", "in_progress", metadata)]))
+        self.assertEqual(200, status, result)
+        self.assertEqual(["cursor_retirement_pending"],
+                         [item["resume_kind"] for item in result["executions"]])
+
+        metadata["review_packet"] = {"candidate_revision": "a" * 40}
+        denied, _ = list_resumable_hermes_native_executions(
+            authenticated_principal="hermes:charlie-builder", database_url="postgres://unit",
+            connect_factory=lambda _: FakeConnection([("CMQ-PILOT", "in_progress", metadata)]))
+        self.assertEqual([], denied["executions"])
 
     def test_native_candidate_binding_uses_native_not_cursor_branch_authority(self):
         native = {

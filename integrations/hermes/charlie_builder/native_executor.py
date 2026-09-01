@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 
 from .schemas import (NATIVE_PATCH_SCHEMA, NATIVE_REVIEW_SCHEMA,
                       validate_native_response, validate_native_review)
-from modules.charlie.mission_admission import canonical_candidate_diff
+from .protocol import canonical_candidate_diff
 
 REPOSITORY = "Crewless9086/amadeus-pig-tracking-system"
 REMOTE = "https://github.com/Crewless9086/amadeus-pig-tracking-system.git"

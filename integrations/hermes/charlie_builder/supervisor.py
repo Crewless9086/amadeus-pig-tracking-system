@@ -25,8 +25,7 @@ from .native_executor import (
     HermesIndependentReviewer, HermesStructuredPatchWorker, NativeExecutionEngine, NativeExecutionError,
     NativePackager, content_identity, execution_lock, run_argv, validate_primary_repository,
 )
-from modules.charlie.execution_bridge import build_hermes_native_execution_context
-from modules.charlie.mission_admission import canonical_candidate_diff
+from .protocol import canonical_candidate_diff
 
 
 class HermesBridgeError(RuntimeError):
@@ -39,14 +38,67 @@ _PLACEHOLDER_VALUES = {
 }
 
 
-def _protected_value(environ, name, *, required=True):
-    value = str((environ or {}).get(name) or "").strip()
-    folded = value.lower().replace("_", "-").replace(" ", "-")
-    if value and (folded in _PLACEHOLDER_VALUES or "placeholder" in folded):
-        raise HermesBridgeError(f"{name.lower()}_placeholder_rejected")
-    if required and not value:
-        raise HermesBridgeError("hermes_protected_configuration_incomplete")
-    return value
+def _profile_protected_value(name, *, environ=None):
+    """Resolve one value through Hermes' active profile secret contract.
+
+    An explicit mapping is retained for deterministic local tests and callers;
+    directory-plugin registration supplies no mapping. In Hermes, an installed
+    per-turn scope is authoritative. During PluginManager registration there is
+    no turn scope yet, so the manager's already-bound Hermes home is read via
+    the supported profile-aware config API. Cross-profile process environment
+    fallback remains owned by ``agent.secret_scope`` and is never reimplemented
+    here.
+    """
+    if environ is not None:
+        return str(dict(environ).get(name) or "").strip()
+    try:
+        from agent.secret_scope import (
+            UnscopedSecretError, current_secret_scope, get_secret,
+        )
+    except ImportError as exc:
+        raise HermesBridgeError(
+            "hermes_profile_secret_runtime_unavailable"
+        ) from exc
+    scope = current_secret_scope()
+    if scope is not None:
+        try:
+            return str(get_secret(name) or "").strip()
+        except Exception as exc:
+            raise HermesBridgeError(
+                f"hermes_profile_secret_resolution_failed:{name}"
+            ) from exc
+    # PluginManager has already installed its profile-home override around
+    # register(ctx). With no turn scope, resolve through that bound profile's
+    # dotenv-aware API directly. This deliberately avoids an early unscoped
+    # get_secret() result (including None) and gives a rotated profile value
+    # precedence over stale process-global state.
+    try:
+        from hermes_cli.config import get_env_value_prefer_dotenv
+        return str(get_env_value_prefer_dotenv(name) or "").strip()
+    except UnscopedSecretError:
+        return ""
+    except Exception as exc:
+        raise HermesBridgeError(
+            f"hermes_profile_secret_resolution_failed:{name}"
+        ) from exc
+
+
+def _profile_protected_values(required, optional=(), *, environ=None):
+    values = {}
+    missing = []
+    for name in tuple(required) + tuple(optional):
+        value = _profile_protected_value(name, environ=environ)
+        folded = value.lower().replace("_", "-").replace(" ", "-")
+        if value and (folded in _PLACEHOLDER_VALUES or "placeholder" in folded):
+            raise HermesBridgeError(f"{name.lower()}_placeholder_rejected")
+        values[name] = value
+        if name in required and not value:
+            missing.append(name)
+    if missing:
+        raise HermesBridgeError(
+            "hermes_protected_configuration_incomplete:" + ",".join(missing)
+        )
+    return values
 
 
 def verify_slack_request(signing_secret, timestamp, raw_body, signature, *, now=None, tolerance=300):
@@ -231,6 +283,16 @@ class CanonicalCharlieApi:
 
     def get_mission(self, mission_id):
         return self.client.request("GET", f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}")
+
+    def get_native_execution_context(self, mission_id):
+        result = self.client.request(
+            "GET",
+            f"/charlie/hermes/missions/{urllib.parse.quote(str(mission_id), safe='')}/native-context",
+        )
+        context = result.get("context")
+        if not isinstance(context, dict):
+            raise HermesBridgeError("native_execution_context_unavailable")
+        return context
 
     def get_dispatch(self, key):
         result = self.client.request("GET", "/charlie/hermes/dispatch", query={"idempotency_key": key})
@@ -481,6 +543,8 @@ class HermesSupervisor:
         return result
 
     def handle_slack_request(self, raw_body, headers, *, now=None):
+        if not self.slack_signing_secret:
+            raise HermesBridgeError("slack_signing_secret_required")
         headers = {str(key).lower(): value for key, value in dict(headers or {}).items()}
         verify_slack_request(self.slack_signing_secret,
                              headers.get("x-slack-request-timestamp"), raw_body,
@@ -510,6 +574,15 @@ class HermesSupervisor:
             or state.get("event") == "cursor_provider_retired"
             or self.cursor is None
         ):
+            # Historical handoff discovery is not mutation authority.  The
+            # canonical service verifies retirement and renews (or replays)
+            # the exact current-main PDA before native preparation.
+            renewed = self.canonical.prepare_dispatch_authorization(mission_id)
+            if (renewed.get("version") != "charlie_pre_dispatch_authorization_v2"
+                    or renewed.get("status") != "valid"):
+                raise HermesBridgeError(
+                    str(renewed.get("status") or "fresh_native_dispatch_authorization_required")
+                )
             return self.dispatch_native({"mission_id": mission_id})
         return self.dispatch_cursor({"mission_id": mission_id})
 
@@ -614,7 +687,7 @@ class HermesSupervisor:
             else:
                 built = engine.build_patch(
                     row.get("raw_text") or row.get("title"),
-                    governance_context=build_hermes_native_execution_context(row),
+                    governance_context=self.canonical.get_native_execution_context(mission_id),
                 )
                 if built.get("state") == "BLOCKED":
                     return self.canonical.record_native_progress(mission_id, {
@@ -1143,7 +1216,7 @@ class HermesSupervisor:
             )
             built = engine.build_patch(
                 "Apply only this independent SEND_BACK correction: " + str(correction or "").strip(),
-                governance_context={**build_hermes_native_execution_context(mission),
+                governance_context={**self.canonical.get_native_execution_context(mission["mission_id"]),
                     "independent_review": {"verdict": "SEND_BACK", "findings": str(correction or "").strip()}},
             )
             if built.get("state") != "PATCH_READY":
@@ -1351,19 +1424,21 @@ def _parse_epoch(value):
 
 def build_plugin_from_environment(environ=None, *, opener=None, validate_live=False):
     """Construct the installable Hermes package exclusively from protected config."""
-    env = dict(os.environ if environ is None else environ)
     required = (
         "CHARLIE_CANONICAL_API_URL", "CHARLIE_HERMES_GATEWAY_TOKEN",
-        "SLACK_SIGNING_SECRET", "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
-        "SLACK_APP_TOKEN",
+        "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
         "CHARLIE_SLACK_CHARLIE_CHANNEL_ID", "CHARLIE_SLACK_BUILD_CHANNEL_ID",
         "CHARLIE_SLACK_APPROVALS_CHANNEL_ID",
     )
-    values = {key: _protected_value(env, key) for key in required}
-    cursor_key = _protected_value(env, "CURSOR_API_KEY", required=False)
-    packager_token = _protected_value(env, "CHARLIE_GITHUB_PACKAGER_TOKEN", required=False)
-    github_token = _protected_value(env, "CHARLIE_GITHUB_READ_TOKEN", required=False)
-    if any(str(env.get(name) or "").strip() for name in (
+    optional = (
+        "CURSOR_API_KEY", "CHARLIE_GITHUB_PACKAGER_TOKEN",
+        "CHARLIE_GITHUB_READ_TOKEN", "SLACK_SIGNING_SECRET",
+    )
+    values = _profile_protected_values(required, optional, environ=environ)
+    cursor_key = values["CURSOR_API_KEY"]
+    packager_token = values["CHARLIE_GITHUB_PACKAGER_TOKEN"]
+    github_token = values["CHARLIE_GITHUB_READ_TOKEN"]
+    if any(_profile_protected_value(name, environ=environ) for name in (
             "CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")):
         raise HermesBridgeError("github_write_credential_forbidden")
     canonical_client = JsonHttpClient(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"], opener=opener)
@@ -1380,8 +1455,12 @@ def build_plugin_from_environment(environ=None, *, opener=None, validate_live=Fa
         slack_approval_channel_id=values["CHARLIE_SLACK_APPROVALS_CHANNEL_ID"],
         slack_bot=SlackBot(values["SLACK_BOT_TOKEN"], client=slack_client),
         github=GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=github_client),
-        native_repository_root=str(env.get("CHARLIE_REPOSITORY_PATH") or "/opt/data/workspaces/amadeus-pig-tracking-system"),
-        native_worktree_base=str(env.get("CHARLIE_NATIVE_WORKTREE_BASE") or "/opt/data/worktrees/charlie"),
+        native_repository_root=str((environ or {}).get("CHARLIE_REPOSITORY_PATH")
+                                   or os.environ.get("CHARLIE_REPOSITORY_PATH")
+                                   or "/opt/data/workspaces/amadeus-pig-tracking-system"),
+        native_worktree_base=str((environ or {}).get("CHARLIE_NATIVE_WORKTREE_BASE")
+                                 or os.environ.get("CHARLIE_NATIVE_WORKTREE_BASE")
+                                 or "/opt/data/worktrees/charlie"),
         github_packager_token=packager_token,
     )
     if validate_live:

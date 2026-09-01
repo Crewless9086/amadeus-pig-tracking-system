@@ -1,16 +1,10 @@
 name: charlie-builder
 version: "1.0.0"
 description: Bounded CHARLIE mission supervisor with one native structured-patch executor.
-requires_env:
-  - CHARLIE_CANONICAL_API_URL
-  - CHARLIE_HERMES_GATEWAY_TOKEN
-  - SLACK_SIGNING_SECRET
-  - SLACK_BOT_TOKEN
-  - SLACK_APP_TOKEN
-  - CHARLIE_SLACK_OWNER_USER_ID
-  - CHARLIE_SLACK_CHARLIE_CHANNEL_ID
-  - CHARLIE_SLACK_BUILD_CHANNEL_ID
-  - CHARLIE_SLACK_APPROVALS_CHANNEL_ID
+# Registration owns the exact protected-configuration check.  Hermes' static
+# directory-plugin preflight does not have the profile environment overlay and
+# must not reject an otherwise valid profile before register(ctx) runs.
+requires_env: []
 provides_hooks:
   - pre_gateway_dispatch
   - pre_tool_call
