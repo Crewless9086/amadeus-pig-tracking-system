@@ -900,8 +900,7 @@ class HermesSupervisorTests(unittest.TestCase):
     def test_installable_factory_requires_and_consumes_protected_config(self):
         env = {
             "CHARLIE_CANONICAL_API_URL": "https://canonical.example", "CHARLIE_HERMES_GATEWAY_TOKEN": "g" * 32,
-            "CURSOR_API_KEY": "cursor", "SLACK_SIGNING_SECRET": "signing", "SLACK_BOT_TOKEN": "xoxb-bot",
-            "SLACK_APP_TOKEN": "xapp-app",
+            "CURSOR_API_KEY": "cursor", "SLACK_BOT_TOKEN": "xoxb-bot",
             "CHARLIE_SLACK_OWNER_USER_ID": "UOWNER", "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": "C1",
             "CHARLIE_SLACK_BUILD_CHANNEL_ID": "CBUILD", "CHARLIE_SLACK_APPROVALS_CHANNEL_ID": "CAPPROVE",
         }
@@ -915,8 +914,21 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual("/srv/commissioned/repository", explicit.supervisor.native_repository_root)
         self.assertNotEqual("/opt/data/amadeus-pig-tracking-system",
                             tools.supervisor.native_repository_root)
-        with self.assertRaisesRegex(HermesBridgeError, "hermes_protected_configuration_incomplete"):
+        with self.assertRaisesRegex(
+                HermesBridgeError,
+                "hermes_protected_configuration_incomplete:CHARLIE_CANONICAL_API_URL"):
             build_plugin_from_environment({})
+        one_missing = dict(env)
+        one_missing.pop("SLACK_BOT_TOKEN")
+        with self.assertRaises(HermesBridgeError) as missing:
+            build_plugin_from_environment(one_missing)
+        self.assertEqual(
+            "hermes_protected_configuration_incomplete:SLACK_BOT_TOKEN",
+            str(missing.exception),
+        )
+        self.assertNotIn(env["CHARLIE_HERMES_GATEWAY_TOKEN"], str(missing.exception))
+        with self.assertRaisesRegex(HermesBridgeError, "slack_signing_secret_required"):
+            tools.supervisor.handle_slack_request(b"{}", {})
         tools_without_process_allowlist = build_plugin_from_environment({**env, "SLACK_ALLOWED_USERS": ""})
         self.assertIn("charlie_dispatch_cursor", tools_without_process_allowlist)
         with self.assertRaisesRegex(HermesBridgeError, "placeholder_rejected"):

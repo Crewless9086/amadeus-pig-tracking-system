@@ -38,14 +38,72 @@ _PLACEHOLDER_VALUES = {
 }
 
 
-def _protected_value(environ, name, *, required=True):
-    value = str((environ or {}).get(name) or "").strip()
-    folded = value.lower().replace("_", "-").replace(" ", "-")
-    if value and (folded in _PLACEHOLDER_VALUES or "placeholder" in folded):
-        raise HermesBridgeError(f"{name.lower()}_placeholder_rejected")
-    if required and not value:
-        raise HermesBridgeError("hermes_protected_configuration_incomplete")
-    return value
+def _profile_protected_value(name, *, environ=None):
+    """Resolve one value through Hermes' active profile secret contract.
+
+    An explicit mapping is retained for deterministic local tests and callers;
+    directory-plugin registration supplies no mapping. In Hermes, an installed
+    per-turn scope is authoritative. During PluginManager registration there is
+    no turn scope yet, so the manager's already-bound Hermes home is read via
+    the supported profile-aware config API. Cross-profile process environment
+    fallback remains owned by ``agent.secret_scope`` and is never reimplemented
+    here.
+    """
+    if environ is not None:
+        return str(dict(environ).get(name) or "").strip()
+    try:
+        from agent.secret_scope import (
+            UnscopedSecretError, current_secret_scope, get_secret,
+        )
+    except ImportError as exc:
+        raise HermesBridgeError(
+            "hermes_profile_secret_runtime_unavailable"
+        ) from exc
+    scope = current_secret_scope()
+    if scope is not None:
+        try:
+            return str(get_secret(name) or "").strip()
+        except Exception as exc:
+            raise HermesBridgeError(
+                f"hermes_profile_secret_resolution_failed:{name}"
+            ) from exc
+    try:
+        return str(get_secret(name) or "").strip()
+    except UnscopedSecretError:
+        # PluginManager has already installed its profile-home override around
+        # register(ctx). Prefer that exact profile's .env without consulting a
+        # process-global value owned by another multiplexed profile.
+        try:
+            from hermes_cli.config import get_env_value_prefer_dotenv
+            return str(get_env_value_prefer_dotenv(name) or "").strip()
+        except UnscopedSecretError:
+            return ""
+        except Exception as exc:
+            raise HermesBridgeError(
+                f"hermes_profile_secret_resolution_failed:{name}"
+            ) from exc
+    except Exception as exc:
+        raise HermesBridgeError(
+            f"hermes_profile_secret_resolution_failed:{name}"
+        ) from exc
+
+
+def _profile_protected_values(required, optional=(), *, environ=None):
+    values = {}
+    missing = []
+    for name in tuple(required) + tuple(optional):
+        value = _profile_protected_value(name, environ=environ)
+        folded = value.lower().replace("_", "-").replace(" ", "-")
+        if value and (folded in _PLACEHOLDER_VALUES or "placeholder" in folded):
+            raise HermesBridgeError(f"{name.lower()}_placeholder_rejected")
+        values[name] = value
+        if name in required and not value:
+            missing.append(name)
+    if missing:
+        raise HermesBridgeError(
+            "hermes_protected_configuration_incomplete:" + ",".join(missing)
+        )
+    return values
 
 
 def verify_slack_request(signing_secret, timestamp, raw_body, signature, *, now=None, tolerance=300):
@@ -490,6 +548,8 @@ class HermesSupervisor:
         return result
 
     def handle_slack_request(self, raw_body, headers, *, now=None):
+        if not self.slack_signing_secret:
+            raise HermesBridgeError("slack_signing_secret_required")
         headers = {str(key).lower(): value for key, value in dict(headers or {}).items()}
         verify_slack_request(self.slack_signing_secret,
                              headers.get("x-slack-request-timestamp"), raw_body,
@@ -1360,19 +1420,21 @@ def _parse_epoch(value):
 
 def build_plugin_from_environment(environ=None, *, opener=None, validate_live=False):
     """Construct the installable Hermes package exclusively from protected config."""
-    env = dict(os.environ if environ is None else environ)
     required = (
         "CHARLIE_CANONICAL_API_URL", "CHARLIE_HERMES_GATEWAY_TOKEN",
-        "SLACK_SIGNING_SECRET", "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
-        "SLACK_APP_TOKEN",
+        "SLACK_BOT_TOKEN", "CHARLIE_SLACK_OWNER_USER_ID",
         "CHARLIE_SLACK_CHARLIE_CHANNEL_ID", "CHARLIE_SLACK_BUILD_CHANNEL_ID",
         "CHARLIE_SLACK_APPROVALS_CHANNEL_ID",
     )
-    values = {key: _protected_value(env, key) for key in required}
-    cursor_key = _protected_value(env, "CURSOR_API_KEY", required=False)
-    packager_token = _protected_value(env, "CHARLIE_GITHUB_PACKAGER_TOKEN", required=False)
-    github_token = _protected_value(env, "CHARLIE_GITHUB_READ_TOKEN", required=False)
-    if any(str(env.get(name) or "").strip() for name in (
+    optional = (
+        "CURSOR_API_KEY", "CHARLIE_GITHUB_PACKAGER_TOKEN",
+        "CHARLIE_GITHUB_READ_TOKEN", "SLACK_SIGNING_SECRET",
+    )
+    values = _profile_protected_values(required, optional, environ=environ)
+    cursor_key = values["CURSOR_API_KEY"]
+    packager_token = values["CHARLIE_GITHUB_PACKAGER_TOKEN"]
+    github_token = values["CHARLIE_GITHUB_READ_TOKEN"]
+    if any(_profile_protected_value(name, environ=environ) for name in (
             "CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")):
         raise HermesBridgeError("github_write_credential_forbidden")
     canonical_client = JsonHttpClient(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"], opener=opener)
@@ -1389,8 +1451,12 @@ def build_plugin_from_environment(environ=None, *, opener=None, validate_live=Fa
         slack_approval_channel_id=values["CHARLIE_SLACK_APPROVALS_CHANNEL_ID"],
         slack_bot=SlackBot(values["SLACK_BOT_TOKEN"], client=slack_client),
         github=GitHubReadMonitor("Crewless9086/amadeus-pig-tracking-system", client=github_client),
-        native_repository_root=str(env.get("CHARLIE_REPOSITORY_PATH") or "/opt/data/workspaces/amadeus-pig-tracking-system"),
-        native_worktree_base=str(env.get("CHARLIE_NATIVE_WORKTREE_BASE") or "/opt/data/worktrees/charlie"),
+        native_repository_root=str((environ or {}).get("CHARLIE_REPOSITORY_PATH")
+                                   or os.environ.get("CHARLIE_REPOSITORY_PATH")
+                                   or "/opt/data/workspaces/amadeus-pig-tracking-system"),
+        native_worktree_base=str((environ or {}).get("CHARLIE_NATIVE_WORKTREE_BASE")
+                                 or os.environ.get("CHARLIE_NATIVE_WORKTREE_BASE")
+                                 or "/opt/data/worktrees/charlie"),
         github_packager_token=packager_token,
     )
     if validate_live:

@@ -1,6 +1,7 @@
 import importlib
 import importlib.util
 import json
+import logging
 import shutil
 import sys
 import tempfile
@@ -60,22 +61,54 @@ class HermesNativePluginTests(unittest.TestCase):
 
     def test_isolated_directory_plugin_uses_real_environment_factory(self):
         source = Path("integrations/hermes/charlie_builder").resolve()
-        protected = {
-            "CHARLIE_CANONICAL_API_URL": "https://canonical.invalid",
-            "CHARLIE_HERMES_GATEWAY_TOKEN": "test-gateway-value-1326",
-            "SLACK_SIGNING_SECRET": "test-signing-value-1326",
-            "SLACK_BOT_TOKEN": "xoxb-test-value-1326",
-            "CHARLIE_SLACK_OWNER_USER_ID": "U0BSRQJASRG",
-            "SLACK_APP_TOKEN": "xapp-test-value-1326",
-            "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": "C0BSRQJ60KC",
-            "CHARLIE_SLACK_BUILD_CHANNEL_ID": "C-BUILD",
-            "CHARLIE_SLACK_APPROVALS_CHANNEL_ID": "C-APPROVALS",
-        }
         with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
             plugin = Path(folder) / "charlie_builder"
             shutil.copytree(source, plugin)
             outside = Path(folder) / "outside"
             outside.mkdir()
+            homes = {"builder": root / "profiles" / "builder",
+                     "other": root / "profiles" / "other"}
+            profile_values = {}
+            for label, home in homes.items():
+                home.mkdir(parents=True)
+                suffix = "one" if label == "builder" else "two"
+                values = {
+                    "CHARLIE_CANONICAL_API_URL": f"https://canonical-{suffix}.invalid",
+                    "CHARLIE_HERMES_GATEWAY_TOKEN": f"gateway-{suffix}-value",
+                    "SLACK_BOT_TOKEN": f"xoxb-{suffix}-value",
+                    "CHARLIE_SLACK_OWNER_USER_ID": f"U-{suffix}",
+                    "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": f"C-{suffix}",
+                    "CHARLIE_SLACK_BUILD_CHANNEL_ID": f"CB-{suffix}",
+                    "CHARLIE_SLACK_APPROVALS_CHANNEL_ID": f"CA-{suffix}",
+                    "CHARLIE_GITHUB_PACKAGER_TOKEN": f"packager-{suffix}-value",
+                }
+                profile_values[label] = values
+                (home / ".env").write_text("".join(
+                    f"{key}={value}\n" for key, value in values.items()), encoding="utf-8")
+
+            # Faithful minimum of the v0.20.6 profile contract: multiplexing
+            # makes unscoped get_secret fail closed, while PluginManager's
+            # bound Hermes home lets get_env_value_prefer_dotenv read exactly
+            # that profile's .env without populating os.environ.
+            active_home = {"path": homes["builder"]}
+            agent_pkg = type(sys)("agent"); agent_pkg.__path__ = []
+            secret_scope = type(sys)("agent.secret_scope")
+            class UnscopedSecretError(RuntimeError): pass
+            secret_scope.UnscopedSecretError = UnscopedSecretError
+            secret_scope.current_secret_scope = lambda: None
+            secret_scope.get_secret = lambda name, default=None: (_ for _ in ()).throw(
+                UnscopedSecretError(name))
+            hermes_pkg = type(sys)("hermes_cli"); hermes_pkg.__path__ = []
+            config = type(sys)("hermes_cli.config")
+            def profile_value(name):
+                rows = (active_home["path"] / ".env").read_text(encoding="utf-8").splitlines()
+                return dict(row.split("=", 1) for row in rows if "=" in row).get(name)
+            config.get_env_value_prefer_dotenv = profile_value
+            injected = {"agent": agent_pkg, "agent.secret_scope": secret_scope,
+                        "hermes_cli": hermes_pkg, "hermes_cli.config": config}
+            previous = {name: sys.modules.get(name) for name in injected}
+            sys.modules.update(injected)
             spec = importlib.util.spec_from_file_location(
                 "isolated_charlie_builder_real", plugin / "__init__.py",
                 submodule_search_locations=[str(plugin)],
@@ -91,17 +124,56 @@ class HermesNativePluginTests(unittest.TestCase):
                 module._RECOVERY_DISCOVERY_ATTEMPTS = 1
                 module._RECOVERY_DISCOVERY_DELAY_SECONDS = 0
                 context = Context()
-                with patch.dict(os.environ, protected, clear=True):
-                    module.register(context)
+                log_messages = []
+                class Capture(logging.Handler):
+                    def emit(self, record): log_messages.append(record.getMessage())
+                capture = Capture()
+                module._LOG.addHandler(capture)
+                loaded = {"enabled": True, "error": ""}
+                with patch.dict(os.environ, {"HERMES_MULTIPLEX_ACTIVE": "1"}, clear=True):
+                    try:
+                        module.register(context)
+                    except Exception as exc:
+                        loaded["error"] = str(exc)
+                        raise
+                    builder_tools = module.build_plugin_from_environment()
+                    active_home["path"] = homes["other"]
+                    other_tools = module.build_plugin_from_environment()
+                    profile_env_absent = not any(
+                        key in os.environ for key in profile_values["builder"])
+                    for _ in range(100):
+                        if log_messages:
+                            break
+                        time.sleep(0.01)
+                module._LOG.removeHandler(capture)
             finally:
                 os.chdir(old_cwd)
                 sys.path[:] = old_path
                 for name in list(sys.modules):
                     if name == spec.name or name.startswith(spec.name + "."):
                         sys.modules.pop(name, None)
+                for name, prior in previous.items():
+                    if prior is None:
+                        sys.modules.pop(name, None)
+                    else:
+                        sys.modules[name] = prior
             self.assertEqual(module._BOUNDED_TOOLS, frozenset(context.tools))
+            self.assertTrue(loaded["enabled"])
+            self.assertEqual("", loaded["error"])
             self.assertEqual({"pre_gateway_dispatch", "pre_tool_call"}, set(context.hooks))
             self.assertEqual(4, len(context.auxiliary_tasks))
+            self.assertEqual("gateway-one-value", builder_tools.supervisor.canonical.client.token)
+            self.assertEqual("gateway-two-value", other_tools.supervisor.canonical.client.token)
+            self.assertNotEqual(builder_tools.supervisor.canonical.client.token,
+                                other_tools.supervisor.canonical.client.token)
+            self.assertEqual("packager-one-value", builder_tools.supervisor.github_packager_token)
+            self.assertTrue(profile_env_absent)
+            rendered_surface = repr(context.tools)
+            for value in profile_values["builder"].values():
+                self.assertNotIn(value, rendered_surface)
+                self.assertNotIn(value, "\n".join(log_messages))
+            with self.assertRaisesRegex(Exception, "slack_signing_secret_required"):
+                builder_tools.supervisor.handle_slack_request(b"{}", {})
 
     def test_runtime_package_has_no_application_root_imports(self):
         for name in ("__init__.py", "supervisor.py", "native_executor.py",
@@ -268,6 +340,9 @@ class HermesNativePluginTests(unittest.TestCase):
         self.assertIn("pre_gateway_dispatch", plugin_manifest)
         metadata = json.loads(Path("integrations/hermes/charlie_builder/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual("channel-managed", metadata["slack_allowlist_authority"])
+        self.assertEqual("hermes_host_slack_adapter", metadata["slack_app_token_authority"])
+        self.assertNotIn("slack_app_token_env", metadata)
+        self.assertTrue(metadata["slack_signing_secret_optional_direct_http_only"])
         self.assertNotIn("slack_gateway_allowed_users_env", metadata)
         self.assertEqual("CHARLIE_GITHUB_PACKAGER_TOKEN", metadata["native_packager_token_env"])
         self.assertEqual("hermes_native", metadata["primary_builder_provider"])

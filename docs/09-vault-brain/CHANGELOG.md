@@ -10,6 +10,12 @@
   profile-owned runtime validation. Isolated-package tests load and register
   all eight bounded tools, both safety hooks and all auxiliary review tasks
   with the application root absent from `sys.path`.
+- Protected plugin configuration now resolves through Hermes v0.20.6's active
+  profile secret scope, or through the PluginManager-bound profile home during
+  registration. Process-global profile credentials remain absent under
+  multiplexing, Socket Mode registration does not require the host-owned app
+  token or optional direct-HTTP signing secret, and missing-key diagnostics
+  disclose variable names only.
 - Startup recovery can now discover the single exact Cursor attempt-5
   retirement boundary and dispatch it through the existing idempotent native
   builder path without a second dashboard or Slack instruction. Canonical
