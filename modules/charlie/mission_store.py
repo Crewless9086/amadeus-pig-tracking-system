@@ -2044,6 +2044,28 @@ def _native_sha(value, length):
     return value if re.fullmatch(rf"[0-9a-f]{{{int(length)}}}", value) else ""
 
 
+_HERMES_PILOT_ALLOWED_FILES = ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]
+_PDA_ALLOWED_EFFECTS = [
+    "create_feature_branch", "edit_allowed_documentation", "run_tests",
+    "commit_feature_branch", "push_feature_branch", "open_or_update_draft_pr",
+    "request_independent_review",
+]
+_PDA_FORBIDDEN_EFFECTS = [
+    "edit_other_file", "merge", "deploy", "credential_change",
+    "branch_protection_change", "render_configuration_change",
+    "supabase_configuration_change", "customer_action", "farm_action",
+    "payment_action", "hardware_action",
+]
+
+
+def _bounded_timestamp(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
 def prepare_hermes_native_execution(mission_id, *, worktree_digest, starting_main_sha,
                                     authenticated_principal, database_url=None,
                                     connect_factory=None):
@@ -2079,6 +2101,7 @@ def prepare_hermes_native_execution(mission_id, *, worktree_digest, starting_mai
                 state = dict(metadata.get("external_supervisor_state") or {})
                 dispatch = dict(metadata.get("dispatch_authorization") or {})
                 admission = dict(metadata.get("mission_admission") or {})
+                retirement = dict(metadata.get("cursor_provider_retirement") or {})
                 if (
                     state.get("agent_state") != "ARCHIVED"
                     or state.get("run_state") not in {"FINISHED", "FAILED", "CANCELLED"}
@@ -2094,7 +2117,27 @@ def prepare_hermes_native_execution(mission_id, *, worktree_digest, starting_mai
                 prior_base_sha = _native_sha(dispatch.get("base_sha"), 40)
                 owner_digest = _native_sha(dispatch.get("owner_instruction_digest"), 64)
                 allowed_files = sorted({_clean_text(item, 500) for item in dispatch.get("allowed_files") or [] if _clean_text(item, 500)})
-                if not generation or not prior_base_sha or not owner_digest or not allowed_files:
+                canonical_owner_digest = hashlib.sha256(str(
+                    metadata.get("mission_vault", {}).get("problem_statement") or row[1] or ""
+                ).encode()).hexdigest()
+                if (dispatch.get("version") != "charlie_pre_dispatch_authorization_v2"
+                        or dispatch.get("status") != "valid"
+                        or dispatch.get("mission_id") != mission_id
+                        or dispatch.get("repository") != "Crewless9086/amadeus-pig-tracking-system"
+                        or int(dispatch.get("execution_attempt") or 0) != 5
+                        or _bounded_timestamp(dispatch.get("expires_at")) <= datetime.now(timezone.utc)
+                        or prior_base_sha != starting_main_sha
+                        or owner_digest != canonical_owner_digest
+                        or allowed_files != _HERMES_PILOT_ALLOWED_FILES
+                        or list(dispatch.get("allowed_effects") or []) != _PDA_ALLOWED_EFFECTS
+                        or retirement.get("provider_status") != "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"
+                        or retirement.get("agent_state") != "ARCHIVED"
+                        or retirement.get("repository_mutation") is not False
+                        or retirement.get("remote_branch_created") is not False
+                        or int(retirement.get("pr_number") or 0) != 0
+                        or str(retirement.get("head_sha") or "")
+                        or retirement.get("exact_candidate") != "absent"
+                        or metadata.get("review_packet")):
                     return {"success": False, "status": "native_execution_authority_unavailable"}, 409
                 identity_material = f"{mission_id}:{generation}:native-1"
                 native_id = "HNX-" + hashlib.sha256(identity_material.encode()).hexdigest().upper()
@@ -2113,6 +2156,7 @@ def prepare_hermes_native_execution(mission_id, *, worktree_digest, starting_mai
                     "branch": branch,
                     "worktree_digest": worktree_digest,
                     "owner_instruction_digest": owner_digest,
+                    "dispatch_authorization_id": dispatch.get("authorization_id"),
                     "allowed_files": allowed_files,
                     "allowed_commands": ["git status", "git diff", "git diff --check"],
                     "allowed_effects": [
@@ -2486,14 +2530,9 @@ def prepare_external_dispatch_authorization(
                     "requested_branch": "cursor/" + mission_id.lower() + f"-attempt-{execution_attempt}",
                     "branch": "",
                     "active_pr_number": 0,
-                    "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
-                    "allowed_effects": ["create_feature_branch", "edit_allowed_documentation",
-                        "run_tests", "commit_feature_branch", "push_feature_branch",
-                        "open_or_update_draft_pr", "request_independent_review"],
-                    "forbidden_effects": ["edit_other_file", "merge", "deploy", "credential_change",
-                        "branch_protection_change", "render_configuration_change",
-                        "supabase_configuration_change", "customer_action", "farm_action",
-                        "payment_action", "hardware_action"],
+                    "allowed_files": list(_HERMES_PILOT_ALLOWED_FILES),
+                    "allowed_effects": list(_PDA_ALLOWED_EFFECTS),
+                    "forbidden_effects": list(_PDA_FORBIDDEN_EFFECTS),
                     "allowed_test_commands": ["git status", "git diff", "git diff --check",
                         "python -m unittest tests.test_charlie_hermes_supervisor -q"],
                     "forbidden_files": ["*"],
@@ -2507,28 +2546,68 @@ def prepare_external_dispatch_authorization(
                     contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
                 authorization = {**contract, "authorization_id": identity, "status": "valid"}
                 existing = metadata.get("dispatch_authorization")
+                retirement = dict(metadata.get("cursor_provider_retirement") or {})
+                expired = _bounded_timestamp(
+                    existing.get("expires_at") if isinstance(existing, dict) else ""
+                ) <= datetime.now(timezone.utc)
+                retirement_renewal = (
+                    isinstance(existing, dict)
+                    and existing.get("version") == "charlie_pre_dispatch_authorization_v2"
+                    and existing.get("status") == "valid"
+                    and expired
+                    and existing.get("mission_id") == mission_id
+                    and existing.get("generation") == generation
+                    and int(existing.get("execution_attempt") or 0) == 5 == execution_attempt
+                    and existing.get("repository") == repository
+                    and existing.get("owner_instruction_digest") == contract["owner_instruction_digest"]
+                    and list(existing.get("allowed_files") or []) == contract["allowed_files"]
+                    and list(existing.get("allowed_effects") or []) == contract["allowed_effects"]
+                    and list(existing.get("forbidden_effects") or []) == contract["forbidden_effects"]
+                    and retirement.get("provider_status") == "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"
+                    and retirement.get("agent_state") == "ARCHIVED"
+                    and retirement.get("repository_mutation") is False
+                    and retirement.get("remote_branch_created") is False
+                    and int(retirement.get("pr_number") or 0) == 0
+                    and not str(retirement.get("head_sha") or "")
+                    and retirement.get("exact_candidate") == "absent"
+                    and state.get("agent_state") == "ARCHIVED"
+                    and state.get("repository_mutation") is False
+                    and state.get("remote_branch_created") is False
+                    and int(state.get("pr_number") or 0) == 0
+                    and not str(state.get("head_sha") or "")
+                    and state.get("exact_candidate") in {None, "", "absent"}
+                    and not metadata.get("review_packet")
+                    and not metadata.get("hermes_native_execution")
+                    and dict(metadata.get("mission_admission") or {}).get("status") != "valid"
+                )
+                if retirement_renewal:
+                    cursor.execute("""select count(*) from public.charlie_missions
+                        where mission_id <> %(mission_id)s and (
+                            metadata_json->'external_supervisor_state'->>'agent_state' in ('ACTIVE','IDLE')
+                            or (coalesce(metadata_json->'hermes_native_execution'->>'native_execution_id','') <> ''
+                                and coalesce(metadata_json->'hermes_native_execution'->>'execution_status','')
+                                    not in ('OWNER_DECISION_REQUIRED','COMPLETED','CANCELLED','BLOCKED'))
+                        )""", {"mission_id": mission_id})
+                    writer_row = cursor.fetchone() or (1,)
+                    if (len(writer_row) != 1 or not isinstance(writer_row[0], (int, str))
+                            or int(writer_row[0]) != 0):
+                        return {"success": False, "status": "dispatch_authorization_writer_conflict"}, 409
+                    # A retired provider branch is historical evidence, not a
+                    # native writer identity. The renewed exact-main contract
+                    # starts unbound and is recorded as a distinct authority.
+                    existing = {}
                 if (isinstance(existing, dict)
                         and existing.get("version") == "charlie_pre_dispatch_authorization_v2"
                         and existing.get("status") == "valid"
                         and existing.get("mission_id") == mission_id
                         and existing.get("generation") == generation
                         and int(existing.get("execution_attempt") or 0) == execution_attempt
-                        and existing.get("base_sha") == base_sha):
-                    # A same-contract renewal must preserve the authenticated
-                    # late-bound branch.  Resetting it would recreate the
-                    # branch/OIDC circular dependency after a transient socket
-                    # outage.
-                    contract.update({
-                        "branch_binding_status": existing.get("branch_binding_status", "unbound"),
-                        "requested_branch": existing.get("requested_branch", contract["requested_branch"]),
-                        "branch": existing.get("branch", ""),
-                        "active_pr_number": int(existing.get("active_pr_number") or 0),
-                    })
-                    identity = "PDA-" + hashlib.sha256(json.dumps(
-                        contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
-                    authorization = {**contract, "authorization_id": identity, "status": "valid"}
-                    existing = {}
-                if existing == authorization:
+                        and existing.get("base_sha") == base_sha
+                        and not expired
+                        and existing.get("owner_instruction_digest") == contract["owner_instruction_digest"]
+                        and list(existing.get("allowed_files") or []) == contract["allowed_files"]
+                        and list(existing.get("allowed_effects") or []) == contract["allowed_effects"]
+                        and list(existing.get("forbidden_effects") or []) == contract["forbidden_effects"]):
                     return {"success": True, "status": "exact_replay",
                             "authorization": existing}, 200
                 if (isinstance(existing, dict) and existing
@@ -2545,9 +2624,11 @@ def prepare_external_dispatch_authorization(
                     where mission_id=%(mission_id)s""",
                     {"mission_id": mission_id, "metadata": json.dumps(metadata, sort_keys=True)})
                 _insert_event(cursor, mission_id, "workflow_updated",
-                    "Bounded pre-dispatch authorization recorded.",
+                    ("Expired pre-dispatch authorization renewed after verified Cursor retirement."
+                     if retirement_renewal else "Bounded pre-dispatch authorization recorded."),
                     {"authorization_id": identity, "generation": generation,
-                     "recorded_by": principal})
+                     "recorded_by": principal,
+                     "reason": "cursor_retirement_exact_main_renewal" if retirement_renewal else "initial"})
     except Exception as exc:
         return {"success": False, "status": "dispatch_authorization_write_failed",
                 "error_type": exc.__class__.__name__}, 503

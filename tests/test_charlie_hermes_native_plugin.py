@@ -92,18 +92,27 @@ class HermesNativePluginTests(unittest.TestCase):
             # bound Hermes home lets get_env_value_prefer_dotenv read exactly
             # that profile's .env without populating os.environ.
             active_home = {"path": homes["builder"]}
+            active_scope = {"value": None}
+            unscoped_behavior = {"value": "raise"}
+            scoped_values = {"SCOPED_ONLY": "scoped-current"}
             agent_pkg = type(sys)("agent"); agent_pkg.__path__ = []
             secret_scope = type(sys)("agent.secret_scope")
             class UnscopedSecretError(RuntimeError): pass
             secret_scope.UnscopedSecretError = UnscopedSecretError
-            secret_scope.current_secret_scope = lambda: None
-            secret_scope.get_secret = lambda name, default=None: (_ for _ in ()).throw(
-                UnscopedSecretError(name))
+            secret_scope.current_secret_scope = lambda: active_scope["value"]
+            def scoped_secret(name, default=None):
+                if active_scope["value"] is not None:
+                    return scoped_values.get(name, default)
+                if unscoped_behavior["value"] == "raise":
+                    raise UnscopedSecretError(name)
+                return default
+            secret_scope.get_secret = scoped_secret
             hermes_pkg = type(sys)("hermes_cli"); hermes_pkg.__path__ = []
             config = type(sys)("hermes_cli.config")
             def profile_value(name):
                 rows = (active_home["path"] / ".env").read_text(encoding="utf-8").splitlines()
-                return dict(row.split("=", 1) for row in rows if "=" in row).get(name)
+                dotenv = dict(row.split("=", 1) for row in rows if "=" in row)
+                return dotenv[name] if name in dotenv else scoped_secret(name)
             config.get_env_value_prefer_dotenv = profile_value
             injected = {"agent": agent_pkg, "agent.secret_scope": secret_scope,
                         "hermes_cli": hermes_pkg, "hermes_cli.config": config}
@@ -136,11 +145,20 @@ class HermesNativePluginTests(unittest.TestCase):
                     except Exception as exc:
                         loaded["error"] = str(exc)
                         raise
+                    # Supported single-profile mode may make unscoped
+                    # get_secret return None. The bound profile dotenv must
+                    # still win over stale process-global state.
+                    unscoped_behavior["value"] = "none"
+                    os.environ.update({key: "stale-process-value"
+                                       for key in profile_values["builder"]})
                     builder_tools = module.build_plugin_from_environment()
                     active_home["path"] = homes["other"]
                     other_tools = module.build_plugin_from_environment()
-                    profile_env_absent = not any(
-                        key in os.environ for key in profile_values["builder"])
+                    supervisor_module = sys.modules[spec.name + ".supervisor"]
+                    active_scope["value"] = object()
+                    scoped_wins = supervisor_module._profile_protected_value("SCOPED_ONLY")
+                    scoped_miss = supervisor_module._profile_protected_value(
+                        "CHARLIE_HERMES_GATEWAY_TOKEN")
                     for _ in range(100):
                         if log_messages:
                             break
@@ -167,7 +185,8 @@ class HermesNativePluginTests(unittest.TestCase):
             self.assertNotEqual(builder_tools.supervisor.canonical.client.token,
                                 other_tools.supervisor.canonical.client.token)
             self.assertEqual("packager-one-value", builder_tools.supervisor.github_packager_token)
-            self.assertTrue(profile_env_absent)
+            self.assertEqual("scoped-current", scoped_wins)
+            self.assertEqual("", scoped_miss)
             rendered_surface = repr(context.tools)
             for value in profile_values["builder"].values():
                 self.assertNotIn(value, rendered_surface)

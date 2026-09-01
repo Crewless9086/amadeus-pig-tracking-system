@@ -67,21 +67,16 @@ def _profile_protected_value(name, *, environ=None):
             raise HermesBridgeError(
                 f"hermes_profile_secret_resolution_failed:{name}"
             ) from exc
+    # PluginManager has already installed its profile-home override around
+    # register(ctx). With no turn scope, resolve through that bound profile's
+    # dotenv-aware API directly. This deliberately avoids an early unscoped
+    # get_secret() result (including None) and gives a rotated profile value
+    # precedence over stale process-global state.
     try:
-        return str(get_secret(name) or "").strip()
+        from hermes_cli.config import get_env_value_prefer_dotenv
+        return str(get_env_value_prefer_dotenv(name) or "").strip()
     except UnscopedSecretError:
-        # PluginManager has already installed its profile-home override around
-        # register(ctx). Prefer that exact profile's .env without consulting a
-        # process-global value owned by another multiplexed profile.
-        try:
-            from hermes_cli.config import get_env_value_prefer_dotenv
-            return str(get_env_value_prefer_dotenv(name) or "").strip()
-        except UnscopedSecretError:
-            return ""
-        except Exception as exc:
-            raise HermesBridgeError(
-                f"hermes_profile_secret_resolution_failed:{name}"
-            ) from exc
+        return ""
     except Exception as exc:
         raise HermesBridgeError(
             f"hermes_profile_secret_resolution_failed:{name}"
@@ -579,6 +574,15 @@ class HermesSupervisor:
             or state.get("event") == "cursor_provider_retired"
             or self.cursor is None
         ):
+            # Historical handoff discovery is not mutation authority.  The
+            # canonical service verifies retirement and renews (or replays)
+            # the exact current-main PDA before native preparation.
+            renewed = self.canonical.prepare_dispatch_authorization(mission_id)
+            if (renewed.get("version") != "charlie_pre_dispatch_authorization_v2"
+                    or renewed.get("status") != "valid"):
+                raise HermesBridgeError(
+                    str(renewed.get("status") or "fresh_native_dispatch_authorization_required")
+                )
             return self.dispatch_native({"mission_id": mission_id})
         return self.dispatch_cursor({"mission_id": mission_id})
 

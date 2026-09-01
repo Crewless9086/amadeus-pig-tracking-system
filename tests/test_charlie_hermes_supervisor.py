@@ -138,9 +138,11 @@ class HermesSupervisorTests(unittest.TestCase):
 
     def test_retired_cursor_provider_selects_native_without_cursor_api_call(self):
         calls = []
+        renewed = {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid"}
         self.canonical.get_mission = lambda mission_id: {"mission": {"mission_id": mission_id,
             "metadata": {"cursor_provider_retirement": {
                 "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"}}}}
+        self.canonical.prepare_dispatch_authorization = lambda _mission_id: renewed
         self.supervisor.dispatch_native = lambda mission: calls.append(mission) or {"status": "native"}
         result = self.supervisor.dispatch_builder({"mission_id": "CMQ-X"})
         self.assertEqual("native", result["status"])
@@ -173,6 +175,8 @@ class HermesSupervisorTests(unittest.TestCase):
                 self.evidence = evidence
                 return {"provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"}
             def running_writer_count(self): return 0
+            def prepare_dispatch_authorization(self, _mission_id):
+                return {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid"}
         canonical, cursor = CanonicalRetirement(), CursorRetirement()
         supervisor = HermesSupervisor(canonical, cursor, owner_slack_user_id="UOWNER",
             slack_command_channel_id="C1", slack_build_channel_id="CBUILD",
@@ -630,7 +634,7 @@ class HermesSupervisorTests(unittest.TestCase):
         self.assertEqual({"success": True, "permission": "allow",
                           "status": "cursor_branch_workspace_authorized", "authorization_id": "digest"}, response.json)
 
-    def test_bound_branch_is_preserved_when_pda_is_renewed(self):
+    def test_unexpired_same_contract_pda_is_replayed_without_renewal(self):
         problem = "Documentation pilot"
         existing = {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid",
             "mission_id": "CMQ-X", "generation": "g1", "execution_attempt": 5,
@@ -638,7 +642,16 @@ class HermesSupervisorTests(unittest.TestCase):
             "starting_main_sha": "a" * 40, "base_sha": "a" * 40,
             "branch_binding_status": "bound", "requested_branch": "cursor/requested",
             "branch": "cursor/actual-five", "active_pr_number": 0,
-            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]}
+            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_effects": ["create_feature_branch", "edit_allowed_documentation", "run_tests",
+                "commit_feature_branch", "push_feature_branch", "open_or_update_draft_pr",
+                "request_independent_review"],
+            "forbidden_effects": ["edit_other_file", "merge", "deploy", "credential_change",
+                "branch_protection_change", "render_configuration_change",
+                "supabase_configuration_change", "customer_action", "farm_action",
+                "payment_action", "hardware_action"],
+            "owner_instruction_digest": hashlib.sha256(problem.encode()).hexdigest(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}
         metadata = {"mission_vault": {"problem_statement": problem},
             "external_supervisor_state": {"slack_owner_user_id": "UOWNER", "slack_channel_id": "C1",
                 "slack_event_id": "Ev1", "generation": "g1", "cursor_agent_id": "bc-five"},
@@ -650,9 +663,65 @@ class HermesSupervisorTests(unittest.TestCase):
             repository="Crewless9086/amadeus-pig-tracking-system", base_sha="a" * 40,
             owner_user_id="UOWNER", channel_id="C1", database_url="postgres://unit",
             connect_factory=lambda _: connection)
-        self.assertEqual(201, status, result)
+        self.assertEqual(200, status, result)
+        self.assertEqual("exact_replay", result["status"])
         self.assertEqual("bound", result["authorization"]["branch_binding_status"])
         self.assertEqual("cursor/actual-five", result["authorization"]["branch"])
+
+    def test_expired_attempt_five_authority_renews_once_after_exact_retirement(self):
+        problem = "Documentation pilot"
+        old_base, current_main = "a" * 40, "d" * 40
+        effects = ["create_feature_branch", "edit_allowed_documentation", "run_tests",
+            "commit_feature_branch", "push_feature_branch", "open_or_update_draft_pr",
+            "request_independent_review"]
+        forbidden = ["edit_other_file", "merge", "deploy", "credential_change",
+            "branch_protection_change", "render_configuration_change",
+            "supabase_configuration_change", "customer_action", "farm_action",
+            "payment_action", "hardware_action"]
+        expired = {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid",
+            "mission_id": "CMQ-X", "generation": "g1", "execution_attempt": 5,
+            "repository": "Crewless9086/amadeus-pig-tracking-system",
+            "base_sha": old_base, "starting_main_sha": old_base,
+            "owner_instruction_digest": hashlib.sha256(problem.encode()).hexdigest(),
+            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_effects": effects, "forbidden_effects": forbidden,
+            "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
+        retired_state = {"slack_owner_user_id": "UOWNER", "slack_channel_id": "C1",
+            "slack_event_id": "Ev1", "generation": "g1", "execution_attempt": 5,
+            "agent_state": "ARCHIVED", "run_state": "FINISHED",
+            "repository_mutation": False, "remote_branch_created": False,
+            "pr_number": 0, "head_sha": "", "exact_candidate": "absent"}
+        retirement = {"provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+            "agent_state": "ARCHIVED", "repository_mutation": False,
+            "remote_branch_created": False, "pr_number": 0, "head_sha": "",
+            "exact_candidate": "absent"}
+        metadata = {"mission_vault": {"problem_statement": problem},
+            "external_supervisor_state": retired_state,
+            "execution_succession": {"active_attempt": 5},
+            "dispatch_authorization": expired, "cursor_provider_retirement": retirement}
+        connection = FakeConnection([])
+        rows = iter([("in_progress", "slack", metadata), (0,)])
+        connection.cursor_instance.fetchone = lambda: next(rows)
+        result, status = prepare_external_dispatch_authorization(
+            "CMQ-X", authenticated_principal="hermes:charlie-builder",
+            repository="Crewless9086/amadeus-pig-tracking-system", base_sha=current_main,
+            owner_user_id="UOWNER", channel_id="C1", database_url="postgres://unit",
+            connect_factory=lambda _: connection)
+        self.assertEqual(201, status, result)
+        fresh = result["authorization"]
+        self.assertEqual(current_main, fresh["base_sha"])
+        self.assertGreater(datetime.fromisoformat(fresh["expires_at"]), datetime.now(timezone.utc))
+        written = [params for sql, params in connection.cursor_instance.executed
+                   if "update public.charlie_missions" in sql][0]
+        persisted = json.loads(written["metadata"])
+        replay_connection = FakeConnection([("in_progress", "slack", persisted)])
+        replay, replay_status = prepare_external_dispatch_authorization(
+            "CMQ-X", authenticated_principal="hermes:charlie-builder",
+            repository="Crewless9086/amadeus-pig-tracking-system", base_sha=current_main,
+            owner_user_id="UOWNER", channel_id="C1", database_url="postgres://unit",
+            connect_factory=lambda _: replay_connection)
+        self.assertEqual(200, replay_status, replay)
+        self.assertEqual(fresh["authorization_id"], replay["authorization"]["authorization_id"])
 
     def test_canonical_dispatch_payload_matches_bounded_server_schema(self):
         class ApiClient:
