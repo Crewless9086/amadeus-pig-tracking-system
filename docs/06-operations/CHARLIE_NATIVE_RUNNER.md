@@ -13,6 +13,18 @@ authorization, deterministic worktree implementation, candidate admission,
 review roles, GitHub draft-PR packager, and Slack notification contracts. It
 does not create another queue or ledger.
 
+## Implementation source map
+
+- `modules/charlie/native_runner/`: plugin-independent structured patch,
+  canonical client, model adapter, packaging, notification, locking, and
+  canonical recovery service.
+- `scripts/charlie_native_runner.py`: bounded once/watch/status/dry-run entry
+  point; deliberately has no merge, release, or deployment mode.
+- `deploy/charlie-native-runner/charlie-native-runner.service`: boot and
+  crash-supervised systemd service with one dedicated process identity.
+- This runbook records deployment, independence, acceptance, rollback, and
+  credential-containment requirements.
+
 ## AMADEUS-CLOUD assessment
 
 The Hermes v0.20.6 System surface exposes gateway status and a gateway restart

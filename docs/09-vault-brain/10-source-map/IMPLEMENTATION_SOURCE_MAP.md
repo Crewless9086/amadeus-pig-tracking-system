@@ -1,17 +1,5 @@
 # Implementation Source Map
 
-## Standalone CHARLIE native runner boundary
-
-- `modules/charlie/native_runner/`: plugin-independent structured patch,
-  canonical client, model adapter, packaging, notification, locking, and
-  canonical recovery service.
-- `scripts/charlie_native_runner.py`: bounded once/watch/status/dry-run entry
-  point; deliberately has no merge, release, or deployment mode.
-- `deploy/charlie-native-runner/charlie-native-runner.service`: boot and
-  crash-supervised systemd service with one dedicated process identity.
-- `docs/06-operations/CHARLIE_NATIVE_RUNNER.md`: deployment, independence,
-  acceptance, rollback, and credential-containment runbook.
-
 ## Livestock quotation journeys
 
 - Contract/lifecycle: `modules/orders/livestock_quotation.py`
