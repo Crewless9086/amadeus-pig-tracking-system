@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-09-02 - Standalone CHARLIE native runner boundary
+
+- Removed mission execution and recovery from the Hermes directory-plugin
+  critical path by introducing one canonical, independently supervised native
+  runner.
+- Reused the existing isolated-worktree, structured-patch, draft packaging,
+  exact-candidate admission, role-isolated review, and notification contracts.
+- Added a no-tool adapter for Hermes v0.20.6 auxiliary inference and a hardened
+  systemd deployment boundary with no merge or deployment capability.
+
 ## 2026-08-31 - Self-contained CHARLIE-BUILDER plugin recovery
 
 - Removed application-root imports from the installed Hermes plugin. Native

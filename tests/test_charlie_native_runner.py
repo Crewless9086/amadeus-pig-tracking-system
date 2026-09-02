@@ -1,0 +1,508 @@
+import importlib
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+
+from modules.charlie.native_runner.execution import NativeExecutionError, NativePackager
+from modules.charlie.native_runner.model_adapter import HermesAuxiliaryModel, run_schema_canary
+from modules.charlie.native_runner.service import (BROAD_GITHUB_NAMES, NativeRunnerService,
+                                                   ProcessLock, read_profile_values)
+
+
+REQUIRED = {
+    "CHARLIE_CANONICAL_API_URL": "https://example.invalid",
+    "CHARLIE_HERMES_GATEWAY_TOKEN": "gateway-test",
+    "SLACK_BOT_TOKEN": "xoxb-test",
+    "CHARLIE_SLACK_OWNER_USER_ID": "U0BSRQJASRG",
+    "CHARLIE_SLACK_CHARLIE_CHANNEL_ID": "C0BSRQJ60KC",
+    "CHARLIE_SLACK_BUILD_CHANNEL_ID": "C0BSTB5FQ5Q",
+    "CHARLIE_SLACK_APPROVALS_CHANNEL_ID": "C0BTMNW0MT2",
+    "CURSOR_API_KEY": "cursor-test",
+    "CHARLIE_GITHUB_PACKAGER_TOKEN": "github-test",
+}
+
+
+def write_profile(tmp_path, values=None):
+    home = tmp_path / "profile"
+    home.mkdir()
+    rows = values or REQUIRED
+    (home / ".env").write_text("\n".join(f"{key}={value}" for key, value in rows.items()), encoding="utf-8")
+    return home
+
+
+def test_profile_reader_is_allowlisted_and_rejects_broad_github_credentials(tmp_path, monkeypatch):
+    for key in BROAD_GITHUB_NAMES:
+        monkeypatch.delenv(key, raising=False)
+    values = read_profile_values(write_profile(tmp_path))
+    assert set(REQUIRED).issubset(values)
+    monkeypatch.setenv("GH_TOKEN", "must-not-be-used")
+    with pytest.raises(NativeExecutionError, match="broad_github_credential_forbidden:GH_TOKEN"):
+        read_profile_values(tmp_path / "profile")
+
+
+def test_model_adapter_uses_installed_low_level_boundary_without_tools_or_api_key(tmp_path):
+    calls = []
+
+    class Reply:
+        content = '{"status":"READY"}'
+        provider = "Nous"
+        model = "test-model"
+
+    def call(**kwargs):
+        calls.append(kwargs)
+        return Reply()
+
+    model = HermesAuxiliaryModel(profile_home=tmp_path, call=call)
+    assert run_schema_canary(model)["status"] == "READY"
+    assert calls[0]["tools"] == []
+    assert "api_key" not in calls[0]
+    assert not any("token" in json.dumps(value).lower() for value in calls[0].values())
+
+
+def test_model_adapter_enters_explicit_hermes_profile_home(tmp_path, monkeypatch):
+    import sys
+    from contextlib import contextmanager
+    entered = []
+    hermes = type(sys)("hermes_cli")
+    hermes.__path__ = []
+    plugins = type(sys)("hermes_cli.plugins")
+    @contextmanager
+    def scope(home):
+        entered.append(Path(home).resolve())
+        yield
+    plugins._plugin_home_scope = scope
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes)
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", plugins)
+    class Reply:
+        content = '{"status":"READY"}'; provider = "Nous"; model = "test-model"
+    model = HermesAuxiliaryModel(profile_home=tmp_path, call=lambda **_: Reply())
+    run_schema_canary(model)
+    assert entered == [tmp_path.resolve()]
+
+
+def test_native_runner_imports_with_plugin_package_absent(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "integrations.hermes.charlie_builder", None)
+    module = importlib.reload(importlib.import_module("modules.charlie.native_runner.service"))
+    assert module.NativeRunnerService
+
+
+def test_cli_and_service_have_no_merge_deploy_release_or_cursor_create_path():
+    script = Path("scripts/charlie_native_runner.py").read_text(encoding="utf-8")
+    service = Path("modules/charlie/native_runner/service.py").read_text(encoding="utf-8")
+    assert "auto-merge" not in script and "release-verify" not in script
+    assert "create_agent" not in service and "attempt 6" not in service.lower()
+    assert not any(name in NativeRunnerService.__dict__ for name in ("merge", "deploy", "release"))
+
+
+def test_process_lock_prevents_two_local_writers(tmp_path):
+    first = ProcessLock(tmp_path / "runner.lock")
+    second = ProcessLock(tmp_path / "runner.lock")
+    first.acquire()
+    try:
+        with pytest.raises(NativeExecutionError, match="native_runner_already_active"):
+            second.acquire()
+    finally:
+        first.release()
+
+
+class CanonicalFake:
+    def __init__(self):
+        self.retirements = 0
+        self.renewals = 0
+        self.prepared = 0
+        self.progress_rows = []
+        self.native = None
+
+    def resumable(self):
+        return [{"mission_id": "CHARLIE-MISSION-13B47938FF65E2C1"}]
+
+    def mission(self, mission_id):
+        metadata = {"external_supervisor_state": {
+            "execution_attempt": 5, "generation": "slack-1787929390.145099-g1",
+            "cursor_agent_id": "bc-five", "cursor_run_id": "run-five", "branch": "cursor/old-five",
+            "slack_channel_id": "C-CHARLIE", "slack_thread_ts": "1787929390.145099",
+        }}
+        if self.retirements:
+            metadata["cursor_provider_retirement"] = {"provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"}
+        if self.native:
+            metadata["hermes_native_execution"] = self.native
+        return {"mission": {"mission_id": mission_id, "title": "docs", "raw_text": "clarify docs", "metadata": metadata}}
+
+    def writers(self): return 1 if self.native and self.native.get("worker_claim_id") else 0
+    def retire_cursor(self, mission_id, evidence):
+        self.retirements += 1
+        return {"provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT", **evidence}
+    def renew_authority(self, mission_id):
+        self.renewals += 1
+        return {"version": "charlie_pre_dispatch_authorization_v2", "status": "valid",
+                "generation": "slack-1787929390.145099-g1"}
+    def prepare_native(self, mission_id, digest, sha):
+        self.prepared += 1
+        identity = __import__("modules.charlie.native_runner.execution", fromlist=["content_identity"]).content_identity(
+            mission_id, "slack-1787929390.145099-g1", 1)
+        self.native = {"mission_id": mission_id, "generation": "slack-1787929390.145099-g1",
+            "native_execution_id": identity[0], "native_attempt": 1,
+            "repository": "Crewless9086/amadeus-pig-tracking-system", "starting_main_sha": sha,
+            "branch": identity[1], "worktree_digest": digest, "owner_instruction_digest": "a" * 64,
+            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_commands": ["git status", "git diff", "git diff --check"],
+            "allowed_effects": ["draft PR"], "forbidden_effects": ["merge", "deploy"],
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "status": "valid"}
+        return self.native
+    def progress(self, mission_id, payload): self.progress_rows.append(payload); return payload
+    def native_context(self, mission_id): return {"governance": "bounded"}
+
+
+class CursorFake:
+    def __init__(self): self.archives = 0
+    def get_agent(self, _): return {"id": "bc-five", "status": "ARCHIVED" if self.archives else "IDLE"}
+    def get_run(self, *_): return {"id": "run-five", "status": "FINISHED"}
+    def archive(self, _): self.archives += 1
+    def cancel(self, *_): raise AssertionError("terminal run must not be cancelled")
+
+
+class GithubFake:
+    def branch_exists(self, _): return False
+    def find_pull(self, _): return 0
+
+
+def test_full_service_orchestration_draft_send_back_correction_mar_checks_notification(tmp_path):
+    events, admissions, bindings, posts = [], [], [], []
+    class Canonical:
+        claim = ""
+        def progress(self, mission_id, payload):
+            if payload.get("event") == "native_writer_claimed":
+                self.claim = payload.get("worker_claim_id")
+            elif payload.get("event") == "native_writer_released":
+                if payload.get("release_claim_id") != self.claim:
+                    return {"success": False, "status": "native_writer_claim_conflict"}
+                self.claim = ""
+            elif self.claim and payload.get("worker_claim_id") != self.claim:
+                return {"success": False, "status": "native_writer_claim_required"}
+            events.append(payload)
+            return payload
+        def native_context(self, mission_id): return {"bounded": True}
+        def bind_candidate(self, mission_id, payload): bindings.append(payload); return {"success": True}
+        def request_admission(self, mission_id, head, pr): admissions.append((head, pr)); return {"success": True}
+    class Engine:
+        def __init__(self, *args, **kwargs): pass
+        def build_patch(self, *args, **kwargs):
+            return {"state": "PATCH_READY", "changed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+                    "worker_identity": "HNW-1", "worker_agent_id": "standalone"}
+        def verify(self): return [{"command": "git diff --check", "returncode": 0}]
+    heads = iter(("a" * 40, "b" * 40))
+    class Packager:
+        def __init__(self, *args, **kwargs): pass
+        def package(self, *args):
+            head = next(heads)
+            return {"pr_number": 1400, "commit_sha": head, "branch": "charlie/mission-native-1",
+                    "changed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+                    "candidate_diff_sha256": ("c" if head.startswith("a") else "d") * 64}
+    class Reviewer:
+        def __init__(self, *args): pass
+        def review(self, role, packet):
+            return {"role": role, "reviewer_task": f"charlie_native_{role.lower()}_reviewer",
+                    "candidate_binding": packet["candidate"],
+                    "verdict": "SEND_BACK" if role == "CHALLENGE" else "APPROVE",
+                    "findings": ["Clarify the no-deploy boundary."] if role == "CHALLENGE" else []}
+    class Github:
+        def pull_state(self, number):
+            return {"pr_number": number, "head_sha": "b" * 40, "draft": True,
+                    "checks": {name: "success" for name in __import__("modules.charlie.native_runner.canonical_client", fromlist=["GitHubObserver"]).GitHubObserver.REQUIRED},
+                    "all_required_checks_pass": True}
+    class Notifier:
+        def post(self, channel, text, **kwargs): posts.append((channel, kwargs.get("idempotency_key"))); return {"ok": True}
+    service = object.__new__(NativeRunnerService)
+    service.canonical, service.model, service.packager_token = Canonical(), SimpleNamespace(complete_structured=lambda **_: None), "contained"
+    service.repository_root, service.worktree_root = tmp_path, tmp_path / "worktrees"
+    service.github, service.notifier, service.slack_approval_channel = Github(), Notifier(), "C-APPROVALS"
+    service.clock = lambda: datetime.now(timezone.utc)
+    service.status_path = tmp_path / "status.json"
+    mission = {"mission_id": "CHARLIE-MISSION-13B47938FF65E2C1", "title": "docs", "raw_text": "clarify",
+               "metadata": {"external_supervisor_state": {"slack_channel_id": "C-CHARLIE", "slack_thread_ts": "1787929390.145099"}}}
+    authorization = {"mission_id": mission["mission_id"], "generation": "g1", "native_execution_id": "HNX-1",
+        "native_attempt": 1, "repository": "Crewless9086/amadeus-pig-tracking-system", "starting_main_sha": "e" * 40,
+        "branch": "charlie/mission-native-1", "worktree_digest": "f" * 64, "owner_instruction_digest": "1" * 64,
+        "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"], "allowed_commands": ["git diff --check"],
+        "allowed_effects": ["draft PR"], "forbidden_effects": ["merge", "deploy"],
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "status": "valid"}
+    with patch("modules.charlie.native_runner.service.NativeExecutionEngine", Engine), \
+         patch("modules.charlie.native_runner.service.NativePackager", Packager), \
+         patch("modules.charlie.native_runner.service.HermesIndependentReviewer", Reviewer):
+        first = service._build(mission, authorization, tmp_path, tmp_path / "worktree")
+        assert first["state"] == "SEND_BACK" and admissions == [("a" * 40, 1400)]
+        native = {**authorization, "execution_status": "SEND_BACK", "pr_number": 1400, "head_sha": "a" * 40,
+                  "candidate_diff_sha256": "c" * 64, "changed_files": authorization["allowed_files"],
+                  "review_challenge": events[-1]["review_challenge"], "correction_rounds": 0,
+                  "worker_claim_id": service.canonical.claim}
+        second = service._correct(mission, native)
+        assert second["state"] == "CHECKS_PENDING" and admissions[-1] == ("b" * 40, 1400)
+        corrected = {**native, "execution_status": "SEND_BACK_CORRECTED", "correction_rounds": 1,
+                     "head_sha": "b" * 40, "review_security": events[-1]["review_security"],
+                     "review_functional": events[-1]["review_functional"]}
+        final = service._supervise(mission, corrected)
+        assert final["state"] == "OWNER_DECISION_REQUIRED"
+        assert len(posts) == 2 and len({item[1] for item in posts}) == 2
+        corrected["owner_notification_head"] = "b" * 40
+        corrected["worker_claim_id"] = ""
+        service._supervise(mission, corrected)
+        assert len(posts) == 2
+    assert len(bindings) == 2
+    assert not any(event.get("execution_status") in {"MERGED", "DEPLOYED"} for event in events)
+
+
+def test_restart_after_local_commit_resumes_packaging_without_second_model_patch(tmp_path):
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    events, packages = [], []
+    class Canonical:
+        def progress(self, mission_id, payload): events.append(payload); return payload
+        def native_context(self, mission_id): raise AssertionError("model context must not be requested")
+        def bind_candidate(self, mission_id, payload): return {"success": True}
+        def request_admission(self, *args): return {"success": True}
+    class Engine:
+        def __init__(self, *args, **kwargs): pass
+        def build_patch(self, *args, **kwargs): raise AssertionError("must not generate a second patch")
+        def verify(self): return [{"command": "git diff --check", "returncode": 0}]
+    class Packager:
+        def __init__(self, *args, **kwargs): pass
+        def package(self, *args):
+            packages.append(1)
+            return {"pr_number": 1401, "commit_sha": "b" * 40, "branch": "charlie/mission-native-1",
+                    "changed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+                    "candidate_diff_sha256": "d" * 64}
+    class Reviewer:
+        def __init__(self, *_): pass
+        def review(self, role, packet):
+            return {"role": role, "reviewer_task": "charlie_native_challenge_reviewer",
+                    "candidate_binding": packet["candidate"], "verdict": "SEND_BACK", "findings": ["one correction"]}
+    service = object.__new__(NativeRunnerService)
+    service.canonical, service.model, service.packager_token = Canonical(), SimpleNamespace(complete_structured=lambda **_: None), "contained"
+    service.status_path, service.clock = tmp_path / "status.json", lambda: datetime.now(timezone.utc)
+    mission = {"mission_id": "CHARLIE-MISSION-13B47938FF65E2C1", "title": "docs"}
+    authorization = {"native_execution_id": "HNX-1", "starting_main_sha": "a" * 40,
+        "branch": "charlie/mission-native-1",
+        "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+        "builder_identity": "HNW-original", "builder_agent_id": "standalone"}
+    results = iter((SimpleNamespace(returncode=0, stdout="b" * 40 + "\n"),
+                    SimpleNamespace(returncode=0, stdout="")))
+    with patch("modules.charlie.native_runner.service.NativeExecutionEngine", Engine), \
+         patch("modules.charlie.native_runner.service.NativePackager", Packager), \
+         patch("modules.charlie.native_runner.service.HermesIndependentReviewer", Reviewer), \
+         patch("modules.charlie.native_runner.service.run_argv", side_effect=lambda *a, **k: next(results)):
+        result = service._build(mission, authorization, tmp_path, worktree)
+    assert result["state"] == "SEND_BACK" and packages == [1]
+
+
+def test_fresh_services_resume_bound_initial_and_corrected_candidates(tmp_path):
+    admissions, events = [], []
+    class Canonical:
+        def progress(self, mission_id, payload): events.append(payload); return payload
+        def request_admission(self, mission_id, head, pr): admissions.append((head, pr)); return {"success": True}
+        def bind_candidate(self, *_): raise AssertionError("already-bound candidate must not rebind")
+    class Reviewer:
+        def __init__(self, *_): pass
+        def review(self, role, packet):
+            return {"role": role, "reviewer_task": f"charlie_native_{role.lower()}_reviewer",
+                    "candidate_binding": packet["candidate"],
+                    "verdict": "SEND_BACK" if role == "CHALLENGE" else "APPROVE",
+                    "findings": ["one"] if role == "CHALLENGE" else []}
+    mission = {"mission_id": "CHARLIE-MISSION-13B47938FF65E2C1"}
+    base = {"native_execution_id": "HNX-1", "pr_number": 1402, "base_sha": "a" * 40,
+            "head_sha": "b" * 40, "branch": "charlie/mission-native-1",
+            "changed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "candidate_diff_sha256": "c" * 64}
+    def fresh():
+        service = object.__new__(NativeRunnerService)
+        service.canonical = Canonical()
+        service.model = SimpleNamespace(complete_structured=lambda **_: None)
+        service.status_path = tmp_path / f"status-{len(events)}.json"
+        service.clock = lambda: datetime.now(timezone.utc)
+        return service
+    with patch("modules.charlie.native_runner.service.HermesIndependentReviewer", Reviewer):
+        first = fresh()._supervise(mission, {**base, "execution_status": "CANDIDATE_BOUND"})
+        assert first["state"] == "SEND_BACK"
+        corrected = fresh()._supervise(mission, {**base, "execution_status": "CORRECTION_BOUND"})
+        assert corrected["state"] == "CHECKS_PENDING"
+    assert admissions == [("b" * 40, 1402), ("b" * 40, 1402)]
+    assert [event["execution_status"] for event in events] == ["SEND_BACK", "SEND_BACK_CORRECTED"]
+
+
+def test_fresh_service_releases_claim_after_owner_notification_crash_without_reposting(tmp_path):
+    progress, posts = [], []
+    class Canonical:
+        def progress(self, mission_id, payload): progress.append(payload); return payload
+    class Github:
+        def pull_state(self, number):
+            return {"pr_number": number, "head_sha": "b" * 40, "checks": {"all": "success"},
+                    "all_required_checks_pass": True}
+    class Notifier:
+        def post(self, *args, **kwargs): posts.append(1)
+    service = object.__new__(NativeRunnerService)
+    service.canonical, service.github, service.notifier = Canonical(), Github(), Notifier()
+    service.slack_approval_channel = "C-APPROVALS"
+    service.status_path, service.clock = tmp_path / "status.json", lambda: datetime.now(timezone.utc)
+    mission = {"mission_id": "CHARLIE-MISSION-X", "metadata": {}}
+    native = {"native_execution_id": "HNX-X", "pr_number": 7, "head_sha": "b" * 40,
+              "owner_notification_head": "b" * 40, "worker_claim_id": "HNC-X",
+              "correction_rounds": 1, "review_security": {"verdict": "APPROVE"},
+              "review_functional": {"verdict": "APPROVE"}}
+    result = service._supervise(mission, native)
+    assert result["state"] == "OWNER_DECISION_REQUIRED" and posts == []
+    assert progress == [{"native_execution_id": "HNX-X", "execution_status": "OWNER_DECISION_REQUIRED",
+                         "release_claim_id": "HNC-X", "event": "native_writer_released"}]
+
+
+def test_attempt_five_retires_before_fresh_authority_and_one_native_identity(tmp_path, monkeypatch):
+    canonical, cursor = CanonicalFake(), CursorFake()
+    service = NativeRunnerService(profile_home=tmp_path, repository_root=tmp_path,
+        worktree_root=tmp_path / "worktrees", canonical=canonical, cursor=cursor,
+        github=GithubFake(), model=object())
+    monkeypatch.setattr("modules.charlie.native_runner.service.validate_primary_repository",
+                        lambda *_: (tmp_path, tmp_path / "worktrees", "b" * 40))
+    monkeypatch.setattr("modules.charlie.native_runner.service.run_schema_canary", lambda _: {"status": "READY"})
+    monkeypatch.setattr(service, "_build", lambda mission, native, repository, worktree: {
+        "native_execution_id": native["native_execution_id"], "worktree": str(worktree)})
+    result = service.once()
+    assert canonical.retirements == canonical.renewals == canonical.prepared == 1
+    assert cursor.archives == 1
+    assert result["native_execution_id"].startswith("HNX-")
+
+
+def test_once_replay_continues_same_claimed_execution_instead_of_zero_writer_deadlock(tmp_path, monkeypatch):
+    canonical = CanonicalFake()
+    canonical.retirements = 1
+    canonical.native = {"native_execution_id": "HNX-SAME", "generation": "g1", "pr_number": 1403,
+                        "worker_claim_id": "HNC-SAME", "execution_status": "SEND_BACK"}
+    service = NativeRunnerService(profile_home=tmp_path, repository_root=tmp_path,
+        worktree_root=tmp_path / "worktrees", canonical=canonical, cursor=CursorFake(),
+        github=GithubFake(), model=object())
+    monkeypatch.setattr("modules.charlie.native_runner.service.validate_primary_repository",
+                        lambda *_: (tmp_path, tmp_path / "worktrees", "b" * 40))
+    calls = []
+    monkeypatch.setattr(service, "_supervise", lambda mission, native: calls.append(native["native_execution_id"])
+                        or {"state": "CONTINUED"})
+    assert service.once()["state"] == "CONTINUED"
+    assert calls == ["HNX-SAME"] and canonical.renewals == canonical.prepared == 0
+
+
+def test_systemd_artifact_is_boot_supervised_single_service_without_hermes_dependency():
+    unit = Path("deploy/charlie-native-runner/charlie-native-runner.service").read_text(encoding="utf-8")
+    assert "WantedBy=multi-user.target" in unit
+    assert "Restart=on-failure" in unit and "RestartSec=10s" in unit
+    assert "-m scripts.charlie_native_runner --watch" in unit
+    assert "hermes" not in unit.lower()
+    assert "--auto-merge" not in unit and "deploy" not in unit.lower()
+
+
+def test_exact_systemd_module_entrypoint_imports_from_repository_root():
+    result = subprocess.run([os.sys.executable, "-m", "scripts.charlie_native_runner", "--help"],
+                            capture_output=True, text=True, shell=False, check=False)
+    assert result.returncode == 0
+    assert "--auto-merge" not in result.stdout and "--deploy" not in result.stdout
+
+
+@pytest.mark.parametrize("candidate_path,summary,reason", [
+    ("unauthorized.txt", "", "native_candidate_scope_mismatch"),
+    ("docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md",
+     " delete mode 100644 docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md",
+     "native_candidate_metadata_change_rejected"),
+])
+def test_recovered_invalid_committed_candidate_is_rejected_before_remote_mutation(
+        tmp_path, candidate_path, summary, reason):
+    packager = object.__new__(NativePackager)
+    packager.worktree = tmp_path
+    packager.authorization = SimpleNamespace(
+        branch="charlie/mission-native-1", starting_main_sha="a" * 40,
+        allowed_files=("docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md",))
+    packager.token = "not-observed"
+    calls = []
+    def git(*args):
+        if args == ("branch", "--show-current"): return "charlie/mission-native-1"
+        if args == ("remote", "get-url", "origin"): return "https://github.com/Crewless9086/amadeus-pig-tracking-system.git"
+        if args in (("diff", "--name-only"), ("diff", "--cached", "--name-only")): return ""
+        if args[0:2] == ("rev-parse", "a" * 40 + "^{commit}"): return "a" * 40
+        if args == ("rev-parse", "HEAD"): return "b" * 40
+        if "--name-only" in args: return candidate_path
+        if "--summary" in args: return summary
+        raise AssertionError(args)
+    packager._git = git
+    packager._push_with_ephemeral_askpass = lambda: calls.append("push")
+    packager._github = lambda *_args: calls.append("github")
+    completed = SimpleNamespace(returncode=0, stdout=b"diff --git a/unauthorized.txt b/unauthorized.txt\n")
+    with patch("modules.charlie.native_runner.execution.run_argv", return_value=completed), \
+         patch("modules.charlie.native_runner.execution.subprocess.run", return_value=completed):
+        with pytest.raises(NativeExecutionError, match=reason):
+            packager.package("title", "body")
+    assert calls == []
+
+
+class HostedCharlieNativeRunnerTests(unittest.TestCase):
+    """The charlie-core workflow invokes this module through unittest."""
+
+    def test_no_tool_low_level_model_boundary(self):
+        calls = []
+        class Reply:
+            content = '{"status":"READY"}'
+            provider = "Nous"
+            model = "test-model"
+        model = HermesAuxiliaryModel(profile_home=".", call=lambda **kwargs: (calls.append(kwargs), Reply())[1])
+        self.assertEqual("READY", run_schema_canary(model)["status"])
+        self.assertEqual([], calls[0]["tools"])
+        self.assertNotIn("api_key", calls[0])
+
+    def test_durable_service_has_no_merge_or_deploy_surface(self):
+        unit = Path("deploy/charlie-native-runner/charlie-native-runner.service").read_text(encoding="utf-8")
+        script = Path("scripts/charlie_native_runner.py").read_text(encoding="utf-8")
+        self.assertIn("WantedBy=multi-user.target", unit)
+        self.assertIn("Restart=on-failure", unit)
+        self.assertNotIn("--auto-merge", script)
+        self.assertFalse(any(name in NativeRunnerService.__dict__ for name in ("merge", "deploy", "release")))
+
+    def test_plugin_absence_and_local_writer_serialization(self):
+        with tempfile.TemporaryDirectory() as root:
+            module = importlib.reload(importlib.import_module("modules.charlie.native_runner.service"))
+            self.assertIsNotNone(module.NativeRunnerService)
+            first, second = ProcessLock(Path(root) / "runner.lock"), ProcessLock(Path(root) / "runner.lock")
+            first.acquire()
+            try:
+                with self.assertRaisesRegex(NativeExecutionError, "native_runner_already_active"):
+                    second.acquire()
+            finally:
+                first.release()
+
+    def test_profile_allowlist_and_broad_credential_rejection(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = write_profile(Path(root))
+            prior = os.environ.pop("GH_TOKEN", None)
+            try:
+                self.assertTrue(set(REQUIRED).issubset(read_profile_values(home)))
+                os.environ["GH_TOKEN"] = "must-not-be-used"
+                with self.assertRaisesRegex(NativeExecutionError, "broad_github_credential_forbidden:GH_TOKEN"):
+                    read_profile_values(home)
+            finally:
+                if prior is None:
+                    os.environ.pop("GH_TOKEN", None)
+                else:
+                    os.environ["GH_TOKEN"] = prior
+
+    def test_exact_systemd_entrypoint_and_pre_remote_scope_gate(self):
+        result = subprocess.run([os.sys.executable, "-m", "scripts.charlie_native_runner", "--help"],
+                                capture_output=True, text=True, shell=False, check=False)
+        self.assertEqual(0, result.returncode)
+        for candidate_path, summary, reason in (
+            ("unauthorized.txt", "", "native_candidate_scope_mismatch"),
+            ("docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md",
+             " delete mode 100644 docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md",
+             "native_candidate_metadata_change_rejected"),
+        ):
+            test_recovered_invalid_committed_candidate_is_rejected_before_remote_mutation(
+                Path("."), candidate_path, summary, reason)
