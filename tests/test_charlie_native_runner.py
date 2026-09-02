@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from modules.charlie.native_runner.execution import NativeExecutionError, NativePackager
+from modules.charlie.native_runner.canonical_client import GitHubObserver
 from modules.charlie.native_runner.model_adapter import HermesAuxiliaryModel, run_schema_canary
 from modules.charlie.native_runner.service import (BROAD_GITHUB_NAMES, NativeRunnerService,
                                                    ProcessLock, read_profile_values)
@@ -368,6 +369,8 @@ def test_attempt_five_retires_before_fresh_authority_and_one_native_identity(tmp
         github=GithubFake(), model=object())
     monkeypatch.setattr("modules.charlie.native_runner.service.validate_primary_repository",
                         lambda *_: (tmp_path, tmp_path / "worktrees", "b" * 40))
+    monkeypatch.setattr("modules.charlie.native_runner.service.run_schema_canary",
+                        lambda _: {"status": "READY"})
     monkeypatch.setattr("modules.charlie.native_runner.service.run_schema_canary", lambda _: {"status": "READY"})
     monkeypatch.setattr(service, "_build", lambda mission, native, repository, worktree: {
         "native_execution_id": native["native_execution_id"], "worktree": str(worktree)})
@@ -388,6 +391,8 @@ def test_once_replay_continues_same_claimed_execution_instead_of_zero_writer_dea
         github=GithubFake(), model=object())
     monkeypatch.setattr("modules.charlie.native_runner.service.validate_primary_repository",
                         lambda *_: (tmp_path, tmp_path / "worktrees", "b" * 40))
+    monkeypatch.setattr("modules.charlie.native_runner.service.run_schema_canary",
+                        lambda _: {"status": "READY"})
     calls = []
     monkeypatch.setattr(service, "_supervise", lambda mission, native: calls.append(native["native_execution_id"])
                         or {"state": "CONTINUED"})
@@ -447,6 +452,42 @@ def test_existing_native_build_runs_canary_before_model_after_restart(tmp_path, 
     monkeypatch.setattr(service, "_build", lambda *_: order.append("build") or {"state": "BUILT"})
     assert service.once()["state"] == "BUILT"
     assert order == ["canary", "build"]
+
+
+def test_packager_lost_claim_fails_before_commit_push_or_pr(tmp_path):
+    packager = object.__new__(NativePackager)
+    packager.worktree = tmp_path
+    packager.authorization = SimpleNamespace(branch="charlie/mission-native-1",
+        starting_main_sha="a" * 40,
+        allowed_files=("docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md",))
+    packager.token = "not-observed"
+    calls = []
+    packager.heartbeat = lambda: (_ for _ in ()).throw(NativeExecutionError("native_writer_claim_conflict"))
+    packager._git = lambda *args: calls.append(args) or ""
+    packager._push_with_ephemeral_askpass = lambda: calls.append("push")
+    packager._github = lambda *_args: calls.append("github")
+    with pytest.raises(NativeExecutionError, match="native_writer_claim_conflict"):
+        packager.package("title", "body")
+    assert calls == []
+
+
+@pytest.mark.parametrize("admission_rows,expected", [
+    ([{"name": "mission-admission", "conclusion": "success", "app": {"id": 4742997}}], True),
+    ([{"name": "mission-admission", "conclusion": "success", "app": {"id": 15368}}], False),
+    ([{"name": "mission-admission", "conclusion": "success", "app": {"id": 4742997}},
+      {"name": "mission-admission", "conclusion": "success", "app": {"id": 15368}}], False),
+])
+def test_github_observer_requires_unambiguous_admission_guard_app(admission_rows, expected):
+    class Client:
+        def request(self, method, path, query=None):
+            if "/pulls/" in path:
+                return {"draft": True, "head": {"sha": "b" * 40}}
+            other = [{"name": name, "conclusion": "success", "app": {"id": 15368}}
+                     for name in GitHubObserver.REQUIRED if name != "mission-admission"]
+            return {"check_runs": other + admission_rows}
+    state = GitHubObserver(client=Client()).pull_state(1403)
+    assert state["all_required_checks_pass"] is expected
+    assert (state["checks"]["mission-admission"] == "success") is expected
 
 
 def test_systemd_artifact_is_boot_supervised_single_service_without_hermes_dependency():

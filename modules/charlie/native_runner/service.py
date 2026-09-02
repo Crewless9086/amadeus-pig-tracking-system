@@ -163,6 +163,16 @@ class NativeRunnerService:
         })
         return expected
 
+    def _claim_heartbeat(self, mission_id, native_execution_id, claim_id, stage):
+        self._record_progress(mission_id, {
+            "native_execution_id": native_execution_id,
+            "execution_status": "RUNNING",
+            "worker_claim_id": claim_id,
+            "claim_expires_at": (self.clock() + timedelta(minutes=10)).isoformat(),
+            "runner_stage": stage,
+            "event": "native_writer_claimed",
+        })
+
     def once(self, *, dry_run=False):
         with ProcessLock(self.worktree_root / ".charlie-native-runner.lock"):
             rows = self.canonical.resumable()
@@ -198,11 +208,11 @@ class NativeRunnerService:
             existing_native["worker_claim_id"] = claim
             repository, _, _ = validate_primary_repository(self.repository_root, self.worktree_root)
             worktree = self.worktree_root / mission_id / existing_native["generation"] / "native-1"
-            if int(existing_native.get("pr_number") or 0):
-                return self._supervise(mission, existing_native)
             if not self._canary_complete:
                 run_schema_canary(self.model)
                 self._canary_complete = True
+            if int(existing_native.get("pr_number") or 0):
+                return self._supervise(mission, existing_native)
             return self._build(mission, existing_native, repository, worktree)
         if writers != 0:
             raise NativeExecutionError("native_writer_claim_not_released")
@@ -256,8 +266,10 @@ class NativeRunnerService:
             "worker_claim_id": claim, "claim_expires_at": (self.clock() + timedelta(minutes=10)).isoformat(),
             "runner_stage": "builder", "event": "native_writer_claimed",
         })
+        heartbeat = lambda: self._claim_heartbeat(
+            mission["mission_id"], authorization["native_execution_id"], claim, "builder")
         engine = NativeExecutionEngine(HermesStructuredPatchWorker(self.model), repository, worktree,
-                                       authorization)
+                                       authorization, heartbeat=heartbeat)
         recovered = False
         if Path(worktree).exists():
             head = run_argv(["git", "rev-parse", "HEAD"], cwd=worktree)
@@ -286,7 +298,9 @@ class NativeRunnerService:
             "stage_artifact": {"kind": "bounded_verification", "commands": evidence},
             "event": "native_verification_completed",
         }, claim_id=claim)
-        packaged = NativePackager(worktree, authorization, self.packager_token).package(
+        heartbeat()
+        packaged = NativePackager(worktree, authorization, self.packager_token,
+                                  heartbeat=heartbeat).package(
             mission.get("title") or "CHARLIE native mission",
             "Hermes-native structured patch. Draft only; no merge or deployment authority.")
         candidate = {
@@ -375,14 +389,19 @@ class NativeRunnerService:
     def _correct(self, mission, native):
         worktree = self.worktree_root / mission["mission_id"] / native["generation"] / "native-1"
         findings = "; ".join(native.get("review_challenge", {}).get("findings") or [])
+        claim = str(native.get("worker_claim_id") or "")
+        heartbeat = lambda: self._claim_heartbeat(
+            mission["mission_id"], native["native_execution_id"], claim, "correction")
         engine = NativeExecutionEngine(HermesStructuredPatchWorker(self.model), self.repository_root,
-                                       worktree, native)
+                                       worktree, native, heartbeat=heartbeat)
         built = engine.build_patch("Apply only this independent SEND_BACK correction: " + findings,
                                    governance_context=self.canonical.native_context(mission["mission_id"]))
         if built.get("state") != "PATCH_READY":
             raise NativeExecutionError("native_correction_not_ready")
         evidence = engine.verify()
-        packaged = NativePackager(worktree, native, self.packager_token).package(
+        heartbeat()
+        packaged = NativePackager(worktree, native, self.packager_token,
+                                  heartbeat=heartbeat).package(
             mission.get("title") or "CHARLIE native mission",
             "Corrected Hermes-native structured patch. Draft only; no merge or deployment authority.")
         binding = {"pr_number": packaged["pr_number"], "base_sha": native["starting_main_sha"],

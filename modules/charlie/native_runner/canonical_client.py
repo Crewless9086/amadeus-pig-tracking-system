@@ -152,8 +152,22 @@ class GitHubObserver:
         head = str((pull.get("head") or {}).get("sha") or "")
         checks = self.client.request("GET", f"/repos/{self.repository}/commits/{head}/check-runs",
                                      query={"filter": "latest", "per_page": 100})
-        by_name = {str(item.get("name")): item for item in checks.get("check_runs") or []}
-        passed = all(by_name.get(name, {}).get("conclusion") == "success" for name in self.REQUIRED)
+        rows = list(checks.get("check_runs") or [])
+        by_name = {str(item.get("name")): item for item in rows}
+        admission_rows = [item for item in rows if str(item.get("name")) == "mission-admission"]
+        trusted_admission = (
+            len(admission_rows) == 1
+            and int((admission_rows[0].get("app") or {}).get("id") or 0) == 4742997
+            and admission_rows[0].get("conclusion") == "success"
+        )
+        passed = trusted_admission and all(
+            by_name.get(name, {}).get("conclusion") == "success"
+            for name in self.REQUIRED if name != "mission-admission"
+        )
+        conclusions = {name: by_name.get(name, {}).get("conclusion", "missing")
+                       for name in sorted(self.REQUIRED)}
+        if not trusted_admission:
+            conclusions["mission-admission"] = "untrusted_or_ambiguous"
         return {"pr_number": int(number), "head_sha": head, "draft": bool(pull.get("draft")),
-                "checks": {name: by_name.get(name, {}).get("conclusion", "missing") for name in sorted(self.REQUIRED)},
+                "checks": conclusions,
                 "all_required_checks_pass": passed}

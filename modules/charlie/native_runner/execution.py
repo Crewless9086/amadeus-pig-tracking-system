@@ -492,15 +492,18 @@ def execution_lock():
 class NativePackager:
     """Deterministic parent-only commit, branch push and draft-PR packaging."""
 
-    def __init__(self, worktree, authorization, token, *, opener=None):
+    def __init__(self, worktree, authorization, token, *, opener=None, heartbeat=None):
         self.worktree = Path(worktree).resolve(strict=True)
         self.authorization = authorization if isinstance(authorization, NativeAuthorization) else NativeAuthorization.from_mapping(authorization)
         self.token = str(token or "").strip()
         self.opener = opener or urllib.request.urlopen
+        self.heartbeat = heartbeat or (lambda: None)
         if not self.token:
             raise NativeExecutionError("github_packager_token_required")
 
     def package(self, title, body):
+        heartbeat = getattr(self, "heartbeat", lambda: None)
+        heartbeat()
         branch = self._git("branch", "--show-current")
         origin = self._git("remote", "get-url", "origin")
         unstaged = set(filter(None, self._git("diff", "--name-only").splitlines()))
@@ -521,6 +524,7 @@ class NativePackager:
         if ancestor.returncode != 0:
             raise NativeExecutionError("native_packaging_base_invalid")
         if changed:
+            heartbeat()
             added = run_argv(["git", "add", "--", *changed], cwd=self.worktree)
             if added.returncode != 0:
                 raise NativeExecutionError("native_packaging_add_failed")
@@ -534,9 +538,12 @@ class NativePackager:
         if head == self.authorization.starting_main_sha:
             raise NativeExecutionError("native_packaging_no_candidate")
         candidate_files, diff = self._validate_candidate_before_remote(head)
+        heartbeat()
         self._push_with_ephemeral_askpass()
+        heartbeat()
         pull = self._find_pull(branch)
         if not pull:
+            heartbeat()
             pull = self._github("POST", "/repos/Crewless9086/amadeus-pig-tracking-system/pulls", {
                 "title": str(title)[:120], "body": str(body), "head": branch,
                 "base": "main", "draft": True,
