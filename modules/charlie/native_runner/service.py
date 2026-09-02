@@ -173,6 +173,24 @@ class NativeRunnerService:
             "event": "native_writer_claimed",
         })
 
+    def _request_admission(self, mission_id, native, *, stage):
+        result = self.canonical.request_admission(
+            mission_id, native["head_sha"], native["pr_number"])
+        if not isinstance(result, dict) or result.get("success") is not True:
+            raise NativeExecutionError("native_mission_admission_request_failed")
+        self._record_progress(mission_id, {
+            "native_execution_id": native["native_execution_id"],
+            "execution_status": stage, "pr_number": native["pr_number"],
+            "head_sha": native["head_sha"], "changed_files": native["changed_files"],
+            "candidate_diff_sha256": native["candidate_diff_sha256"],
+            "event": "native_mission_admission_requested",
+        }, claim_id=native.get("worker_claim_id"))
+
+    def _trusted_admission_ready(self, native):
+        state = self.github.pull_state(int(native["pr_number"]))
+        return (state.get("head_sha") == native.get("head_sha")
+                and (state.get("checks") or {}).get("mission-admission") == "success")
+
     def once(self, *, dry_run=False):
         with ProcessLock(self.worktree_root / ".charlie-native-runner.lock"):
             rows = self.canonical.resumable()
@@ -325,11 +343,24 @@ class NativeRunnerService:
                 "native_execution_id": native["native_execution_id"], "execution_status": "CANDIDATE_BOUND",
                 **candidate, "event": "native_candidate_bound",
             }, claim_id=native.get("worker_claim_id"))
+            native = {**native, "execution_status": "CANDIDATE_BOUND"}
+        if native.get("execution_status") == "CANDIDATE_BOUND":
+            self._request_admission(mission["mission_id"], native, stage="ADMISSION_PENDING")
+            native = {**native, "execution_status": "ADMISSION_PENDING"}
+        if not self._trusted_admission_ready(native):
+            return self._status(state="ADMISSION_PENDING", mission_id=mission["mission_id"],
+                                native_execution_id=native["native_execution_id"],
+                                branch=native["branch"], pr_number=native["pr_number"],
+                                head_sha=native["head_sha"])
+        self._claim_heartbeat(mission["mission_id"], native["native_execution_id"],
+                              native.get("worker_claim_id"), "challenge_review")
         reviewer = HermesIndependentReviewer(self.model)
         packet = {"candidate": {key: candidate[key] for key in (
             "pr_number", "base_sha", "head_sha", "candidate_diff_sha256", "changed_files")},
             "verification": list(evidence or (native.get("stage_artifact") or {}).get("commands") or [])}
         challenge = reviewer.review("CHALLENGE", packet)
+        self._claim_heartbeat(mission["mission_id"], native["native_execution_id"],
+                              native.get("worker_claim_id"), "challenge_review")
         if challenge.get("verdict") != "SEND_BACK":
             raise NativeExecutionError("commissioning_genuine_send_back_required")
         recorded = self._record_progress(mission["mission_id"], {
@@ -338,15 +369,14 @@ class NativeRunnerService:
             "changed_files": candidate["changed_files"], "candidate_diff_sha256": candidate["candidate_diff_sha256"],
             "review_challenge": challenge, "event": "native_challenge_send_back",
         }, claim_id=native.get("worker_claim_id"))
-        self.canonical.request_admission(mission["mission_id"], candidate["head_sha"], candidate["pr_number"])
         return self._status(state="SEND_BACK", mission_id=mission["mission_id"],
                             native_execution_id=native["native_execution_id"],
                             branch=native["branch"], pr_number=candidate["pr_number"], head_sha=candidate["head_sha"])
 
     def _supervise(self, mission, native):
-        if native.get("execution_status") in {"PACKAGED", "CANDIDATE_BOUND"}:
+        if native.get("execution_status") in {"PACKAGED", "CANDIDATE_BOUND", "ADMISSION_PENDING"}:
             return self._complete_initial_candidate(mission, native)
-        if native.get("execution_status") in {"CORRECTION_PACKAGED", "CORRECTION_BOUND"}:
+        if native.get("execution_status") in {"CORRECTION_PACKAGED", "CORRECTION_BOUND", "CORRECTION_ADMISSION_PENDING"}:
             return self._complete_corrected_candidate(mission, native)
         if (native.get("execution_status") == "SEND_BACK"
                 and int(native.get("correction_rounds") or 0) == 0):
@@ -423,12 +453,29 @@ class NativeRunnerService:
                 "native_execution_id": native["native_execution_id"], "execution_status": "CORRECTION_BOUND",
                 **binding, "event": "native_correction_candidate_bound",
             }, claim_id=native.get("worker_claim_id"))
+            native = {**native, "execution_status": "CORRECTION_BOUND"}
+        if native.get("execution_status") == "CORRECTION_BOUND":
+            self._request_admission(mission["mission_id"], native,
+                                    stage="CORRECTION_ADMISSION_PENDING")
+            native = {**native, "execution_status": "CORRECTION_ADMISSION_PENDING"}
+        if not self._trusted_admission_ready(native):
+            return self._status(state="CORRECTION_ADMISSION_PENDING",
+                                mission_id=mission["mission_id"],
+                                native_execution_id=native["native_execution_id"],
+                                branch=native["branch"], pr_number=native["pr_number"],
+                                head_sha=native["head_sha"])
+        self._claim_heartbeat(mission["mission_id"], native["native_execution_id"],
+                              native.get("worker_claim_id"), "independent_review")
         reviewer = HermesIndependentReviewer(self.model)
         packet = {"candidate": {key: binding[key] for key in (
             "pr_number", "base_sha", "head_sha", "candidate_diff_sha256", "changed_files")},
             "verification": list(evidence or (native.get("stage_artifact") or {}).get("commands") or [])}
         security = reviewer.review("SECURITY", packet)
+        self._claim_heartbeat(mission["mission_id"], native["native_execution_id"],
+                              native.get("worker_claim_id"), "independent_review")
         functional = reviewer.review("FUNCTIONAL", packet)
+        self._claim_heartbeat(mission["mission_id"], native["native_execution_id"],
+                              native.get("worker_claim_id"), "independent_review")
         if security.get("verdict") != functional.get("verdict") or security.get("verdict") != "APPROVE":
             raise NativeExecutionError("native_corrected_review_not_approved")
         self._record_progress(mission["mission_id"], {
@@ -438,7 +485,6 @@ class NativeRunnerService:
             "review_security": security, "review_functional": functional,
             "event": "native_send_back_corrected",
         }, claim_id=native.get("worker_claim_id"))
-        self.canonical.request_admission(mission["mission_id"], binding["head_sha"], binding["pr_number"])
         return self._status(state="CHECKS_PENDING", mission_id=mission["mission_id"],
                             native_execution_id=native["native_execution_id"],
                             branch=binding["branch"], pr_number=binding["pr_number"], head_sha=binding["head_sha"])

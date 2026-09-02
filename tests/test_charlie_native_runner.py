@@ -216,7 +216,7 @@ def test_full_service_orchestration_draft_send_back_correction_mar_checks_notifi
                     "findings": ["Clarify the no-deploy boundary."] if role == "CHALLENGE" else []}
     class Github:
         def pull_state(self, number):
-            return {"pr_number": number, "head_sha": "b" * 40, "draft": True,
+            return {"pr_number": number, "head_sha": bindings[-1]["head_sha"], "draft": True,
                     "checks": {name: "success" for name in __import__("modules.charlie.native_runner.canonical_client", fromlist=["GitHubObserver"]).GitHubObserver.REQUIRED},
                     "all_required_checks_pass": True}
     class Notifier:
@@ -285,9 +285,15 @@ def test_restart_after_local_commit_resumes_packaging_without_second_model_patch
         def review(self, role, packet):
             return {"role": role, "reviewer_task": "charlie_native_challenge_reviewer",
                     "candidate_binding": packet["candidate"], "verdict": "SEND_BACK", "findings": ["one correction"]}
+    class Github:
+        def pull_state(self, number):
+            return {"pr_number": number, "head_sha": "b" * 40,
+                    "checks": {"mission-admission": "success"},
+                    "all_required_checks_pass": False}
     service = object.__new__(NativeRunnerService)
     service.canonical, service.model, service.packager_token = Canonical(), SimpleNamespace(complete_structured=lambda **_: None), "contained"
     service.status_path, service.clock = tmp_path / "status.json", lambda: datetime.now(timezone.utc)
+    service.github = Github()
     mission = {"mission_id": "CHARLIE-MISSION-13B47938FF65E2C1", "title": "docs"}
     authorization = {"native_execution_id": "HNX-1", "starting_main_sha": "a" * 40,
         "branch": "charlie/mission-native-1",
@@ -327,6 +333,10 @@ def test_fresh_services_resume_bound_initial_and_corrected_candidates(tmp_path):
         service.model = SimpleNamespace(complete_structured=lambda **_: None)
         service.status_path = tmp_path / f"status-{len(events)}.json"
         service.clock = lambda: datetime.now(timezone.utc)
+        service.github = SimpleNamespace(pull_state=lambda number: {
+            "pr_number": number, "head_sha": "b" * 40,
+            "checks": {"mission-admission": "success"},
+            "all_required_checks_pass": False})
         return service
     with patch("modules.charlie.native_runner.service.HermesIndependentReviewer", Reviewer):
         first = fresh()._supervise(mission, {**base, "execution_status": "CANDIDATE_BOUND"})
@@ -334,7 +344,38 @@ def test_fresh_services_resume_bound_initial_and_corrected_candidates(tmp_path):
         corrected = fresh()._supervise(mission, {**base, "execution_status": "CORRECTION_BOUND"})
         assert corrected["state"] == "CHECKS_PENDING"
     assert admissions == [("b" * 40, 1402), ("b" * 40, 1402)]
-    assert [event["execution_status"] for event in events] == ["SEND_BACK", "SEND_BACK_CORRECTED"]
+    statuses = [event["execution_status"] for event in events]
+    assert statuses.index("ADMISSION_PENDING") < statuses.index("SEND_BACK")
+    assert statuses.index("CORRECTION_ADMISSION_PENDING") < statuses.index("SEND_BACK_CORRECTED")
+
+
+def test_initial_review_waits_for_exact_head_trusted_admission_across_restart(tmp_path):
+    events, reviews = [], []
+    class Canonical:
+        def progress(self, mission_id, payload): events.append(payload); return payload
+        def request_admission(self, *args): return {"success": True}
+        def bind_candidate(self, *_): raise AssertionError("already bound")
+    service = object.__new__(NativeRunnerService)
+    service.canonical = Canonical()
+    service.github = SimpleNamespace(pull_state=lambda number: {
+        "pr_number": number, "head_sha": "b" * 40,
+        "checks": {"mission-admission": "pending"},
+        "all_required_checks_pass": False})
+    service.model = object()
+    service.status_path = tmp_path / "status.json"
+    service.clock = lambda: datetime.now(timezone.utc)
+    native = {"native_execution_id": "HNX-1", "execution_status": "CANDIDATE_BOUND",
+              "pr_number": 1402, "base_sha": "a" * 40, "head_sha": "b" * 40,
+              "branch": "charlie/mission-native-1", "changed_files": [
+                  "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+              "candidate_diff_sha256": "c" * 64, "worker_claim_id": "HNC-X"}
+    class Reviewer:
+        def __init__(self, *_): reviews.append("constructed")
+    with patch("modules.charlie.native_runner.service.HermesIndependentReviewer", Reviewer):
+        result = service._supervise({"mission_id": "CHARLIE-MISSION-X"}, native)
+    assert result["state"] == "ADMISSION_PENDING"
+    assert reviews == []
+    assert events[0]["execution_status"] == "ADMISSION_PENDING"
 
 
 def test_fresh_service_releases_claim_after_owner_notification_crash_without_reposting(tmp_path):
