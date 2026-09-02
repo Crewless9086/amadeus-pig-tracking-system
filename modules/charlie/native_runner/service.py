@@ -142,6 +142,27 @@ class NativeRunnerService:
             "release_claim_id": claim_id, "event": "native_writer_released",
         })
 
+    @staticmethod
+    def _claim_identity(native_execution_id):
+        return "HNC-" + hashlib.sha256((str(native_execution_id) + ":standalone").encode()).hexdigest()
+
+    def _prove_or_reacquire_claim(self, mission_id, native):
+        """Atomically prove this exact execution owns the canonical writer claim."""
+        native_id = str(native.get("native_execution_id") or "")
+        expected = self._claim_identity(native_id)
+        stored = str(native.get("worker_claim_id") or "")
+        if stored and stored != expected:
+            raise NativeExecutionError("native_writer_identity_conflict")
+        self._record_progress(mission_id, {
+            "native_execution_id": native_id,
+            "execution_status": str(native.get("execution_status") or "RUNNING"),
+            "worker_claim_id": expected,
+            "claim_expires_at": (self.clock() + timedelta(minutes=10)).isoformat(),
+            "runner_stage": str(native.get("runner_stage") or "builder"),
+            "event": "native_writer_claimed",
+        })
+        return expected
+
     def once(self, *, dry_run=False):
         with ProcessLock(self.worktree_root / ".charlie-native-runner.lock"):
             rows = self.canonical.resumable()
@@ -171,12 +192,17 @@ class NativeRunnerService:
         existing_native = dict(metadata.get("hermes_native_execution") or {})
         writers = self.canonical.writers()
         if existing_native:
-            if writers > 1 or (writers == 1 and not existing_native.get("worker_claim_id")):
+            if writers > 1:
                 raise NativeExecutionError("native_writer_identity_conflict")
+            claim = self._prove_or_reacquire_claim(mission_id, existing_native)
+            existing_native["worker_claim_id"] = claim
             repository, _, _ = validate_primary_repository(self.repository_root, self.worktree_root)
             worktree = self.worktree_root / mission_id / existing_native["generation"] / "native-1"
             if int(existing_native.get("pr_number") or 0):
                 return self._supervise(mission, existing_native)
+            if not self._canary_complete:
+                run_schema_canary(self.model)
+                self._canary_complete = True
             return self._build(mission, existing_native, repository, worktree)
         if writers != 0:
             raise NativeExecutionError("native_writer_claim_not_released")
@@ -224,7 +250,7 @@ class NativeRunnerService:
         })
 
     def _build(self, mission, authorization, repository, worktree):
-        claim = "HNC-" + hashlib.sha256((authorization["native_execution_id"] + ":standalone").encode()).hexdigest()
+        claim = self._claim_identity(authorization["native_execution_id"])
         progress = self._record_progress(mission["mission_id"], {
             "native_execution_id": authorization["native_execution_id"], "execution_status": "RUNNING",
             "worker_claim_id": claim, "claim_expires_at": (self.clock() + timedelta(minutes=10)).isoformat(),

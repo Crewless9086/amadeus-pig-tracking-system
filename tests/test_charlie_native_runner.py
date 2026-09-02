@@ -380,8 +380,9 @@ def test_attempt_five_retires_before_fresh_authority_and_one_native_identity(tmp
 def test_once_replay_continues_same_claimed_execution_instead_of_zero_writer_deadlock(tmp_path, monkeypatch):
     canonical = CanonicalFake()
     canonical.retirements = 1
+    expected = NativeRunnerService._claim_identity("HNX-SAME")
     canonical.native = {"native_execution_id": "HNX-SAME", "generation": "g1", "pr_number": 1403,
-                        "worker_claim_id": "HNC-SAME", "execution_status": "SEND_BACK"}
+                        "worker_claim_id": expected, "execution_status": "SEND_BACK"}
     service = NativeRunnerService(profile_home=tmp_path, repository_root=tmp_path,
         worktree_root=tmp_path / "worktrees", canonical=canonical, cursor=CursorFake(),
         github=GithubFake(), model=object())
@@ -392,6 +393,60 @@ def test_once_replay_continues_same_claimed_execution_instead_of_zero_writer_dea
                         or {"state": "CONTINUED"})
     assert service.once()["state"] == "CONTINUED"
     assert calls == ["HNX-SAME"] and canonical.renewals == canonical.prepared == 0
+
+
+def test_resume_rejects_mismatched_stored_claim_before_model_or_packaging(tmp_path, monkeypatch):
+    canonical = CanonicalFake()
+    canonical.retirements = 1
+    canonical.native = {"native_execution_id": "HNX-SAME", "generation": "g1", "pr_number": 1403,
+                        "worker_claim_id": "HNC-STALE", "execution_status": "SEND_BACK"}
+    service = NativeRunnerService(profile_home=tmp_path, repository_root=tmp_path,
+        worktree_root=tmp_path / "worktrees", canonical=canonical, cursor=CursorFake(),
+        github=GithubFake(), model=object())
+    monkeypatch.setattr("modules.charlie.native_runner.service.validate_primary_repository",
+                        lambda *_: (tmp_path, tmp_path / "worktrees", "b" * 40))
+    monkeypatch.setattr(service, "_supervise", lambda *_: pytest.fail("packaging reached"))
+    with pytest.raises(NativeExecutionError, match="native_writer_identity_conflict"):
+        service.once()
+
+
+def test_resume_rejects_other_executions_live_claim_before_model_or_packaging(tmp_path, monkeypatch):
+    class OtherWriterCanonical(CanonicalFake):
+        def writers(self): return 1
+        def progress(self, mission_id, payload):
+            return {"success": False, "status": "native_writer_claim_conflict"}
+    canonical = OtherWriterCanonical()
+    canonical.retirements = 1
+    native_id = "HNX-SAME"
+    canonical.native = {"native_execution_id": native_id, "generation": "g1", "pr_number": 1403,
+                        "worker_claim_id": NativeRunnerService._claim_identity(native_id),
+                        "execution_status": "SEND_BACK"}
+    service = NativeRunnerService(profile_home=tmp_path, repository_root=tmp_path,
+        worktree_root=tmp_path / "worktrees", canonical=canonical, cursor=CursorFake(),
+        github=GithubFake(), model=object())
+    monkeypatch.setattr(service, "_supervise", lambda *_: pytest.fail("packaging reached"))
+    with pytest.raises(NativeExecutionError, match="native_writer_claim_conflict"):
+        service.once()
+
+
+def test_existing_native_build_runs_canary_before_model_after_restart(tmp_path, monkeypatch):
+    canonical = CanonicalFake()
+    canonical.retirements = 1
+    native_id = "HNX-SAME"
+    canonical.native = {"native_execution_id": native_id, "generation": "g1", "pr_number": 0,
+                        "worker_claim_id": NativeRunnerService._claim_identity(native_id),
+                        "execution_status": "RUNNING"}
+    service = NativeRunnerService(profile_home=tmp_path, repository_root=tmp_path,
+        worktree_root=tmp_path / "worktrees", canonical=canonical, cursor=CursorFake(),
+        github=GithubFake(), model=object())
+    monkeypatch.setattr("modules.charlie.native_runner.service.validate_primary_repository",
+                        lambda *_: (tmp_path, tmp_path / "worktrees", "b" * 40))
+    order = []
+    monkeypatch.setattr("modules.charlie.native_runner.service.run_schema_canary",
+                        lambda _: order.append("canary") or {"status": "READY"})
+    monkeypatch.setattr(service, "_build", lambda *_: order.append("build") or {"state": "BUILT"})
+    assert service.once()["state"] == "BUILT"
+    assert order == ["canary", "build"]
 
 
 def test_systemd_artifact_is_boot_supervised_single_service_without_hermes_dependency():
