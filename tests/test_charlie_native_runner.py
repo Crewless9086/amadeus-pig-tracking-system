@@ -20,6 +20,14 @@ except ModuleNotFoundError:  # charlie-core intentionally runs without pytest in
     class _UnittestOnlyPytest:
         mark = _UnittestOnlyMark()
 
+        @staticmethod
+        def raises(exception, *, match=None):
+            return unittest.TestCase().assertRaisesRegex(exception, match or ".*")
+
+        @staticmethod
+        def fail(message="pytest-style failure"):
+            raise AssertionError(message)
+
     pytest = _UnittestOnlyPytest()
 
 from modules.charlie.native_runner.execution import NativeExecutionError, NativePackager
@@ -549,6 +557,21 @@ def test_systemd_artifact_is_boot_supervised_single_service_without_hermes_depen
     assert "-m scripts.charlie_native_runner --watch" in unit
     assert "hermes" not in unit.lower()
     assert "--auto-merge" not in unit and "deploy" not in unit.lower()
+
+
+def test_hosted_unittest_gate_runs_when_pytest_import_is_blocked():
+    code = (
+        "import builtins,unittest; real=builtins.__import__; "
+        "builtins.__import__=lambda name,*a,**k: "
+        "(_ for _ in ()).throw(ModuleNotFoundError(name)) if name=='pytest' else real(name,*a,**k); "
+        "import tests.test_charlie_native_runner as m; "
+        "result=unittest.TextTestRunner(verbosity=0).run("
+        "unittest.defaultTestLoader.loadTestsFromTestCase(m.HostedCharlieNativeRunnerTests)); "
+        "raise SystemExit(0 if result.wasSuccessful() else 1)"
+    )
+    result = subprocess.run([os.sys.executable, "-c", code], capture_output=True,
+                            text=True, shell=False, check=False)
+    assert result.returncode == 0, result.stderr
 
 
 def test_exact_systemd_module_entrypoint_imports_from_repository_root():
