@@ -9,7 +9,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import pytest
+try:
+    import pytest
+except ModuleNotFoundError:  # charlie-core intentionally runs without pytest installed
+    class _UnittestOnlyMark:
+        @staticmethod
+        def parametrize(*_args, **_kwargs):
+            return lambda function: function
+
+    class _UnittestOnlyPytest:
+        mark = _UnittestOnlyMark()
+
+    pytest = _UnittestOnlyPytest()
 
 from modules.charlie.native_runner.execution import NativeExecutionError, NativePackager
 from modules.charlie.native_runner.canonical_client import GitHubObserver
