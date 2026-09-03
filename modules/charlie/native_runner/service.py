@@ -556,6 +556,8 @@ class NativeRunnerService:
 
     def _supervise(self, mission, native):
         self._active_stage = "supervision"
+        if native.get("execution_status") == "CORRECTION_PATCH_INTENT_RECORDED":
+            return self._correct(mission, native)
         if native.get("execution_status") in {"PACKAGED", "CANDIDATE_BOUND", "ADMISSION_PENDING"}:
             return self._complete_initial_candidate(mission, native)
         if native.get("execution_status") in {"CORRECTION_PACKAGED", "CORRECTION_BOUND", "CORRECTION_ADMISSION_PENDING"}:

@@ -447,6 +447,77 @@ def test_recorded_patch_restart_skips_second_model_call(tmp_path, patch_already_
     assert result["state"] == "PACKAGED"
 
 
+@pytest.mark.parametrize("patch_already_applied", [False, True])
+def test_correction_intent_restart_skips_second_model_call(tmp_path, patch_already_applied):
+    mission = {"mission_id": "MISSION-1", "generation": "g1", "title": "doc"}
+    worktree = tmp_path / "worktrees" / "MISSION-1" / "g1" / "native-1"
+    worktree.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=worktree, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "runner@example.invalid"], cwd=worktree, check=True)
+    subprocess.run(["git", "config", "user.name", "Runner"], cwd=worktree, check=True)
+    target = worktree / "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"
+    target.parent.mkdir(parents=True); target.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=worktree, check=True)
+    subprocess.run(["git", "commit", "-m", "candidate"], cwd=worktree, check=True, capture_output=True)
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=worktree, check=True,
+                          capture_output=True, text=True).stdout.strip()
+    target.write_text("after\n", encoding="utf-8")
+    correction = subprocess.run(["git", "diff", "--binary", "--no-ext-diff", "--"], cwd=worktree,
+                                check=True, capture_output=True, text=True).stdout
+    digest = __import__("hashlib").sha256(correction.encode()).hexdigest()
+    intent = {"schema": "charlie_native_patch_intent_v1", "patch": correction,
+              "patch_sha256": digest,
+              "changed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+              "builder_identity": "HNW-CORRECTION", "builder_agent_id": "standalone"}
+    (worktree.parent / ".native-1-correction-patch-intent.json").write_text(
+        json.dumps(intent), encoding="utf-8")
+    if not patch_already_applied:
+        subprocess.run(["git", "checkout", "--", target.relative_to(worktree).as_posix()],
+                       cwd=worktree, check=True, capture_output=True)
+    native = {"mission_id": "MISSION-1", "generation": "g1", "native_execution_id": "HNX-1",
+              "native_attempt": 1, "repository": "Crewless9086/amadeus-pig-tracking-system",
+              "starting_main_sha": base, "branch": "charlie/mission-native-1",
+              "worktree_digest": __import__("hashlib").sha256(str(worktree.resolve()).encode()).hexdigest(),
+              "owner_instruction_digest": "b" * 64,
+              "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+              "allowed_commands": ["git diff --check"], "allowed_effects": ["draft PR"],
+              "forbidden_effects": ["merge", "deploy"],
+              "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "status": "valid",
+              "pr_number": 1330, "head_sha": base, "correction_rounds": 0,
+              "review_challenge": {"findings": ["clarify"]}, "worker_claim_id": "HNC-1",
+              "execution_status": "CORRECTION_PATCH_INTENT_RECORDED",
+              "correction_patch_sha256": digest,
+              "correction_builder_identity": "HNW-CORRECTION",
+              "correction_builder_agent_id": "standalone"}
+    class Engine:
+        def __init__(self, *_args, **_kwargs): pass
+        def build_patch(self, *_args, **_kwargs): pytest.fail("second correction model call")
+        def verify(self): return [{"command": "git diff --check", "returncode": 0}]
+    service = object.__new__(NativeRunnerService)
+    service.repository_root, service.worktree_root = tmp_path, tmp_path / "worktrees"
+    service.model = SimpleNamespace(complete_structured=lambda **_: pytest.fail("second correction model call"))
+    service.packager_token = "contained"
+    service.clock, service._stop_event = lambda: datetime.now(timezone.utc), threading.Event()
+    service.canonical = SimpleNamespace(native_context=lambda _mission: {})
+    service._record_progress = lambda *_args, **_kwargs: {"success": True}
+    service._complete_corrected_candidate = lambda *_args, **_kwargs: {"state": "RECOVERED"}
+    packaged = {"pr_number": 1330, "commit_sha": "c" * 40,
+                "candidate_diff_sha256": "d" * 64, "changed_files": native["allowed_files"],
+                "branch": native["branch"]}
+    with patch("modules.charlie.native_runner.service.NativeExecutionEngine", Engine), \
+         patch("modules.charlie.native_runner.service.NativePackager.package", return_value=packaged):
+        assert service._correct(mission, native)["state"] == "RECOVERED"
+
+
+def test_supervise_routes_recorded_correction_intent_to_recovery(tmp_path):
+    service = object.__new__(NativeRunnerService)
+    service._active_stage = ""
+    service._correct = lambda mission, native: {"state": "CORRECTION_RECOVERY", "id": native["native_execution_id"]}
+    result = service._supervise({"mission_id": "MISSION-1"}, {
+        "native_execution_id": "HNX-1", "execution_status": "CORRECTION_PATCH_INTENT_RECORDED"})
+    assert result == {"state": "CORRECTION_RECOVERY", "id": "HNX-1"}
+
+
 def test_native_runner_imports_with_plugin_package_absent(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "integrations.hermes.charlie_builder", None)
     module = importlib.reload(importlib.import_module("modules.charlie.native_runner.service"))
