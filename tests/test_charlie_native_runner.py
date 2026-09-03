@@ -594,8 +594,10 @@ def test_full_service_orchestration_draft_send_back_correction_mar_checks_notifi
         "allowed_effects": ["draft PR"], "forbidden_effects": ["merge", "deploy"],
         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "status": "valid"}
     with patch("modules.charlie.native_runner.service.NativeExecutionEngine", Engine), \
-         patch("modules.charlie.native_runner.service.NativePackager", Packager), \
-         patch("modules.charlie.native_runner.service.HermesIndependentReviewer", Reviewer):
+             patch("modules.charlie.native_runner.service.NativePackager", Packager), \
+             patch("modules.charlie.native_runner.service.HermesIndependentReviewer", Reviewer), \
+             patch("modules.charlie.native_runner.service.run_argv",
+                   return_value=SimpleNamespace(returncode=0, stdout="", stderr="")):
         first = service._build(mission, authorization, tmp_path, tmp_path / "worktree")
         assert first["state"] == "SEND_BACK" and admissions == [("a" * 40, 1400)]
         native = {**authorization, "execution_status": "SEND_BACK", "pr_number": 1400, "head_sha": "a" * 40,

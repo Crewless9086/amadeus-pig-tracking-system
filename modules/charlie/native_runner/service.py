@@ -163,10 +163,12 @@ class NativeRunnerService:
             self._remote_mutation = True
 
     @staticmethod
-    def _patch_intent_path(worktree):
-        return Path(worktree).parent / ".native-1-patch-intent.json"
+    def _patch_intent_path(worktree, stage="builder"):
+        suffix = "correction-patch-intent" if stage == "correction" else "patch-intent"
+        return Path(worktree).parent / f".native-1-{suffix}.json"
 
-    def _persist_patch_intent(self, mission_id, authorization, worktree, response, patch, paths):
+    def _persist_patch_intent(self, mission_id, authorization, worktree, response, patch, paths,
+                              *, stage="builder"):
         encoded = str(patch).encode("utf-8")
         digest = hashlib.sha256(encoded).hexdigest()
         record = {
@@ -175,7 +177,7 @@ class NativeRunnerService:
             "builder_identity": response.get("worker_identity"),
             "builder_agent_id": response.get("worker_agent_id"),
         }
-        target = self._patch_intent_path(worktree)
+        target = self._patch_intent_path(worktree, stage)
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".tmp")
         temporary.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
@@ -184,26 +186,33 @@ class NativeRunnerService:
         except OSError:
             pass
         os.replace(temporary, target)
+        digest_field = "correction_patch_sha256" if stage == "correction" else "patch_sha256"
+        identity_field = "correction_builder_identity" if stage == "correction" else "builder_identity"
+        agent_field = "correction_builder_agent_id" if stage == "correction" else "builder_agent_id"
         self._record_progress(mission_id, {
             "native_execution_id": authorization["native_execution_id"],
-            "execution_status": "PATCH_INTENT_RECORDED", "patch_sha256": digest,
-            "changed_files": list(paths), "builder_identity": response.get("worker_identity"),
-            "builder_agent_id": response.get("worker_agent_id"),
-            "event": "native_patch_intent_recorded",
+            "execution_status": ("CORRECTION_PATCH_INTENT_RECORDED" if stage == "correction"
+                                 else "PATCH_INTENT_RECORDED"), digest_field: digest,
+            "changed_files": list(paths), identity_field: response.get("worker_identity"),
+            agent_field: response.get("worker_agent_id"),
+            "event": ("native_correction_patch_intent_recorded" if stage == "correction"
+                      else "native_patch_intent_recorded"),
         }, claim_id=authorization.get("worker_claim_id"))
 
-    def _recover_patch_intent(self, authorization, worktree, *, applied=True):
-        target = self._patch_intent_path(worktree)
+    def _recover_patch_intent(self, authorization, worktree, *, applied=True, stage="builder"):
+        target = self._patch_intent_path(worktree, stage)
         try:
             record = json.loads(target.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError) as exc:
             raise NativeExecutionError("native_dirty_patch_provenance_missing") from exc
         patch = str(record.get("patch") or "")
         digest = hashlib.sha256(patch.encode("utf-8")).hexdigest()
+        digest_field = "correction_patch_sha256" if stage == "correction" else "patch_sha256"
+        identity_field = "correction_builder_identity" if stage == "correction" else "builder_identity"
         if (record.get("schema") != "charlie_native_patch_intent_v1"
                 or digest != record.get("patch_sha256")
-                or digest != authorization.get("patch_sha256")
-                or record.get("builder_identity") != authorization.get("builder_identity")):
+                or digest != authorization.get(digest_field)
+                or record.get("builder_identity") != authorization.get(identity_field)):
             raise NativeExecutionError("native_dirty_patch_provenance_invalid")
         if applied:
             current = run_argv(["git", "diff", "--binary", "--no-ext-diff", "--"], cwd=worktree)
@@ -599,11 +608,31 @@ class NativeRunnerService:
         claim = str(native.get("worker_claim_id") or "")
         heartbeat = lambda: self._lifecycle_heartbeat(
             mission["mission_id"], native["native_execution_id"], claim, "correction")
-        engine = NativeExecutionEngine(HermesStructuredPatchWorker(self.model), self.repository_root,
-                                       worktree, native, heartbeat=heartbeat)
-        self._ensure_running()
-        built = engine.build_patch("Apply only this independent SEND_BACK correction: " + findings,
-                                   governance_context=self.canonical.native_context(mission["mission_id"]))
+        self._active_worktree = Path(worktree)
+        engine = NativeExecutionEngine(
+            HermesStructuredPatchWorker(self.model), self.repository_root, worktree, native,
+            heartbeat=heartbeat,
+            patch_intent=lambda response, patch, paths: self._persist_patch_intent(
+                mission["mission_id"], native, worktree, response, patch, paths, stage="correction"))
+        dirty = run_argv(["git", "status", "--porcelain"], cwd=worktree)
+        if dirty.returncode:
+            raise NativeExecutionError("native_correction_recovery_unavailable")
+        recovered = False
+        if native.get("correction_patch_sha256"):
+            intent = self._recover_patch_intent(
+                native, worktree, applied=bool(dirty.stdout.strip()), stage="correction")
+            if not dirty.stdout.strip():
+                PatchValidator(worktree, native["allowed_files"]).apply(intent["patch"])
+            self._observe_mutation("repository")
+            built = {"state": "PATCH_READY", "changed_files": intent["changed_files"],
+                     "worker_identity": intent["builder_identity"],
+                     "worker_agent_id": intent.get("builder_agent_id")}
+            recovered = True
+        if not recovered:
+            self._ensure_running()
+            built = engine.build_patch("Apply only this independent SEND_BACK correction: " + findings,
+                                       governance_context=self.canonical.native_context(mission["mission_id"]))
+            self._observe_mutation("repository")
         if built.get("state") != "PATCH_READY":
             raise NativeExecutionError("native_correction_not_ready")
         self._ensure_running()

@@ -2221,6 +2221,8 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
                "admission_requested_head", "owner_notification_head", "candidate_diff_sha256", "review_security",
                "review_functional", "review_challenge", "review_request_roles", "runner_stage", "stage_artifact",
                "builder_identity", "builder_agent_id", "patch_sha256",
+               "correction_builder_identity", "correction_builder_agent_id",
+               "correction_patch_sha256",
                "repository_mutation", "remote_mutation"}
     if not mission_id or not principal or not state or set(state) - allowed:
         return {"success": False, "status": "native_execution_state_invalid"}, 400
