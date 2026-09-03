@@ -1,0 +1,24 @@
+[Unit]
+Description=CHARLIE standalone native runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=charlie-runner
+Group=charlie-runner
+WorkingDirectory=/srv/charlie/repository
+ExecStart=/srv/charlie/venv/bin/python -m scripts.charlie_native_runner --watch --poll-seconds 15 --profile-home /opt/data --config-file /etc/charlie-native-runner.env --repository-root /srv/charlie/repository --worktree-root /srv/charlie/worktrees
+Restart=on-failure
+RestartSec=10s
+StartLimitIntervalSec=300
+StartLimitBurst=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/charlie/repository /srv/charlie/worktrees
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

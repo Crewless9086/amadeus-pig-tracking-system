@@ -1,5 +1,29 @@
 # Vault Brain Changelog
 
+## 2026-09-03 - Render worker boundary for CHARLIE native runner
+
+- Added a separately billed, single-instance Render Background Worker Blueprint
+  with a 10 GB persistent disk, manual deployment, exact-revision repository
+  bootstrap, allowlisted protected configuration, and graceful SIGTERM handling.
+- Recorded the USD 27.50/month compute-plus-disk cost and retained the dedicated
+  systemd host as a fallback instead of requiring an immediate VPS purchase.
+- Bound the adapter to Hermes v0.20.6's real OpenAI-compatible response and
+  route-info contract, pinned the provider/model and retry budget, made the
+  Cursor credential retirement-only, and added durable BLOCKED_HOLD reporting
+  plus dirty-patch restart recovery without another model call.
+- Clarified that USD 27.50 is the minimum infrastructure subtotal; model use,
+  bandwidth, existing workspace charges, and future scaling remain separate.
+
+## 2026-09-02 - Standalone CHARLIE native runner boundary
+
+- Removed mission execution and recovery from the Hermes directory-plugin
+  critical path by introducing one canonical, independently supervised native
+  runner.
+- Reused the existing isolated-worktree, structured-patch, draft packaging,
+  exact-candidate admission, role-isolated review, and notification contracts.
+- Added a no-tool adapter for Hermes v0.20.6 auxiliary inference and a hardened
+  systemd deployment boundary with no merge or deployment capability.
+
 ## 2026-08-31 - Self-contained CHARLIE-BUILDER plugin recovery
 
 - Removed application-root imports from the installed Hermes plugin. Native

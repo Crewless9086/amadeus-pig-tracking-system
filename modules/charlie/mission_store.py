@@ -2220,7 +2220,10 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
                "correction_rounds", "worker_claim_id", "claim_expires_at", "release_claim_id",
                "admission_requested_head", "owner_notification_head", "candidate_diff_sha256", "review_security",
                "review_functional", "review_challenge", "review_request_roles", "runner_stage", "stage_artifact",
-               "builder_identity", "builder_agent_id"}
+               "builder_identity", "builder_agent_id", "patch_sha256",
+               "correction_builder_identity", "correction_builder_agent_id",
+               "correction_patch_sha256",
+               "repository_mutation", "remote_mutation"}
     if not mission_id or not principal or not state or set(state) - allowed:
         return {"success": False, "status": "native_execution_state_invalid"}, 400
     database_url = _database_url(database_url)
@@ -2238,6 +2241,12 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
                 current = dict(metadata.get("hermes_native_execution") or {})
                 if not current or state.get("native_execution_id") != current.get("native_execution_id"):
                     return {"success": False, "status": "native_execution_identity_conflict"}, 409
+                if (state.get("event") == "native_runner_blocked"
+                        and current.get("event") == "native_runner_blocked"
+                        and current.get("failure_reason") == state.get("failure_reason")
+                        and current.get("runner_stage") == state.get("runner_stage")):
+                    return {"success": True, "status": "native_execution_state_replayed",
+                            "authorization": current}, 200
                 claim_id = _clean_text(state.get("worker_claim_id"), 120)
                 release_id = _clean_text(state.get("release_claim_id"), 120)
                 existing_claim = _clean_text(current.get("worker_claim_id"), 120)
@@ -2281,6 +2290,62 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
                 "error_type": exc.__class__.__name__}, 503
     return {"success": True, "status": "native_execution_state_recorded",
             "authorization": merged}, 201
+
+
+def record_native_runner_blocker(mission_id, blocker, *, authenticated_principal,
+                                 database_url=None, connect_factory=None):
+    """Record one idempotent, credential-free standalone-runner blocker."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    blocker = blocker if isinstance(blocker, dict) else {}
+    allowed = {"reason", "stage", "generation", "authority_identity", "runner_revision",
+               "repository_mutation", "remote_mutation", "notification_identity"}
+    if (not mission_id or principal != "hermes:charlie-builder" or not blocker
+            or set(blocker) - allowed
+            or not isinstance(blocker.get("repository_mutation"), bool)
+            or not isinstance(blocker.get("remote_mutation"), bool)
+            or (blocker.get("remote_mutation") and not blocker.get("repository_mutation"))):
+        return {"success": False, "status": "native_runner_blocker_invalid"}, 400
+    bounded = {key: _clean_text(blocker.get(key), 200) for key in
+               ("reason", "stage", "generation", "authority_identity",
+                "runner_revision", "notification_identity")}
+    if not bounded["reason"] or not bounded["stage"]:
+        return {"success": False, "status": "native_runner_blocker_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("native_runner_blocker") or {})
+                if current.get("notification_identity") == bounded["notification_identity"]:
+                    return {"success": True, "status": "native_runner_blocker_replayed",
+                            "blocker": current}, 200
+                recorded = {**bounded,
+                            "repository_mutation": blocker["repository_mutation"],
+                            "remote_mutation": blocker["remote_mutation"],
+                            "event": "native_runner_blocked", "recorded_by": principal,
+                            "recorded_at": datetime.now(timezone.utc).isoformat()}
+                metadata["native_runner_blocker"] = recorded
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated", "CHARLIE native runner blocked.",
+                              {"reason": bounded["reason"], "stage": bounded["stage"],
+                               "notification_identity": bounded["notification_identity"],
+                               "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "native_runner_blocker_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "native_runner_blocker_recorded",
+            "blocker": recorded}, 201
 
 
 def list_resumable_hermes_native_executions(*, authenticated_principal,

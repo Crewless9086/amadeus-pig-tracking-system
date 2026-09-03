@@ -1330,6 +1330,18 @@ def charlie_hermes_native_execution_progress_route(mission_id):
     return jsonify(result), status
 
 
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-runner/blocker", methods=["POST"])
+def charlie_hermes_native_runner_blocker_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    from modules.charlie.mission_store import record_native_runner_blocker
+    result, status = record_native_runner_blocker(
+        mission_id, request.get_json(silent=True) or {},
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
 @charlie_bp.route("/charlie/cursor/hooks/authorize", methods=["POST"])
 def charlie_cursor_hook_authorize_route():
     """Authorize one managed Cursor hook operation from signed runtime identity."""
