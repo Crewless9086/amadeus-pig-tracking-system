@@ -4,10 +4,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+RUN git clone --filter=blob:none https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
+    && git -C /opt/hermes-agent checkout --detach 5fc308a70719a83cccdbba4c0e39c23f5a8239d5 \
+    && test "$(git -C /opt/hermes-agent rev-parse HEAD)" = "5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
+
 WORKDIR /opt/charlie
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir "git+https://github.com/NousResearch/hermes-agent.git@5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
+    && pip install --no-cache-dir --editable /opt/hermes-agent
 COPY . .
 
 CMD ["python", "scripts/charlie_render_native_runner.py"]

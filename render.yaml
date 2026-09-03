@@ -8,7 +8,6 @@ services:
     numInstances: 1
     autoDeployTrigger: off
     maxShutdownDelaySeconds: 300
-    notificationOverride: failure
     dockerfilePath: ./deploy/charlie-native-runner/Dockerfile.render
     dockerContext: .
     disk:
