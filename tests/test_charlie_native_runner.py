@@ -115,7 +115,9 @@ def test_render_blueprint_is_one_paid_worker_with_one_persistent_disk():
     assert "notificationOverride:" not in text
     dockerfile = Path("deploy/charlie-native-runner/Dockerfile.render").read_text(encoding="utf-8")
     assert "python:3.12-slim@sha256:" in dockerfile
-    assert "HERMES_AGENT_REVISION=5fc308a70719a83cccdbba4c0e39c23f5a8239d5" in dockerfile
+    assert "ARG HERMES_AGENT_REVISION" not in dockerfile
+    assert dockerfile.count("5fc308a70719a83cccdbba4c0e39c23f5a8239d5") == 2
+    assert "git -C /opt/hermes-agent rev-parse HEAD" in dockerfile
     assert "pip install --no-cache-dir --editable /opt/hermes-agent" in dockerfile
     assert 'git+https://github.com/NousResearch/hermes-agent.git@' not in dockerfile
     ignored = Path(".dockerignore").read_text(encoding="utf-8").splitlines()

@@ -4,9 +4,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-ARG HERMES_AGENT_REVISION=5fc308a70719a83cccdbba4c0e39c23f5a8239d5
 RUN git clone --filter=blob:none https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
-    && git -C /opt/hermes-agent checkout --detach "$HERMES_AGENT_REVISION"
+    && git -C /opt/hermes-agent checkout --detach 5fc308a70719a83cccdbba4c0e39c23f5a8239d5 \
+    && test "$(git -C /opt/hermes-agent rev-parse HEAD)" = "5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
 
 WORKDIR /opt/charlie
 COPY requirements.txt .
