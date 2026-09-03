@@ -80,6 +80,11 @@ class CanonicalClient:
         result = self.client.request("POST", f"/charlie/hermes/missions/{self._mission(mission_id)}/native-execution/progress", payload)
         return result.get("authorization") or result
 
+    def blocker(self, mission_id, payload):
+        return self.client.request(
+            "POST", f"/charlie/hermes/missions/{self._mission(mission_id)}/native-runner/blocker",
+            payload)
+
     def bind_candidate(self, mission_id, payload):
         return self.client.request("POST", f"/charlie/build-relay/missions/{self._mission(mission_id)}/external-candidate", payload)
 

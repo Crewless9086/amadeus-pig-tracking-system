@@ -7,6 +7,12 @@
   bootstrap, allowlisted protected configuration, and graceful SIGTERM handling.
 - Recorded the USD 27.50/month compute-plus-disk cost and retained the dedicated
   systemd host as a fallback instead of requiring an immediate VPS purchase.
+- Bound the adapter to Hermes v0.20.6's real OpenAI-compatible response and
+  route-info contract, pinned the provider/model and retry budget, made the
+  Cursor credential retirement-only, and added durable BLOCKED_HOLD reporting
+  plus dirty-patch restart recovery without another model call.
+- Clarified that USD 27.50 is the minimum infrastructure subtotal; model use,
+  bandwidth, existing workspace charges, and future scaling remain separate.
 
 ## 2026-09-02 - Standalone CHARLIE native runner boundary
 

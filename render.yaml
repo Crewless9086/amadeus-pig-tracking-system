@@ -8,6 +8,7 @@ services:
     numInstances: 1
     autoDeployTrigger: off
     maxShutdownDelaySeconds: 300
+    notificationOverride: failure
     dockerfilePath: ./deploy/charlie-native-runner/Dockerfile.render
     dockerContext: .
     disk:
@@ -37,3 +38,7 @@ services:
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: CHARLIE_NATIVE_MODEL_PROVIDER
+        value: openrouter
+      - key: CHARLIE_NATIVE_MODEL
+        value: openai/gpt-5-mini

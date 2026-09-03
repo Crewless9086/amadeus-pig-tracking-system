@@ -22,8 +22,10 @@ REQUIRED_NAMES = (
     "CHARLIE_CANONICAL_API_URL", "CHARLIE_HERMES_GATEWAY_TOKEN", "SLACK_BOT_TOKEN",
     "CHARLIE_SLACK_OWNER_USER_ID", "CHARLIE_SLACK_CHARLIE_CHANNEL_ID",
     "CHARLIE_SLACK_BUILD_CHANNEL_ID", "CHARLIE_SLACK_APPROVALS_CHANNEL_ID",
-    "CURSOR_API_KEY", "CHARLIE_GITHUB_PACKAGER_TOKEN",
+    "CHARLIE_GITHUB_PACKAGER_TOKEN",
 )
+OPTIONAL_NAMES = ("CURSOR_API_KEY", "CHARLIE_GITHUB_READ_TOKEN",
+                  "CHARLIE_NATIVE_MODEL_PROVIDER", "CHARLIE_NATIVE_MODEL")
 BROAD_GITHUB_NAMES = ("CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
 RUNNER_SECRET_NAMES = (
     "CHARLIE_HERMES_GATEWAY_TOKEN", "SLACK_BOT_TOKEN", "CURSOR_API_KEY",
@@ -36,7 +38,7 @@ def read_profile_values(profile_home, names=REQUIRED_NAMES, *, config_path=None)
     dotenv = Path(config_path).resolve(strict=True) if config_path else home / ".env"
     if not dotenv.is_file():
         raise NativeExecutionError("native_profile_configuration_unavailable")
-    wanted = set(names) | set(BROAD_GITHUB_NAMES) | {"CHARLIE_GITHUB_READ_TOKEN"}
+    wanted = set(names) | set(BROAD_GITHUB_NAMES) | set(OPTIONAL_NAMES)
     values = {}
     for line in dotenv.read_text(encoding="utf-8").splitlines():
         raw = line.strip()
@@ -65,7 +67,7 @@ def read_environment_values(names=REQUIRED_NAMES, *, environ=None):
     if broad:
         raise NativeExecutionError("broad_github_credential_forbidden:" + ",".join(broad))
     values = {name: str(source.get(name) or "").strip()
-              for name in set(names) | {"CHARLIE_GITHUB_READ_TOKEN"}}
+              for name in set(names) | set(OPTIONAL_NAMES)}
     missing = [name for name in names if not values.get(name)]
     if missing:
         raise NativeExecutionError("native_protected_configuration_missing:" + ",".join(missing))
@@ -133,16 +135,22 @@ class NativeRunnerService:
         else:
             values = {}
         self.canonical = canonical or CanonicalClient(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"])
-        self.cursor = cursor or (CursorRetirementClient(values["CURSOR_API_KEY"]) if values else None)
+        self.cursor = cursor or (CursorRetirementClient(values.get("CURSOR_API_KEY", ""))
+                                 if values.get("CURSOR_API_KEY") else None)
         read_token = values.get("CHARLIE_GITHUB_READ_TOKEN", "") if values else ""
         self.github = github or GitHubObserver(read_token)
         self.notifier = notifier or (SlackNotifier(values["SLACK_BOT_TOKEN"]) if values else None)
-        self.model = model or HermesAuxiliaryModel(profile_home=self.profile_home)
+        self.model = model or HermesAuxiliaryModel(
+            profile_home=self.profile_home,
+            provider=values.get("CHARLIE_NATIVE_MODEL_PROVIDER") or "openrouter",
+            model=values.get("CHARLIE_NATIVE_MODEL") or "openai/gpt-5-mini")
         self.packager_token = values.get("CHARLIE_GITHUB_PACKAGER_TOKEN", "") if values else "test-only"
         self.slack_approval_channel = values.get("CHARLIE_SLACK_APPROVALS_CHANNEL_ID", "") if values else "C-APPROVALS"
         self.status_path = Path(status_path or (self.worktree_root / ".runner-status.json"))
         self._canary_complete = False
         self._stop_event = threading.Event()
+        self._active_mission_id = ""
+        self._active_stage = "discovery"
 
     def _ensure_running(self):
         if getattr(self, "_stop_event", None) is not None and self._stop_event.is_set():
@@ -243,6 +251,7 @@ class NativeRunnerService:
                 raise NativeExecutionError("native_resumable_mission_invalid")
             if dry_run:
                 return self._status(state="DRY_RUN", mission_id=mission_id)
+            self._active_mission_id = mission_id
             return self._process(mission_id)
 
     def _process(self, mission_id):
@@ -252,7 +261,14 @@ class NativeRunnerService:
         metadata = dict(mission.get("metadata") or {})
         retirement = dict(metadata.get("cursor_provider_retirement") or {})
         if not retirement:
+            # Prove the exact installed Hermes route before any Cursor
+            # cancellation/archive or canonical retirement.
+            if not self._canary_complete:
+                self._active_stage = "model_canary"
+                run_schema_canary(self.model)
+                self._canary_complete = True
             self._ensure_running()
+            self._active_stage = "cursor_retirement"
             retirement = self._retire_attempt_five(mission_id, metadata)
         if retirement.get("provider_status") != "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT":
             raise NativeExecutionError("cursor_attempt_five_retirement_unproven")
@@ -269,6 +285,7 @@ class NativeRunnerService:
             repository, _, _ = validate_primary_repository(self.repository_root, self.worktree_root)
             worktree = self.worktree_root / mission_id / existing_native["generation"] / "native-1"
             if not self._canary_complete:
+                self._active_stage = "model_canary"
                 run_schema_canary(self.model)
                 self._canary_complete = True
             if int(existing_native.get("pr_number") or 0):
@@ -276,6 +293,10 @@ class NativeRunnerService:
             return self._build(mission, existing_native, repository, worktree)
         if writers != 0:
             raise NativeExecutionError("native_writer_claim_not_released")
+        if not self._canary_complete:
+            self._active_stage = "model_canary"
+            run_schema_canary(self.model)
+            self._canary_complete = True
         authorization = self.canonical.renew_authority(mission_id)
         if authorization.get("status") != "valid" or authorization.get("version") != "charlie_pre_dispatch_authorization_v2":
             raise NativeExecutionError("fresh_native_dispatch_authorization_required")
@@ -287,10 +308,6 @@ class NativeRunnerService:
         native = self.canonical.prepare_native(mission_id, digest, main_sha)
         if native.get("native_execution_id") != native_id or native.get("branch") != branch:
             raise NativeExecutionError("native_execution_identity_conflict")
-        if not self._canary_complete and not int(native.get("pr_number") or 0):
-            self._ensure_running()
-            run_schema_canary(self.model)
-            self._canary_complete = True
         if int(native.get("pr_number") or 0):
             return self._supervise(mission, native)
         return self._build(mission, native, repository, worktree)
@@ -298,8 +315,10 @@ class NativeRunnerService:
     def _retire_attempt_five(self, mission_id, metadata):
         self._ensure_running()
         state = dict(metadata.get("external_supervisor_state") or {})
-        if int(state.get("execution_attempt") or 0) != 5 or self.cursor is None:
+        if int(state.get("execution_attempt") or 0) != 5:
             raise NativeExecutionError("cursor_attempt_five_identity_incomplete")
+        if self.cursor is None:
+            raise NativeExecutionError("cursor_api_key_required_for_attempt_five_retirement")
         agent_id, run_id, branch = (str(state.get(key) or "") for key in ("cursor_agent_id", "cursor_run_id", "branch"))
         agent, run = self.cursor.get_agent(agent_id), self.cursor.get_run(agent_id, run_id)
         run_state = str(run.get("status") or "").upper()
@@ -323,6 +342,7 @@ class NativeRunnerService:
 
     def _build(self, mission, authorization, repository, worktree):
         self._ensure_running()
+        self._active_stage = "builder"
         claim = self._claim_identity(authorization["native_execution_id"])
         progress = self._record_progress(mission["mission_id"], {
             "native_execution_id": authorization["native_execution_id"], "execution_status": "RUNNING",
@@ -334,6 +354,7 @@ class NativeRunnerService:
         engine = NativeExecutionEngine(HermesStructuredPatchWorker(self.model), repository, worktree,
                                        authorization, heartbeat=heartbeat)
         recovered = False
+        recovered_dirty = False
         if Path(worktree).exists():
             head = run_argv(["git", "rev-parse", "HEAD"], cwd=worktree)
             dirty = run_argv(["git", "status", "--porcelain"], cwd=worktree)
@@ -343,18 +364,34 @@ class NativeRunnerService:
                 if dirty.stdout.strip() or not authorization.get("builder_identity"):
                     raise NativeExecutionError("native_packaging_recovery_unproven")
                 recovered = True
+            elif dirty.stdout.strip():
+                changed = run_argv(["git", "diff", "--name-only", "--"], cwd=worktree)
+                summary = run_argv(["git", "diff", "--summary", "--"], cwd=worktree)
+                checked = run_argv(["git", "diff", "--check"], cwd=worktree)
+                actual = sorted(filter(None, changed.stdout.splitlines()))
+                if (changed.returncode or summary.returncode or checked.returncode
+                        or set(actual) - set(authorization["allowed_files"])
+                        or any(word in summary.stdout.lower() for word in
+                               ("mode change", "rename", "delete", "create mode"))):
+                    raise NativeExecutionError("native_dirty_patch_recovery_conflict")
+                recovered = True
+                recovered_dirty = True
         if recovered:
+            identity = authorization.get("builder_identity")
+            if recovered_dirty and not identity:
+                patch = run_argv(["git", "diff", "--binary", "--no-ext-diff", "--"], cwd=worktree)
+                identity = "HNW-RECOVERY-" + hashlib.sha256(patch.stdout.encode()).hexdigest()
             built = {"state": "PATCH_READY", "changed_files": list(authorization["allowed_files"]),
-                     "worker_identity": authorization.get("builder_identity"),
-                     "worker_agent_id": authorization.get("builder_agent_id")}
+                     "worker_identity": identity,
+                     "worker_agent_id": authorization.get("builder_agent_id") or "standalone"}
         else:
             self._ensure_running()
             built = engine.build_patch(mission.get("raw_text") or mission.get("title"),
                                        governance_context=self.canonical.native_context(mission["mission_id"]))
             if built.get("state") != "PATCH_READY":
-                self._release_claim(mission["mission_id"], authorization["native_execution_id"], claim, "BLOCKED")
-                return self._status(state="BLOCKED", mission_id=mission["mission_id"], reason=built.get("reason"))
+                raise NativeExecutionError("native_model_blocked")
         self._ensure_running()
+        self._active_stage = "verification"
         evidence = engine.verify()
         self._record_progress(mission["mission_id"], {
             "native_execution_id": authorization["native_execution_id"], "execution_status": "VERIFIED",
@@ -365,6 +402,7 @@ class NativeRunnerService:
         }, claim_id=claim)
         heartbeat()
         self._ensure_running()
+        self._active_stage = "packaging"
         packaged = NativePackager(worktree, authorization, self.packager_token,
                                   heartbeat=heartbeat).package(
             mission.get("title") or "CHARLIE native mission",
@@ -427,6 +465,7 @@ class NativeRunnerService:
                             branch=native["branch"], pr_number=candidate["pr_number"], head_sha=candidate["head_sha"])
 
     def _supervise(self, mission, native):
+        self._active_stage = "supervision"
         if native.get("execution_status") in {"PACKAGED", "CANDIDATE_BOUND", "ADMISSION_PENDING"}:
             return self._complete_initial_candidate(mission, native)
         if native.get("execution_status") in {"CORRECTION_PACKAGED", "CORRECTION_BOUND", "CORRECTION_ADMISSION_PENDING"}:
@@ -473,6 +512,7 @@ class NativeRunnerService:
 
     def _correct(self, mission, native):
         self._ensure_running()
+        self._active_stage = "correction"
         worktree = self.worktree_root / mission["mission_id"] / native["generation"] / "native-1"
         findings = "; ".join(native.get("review_challenge", {}).get("findings") or [])
         claim = str(native.get("worker_claim_id") or "")
@@ -554,24 +594,118 @@ class NativeRunnerService:
                             native_execution_id=native["native_execution_id"],
                             branch=binding["branch"], pr_number=binding["pr_number"], head_sha=binding["head_sha"])
 
+    def _blocker_identity(self, mission_id, reason):
+        generation = authority = resume = ""
+        if mission_id:
+            try:
+                mission = dict((self.canonical.mission(mission_id) or {}).get("mission") or {})
+                metadata = dict(mission.get("metadata") or {})
+                generation = str(mission.get("generation") or metadata.get("generation") or "")
+                auth = dict(metadata.get("dispatch_authorization") or {})
+                authority = str(auth.get("authorization_id") or auth.get("issued_at") or "")
+                resume = str(metadata.get("native_runner_resume_identity") or "")
+            except Exception:
+                resume = ""
+        revision = str(os.environ.get("RENDER_GIT_COMMIT") or "local")
+        raw = "|".join((mission_id, generation, authority, revision, resume, reason))
+        return hashlib.sha256(raw.encode()).hexdigest(), generation, authority, revision
+
+    def _report_blocker(self, mission_id, reason, repeated):
+        stage = str(self._active_stage or "execution")
+        fingerprint, generation, authority, revision = self._blocker_identity(mission_id, reason)
+        state = self._status(state="BLOCKED_HOLD" if repeated >= 2 else "BLOCKED",
+                             mission_id=mission_id, reason=reason, stage=stage,
+                             repeated=repeated, blocker_fingerprint=fingerprint,
+                             generation=generation, authority_identity=authority,
+                             runner_revision=revision, repository_mutation=False,
+                             remote_mutation=False)
+        if repeated == 1 and mission_id:
+            try:
+                loaded = self.canonical.mission(mission_id)
+                mission = dict(loaded.get("mission") or {})
+                metadata = dict(mission.get("metadata") or {})
+                external = dict(metadata.get("external_supervisor_state") or {})
+                text = (f"Mission {mission_id} blocked at {stage}: {reason}. "
+                        "repository_mutation=false remote_mutation=false")
+                self.canonical.blocker(mission_id, {
+                    "reason": reason, "stage": stage, "generation": generation,
+                    "authority_identity": authority, "runner_revision": revision,
+                    "repository_mutation": False, "remote_mutation": False,
+                    "notification_identity": fingerprint,
+                })
+                if self.notifier:
+                    self.notifier.post(external.get("slack_channel_id"), text,
+                        thread_ts=external.get("slack_thread_ts", ""),
+                        idempotency_key=f"{mission_id}:{fingerprint}:blocked-thread")
+                    self.notifier.post(metadata.get("slack_approval_channel_id") or self.slack_approval_channel,
+                        text, idempotency_key=f"{mission_id}:{fingerprint}:blocked-approvals")
+            except Exception:
+                # Reporting failure is itself bounded in local durable state;
+                # never expose transport bodies or restart the model loop.
+                state = self._status(**{**state, "state": "BLOCKED_HOLD",
+                                       "reporting": "bounded_notification_failed"})
+        return state
+
+    @staticmethod
+    def _bounded_reason(exc):
+        if isinstance(exc, NativeExecutionError):
+            return str(exc).split(":", 1)[0]
+        name = exc.__class__.__name__.lower()
+        if "json" in name or "schema" in name or isinstance(exc, (ValueError, TypeError)):
+            return "native_model_protocol_invalid"
+        return "native_runner_internal_failure"
+
     def watch(self, poll_seconds=15, *, stop_event=None):
         failures = {}
         stopping = stop_event or threading.Event()
         self._stop_event = stopping
+        if self.status_path.exists():
+            try:
+                prior = json.loads(self.status_path.read_text(encoding="utf-8"))
+                if prior.get("state") == "BLOCKED_HOLD":
+                    reason = str(prior.get("reason") or "native_runner_blocked")
+                    current, *_ = self._blocker_identity(str(prior.get("mission_id") or ""), reason)
+                    if current == prior.get("blocker_fingerprint"):
+                        while not stopping.wait(max(5, min(int(poll_seconds), 300))):
+                            current, *_ = self._blocker_identity(str(prior.get("mission_id") or ""), reason)
+                            if current != prior.get("blocker_fingerprint"):
+                                break
+                        if stopping.is_set():
+                            self._status(state="STOPPED", reason="sigterm")
+                            return 0
+                    else:
+                        failures.clear()
+            except (OSError, ValueError, TypeError):
+                # A malformed local status file is not authority. Continue to
+                # canonical discovery and overwrite it atomically.
+                failures.clear()
         while not stopping.is_set():
             try:
-                self.once()
+                result = self.once()
+                if isinstance(result, dict) and result.get("state") == "BLOCKED":
+                    raise NativeExecutionError(str(result.get("reason") or "native_execution_blocked"))
                 failures.clear()
                 stopping.wait(max(5, min(int(poll_seconds), 300)))
-            except NativeExecutionError as exc:
-                reason = str(exc)
-                failures[reason] = failures.get(reason, 0) + 1
-                self._status(state="BLOCKED", reason=reason, repeated=failures[reason])
+            except Exception as exc:
+                reason = self._bounded_reason(exc)
+                # The model adapter owns its single application retry. Once it
+                # reports exhaustion, another watch cycle would exceed the
+                # two-request budget.
+                exhausted = reason == "hermes_auxiliary_inference_failed"
+                failures[reason] = max(2 if exhausted else 0, failures.get(reason, 0) + 1)
+                if stopping.is_set() and reason == "native_runner_shutdown_requested":
+                    break
+                mission_id = str(getattr(self, "_active_mission_id", "") or "")
+                self._report_blocker(mission_id, reason, failures[reason])
                 if failures[reason] >= 2:
-                    # A repeated identical mission defect is a bounded canonical
-                    # stop, not a crash. Exit cleanly so the service supervisor
-                    # does not manufacture an infinite restart loop.
-                    return 0
+                    while not stopping.wait(max(5, min(int(poll_seconds), 300))):
+                        prior = json.loads(self.status_path.read_text(encoding="utf-8"))
+                        current, *_ = self._blocker_identity(mission_id, reason)
+                        if current != prior.get("blocker_fingerprint"):
+                            failures.clear()
+                            break
+                    if not failures:
+                        continue
                 stopping.wait(min(60, 5 * (2 ** (failures[reason] - 1))))
         self._status(state="STOPPED", reason="sigterm")
         return 0

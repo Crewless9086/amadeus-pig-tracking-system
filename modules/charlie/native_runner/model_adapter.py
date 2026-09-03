@@ -14,6 +14,8 @@ ALLOWED_TASKS = frozenset({
     "charlie_native_functional_reviewer",
     "charlie_native_challenge_reviewer",
 })
+DEFAULT_PROVIDER = "openrouter"
+DEFAULT_MODEL = "openai/gpt-5-mini"
 
 
 @dataclass(frozen=True)
@@ -41,10 +43,36 @@ def _parsed_json(value):
     return parsed
 
 
+def _validate_schema(value, schema):
+    """Validate the bounded JSON-schema subset used by native runner calls."""
+    if not isinstance(value, dict) or schema.get("type") != "object":
+        raise NativeExecutionError("native_model_schema_invalid")
+    required = set(schema.get("required") or ())
+    properties = dict(schema.get("properties") or {})
+    if not required.issubset(value):
+        raise NativeExecutionError("native_model_schema_invalid")
+    if schema.get("additionalProperties") is False and set(value) - set(properties):
+        raise NativeExecutionError("native_model_schema_invalid")
+    for key, item in value.items():
+        rule = dict(properties.get(key) or {})
+        if "const" in rule and item != rule["const"]:
+            raise NativeExecutionError("native_model_schema_invalid")
+        if "enum" in rule and item not in rule["enum"]:
+            raise NativeExecutionError("native_model_schema_invalid")
+        expected = rule.get("type")
+        valid = {"string": isinstance(item, str), "array": isinstance(item, list),
+                 "object": isinstance(item, dict), "integer": isinstance(item, int) and not isinstance(item, bool),
+                 "boolean": isinstance(item, bool)}.get(expected, True)
+        if not valid:
+            raise NativeExecutionError("native_model_schema_invalid")
+    return value
+
+
 class HermesAuxiliaryModel:
     """One structured completion at a time, with no model-visible tools or secrets."""
 
-    def __init__(self, *, profile_home, call=None, provider="", model="", profile="default"):
+    def __init__(self, *, profile_home, call=None, provider=DEFAULT_PROVIDER,
+                 model=DEFAULT_MODEL, profile="default"):
         self.profile_home = str(profile_home)
         self.provider = str(provider or "")
         self.model = str(model or "")
@@ -88,11 +116,19 @@ class HermesAuxiliaryModel:
         last = None
         for _ in range(2):
             try:
+                route_info = {}
                 with self._profile_scope():
-                    raw = self.call(**kwargs)
-                parsed = _parsed_json(getattr(raw, "content", raw))
-                provider = str(getattr(raw, "provider", "") or self.provider).strip()
-                model = str(getattr(raw, "model", "") or self.model).strip()
+                    raw = self.call(route_info=route_info, **kwargs)
+                choices = getattr(raw, "choices", None)
+                if not isinstance(choices, (list, tuple)) or not choices:
+                    raise NativeExecutionError("native_model_response_invalid")
+                message = getattr(choices[0], "message", None)
+                content = getattr(message, "content", None) if message is not None else None
+                if not isinstance(content, str) or not content.strip():
+                    raise NativeExecutionError("native_model_response_invalid")
+                parsed = _validate_schema(_parsed_json(content), json_schema)
+                provider = str(route_info.get("provider") or "").strip()
+                model = str(route_info.get("model") or getattr(raw, "model", "") or "").strip()
                 if not provider or not model:
                     raise NativeExecutionError("native_runtime_identity_missing")
                 return StructuredResult(parsed, provider, model, "standalone", {

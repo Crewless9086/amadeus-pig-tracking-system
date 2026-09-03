@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -76,7 +77,10 @@ def test_render_environment_reader_is_allowlisted_and_rejects_broad_credentials(
         monkeypatch.setenv(key, value)
     monkeypatch.setenv("UNRELATED_SECRET", "must-not-be-read")
     values = read_environment_values()
-    assert set(values) == set(REQUIRED) | {"CHARLIE_GITHUB_READ_TOKEN"}
+    assert set(REQUIRED).issubset(values)
+    assert set(values) == set(REQUIRED) | {"CHARLIE_GITHUB_READ_TOKEN",
+                                           "CHARLIE_NATIVE_MODEL_PROVIDER",
+                                           "CHARLIE_NATIVE_MODEL"}
     assert "UNRELATED_SECRET" not in values
     monkeypatch.setenv("GITHUB_TOKEN", "forbidden")
     with pytest.raises(NativeExecutionError, match="broad_github_credential_forbidden:GITHUB_TOKEN"):
@@ -108,6 +112,7 @@ def test_render_blueprint_is_one_paid_worker_with_one_persistent_disk():
     assert "mountPath: /var/data" in text and "sizeGB: 10" in text
     assert "type: web" not in text and "healthCheckPath:" not in text
     assert "maxShutdownDelaySeconds: 300" in text
+    assert "notificationOverride: failure" in text
     dockerfile = Path("deploy/charlie-native-runner/Dockerfile.render").read_text(encoding="utf-8")
     assert "python:3.12-slim@sha256:" in dockerfile
     ignored = Path(".dockerignore").read_text(encoding="utf-8").splitlines()
@@ -237,18 +242,24 @@ def test_real_packager_stops_after_local_commit_before_push_or_pr(tmp_path):
 def test_model_adapter_uses_installed_low_level_boundary_without_tools_or_api_key(tmp_path):
     calls = []
 
-    class Reply:
+    class Message:
         content = '{"status":"READY"}'
-        provider = "Nous"
+    class Choice:
+        message = Message()
+    class Reply:
+        choices = [Choice()]
         model = "test-model"
 
     def call(**kwargs):
         calls.append(kwargs)
+        kwargs["route_info"].update(provider="openrouter", model="test-model")
         return Reply()
 
     model = HermesAuxiliaryModel(profile_home=tmp_path, call=call)
     assert run_schema_canary(model)["status"] == "READY"
     assert calls[0]["tools"] == []
+    assert calls[0]["provider"] == "openrouter"
+    assert calls[0]["model"] == "openai/gpt-5-mini"
     assert "api_key" not in calls[0]
     assert not any("token" in json.dumps(value).lower() for value in calls[0].values())
 
@@ -268,10 +279,125 @@ def test_model_adapter_enters_explicit_hermes_profile_home(tmp_path, monkeypatch
     monkeypatch.setitem(sys.modules, "hermes_cli", hermes)
     monkeypatch.setitem(sys.modules, "hermes_cli.plugins", plugins)
     class Reply:
-        content = '{"status":"READY"}'; provider = "Nous"; model = "test-model"
-    model = HermesAuxiliaryModel(profile_home=tmp_path, call=lambda **_: Reply())
+        choices = [SimpleNamespace(message=SimpleNamespace(content='{"status":"READY"}'))]
+        model = "test-model"
+    def call(**kwargs):
+        kwargs["route_info"].update(provider="openrouter", model="test-model")
+        return Reply()
+    model = HermesAuxiliaryModel(profile_home=tmp_path, call=call)
     run_schema_canary(model)
     assert entered == [tmp_path.resolve()]
+
+
+def test_model_adapter_uses_pinned_openai_response_and_route_info(tmp_path):
+    calls = []
+    reply = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"status":"READY"}'))],
+        model="provider-fallback-model")
+    def call(**kwargs):
+        calls.append(kwargs)
+        kwargs["route_info"].update(provider="openrouter", model="openai/gpt-5-mini")
+        return reply
+    result = run_schema_canary(HermesAuxiliaryModel(profile_home=tmp_path, call=call))
+    assert result == {"status": "READY", "provider": "openrouter",
+                      "model": "openai/gpt-5-mini", "tools_count": 0}
+    assert calls[0]["tools"] == [] and calls[0]["provider"] == "openrouter"
+    fake = SimpleNamespace(content='{"status":"READY"}', provider="openrouter", model="fake")
+    with pytest.raises(NativeExecutionError, match="native_model_response_invalid"):
+        run_schema_canary(HermesAuxiliaryModel(profile_home=tmp_path, call=lambda **_: fake))
+
+
+def test_cursor_key_is_optional_after_canonical_retirement(tmp_path, monkeypatch):
+    values = dict(REQUIRED)
+    values.pop("CURSOR_API_KEY")
+    for key in set(REQUIRED) | set(BROAD_GITHUB_NAMES):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    resolved = read_environment_values()
+    assert resolved["CURSOR_API_KEY"] == ""
+    service = NativeRunnerService(
+        profile_home=tmp_path, repository_root=tmp_path / "repo",
+        worktree_root=tmp_path / "worktrees", configuration_source="environment",
+        model=SimpleNamespace())
+    assert service.cursor is None
+
+
+def test_render_profile_disables_hermes_internal_transient_retries(tmp_path, monkeypatch):
+    module = importlib.import_module("scripts.charlie_render_native_runner")
+    monkeypatch.setattr(module, "PROFILE", tmp_path / "profile")
+    module.prepare_hermes_profile()
+    text = (tmp_path / "profile" / "config.yaml").read_text(encoding="utf-8")
+    assert json.loads(text)["auxiliary"]["transient_retries"] == 0
+
+
+def test_repeated_blocker_notifies_once_per_destination_and_holds(tmp_path):
+    import threading
+    notices, canonical_blocks, calls = [], [], []
+    class Canonical:
+        def mission(self, _mission_id):
+            return {"mission": {"generation": "g1", "metadata": {
+                "external_supervisor_state": {"slack_channel_id": "C1", "slack_thread_ts": "T1"},
+                "slack_approval_channel_id": "C2", "dispatch_authorization": {"authorization_id": "PDA-1"}}}}
+        def blocker(self, mission_id, payload):
+            canonical_blocks.append((mission_id, payload)); return {"success": True}
+    class Notifier:
+        def post(self, channel, text, **kwargs): notices.append((channel, kwargs.get("idempotency_key")))
+    service = object.__new__(NativeRunnerService)
+    service.canonical, service.notifier = Canonical(), Notifier()
+    service.slack_approval_channel = "C2"
+    service.status_path, service.clock = tmp_path / "status.json", lambda: datetime.now(timezone.utc)
+    service._active_mission_id, service._active_stage = "MISSION-1", "model"
+    def once():
+        calls.append("model"); raise NativeExecutionError("native_model_response_invalid")
+    service.once = once
+    class StopAfterHold:
+        def __init__(self): self.stopped = False
+        def is_set(self): return self.stopped
+        def wait(self, _seconds):
+            if len(calls) >= 2: self.stopped = True
+            return self.stopped
+    service.watch(5, stop_event=StopAfterHold())
+    assert calls == ["model", "model"]
+    assert [item[0] for item in notices] == ["C1", "C2"]
+    assert len(canonical_blocks) == 1
+    assert "secret" not in json.dumps(canonical_blocks).lower()
+
+
+def test_dirty_allowed_patch_restart_skips_second_model_call(tmp_path):
+    repo = tmp_path / "repo"; worktree = tmp_path / "worktree"
+    repo.mkdir(); worktree.mkdir()
+    subprocess.run(["git", "init"], cwd=worktree, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "runner@example.invalid"], cwd=worktree, check=True)
+    subprocess.run(["git", "config", "user.name", "Runner"], cwd=worktree, check=True)
+    target = worktree / "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"
+    target.parent.mkdir(parents=True); target.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=worktree, check=True)
+    subprocess.run(["git", "commit", "-m", "base"], cwd=worktree, check=True, capture_output=True)
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=worktree, check=True,
+                          capture_output=True, text=True).stdout.strip()
+    target.write_text("after\n", encoding="utf-8")
+    auth = {"mission_id": "MISSION-1", "generation": "g1", "native_execution_id": "HNX-1",
+            "native_attempt": 1, "repository": "Crewless9086/amadeus-pig-tracking-system",
+            "starting_main_sha": base, "branch": "charlie/mission-native-1",
+            "worktree_digest": __import__("hashlib").sha256(str(worktree.resolve()).encode()).hexdigest(),
+            "owner_instruction_digest": "b" * 64,
+            "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+            "allowed_commands": ["git diff --check"], "allowed_effects": ["draft PR"],
+            "forbidden_effects": ["merge", "deploy"],
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "status": "valid"}
+    service = object.__new__(NativeRunnerService)
+    service.clock, service._stop_event = lambda: datetime.now(timezone.utc), threading.Event()
+    service.model = SimpleNamespace(complete_structured=lambda **_: pytest.fail("second model call"))
+    service.packager_token = "contained"
+    service._record_progress = lambda *_args, **_kwargs: {"success": True}
+    service._complete_initial_candidate = lambda *_args, **_kwargs: {"state": "PACKAGED"}
+    packaged = {"pr_number": 1331, "commit_sha": "c" * 40,
+                "candidate_diff_sha256": "d" * 64,
+                "changed_files": auth["allowed_files"], "branch": auth["branch"]}
+    with patch("modules.charlie.native_runner.service.NativePackager.package", return_value=packaged):
+        result = service._build({"mission_id": "MISSION-1", "title": "doc"}, auth, repo, worktree)
+    assert result["state"] == "PACKAGED"
 
 
 def test_native_runner_imports_with_plugin_package_absent(monkeypatch):
@@ -788,10 +914,13 @@ class HostedCharlieNativeRunnerTests(unittest.TestCase):
     def test_no_tool_low_level_model_boundary(self):
         calls = []
         class Reply:
-            content = '{"status":"READY"}'
-            provider = "Nous"
+            choices = [SimpleNamespace(message=SimpleNamespace(content='{"status":"READY"}'))]
             model = "test-model"
-        model = HermesAuxiliaryModel(profile_home=".", call=lambda **kwargs: (calls.append(kwargs), Reply())[1])
+        def call(**kwargs):
+            calls.append(kwargs)
+            kwargs["route_info"].update(provider="openrouter", model="test-model")
+            return Reply()
+        model = HermesAuxiliaryModel(profile_home=".", call=call)
         self.assertEqual("READY", run_schema_canary(model)["status"])
         self.assertEqual([], calls[0]["tools"])
         self.assertNotIn("api_key", calls[0])
