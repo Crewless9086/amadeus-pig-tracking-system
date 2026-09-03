@@ -107,6 +107,12 @@ def test_render_blueprint_is_one_paid_worker_with_one_persistent_disk():
     assert "autoDeployTrigger: off" in text
     assert "mountPath: /var/data" in text and "sizeGB: 10" in text
     assert "type: web" not in text and "healthCheckPath:" not in text
+    assert "maxShutdownDelaySeconds: 300" in text
+    dockerfile = Path("deploy/charlie-native-runner/Dockerfile.render").read_text(encoding="utf-8")
+    assert "python:3.12-slim@sha256:" in dockerfile
+    ignored = Path(".dockerignore").read_text(encoding="utf-8").splitlines()
+    for protected in (".git", ".env*", "credentials/**", "secrets/**", "worktrees/"):
+        assert protected in ignored
 
 
 def test_render_bootstrap_uses_exact_revision_and_no_shell(tmp_path, monkeypatch):
@@ -145,6 +151,29 @@ def test_watch_stops_cleanly_on_supervisor_termination(tmp_path):
     service.once = lambda: {"state": "IDLE"}
     stopping = threading.Event(); stopping.set()
     assert service.watch(5, stop_event=stopping) == 0
+    assert json.loads(service.status_path.read_text())["state"] == "STOPPED"
+
+
+def test_shutdown_during_active_cycle_prevents_next_mutating_stage(tmp_path):
+    import threading
+    entered = threading.Event(); release = threading.Event(); stopping = threading.Event()
+    service = object.__new__(NativeRunnerService)
+    service.worktree_root = tmp_path
+    service.status_path = tmp_path / "status.json"
+    service.clock = lambda: datetime.now(timezone.utc)
+    service._stop_event = stopping
+    stages = []
+    def active_once():
+        stages.append("model")
+        entered.set(); release.wait(2)
+        service._ensure_running()
+        stages.append("package")
+    service.once = active_once
+    worker = threading.Thread(target=lambda: service.watch(5, stop_event=stopping))
+    worker.start(); assert entered.wait(1)
+    stopping.set(); release.set(); worker.join(2)
+    assert not worker.is_alive()
+    assert stages == ["model"]
     assert json.loads(service.status_path.read_text())["state"] == "STOPPED"
 
 

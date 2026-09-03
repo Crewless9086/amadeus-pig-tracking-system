@@ -7,7 +7,7 @@ services:
     plan: 1c-2g
     numInstances: 1
     autoDeployTrigger: off
-    maxShutdownDelaySeconds: 120
+    maxShutdownDelaySeconds: 300
     dockerfilePath: ./deploy/charlie-native-runner/Dockerfile.render
     dockerContext: .
     disk:

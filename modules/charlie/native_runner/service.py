@@ -142,6 +142,11 @@ class NativeRunnerService:
         self.slack_approval_channel = values.get("CHARLIE_SLACK_APPROVALS_CHANNEL_ID", "") if values else "C-APPROVALS"
         self.status_path = Path(status_path or (self.worktree_root / ".runner-status.json"))
         self._canary_complete = False
+        self._stop_event = threading.Event()
+
+    def _ensure_running(self):
+        if getattr(self, "_stop_event", None) is not None and self._stop_event.is_set():
+            raise NativeExecutionError("native_runner_shutdown_requested")
 
     def _status(self, **state):
         safe = {key: value for key, value in state.items() if "token" not in key.lower()}
@@ -220,7 +225,9 @@ class NativeRunnerService:
                 and (state.get("checks") or {}).get("mission-admission") == "success")
 
     def once(self, *, dry_run=False):
+        self._ensure_running()
         with ProcessLock(self.worktree_root / ".charlie-native-runner.lock"):
+            self._ensure_running()
             rows = self.canonical.resumable()
             if not rows:
                 return self._status(state="IDLE")
@@ -234,11 +241,13 @@ class NativeRunnerService:
             return self._process(mission_id)
 
     def _process(self, mission_id):
+        self._ensure_running()
         loaded = self.canonical.mission(mission_id)
         mission = dict(loaded.get("mission") or {})
         metadata = dict(mission.get("metadata") or {})
         retirement = dict(metadata.get("cursor_provider_retirement") or {})
         if not retirement:
+            self._ensure_running()
             retirement = self._retire_attempt_five(mission_id, metadata)
         if retirement.get("provider_status") != "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT":
             raise NativeExecutionError("cursor_attempt_five_retirement_unproven")
@@ -274,6 +283,7 @@ class NativeRunnerService:
         if native.get("native_execution_id") != native_id or native.get("branch") != branch:
             raise NativeExecutionError("native_execution_identity_conflict")
         if not self._canary_complete and not int(native.get("pr_number") or 0):
+            self._ensure_running()
             run_schema_canary(self.model)
             self._canary_complete = True
         if int(native.get("pr_number") or 0):
@@ -281,6 +291,7 @@ class NativeRunnerService:
         return self._build(mission, native, repository, worktree)
 
     def _retire_attempt_five(self, mission_id, metadata):
+        self._ensure_running()
         state = dict(metadata.get("external_supervisor_state") or {})
         if int(state.get("execution_attempt") or 0) != 5 or self.cursor is None:
             raise NativeExecutionError("cursor_attempt_five_identity_incomplete")
@@ -306,6 +317,7 @@ class NativeRunnerService:
         })
 
     def _build(self, mission, authorization, repository, worktree):
+        self._ensure_running()
         claim = self._claim_identity(authorization["native_execution_id"])
         progress = self._record_progress(mission["mission_id"], {
             "native_execution_id": authorization["native_execution_id"], "execution_status": "RUNNING",
@@ -331,11 +343,13 @@ class NativeRunnerService:
                      "worker_identity": authorization.get("builder_identity"),
                      "worker_agent_id": authorization.get("builder_agent_id")}
         else:
+            self._ensure_running()
             built = engine.build_patch(mission.get("raw_text") or mission.get("title"),
                                        governance_context=self.canonical.native_context(mission["mission_id"]))
             if built.get("state") != "PATCH_READY":
                 self._release_claim(mission["mission_id"], authorization["native_execution_id"], claim, "BLOCKED")
                 return self._status(state="BLOCKED", mission_id=mission["mission_id"], reason=built.get("reason"))
+        self._ensure_running()
         evidence = engine.verify()
         self._record_progress(mission["mission_id"], {
             "native_execution_id": authorization["native_execution_id"], "execution_status": "VERIFIED",
@@ -345,6 +359,7 @@ class NativeRunnerService:
             "event": "native_verification_completed",
         }, claim_id=claim)
         heartbeat()
+        self._ensure_running()
         packaged = NativePackager(worktree, authorization, self.packager_token,
                                   heartbeat=heartbeat).package(
             mission.get("title") or "CHARLIE native mission",
@@ -386,6 +401,7 @@ class NativeRunnerService:
         packet = {"candidate": {key: candidate[key] for key in (
             "pr_number", "base_sha", "head_sha", "candidate_diff_sha256", "changed_files")},
             "verification": list(evidence or (native.get("stage_artifact") or {}).get("commands") or [])}
+        self._ensure_running()
         challenge = reviewer.review("CHALLENGE", packet)
         self._claim_heartbeat(mission["mission_id"], native["native_execution_id"],
                               native.get("worker_claim_id"), "challenge_review")
@@ -445,6 +461,7 @@ class NativeRunnerService:
                             native_execution_id=native["native_execution_id"], **state)
 
     def _correct(self, mission, native):
+        self._ensure_running()
         worktree = self.worktree_root / mission["mission_id"] / native["generation"] / "native-1"
         findings = "; ".join(native.get("review_challenge", {}).get("findings") or [])
         claim = str(native.get("worker_claim_id") or "")
@@ -452,12 +469,15 @@ class NativeRunnerService:
             mission["mission_id"], native["native_execution_id"], claim, "correction")
         engine = NativeExecutionEngine(HermesStructuredPatchWorker(self.model), self.repository_root,
                                        worktree, native, heartbeat=heartbeat)
+        self._ensure_running()
         built = engine.build_patch("Apply only this independent SEND_BACK correction: " + findings,
                                    governance_context=self.canonical.native_context(mission["mission_id"]))
         if built.get("state") != "PATCH_READY":
             raise NativeExecutionError("native_correction_not_ready")
+        self._ensure_running()
         evidence = engine.verify()
         heartbeat()
+        self._ensure_running()
         packaged = NativePackager(worktree, native, self.packager_token,
                                   heartbeat=heartbeat).package(
             mission.get("title") or "CHARLIE native mission",
@@ -498,9 +518,11 @@ class NativeRunnerService:
         packet = {"candidate": {key: binding[key] for key in (
             "pr_number", "base_sha", "head_sha", "candidate_diff_sha256", "changed_files")},
             "verification": list(evidence or (native.get("stage_artifact") or {}).get("commands") or [])}
+        self._ensure_running()
         security = reviewer.review("SECURITY", packet)
         self._claim_heartbeat(mission["mission_id"], native["native_execution_id"],
                               native.get("worker_claim_id"), "independent_review")
+        self._ensure_running()
         functional = reviewer.review("FUNCTIONAL", packet)
         self._claim_heartbeat(mission["mission_id"], native["native_execution_id"],
                               native.get("worker_claim_id"), "independent_review")
@@ -520,6 +542,7 @@ class NativeRunnerService:
     def watch(self, poll_seconds=15, *, stop_event=None):
         failures = {}
         stopping = stop_event or threading.Event()
+        self._stop_event = stopping
         while not stopping.is_set():
             try:
                 self.once()

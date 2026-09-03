@@ -41,7 +41,7 @@ service primitive satisfying those requirements.
 Render is the preferred managed host for this boundary. `render.yaml` defines a
 separate `charlie-native-runner` Background Worker: one `1c-2g` instance (1 CPU,
 2 GB RAM), a 10 GB encrypted persistent disk mounted at `/var/data`, automatic
-deploys disabled, and a 120-second graceful shutdown window. The disk makes the
+deploys disabled, and Render's maximum 300-second graceful shutdown window. The disk makes the
 service single-instance and preserves `/var/data/repository`,
 `/var/data/worktrees`, the process lock, and recovery status across restarts.
 The worker has no inbound port.
