@@ -128,9 +128,11 @@ class HermesAuxiliaryModel:
                     raise NativeExecutionError("native_model_response_invalid")
                 parsed = _validate_schema(_parsed_json(content), json_schema)
                 provider = str(route_info.get("provider") or "").strip()
-                model = str(route_info.get("model") or getattr(raw, "model", "") or "").strip()
+                model = str(route_info.get("model") or "").strip()
                 if not provider or not model:
                     raise NativeExecutionError("native_runtime_identity_missing")
+                if provider != self.provider or model != self.model:
+                    raise NativeExecutionError("native_runtime_route_mismatch")
                 return StructuredResult(parsed, provider, model, "standalone", {
                     "runtime_boundary": RUNTIME_BOUNDARY, "task": task,
                     "purpose": str(purpose), "schema_name": str(schema_name),

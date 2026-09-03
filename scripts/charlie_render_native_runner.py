@@ -16,9 +16,13 @@ PROFILE = DISK / "hermes-profile"
 
 
 def run(argv, *, cwd=None):
+    allowed = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP",
+               "SYSTEMROOT", "COMSPEC", "PATHEXT", "SSL_CERT_FILE",
+               "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO")
+    child_env = {name: os.environ[name] for name in allowed if os.environ.get(name)}
     return subprocess.run(argv, cwd=cwd, check=True, text=True,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          shell=False)
+                          shell=False, env=child_env)
 
 
 def prepare_repository(*, deployed_sha=None):

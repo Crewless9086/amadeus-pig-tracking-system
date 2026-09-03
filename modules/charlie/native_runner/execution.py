@@ -424,11 +424,12 @@ class HermesIndependentReviewer:
 
 
 class NativeExecutionEngine:
-    def __init__(self, worker, repository_root, worktree_root, authorization, *, heartbeat=None):
+    def __init__(self, worker, repository_root, worktree_root, authorization, *, heartbeat=None, patch_intent=None):
         self.worker = worker
         self.authorization = authorization if isinstance(authorization, NativeAuthorization) else NativeAuthorization.from_mapping(authorization)
         self.worktree = NativeWorktree(repository_root, worktree_root, self.authorization)
         self.heartbeat = heartbeat or (lambda: None)
+        self.patch_intent = patch_intent
 
     def build_patch(self, instruction, governance_context=None):
         root = self.worktree.ensure()
@@ -453,7 +454,11 @@ class NativeExecutionEngine:
             if response["state"] == "BLOCKED":
                 return response
             if response["state"] == "PATCH_READY":
-                changed = PatchValidator(root, self.authorization.allowed_files).apply(response["unified_diff"])
+                validator = PatchValidator(root, self.authorization.allowed_files)
+                expected = validator.validate(response["unified_diff"])
+                if self.patch_intent:
+                    self.patch_intent(response, response["unified_diff"], expected)
+                changed = validator.apply(response["unified_diff"])
                 return {**response, "changed_files": list(changed)}
             fresh = [path for path in response["context_paths"] if path not in requested]
             if not fresh:
@@ -492,12 +497,13 @@ def execution_lock():
 class NativePackager:
     """Deterministic parent-only commit, branch push and draft-PR packaging."""
 
-    def __init__(self, worktree, authorization, token, *, opener=None, heartbeat=None):
+    def __init__(self, worktree, authorization, token, *, opener=None, heartbeat=None, mutation_observer=None):
         self.worktree = Path(worktree).resolve(strict=True)
         self.authorization = authorization if isinstance(authorization, NativeAuthorization) else NativeAuthorization.from_mapping(authorization)
         self.token = str(token or "").strip()
         self.opener = opener or urllib.request.urlopen
         self.heartbeat = heartbeat or (lambda: None)
+        self.mutation_observer = mutation_observer or (lambda _kind: None)
         if not self.token:
             raise NativeExecutionError("github_packager_token_required")
 
@@ -535,6 +541,7 @@ class NativePackager:
                 "commit", "-m", str(title)[:72]], cwd=self.worktree)
             if committed.returncode != 0:
                 raise NativeExecutionError("native_packaging_commit_failed")
+            self.mutation_observer("repository")
         head = self._git("rev-parse", "HEAD")
         if head == self.authorization.starting_main_sha:
             raise NativeExecutionError("native_packaging_no_candidate")
@@ -542,6 +549,7 @@ class NativePackager:
         candidate_files, diff = self._validate_candidate_before_remote(head)
         heartbeat()
         self._push_with_ephemeral_askpass()
+        self.mutation_observer("remote")
         heartbeat()
         pull = self._find_pull(branch)
         if not pull:
@@ -550,6 +558,7 @@ class NativePackager:
                 "title": str(title)[:120], "body": str(body), "head": branch,
                 "base": "main", "draft": True,
             })
+            self.mutation_observer("remote")
         if not pull.get("draft") or (pull.get("head") or {}).get("sha") != head:
             raise NativeExecutionError("native_packaging_pr_unverified")
         return {"commit_sha": head, "pr_number": int(pull["number"]),

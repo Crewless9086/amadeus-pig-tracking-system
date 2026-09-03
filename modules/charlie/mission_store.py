@@ -2220,7 +2220,8 @@ def record_hermes_native_execution_state(mission_id, state, *, authenticated_pri
                "correction_rounds", "worker_claim_id", "claim_expires_at", "release_claim_id",
                "admission_requested_head", "owner_notification_head", "candidate_diff_sha256", "review_security",
                "review_functional", "review_challenge", "review_request_roles", "runner_stage", "stage_artifact",
-               "builder_identity", "builder_agent_id", "repository_mutation", "remote_mutation"}
+               "builder_identity", "builder_agent_id", "patch_sha256",
+               "repository_mutation", "remote_mutation"}
     if not mission_id or not principal or not state or set(state) - allowed:
         return {"success": False, "status": "native_execution_state_invalid"}, 400
     database_url = _database_url(database_url)
@@ -2299,8 +2300,9 @@ def record_native_runner_blocker(mission_id, blocker, *, authenticated_principal
                "repository_mutation", "remote_mutation", "notification_identity"}
     if (not mission_id or principal != "hermes:charlie-builder" or not blocker
             or set(blocker) - allowed
-            or blocker.get("repository_mutation") is not False
-            or blocker.get("remote_mutation") is not False):
+            or not isinstance(blocker.get("repository_mutation"), bool)
+            or not isinstance(blocker.get("remote_mutation"), bool)
+            or (blocker.get("remote_mutation") and not blocker.get("repository_mutation"))):
         return {"success": False, "status": "native_runner_blocker_invalid"}, 400
     bounded = {key: _clean_text(blocker.get(key), 200) for key in
                ("reason", "stage", "generation", "authority_identity",
@@ -2324,7 +2326,9 @@ def record_native_runner_blocker(mission_id, blocker, *, authenticated_principal
                 if current.get("notification_identity") == bounded["notification_identity"]:
                     return {"success": True, "status": "native_runner_blocker_replayed",
                             "blocker": current}, 200
-                recorded = {**bounded, "repository_mutation": False, "remote_mutation": False,
+                recorded = {**bounded,
+                            "repository_mutation": blocker["repository_mutation"],
+                            "remote_mutation": blocker["remote_mutation"],
                             "event": "native_runner_blocked", "recorded_by": principal,
                             "recorded_at": datetime.now(timezone.utc).isoformat()}
                 metadata["native_runner_blocker"] = recorded

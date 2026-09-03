@@ -151,6 +151,63 @@ class NativeRunnerService:
         self._stop_event = threading.Event()
         self._active_mission_id = ""
         self._active_stage = "discovery"
+        self._repository_mutation = False
+        self._remote_mutation = False
+
+    def _observe_mutation(self, kind):
+        if kind == "repository":
+            self._repository_mutation = True
+        elif kind == "remote":
+            self._repository_mutation = True
+            self._remote_mutation = True
+
+    @staticmethod
+    def _patch_intent_path(worktree):
+        return Path(worktree).parent / ".native-1-patch-intent.json"
+
+    def _persist_patch_intent(self, mission_id, authorization, worktree, response, patch, paths):
+        encoded = str(patch).encode("utf-8")
+        digest = hashlib.sha256(encoded).hexdigest()
+        record = {
+            "schema": "charlie_native_patch_intent_v1", "patch": str(patch),
+            "patch_sha256": digest, "changed_files": list(paths),
+            "builder_identity": response.get("worker_identity"),
+            "builder_agent_id": response.get("worker_agent_id"),
+        }
+        target = self._patch_intent_path(worktree)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
+        try:
+            temporary.chmod(0o600)
+        except OSError:
+            pass
+        os.replace(temporary, target)
+        self._record_progress(mission_id, {
+            "native_execution_id": authorization["native_execution_id"],
+            "execution_status": "PATCH_INTENT_RECORDED", "patch_sha256": digest,
+            "changed_files": list(paths), "builder_identity": response.get("worker_identity"),
+            "builder_agent_id": response.get("worker_agent_id"),
+            "event": "native_patch_intent_recorded",
+        }, claim_id=authorization.get("worker_claim_id"))
+
+    def _recover_patch_intent(self, authorization, worktree):
+        target = self._patch_intent_path(worktree)
+        try:
+            record = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError) as exc:
+            raise NativeExecutionError("native_dirty_patch_provenance_missing") from exc
+        patch = str(record.get("patch") or "")
+        digest = hashlib.sha256(patch.encode("utf-8")).hexdigest()
+        if (record.get("schema") != "charlie_native_patch_intent_v1"
+                or digest != record.get("patch_sha256")
+                or digest != authorization.get("patch_sha256")
+                or record.get("builder_identity") != authorization.get("builder_identity")):
+            raise NativeExecutionError("native_dirty_patch_provenance_invalid")
+        current = run_argv(["git", "diff", "--binary", "--no-ext-diff", "--"], cwd=worktree)
+        if current.returncode or hashlib.sha256(current.stdout.encode("utf-8")).hexdigest() != digest:
+            raise NativeExecutionError("native_dirty_patch_provenance_mismatch")
+        return record
 
     def _ensure_running(self):
         if getattr(self, "_stop_event", None) is not None and self._stop_event.is_set():
@@ -280,14 +337,14 @@ class NativeRunnerService:
         if existing_native:
             if writers > 1:
                 raise NativeExecutionError("native_writer_identity_conflict")
-            claim = self._prove_or_reacquire_claim(mission_id, existing_native)
-            existing_native["worker_claim_id"] = claim
-            repository, _, _ = validate_primary_repository(self.repository_root, self.worktree_root)
-            worktree = self.worktree_root / mission_id / existing_native["generation"] / "native-1"
             if not self._canary_complete:
                 self._active_stage = "model_canary"
                 run_schema_canary(self.model)
                 self._canary_complete = True
+            claim = self._prove_or_reacquire_claim(mission_id, existing_native)
+            existing_native["worker_claim_id"] = claim
+            repository, _, _ = validate_primary_repository(self.repository_root, self.worktree_root)
+            worktree = self.worktree_root / mission_id / existing_native["generation"] / "native-1"
             if int(existing_native.get("pr_number") or 0):
                 return self._supervise(mission, existing_native)
             return self._build(mission, existing_native, repository, worktree)
@@ -351,8 +408,11 @@ class NativeRunnerService:
         })
         heartbeat = lambda: self._lifecycle_heartbeat(
             mission["mission_id"], authorization["native_execution_id"], claim, "builder")
-        engine = NativeExecutionEngine(HermesStructuredPatchWorker(self.model), repository, worktree,
-                                       authorization, heartbeat=heartbeat)
+        engine = NativeExecutionEngine(
+            HermesStructuredPatchWorker(self.model), repository, worktree, authorization,
+            heartbeat=heartbeat,
+            patch_intent=lambda response, patch, paths: self._persist_patch_intent(
+                mission["mission_id"], authorization, worktree, response, patch, paths))
         recovered = False
         recovered_dirty = False
         if Path(worktree).exists():
@@ -374,16 +434,17 @@ class NativeRunnerService:
                         or any(word in summary.stdout.lower() for word in
                                ("mode change", "rename", "delete", "create mode"))):
                     raise NativeExecutionError("native_dirty_patch_recovery_conflict")
+                intent = self._recover_patch_intent(authorization, worktree)
                 recovered = True
                 recovered_dirty = True
         if recovered:
             identity = authorization.get("builder_identity")
-            if recovered_dirty and not identity:
-                patch = run_argv(["git", "diff", "--binary", "--no-ext-diff", "--"], cwd=worktree)
-                identity = "HNW-RECOVERY-" + hashlib.sha256(patch.stdout.encode()).hexdigest()
+            if recovered_dirty:
+                identity = intent.get("builder_identity")
             built = {"state": "PATCH_READY", "changed_files": list(authorization["allowed_files"]),
                      "worker_identity": identity,
-                     "worker_agent_id": authorization.get("builder_agent_id") or "standalone"}
+                     "worker_agent_id": (intent.get("builder_agent_id") if recovered_dirty
+                                         else authorization.get("builder_agent_id"))}
         else:
             self._ensure_running()
             built = engine.build_patch(mission.get("raw_text") or mission.get("title"),
@@ -404,7 +465,7 @@ class NativeRunnerService:
         self._ensure_running()
         self._active_stage = "packaging"
         packaged = NativePackager(worktree, authorization, self.packager_token,
-                                  heartbeat=heartbeat).package(
+                                  heartbeat=heartbeat, mutation_observer=self._observe_mutation).package(
             mission.get("title") or "CHARLIE native mission",
             "Hermes-native structured patch. Draft only; no merge or deployment authority.")
         self._ensure_running()
@@ -530,7 +591,7 @@ class NativeRunnerService:
         heartbeat()
         self._ensure_running()
         packaged = NativePackager(worktree, native, self.packager_token,
-                                  heartbeat=heartbeat).package(
+                                  heartbeat=heartbeat, mutation_observer=self._observe_mutation).package(
             mission.get("title") or "CHARLIE native mission",
             "Corrected Hermes-native structured patch. Draft only; no merge or deployment authority.")
         self._ensure_running()
@@ -617,20 +678,24 @@ class NativeRunnerService:
                              mission_id=mission_id, reason=reason, stage=stage,
                              repeated=repeated, blocker_fingerprint=fingerprint,
                              generation=generation, authority_identity=authority,
-                             runner_revision=revision, repository_mutation=False,
-                             remote_mutation=False)
+                             runner_revision=revision,
+                             repository_mutation=bool(getattr(self, "_repository_mutation", False)),
+                             remote_mutation=bool(getattr(self, "_remote_mutation", False)))
         if repeated == 1 and mission_id:
             try:
                 loaded = self.canonical.mission(mission_id)
                 mission = dict(loaded.get("mission") or {})
                 metadata = dict(mission.get("metadata") or {})
                 external = dict(metadata.get("external_supervisor_state") or {})
+                repository_mutation = bool(getattr(self, "_repository_mutation", False))
+                remote_mutation = bool(getattr(self, "_remote_mutation", False))
                 text = (f"Mission {mission_id} blocked at {stage}: {reason}. "
-                        "repository_mutation=false remote_mutation=false")
+                        f"repository_mutation={str(repository_mutation).lower()} "
+                        f"remote_mutation={str(remote_mutation).lower()}")
                 self.canonical.blocker(mission_id, {
                     "reason": reason, "stage": stage, "generation": generation,
                     "authority_identity": authority, "runner_revision": revision,
-                    "repository_mutation": False, "remote_mutation": False,
+                    "repository_mutation": repository_mutation, "remote_mutation": remote_mutation,
                     "notification_identity": fingerprint,
                 })
                 if self.notifier:

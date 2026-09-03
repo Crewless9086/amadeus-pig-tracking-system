@@ -255,11 +255,11 @@ def test_model_adapter_uses_installed_low_level_boundary_without_tools_or_api_ke
         kwargs["route_info"].update(provider="openrouter", model="test-model")
         return Reply()
 
-    model = HermesAuxiliaryModel(profile_home=tmp_path, call=call)
+    model = HermesAuxiliaryModel(profile_home=tmp_path, call=call, model="test-model")
     assert run_schema_canary(model)["status"] == "READY"
     assert calls[0]["tools"] == []
     assert calls[0]["provider"] == "openrouter"
-    assert calls[0]["model"] == "openai/gpt-5-mini"
+    assert calls[0]["model"] == "test-model"
     assert "api_key" not in calls[0]
     assert not any("token" in json.dumps(value).lower() for value in calls[0].values())
 
@@ -284,7 +284,7 @@ def test_model_adapter_enters_explicit_hermes_profile_home(tmp_path, monkeypatch
     def call(**kwargs):
         kwargs["route_info"].update(provider="openrouter", model="test-model")
         return Reply()
-    model = HermesAuxiliaryModel(profile_home=tmp_path, call=call)
+    model = HermesAuxiliaryModel(profile_home=tmp_path, call=call, model="test-model")
     run_schema_canary(model)
     assert entered == [tmp_path.resolve()]
 
@@ -377,6 +377,10 @@ def test_dirty_allowed_patch_restart_skips_second_model_call(tmp_path):
     base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=worktree, check=True,
                           capture_output=True, text=True).stdout.strip()
     target.write_text("after\n", encoding="utf-8")
+    recorded_patch = subprocess.run(
+        ["git", "diff", "--binary", "--no-ext-diff", "--"], cwd=worktree,
+        check=True, capture_output=True, text=True).stdout
+    patch_sha = __import__("hashlib").sha256(recorded_patch.encode()).hexdigest()
     auth = {"mission_id": "MISSION-1", "generation": "g1", "native_execution_id": "HNX-1",
             "native_attempt": 1, "repository": "Crewless9086/amadeus-pig-tracking-system",
             "starting_main_sha": base, "branch": "charlie/mission-native-1",
@@ -385,7 +389,14 @@ def test_dirty_allowed_patch_restart_skips_second_model_call(tmp_path):
             "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
             "allowed_commands": ["git diff --check"], "allowed_effects": ["draft PR"],
             "forbidden_effects": ["merge", "deploy"],
-            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "status": "valid"}
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "status": "valid",
+            "patch_sha256": patch_sha, "builder_identity": "HNW-PROVEN",
+            "builder_agent_id": "standalone"}
+    intent = {"schema": "charlie_native_patch_intent_v1", "patch": recorded_patch,
+              "patch_sha256": patch_sha, "changed_files": auth["allowed_files"],
+              "builder_identity": "HNW-PROVEN", "builder_agent_id": "standalone"}
+    (worktree.parent / ".native-1-patch-intent.json").write_text(
+        json.dumps(intent), encoding="utf-8")
     service = object.__new__(NativeRunnerService)
     service.clock, service._stop_event = lambda: datetime.now(timezone.utc), threading.Event()
     service.model = SimpleNamespace(complete_structured=lambda **_: pytest.fail("second model call"))
@@ -763,6 +774,8 @@ def test_resume_rejects_mismatched_stored_claim_before_model_or_packaging(tmp_pa
     monkeypatch.setattr("modules.charlie.native_runner.service.validate_primary_repository",
                         lambda *_: (tmp_path, tmp_path / "worktrees", "b" * 40))
     monkeypatch.setattr(service, "_supervise", lambda *_: pytest.fail("packaging reached"))
+    monkeypatch.setattr("modules.charlie.native_runner.service.run_schema_canary",
+                        lambda _: {"status": "READY"})
     with pytest.raises(NativeExecutionError, match="native_writer_identity_conflict"):
         service.once()
 
@@ -781,6 +794,8 @@ def test_resume_rejects_other_executions_live_claim_before_model_or_packaging(tm
     service = NativeRunnerService(profile_home=tmp_path, repository_root=tmp_path,
         worktree_root=tmp_path / "worktrees", canonical=canonical, cursor=CursorFake(),
         github=GithubFake(), model=object())
+    monkeypatch.setattr("modules.charlie.native_runner.service.run_schema_canary",
+                        lambda _: {"status": "READY"})
     monkeypatch.setattr(service, "_supervise", lambda *_: pytest.fail("packaging reached"))
     with pytest.raises(NativeExecutionError, match="native_writer_claim_conflict"):
         service.once()
@@ -799,11 +814,40 @@ def test_existing_native_build_runs_canary_before_model_after_restart(tmp_path, 
     monkeypatch.setattr("modules.charlie.native_runner.service.validate_primary_repository",
                         lambda *_: (tmp_path, tmp_path / "worktrees", "b" * 40))
     order = []
+    original_progress = canonical.progress
+    canonical.progress = lambda mission_id, payload: (
+        order.append("canonical_write") or original_progress(mission_id, payload))
     monkeypatch.setattr("modules.charlie.native_runner.service.run_schema_canary",
                         lambda _: order.append("canary") or {"status": "READY"})
     monkeypatch.setattr(service, "_build", lambda *_: order.append("build") or {"state": "BUILT"})
     assert service.once()["state"] == "BUILT"
-    assert order == ["canary", "build"]
+    assert order[0] == "canary"
+    assert order[-1] == "build"
+    assert "canonical_write" in order[1:-1]
+
+
+def test_model_route_mismatch_fails_closed(tmp_path):
+    class Reply:
+        choices = [SimpleNamespace(message=SimpleNamespace(content='{"status":"READY"}'))]
+    def call(**kwargs):
+        kwargs["route_info"].update(provider="other", model="openai/gpt-5-mini")
+        return Reply()
+    with pytest.raises(NativeExecutionError, match="native_runtime_route_mismatch"):
+        run_schema_canary(HermesAuxiliaryModel(profile_home=tmp_path, call=call))
+
+
+def test_render_bootstrap_git_environment_excludes_secret_names(monkeypatch):
+    module = importlib.import_module("scripts.charlie_render_native_runner")
+    observed = {}
+    monkeypatch.setenv("PATH", "contained-path")
+    monkeypatch.setenv("CHARLIE_GITHUB_PACKAGER_TOKEN", "must-not-propagate")
+    def fake_run(argv, **kwargs):
+        observed.update(kwargs.get("env") or {})
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    module.run(["git", "status"])
+    assert observed["PATH"] == "contained-path"
+    assert "CHARLIE_GITHUB_PACKAGER_TOKEN" not in observed
 
 
 def test_packager_lost_claim_fails_before_commit_push_or_pr(tmp_path):
@@ -920,7 +964,7 @@ class HostedCharlieNativeRunnerTests(unittest.TestCase):
             calls.append(kwargs)
             kwargs["route_info"].update(provider="openrouter", model="test-model")
             return Reply()
-        model = HermesAuxiliaryModel(profile_home=".", call=call)
+        model = HermesAuxiliaryModel(profile_home=".", call=call, model="test-model")
         self.assertEqual("READY", run_schema_canary(model)["status"])
         self.assertEqual([], calls[0]["tools"])
         self.assertNotIn("api_key", calls[0])
