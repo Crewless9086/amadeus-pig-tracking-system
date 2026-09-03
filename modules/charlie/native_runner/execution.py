@@ -528,6 +528,7 @@ class NativePackager:
             added = run_argv(["git", "add", "--", *changed], cwd=self.worktree)
             if added.returncode != 0:
                 raise NativeExecutionError("native_packaging_add_failed")
+            heartbeat()
             committed = run_argv([
                 "git", "-c", "user.name=CHARLIE Native Packager",
                 "-c", "user.email=charlie-native@users.noreply.github.com",
@@ -537,6 +538,7 @@ class NativePackager:
         head = self._git("rev-parse", "HEAD")
         if head == self.authorization.starting_main_sha:
             raise NativeExecutionError("native_packaging_no_candidate")
+        heartbeat()
         candidate_files, diff = self._validate_candidate_before_remote(head)
         heartbeat()
         self._push_with_ephemeral_askpass()

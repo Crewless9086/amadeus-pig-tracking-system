@@ -177,6 +177,63 @@ def test_shutdown_during_active_cycle_prevents_next_mutating_stage(tmp_path):
     assert json.loads(service.status_path.read_text())["state"] == "STOPPED"
 
 
+def test_production_lifecycle_heartbeat_fences_post_model_and_packager_stages(tmp_path):
+    import threading
+    service = object.__new__(NativeRunnerService)
+    service._stop_event = threading.Event()
+    renewed = []
+    service._claim_heartbeat = lambda *args: renewed.append(args)
+    service._stop_event.set()
+    with pytest.raises(NativeExecutionError, match="native_runner_shutdown_requested"):
+        service._lifecycle_heartbeat("mission", "HNX-1", "claim", "builder")
+    assert renewed == []
+    source = Path("modules/charlie/native_runner/service.py").read_text(encoding="utf-8")
+    assert source.count("heartbeat = lambda: self._lifecycle_heartbeat(") == 2
+
+
+def test_real_packager_stops_after_local_commit_before_push_or_pr(tmp_path):
+    worktree = tmp_path / "worktree"; worktree.mkdir()
+    service = object.__new__(NativeRunnerService)
+    service._stop_event = __import__("threading").Event()
+    service._claim_heartbeat = lambda *_: None
+    remote = []
+    authorization = {
+        "mission_id": "CHARLIE-MISSION-13B47938FF65E2C1", "generation": "g1",
+        "native_execution_id": "HNX-1", "native_attempt": 1,
+        "repository": "Crewless9086/amadeus-pig-tracking-system",
+        "starting_main_sha": "a" * 40, "branch": "charlie/mission-native-1",
+        "worktree_digest": "b" * 64, "owner_instruction_digest": "c" * 64,
+        "allowed_files": ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"],
+        "allowed_commands": ["git diff --check"], "allowed_effects": ["draft PR"],
+        "forbidden_effects": ["merge", "deploy"],
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        "status": "valid",
+    }
+    packager = NativePackager(worktree, authorization, "contained",
+        heartbeat=lambda: service._lifecycle_heartbeat("mission", "HNX-1", "claim", "packager"))
+    def git(*args):
+        mapping = {
+            ("branch", "--show-current"): "charlie/mission-native-1",
+            ("remote", "get-url", "origin"): "https://github.com/Crewless9086/amadeus-pig-tracking-system.git",
+            ("diff", "--name-only"): "docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md",
+            ("diff", "--cached", "--name-only"): "",
+            ("rev-parse", "a" * 40 + "^{commit}"): "a" * 40,
+            ("rev-parse", "HEAD"): "b" * 40,
+        }
+        return mapping[tuple(args)]
+    packager._git = git
+    packager._push_with_ephemeral_askpass = lambda: remote.append("push")
+    packager._find_pull = lambda _branch: remote.append("pr")
+    def argv(args, **_kwargs):
+        if "commit" in args:
+            service._stop_event.set()
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    with patch("modules.charlie.native_runner.execution.run_argv", side_effect=argv):
+        with pytest.raises(NativeExecutionError, match="native_runner_shutdown_requested"):
+            packager.package("title", "body")
+    assert remote == []
+
+
 def test_model_adapter_uses_installed_low_level_boundary_without_tools_or_api_key(tmp_path):
     calls = []
 

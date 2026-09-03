@@ -206,6 +206,11 @@ class NativeRunnerService:
             "event": "native_writer_claimed",
         })
 
+    def _lifecycle_heartbeat(self, mission_id, native_execution_id, claim_id, stage):
+        """Fence every engine/remote stage when the service is terminating."""
+        self._ensure_running()
+        return self._claim_heartbeat(mission_id, native_execution_id, claim_id, stage)
+
     def _request_admission(self, mission_id, native, *, stage):
         result = self.canonical.request_admission(
             mission_id, native["head_sha"], native["pr_number"])
@@ -324,7 +329,7 @@ class NativeRunnerService:
             "worker_claim_id": claim, "claim_expires_at": (self.clock() + timedelta(minutes=10)).isoformat(),
             "runner_stage": "builder", "event": "native_writer_claimed",
         })
-        heartbeat = lambda: self._claim_heartbeat(
+        heartbeat = lambda: self._lifecycle_heartbeat(
             mission["mission_id"], authorization["native_execution_id"], claim, "builder")
         engine = NativeExecutionEngine(HermesStructuredPatchWorker(self.model), repository, worktree,
                                        authorization, heartbeat=heartbeat)
@@ -364,6 +369,7 @@ class NativeRunnerService:
                                   heartbeat=heartbeat).package(
             mission.get("title") or "CHARLIE native mission",
             "Hermes-native structured patch. Draft only; no merge or deployment authority.")
+        self._ensure_running()
         candidate = {
             "pr_number": packaged["pr_number"], "base_sha": authorization["starting_main_sha"],
             "head_sha": packaged["commit_sha"], "branch": packaged["branch"],
@@ -378,9 +384,11 @@ class NativeRunnerService:
                                                           "worker_claim_id": claim}, evidence)
 
     def _complete_initial_candidate(self, mission, native, evidence=None):
+        self._ensure_running()
         candidate = {key: native[key] for key in (
             "pr_number", "base_sha", "head_sha", "branch", "changed_files", "candidate_diff_sha256")}
         if native.get("execution_status") == "PACKAGED":
+            self._ensure_running()
             self.canonical.bind_candidate(mission["mission_id"], candidate)
             self._record_progress(mission["mission_id"], {
                 "native_execution_id": native["native_execution_id"], "execution_status": "CANDIDATE_BOUND",
@@ -388,6 +396,7 @@ class NativeRunnerService:
             }, claim_id=native.get("worker_claim_id"))
             native = {**native, "execution_status": "CANDIDATE_BOUND"}
         if native.get("execution_status") == "CANDIDATE_BOUND":
+            self._ensure_running()
             self._request_admission(mission["mission_id"], native, stage="ADMISSION_PENDING")
             native = {**native, "execution_status": "ADMISSION_PENDING"}
         if not self._trusted_admission_ready(native):
@@ -435,10 +444,12 @@ class NativeRunnerService:
             external = dict(metadata.get("external_supervisor_state") or {})
             already_notified = str(native.get("owner_notification_head") or "") == state["head_sha"]
             if self.notifier and not already_notified:
+                self._ensure_running()
                 self.notifier.post(external.get("slack_channel_id"),
                     f"Mission {mission['mission_id']} is ready for an exact owner decision on draft PR #{state['pr_number']} head {state['head_sha']}.",
                     thread_ts=external.get("slack_thread_ts", ""),
                     idempotency_key=f"{mission['mission_id']}:{state['head_sha']}:thread")
+                self._ensure_running()
                 self.notifier.post(metadata.get("slack_approval_channel_id") or self.slack_approval_channel,
                     f"OWNER DECISION REQUIRED: mission {mission['mission_id']} PR #{state['pr_number']} exact head {state['head_sha']}. No merge or deployment has occurred.",
                     idempotency_key=f"{mission['mission_id']}:{state['head_sha']}:approvals")
@@ -465,7 +476,7 @@ class NativeRunnerService:
         worktree = self.worktree_root / mission["mission_id"] / native["generation"] / "native-1"
         findings = "; ".join(native.get("review_challenge", {}).get("findings") or [])
         claim = str(native.get("worker_claim_id") or "")
-        heartbeat = lambda: self._claim_heartbeat(
+        heartbeat = lambda: self._lifecycle_heartbeat(
             mission["mission_id"], native["native_execution_id"], claim, "correction")
         engine = NativeExecutionEngine(HermesStructuredPatchWorker(self.model), self.repository_root,
                                        worktree, native, heartbeat=heartbeat)
@@ -482,6 +493,7 @@ class NativeRunnerService:
                                   heartbeat=heartbeat).package(
             mission.get("title") or "CHARLIE native mission",
             "Corrected Hermes-native structured patch. Draft only; no merge or deployment authority.")
+        self._ensure_running()
         binding = {"pr_number": packaged["pr_number"], "base_sha": native["starting_main_sha"],
                    "head_sha": packaged["commit_sha"], "candidate_diff_sha256": packaged["candidate_diff_sha256"],
                    "changed_files": packaged["changed_files"], "branch": packaged["branch"]}
@@ -493,9 +505,11 @@ class NativeRunnerService:
                                                             "execution_status": "CORRECTION_PACKAGED"}, evidence)
 
     def _complete_corrected_candidate(self, mission, native, evidence=None):
+        self._ensure_running()
         binding = {key: native[key] for key in (
             "pr_number", "base_sha", "head_sha", "candidate_diff_sha256", "changed_files", "branch")}
         if native.get("execution_status") == "CORRECTION_PACKAGED":
+            self._ensure_running()
             self.canonical.bind_candidate(mission["mission_id"], binding)
             self._record_progress(mission["mission_id"], {
                 "native_execution_id": native["native_execution_id"], "execution_status": "CORRECTION_BOUND",
@@ -503,6 +517,7 @@ class NativeRunnerService:
             }, claim_id=native.get("worker_claim_id"))
             native = {**native, "execution_status": "CORRECTION_BOUND"}
         if native.get("execution_status") == "CORRECTION_BOUND":
+            self._ensure_running()
             self._request_admission(mission["mission_id"], native,
                                     stage="CORRECTION_ADMISSION_PENDING")
             native = {**native, "execution_status": "CORRECTION_ADMISSION_PENDING"}
