@@ -364,7 +364,8 @@ def test_repeated_blocker_notifies_once_per_destination_and_holds(tmp_path):
     assert "secret" not in json.dumps(canonical_blocks).lower()
 
 
-def test_dirty_allowed_patch_restart_skips_second_model_call(tmp_path):
+@pytest.mark.parametrize("patch_already_applied", [False, True])
+def test_recorded_patch_restart_skips_second_model_call(tmp_path, patch_already_applied):
     repo = tmp_path / "repo"; worktree = tmp_path / "worktree"
     repo.mkdir(); worktree.mkdir()
     subprocess.run(["git", "init"], cwd=worktree, check=True, capture_output=True)
@@ -397,6 +398,9 @@ def test_dirty_allowed_patch_restart_skips_second_model_call(tmp_path):
               "builder_identity": "HNW-PROVEN", "builder_agent_id": "standalone"}
     (worktree.parent / ".native-1-patch-intent.json").write_text(
         json.dumps(intent), encoding="utf-8")
+    if not patch_already_applied:
+        subprocess.run(["git", "checkout", "--", target.relative_to(worktree).as_posix()],
+                       cwd=worktree, check=True, capture_output=True)
     service = object.__new__(NativeRunnerService)
     service.clock, service._stop_event = lambda: datetime.now(timezone.utc), threading.Event()
     service.model = SimpleNamespace(complete_structured=lambda **_: pytest.fail("second model call"))
@@ -824,6 +828,41 @@ def test_existing_native_build_runs_canary_before_model_after_restart(tmp_path, 
     assert order[0] == "canary"
     assert order[-1] == "build"
     assert "canonical_write" in order[1:-1]
+
+
+@pytest.mark.parametrize("existing_native", [False, True])
+def test_failing_canary_prevents_cursor_canonical_and_worktree_mutation(
+        tmp_path, monkeypatch, existing_native):
+    class GuardedCanonical(CanonicalFake):
+        def progress(self, *_args, **_kwargs):
+            pytest.fail("canonical writer mutation reached")
+        def retire_cursor(self, *_args, **_kwargs):
+            pytest.fail("canonical retirement reached")
+    class GuardedCursor(CursorFake):
+        def get_agent(self, _): pytest.fail("Cursor provider reached")
+        def get_run(self, *_): pytest.fail("Cursor provider reached")
+    canonical = GuardedCanonical()
+    if existing_native:
+        canonical.retirements = 1
+        native_id = "HNX-SAME"
+        canonical.native = {
+            "native_execution_id": native_id, "generation": "g1", "pr_number": 0,
+            "worker_claim_id": NativeRunnerService._claim_identity(native_id),
+            "execution_status": "RUNNING",
+        }
+    worktrees = tmp_path / "worktrees"
+    service = NativeRunnerService(
+        profile_home=tmp_path, repository_root=tmp_path, worktree_root=worktrees,
+        canonical=canonical, cursor=GuardedCursor(), github=GithubFake(), model=object())
+    monkeypatch.setattr(
+        "modules.charlie.native_runner.service.run_schema_canary",
+        lambda _: (_ for _ in ()).throw(NativeExecutionError("hermes_auxiliary_canary_failed")))
+    monkeypatch.setattr(
+        "modules.charlie.native_runner.service.validate_primary_repository",
+        lambda *_: pytest.fail("repository/worktree validation reached"))
+    with pytest.raises(NativeExecutionError, match="hermes_auxiliary_canary_failed"):
+        service.once()
+    assert not (worktrees / "CHARLIE-MISSION-13B47938FF65E2C1").exists()
 
 
 def test_model_route_mismatch_fails_closed(tmp_path):

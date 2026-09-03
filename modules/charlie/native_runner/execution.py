@@ -548,17 +548,19 @@ class NativePackager:
         heartbeat()
         candidate_files, diff = self._validate_candidate_before_remote(head)
         heartbeat()
-        self._push_with_ephemeral_askpass()
+        # A lost response can make the remote outcome unknowable. Report the
+        # attempt conservatively before crossing the remote mutation boundary.
         self.mutation_observer("remote")
+        self._push_with_ephemeral_askpass()
         heartbeat()
         pull = self._find_pull(branch)
         if not pull:
             heartbeat()
+            self.mutation_observer("remote")
             pull = self._github("POST", "/repos/Crewless9086/amadeus-pig-tracking-system/pulls", {
                 "title": str(title)[:120], "body": str(body), "head": branch,
                 "base": "main", "draft": True,
             })
-            self.mutation_observer("remote")
         if not pull.get("draft") or (pull.get("head") or {}).get("sha") != head:
             raise NativeExecutionError("native_packaging_pr_unverified")
         return {"commit_sha": head, "pr_number": int(pull["number"]),

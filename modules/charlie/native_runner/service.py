@@ -14,7 +14,7 @@ from .canonical_client import (CanonicalClient, CursorRetirementClient,
                                GitHubObserver, SlackNotifier)
 from .execution import (HermesIndependentReviewer, HermesStructuredPatchWorker,
                         NativeExecutionEngine, NativeExecutionError,
-                        NativePackager, content_identity,
+                        NativePackager, PatchValidator, content_identity,
                         run_argv, validate_primary_repository)
 from .model_adapter import HermesAuxiliaryModel, run_schema_canary
 
@@ -153,6 +153,7 @@ class NativeRunnerService:
         self._active_stage = "discovery"
         self._repository_mutation = False
         self._remote_mutation = False
+        self._active_worktree = None
 
     def _observe_mutation(self, kind):
         if kind == "repository":
@@ -191,7 +192,7 @@ class NativeRunnerService:
             "event": "native_patch_intent_recorded",
         }, claim_id=authorization.get("worker_claim_id"))
 
-    def _recover_patch_intent(self, authorization, worktree):
+    def _recover_patch_intent(self, authorization, worktree, *, applied=True):
         target = self._patch_intent_path(worktree)
         try:
             record = json.loads(target.read_text(encoding="utf-8"))
@@ -204,10 +205,18 @@ class NativeRunnerService:
                 or digest != authorization.get("patch_sha256")
                 or record.get("builder_identity") != authorization.get("builder_identity")):
             raise NativeExecutionError("native_dirty_patch_provenance_invalid")
-        current = run_argv(["git", "diff", "--binary", "--no-ext-diff", "--"], cwd=worktree)
-        if current.returncode or hashlib.sha256(current.stdout.encode("utf-8")).hexdigest() != digest:
-            raise NativeExecutionError("native_dirty_patch_provenance_mismatch")
+        if applied:
+            current = run_argv(["git", "diff", "--binary", "--no-ext-diff", "--"], cwd=worktree)
+            if current.returncode or hashlib.sha256(current.stdout.encode("utf-8")).hexdigest() != digest:
+                raise NativeExecutionError("native_dirty_patch_provenance_mismatch")
         return record
+
+    def _refresh_local_mutation_state(self):
+        worktree = getattr(self, "_active_worktree", None)
+        if worktree and Path(worktree).exists():
+            changed = run_argv(["git", "status", "--porcelain"], cwd=worktree)
+            if changed.returncode == 0 and changed.stdout.strip():
+                self._repository_mutation = True
 
     def _ensure_running(self):
         if getattr(self, "_stop_event", None) is not None and self._stop_event.is_set():
@@ -413,6 +422,7 @@ class NativeRunnerService:
             heartbeat=heartbeat,
             patch_intent=lambda response, patch, paths: self._persist_patch_intent(
                 mission["mission_id"], authorization, worktree, response, patch, paths))
+        self._active_worktree = Path(worktree)
         recovered = False
         recovered_dirty = False
         if Path(worktree).exists():
@@ -424,6 +434,14 @@ class NativeRunnerService:
                 if dirty.stdout.strip() or not authorization.get("builder_identity"):
                     raise NativeExecutionError("native_packaging_recovery_unproven")
                 recovered = True
+            elif not dirty.stdout.strip() and authorization.get("patch_sha256"):
+                intent = self._recover_patch_intent(authorization, worktree, applied=False)
+                changed = PatchValidator(worktree, authorization["allowed_files"]).apply(intent["patch"])
+                if sorted(changed) != sorted(intent.get("changed_files") or []):
+                    raise NativeExecutionError("native_dirty_patch_provenance_mismatch")
+                self._observe_mutation("repository")
+                recovered = True
+                recovered_dirty = True
             elif dirty.stdout.strip():
                 changed = run_argv(["git", "diff", "--name-only", "--"], cwd=worktree)
                 summary = run_argv(["git", "diff", "--summary", "--"], cwd=worktree)
@@ -451,6 +469,7 @@ class NativeRunnerService:
                                        governance_context=self.canonical.native_context(mission["mission_id"]))
             if built.get("state") != "PATCH_READY":
                 raise NativeExecutionError("native_model_blocked")
+            self._observe_mutation("repository")
         self._ensure_running()
         self._active_stage = "verification"
         evidence = engine.verify()
@@ -672,6 +691,7 @@ class NativeRunnerService:
         return hashlib.sha256(raw.encode()).hexdigest(), generation, authority, revision
 
     def _report_blocker(self, mission_id, reason, repeated):
+        self._refresh_local_mutation_state()
         stage = str(self._active_stage or "execution")
         fingerprint, generation, authority, revision = self._blocker_identity(mission_id, reason)
         state = self._status(state="BLOCKED_HOLD" if repeated >= 2 else "BLOCKED",
