@@ -34,7 +34,8 @@ from modules.charlie.native_runner.execution import NativeExecutionError, Native
 from modules.charlie.native_runner.canonical_client import GitHubObserver
 from modules.charlie.native_runner.model_adapter import HermesAuxiliaryModel, run_schema_canary
 from modules.charlie.native_runner.service import (BROAD_GITHUB_NAMES, NativeRunnerService,
-                                                   ProcessLock, read_profile_values)
+                                                   ProcessLock, read_environment_values,
+                                                   read_profile_values)
 
 
 REQUIRED = {
@@ -66,6 +67,85 @@ def test_profile_reader_is_allowlisted_and_rejects_broad_github_credentials(tmp_
     monkeypatch.setenv("GH_TOKEN", "must-not-be-used")
     with pytest.raises(NativeExecutionError, match="broad_github_credential_forbidden:GH_TOKEN"):
         read_profile_values(tmp_path / "profile")
+
+
+def test_render_environment_reader_is_allowlisted_and_rejects_broad_credentials(monkeypatch):
+    for key in set(REQUIRED) | set(BROAD_GITHUB_NAMES) | {"UNRELATED_SECRET"}:
+        monkeypatch.delenv(key, raising=False)
+    for key, value in REQUIRED.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-be-read")
+    values = read_environment_values()
+    assert set(values) == set(REQUIRED) | {"CHARLIE_GITHUB_READ_TOKEN"}
+    assert "UNRELATED_SECRET" not in values
+    monkeypatch.setenv("GITHUB_TOKEN", "forbidden")
+    with pytest.raises(NativeExecutionError, match="broad_github_credential_forbidden:GITHUB_TOKEN"):
+        read_environment_values()
+
+
+def test_render_service_removes_parent_secrets_from_inherited_environment(tmp_path, monkeypatch):
+    for key in BROAD_GITHUB_NAMES:
+        monkeypatch.delenv(key, raising=False)
+    for key, value in REQUIRED.items():
+        monkeypatch.setenv(key, value)
+    service = NativeRunnerService(
+        profile_home=tmp_path, repository_root=tmp_path / "repo",
+        worktree_root=tmp_path / "worktrees", configuration_source="environment",
+        model=SimpleNamespace(),
+    )
+    assert service.packager_token == REQUIRED["CHARLIE_GITHUB_PACKAGER_TOKEN"]
+    for name in ("CHARLIE_HERMES_GATEWAY_TOKEN", "SLACK_BOT_TOKEN", "CURSOR_API_KEY",
+                 "CHARLIE_GITHUB_PACKAGER_TOKEN"):
+        assert name not in os.environ
+
+
+def test_render_blueprint_is_one_paid_worker_with_one_persistent_disk():
+    text = Path("render.yaml").read_text(encoding="utf-8")
+    assert "type: worker" in text
+    assert "plan: 1c-2g" in text
+    assert "numInstances: 1" in text
+    assert "autoDeployTrigger: off" in text
+    assert "mountPath: /var/data" in text and "sizeGB: 10" in text
+    assert "type: web" not in text and "healthCheckPath:" not in text
+
+
+def test_render_bootstrap_uses_exact_revision_and_no_shell(tmp_path, monkeypatch):
+    module = importlib.import_module("scripts.charlie_render_native_runner")
+    disk = tmp_path / "disk"
+    repository = disk / "repository"
+    worktrees = disk / "worktrees"
+    profile = disk / "hermes-profile"
+    calls = []
+    monkeypatch.setattr(module, "DISK", disk)
+    monkeypatch.setattr(module, "REPOSITORY", repository)
+    monkeypatch.setattr(module, "WORKTREES", worktrees)
+    monkeypatch.setattr(module, "PROFILE", profile)
+    class Result:
+        def __init__(self, stdout=""): self.stdout = stdout
+    def fake(argv, cwd=None):
+        calls.append((list(argv), cwd))
+        if argv[:2] == ["git", "clone"]:
+            (repository / ".git").mkdir(parents=True)
+        if argv[-3:] == ["remote", "get-url", "origin"]: return Result(module.ORIGIN + "\n")
+        if argv[-2:] == ["rev-parse", "HEAD"]: return Result("a" * 40 + "\n")
+        return Result("")
+    monkeypatch.setattr(module, "run", fake)
+    assert module.prepare_repository(deployed_sha="a" * 40) == "a" * 40
+    assert any(row[0][:3] == ["git", "checkout", "--detach"] for row in calls)
+    source = Path("scripts/charlie_render_native_runner.py").read_text(encoding="utf-8")
+    assert "shell=False" in source and "shell=True" not in source
+
+
+def test_watch_stops_cleanly_on_supervisor_termination(tmp_path):
+    import threading
+    service = object.__new__(NativeRunnerService)
+    service.worktree_root = tmp_path
+    service.status_path = tmp_path / "status.json"
+    service.clock = lambda: datetime.now(timezone.utc)
+    service.once = lambda: {"state": "IDLE"}
+    stopping = threading.Event(); stopping.set()
+    assert service.watch(5, stop_event=stopping) == 0
+    assert json.loads(service.status_path.read_text())["state"] == "STOPPED"
 
 
 def test_model_adapter_uses_installed_low_level_boundary_without_tools_or_api_key(tmp_path):

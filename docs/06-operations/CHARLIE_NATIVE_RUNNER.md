@@ -36,6 +36,41 @@ explicitly outside this runner boundary. AMADEUS-CLOUD therefore cannot host
 the production runner until its platform provides a documented independent
 service primitive satisfying those requirements.
 
+## Render Background Worker deployment
+
+Render is the preferred managed host for this boundary. `render.yaml` defines a
+separate `charlie-native-runner` Background Worker: one `1c-2g` instance (1 CPU,
+2 GB RAM), a 10 GB encrypted persistent disk mounted at `/var/data`, automatic
+deploys disabled, and a 120-second graceful shutdown window. The disk makes the
+service single-instance and preserves `/var/data/repository`,
+`/var/data/worktrees`, the process lock, and recovery status across restarts.
+The worker has no inbound port.
+
+The exact recurring service cost is USD 27.50/month before usage overages: USD
+25.00/month for `1c-2g` compute plus USD 2.50/month for 10 GB at USD
+0.25/GB/month. Existing workspace-plan charges and usage-based outbound
+bandwidth are not duplicated in that figure.
+
+The worker image pins Hermes source commit
+`5fc308a70719a83cccdbba4c0e39c23f5a8239d5` solely for the low-level
+no-tool auxiliary inference adapter. Render protected configuration is
+allowlisted in the Blueprint; secret entries use `sync: false`. Broad GitHub
+credentials abort startup. `OPENROUTER_API_KEY` supplies the reviewed equivalent
+provider route inside Hermes auxiliary inference and never enters model
+content, verification subprocesses, logs, artifacts, Slack, or canonical state.
+
+On each start, `scripts/charlie_render_native_runner.py` validates or creates
+the persistent repository clone, fetches the exact `RENDER_GIT_COMMIT`, checks
+out that revision detached, validates origin and clean state, then replaces
+itself with the bounded watch process. Git operations use argv without a shell.
+SIGTERM stops polling, records a bounded stopped status, and exits inside the
+configured shutdown window.
+
+Initial deployment is manual. Before mutation, run the existing read-only
+no-tool canary and verify repository identity, exact revision, disk persistence,
+one local lock, and one canonical writer. Rollback suspends only the worker and
+retains the disk until canonical state and any draft PR are reconciled.
+
 ## Dedicated host contract
 
 Provision Ubuntu 24.04 LTS with 4 vCPU, 8 GB RAM, and an 80 GB persistent disk.

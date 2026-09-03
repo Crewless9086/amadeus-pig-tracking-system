@@ -14,7 +14,8 @@ from .execution import (
     validate_primary_repository,
 )
 from .model_adapter import HermesAuxiliaryModel, run_schema_canary
-from .service import NativeRunnerService, ProcessLock, read_profile_values
+from .service import (NativeRunnerService, ProcessLock, read_environment_values,
+                      read_profile_values)
 
 __all__ = [
     "ContextBroker",
@@ -33,4 +34,5 @@ __all__ = [
     "NativeRunnerService",
     "ProcessLock",
     "read_profile_values",
+    "read_environment_values",
 ]

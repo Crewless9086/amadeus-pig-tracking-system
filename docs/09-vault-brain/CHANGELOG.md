@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-09-03 - Render worker boundary for CHARLIE native runner
+
+- Added a separately billed, single-instance Render Background Worker Blueprint
+  with a 10 GB persistent disk, manual deployment, exact-revision repository
+  bootstrap, allowlisted protected configuration, and graceful SIGTERM handling.
+- Recorded the USD 27.50/month compute-plus-disk cost and retained the dedicated
+  systemd host as a fallback instead of requiring an immediate VPS purchase.
+
 ## 2026-09-02 - Standalone CHARLIE native runner boundary
 
 - Removed mission execution and recovery from the Hermes directory-plugin

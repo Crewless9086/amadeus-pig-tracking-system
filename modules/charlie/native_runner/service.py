@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +25,10 @@ REQUIRED_NAMES = (
     "CURSOR_API_KEY", "CHARLIE_GITHUB_PACKAGER_TOKEN",
 )
 BROAD_GITHUB_NAMES = ("CHARLIE_GITHUB_WRITE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
+RUNNER_SECRET_NAMES = (
+    "CHARLIE_HERMES_GATEWAY_TOKEN", "SLACK_BOT_TOKEN", "CURSOR_API_KEY",
+    "CHARLIE_GITHUB_PACKAGER_TOKEN", "CHARLIE_GITHUB_READ_TOKEN",
+)
 
 
 def read_profile_values(profile_home, names=REQUIRED_NAMES, *, config_path=None):
@@ -47,6 +52,20 @@ def read_profile_values(profile_home, names=REQUIRED_NAMES, *, config_path=None)
     broad = [name for name in BROAD_GITHUB_NAMES if values.get(name) or os.environ.get(name)]
     if broad:
         raise NativeExecutionError("broad_github_credential_forbidden:" + ",".join(broad))
+    missing = [name for name in names if not values.get(name)]
+    if missing:
+        raise NativeExecutionError("native_protected_configuration_missing:" + ",".join(missing))
+    return values
+
+
+def read_environment_values(names=REQUIRED_NAMES, *, environ=None):
+    """Read only the runner allowlist from a service-owned environment."""
+    source = os.environ if environ is None else environ
+    broad = [name for name in BROAD_GITHUB_NAMES if str(source.get(name) or "").strip()]
+    if broad:
+        raise NativeExecutionError("broad_github_credential_forbidden:" + ",".join(broad))
+    values = {name: str(source.get(name) or "").strip()
+              for name in set(names) | {"CHARLIE_GITHUB_READ_TOKEN"}}
     missing = [name for name in names if not values.get(name)]
     if missing:
         raise NativeExecutionError("native_protected_configuration_missing:" + ",".join(missing))
@@ -98,12 +117,21 @@ class NativeRunnerService:
 
     def __init__(self, *, profile_home, repository_root, worktree_root,
                  canonical=None, cursor=None, github=None, notifier=None, model=None,
-                 clock=None, status_path=None, config_path=None):
+                 clock=None, status_path=None, config_path=None, configuration_source="profile"):
         self.profile_home = Path(profile_home).resolve(strict=True)
         self.repository_root = Path(repository_root)
         self.worktree_root = Path(worktree_root)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
-        values = read_profile_values(self.profile_home, config_path=config_path) if canonical is None else {}
+        if canonical is None:
+            values = (read_environment_values() if configuration_source == "environment"
+                      else read_profile_values(self.profile_home, config_path=config_path))
+            if configuration_source == "environment":
+                # Retain secrets only in the deterministic parent object. They
+                # must not remain inherited by model or verification children.
+                for name in RUNNER_SECRET_NAMES:
+                    os.environ.pop(name, None)
+        else:
+            values = {}
         self.canonical = canonical or CanonicalClient(values["CHARLIE_CANONICAL_API_URL"], values["CHARLIE_HERMES_GATEWAY_TOKEN"])
         self.cursor = cursor or (CursorRetirementClient(values["CURSOR_API_KEY"]) if values else None)
         read_token = values.get("CHARLIE_GITHUB_READ_TOKEN", "") if values else ""
@@ -489,13 +517,14 @@ class NativeRunnerService:
                             native_execution_id=native["native_execution_id"],
                             branch=binding["branch"], pr_number=binding["pr_number"], head_sha=binding["head_sha"])
 
-    def watch(self, poll_seconds=15):
+    def watch(self, poll_seconds=15, *, stop_event=None):
         failures = {}
-        while True:
+        stopping = stop_event or threading.Event()
+        while not stopping.is_set():
             try:
                 self.once()
                 failures.clear()
-                time.sleep(max(5, min(int(poll_seconds), 300)))
+                stopping.wait(max(5, min(int(poll_seconds), 300)))
             except NativeExecutionError as exc:
                 reason = str(exc)
                 failures[reason] = failures.get(reason, 0) + 1
@@ -505,4 +534,6 @@ class NativeRunnerService:
                     # stop, not a crash. Exit cleanly so the service supervisor
                     # does not manufacture an infinite restart loop.
                     return 0
-                time.sleep(min(60, 5 * (2 ** (failures[reason] - 1))))
+                stopping.wait(min(60, 5 * (2 ** (failures[reason] - 1))))
+        self._status(state="STOPPED", reason="sigterm")
+        return 0
