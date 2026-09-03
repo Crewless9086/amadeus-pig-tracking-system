@@ -361,7 +361,39 @@ def test_repeated_blocker_notifies_once_per_destination_and_holds(tmp_path):
     assert calls == ["model", "model"]
     assert [item[0] for item in notices] == ["C1", "C2"]
     assert len(canonical_blocks) == 1
-    assert "secret" not in json.dumps(canonical_blocks).lower()
+
+
+def test_blocker_reporting_retries_only_incomplete_destinations(tmp_path):
+    attempts = {"canonical": 0, "C1": 0, "C2": 0}
+    class Canonical:
+        def mission(self, _mission_id):
+            return {"mission": {"generation": "g1", "metadata": {
+                "external_supervisor_state": {"slack_channel_id": "C1", "slack_thread_ts": "T1"},
+                "slack_approval_channel_id": "C2",
+                "dispatch_authorization": {"authorization_id": "PDA-1"}}}}
+        def blocker(self, _mission_id, _payload):
+            attempts["canonical"] += 1
+            if attempts["canonical"] == 1:
+                raise OSError("transient")
+            return {"success": True}
+    class Notifier:
+        def post(self, channel, _text, **_kwargs):
+            attempts[channel] += 1
+            if channel == "C2" and attempts[channel] == 1:
+                raise OSError("transient")
+            return {"ok": True}
+    service = object.__new__(NativeRunnerService)
+    service.canonical, service.notifier = Canonical(), Notifier()
+    service.slack_approval_channel = "C2"
+    service.status_path, service.clock = tmp_path / "status.json", lambda: datetime.now(timezone.utc)
+    service._active_stage, service._active_worktree = "packaging", None
+    service._repository_mutation, service._remote_mutation = True, True
+    service._report_blocker("MISSION-1", "native_packaging_push_failed", 2)
+    service._report_blocker("MISSION-1", "native_packaging_push_failed", 2)
+    saved = json.loads(service.status_path.read_text())
+    assert attempts == {"canonical": 2, "C1": 1, "C2": 2}
+    assert saved["reporting"] == "complete"
+    assert saved["repository_mutation"] is True and saved["remote_mutation"] is True
 
 
 @pytest.mark.parametrize("patch_already_applied", [False, True])

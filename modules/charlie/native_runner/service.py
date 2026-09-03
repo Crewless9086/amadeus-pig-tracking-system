@@ -415,6 +415,7 @@ class NativeRunnerService:
             "worker_claim_id": claim, "claim_expires_at": (self.clock() + timedelta(minutes=10)).isoformat(),
             "runner_stage": "builder", "event": "native_writer_claimed",
         })
+        authorization = {**authorization, "worker_claim_id": claim}
         heartbeat = lambda: self._lifecycle_heartbeat(
             mission["mission_id"], authorization["native_execution_id"], claim, "builder")
         engine = NativeExecutionEngine(
@@ -674,7 +675,8 @@ class NativeRunnerService:
                             native_execution_id=native["native_execution_id"],
                             branch=binding["branch"], pr_number=binding["pr_number"], head_sha=binding["head_sha"])
 
-    def _blocker_identity(self, mission_id, reason):
+    def _blocker_identity(self, mission_id, reason, *, stage="", repository_mutation=False,
+                          remote_mutation=False):
         generation = authority = resume = ""
         if mission_id:
             try:
@@ -687,48 +689,75 @@ class NativeRunnerService:
             except Exception:
                 resume = ""
         revision = str(os.environ.get("RENDER_GIT_COMMIT") or "local")
-        raw = "|".join((mission_id, generation, authority, revision, resume, reason))
+        raw = "|".join((mission_id, generation, authority, revision, resume, reason,
+                        str(stage), str(bool(repository_mutation)), str(bool(remote_mutation))))
         return hashlib.sha256(raw.encode()).hexdigest(), generation, authority, revision
 
     def _report_blocker(self, mission_id, reason, repeated):
         self._refresh_local_mutation_state()
         stage = str(self._active_stage or "execution")
-        fingerprint, generation, authority, revision = self._blocker_identity(mission_id, reason)
-        state = self._status(state="BLOCKED_HOLD" if repeated >= 2 else "BLOCKED",
-                             mission_id=mission_id, reason=reason, stage=stage,
-                             repeated=repeated, blocker_fingerprint=fingerprint,
-                             generation=generation, authority_identity=authority,
-                             runner_revision=revision,
-                             repository_mutation=bool(getattr(self, "_repository_mutation", False)),
-                             remote_mutation=bool(getattr(self, "_remote_mutation", False)))
-        if repeated == 1 and mission_id:
+        repository_mutation = bool(getattr(self, "_repository_mutation", False))
+        remote_mutation = bool(getattr(self, "_remote_mutation", False))
+        fingerprint, generation, authority, revision = self._blocker_identity(
+            mission_id, reason, stage=stage, repository_mutation=repository_mutation,
+            remote_mutation=remote_mutation)
+        completed = {}
+        if self.status_path.exists():
+            try:
+                prior = json.loads(self.status_path.read_text(encoding="utf-8"))
+                if prior.get("blocker_fingerprint") == fingerprint:
+                    completed = dict(prior.get("reporting_completed") or {})
+            except (OSError, ValueError, TypeError):
+                completed = {}
+        state_values = dict(state="BLOCKED_HOLD" if repeated >= 2 else "BLOCKED",
+                            mission_id=mission_id, reason=reason, stage=stage,
+                            repeated=repeated, blocker_fingerprint=fingerprint,
+                            generation=generation, authority_identity=authority,
+                            runner_revision=revision, repository_mutation=repository_mutation,
+                            remote_mutation=remote_mutation)
+        state = self._status(**state_values, reporting_completed=completed)
+        if mission_id:
+            loaded = {}
             try:
                 loaded = self.canonical.mission(mission_id)
-                mission = dict(loaded.get("mission") or {})
-                metadata = dict(mission.get("metadata") or {})
-                external = dict(metadata.get("external_supervisor_state") or {})
-                repository_mutation = bool(getattr(self, "_repository_mutation", False))
-                remote_mutation = bool(getattr(self, "_remote_mutation", False))
-                text = (f"Mission {mission_id} blocked at {stage}: {reason}. "
-                        f"repository_mutation={str(repository_mutation).lower()} "
-                        f"remote_mutation={str(remote_mutation).lower()}")
-                self.canonical.blocker(mission_id, {
-                    "reason": reason, "stage": stage, "generation": generation,
-                    "authority_identity": authority, "runner_revision": revision,
-                    "repository_mutation": repository_mutation, "remote_mutation": remote_mutation,
-                    "notification_identity": fingerprint,
-                })
-                if self.notifier:
+            except Exception:
+                loaded = {}
+            mission = dict(loaded.get("mission") or {})
+            metadata = dict(mission.get("metadata") or {})
+            external = dict(metadata.get("external_supervisor_state") or {})
+            text = (f"Mission {mission_id} blocked at {stage}: {reason}. "
+                    f"repository_mutation={str(repository_mutation).lower()} "
+                    f"remote_mutation={str(remote_mutation).lower()}")
+            if not completed.get("canonical"):
+                try:
+                    self.canonical.blocker(mission_id, {
+                        "reason": reason, "stage": stage, "generation": generation,
+                        "authority_identity": authority, "runner_revision": revision,
+                        "repository_mutation": repository_mutation, "remote_mutation": remote_mutation,
+                        "notification_identity": fingerprint,
+                    })
+                    completed["canonical"] = True
+                except Exception:
+                    pass
+            if self.notifier and external.get("slack_channel_id") and not completed.get("thread"):
+                try:
                     self.notifier.post(external.get("slack_channel_id"), text,
                         thread_ts=external.get("slack_thread_ts", ""),
                         idempotency_key=f"{mission_id}:{fingerprint}:blocked-thread")
+                    completed["thread"] = True
+                except Exception:
+                    pass
+            if self.notifier and not completed.get("approvals"):
+                try:
                     self.notifier.post(metadata.get("slack_approval_channel_id") or self.slack_approval_channel,
                         text, idempotency_key=f"{mission_id}:{fingerprint}:blocked-approvals")
-            except Exception:
-                # Reporting failure is itself bounded in local durable state;
-                # never expose transport bodies or restart the model loop.
-                state = self._status(**{**state, "state": "BLOCKED_HOLD",
-                                       "reporting": "bounded_notification_failed"})
+                    completed["approvals"] = True
+                except Exception:
+                    pass
+            state = self._status(**state_values, reporting_completed=completed,
+                                 reporting=("complete" if all(completed.get(key) for key in
+                                            ("canonical", "thread", "approvals"))
+                                            else "bounded_notification_pending"))
         return state
 
     @staticmethod
@@ -749,10 +778,22 @@ class NativeRunnerService:
                 prior = json.loads(self.status_path.read_text(encoding="utf-8"))
                 if prior.get("state") == "BLOCKED_HOLD":
                     reason = str(prior.get("reason") or "native_runner_blocked")
-                    current, *_ = self._blocker_identity(str(prior.get("mission_id") or ""), reason)
+                    current, *_ = self._blocker_identity(
+                        str(prior.get("mission_id") or ""), reason,
+                        stage=str(prior.get("stage") or ""),
+                        repository_mutation=bool(prior.get("repository_mutation")),
+                        remote_mutation=bool(prior.get("remote_mutation")))
                     if current == prior.get("blocker_fingerprint"):
                         while not stopping.wait(max(5, min(int(poll_seconds), 300))):
-                            current, *_ = self._blocker_identity(str(prior.get("mission_id") or ""), reason)
+                            self._active_stage = str(prior.get("stage") or "execution")
+                            self._repository_mutation = bool(prior.get("repository_mutation"))
+                            self._remote_mutation = bool(prior.get("remote_mutation"))
+                            self._report_blocker(str(prior.get("mission_id") or ""), reason, 2)
+                            current, *_ = self._blocker_identity(
+                                str(prior.get("mission_id") or ""), reason,
+                                stage=str(prior.get("stage") or ""),
+                                repository_mutation=bool(prior.get("repository_mutation")),
+                                remote_mutation=bool(prior.get("remote_mutation")))
                             if current != prior.get("blocker_fingerprint"):
                                 break
                         if stopping.is_set():
@@ -785,7 +826,11 @@ class NativeRunnerService:
                 if failures[reason] >= 2:
                     while not stopping.wait(max(5, min(int(poll_seconds), 300))):
                         prior = json.loads(self.status_path.read_text(encoding="utf-8"))
-                        current, *_ = self._blocker_identity(mission_id, reason)
+                        self._report_blocker(mission_id, reason, failures[reason])
+                        current, *_ = self._blocker_identity(
+                            mission_id, reason, stage=str(self._active_stage or "execution"),
+                            repository_mutation=bool(self._repository_mutation),
+                            remote_mutation=bool(self._remote_mutation))
                         if current != prior.get("blocker_fingerprint"):
                             failures.clear()
                             break
