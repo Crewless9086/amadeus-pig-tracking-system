@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-09-10 - Approved mortality release continuation
+
+Recorded Charl's exact approval of mortality candidate
+`29f73b12da6989ec6c5553e2c73058cc3f36467d`, PR #1332 and Anton's private Plaas
+menu. Retained ordinary Afrikaans conversation as required live acceptance,
+prohibited terminal-created farm events, and made verified release disposition
+the promotion gate for weaning then first treatment even while mortality
+acceptance awaits a genuine report. Corrected the historical June one-step API
+document with the current phased contract. OMQ/PR1309 production correction and
+CHARLIE commissioning remain separate, with CHARLIE held.
+
 ## 2026-09-10 - Everyday herd operations continuation
 
 - Registered Charl's explicit mortality, weaning and first-treatment priority

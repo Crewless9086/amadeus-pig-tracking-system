@@ -1,5 +1,19 @@
 # Pig Lifecycle Outcome Plan
 
+Status: historical June 2026 design and implementation record. The one-step
+death POST examples below are superseded by the mortality preview/confirmation
+contract qualified on 10 September 2026, candidate
+`29f73b12da6989ec6c5553e2c73058cc3f36467d`.
+
+Current mortality clients use a verified actor and CSRF-bound `phase=preview`,
+then `phase=confirm` with the retained operation ID. GET on the same death route
+resumes the actor's retained operation. `changed_by` in a request does not grant
+identity or authority. Missing preview/confirmation cannot record a Died event.
+Application and Telegram use the same canonical mortality transaction and
+readback. Non-death administrator actions retain their separate existing rules.
+See [the current health/loss workflow](../09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md).
+Source qualification does not establish deployment or a genuine farm outcome.
+
 ## Purpose
 
 Phase 9.7 makes animal outcomes auditable and useful for reporting. The system should record what happened to each pig once, through backend-owned actions, then let pig, litter, sow, boar, sales, slaughter, and dashboard views derive from that truth.

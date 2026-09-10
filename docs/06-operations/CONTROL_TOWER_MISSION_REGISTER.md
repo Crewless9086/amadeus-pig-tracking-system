@@ -9,7 +9,8 @@ separate CHARLIE/OpenAI commissioning response is pending. Continue existing
 missions in this order: mortality, litter weaning, first treatment, then daily
 farm-plan conversations and irrigation status/follow-ups. This direction
 supersedes older ordering for this bounded work; it does not release CHARLIE's
-hold or authorize production changes.
+hold. The subsequent exact mortality release approval below authorizes only
+that bounded production release and Anton's private menu commissioning.
 
 The owner outcome is Anton performing his authorized daily farm operations
 through natural Oom Sakkie Telegram conversation. Application and Telegram use
@@ -30,12 +31,15 @@ source and browser evidence, and verified all 21 source hashes and 58 evidence
 artifact hashes. Both review findings are resolved. The shared PR830 test file
 was ultimately left unchanged; its existing mortality contract passes.
 
-Lifecycle remains `REVIEW_HOLD` pending the owner's requested release approval;
-this is not BUSINESS COMPLETE or a verified live result. The exact prepared
+Charl has now explicitly approved candidate `29f73b12da6989ec6c5553e2c73058cc3f36467d`
+and the prepared source release, controlled acceptance and Anton private Plaas
+menu package. Release is in progress through PR #1332; this is not BUSINESS
+COMPLETE or a verified live result. The exact prepared
 package is `C:/tmp/amadeus-herd-ops-20260910/HERDMASTER_HANDOVER.md`, with the
 private-menu request/rollback in `HERDMASTER_MENU_ENTRY_PROPOSAL.json` and root
-verification in `CONTROL_TOWER_VERIFICATION.json`. No push, PR, merge or deploy
-has occurred. After approval, Control Tower rechecks current-main/ownership,
+verification in `CONTROL_TOWER_VERIFICATION.json`. The canonical owner approval
+event is `CORE-MISSION-CONTROL-658FFC772E079CF038242DED`; only the existing
+mortality mission was updated. Control Tower rechecks current-main/ownership,
 publishes the reviewed candidate, completes required CI, uses the serialized
 release lane, verifies the loaded revision, commissions only Anton's approved
 private-chat menu and observes genuine own-identity acceptance. No historical
@@ -50,10 +54,25 @@ evidence, not permission to activate n8n or a claim that every possible external
 effect has been exhaustively disproved. `N8N_CONTAINMENT_READONLY.json` retains
 the check; no configuration/workflow was changed.
 
-Current source lane is idle at the genuine review boundary. Weaning is the next
-existing HERDMASTER continuation after this disposition/release gate and an
-ownership check; first treatment follows it. OMQ/PR1309 remains the separate
-live follow-up dependency. CHARLIE's owner-directed commissioning hold remains.
+Control Tower owns the approved mortality release. Once its deployed disposition
+is verified, promote the existing eligible weaning work, then first treatment;
+do not hold those local repairs solely for a genuine mortality report. Ordinary
+Afrikaans Telegram conversation remains required acceptance; the Mini App is
+supplementary. If there is no genuine report, retain deployed/live mortality
+acceptance pending. No terminal may report or confirm an event for Anton.
+OMQ/PR1309 retains its source ownership and separate production correction
+boundary; diagnosis and local repair preparation are authorized. Daily-plan and
+follow-up reliability remain separate evidence gates. CHARLIE stays held.
+
+Before release, the exact candidate's 21 source hashes matched again and all
+five required GitHub checks passed, including the protected mission-admission
+issuer. The first-party client audit confirms the phased contract and versioned
+asset; the historical June API design now carries a supersession notice. Live
+prerequisites confirm the expected Anton binding, configured semantic/direct
+runtime and existing schema. Telegram currently enters through the existing
+cloud n8n relay; its active transport is being checked without execution or
+configuration changes. Evidence is retained under
+`C:/tmp/amadeus-herd-ops-20260910/`.
 
 ### Current mission, authority and delivery
 
