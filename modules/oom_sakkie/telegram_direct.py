@@ -330,6 +330,39 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
             parsed["telegram_chat_id"], source, allowed_ids))
     if family_principal.role is FamilyRole.UNKNOWN_SENDER and not is_owner_ingress:
         return _direct_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    if (family_principal.role in {FamilyRole.OWNER, FamilyRole.FARM_MANAGER}
+            and parsed.get("telegram_chat_type") == "private"
+            and parsed["telegram_user_id"] == parsed["telegram_chat_id"]):
+        # Both authenticated Telegram ingresses consume the same retained
+        # specialist operation. The direct bot must not divert a manager's
+        # mortality report into the older observation-only family adapter.
+        from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
+        from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
+        from modules.oom_sakkie.telegram_gateway import _bind_protected_preview_card
+        parsed = {**parsed, "output_language": family_principal.language}
+        authority = issue_gateway_owner_authority(parsed["telegram_user_id"], parsed["telegram_chat_id"],
+            principal_role=family_principal.role.value, capabilities=family_principal.effective_permissions)
+        health_result, health_status = handle_protected_action_input(parsed, authority)
+        if not health_result.get("handled"):
+            if semantic_front_door_policy(source).get("enabled"):
+                semantic = interpret_owner_message(parsed, environ=source)
+                if semantic is not None:
+                    parsed = {**parsed, "semantic": semantic.as_hint()}
+            health_result, health_status = handle_authenticated_health_loss_message(parsed, authority)
+        if health_result.get("handled"):
+            delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
+                if health_result.get("suppress_owner_delivery") else
+                deliver_family_result(parsed, health_result, specialist="HERDMASTER",
+                    mission_id=str(health_result.get("mission_id") or ""),
+                    card_mission_id=str(health_result.get("card_mission_id") or "")))
+            delivery = _bind_protected_preview_card(health_result, delivery)
+            body, _ = _direct_result(health_result.get("success") is True,
+                str(health_result.get("status") or "health_loss_contained"), policy, health_status)
+            body.update({"message": health_result, "answer": health_result.get("answer", ""),
+                "delivery": delivery, "family_role": family_principal.role.value,
+                "language": family_principal.language, "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+                "writes": health_result.get("writes_farm_data") is True})
+            return body, health_status if delivery.get("success") else 503
     if not is_owner_ingress and family_principal.role is not FamilyRole.OWNER:
         family_result, family_status = handle_family_runtime_message(
             parsed, family_principal, summary_loader=load_family_summary,

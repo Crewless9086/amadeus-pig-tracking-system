@@ -57,6 +57,43 @@ def maya_packet():
     return maya, evidence(maya, matings=[mating])
 
 
+@pytest.mark.parametrize("text,day", [
+    ("Pig 93 is dead today.", "2026-08-01"),
+    ("Pig 93 passed away yesterday.", "2026-07-31"),
+    ("Pig 93 was found dead last night.", "2026-07-31"),
+    ("Vark 93 is gister dood.", "2026-07-31"),
+    ("Vark 93 het gister gesterf.", "2026-07-31"),
+    ("Vark 93 is vanoggend dood aangetref.", "2026-08-01"),
+    ("Pig 93 died yesterday. He was buried today.", "2026-07-31"),
+    ("Pig 93 died yesterday after being ill. I suspect an infection.", "2026-07-31"),
+])
+def test_ordinary_mortality_language_keeps_death_date_separate_from_disposal(text, day):
+    result = evaluate_health_loss_intake(report(text), evidence(animal("PIG-2026-0093","93","93")))
+    assert result["status"] == "preview_ready"
+    assert result["preview"]["event_date"] == day
+    assert result["smallest_missing_follow_up_question"] == ""
+
+
+@pytest.mark.parametrize("text,status", [
+    ("Pig 93 died.", "event_date_required"),
+    ("Pig 93 died on 2026-02-30.", "event_date_required"),
+    ("Pig 93 died on 2026-07-30 or 2026-07-31.", "event_date_required"),
+    ("Pig 93 died tomorrow.", "chronology_conflict"),
+])
+def test_mortality_never_assumes_missing_invalid_ambiguous_or_future_date(text,status):
+    result = evaluate_health_loss_intake(report(text), evidence(animal("PIG-2026-0093","93","93")))
+    assert result["status"] == status
+    assert result["canonical_effects"] == []
+    assert not any(row["fact"] == "event_date" for row in result["observed_facts"])
+
+
+def test_simulated_semantic_prose_cannot_supply_a_missing_owner_death_date():
+    packet = report("Pig 93 died. Semantic interpretation: Pig 93 died today.")
+    packet["report_parts"] = [{"text":"Pig 93 died.","provider_timestamp":TIME}]
+    result = evaluate_health_loss_intake(packet,evidence(animal("PIG-2026-0093","93","93")))
+    assert result["status"] == "event_date_required"
+
+
 def test_prince_recovery_observation_produces_protected_preview_without_repeat_question():
     prince = animal("PIG-2026-E057", "Prince", "Prince")
     result = evaluate_health_loss_intake(report(
@@ -105,7 +142,7 @@ def test_latest_corrected_welfare_state_wins_over_earlier_clause():
 def test_maya_compound_preview_preserves_counts_and_suspicion_boundary():
     maya, canonical = maya_packet()
     result = evaluate_health_loss_intake(report(MAYA_REPORT), canonical)
-    assert result["status"] == "partial_preview_ready"
+    assert result["status"] == "preview_ready"
     assert result["event_family"] == "compound_event"
     observed = {x["fact"]: x["value"] for x in result["observed_facts"]}
     assert {key: observed[key] for key in (
@@ -129,7 +166,7 @@ def test_maya_compound_preview_preserves_counts_and_suspicion_boundary():
     }
     assert effects["medical_observation"]["facts"]["diagnosis_inferred"] is False
     assert effects["movement_pen"]["supported"] is False
-    assert "removed from the pen" in result["smallest_missing_follow_up_question"]
+    assert result["smallest_missing_follow_up_question"] == ""
     assert result["writes_performed"] is False
     assert result["farm_write_authority"] is False
 
@@ -356,7 +393,7 @@ def test_stillborn_and_later_death_are_distinct():
         "date": "2026-04-10", "is_open": True,
     }])
     later = evaluate_health_loss_intake(
-        report("Luna was farrowing. 2 piglets were born alive but then died."), canonical
+        report("Luna was farrowing. 2 piglets were born alive but then died today."), canonical
     )
     litter = next(x for x in later["canonical_effects"] if x["area"] == "litter")
     assert litter["supported"] is False
@@ -371,7 +408,7 @@ def test_explicit_complete_mixed_birth_outcomes_are_one_atomic_litter():
     }])
     result = evaluate_health_loss_intake(report(
         "Luna was farrowing. Total born: 5; 2 piglets were stillborn and "
-        "3 piglets were born alive but then died."
+        "3 piglets were born alive but then died today."
     ), canonical)
     litter = next(x for x in result["canonical_effects"] if x["area"] == "litter")
     assert litter["supported"] is True
@@ -467,7 +504,8 @@ def test_found_dead_supports_deceased_date_but_not_exact_death_time():
     assert lifecycle["action"] == "record_death"
     assert lifecycle["facts"]["date"] == "2026-08-01"
     assert lifecycle["facts"]["time"] == "Unknown"
-    assert result["smallest_missing_follow_up_question"].startswith("Has 22")
+    assert result["smallest_missing_follow_up_question"] == ""
+    assert next(x for x in result["canonical_effects"] if x["area"] == "movement_pen")["supported"] is False
 
 
 def test_was_dead_discovery_language_supports_date_not_time():

@@ -51,8 +51,8 @@ def test_maya_compound_report_renders_one_complete_human_preview_without_writes(
     text = result["owner_text"]
     assert "Animal: Maya (tag Maya)" in text
     assert "No diagnosis or treatment is inferred" in text
-    assert result["question_count"] == 1
-    assert result["confirmation_ready"] is False
+    assert result["question_count"] == 0
+    assert result["confirmation_ready"] is True
     assert result["writes_farm_data"] is False
     assert result["sends_telegram"] is False
 
@@ -157,8 +157,8 @@ def test_ordinary_found_dead_preview_proposes_deceased_date_and_unknown_time():
     result = prepare_health_loss_owner_preview(
         envelope("I found tag 22 dead this morning."), evidence(animal)
     )
-    assert result["question_count"] == 1
-    assert "removed from the pen" in result["owner_text"]
+    assert result["question_count"] == 0
+    assert "removed from the pen" not in result["owner_text"]
     assert "DEATH PREVIEW" in result["owner_text"]
     assert "Death date: 2026-08-01" in result["owner_text"]
     assert "exact time remain Unknown" in result["owner_text"]
