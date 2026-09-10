@@ -1,6 +1,6 @@
 # HERDMASTER Natural Health And Loss Intake Workflow
 
-Status: owner-approved canonical workflow; stage 1 source prepared; production behavior unproven
+Status: owner-approved canonical workflow; current mortality parity candidate locally qualified; current live parity and visible closure unproven
 
 ## Business outcome
 
@@ -55,6 +55,14 @@ keep these categories separate:
 The owner's exact text, authenticated principal, provider message identity,
 provider time and timezone remain bound to the preview. Unsupported diagnosis,
 ambiguous identity, conflicting chronology, or stale evidence fails closed.
+
+The actual death/found-dead date must come from supplied evidence or necessary
+clarification. Reporting time is not automatically the death date. Interpret
+relative dates against the originating message's South African local date and
+retain that association across later messages. A treatment, symptom, weighing,
+movement or disposal date does not silently correct a known death date. Unknown
+cause or disposal does not block recording a supported death; dependent facts
+remain Unknown and their distinct follow-up stays open.
 
 Mortality assessment must reconcile every attributable loss without treating
 an undated or missing-cause record as zero. Show dated, undated, corrected and
@@ -143,6 +151,31 @@ These fixtures are immutable test evidence. They must never consume or replay a
 provider update or become animal-specific production logic.
 
 ## Current implementation truth
+
+### Current mortality continuation
+
+The locally qualified continuation makes the existing application death route,
+Telegram gateway and direct webhook adapters to the same retained health/loss
+preview and canonical confirmed transaction. Application confirmation is bound
+to the authenticated actor, canonical animal and retained operation; it does
+not accept caller-supplied audit identity or an unconfirmed legacy Died POST.
+Existing non-death admin removal operations remain separately guarded.
+
+Application farm access verifies Telegram Mini App initData server-side using
+the existing bot and family delegation. Its signed farm session is distinct
+from an owner-admin session and the current delegation is rechecked for the
+mortality action. Expired, revoked, mismatched or incorrectly signed identity
+is denied. This creates no new role, shared credential or wildcard grant.
+The exact release/menu proposal and source revision belong to the mission
+register and release handover. A scoped Mini App launch and genuine Anton
+authentication still require approved live commissioning.
+
+Qualification uses actual application services, disposable PostgreSQL and a
+browser. Telegram delivery, provider signatures and semantic inputs are clearly
+labelled simulations. New tests extend the existing mortality suite with both
+ingresses, cross-channel confirmation/readback, retained facts, competing
+confirmations, rollback, historical preservation and negative authority checks.
+These results do not prove provider delivery or independent manager continuity.
 
 ### Prepared source
 

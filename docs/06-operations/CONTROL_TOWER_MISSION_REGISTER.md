@@ -18,6 +18,43 @@ adapt to the channel and configured recipient language. Anton must retain his
 own authenticated farm-manager identity. Charl's credentials, a blanket admin
 grant and terminal-generated production events cannot establish acceptance.
 
+### Current review disposition - 2026-09-10
+
+Mortality candidate `29f73b12da6989ec6c5553e2c73058cc3f36467d` is locally
+qualified and independently reviewed, with a clean worktree. The worker ended
+successfully at `18:13:59Z` and released source work to Control Tower. Its
+reported checks are 342 backend tests plus 29 subtests, 17 real PostgreSQL tests
+and one actual browser journey. Control Tower independently reran all 17
+PostgreSQL tests and the original date-regression reproduction, reviewed final
+source and browser evidence, and verified all 21 source hashes and 58 evidence
+artifact hashes. Both review findings are resolved. The shared PR830 test file
+was ultimately left unchanged; its existing mortality contract passes.
+
+Lifecycle remains `REVIEW_HOLD` pending the owner's requested release approval;
+this is not BUSINESS COMPLETE or a verified live result. The exact prepared
+package is `C:/tmp/amadeus-herd-ops-20260910/HERDMASTER_HANDOVER.md`, with the
+private-menu request/rollback in `HERDMASTER_MENU_ENTRY_PROPOSAL.json` and root
+verification in `CONTROL_TOWER_VERIFICATION.json`. No push, PR, merge or deploy
+has occurred. After approval, Control Tower rechecks current-main/ownership,
+publishes the reviewed candidate, completes required CI, uses the serialized
+release lane, verifies the loaded revision, commissions only Anton's approved
+private-chat menu and observes genuine own-identity acceptance. No historical
+animal/message replay or fabricated death is an acceptance step.
+
+The worker reported an incidental Docker restart-policy effect: existing
+`charl-n8n-1` auto-started at `16:03:15Z` and was restored stopped at `16:04:26Z`.
+Control Tower subsequently inspected the stopped container's SQLite metadata
+and bounded startup logs: zero active workflows, zero retained executions and
+zero executions in that interval. It remains stopped. This is contained
+evidence, not permission to activate n8n or a claim that every possible external
+effect has been exhaustively disproved. `N8N_CONTAINMENT_READONLY.json` retains
+the check; no configuration/workflow was changed.
+
+Current source lane is idle at the genuine review boundary. Weaning is the next
+existing HERDMASTER continuation after this disposition/release gate and an
+ownership check; first treatment follows it. OMQ/PR1309 remains the separate
+live follow-up dependency. CHARLIE's owner-directed commissioning hold remains.
+
 ### Current mission, authority and delivery
 
 - Continue canonical `HERDMASTER-NATURAL-HEALTH-LOSS-1`, with its existing
@@ -27,8 +64,8 @@ grant and terminal-generated production events cannot establish acceptance.
 - Development owner: **HERDMASTER / OOM SAKKIE MORTALITY**, worktree
   `C:/tmp/herdmaster-daily-mortality-20260910`, branch
   `fix/herdmaster-daily-mortality-20260910`, starting HEAD
-  `cd2ff4acc398eb134050b843c012e3bebb662989`. Lifecycle `WORKING`, strategic
-  class `CURRENT_BLOCKER`, one source implementation slot.
+  `cd2ff4acc398eb134050b843c012e3bebb662989`. Current lifecycle `REVIEW_HOLD`,
+  strategic class `CURRENT_BLOCKER`; source slot idle after qualified handover.
 - Direct launcher `C:/tmp/amadeus-herd-ops-20260910/launch_herdmaster.ps1`
   delivered the bound prompt at `2026-09-10T15:56:03Z`. The target's
   `ACKNOWLEDGED.md` binds the exact mission/worktree/HEAD/Standard identity;
@@ -137,7 +174,7 @@ physical irrigation effects require separate verification.
 
 | Terminal | Current Control Tower classification | Next trigger |
 |---|---|---|
-| HERDMASTER | Active, acknowledged mortality continuation; do not resend | Exact local candidate and review evidence |
+| HERDMASTER | Source-qualified, reviewed, worker exited successfully; released-retain | Exact owner release approval; Control Tower resumes directly |
 | OOM SAKKIE | Mortality source scope coordinated through the same terminal; no second overlapping writer | Mortality review; later existing farm-plan mission |
 | CORE / CHARLIE | Separate owner-directed hold retained; no activation dispatched | Explicit resolution/authorization for its held commissioning mission |
 | ROOTLINE | No new implementation dispatched; terminal-specific fresh progress Unknown | Herd sequence or separately proved incident; verify ownership before dispatch |

@@ -17,6 +17,14 @@
   resumption separately from source progress. Added passive evidence that the
   latest manager cycles failed and their next-cycle timestamp is overdue;
   retained the existing OMQ/PR1309 dependency without triggering live work.
+- Recorded the qualified mortality candidate, independent 17-test PostgreSQL
+  rerun, resolved date/UI findings and exact review artifacts. Reconciled the
+  existing workflow/source map for the shared mortality transaction and bounded
+  Telegram-verified application identity. Source and live acceptance remain
+  distinct; the private-menu release proposal is unexecuted.
+- Recorded and checked the brief incidental n8n startup during Docker setup:
+  restored stopped, no active workflows or retained executions observed. No
+  n8n authority or workflow configuration was added.
 
 ## 2026-09-03 - Render worker boundary for CHARLIE native runner
 

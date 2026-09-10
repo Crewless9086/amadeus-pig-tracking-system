@@ -357,6 +357,21 @@
   `modules/oom_sakkie/family_access.py`, `telegram_gateway.py` and
   `protected_action_claims.py`. The family principal is canonical; no
   Telegram-specific preference store or second callback rail exists.
+- Current locally qualified mortality parity candidate (release status is in
+  the mission register): application `/api/pig-weights/pig/<pig_id>/lifecycle/death`
+  adapts through `handle_application_mortality` in the existing health/loss
+  runtime to its retained preview and canonical confirmed writer. Gateway and
+  direct webhook reuse that same runtime and effective family capabilities.
+  `modules/auth/owner_access.py` verifies Telegram Mini App identity at
+  `/owner/telegram/login`, retains a distinct farm session and rechecks the
+  existing family delegation; it grants no owner-admin session. Presentation
+  remains in `templates/owner-login.html`, `templates/pig-detail.html` and
+  `static/js/pigDetail.js`. Non-death admin removal controls remain available.
+  Cross-channel/date/identity tests are in
+  `tests/test_herdmaster_mortality_journey_postgres.py`; the actual isolated
+  browser journey is `tests/herdmaster_mortality_browser.spec.js`. Existing
+  atomic mortality PostgreSQL tests remain the transaction/replay gate.
+  Simulated provider delivery and signatures are local test evidence only.
 - Canonical health/loss workflow and stage-one pure contracts:
   `docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md`,
   `modules/pig_weights/herdmaster_natural_health_loss_intake.py`, and
