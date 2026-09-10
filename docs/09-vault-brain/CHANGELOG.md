@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-09-10 - Everyday herd operations continuation
+
+- Registered Charl's explicit mortality, weaning and first-treatment priority
+  in the existing HERDMASTER/Oom Sakkie lineage while retaining the separate
+  CHARLIE/OpenAI commissioning hold.
+- Bound the directly launched mortality terminal to a clean current-production
+  worktree, local reproduction/qualification and a concrete release-review gate.
+  Preserved Anton's own farm-manager identity, recipient language, shared
+  canonical channel semantics, replay safety and historical evidence.
+- Distinguished provider-configuration and disposable-test evidence from genuine
+  deployed acceptance. Daily farm plans and separately verified irrigation
+  follow-ups remain later in the queue; no live outcome or authority expansion
+  is claimed.
+
 ## 2026-09-03 - Render worker boundary for CHARLIE native runner
 
 - Added a separately billed, single-instance Render Background Worker Blueprint

@@ -2,6 +2,123 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-09-10 - Owner priority: everyday herd operations under Control Tower
+
+Charl explicitly resumes Control Tower-managed development terminals while the
+separate CHARLIE/OpenAI commissioning response is pending. Continue existing
+missions in this order: mortality, litter weaning, first treatment, then daily
+farm-plan conversations and irrigation status/follow-ups. This direction
+supersedes older ordering for this bounded work; it does not release CHARLIE's
+hold or authorize production changes.
+
+The owner outcome is Anton performing his authorized daily farm operations
+through natural Oom Sakkie Telegram conversation. Application and Telegram use
+the same canonical operations, validation and records; input and presentation
+adapt to the channel and configured recipient language. Anton must retain his
+own authenticated farm-manager identity. Charl's credentials, a blanket admin
+grant and terminal-generated production events cannot establish acceptance.
+
+### Current mission, authority and delivery
+
+- Continue canonical `HERDMASTER-NATURAL-HEALTH-LOSS-1`, with its existing
+  `OOM-INTAKE-SLICE-1` and Anton recovery lineage. A read-only Supabase query on
+  10 September confirmed this mission and `OMQ-20260813-03` remain
+  `in_progress`; no duplicate mission or runnable admission was created.
+- Development owner: **HERDMASTER / OOM SAKKIE MORTALITY**, worktree
+  `C:/tmp/herdmaster-daily-mortality-20260910`, branch
+  `fix/herdmaster-daily-mortality-20260910`, starting HEAD
+  `cd2ff4acc398eb134050b843c012e3bebb662989`. Lifecycle `WORKING`, strategic
+  class `CURRENT_BLOCKER`, one source implementation slot.
+- Direct launcher `C:/tmp/amadeus-herd-ops-20260910/launch_herdmaster.ps1`
+  delivered the bound prompt at `2026-09-10T15:56:03Z`. The target's
+  `ACKNOWLEDGED.md` binds the exact mission/worktree/HEAD/Standard identity;
+  fresh `PROGRESS.md` records governance and journey discovery. This proves
+  development execution only, not deployed-agent activity.
+- Source/local-test authority: reproduce with synthetic records and disposable
+  PostgreSQL, repair the smallest reusable defect, extend real backend/browser
+  tests, prepare independent review and an exact release/acceptance package.
+  No merge, deployment, production migration/configuration, credential or
+  privilege change, provider send, production confirmation or farm write is
+  authorized by this continuation.
+- The existing CHARLIE `CMQ-20260813-05-SLACK-GATEWAY` remains
+  `SOURCE_QUALIFIED_LIVE_PAUSED`; its `.w/pr1331-render-hermes-install`
+  writer and database-release-rail source ownership are preserved. The old
+  local runner reports `governed_stop_active`. An `approved` queue status is
+  not a hold release or worker-execution proof.
+
+### Fresh evidence and qualification gates
+
+Render reports web deployment `dep-dad556dg1s2s73f3ggj0` live at exact revision
+`cd2ff4acc398eb134050b843c012e3bebb662989`, matching current main. Current
+service configuration, evaluated using that source, resolves
+`OOM-FAMILY-AUTH-ANTON-20260815` to a separate private-chat `farm_manager`,
+language `af`, with mortality-confirmation and treatment capability. This is
+provider-configuration evidence, not a tested Anton login or live conversation.
+
+Mortality qualification must identify the failing layer before changing code;
+prove unique animal identification and actual event date; retain supplied facts;
+ask only necessary clarification; preview and confirm the exact operation;
+commit before reporting success; reconcile active-herd counts and preserved
+history; and read the result through both channels. Repeated delivery,
+confirmation, concurrent attempts, transaction failure, wrong actors and
+interruption/continuation must not produce duplicate or misattributed effects.
+Never invent cause, death time, disposal detail or another missing fact.
+
+Tests must exercise actual application services and a disposable database.
+Browser tests must reach the application/backend rather than intercept a
+fabricated success. Simulated Telegram/provider/LLM evidence is labelled test
+evidence. Historical Pig 125/126/138/146, Linda, Mona and Molly events remain
+retained evidence and are never replay instructions or proof of current state.
+
+After local qualification and independent review, present the exact candidate,
+before/after evidence, release sequence, rollback/containment and controlled
+live acceptance for Charl's approval. Until then, no owner repetition is
+required. After approval, the same mission resumes through the serialized lane;
+fresh Anton-origin input and confirmation must traverse deployed Oom Sakkie and
+HERDMASTER, canonical commit/readback, visible closure and later independent
+follow-up. Local qualification is not a verified live result.
+
+### Forward pipeline and terminal sweep
+
+Weaning and first treatment continue the existing HERDMASTER continuous-husbandry
+and canonical litter-action lineage after mortality's applicable gate. Reuse
+the existing atomic litter writers, protected claims and read models; do not
+create a separate treatment/weaning store. The follow-on audit is read-only;
+its code-supported reproduction targets are not yet reproduced defects.
+Daily farm plans remain in `OMQ-20260813-03`; irrigation status and follow-ups
+retain the existing ROOTLINE mission lineage. Provider message delivery and
+physical irrigation effects require separate verification.
+
+| Terminal | Current Control Tower classification | Next trigger |
+|---|---|---|
+| HERDMASTER | Active, acknowledged mortality continuation; do not resend | Exact local candidate and review evidence |
+| OOM SAKKIE | Mortality source scope coordinated through the same terminal; no second overlapping writer | Mortality review; later existing farm-plan mission |
+| CORE / CHARLIE | Separate owner-directed hold retained; no activation dispatched | Explicit resolution/authorization for its held commissioning mission |
+| ROOTLINE | No new implementation dispatched; terminal-specific fresh progress Unknown | Herd sequence or separately proved incident; verify ownership before dispatch |
+| SAM Livestock / SAM Meat | No new implementation dispatched; fresh terminal state Unknown | Registered sales outcome becomes selected; verify ownership first |
+| BEACON | No new implementation dispatched; fresh terminal state Unknown | Registered marketing outcome becomes selected; verify ownership first |
+| CODEX UI | Shared presentation scope reserved to mortality; old dirty matings work preserved | Qualified backend contract and bounded browser scope |
+| DOCUMENTS / GREEN / STORYWORKS | No new implementation dispatched; fresh terminal state Unknown | Existing registered outcome selected after current priority and ownership checks |
+
+No other open process is treated as active specialist work without mission-bound
+fresh evidence. The recovery WIP cap remains three; this direction opens one
+implementation track and preserves separate held work. Current live worker,
+last/next independent cycle and genuine mortality outcome remain unverified.
+
+Control Tower's local repository-scan repair reduced Git status from 20,707
+entries to eight through backed-up repository-local exclusions. All seven
+tracked changes and their hashes are unchanged; untracked qualification evidence
+remains on disk. There are 607 registered worktrees after the two isolated
+workspaces were created. Relevant old mortality/Anton source heads were merged
+and are retained; the old deployed-commission worktree's `.tmp` remains for
+reconciliation. No bulk worktree cleanup or deletion occurred.
+
+Evidence and exact prompt: `C:/tmp/amadeus-herd-ops-20260910`.
+Source claim: `C:/tmp/amadeus-parallel-control/CLAIMS/HERDMASTER_NATURAL_HEALTH_LOSS_20260910.md`.
+Control Tower owns this register reconciliation in its clean current-lineage
+worktree; `NEXT_STEPS.md` remains the existing pointer. **NO BUSINESS OUTCOME.
+ACTION REQUIRED NOW: NONE.**
+
 ## 2026-08-19 - Queued Oom Sakkie shared owner-attention projection
 
 Charl confirmed the cross-channel invariant: application, Telegram, future
