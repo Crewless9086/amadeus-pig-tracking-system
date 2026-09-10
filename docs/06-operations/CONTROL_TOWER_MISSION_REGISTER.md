@@ -48,6 +48,52 @@ grant and terminal-generated production events cannot establish acceptance.
 
 ### Fresh evidence and qualification gates
 
+At `2026-09-10T16:47Z`, supervision found the first Codex worker absent while
+its visible launcher shell remained open. Its last retained activity at
+`16:13Z` was an isolated schema-bootstrap failure, with no final handover or
+exit receipt; the process-exit cause is unknown. This was not source
+qualification or proof of a farm defect. The same saved session
+`01a08c08-86d2-7fa1-95ed-9102bc2fc4b4` was directly resumed at `16:51:00Z`
+by `resume_herdmaster.ps1`, with a new launcher and guaranteed exit receipt.
+Fresh target activity at `16:51:49Z` consumed Control Tower's live-context
+addendum and continued disposable-database setup. The source worktree remained
+clean at that observation. Do not use an open launcher alone as execution proof.
+
+Passive observation at `16:07Z` found the latest three canonical Oom Sakkie
+general-manager cycles, at `04:30`, `04:35` and `04:40Z`, all `failed`; their
+stored `next_cycle_at` is overdue. These records carry deadline deferrals, but
+the exact elapsed phase and reason for absent later cycles are not yet proved.
+This is a live follow-up dependency under existing `OMQ-20260813-03`, not a
+reason to change unrelated mortality code. Existing PR #1309 owns morning
+scheduler containment and remains a separate source/release candidate. No
+production cycle, message or farm effect was invoked by Control Tower.
+
+The worker subsequently completed the local bootstrap using 82 existing
+migrations and reproduced current-source defects with actual services and test
+records: the app accepts a future death date and caller-supplied audit actor,
+updates the pig without a lifecycle event, and bypasses a bound preview;
+Telegram misses the ordinary Afrikaans death report and fills a missing date
+from report time. Further real-ingress tests reproduced role-capability loss
+in the gateway and mortality diversion in the direct webhook. Candidate repairs
+are under qualification in the same assigned worktree; no live fix is claimed.
+
+Control Tower independently reproduced a candidate regression where a later
+treatment date replaces the known death date, and found that the candidate's
+application form removed existing admin removal choices. Both findings are
+returned as a same-mission review addendum; source qualification is withheld
+until corrected. PR830's shared test file changes a separate herd-list method;
+the mortality terminal has a bounded claim to its existing mortality test
+method, preserving the rest of that PR and all dirty parent-workspace changes.
+
+Passive cron logs now prove that 04:45, 04:50 and 04:55Z executions terminated
+at the morning HTTP call with 503 before general-manager invocation. The cron
+is enabled at cd2ff4ac; this supports existing PR1309's containment scope but
+does not resolve earlier manager deadline failures. At 17:48Z production login
+guards/secrets were confirmed configured and local bypass disabled; Anton's
+provider menu remains default. A private-chat Mini App launch point for his
+existing identity requires an exact later release approval. No provider menu
+or other configuration has been changed.
+
 Render reports web deployment `dep-dad556dg1s2s73f3ggj0` live at exact revision
 `cd2ff4acc398eb134050b843c012e3bebb662989`, matching current main. Current
 service configuration, evaluated using that source, resolves

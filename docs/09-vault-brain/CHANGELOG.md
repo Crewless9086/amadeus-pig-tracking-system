@@ -13,6 +13,10 @@
   deployed acceptance. Daily farm plans and separately verified irrigation
   follow-ups remain later in the queue; no live outcome or authority expansion
   is claimed.
+- Recorded the mortality worker's interrupted test setup and direct saved-session
+  resumption separately from source progress. Added passive evidence that the
+  latest manager cycles failed and their next-cycle timestamp is overdue;
+  retained the existing OMQ/PR1309 dependency without triggering live work.
 
 ## 2026-09-03 - Render worker boundary for CHARLIE native runner
 
