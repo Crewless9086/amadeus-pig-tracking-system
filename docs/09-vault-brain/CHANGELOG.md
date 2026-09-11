@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-09-11 - Mortality deployed and private menu commissioned
+
+Recorded PR1332, exact deployed merge00d1bfa93e7abfad64f50cb828e4b03cf77e23e3,
+required CI, active relay compatibility, Anton-only Plaas snapshot/change/readback
+and canonical deployed/live-acceptance-pending disposition. No farm event or
+provider message was manufactured. Promoted the existing weaning source lineage
+to its visible acknowledged terminal without waiting for mortality acceptance;
+first treatment follows. Scheduler correction remains with OMQ/PR1309 and its
+separate production boundary. CHARLIE commissioning remains held.
+
 ## 2026-09-10 - Approved mortality release continuation
 
 Recorded Charl's exact approval of mortality candidate

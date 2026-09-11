@@ -2,6 +2,71 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-09-11 - Mortality deployed; weaning source continuation active
+
+Approved mortality candidate `29f73b12da6989ec6c5553e2c73058cc3f36467d` merged
+through PR #1332 as `00d1bfa93e7abfad64f50cb828e4b03cf77e23e3`; the merged
+source tree exactly matches the qualified candidate. All five required PR
+checks and all three required merge workflows passed. Render deployment
+`dep-dahnc7bm8hqs73cil3l0` became live at `03:32:44Z`. An initial revision
+readback differed; fresh readback at `04:23:33Z` verified the exact loaded SHA,
+HTTP200 health, byte-matching versioned mortality client and served Mini App
+login. No second deployment was needed. The shared release lock is released.
+
+At `04:23:53Z`, Control Tower verified the existing Anton binding and snapshotted
+his current private menu, changed only that menu to Plaas at
+`https://amadeus-pig-tracking-system.onrender.com/owner/login?next=/pigs`, and
+read the same menu back successfully. The snapshot and prepared source rollback
+are retained. No global menu, delegation, credential, webhook, cloud workflow,
+provider message, confirmation or farm event was changed by this commissioning.
+
+Ordinary Afrikaans conversation remains required acceptance. The active cloud
+GateKeeper/relay versions and retained execution evidence prove original
+Telegram identity/provider fields reach the repaired gateway and protected
+callbacks reach the repaired direct adapter. No legacy one-step mortality
+client was found in the first-party source or 15 active cloud workflows.
+Historical callback timeout and current authentication/delivery uncertainty
+remain distinct from source compatibility.
+
+Disposition: **deployed; live mortality acceptance pending**. Genuine Anton
+authentication, a genuine current report and confirmation, delivered result,
+matching canonical/application readback and later independent follow-up remain
+unverified. No mortality or historical replay was manufactured. Existing
+canonical mission `HERDMASTER-NATURAL-HEALTH-LOSS-1` retains that open outcome;
+event `CORE-MISSION-CONTROL-698DE6029D2119267AAC5A4C` records the deployment/menu
+disposition and its admission is consumed. This is not BUSINESS COMPLETE.
+
+Charl explicitly directed weaning to proceed after this release disposition,
+without waiting solely for mortality acceptance, then first treatment. Visible
+HERDMASTER / OOM SAKKIE WEANING launched at `04:26:04Z`, launcher33540,
+worker33280, worktree `C:/tmp/herdmaster-daily-weaning-20260911`, branch
+`fix/herdmaster-daily-weaning-20260911`, base the verified deployment above.
+ACKNOWLEDGED.md and PROGRESS.md prove delivered instructions, complete tracked
+governance preflight and active source trace/reproduction preparation. The
+worker is authorized for source/disposable qualification only, with one exact
+source writer and no live weaning authority. Its artifacts and full handover
+are under `C:/tmp/amadeus-weaning-20260911/`.
+
+HERDMASTER-CONTINUOUS-HUSBANDRY is the existing documented PR570/PR1291 lineage;
+fresh read found no canonical row under that exact label. Control Tower is
+reconciling the existing parent without creating a duplicate queue, while safe
+local reproduction continues. PR570's old source claim is released and its
+clean worktree preserved; PR1291 is merged. First treatment remains next.
+
+OMQ/PR1309 keeps scheduler ownership. Its two-file containment was reproduced
+offline and 13 focused tests passed; underlying morning503 and earlier manager
+deadline failures remain separate. The stale PR needs current-base admission
+and review before a separately approved production correction. Daily-plan and
+follow-up reliability remain independent acceptance gates. CHARLIE commissioning
+is held; no native runner or migration rail was activated. The owner's original
+tracked changes and retained evidence are preserved.
+
+Evidence: `C:/tmp/amadeus-herd-ops-20260910/MORTALITY_DEPLOYMENT.json`,
+`ANTON_MENU_BEFORE.json`, `ANTON_MENU_COMMISSIONED.json`,
+`MORTALITY_CANONICAL_DISPOSITION.json`, `PR1332_REQUIRED_CHECKS.json`,
+`MERGE_REQUIRED_CI.json`, `N8N_TELEGRAM_TRANSPORT_AUDIT.json` and
+`SCHEDULER_REPAIR_PREPARATION.md`. ACTION REQUIRED NOW: NONE.
+
 ## 2026-09-10 - Owner priority: everyday herd operations under Control Tower
 
 Charl explicitly resumes Control Tower-managed development terminals while the
