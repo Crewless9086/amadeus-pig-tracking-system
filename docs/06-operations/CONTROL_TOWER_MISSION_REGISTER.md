@@ -1,5 +1,59 @@
 # Control Tower Mission Register
 
+## 2026-09-11 - OMQ cron containment verified; reviewed application repair held
+
+Existing OMQ-20260813-03-MORNING-CONTAINMENT / PR1309 retained ownership.
+Charl's exact cron-only approval was reconciled through existing admission and
+all required hosted checks. Protected merge 203a7e9b44db5edf644a3ee1feba54118b12ede6
+has the complete reviewed 9b102c03 tree. A skip-render merge marker and one
+targeted build deployed only the existing OOM cron (dep-dai64me743jc739h1ua0).
+Web remains 00d1bfa9; mortality, Anton's verified Plaas menu, herd a0865257 and
+all other service deployments/configurations remain preserved.
+
+Natural 20:25 and 20:30 UTC runs each exposed morning HTTP 503, made exactly one bounded
+manager request (58.876 s / 59.271 s), retained failure and introduced no immediate
+morning retry. Canonical manager results both failed with 313 replays, five
+claims, five deadline deferrals and zero confirmed deliveries. Bounded event,
+provider-lifecycle and operational-record checks found no duplicate effect
+attributable to containment. This restores manager attempts; it does not prove
+dependable plans or useful manager processing. No manual production invocation
+or manufactured farm event was used.
+
+Control Tower continued local diagnosis/repair directly. Candidate `0e30c9a9d2113435f860e977a900f3bd3a73b240`
+(tree de82c4cd362520e28169743ca856adf2e2e5a206) changes three application files:
+family_message_lifecycle.py recognizes visible HTML before the Afrikaans guard;
+general_manager_worker.py batches existing replay locks/observation epochs and
+filters/bounds refresh; morning_runtime.py uses processing time for current
+brief reassessment after a delayed answer. Three test files complete the six-file
+patch. Protected completion/lease/BEACON-retirement functions remain unchanged.
+Independent review reproduced and resolved the initial lock-order deadlock and
+the delayed-answer historical-date gap. Final focused qualification passed 178
+tests and 12 subtests (one Windows platform skip); the existing hosted unittest
+command locally discovered and passed 12 regressions. The 19 legacy pytest failures
+match the deployed baseline and are not reported green. The 313-replay workload
+fell from 645 to 62 real SQL statements; modeled 100 ms/statement latency and actual
+loopback timing remain separate from unmeasured production phase timing.
+
+The reviewed next proposal is web-only, unpublished and undeployed, with a
+six-file scoped rollback. It requires a separate exact owner decision, supported
+existing-mission admission, all hosted gates, a verified empty fresh SAST-date
+delivery identity and promotion/readback before 06:30 ahead of 06:45 morning.
+Old ambiguous records are immutable. Natural manager progress, per-recipient
+morning provider confirmation and a later duplicate-safe cycle remain required.
+Canonical finding `CORE-MISSION-CONTROL-B129CD20312E60A27C4C93E9` and handover
+`OMQ-20260813-03-MORNING-CONTAINMENT-DEPLOYED-203a7e9b-LOCAL-0e30c9a9d2113435f860e977a900f3bd3a73b240` are read back. Child stays in_progress / RELEASE_HOLD;
+parent herd EXTERNAL_HOLD and old admission/dispatch/source scope are preserved.
+
+The owner outcome remains Anton recording herd operations through OOM SAKKIE
+in Telegram and receiving dependable plans and follow-ups. Next herd integration
+retains its separate skip/weaning qualification and Anton capability dependency.
+Rejected migration continuation and CHARLIE commissioning stay held; unrelated
+workers and ROOTLINE/SAM/BEACON ownership are not taken over. Daily-plan dialogue
+and irrigation remain subsequent existing queue work. No owner monitoring or
+terminal-relay labour was added. Full evidence and next proposal are in root
+`.tmp/control-tower-scheduler-review/release/`; the original 24-artifact
+containment proposal manifest remains unchanged.
+
 ## 2026-09-11 - PR1309 scheduler containment prepared; herd release preserved
 
 Control Tower completed the owner-requested local scheduler preparation on

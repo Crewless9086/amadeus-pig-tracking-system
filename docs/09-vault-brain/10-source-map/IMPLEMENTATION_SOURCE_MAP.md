@@ -1,5 +1,24 @@
 # Implementation Source Map
 
+## 2026-09-11 - Verified OMQ containment and reviewed recovery candidate
+
+PR1309 candidate 9b102c03 deployed only to the existing cron as 203a7e9b with
+identical tree and all required checks. Two consecutive natural runs retained
+morning failure and one bounded manager request without attributable duplicates;
+both managers still failed on deadline. Local candidate `0e30c9a9d2113435f860e977a900f3bd3a73b240` repairs replay
+reconciliation/refresh, visible-HTML Afrikaans validation and processing-date
+owner-answer reassessment. Six files, 178 passing focused tests plus 12 subtests,
+one platform skip, 12 locally passing hosted-command regressions and independent
+review; 19 legacy failures match baseline. No application deployment occurred.
+
+Existing OMQ ownership remains. The exact web-only proposal and scoped rollback
+require separate approval, admission/CI and a verified fresh-date activation
+window. Morning/provider delivery and useful manager progress remain unproven.
+Herd a0865257, deployed mortality, Anton's Plaas menu, existing owners and the
+rejected migration/CHARLIE holds are preserved. Canonical finding
+`CORE-MISSION-CONTROL-B129CD20312E60A27C4C93E9` records the result. Full packet:
+root `.tmp/control-tower-scheduler-review/release/`.
+
 ## 2026-09-11 - Reviewed PR1309 scheduler containment
 
 Prepared unchanged two-file scheduler/test source on current main at
