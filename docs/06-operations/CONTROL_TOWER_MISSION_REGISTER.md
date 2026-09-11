@@ -4,6 +4,48 @@ Status: Active owner-facing dispatch authority
 
 ## 2026-09-11 - Mortality deployed; weaning source continuation active
 
+### Current weaning review return - 10:39 UTC
+
+The initial weaning candidate `781f4c7ded1ea682d060ead37d0f87401900c172`
+is **WORKING / REVIEW_CORRECTIONS_REQUIRED**, not accepted for release.
+Control Tower independently verified its 26 source hashes and 117 artifact
+hashes and reran 75 PostgreSQL tests in a separate review database. The actual
+desktop/mobile browser evidence was inspected. Independent review then found
+two targeted defects: a first-arriving delayed natural confirmation can select
+a newer corrected preview, and the two weaning completion statuses omit the
+existing recovery for an uncertain completion-card edit. Synthetic source
+function probes establish both findings; the owning worker must reproduce and
+qualify them through the actual ingress, delivery persistence and test database.
+The proposed sparse-fact-withdrawal blocker was withdrawn after validation;
+it is not an instruction to expand the repair.
+
+The worker subsequently reproduced both defects through the actual gateway
+and direct adapters, canonical writer, delivery persistence and isolated
+PostgreSQL. All eight new focused regressions fail before repair: delayed
+confirmation with older timestamp/same-second lower provider ID, and ambiguous
+or orphaned completion edit, each on both transports. This is synthetic local
+qualification evidence, with no provider or production effects.
+
+The same saved weaning session `01a08eb7-30be-7852-9e58-1bfbb70c0625`
+resumed at `10:34:00Z` in visible launcher33972 / worker35484. Fresh command
+events at `10:36:40Z` verify current governance identities and active source
+inspection. Original candidate/handover evidence remains retained. Source
+ownership now additionally permits only the necessary weaning completion-status
+integration in `family_message_lifecycle.py` and focused regression coverage;
+OMQ scheduler/diagnostic ownership is unchanged. A new clean candidate and
+proportional independent requalification are required before first-treatment
+source promotion. The original worker33280 ended successfully and is no longer
+the active process. Control Tower delivers this continuation directly; no
+owner relay is required.
+
+First treatment is prepared under the same existing canonical parent and
+documented PR1291 lineage, but has not been dispatched. Automatic promotion
+requires the weaning correction handover and resolved independent review.
+Weaning release, constraint migration and an explicit delegated weaning grant
+remain unapproved. Its next-day follow-up is retained **unscheduled intent**,
+not a proved collector case or autonomous cycle. Mortality remains deployed
+with genuine live acceptance pending as described below.
+
 Approved mortality candidate `29f73b12da6989ec6c5553e2c73058cc3f36467d` merged
 through PR #1332 as `00d1bfa93e7abfad64f50cb828e4b03cf77e23e3`; the merged
 source tree exactly matches the qualified candidate. All five required PR
@@ -75,6 +117,11 @@ cycles at 04:30, 04:35 and 04:40 UTC again failed, each with five deadline
 deferrals, 313 candidate replays and zero confirmed deliveries. Their next
 04:45 cycle is overdue. Daily-manager reliability remains degraded independently
 of the mortality source release; current cron/web diagnosis stays with OMQ.
+Fresh passive observation at `10:41:29Z` confirmed the same exact deployment,
+again found no Anton mortality claim/event since deployment, and found no
+manager cycle later than the failed `04:40:30Z` cycle. Evidence is retained
+separately in `POST_RELEASE_OBSERVATION_1041.json`; the earlier observation is
+unchanged. No live acceptance or follow-up recovery is claimed.
 
 OMQ/PR1309 keeps scheduler ownership. Its two-file containment was reproduced
 offline and 13 focused tests passed; underlying morning503 and earlier manager

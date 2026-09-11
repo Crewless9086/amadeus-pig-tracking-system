@@ -2,6 +2,14 @@
 
 ## 2026-09-11 - Mortality deployed and private menu commissioned
 
+Returned initial weaning candidate781f4c7d for two independently reproduced
+confirmation-order/completion-delivery corrections after 75 independent
+PostgreSQL passes and source/evidence hash verification. Resumed the same
+visible source worker directly, preserved its original review archive, and
+kept first treatment serialized after resolved review. A fresh10:41UTC passive
+read still finds exact mortality deployment with no genuine Anton mortality
+claim/event and no manager cycle after04:40UTC. No new production effect.
+
 Recorded PR1332, exact deployed merge00d1bfa93e7abfad64f50cb828e4b03cf77e23e3,
 required CI, active relay compatibility, Anton-only Plaas snapshot/change/readback
 and canonical deployed/live-acceptance-pending disposition. No farm event or
