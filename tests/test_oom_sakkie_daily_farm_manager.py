@@ -14,6 +14,71 @@ from modules.oom_sakkie.herdmaster_daily_manager_adapter import (
 NOW=datetime(2026,8,10,5,0,tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("language", ["af", "en"])
+@pytest.mark.parametrize("watchers", ["weaning", "payment", "both", "empty"])
+def test_canonical_morning_briefs_cross_family_delivery_once(language, watchers):
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    litters = [{"Litter_ID": "LOCAL-LITTER", "Sow_Pig_ID": "LOCAL-SOW",
+        "Sow_Tag_Number": "X100", "Litter_Status": "Active",
+        "Wean_Date": "2026-08-09", "Weaned_Count": None}]
+    sales = [{"sale_id": "LOCAL-SALE", "sale_date": "2026-08-10",
+        "sale_status": "pending", "payment_status": "pending",
+        "buyer_name": "Voorbeeld", "net_total": 100, "item_count": 1}]
+    daily_store = store()
+    events, sends = [], []
+    def event_store(action, identity, payload):
+        if action == "load":
+            return list(events)
+        events.append(dict(payload))
+        return {"success": True, "created": True}
+    def sender(chat, text):
+        sends.append((chat, text))
+        return {"success": True, "telegram_message_id": "local-card"}
+    def deliver(parsed, value, **kwargs):
+        return deliver_family_result(parsed, value, event_store=event_store,
+            sender=sender, **kwargs)
+    kwargs = dict(owner_user_id="77", chat_id="77", specialist_results=[], now=NOW,
+        litter_rows=litters if watchers in {"weaning", "both"} else [],
+        sale_rows=sales if watchers in {"payment", "both"} else [],
+        language=language, deliver=deliver, store=daily_store,
+        semantic_prioritizer=lambda rows, **_kwargs: list(rows))
+    first = run_daily_farm_manager(**kwargs)
+    second = run_daily_farm_manager(**kwargs)
+    assert first["status"] == "daily_manager_presented" and first["success"] is True
+    assert second["status"] == "daily_manager_unchanged_silent"
+    assert len(sends) == 1 and events
+    assert first["writes_farm_data"] is False and first["hardware_commands"] == 0
+    if language == "af" and watchers != "empty":
+        assert "AKSIE NODIG" in sends[0][1]
+
+
+@pytest.mark.parametrize("answer,accepted", [
+    ("<b>AKSIE NODIG</b>\nBetaal die faktuur.", True),
+    ("<b>Aksie&nbsp;nodig!</b>\nBetaal die faktuur.", True),
+    ("<b>AKSIE NODIG</b>\nPlease confirm the payment.", False),
+    ("<b>AKSIE NODIG</b>\n<b>Please</b> confirm&#32;the payment.", False),
+])
+def test_morning_language_guard_reads_visible_html_and_still_rejects_english(answer, accepted):
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    sends, events = [], []
+    def event_store(action, identity, payload):
+        if action == "load":
+            return list(events)
+        events.append(payload)
+        return {"success": True, "created": True}
+    outcome = deliver_family_result(
+        {"telegram_user_id": "77", "telegram_chat_id": "77", "telegram_chat_type": "private",
+         "provider_message_id": "local-visible-text", "output_language": "af"},
+        {"success": True, "status": "daily_farm_manager_ready", "answer": answer,
+         "recipient_render_contract": "specialist_structured_recipient_v1", "recipient_language": "af"},
+        specialist="OOM_SAKKIE", event_store=event_store,
+        sender=lambda chat, text: sends.append(text) or {"success": True, "telegram_message_id": "local-card"})
+    assert outcome["success"] is accepted
+    assert len(sends) == int(accepted)
+    if not accepted:
+        assert outcome["status"] == "recipient_language_render_unrecognized" and not events
+
+
 def result(name="rootline",items=()):
     return SpecialistResult(name,name+"-1",NOW,SpecialistAvailability.AVAILABLE,
         work_items=tuple(items))

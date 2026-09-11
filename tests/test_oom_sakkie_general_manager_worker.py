@@ -300,6 +300,7 @@ def test_expired_cycle_budget_defers_claim_without_specialist_or_provider_call()
     result = store.run_cycle([], now=NOW, source_revision="abc",
         deliver=lambda case: delivered.append(case),
         refresh=lambda case: (_ for _ in ()).throw(AssertionError()),
+        refresh_batch=lambda cases: (_ for _ in ()).throw(AssertionError("expired refresh batch started")),
         deadline_monotonic=time.monotonic(),
         brain_guard_audit=audit)
 
