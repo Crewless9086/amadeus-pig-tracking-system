@@ -19,7 +19,8 @@ OOM_SAKKIE_MANAGER_ACTION_CAPABILITIES={
 
 def handle_protected_action_input(parsed, gateway_authority, *, callback_data="",
                                   connect_factory=None, health_handler=None,
-                                  irrigation_handler=None, documents_handler=None):
+                                  irrigation_handler=None, documents_handler=None,
+                                  weaning_semantic_confirmation=False):
     owner=str(parsed.get("telegram_user_id") or "");chat=str(parsed.get("telegram_chat_id") or "")
     if (not validates_gateway_owner_authority(gateway_authority) or not owner or owner!=chat
             or gateway_authority.owner_user_id != owner
@@ -47,7 +48,8 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           provider_message_id=str(parsed.get("provider_message_id") or parsed.get("callback_query_id") or ""),
           provider_timestamp=str(parsed.get("provider_timestamp") or ""),
           source_card_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory,
-          allowed_action_kinds=allowed)
+          allowed_action_kinds=allowed,
+          weaning_semantic_confirmation=weaning_semantic_confirmation)
     except Exception as exc:
         from modules.oom_sakkie.bounded_postgres_read import is_database_unavailable
         if not is_database_unavailable(exc):

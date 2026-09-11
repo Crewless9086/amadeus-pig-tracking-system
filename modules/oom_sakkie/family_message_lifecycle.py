@@ -271,6 +271,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         and str(result.get("status") or "") in {
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded",
             "payment_state_recorded", "payment_state_replay_noop",
+            "weaning_day_committed", "weaning_day_replayed_withheld",
             "protected_preview_cancelled", "protected_preview_change_requested",
             "segment_started", "active_segment_owned", "private_media_review_recorded",
             "private_media_review_presented"

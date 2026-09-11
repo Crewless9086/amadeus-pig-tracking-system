@@ -313,8 +313,13 @@ def handle_litter_weaning_message(parsed, authority, *, connect_factory=None):
         if not active or (active['preview_payload'] or {}).get('contract_version') != ACTION_KIND:
             return answer('weaning_confirmation_not_unambiguous', 'Antwoord op die presiese speenvoorskou wat jy wil bevestig.'), 409
         from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
-        return handle_protected_action_input({**parsed, 'reply_to_message_id': active['preview_card_message_id']}, authority,
-            callback_data='oompa:' + active['callback_token'] + ':confirm', connect_factory=connect_factory)
+        result, code = handle_protected_action_input(parsed, authority,
+            callback_data='oompa:' + active['callback_token'] + ':confirm', connect_factory=connect_factory,
+            weaning_semantic_confirmation=True)
+        if code == 409 and result.get('status') in {'weaning_confirmation_not_unambiguous',
+                'protected_callback_card_mismatch', 'protected_callback_card_unbound', 'protected_callback_stale'}:
+            return answer(result['status'], 'Antwoord op die presiese speenvoorskou wat jy wil bevestig.'), code
+        return result, code
     supplied = semantic.get('litter_weaning')
     if not isinstance(supplied, dict):
         return answer('weaning_typed_facts_required', 'Ek kort die werpsel, werklike datum en watter varkies gespeen is.'), 409
