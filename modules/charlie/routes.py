@@ -1,6 +1,10 @@
+import hmac
 import os
 import re
 import time
+import json
+import urllib.error
+import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -23,7 +27,23 @@ from modules.charlie.runner_control import runner_status as local_runner_status
 from modules.charlie.mission_store import (
     get_mission,
     get_mission_review_packet,
+    append_mission_admission_event,
     append_mission_control_event,
+    bind_external_supervisor_candidate,
+    bind_external_supervisor_branch,
+    authorize_cursor_workspace_hook,
+    authorize_cursor_branch_workspace_hook,
+    invalidate_external_candidate_admission,
+    read_external_supervisor_state,
+    record_external_supervisor_state,
+    retire_cursor_provider_execution,
+    prepare_external_dispatch_authorization,
+    prepare_external_execution_succession,
+    prepare_hermes_native_execution,
+    list_resumable_hermes_native_executions,
+    record_hermes_native_execution_state,
+    refresh_external_dispatch_authorization_base,
+    read_current_mission_admission_authority,
     list_missions,
     list_owner_work_missions,
     create_owner_execution_hold,
@@ -40,6 +60,11 @@ from modules.charlie.mission_store import (
     update_mission_status,
     update_mission_vault,
 )
+from modules.charlie.cursor_cloud_identity import (
+    APPROVED_REPOSITORY,
+    CursorIdentityError,
+    verify_cursor_oidc_token,
+)
 from modules.charlie.core_workflow import (
     CHARLIE_CORE_VERSION,
     VAULT_SCHEMA,
@@ -47,6 +72,7 @@ from modules.charlie.core_workflow import (
     build_core_plan,
     evaluate_core_readiness,
 )
+from modules.charlie.execution_bridge import build_hermes_native_execution_context
 from modules.charlie.vault_store import vault_tables_health
 from modules.charlie.model_registry import choose_model, estimate_model_cost, model_registry_packet
 from modules.charlie.mission_memory import (
@@ -107,6 +133,15 @@ MISSION_CONTROL_CACHE = {"expires_at": 0.0, "packet": None}
 MISSION_CONTROL_CACHE_SECONDS = 15
 PRIVATE_DASHBOARD_CACHE = {"expires_at": 0.0, "packet": None}
 PRIVATE_DASHBOARD_CACHE_SECONDS = 15
+
+
+def _require_hermes_gateway_access():
+    expected = str(env_value("CHARLIE_HERMES_GATEWAY_TOKEN") or "").strip()
+    supplied = str(request.headers.get("Authorization") or "")
+    supplied = supplied[7:].strip() if supplied.startswith("Bearer ") else ""
+    if len(expected) < 32 or not hmac.compare_digest(expected, supplied):
+        return jsonify({"success": False, "status": "hermes_gateway_unauthorized"}), 403
+    return None
 
 
 @charlie_bp.route("/charlie/build-relay/policy", methods=["GET"])
@@ -1004,6 +1039,487 @@ def charlie_build_relay_mission_detail_route(mission_id):
         return denied
     result, status_code = get_mission(mission_id)
     return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/external-candidate", methods=["POST"])
+def charlie_external_supervisor_candidate_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "status": "external_candidate_binding_invalid"}), 400
+    loaded, loaded_status = get_mission(mission_id)
+    metadata = dict(((loaded.get("mission") or {}).get("metadata") or {})) if loaded_status < 400 else {}
+    native = dict(metadata.get("hermes_native_execution") or {})
+    packet = dict(metadata.get("review_packet") or {})
+    if native and packet and packet.get("candidate_revision") != payload.get("head_sha"):
+        try:
+            pr_number = int(payload.get("pr_number") or 0)
+            pull_request = urllib.request.Request(
+                f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/pulls/{pr_number}",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "CHARLIE-Native-Candidate"})
+            with urllib.request.urlopen(pull_request, timeout=15) as response:
+                pull = json.loads(response.read(1048576))
+            if (pull.get("state") != "open" or (pull.get("head") or {}).get("sha") != payload.get("head_sha")
+                    or (pull.get("head") or {}).get("ref") != payload.get("branch_name")
+                    or (pull.get("base") or {}).get("sha") != payload.get("base_sha")
+                    or int(packet.get("pr_number") or 0) != pr_number
+                    or packet.get("branch_name") != payload.get("branch_name")):
+                raise ValueError("native_candidate_github_identity_changed")
+            invalidated, invalidated_status = invalidate_external_candidate_admission(
+                mission_id, str(packet.get("candidate_revision") or ""), str(payload.get("head_sha") or ""),
+                authenticated_principal="control_tower_isolated_validator_v2")
+            if invalidated_status >= 400:
+                return jsonify(invalidated), invalidated_status
+        except (OSError, ValueError, urllib.error.URLError):
+            return jsonify({"success": False, "status": "native_candidate_github_identity_changed"}), 409
+    result, status_code = bind_external_supervisor_candidate(
+        mission_id, payload, authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/protected-admission", methods=["POST"])
+def charlie_protected_admission_record_route(mission_id):
+    """Record only an exact receipt signed by the existing protected issuer."""
+    from scripts.charlie_mission_admission_guard import _validate_external_receipt_envelope
+    payload = request.get_json(silent=True) or {}
+    envelope = payload.get("envelope")
+    try:
+        pr_number = int(payload.get("pr_number") or 0)
+        if pr_number <= 0 or set(payload) != {"envelope", "pr_number"}:
+            raise ValueError("protected_admission_payload_invalid")
+        receipt = (envelope or {}).get("receipt") or {}
+        candidate = receipt.get("candidate") or {}
+        repository = receipt.get("repository") or {}
+        verified, identity = _validate_external_receipt_envelope(
+            envelope, expected_repository="Crewless9086/amadeus-pig-tracking-system",
+            expected_base_sha=str(repository.get("base_sha") or ""),
+            expected_head_sha=str(candidate.get("head_sha") or ""),
+            expected_changed_files=candidate.get("changed_files") or [])
+        if identity.get("mission_id") != mission_id:
+            raise ValueError("mission_identity_mismatch")
+        loaded, loaded_status = get_mission(mission_id)
+        authority, authority_status = read_current_mission_admission_authority(mission_id)
+        if loaded_status >= 400 or authority_status >= 400:
+            raise ValueError("canonical_authority_unavailable")
+        metadata = dict(((loaded.get("mission") or {}).get("metadata") or {}))
+        packet = dict(metadata.get("review_packet") or {})
+        contract = dict(metadata.get("mission_admission_contract") or {})
+        family = dict(metadata.get("mission_family") or {})
+        if packet and packet.get("candidate_revision") != identity["head_sha"]:
+            current_admission = dict(metadata.get("mission_admission") or {})
+            invalidated, invalidated_status = invalidate_external_candidate_admission(
+                mission_id, str(packet.get("candidate_revision") or ""), identity["head_sha"],
+                authenticated_principal="control_tower_isolated_validator_v2")
+            if invalidated_status >= 400:
+                raise ValueError(invalidated.get("status") or "candidate_invalidation_failed")
+            packet = {}
+        if not packet:
+            authorization = dict(metadata.get("dispatch_authorization") or {})
+            pull_request = urllib.request.Request(
+                f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/pulls/{pr_number}",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "CHARLIE-Canonical-Admission"})
+            with urllib.request.urlopen(pull_request, timeout=15) as response:
+                pull = json.loads(response.read(1048576))
+            if (pull.get("state") != "open" or (pull.get("head") or {}).get("sha") != identity["head_sha"]
+                    or (pull.get("head") or {}).get("ref") != candidate.get("branch")
+                    or (pull.get("base") or {}).get("sha") != identity["base_sha"]
+                    or authorization.get("status") != "valid"):
+                raise ValueError("protected_admission_pull_identity_changed")
+            binding = {"pr_number": pr_number, "branch_name": candidate["branch"],
+                "base_sha": identity["base_sha"], "head_sha": identity["head_sha"],
+                "candidate_diff_sha256": candidate["diff_sha256"],
+                "changed_files": identity["changed_files"], "generation": identity["generation"],
+                "allowed_files": identity["allowed_files"], "forbidden_files": verified["scope"]["forbidden_files"],
+                "allowed_effects": identity["allowed_effects"], "forbidden_effects": identity["forbidden_effects"],
+                "required_tests": verified["required_tests"],
+                "operational_acceptance": verified["operational_acceptance"]["requirements"]}
+            bound, bound_status = bind_external_supervisor_candidate(
+                mission_id, binding, authenticated_principal="hermes:charlie-builder")
+            if bound_status >= 400:
+                raise ValueError(bound.get("status") or "external_candidate_binding_failed")
+            loaded, loaded_status = get_mission(mission_id)
+            metadata = dict(((loaded.get("mission") or {}).get("metadata") or {}))
+            packet = dict(metadata.get("review_packet") or {})
+            contract = dict(metadata.get("mission_admission_contract") or {})
+            family = dict(metadata.get("mission_family") or {})
+        if (packet.get("candidate_revision") != identity["head_sha"]
+                or packet.get("candidate_diff_sha256") != candidate.get("diff_sha256")
+                or sorted(packet.get("changed_files") or []) != sorted(identity["changed_files"])
+                or contract.get("base_sha") != identity["base_sha"]
+                or contract.get("branch") != candidate.get("branch")
+                or sorted(contract.get("allowed_files") or []) != sorted(identity["allowed_files"])
+                or family.get("generation") != identity["generation"]
+                or authority.get("latest_correction_digest") != verified["owner_instruction_chain"]["latest_correction_digest"]
+                or authority.get("collision_snapshot_sha256") != verified["collision_snapshot"]["snapshot_sha256"]):
+            raise ValueError("canonical_candidate_linkage_changed")
+        admission = {"receipt_id": verified["receipt_id"], "content_sha256": verified["content_sha256"],
+            "mission_id": mission_id, "root_mission_id": identity["root_mission_id"],
+            "generation": identity["generation"], "base_sha": identity["base_sha"],
+            "head_sha": identity["head_sha"], "authority_key_sha256": verified["authority_key_sha256"],
+            "latest_correction_digest": verified["owner_instruction_chain"]["latest_correction_digest"],
+            "collision_snapshot_sha256": verified["collision_snapshot"]["snapshot_sha256"],
+            "signed_receipt": verified}
+        result, status = append_mission_admission_event(mission_id, admission,
+            authenticated_principal="control_tower_isolated_validator_v2")
+        return jsonify(result), status
+    except Exception:
+        return jsonify({"success": False, "status": "protected_admission_rejected"}), 409
+
+
+@charlie_bp.route("/charlie/hermes/missions", methods=["POST"])
+def charlie_hermes_mission_reconcile_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    required = {"source", "source_event_id", "owner_user_id", "channel_id",
+                "thread_ts", "instruction", "idempotency_key"}
+    if set(payload) != required or payload.get("source") != "slack":
+        return jsonify({"success": False, "status": "hermes_mission_payload_invalid"}), 400
+    instruction = str(payload.get("instruction") or "").strip()
+    result, status = record_mission({
+        "raw_text": instruction, "title": instruction[:160], "urgency": "P2",
+        "mission_type": "system improvement", "approval_level": "LEVEL 3",
+        "metadata": {"mission_plane": {
+            "plane": "software", "coordinator": "CHARLIE", "executor": "Hermes Native",
+            "classification_source": "authenticated_slack_ingress",
+        }, "external_supervisor_state": {
+            "slack_event_id": str(payload["source_event_id"]),
+            "slack_owner_user_id": str(payload["owner_user_id"]),
+            "slack_channel_id": str(payload["channel_id"]),
+            "slack_thread_ts": str(payload["thread_ts"]),
+        }},
+    }, source_context={"source": "slack", "source_message_id": str(payload["source_event_id"]),
+                       "telegram_user_id": str(payload["owner_user_id"]),
+                       "telegram_chat_id": str(payload["channel_id"])})
+    mission_id = result.get("mission_id")
+    return jsonify({"success": status < 400, **result, "mission_id": mission_id}), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>", methods=["GET"])
+def charlie_hermes_mission_status_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = get_mission(mission_id)
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-context", methods=["GET"])
+def charlie_hermes_native_context_route(mission_id):
+    """Return the credential-free native-builder context from canonical truth."""
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = get_mission(mission_id)
+    if status >= 400:
+        return jsonify(result), status
+    mission = dict(result.get("mission") or {})
+    metadata = dict(mission.get("metadata") or {})
+    authorization = dict(metadata.get("hermes_native_execution") or {})
+    retirement = dict(metadata.get("cursor_provider_retirement") or {})
+    if (authorization.get("status") != "valid"
+            and retirement.get("provider_status") != "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"):
+        return jsonify({"success": False, "status": "native_context_mission_ineligible"}), 409
+    try:
+        context = build_hermes_native_execution_context(mission)
+        encoded = json.dumps(context, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "status": "native_context_unavailable"}), 409
+    if len(encoded) > 262144:
+        return jsonify({"success": False, "status": "native_context_too_large"}), 413
+    return jsonify({"success": True, "status": "native_context_ready", "context": context}), 200
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/progress", methods=["POST"])
+def charlie_hermes_mission_progress_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = record_external_supervisor_state(
+        mission_id, request.get_json(silent=True) or {},
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/dispatch-authorization", methods=["POST"])
+def charlie_hermes_dispatch_authorization_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    if (request.get_json(silent=True) or {}) != {}:
+        return jsonify({"success": False, "status": "dispatch_authorization_input_forbidden"}), 400
+    base_sha = str(env_value("RENDER_GIT_COMMIT") or "")
+    result, status = prepare_external_dispatch_authorization(
+        mission_id,
+        authenticated_principal="hermes:charlie-builder",
+        repository="Crewless9086/amadeus-pig-tracking-system",
+        base_sha=base_sha,
+        owner_user_id=str(env_value("CHARLIE_SLACK_OWNER_USER_ID") or ""),
+        channel_id=str(env_value("CHARLIE_SLACK_CHARLIE_CHANNEL_ID") or ""),
+    )
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/execution-succession", methods=["POST"])
+def charlie_hermes_execution_succession_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    required = {"generation", "predecessor_agent_id", "predecessor_run_id",
+                "predecessor_state", "replacement_reason"}
+    if set(payload) != required:
+        return jsonify({"success": False, "status": "execution_succession_invalid"}), 400
+    result, status = prepare_external_execution_succession(
+        mission_id, **payload, observed_main_sha=str(env_value("RENDER_GIT_COMMIT") or ""),
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-execution", methods=["POST"])
+def charlie_hermes_native_execution_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    if set(payload) != {"worktree_digest", "starting_main_sha"}:
+        return jsonify({"success": False, "status": "native_execution_input_invalid"}), 400
+    runtime_sha = str(env_value("RENDER_GIT_COMMIT") or "").strip().lower()
+    requested_sha = str(payload.get("starting_main_sha") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", runtime_sha) or requested_sha != runtime_sha:
+        return jsonify({"success": False, "status": "native_execution_runtime_revision_mismatch"}), 409
+    result, status = prepare_hermes_native_execution(
+        mission_id, worktree_digest=str(payload.get("worktree_digest") or ""),
+        starting_main_sha=requested_sha,
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/cursor-retirement", methods=["POST"])
+def charlie_hermes_cursor_retirement_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = retire_cursor_provider_execution(
+        mission_id, request.get_json(silent=True) or {},
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/native-executions/resumable", methods=["GET"])
+def charlie_hermes_native_recovery_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = list_resumable_hermes_native_executions(
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-execution/progress", methods=["POST"])
+def charlie_hermes_native_execution_progress_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    result, status = record_hermes_native_execution_state(
+        mission_id, request.get_json(silent=True) or {},
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/native-runner/blocker", methods=["POST"])
+def charlie_hermes_native_runner_blocker_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    from modules.charlie.mission_store import record_native_runner_blocker
+    result, status = record_native_runner_blocker(
+        mission_id, request.get_json(silent=True) or {},
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/cursor/hooks/authorize", methods=["POST"])
+def charlie_cursor_hook_authorize_route():
+    """Authorize one managed Cursor hook operation from signed runtime identity."""
+    header = str(request.headers.get("Authorization") or "")
+    if not header.startswith("Bearer "):
+        return jsonify({"success": False, "permission": "deny", "status": "cursor_oidc_required"}), 401
+    try:
+        claims = verify_cursor_oidc_token(header[7:].strip())
+    except CursorIdentityError as exc:
+        return jsonify({"success": False, "permission": "deny", "status": str(exc)}), 401
+    payload = request.get_json(silent=True) or {}
+    allowed = {"action", "target_path", "command", "changed_files"}
+    if not isinstance(payload, dict) or set(payload) - allowed:
+        return jsonify({"success": False, "permission": "deny", "status": "cursor_hook_request_invalid"}), 400
+    result, status = authorize_cursor_workspace_hook(
+        cloud_agent_id=claims["cloud_agent_id"], branch_name=str(claims.get("branch_name") or ""),
+        repository=APPROVED_REPOSITORY, action=str(payload.get("action") or ""),
+        target_path=str(payload.get("target_path") or ""), command=str(payload.get("command") or ""),
+        changed_files=payload.get("changed_files") if isinstance(payload.get("changed_files"), list) else [],
+    )
+    bounded = {key: result.get(key) for key in
+               ("success", "permission", "status", "authorization_id", "branch", "allowed_path", "command")
+               if result.get(key) is not None}
+    if status >= 400:
+        bounded["permission"] = "deny"
+    return jsonify(bounded), status
+
+
+_CURSOR_BRANCH_RATE = {}
+
+
+@charlie_bp.route("/charlie/cursor/hooks/authorize-branch", methods=["POST"])
+def charlie_cursor_hook_authorize_branch_route():
+    """Bounded policy decision for an already authenticated Hermes-bound branch."""
+    if request.content_length is not None and request.content_length > 16384:
+        return jsonify({"success": False, "permission": "deny",
+                        "status": "cursor_branch_request_too_large"}), 413
+    now = time.monotonic()
+    peer = str(request.remote_addr or "unknown")
+    recent = [stamp for stamp in _CURSOR_BRANCH_RATE.get(peer, []) if now - stamp < 60]
+    if len(recent) >= 60:
+        return jsonify({"success": False, "permission": "deny",
+                        "status": "cursor_branch_rate_limited"}), 429
+    recent.append(now)
+    _CURSOR_BRANCH_RATE[peer] = recent
+    payload = request.get_json(silent=True) or {}
+    allowed = {"repository", "branch", "current_head", "action", "target_path", "command", "changed_files"}
+    if not isinstance(payload, dict) or set(payload) - allowed or not {"repository", "branch", "current_head", "action"}.issubset(payload):
+        return jsonify({"success": False, "permission": "deny",
+                        "status": "cursor_branch_request_invalid"}), 400
+    result, status = authorize_cursor_branch_workspace_hook(
+        repository=str(payload.get("repository") or ""), branch=str(payload.get("branch") or ""),
+        current_head=str(payload.get("current_head") or ""), action=str(payload.get("action") or ""),
+        target_path=str(payload.get("target_path") or ""), command=str(payload.get("command") or ""),
+        changed_files=payload.get("changed_files") if isinstance(payload.get("changed_files"), list) else [],
+    )
+    bounded = {key: result.get(key) for key in ("success", "permission", "status", "authorization_id")
+               if result.get(key) is not None}
+    if status >= 400:
+        bounded["permission"] = "deny"
+    return jsonify(bounded), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/actual-branch", methods=["POST"])
+def charlie_hermes_actual_branch_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    if set(payload) != {"generation", "cursor_agent_id", "cursor_run_id", "repository", "branches"}:
+        return jsonify({"success": False, "status": "external_branch_binding_invalid"}), 400
+    result, status = bind_external_supervisor_branch(
+        mission_id, **payload, authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/refresh-dispatch-base", methods=["POST"])
+def charlie_hermes_refresh_dispatch_base_route(mission_id):
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    required = {"generation", "cursor_agent_id", "old_base_sha"}
+    if set(payload) != required:
+        return jsonify({"success": False, "status": "dispatch_base_refresh_invalid"}), 400
+    new_base = str(env_value("RENDER_GIT_COMMIT") or "")
+    old_base = str(payload.get("old_base_sha") or "")
+    try:
+        compare_request = urllib.request.Request(
+            f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/compare/{old_base}...{new_base}",
+            headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"})
+        with urllib.request.urlopen(compare_request, timeout=15) as response:
+            comparison = json.loads(response.read().decode("utf-8"))
+        if comparison.get("status") not in {"ahead", "identical"}:
+            raise ValueError("base_not_ancestor")
+        changed_files = [str(item.get("filename") or "") for item in comparison.get("files") or []]
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
+        return jsonify({"success": False, "status": "dispatch_base_comparison_unavailable"}), 503
+    if old_base == new_base:
+        return jsonify({"success": True, "status": "base_current"}), 200
+    result, status = refresh_external_dispatch_authorization_base(
+        mission_id, generation=payload["generation"], cursor_agent_id=payload["cursor_agent_id"],
+        old_base_sha=old_base, new_base_sha=new_base, changed_files=changed_files,
+        authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/missions/<mission_id>/admission", methods=["POST"])
+def charlie_hermes_mission_admission_route(mission_id):
+    """Trigger only the protected-main issuer for the canonical bound candidate."""
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    supplied = request.get_json(silent=True) or {}
+    if (set(supplied) != {"expected_head_sha", "pr_number"}
+            or not re.fullmatch(r"[0-9a-f]{40}", str(supplied.get("expected_head_sha") or ""))
+            or not isinstance(supplied.get("pr_number"), int) or supplied["pr_number"] <= 0):
+        return jsonify({"success": False, "status": "issuer_request_invalid"}), 400
+    loaded, status = get_mission(mission_id)
+    if status >= 400:
+        return jsonify(loaded), status
+    metadata = dict(((loaded.get("mission") or {}).get("metadata") or {}))
+    packet = dict(metadata.get("review_packet") or {})
+    expected_head = str(supplied["expected_head_sha"])
+    authorization = dict(metadata.get("dispatch_authorization") or {})
+    if packet.get("candidate_revision") == expected_head and int(packet.get("pr_number") or 0):
+        pr_number = int(packet["pr_number"])
+    elif authorization.get("status") == "valid":
+        pr_number = supplied["pr_number"]
+    else:
+        return jsonify({"success": False, "status": "canonical_candidate_not_bound"}), 409
+    token = str(env_value("CHARLIE_ADMISSION_ISSUER_GITHUB_TOKEN") or "").strip()
+    if len(token) < 32:
+        return jsonify({"success": False, "status": "protected_issuer_unavailable"}), 503
+    body = json.dumps({"ref": "main", "inputs": {
+        "pull_request_number": str(pr_number), "expected_head_sha": expected_head,
+    }}, separators=(",", ":")).encode()
+    issuer_request = urllib.request.Request(
+        "https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/actions/workflows/mission-admission-issuer.yml/dispatches",
+        data=body, method="POST", headers={"Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json", "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28"})
+    try:
+        with urllib.request.urlopen(issuer_request, timeout=15) as response:
+            if response.status != 204:
+                raise OSError("unexpected_status")
+    except (urllib.error.URLError, OSError):
+        return jsonify({"success": False, "status": "protected_issuer_unavailable"}), 503
+    return jsonify({"success": True, "status": "protected_issuer_dispatched",
+                    "mission_id": mission_id, "pr_number": pr_number,
+                    "expected_head_sha": expected_head}), 202
+
+
+@charlie_bp.route("/charlie/hermes/dispatch", methods=["GET", "POST"])
+def charlie_hermes_dispatch_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    if request.method == "GET":
+        result, status = read_external_supervisor_state(request.args.get("idempotency_key", ""))
+        return jsonify(result), status
+    payload = request.get_json(silent=True) or {}
+    mission_id = str(payload.get("mission_id") or "")
+    state = {key: value for key, value in payload.items() if key != "mission_id"}
+    result, status = record_external_supervisor_state(
+        mission_id, state, authenticated_principal="hermes:charlie-builder")
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/hermes/writers", methods=["GET"])
+def charlie_hermes_writer_count_route():
+    denied = _require_hermes_gateway_access()
+    if denied:
+        return denied
+    missions, status = list_missions(status="in_progress", limit=100, compact=False)
+    running = sum(1 for row in missions.get("missions") or []
+                  if ((row.get("metadata") or {}).get("external_supervisor_state") or {}).get("agent_state") == "ACTIVE")
+    return jsonify({"success": status < 400, "running": running}), status
 
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/outcome-handover", methods=["POST"])

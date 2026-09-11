@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 jobs:
-  mission-admission:
+  mission-admission-candidate-diagnostic:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     services:
@@ -206,36 +206,41 @@ jobs:
       - name: Validate complete exact candidate
         shell: bash
         env:
-          VALIDATION_RECEIPT_KEY_B64: ${{ secrets.CHARLIE_VALIDATION_RECEIPT_KEY_B64 }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
-          test -n "$VALIDATION_RECEIPT_KEY_B64"
-          install -m 700 -d .charlie_runner
-          printf '%s' "$VALIDATION_RECEIPT_KEY_B64" | base64 --decode \
-            > .charlie_runner/validation-receipt.key
-          chmod 600 .charlie_runner/validation-receipt.key
-          if [ "${{ github.head_ref }}" = "cursor/mission-admission-stage2-20260827" ]; then
-            admitted_head=""
-            for _attempt in $(seq 1 12); do
-              body="$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }} --jq .body)"
-              admitted_head="$(printf '%s' "$body" | sed -n 's/^Stage2-Admission-Head: \([0-9a-f]\{40\}\)$/\1/p')"
-              [ "$admitted_head" = "$head" ] && break
-              sleep 5
-            done
-            test "$admitted_head" = "$head"
-            export CHARLIE_STAGE2_ADMITTED_HEAD="$admitted_head"
-            CI=true python scripts/charlie_mission_admission_guard.py \
-              issue-stage2 --base "$base" --head "$head"
-            export CHARLIE_MISSION_ADMISSION_STATE_ROOT="$PWD/.charlie_runner"
-            export CHARLIE_MISSION_ADMISSION_MISSION_ID="CMQ-20260813-05-STAGE2-ADMISSION"
-          else
-            CI=true python scripts/charlie_mission_admission_guard.py \
-              issue-bootstrap --base "$base" --head "$head"
-          fi
-          python scripts/charlie_mission_admission_guard.py ci \
+          gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }} \
+            > "$RUNNER_TEMP/pull-request.json"
+          python - <<'PY'
+          import base64
+          import binascii
+          import json
+          import os
+          import re
+
+          source = os.path.join(os.environ["RUNNER_TEMP"], "pull-request.json")
+          target = os.path.join(
+              os.environ["RUNNER_TEMP"], "mission-admission-receipt.json"
+          )
+          body = str(json.load(open(source, encoding="utf-8")).get("body") or "")
+          matches = re.findall(
+              r"(?m)^Mission-Admission-Receipt-B64: ([A-Za-z0-9+/]+={0,2})\r?$",
+              body,
+          )
+          if len(matches) != 1:
+              raise SystemExit("exactly_one_external_admission_receipt_required")
+          try:
+              decoded = base64.b64decode(matches[0], validate=True)
+              receipt = json.loads(decoded)
+          except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError) as exc:
+              raise SystemExit("external_admission_receipt_invalid") from exc
+          with open(target, "w", encoding="utf-8") as output:
+              json.dump(receipt, output, sort_keys=True, separators=(",", ":"))
+          PY
+          python scripts/charlie_mission_admission_guard.py ci-external \
+            --receipt "$RUNNER_TEMP/mission-admission-receipt.json" \
             --base "$base" --head "$head"
 
   charlie-core:

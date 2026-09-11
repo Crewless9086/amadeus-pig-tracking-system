@@ -1,5 +1,154 @@
 # Vault Brain Changelog
 
+## 2026-09-03 - Render worker boundary for CHARLIE native runner
+
+- Added a separately billed, single-instance Render Background Worker Blueprint
+  with a 10 GB persistent disk, manual deployment, exact-revision repository
+  bootstrap, allowlisted protected configuration, and graceful SIGTERM handling.
+- Recorded the USD 27.50/month compute-plus-disk cost and retained the dedicated
+  systemd host as a fallback instead of requiring an immediate VPS purchase.
+- Bound the adapter to Hermes v0.20.6's real OpenAI-compatible response and
+  route-info contract, pinned the provider/model and retry budget, made the
+  Cursor credential retirement-only, and added durable BLOCKED_HOLD reporting
+  plus dirty-patch restart recovery without another model call.
+- Clarified that USD 27.50 is the minimum infrastructure subtotal; model use,
+  bandwidth, existing workspace charges, and future scaling remain separate.
+
+## 2026-09-02 - Standalone CHARLIE native runner boundary
+
+- Removed mission execution and recovery from the Hermes directory-plugin
+  critical path by introducing one canonical, independently supervised native
+  runner.
+- Reused the existing isolated-worktree, structured-patch, draft packaging,
+  exact-candidate admission, role-isolated review, and notification contracts.
+- Added a no-tool adapter for Hermes v0.20.6 auxiliary inference and a hardened
+  systemd deployment boundary with no merge or deployment capability.
+
+## 2026-08-31 - Self-contained CHARLIE-BUILDER plugin recovery
+
+- Removed application-root imports from the installed Hermes plugin. Native
+  governance context now crosses the existing authenticated CHARLIE API, while
+  candidate-diff identity is reproduced by a small pure plugin protocol with
+  compatibility tests against the authoritative backend implementation.
+- Hermes' static directory-plugin environment preflight no longer masks the
+  profile-owned runtime validation. Isolated-package tests load and register
+  all eight bounded tools, both safety hooks and all auxiliary review tasks
+  with the application root absent from `sys.path`.
+- Protected plugin configuration now resolves through Hermes v0.20.6's active
+  profile secret scope, or through the PluginManager-bound profile home during
+  registration. Process-global profile credentials remain absent under
+  multiplexing, Socket Mode registration does not require the host-owned app
+  token or optional direct-HTTP signing secret, and missing-key diagnostics
+  disclose variable names only.
+- Startup recovery can now discover the single exact Cursor attempt-5
+  retirement boundary and dispatch it through the existing idempotent native
+  builder path without a second dashboard or Slack instruction. Canonical
+  discovery retries asynchronously with bounded diagnostics, so a transient
+  startup outage cannot silently abandon the handoff or delay registration of
+  the fail-closed tool and hook surface.
+
+## 2026-08-30 - Hermes-native structured-patch executor
+
+- Cursor Cloud is retained as failed-safe audit history but removed from the
+  critical-path builder contract after its managed commit/PR handoff could not
+  satisfy repository hooks. The canonical mission and Slack thread remain the
+  source of truth.
+- The existing CHARLIE execution bridge now supplies governance and stage
+  context to a host-owned Hermes structured model call with no tools or
+  credentials. A trusted parent validates bounded tracked context and unified
+  diffs, owns one deterministic isolated worktree, and permits only the
+  admitted branch, file and verification commands.
+- Parent-only packaging uses one repository-scoped credential solely for the
+  admitted feature-branch push and draft-PR API call. Exact-candidate Mission
+  Admission, independent review, five required checks and the no-merge/no-
+  deployment boundary remain unchanged.
+- Structured SECURITY and FUNCTIONAL review evidence is bound to the exact PR,
+  base, head, binary-diff digest and file set, and records the host-reported
+  provider/model/Agent identity for distinct auxiliary task routes. Stale or
+  non-independent review packets cannot advance supervision, and the pilot's
+  genuine SEND_BACK correction remains an explicit release prerequisite.
+- Native builder and reviewer separation now compares and durably records the
+  host-reported Agent principals, not role-derived labels. A bounded third
+  commissioning challenge must return a concrete SEND_BACK. Correction worker
+  identity and verification are checkpointed before packaging; restart safely
+  reconciles an already-pushed same-worktree head and then completes candidate
+  binding and fresh reviews rather than stranding the journey.
+
+## 2026-08-29 - Cursor managed-VM hook classification recovery
+
+- A configured `CURSOR_AGENT_SOCKET` now selects the OIDC-backed Cloud PDA path
+  even while the documented managed-VM socket is briefly unavailable. The hook
+  fails closed with `cursor_oidc_unavailable` instead of silently falling into
+  the local exact-candidate MAR path.
+- The five-minute Cursor OIDC token is cached across separate hook processes in
+  a per-user, outside-repository 0700/0600 runtime cache with an atomic write and
+  bounded process lock. Retryable socket and 429/5xx responses remain inside an
+  eight-second total authorization budget; fatal responses never retry.
+- Read-only attempt-3 runtime evidence at Unix time `1788000903` confirmed the
+  documented variable was present as `/run/cursor/api.sock` and the socket was
+  then ready. Three earlier hook denials produced no CHARLIE authorization
+  request, bounding the original incident to pre-request Cloud-mode selection.
+- Authorized one final serialized attempt-4 recovery only after the failed-safe
+  attempt-3 writer is provider- and canonically `ARCHIVED` with zero mutation,
+  PR, candidate, or MAR. The
+  original mission, generation, owner instruction, Slack thread, and one-active-
+  writer boundary remain unchanged.
+
+## 2026-08-28 - Portable Cursor admission hook recovery
+
+- Replaced direct `python` hook commands with a no-shell Node launcher that
+  selects the supported Windows or Linux Python executable while preserving
+  exact stdin, output, environment and fail-closed guard status.
+- Added canonical one-time binding for the sole branch reported by an existing
+  Cursor Agent and an evented, pre-candidate-only base refresh restricted to
+  the reviewed disjoint infrastructure correction. Neither rail creates a new
+  mission, Agent, branch, PR, merge or deployment authority.
+
+## 2026-08-28 - Hermes Slack deterministic routing containment
+
+- The native `charlie-builder` plugin now intercepts the exact authorised
+  `#charlie` owner event before the generic Hermes model/tool loop, routes it
+  through canonical reconciliation and admitted Cursor dispatch, and returns
+  `skip` on success or bounded failure.
+- Slack-scoped tool calls are restricted to the eight bounded supervisor tools;
+  public GitHub monitoring can operate without a token and rejects placeholder
+  or write-token configuration. No merge, deployment or business authority is
+  introduced.
+
+## 2026-08-28 - Protected dynamic Mission Admission issuer
+
+- Added a protected-default-branch, manual-dispatch issuer that accepts only a
+  pull-request number and expected head. It resolves scope and mission lineage
+  from canonical CHARLIE records through a TLS, session-forced read-only
+  database identity, treats candidate Git data as inert, and updates exactly one
+  receipt marker without executing candidate code.
+- Replaced the trusted verifier's historical static canonical binding with an
+  independent current-authority read. Owner corrections, collision changes,
+  mission-generation changes, revocation, consumption, database failure and
+  privilege ambiguity fail closed. The stored static binding remains untouched
+  but is no longer in the active path.
+- No schema, endpoint, queue, service, deployment, farm, customer or business
+  authority was added.
+
+## 2026-08-27 - Generic exact-candidate admission in hosted CI
+
+- Replaced the normal-PR fallback to the sealed Stage 1 bootstrap contract with
+  verification of one externally issued, exact-candidate Mission Admission
+  Receipt carried in the PR body. A separately rotated Ed25519 signing key is
+  held only in the protected validator environment; pull-request CI receives
+  only its fixed public key. The legacy repository-wide symmetric secret was
+  removed so candidate workflows cannot recover either signing authority.
+- Hosted CI now fails closed for a missing, duplicated, malformed, altered,
+  expired or differently bound receipt, while retaining the historical Stage 2
+  issuance path. It does not query or manufacture canonical production state.
+- Added a protected-base `pull_request_target` workflow that never checks out or
+  executes candidate content and publishes the sole required `mission-admission`
+  Check Run through the repository-scoped CHARLIE Admission Guard GitHub App.
+  Candidate Actions retain a separately named diagnostic and cannot access the
+  protected App environment or satisfy the App-bound required check. The trusted
+  workflow also compares mission lineage, authority identity, owner correction
+  and a fresh collision snapshot with a protected canonical binding.
+
 ## 2026-08-27 - Mission Admission Guard Stage 2 delivery adapter
 
 - Added a bounded adapter that validates an externally issued Mission Admission
@@ -1959,3 +2108,8 @@
 - Added one-ON, deterministic claim, bounded OFF, final readback and restart
   recovery source using the existing ROOTLINE transport and execution store.
 - No provider, configuration, canonical or farm effect occurred.
+## 2026-08-30 — Hermes-native executor release hardening
+
+- Added canonical restart discovery and renewable cross-process writer claims so one native execution resumes its exact worktree after a gateway replacement without overlapping writers.
+- Bound native execution to the authenticated deployed `RENDER_GIT_COMMIT`, enforced cumulative context limits, rejected symlinked worktree paths before resolution, and expanded packager credential-separation tests.
+- Required authenticated exact-head SECURITY and FUNCTIONAL review roles from distinct GitHub reviewers; comment text cannot spoof a verdict, and native owner notification remains blocked until a genuine SEND_BACK correction has occurred.

@@ -392,7 +392,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         parsed["telegram_user_id"],
         parsed["telegram_chat_id"],
         principal_role=family_principal.role.value,
-        capabilities=family_principal.permissions,
+        capabilities=family_principal.effective_permissions,
     )
     if parsed["telegram_chat_type"] != "private":
         gateway_authority = None

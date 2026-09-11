@@ -2,7 +2,8 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
+import shlex
+from datetime import datetime, timedelta, timezone
 
 from services.database_service import DATABASE_URL_ENV
 from modules.charlie.core_workflow import (
@@ -1602,10 +1603,12 @@ def append_mission_admission_event(
         "latest_correction_digest",
         "collision_snapshot_sha256",
     }
+    optional = {"signed_receipt"}
     if (
         not mission_id
         or not principal
-        or set(admission) != required
+        or not required.issubset(admission)
+        or set(admission) - required - optional
         or not str(admission.get("receipt_id") or "").startswith("MAR-")
         or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("content_sha256") or ""))
         or not re.fullmatch(r"[0-9a-f]{40}", str(admission.get("base_sha") or ""))
@@ -1614,6 +1617,10 @@ def append_mission_admission_event(
         or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("latest_correction_digest") or ""))
         or not re.fullmatch(r"[0-9a-f]{64}", str(admission.get("collision_snapshot_sha256") or ""))
         or admission.get("mission_id") != mission_id
+        or (
+            "signed_receipt" in admission
+            and not isinstance(admission.get("signed_receipt"), dict)
+        )
         or not _clean_text(admission.get("root_mission_id"), 90)
         or not _clean_text(admission.get("generation"), 200)
     ):
@@ -1696,6 +1703,1380 @@ def append_mission_admission_event(
         "event_id": event["event_id"],
         "admission": projection,
     }, 201
+
+
+def bind_external_supervisor_candidate(
+    mission_id,
+    binding,
+    *,
+    authenticated_principal,
+    database_url=None,
+    connect_factory=None,
+):
+    """Bind one externally supervised PR candidate without exposing raw storage."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    binding = binding if isinstance(binding, dict) else {}
+    required = {
+        "pr_number", "branch_name", "base_sha", "head_sha",
+        "candidate_diff_sha256", "changed_files", "generation",
+        "allowed_files", "forbidden_files", "allowed_effects",
+        "forbidden_effects", "required_tests", "operational_acceptance",
+    }
+    sha40 = lambda value: bool(re.fullmatch(r"[0-9a-f]{40}", str(value or "")))
+    sha64 = lambda value: bool(re.fullmatch(r"[0-9a-f]{64}", str(value or "")))
+    paths = sorted({_clean_text(item, 500) for item in binding.get("changed_files") or [] if _clean_text(item, 500)})
+    allowed = sorted({_clean_text(item, 500) for item in binding.get("allowed_files") or [] if _clean_text(item, 500)})
+    if (not mission_id or not principal or set(binding) != required
+            or not isinstance(binding.get("pr_number"), int) or binding["pr_number"] <= 0
+            or not _clean_text(binding.get("branch_name"), 240)
+            or not sha40(binding.get("base_sha")) or not sha40(binding.get("head_sha"))
+            or not sha64(binding.get("candidate_diff_sha256")) or paths != allowed
+            or not paths or not _clean_text(binding.get("generation"), 200)
+            or not all(isinstance(binding.get(key), list) for key in (
+                "forbidden_files", "allowed_effects", "forbidden_effects",
+                "required_tests", "operational_acceptance"))):
+        return {"success": False, "status": "external_candidate_binding_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    packet = {
+        "pr_number": binding["pr_number"], "branch_name": binding["branch_name"],
+        "candidate_revision": binding["head_sha"],
+        "candidate_diff_sha256": binding["candidate_diff_sha256"],
+        "changed_files": paths,
+    }
+    contract = {
+        "generation": binding["generation"], "branch": binding["branch_name"],
+        "base_sha": binding["base_sha"], "allowed_files": allowed,
+        **{key: sorted(binding[key]) for key in (
+            "forbidden_files", "allowed_effects", "forbidden_effects",
+            "required_tests", "operational_acceptance")},
+    }
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select status,coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                if row[0] not in {"approved", "in_progress", "pr_ready"}:
+                    return {"success": False, "status": "external_candidate_binding_state_invalid"}, 409
+                metadata = dict(row[1] or {})
+                dispatch_authorization = metadata.get("dispatch_authorization") \
+                    if isinstance(metadata.get("dispatch_authorization"), dict) else {}
+                native_authorization = metadata.get("hermes_native_execution") \
+                    if isinstance(metadata.get("hermes_native_execution"), dict) else {}
+                if native_authorization:
+                    if (native_authorization.get("status") != "valid"
+                            or binding["base_sha"] != native_authorization.get("starting_main_sha")
+                            or binding["branch_name"] != native_authorization.get("branch")
+                            or binding["generation"] != native_authorization.get("generation")
+                            or paths != sorted(native_authorization.get("allowed_files") or [])
+                            or sorted(binding["allowed_effects"]) != sorted(native_authorization.get("allowed_effects") or [])
+                            or sorted(binding["forbidden_effects"]) != sorted(native_authorization.get("forbidden_effects") or [])):
+                        return {"success": False, "status": "external_candidate_native_authorization_mismatch"}, 409
+                elif dispatch_authorization:
+                    if (dispatch_authorization.get("status") != "valid"
+                            or binding["base_sha"] != dispatch_authorization.get("base_sha")
+                            or binding["branch_name"] != dispatch_authorization.get("branch")
+                            or binding["generation"] != dispatch_authorization.get("generation")
+                            or paths != sorted(dispatch_authorization.get("allowed_files") or [])
+                            or sorted(binding["allowed_effects"]) != sorted(dispatch_authorization.get("allowed_effects") or [])
+                            or sorted(binding["forbidden_effects"]) != sorted(dispatch_authorization.get("forbidden_effects") or [])):
+                        return {"success": False, "status": "external_candidate_dispatch_authorization_mismatch"}, 409
+                existing = metadata.get("review_packet")
+                if isinstance(existing, dict) and existing:
+                    if existing == packet and metadata.get("mission_admission_contract") == contract:
+                        return {"success": True, "status": "exact_replay", "mission_id": mission_id}, 200
+                    current_admission = metadata.get("mission_admission") \
+                        if isinstance(metadata.get("mission_admission"), dict) else {}
+                    if current_admission.get("status") not in {"revoked", "invalidated", "consumed"}:
+                        return {"success": False, "status": "external_candidate_binding_conflict"}, 409
+                family = dict(metadata.get("mission_family") or {})
+                family["root_mission_id"] = family.get("root_mission_id") or mission_id
+                family["generation"] = binding["generation"]
+                metadata.update({"review_packet": packet, "mission_admission_contract": contract,
+                                 "mission_family": family, "external_supervisor": {
+                                     "principal": principal, "transport": (
+                                         "hermes_native_structured_patch_v1" if native_authorization
+                                         else "hermes_cursor_cloud_v1")}})
+                if dispatch_authorization:
+                    dispatch_authorization["active_pr_number"] = binding["pr_number"]
+                    identity_contract = {key: value for key, value in dispatch_authorization.items()
+                                         if key not in {"authorization_id", "status"}}
+                    dispatch_authorization["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                        identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                    metadata["dispatch_authorization"] = dispatch_authorization
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Externally supervised exact PR candidate bound.",
+                    {"pr_number": binding["pr_number"], "head_sha": binding["head_sha"],
+                     "generation": binding["generation"], "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "external_candidate_binding_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "external_candidate_bound",
+            "mission_id": mission_id, "pr_number": binding["pr_number"],
+            "head_sha": binding["head_sha"]}, 201
+
+
+def invalidate_external_candidate_admission(
+    mission_id, old_head_sha, new_head_sha, *, authenticated_principal,
+    database_url=None, connect_factory=None,
+):
+    """Invalidate an exact receipt when the same supervised PR head changes."""
+    if (authenticated_principal != "control_tower_isolated_validator_v2"
+            or not re.fullmatch(r"[0-9a-f]{40}", str(old_head_sha or ""))
+            or not re.fullmatch(r"[0-9a-f]{40}", str(new_head_sha or ""))
+            or old_head_sha == new_head_sha):
+        return {"success": False, "status": "candidate_invalidation_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                admission = dict(metadata.get("mission_admission") or {})
+                packet = dict(metadata.get("review_packet") or {})
+                if admission.get("status") == "invalidated" and admission.get("replacement_head_sha") == new_head_sha:
+                    return {"success": True, "status": "exact_replay"}, 200
+                if (admission.get("status") != "valid" or admission.get("head_sha") != old_head_sha
+                        or packet.get("candidate_revision") != old_head_sha):
+                    return {"success": False, "status": "candidate_invalidation_conflict"}, 409
+                metadata["mission_admission"] = {**admission, "status": "invalidated",
+                    "invalidated_reason": "candidate_head_changed", "replacement_head_sha": new_head_sha}
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Exact admission invalidated because the supervised candidate head changed.",
+                    {"old_head_sha": old_head_sha, "new_head_sha": new_head_sha,
+                     "recorded_by": authenticated_principal})
+    except Exception as exc:
+        return {"success": False, "status": "candidate_invalidation_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "candidate_admission_invalidated"}, 201
+
+
+def record_external_supervisor_state(mission_id, state, *, authenticated_principal,
+                                     database_url=None, connect_factory=None):
+    """Persist bounded Hermes linkage/progress in the canonical mission row."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    state = state if isinstance(state, dict) else {}
+    allowed = {"idempotency_key", "generation", "cursor_agent_id", "cursor_run_id",
+               "slack_channel_id", "slack_thread_ts", "branch", "pr_number",
+               "head_sha", "agent_state", "run_state", "stalled", "event",
+               "failed_attempts", "checks", "independent_review", "branches",
+               "ci_stalled", "stalled_checks", "admission_requested_head",
+               "all_required_checks_pass", "approved_head_sha", "owner_notification_head",
+               "execution_attempt", "repository_mutation"}
+    if not mission_id or not principal or not state or set(state) - allowed:
+        return {"success": False, "status": "external_supervisor_state_invalid"}, 400
+    key = _clean_text(state.get("idempotency_key"), 300)
+    if key and not key.startswith(mission_id + ":"):
+        return {"success": False, "status": "external_supervisor_identity_conflict"}, 409
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb) from public.charlie_missions
+                    where mission_id=%(mission_id)s for update""", {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("external_supervisor_state") or {})
+                succession = dict(metadata.get("execution_succession") or {})
+                attempt = int(state.get("execution_attempt") or current.get("execution_attempt") or 1)
+                effective_agent = state.get("cursor_agent_id") or current.get("cursor_agent_id")
+                effective_state = state.get("agent_state") or current.get("agent_state")
+                if attempt >= 2:
+                    if (succession.get("active_attempt") != attempt
+                            or succession.get("predecessor_archived") is not True
+                            or state.get("cursor_agent_id") == succession.get("predecessor_agent_id")):
+                        return {"success": False, "status": "execution_succession_not_authorized"}, 409
+                    successor = str(succession.get("successor_agent_id") or "")
+                    if successor and state.get("cursor_agent_id") not in {None, successor}:
+                        return {"success": False, "status": "execution_successor_conflict"}, 409
+                    if state.get("cursor_agent_id"):
+                        succession["successor_agent_id"] = state["cursor_agent_id"]
+                        metadata["execution_succession"] = succession
+                        authorization = dict(metadata.get("dispatch_authorization") or {})
+                        if authorization.get("status") == "valid":
+                            authorization.update({"execution_attempt": attempt,
+                                                  "active_cursor_agent_id": state["cursor_agent_id"],
+                                                  "branch": "", "branch_binding_status": "unbound",
+                                                  "active_pr_number": 0})
+                            identity_contract = {key: value for key, value in authorization.items()
+                                                 if key not in {"authorization_id", "status"}}
+                            authorization["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                                identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                            metadata["dispatch_authorization"] = authorization
+                elif (int(succession.get("active_attempt") or 0) >= 2
+                        and effective_agent == succession.get("predecessor_agent_id")
+                        and effective_state == "ACTIVE"):
+                    return {"success": False, "status": "predecessor_reactivation_forbidden"}, 409
+                if key and current.get("idempotency_key") == key and current.get("cursor_agent_id"):
+                    if state.get("cursor_agent_id") and state["cursor_agent_id"] != current.get("cursor_agent_id"):
+                        return {"success": False, "status": "external_supervisor_dispatch_conflict"}, 409
+                merged = {**current, **state, "recorded_by": principal,
+                          "updated_at": datetime.now(timezone.utc).isoformat()}
+                metadata["external_supervisor_state"] = merged
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated", "External supervisor state recorded.",
+                              {key: merged.get(key) for key in ("cursor_agent_id", "cursor_run_id", "pr_number", "head_sha", "event")})
+    except Exception as exc:
+        return {"success": False, "status": "external_supervisor_state_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "external_supervisor_state_recorded",
+            "mission_id": mission_id, "dispatch": merged}, 201
+
+
+def retire_cursor_provider_execution(mission_id, evidence, *, authenticated_principal,
+                                     database_url=None, connect_factory=None):
+    """Atomically retire one provider-verified zero-candidate Cursor execution."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    evidence = evidence if isinstance(evidence, dict) else {}
+    required = {"generation", "cursor_agent_id", "cursor_run_id", "execution_attempt",
+                "provider_agent_state", "provider_run_state", "branch",
+                "repository_mutation", "remote_branch_created", "pr_number",
+                "head_sha", "exact_candidate"}
+    if (not mission_id or principal != "hermes:charlie-builder" or set(evidence) != required
+            or int(evidence.get("execution_attempt") or 0) != 5
+            or evidence.get("provider_agent_state") != "ARCHIVED"
+            or evidence.get("provider_run_state") not in {"FINISHED", "CANCELLED"}
+            or evidence.get("repository_mutation") is not False
+            or evidence.get("remote_branch_created") is not False
+            or int(evidence.get("pr_number") or 0) != 0
+            or str(evidence.get("head_sha") or "")
+            or evidence.get("exact_candidate") != "absent"):
+        return {"success": False, "status": "cursor_retirement_evidence_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("external_supervisor_state") or {})
+                dispatch = dict(metadata.get("dispatch_authorization") or {})
+                admission = dict(metadata.get("mission_admission") or {})
+                review_packet = dict(metadata.get("review_packet") or {})
+                retirement = dict(metadata.get("cursor_provider_retirement") or {})
+                if retirement:
+                    exact = (retirement.get("agent_id") == evidence["cursor_agent_id"]
+                             and retirement.get("run_id") == evidence["cursor_run_id"]
+                             and retirement.get("generation") == evidence["generation"])
+                    return ({"success": exact, "status": "exact_replay" if exact else "cursor_retirement_conflict",
+                             "retirement": retirement}, 200 if exact else 409)
+                if (current.get("cursor_agent_id") != evidence["cursor_agent_id"]
+                        or current.get("cursor_run_id") != evidence["cursor_run_id"]
+                        or current.get("generation") != evidence["generation"]
+                        or int(current.get("execution_attempt") or 0) != 5
+                        or current.get("branch") != evidence["branch"]
+                        or current.get("repository_mutation") is not False
+                        or current.get("remote_branch_created") is True
+                        or int(current.get("pr_number") or 0) != 0
+                        or str(current.get("head_sha") or "")
+                        or current.get("exact_candidate") not in {None, "", "absent"}
+                        or bool(review_packet)
+                        or dispatch.get("generation") != evidence["generation"]
+                        or admission.get("status") == "valid"):
+                    return {"success": False, "status": "cursor_retirement_identity_conflict"}, 409
+                retired_state = {**current,
+                    "agent_state": "ARCHIVED", "run_state": evidence["provider_run_state"],
+                    "repository_mutation": False, "remote_branch_created": False,
+                    "pr_number": 0, "head_sha": "", "exact_candidate": "absent",
+                    "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+                    "event": "cursor_provider_retired", "recorded_by": principal,
+                    "updated_at": datetime.now(timezone.utc).isoformat()}
+                retirement = {
+                    "provider": "cursor_cloud", "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+                    "generation": evidence["generation"], "agent_id": evidence["cursor_agent_id"],
+                    "run_id": evidence["cursor_run_id"], "agent_state": "ARCHIVED",
+                    "run_state": evidence["provider_run_state"], "repository_mutation": False,
+                    "remote_branch_created": False, "pr_number": 0, "head_sha": "",
+                    "exact_candidate": "absent", "valid_mission_admission": False,
+                    "event": "cursor_provider_retired", "recorded_by": principal,
+                }
+                metadata["external_supervisor_state"] = retired_state
+                metadata["cursor_provider_retirement"] = retirement
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated", "Cursor provider retired after verified zero-candidate containment.",
+                              {"generation": evidence["generation"], "cursor_agent_id": evidence["cursor_agent_id"],
+                               "cursor_run_id": evidence["cursor_run_id"], "event": "cursor_provider_retired",
+                               "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "cursor_retirement_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "cursor_provider_retired",
+            "mission_id": mission_id, "retirement": retirement}, 201
+
+
+def _native_sha(value, length):
+    value = str(value or "").strip().lower()
+    return value if re.fullmatch(rf"[0-9a-f]{{{int(length)}}}", value) else ""
+
+
+_HERMES_PILOT_ALLOWED_FILES = ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]
+_PDA_ALLOWED_EFFECTS = [
+    "create_feature_branch", "edit_allowed_documentation", "run_tests",
+    "commit_feature_branch", "push_feature_branch", "open_or_update_draft_pr",
+    "request_independent_review",
+]
+_PDA_FORBIDDEN_EFFECTS = [
+    "edit_other_file", "merge", "deploy", "credential_change",
+    "branch_protection_change", "render_configuration_change",
+    "supabase_configuration_change", "customer_action", "farm_action",
+    "payment_action", "hardware_action",
+]
+
+
+def _bounded_timestamp(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def prepare_hermes_native_execution(mission_id, *, worktree_digest, starting_main_sha,
+                                    authenticated_principal, database_url=None,
+                                    connect_factory=None):
+    """Create or replay one provider-neutral native execution authorization.
+
+    Cursor history is preserved.  The native execution is admitted only after
+    the final Cursor writer is archived with zero candidate and zero mutation.
+    """
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    worktree_digest = _native_sha(worktree_digest, 64)
+    starting_main_sha = _native_sha(starting_main_sha, 40)
+    if not mission_id or not principal or not worktree_digest or not starting_main_sha:
+        return {"success": False, "status": "native_execution_input_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb), raw_text
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("hermes_native_execution") or {})
+                if current:
+                    if current.get("worktree_digest") != worktree_digest:
+                        return {"success": False, "status": "native_execution_identity_conflict"}, 409
+                    return {"success": True, "status": "exact_replay", "authorization": current}, 200
+                state = dict(metadata.get("external_supervisor_state") or {})
+                dispatch = dict(metadata.get("dispatch_authorization") or {})
+                admission = dict(metadata.get("mission_admission") or {})
+                retirement = dict(metadata.get("cursor_provider_retirement") or {})
+                if (
+                    state.get("agent_state") != "ARCHIVED"
+                    or state.get("run_state") not in {"FINISHED", "FAILED", "CANCELLED"}
+                    or state.get("repository_mutation") is not False
+                    or state.get("remote_branch_created") is not False
+                    or int(state.get("pr_number") or 0) != 0
+                    or str(state.get("head_sha") or "")
+                    or state.get("exact_candidate") not in {None, "", "absent"}
+                    or admission.get("status") == "valid"
+                ):
+                    return {"success": False, "status": "cursor_retirement_not_proven"}, 409
+                generation = _clean_text(dispatch.get("generation") or state.get("generation"), 200)
+                prior_base_sha = _native_sha(dispatch.get("base_sha"), 40)
+                owner_digest = _native_sha(dispatch.get("owner_instruction_digest"), 64)
+                allowed_files = sorted({_clean_text(item, 500) for item in dispatch.get("allowed_files") or [] if _clean_text(item, 500)})
+                canonical_owner_digest = hashlib.sha256(str(
+                    metadata.get("mission_vault", {}).get("problem_statement") or row[1] or ""
+                ).encode()).hexdigest()
+                if (dispatch.get("version") != "charlie_pre_dispatch_authorization_v2"
+                        or dispatch.get("status") != "valid"
+                        or dispatch.get("mission_id") != mission_id
+                        or dispatch.get("repository") != "Crewless9086/amadeus-pig-tracking-system"
+                        or int(dispatch.get("execution_attempt") or 0) != 5
+                        or _bounded_timestamp(dispatch.get("expires_at")) <= datetime.now(timezone.utc)
+                        or prior_base_sha != starting_main_sha
+                        or owner_digest != canonical_owner_digest
+                        or allowed_files != _HERMES_PILOT_ALLOWED_FILES
+                        or list(dispatch.get("allowed_effects") or []) != _PDA_ALLOWED_EFFECTS
+                        or retirement.get("provider_status") != "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"
+                        or retirement.get("agent_state") != "ARCHIVED"
+                        or retirement.get("repository_mutation") is not False
+                        or retirement.get("remote_branch_created") is not False
+                        or int(retirement.get("pr_number") or 0) != 0
+                        or str(retirement.get("head_sha") or "")
+                        or retirement.get("exact_candidate") != "absent"
+                        or metadata.get("review_packet")):
+                    return {"success": False, "status": "native_execution_authority_unavailable"}, 409
+                identity_material = f"{mission_id}:{generation}:native-1"
+                native_id = "HNX-" + hashlib.sha256(identity_material.encode()).hexdigest().upper()
+                branch = f"charlie/{mission_id.lower()}-native-1"
+                authorization = {
+                    "version": "charlie_native_workspace_authorization_v1",
+                    "status": "valid",
+                    "mission_id": mission_id,
+                    "generation": generation,
+                    "executor_provider": "hermes_native",
+                    "native_execution_id": native_id,
+                    "native_attempt": 1,
+                    "repository": "Crewless9086/amadeus-pig-tracking-system",
+                    "starting_main_sha": starting_main_sha,
+                    "prior_cursor_authorization_base_sha": prior_base_sha,
+                    "branch": branch,
+                    "worktree_digest": worktree_digest,
+                    "owner_instruction_digest": owner_digest,
+                    "dispatch_authorization_id": dispatch.get("authorization_id"),
+                    "allowed_files": allowed_files,
+                    "allowed_commands": ["git status", "git diff", "git diff --check"],
+                    "allowed_effects": [
+                        "create_feature_branch", "edit_allowed_files", "run_tests",
+                        "commit_feature_branch", "push_feature_branch", "open_draft_pull_request",
+                        "request_independent_review",
+                    ],
+                    "forbidden_effects": [
+                        "edit any other file", "write main or master", "merge", "deploy",
+                        "change credentials or branch protection", "mutate Supabase outside canonical mission events",
+                        "customer farm payment or hardware action",
+                    ],
+                    "created_by": principal,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(),
+                    "forbidden_files": [
+                        ".git/**", ".github/**", ".cursor/**", ".env*",
+                        "credentials/**", "secrets/**",
+                    ],
+                    "pr_number": 0,
+                }
+                metadata["cursor_provider_retirement"] = {
+                    "provider": "cursor_cloud",
+                    "provider_status": "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT",
+                    "agent_id": state.get("cursor_agent_id"),
+                    "run_id": state.get("cursor_run_id"),
+                    "agent_state": "ARCHIVED",
+                    "run_state": state.get("run_state"),
+                    "repository_mutation": False,
+                    "remote_branch_created": False,
+                    "pr_number": 0,
+                    "head_sha": "",
+                    "exact_candidate": "absent",
+                    "valid_mission_admission": False,
+                    "event": "cursor_provider_retired",
+                    "recorded_by": principal,
+                }
+                metadata["hermes_native_execution"] = authorization
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                              "Cursor Cloud retired; one Hermes-native execution authorized.",
+                              {"native_execution_id": native_id, "generation": generation,
+                               "provider": "hermes_native", "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "native_execution_prepare_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "native_execution_authorized",
+            "authorization": authorization}, 201
+
+
+def record_hermes_native_execution_state(mission_id, state, *, authenticated_principal,
+                                         database_url=None, connect_factory=None):
+    """Record bounded native progress without introducing another ledger."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    state = state if isinstance(state, dict) else {}
+    allowed = {"native_execution_id", "execution_status", "commit_sha", "pr_number", "head_sha",
+               "changed_files", "review_verdict", "checks", "event", "failure_reason",
+               "correction_rounds", "worker_claim_id", "claim_expires_at", "release_claim_id",
+               "admission_requested_head", "owner_notification_head", "candidate_diff_sha256", "review_security",
+               "review_functional", "review_challenge", "review_request_roles", "runner_stage", "stage_artifact",
+               "builder_identity", "builder_agent_id", "patch_sha256",
+               "correction_builder_identity", "correction_builder_agent_id",
+               "correction_patch_sha256",
+               "repository_mutation", "remote_mutation"}
+    if not mission_id or not principal or not state or set(state) - allowed:
+        return {"success": False, "status": "native_execution_state_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb) from public.charlie_missions
+                    where mission_id=%(mission_id)s for update""", {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("hermes_native_execution") or {})
+                if not current or state.get("native_execution_id") != current.get("native_execution_id"):
+                    return {"success": False, "status": "native_execution_identity_conflict"}, 409
+                if (state.get("event") == "native_runner_blocked"
+                        and current.get("event") == "native_runner_blocked"
+                        and current.get("failure_reason") == state.get("failure_reason")
+                        and current.get("runner_stage") == state.get("runner_stage")):
+                    return {"success": True, "status": "native_execution_state_replayed",
+                            "authorization": current}, 200
+                claim_id = _clean_text(state.get("worker_claim_id"), 120)
+                release_id = _clean_text(state.get("release_claim_id"), 120)
+                existing_claim = _clean_text(current.get("worker_claim_id"), 120)
+                try:
+                    existing_expiry = datetime.fromisoformat(
+                        str(current.get("claim_expires_at") or "").replace("Z", "+00:00"))
+                except ValueError:
+                    existing_expiry = datetime.min.replace(tzinfo=timezone.utc)
+                if state.get("event") == "native_writer_claimed":
+                    try:
+                        requested_expiry = datetime.fromisoformat(
+                            str(state.get("claim_expires_at") or "").replace("Z", "+00:00"))
+                    except ValueError:
+                        return {"success": False, "status": "native_writer_claim_invalid"}, 400
+                    if (not claim_id or requested_expiry <= datetime.now(timezone.utc)
+                            or requested_expiry > datetime.now(timezone.utc) + timedelta(minutes=10)):
+                        return {"success": False, "status": "native_writer_claim_invalid"}, 400
+                    if existing_claim and existing_claim != claim_id and existing_expiry > datetime.now(timezone.utc):
+                        return {"success": False, "status": "native_writer_claim_conflict"}, 409
+                elif state.get("event") == "native_writer_released":
+                    if not release_id or release_id != existing_claim:
+                        return {"success": False, "status": "native_writer_claim_conflict"}, 409
+                    state = {**state, "worker_claim_id": "", "claim_expires_at": ""}
+                elif existing_claim and claim_id != existing_claim:
+                    return {"success": False, "status": "native_writer_claim_required"}, 409
+                merged = {**current, **state, "updated_by": principal,
+                          "updated_at": datetime.now(timezone.utc).isoformat()}
+                merged.pop("release_claim_id", None)
+                if state.get("event") == "native_send_back_corrected":
+                    merged["correction_rounds"] = int(current.get("correction_rounds") or 0) + 1
+                metadata["hermes_native_execution"] = merged
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated", "Hermes-native execution state recorded.",
+                              {"native_execution_id": merged.get("native_execution_id"),
+                               "status": merged.get("execution_status"), "event": merged.get("event"),
+                               "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "native_execution_state_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "native_execution_state_recorded",
+            "authorization": merged}, 201
+
+
+def record_native_runner_blocker(mission_id, blocker, *, authenticated_principal,
+                                 database_url=None, connect_factory=None):
+    """Record one idempotent, credential-free standalone-runner blocker."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    blocker = blocker if isinstance(blocker, dict) else {}
+    allowed = {"reason", "stage", "generation", "authority_identity", "runner_revision",
+               "repository_mutation", "remote_mutation", "notification_identity"}
+    if (not mission_id or principal != "hermes:charlie-builder" or not blocker
+            or set(blocker) - allowed
+            or not isinstance(blocker.get("repository_mutation"), bool)
+            or not isinstance(blocker.get("remote_mutation"), bool)
+            or (blocker.get("remote_mutation") and not blocker.get("repository_mutation"))):
+        return {"success": False, "status": "native_runner_blocker_invalid"}, 400
+    bounded = {key: _clean_text(blocker.get(key), 200) for key in
+               ("reason", "stage", "generation", "authority_identity",
+                "runner_revision", "notification_identity")}
+    if not bounded["reason"] or not bounded["stage"]:
+        return {"success": False, "status": "native_runner_blocker_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                current = dict(metadata.get("native_runner_blocker") or {})
+                if current.get("notification_identity") == bounded["notification_identity"]:
+                    return {"success": True, "status": "native_runner_blocker_replayed",
+                            "blocker": current}, 200
+                recorded = {**bounded,
+                            "repository_mutation": blocker["repository_mutation"],
+                            "remote_mutation": blocker["remote_mutation"],
+                            "event": "native_runner_blocked", "recorded_by": principal,
+                            "recorded_at": datetime.now(timezone.utc).isoformat()}
+                metadata["native_runner_blocker"] = recorded
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated", "CHARLIE native runner blocked.",
+                              {"reason": bounded["reason"], "stage": bounded["stage"],
+                               "notification_identity": bounded["notification_identity"],
+                               "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "native_runner_blocker_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "native_runner_blocker_recorded",
+            "blocker": recorded}, 201
+
+
+def list_resumable_hermes_native_executions(*, authenticated_principal,
+                                             database_url=None, connect_factory=None):
+    """Recover unfinished native executions from canonical mission truth."""
+    if _clean_text(authenticated_principal, 200) != "hermes:charlie-builder":
+        return {"success": False, "status": "native_recovery_not_authorized"}, 403
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id, status, coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions
+                    where metadata_json ? 'hermes_native_execution'
+                       or metadata_json ? 'external_supervisor_state'
+                    order by mission_id""")
+                rows = cursor.fetchall() or []
+    except Exception as exc:
+        return {"success": False, "status": "native_recovery_unavailable",
+                "error_type": exc.__class__.__name__}, 503
+    executions = []
+    terminal = {"OWNER_DECISION_REQUIRED", "BLOCKED", "COMPLETED", "CANCELLED", "REVOKED"}
+    pending_handoffs = []
+    active_native_count = 0
+    active_cursor_missions = set()
+    for mission_id, mission_status, metadata_value in rows:
+        metadata = dict(metadata_value or {})
+        native = dict(metadata.get("hermes_native_execution") or {})
+        state = dict(metadata.get("external_supervisor_state") or {})
+        if (str(state.get("agent_state") or "").upper() == "ACTIVE"
+                or str(state.get("run_state") or "").upper() == "RUNNING"):
+            active_cursor_missions.add(str(mission_id))
+        if native.get("status") == "valid" and native.get("execution_status") not in terminal:
+            active_native_count += 1
+            executions.append({
+                "mission_id": str(mission_id),
+                "native_execution_id": native.get("native_execution_id"),
+                "slack_channel_id": state.get("slack_channel_id"),
+                "slack_thread_ts": state.get("slack_thread_ts"),
+                "resume_kind": "hermes_native_execution",
+            })
+            continue
+        dispatch = dict(metadata.get("dispatch_authorization") or {})
+        if (
+            str(mission_status or "").lower() in {"new", "in_progress"}
+            and int(state.get("execution_attempt") or 0) == 5
+            and all(str(state.get(key) or "").strip() for key in (
+                "cursor_agent_id", "cursor_run_id", "branch", "slack_channel_id", "slack_thread_ts"))
+            and state.get("repository_mutation") is False
+            and not int(state.get("pr_number") or 0)
+            and not str(state.get("head_sha") or "").strip()
+            and not metadata.get("review_packet")
+            and not metadata.get("exact_candidate")
+            and not metadata.get("mission_admission")
+            and not metadata.get("cursor_provider_retirement")
+            and not metadata.get("hermes_native_execution")
+            and dispatch.get("status") == "valid"
+        ):
+            pending_handoffs.append({
+                "mission_id": str(mission_id),
+                "native_execution_id": "",
+                "slack_channel_id": state.get("slack_channel_id"),
+                "slack_thread_ts": state.get("slack_thread_ts"),
+                "resume_kind": "cursor_retirement_pending",
+            })
+    pending_ids = {item["mission_id"] for item in pending_handoffs}
+    if (active_native_count == 0 and len(pending_handoffs) == 1
+            and active_cursor_missions.issubset(pending_ids)):
+        executions.extend(pending_handoffs)
+    return {"success": True, "status": "native_recovery_ready", "executions": executions}, 200
+
+
+def prepare_external_execution_succession(
+    mission_id, *, generation, predecessor_agent_id, predecessor_run_id,
+    predecessor_state, replacement_reason, observed_main_sha,
+    authenticated_principal, database_url=None, connect_factory=None,
+):
+    """Authorize one serialized, zero-candidate worker replacement."""
+    mission_id = _clean_text(mission_id, 90)
+    generation = _clean_text(generation, 200)
+    agent_id = _clean_text(predecessor_agent_id, 160)
+    run_id = _clean_text(predecessor_run_id, 160)
+    final_state = _clean_text(predecessor_state, 40).upper()
+    principal = _clean_text(authenticated_principal, 200)
+    if (not mission_id or not generation or not agent_id.startswith("bc-")
+            or not run_id.startswith("run-") or final_state not in {"FAILED", "CANCELLED", "IDLE", "ARCHIVED"}
+            or replacement_reason not in {"workspace_refresh_unsupported_after_hook_repair",
+                                          "cursor_workspace_authorization_state_machine_repaired",
+                                          "cursor_cloud_socket_detection_repaired",
+                                          "cursor_branch_bound_fallback_repaired"}
+            or not re.fullmatch(r"[0-9a-f]{40}", str(observed_main_sha or ""))
+            or principal != "hermes:charlie-builder"):
+        return {"success": False, "status": "execution_succession_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                authorization = dict(metadata.get("dispatch_authorization") or {})
+                existing = dict(metadata.get("execution_succession") or {})
+                requested_attempt = {
+                    "workspace_refresh_unsupported_after_hook_repair": 2,
+                    "cursor_workspace_authorization_state_machine_repaired": 3,
+                    "cursor_cloud_socket_detection_repaired": 4,
+                    "cursor_branch_bound_fallback_repaired": 5,
+                }[replacement_reason]
+                if existing and int(existing.get("active_attempt") or 0) == requested_attempt:
+                    if (existing.get("predecessor_agent_id") == agent_id
+                            and existing.get("predecessor_run_id") == run_id
+                            and existing.get("predecessor_final_state") == final_state
+                            and existing.get("replacement_reason") == replacement_reason
+                            and existing.get("observed_main_sha") == observed_main_sha
+                            and existing.get("generation") == generation
+                            and existing.get("replacement_principal") == principal):
+                        return {"success": True, "status": "exact_replay", "succession": existing}, 200
+                    return {"success": False, "status": "execution_succession_limit_reached"}, 409
+                if requested_attempt == 2 and existing:
+                    return {"success": False, "status": "execution_succession_limit_reached"}, 409
+                if requested_attempt == 3 and int(existing.get("active_attempt") or 0) != 2:
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                if requested_attempt == 4 and int(existing.get("active_attempt") or 0) != 3:
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                if requested_attempt == 5 and int(existing.get("active_attempt") or 0) != 4:
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                if requested_attempt in {4, 5} and final_state != "ARCHIVED":
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                owner_digest = hashlib.sha256(str(metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
+                if (state.get("generation") != generation or state.get("cursor_agent_id") != agent_id
+                        or state.get("cursor_run_id") != run_id or state.get("agent_state") != "ARCHIVED"
+                        or state.get("event") != "predecessor_archived"
+                        or state.get("repository_mutation") is not False
+                        or state.get("pr_number") or state.get("head_sha")
+                        or metadata.get("review_packet") or metadata.get("mission_admission")
+                        or authorization.get("status") != "valid" or authorization.get("generation") != generation
+                        or authorization.get("base_sha") != observed_main_sha
+                        or authorization.get("owner_instruction_digest") != owner_digest
+                        or authorization.get("repository") != "Crewless9086/amadeus-pig-tracking-system"
+                        or authorization.get("allowed_files") != ["docs/06-operations/HERMES_SUPERVISOR_BRIDGE.md"]):
+                    return {"success": False, "status": "execution_succession_precondition_failed"}, 409
+                history = list(existing.get("history") or [])
+                if existing:
+                    history.append({key: existing.get(key) for key in (
+                        "active_attempt", "predecessor_agent_id", "predecessor_run_id",
+                        "predecessor_final_state", "replacement_reason", "replacement_timestamp")})
+                succession = {"version": "charlie_execution_succession_v2", "mission_id": mission_id,
+                    "generation": generation, "active_attempt": requested_attempt, "maximum_attempts": 5,
+                    "predecessor_agent_id": agent_id, "predecessor_run_id": run_id,
+                    "predecessor_final_state": final_state, "predecessor_archived": True,
+                    "successor_agent_id": "", "replacement_reason": replacement_reason,
+                    "replacement_timestamp": datetime.now(timezone.utc).isoformat(),
+                    "replacement_principal": principal, "observed_main_sha": observed_main_sha,
+                    "owner_instruction_digest": owner_digest, "slack_event_id": state.get("slack_event_id"),
+                    "slack_thread_ts": state.get("slack_thread_ts"), "history": history}
+                metadata["execution_succession"] = succession
+                state.update({"agent_state": "ARCHIVED", "run_state": final_state,
+                              "execution_attempt": requested_attempt - 1, "event": "predecessor_archived"})
+                metadata["external_supervisor_state"] = state
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Serialized Cursor execution succession authorized.", succession)
+    except Exception as exc:
+        return {"success": False, "status": "execution_succession_write_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "execution_succession_authorized", "mission_id": mission_id,
+            "succession": succession}, 201
+
+
+def prepare_external_dispatch_authorization(
+    mission_id, *, authenticated_principal, repository, base_sha,
+    owner_user_id, channel_id, database_url=None, connect_factory=None,
+):
+    """Create the narrow, replay-safe authorization that may precede a PR."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    if (not mission_id or principal != "hermes:charlie-builder"
+            or repository != "Crewless9086/amadeus-pig-tracking-system"
+            or not re.fullmatch(r"[0-9a-f]{40}", str(base_sha or ""))):
+        return {"success": False, "status": "dispatch_authorization_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select status,source,coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[2] or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                if (row[1] != "slack" or state.get("slack_owner_user_id") != owner_user_id
+                        or state.get("slack_channel_id") != channel_id):
+                    return {"success": False, "status": "dispatch_owner_context_invalid"}, 403
+                event_id = str(state.get("slack_event_id") or "").strip()
+                generation = str(state.get("generation") or f"slack-{event_id}-g1")
+                if not event_id:
+                    return {"success": False, "status": "dispatch_event_identity_missing"}, 409
+                owner_principal = "owner:slack:" + str(owner_user_id)
+                finding = build_mission_control_event(mission_id, {
+                    "event_type": "finding_recorded",
+                    "summary": str(metadata.get("mission_vault", {}).get("problem_statement") or "Authenticated Slack software mission."),
+                    "idempotency_key": "slack-owner-instruction:" + event_id,
+                }, recorded_by=owner_principal)
+                correction = build_mission_control_event(mission_id, {
+                    "event_type": "owner_correction_recorded",
+                    "summary": "Authorize the bounded documentation-only pre-dispatch contract.",
+                    "corrects_event_id": finding["event_id"],
+                    "idempotency_key": "slack-predispatch-authorization:" + event_id,
+                }, recorded_by=owner_principal)
+                for governed_event in (finding, correction):
+                    cursor.execute("""insert into public.charlie_mission_events
+                        (event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at)
+                        values (%(event_id)s,%(mission_id)s,%(event_type)s,%(notes)s,%(recorded_by)s,%(metadata)s::jsonb,%(created_at)s)
+                        on conflict (event_id) do nothing""", {
+                        "event_id": governed_event["event_id"], "mission_id": mission_id,
+                        "event_type": governed_event["event_type"], "notes": governed_event["summary"],
+                        "recorded_by": owner_principal,
+                        "metadata": json.dumps(governed_event, sort_keys=True),
+                        "created_at": governed_event["recorded_at"],
+                    })
+                succession = dict(metadata.get("execution_succession") or {})
+                execution_attempt = int(succession.get("active_attempt") or 1)
+                contract = {
+                    "version": "charlie_pre_dispatch_authorization_v2",
+                    "mission_id": mission_id,
+                    "generation": generation,
+                    "execution_attempt": execution_attempt,
+                    "active_cursor_agent_id": str(succession.get("successor_agent_id") or state.get("cursor_agent_id") or ""),
+                    "repository": repository,
+                    "starting_main_sha": base_sha,
+                    "base_sha": base_sha,
+                    "branch_binding_status": "unbound",
+                    "requested_branch": "cursor/" + mission_id.lower() + f"-attempt-{execution_attempt}",
+                    "branch": "",
+                    "active_pr_number": 0,
+                    "allowed_files": list(_HERMES_PILOT_ALLOWED_FILES),
+                    "allowed_effects": list(_PDA_ALLOWED_EFFECTS),
+                    "forbidden_effects": list(_PDA_FORBIDDEN_EFFECTS),
+                    "allowed_test_commands": ["git status", "git diff", "git diff --check",
+                        "python -m unittest tests.test_charlie_hermes_supervisor -q"],
+                    "forbidden_files": ["*"],
+                    "owner_instruction_digest": hashlib.sha256(
+                        str(metadata.get("mission_vault", {}).get("problem_statement") or "").encode()
+                    ).hexdigest(),
+                    "issued_at": datetime.now(timezone.utc).isoformat(),
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+                }
+                identity = "PDA-" + hashlib.sha256(json.dumps(
+                    contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                authorization = {**contract, "authorization_id": identity, "status": "valid"}
+                existing = metadata.get("dispatch_authorization")
+                retirement = dict(metadata.get("cursor_provider_retirement") or {})
+                expired = _bounded_timestamp(
+                    existing.get("expires_at") if isinstance(existing, dict) else ""
+                ) <= datetime.now(timezone.utc)
+                retirement_renewal = (
+                    isinstance(existing, dict)
+                    and existing.get("version") == "charlie_pre_dispatch_authorization_v2"
+                    and existing.get("status") == "valid"
+                    and expired
+                    and existing.get("mission_id") == mission_id
+                    and existing.get("generation") == generation
+                    and int(existing.get("execution_attempt") or 0) == 5 == execution_attempt
+                    and existing.get("repository") == repository
+                    and existing.get("owner_instruction_digest") == contract["owner_instruction_digest"]
+                    and list(existing.get("allowed_files") or []) == contract["allowed_files"]
+                    and list(existing.get("allowed_effects") or []) == contract["allowed_effects"]
+                    and list(existing.get("forbidden_effects") or []) == contract["forbidden_effects"]
+                    and retirement.get("provider_status") == "UNSUITABLE_FOR_CURRENT_BUILDER_CONTRACT"
+                    and retirement.get("agent_state") == "ARCHIVED"
+                    and retirement.get("repository_mutation") is False
+                    and retirement.get("remote_branch_created") is False
+                    and int(retirement.get("pr_number") or 0) == 0
+                    and not str(retirement.get("head_sha") or "")
+                    and retirement.get("exact_candidate") == "absent"
+                    and state.get("agent_state") == "ARCHIVED"
+                    and state.get("repository_mutation") is False
+                    and state.get("remote_branch_created") is False
+                    and int(state.get("pr_number") or 0) == 0
+                    and not str(state.get("head_sha") or "")
+                    and state.get("exact_candidate") in {None, "", "absent"}
+                    and not metadata.get("review_packet")
+                    and not metadata.get("hermes_native_execution")
+                    and dict(metadata.get("mission_admission") or {}).get("status") != "valid"
+                )
+                if retirement_renewal:
+                    cursor.execute("""select count(*) from public.charlie_missions
+                        where mission_id <> %(mission_id)s and (
+                            metadata_json->'external_supervisor_state'->>'agent_state' in ('ACTIVE','IDLE')
+                            or (coalesce(metadata_json->'hermes_native_execution'->>'native_execution_id','') <> ''
+                                and coalesce(metadata_json->'hermes_native_execution'->>'execution_status','')
+                                    not in ('OWNER_DECISION_REQUIRED','COMPLETED','CANCELLED','BLOCKED'))
+                        )""", {"mission_id": mission_id})
+                    writer_row = cursor.fetchone() or (1,)
+                    if (len(writer_row) != 1 or not isinstance(writer_row[0], (int, str))
+                            or int(writer_row[0]) != 0):
+                        return {"success": False, "status": "dispatch_authorization_writer_conflict"}, 409
+                    # A retired provider branch is historical evidence, not a
+                    # native writer identity. The renewed exact-main contract
+                    # starts unbound and is recorded as a distinct authority.
+                    existing = {}
+                if (isinstance(existing, dict)
+                        and existing.get("version") == "charlie_pre_dispatch_authorization_v2"
+                        and existing.get("status") == "valid"
+                        and existing.get("mission_id") == mission_id
+                        and existing.get("generation") == generation
+                        and int(existing.get("execution_attempt") or 0) == execution_attempt
+                        and existing.get("base_sha") == base_sha
+                        and not expired
+                        and existing.get("owner_instruction_digest") == contract["owner_instruction_digest"]
+                        and list(existing.get("allowed_files") or []) == contract["allowed_files"]
+                        and list(existing.get("allowed_effects") or []) == contract["allowed_effects"]
+                        and list(existing.get("forbidden_effects") or []) == contract["forbidden_effects"]):
+                    return {"success": True, "status": "exact_replay",
+                            "authorization": existing}, 200
+                if (isinstance(existing, dict) and existing
+                        and (existing.get("version") != "charlie_pre_dispatch_authorization_v1"
+                             and int(existing.get("execution_attempt") or 0) >= execution_attempt
+                             or state.get("pr_number") or state.get("head_sha")
+                             or metadata.get("review_packet") or metadata.get("mission_admission"))):
+                    return {"success": False, "status": "dispatch_authorization_conflict"}, 409
+                metadata["dispatch_authorization"] = authorization
+                metadata["mission_plane"] = {"plane": "software", "coordinator": "CHARLIE",
+                    "executor": "Cursor Cloud", "classification_source": "authenticated_slack_ingress"}
+                cursor.execute("""update public.charlie_missions set status='in_progress',
+                    mission_type='system improvement',metadata_json=%(metadata)s::jsonb,updated_at=now()
+                    where mission_id=%(mission_id)s""",
+                    {"mission_id": mission_id, "metadata": json.dumps(metadata, sort_keys=True)})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    ("Expired pre-dispatch authorization renewed after verified Cursor retirement."
+                     if retirement_renewal else "Bounded pre-dispatch authorization recorded."),
+                    {"authorization_id": identity, "generation": generation,
+                     "recorded_by": principal,
+                     "reason": "cursor_retirement_exact_main_renewal" if retirement_renewal else "initial"})
+    except Exception as exc:
+        return {"success": False, "status": "dispatch_authorization_write_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "dispatch_authorization_recorded",
+            "mission_id": mission_id, "authorization": authorization}, 201
+
+
+def bind_external_supervisor_branch(
+    mission_id, *, generation, cursor_agent_id, cursor_run_id, repository, branches,
+    authenticated_principal, database_url=None, connect_factory=None,
+):
+    """Bind the sole actual Cursor branch once, without creating another branch."""
+    mission_id = _clean_text(mission_id, 90)
+    generation = _clean_text(generation, 200)
+    agent_id = _clean_text(cursor_agent_id, 160)
+    run_id = _clean_text(cursor_run_id, 160)
+    principal = _clean_text(authenticated_principal, 200)
+    branch_values = [
+        _clean_text((item.get("name") or item.get("branch")) if isinstance(item, dict) else item, 240)
+        for item in (branches or [])
+    ]
+    branch_values = [value for value in branch_values if value]
+    if (not mission_id or not generation or not agent_id.startswith("bc-")
+            or not run_id.startswith("run-") or principal != "hermes:charlie-builder"
+            or repository != "Crewless9086/amadeus-pig-tracking-system"):
+        return {"success": False, "status": "external_branch_binding_invalid"}, 400
+    if len(branch_values) != 1:
+        return {"success": False, "status": "external_branch_count_invalid"}, 409
+    branch = branch_values[0]
+    if branch.startswith("refs/") or ".." in branch or branch.startswith("-"):
+        return {"success": False, "status": "external_branch_identity_invalid"}, 409
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                authorization = dict(metadata.get("dispatch_authorization") or {})
+                if (state.get("generation") != generation
+                        or state.get("cursor_agent_id") != agent_id
+                        or state.get("cursor_run_id") != run_id
+                        or authorization.get("generation") != generation
+                        or authorization.get("status") != "valid"):
+                    return {"success": False, "status": "external_branch_linkage_conflict"}, 409
+                if (state.get("pr_number") or state.get("head_sha")
+                        or metadata.get("review_packet") or metadata.get("mission_admission")):
+                    return {"success": False, "status": "external_branch_candidate_already_bound"}, 409
+                existing = str(state.get("branch") or "")
+                if existing:
+                    if existing != branch:
+                        return {"success": False, "status": "external_branch_binding_conflict"}, 409
+                    if (authorization.get("branch") == branch
+                            and authorization.get("branch_binding_status") == "bound"):
+                        return {"success": True, "status": "exact_replay", "branch": branch}, 200
+                requested = str(authorization.get("requested_branch") or authorization.get("branch") or "")
+                state.update({"branch": branch, "branches": branch_values})
+                authorization.update({"requested_branch": requested, "branch": branch,
+                                      "branch_binding_status": "bound"})
+                identity_contract = {key: value for key, value in authorization.items()
+                                     if key not in {"authorization_id", "status"}}
+                authorization["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                    identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                metadata.update({"external_supervisor_state": state,
+                                 "dispatch_authorization": authorization})
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Actual Cursor branch bound to the existing supervised Agent.",
+                    {"generation": generation, "cursor_agent_id": agent_id,
+                     "cursor_run_id": run_id, "branch": branch, "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "external_branch_binding_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "external_branch_bound", "branch": branch}, 201
+
+
+def authorize_cursor_workspace_hook(
+    *, cloud_agent_id, branch_name, repository, action, target_path="", command="", changed_files=None,
+    authenticated_principal="cursor:oidc", database_url=None, connect_factory=None,
+):
+    """Resolve a signed Cursor Agent to one current PDA and authorize one hook action."""
+    agent_id = _clean_text(cloud_agent_id, 160)
+    branch = _clean_text(branch_name, 240)
+    action = _clean_text(action, 80)
+    target = _clean_text(target_path, 500).replace("\\", "/")
+    changed = sorted({_clean_text(item, 500).replace("\\", "/") for item in (changed_files or [])
+                      if _clean_text(item, 500)})
+    command = _clean_text(command, 1000)
+    if (not agent_id.startswith("bc-") or repository != "github.com/Crewless9086/amadeus-pig-tracking-system"
+            or not branch.startswith("cursor/") or branch in {"main", "master"}
+            or action not in {"repository_file_write", "repository_file_delete", "shell_verify", "after_file_edit"}):
+        return {"success": False, "status": "cursor_workspace_identity_invalid"}, 403
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id,coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions
+                    where metadata_json->'external_supervisor_state'->>'cursor_agent_id'=%(agent_id)s
+                       or metadata_json->'execution_succession'->>'successor_agent_id'=%(agent_id)s
+                    for update""", {"agent_id": agent_id})
+                rows = cursor.fetchall()
+                if len(rows) != 1:
+                    return {"success": False, "status": "cursor_agent_mission_resolution_invalid"}, 409
+                mission_id, raw_metadata = rows[0]
+                metadata = dict(raw_metadata or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                succession = dict(metadata.get("execution_succession") or {})
+                pda = dict(metadata.get("dispatch_authorization") or {})
+                attempt = int(succession.get("active_attempt") or state.get("execution_attempt") or 1)
+                try:
+                    expires_at = datetime.fromisoformat(str(pda.get("expires_at") or "").replace("Z", "+00:00"))
+                except ValueError:
+                    expires_at = datetime.min.replace(tzinfo=timezone.utc)
+                owner_digest = hashlib.sha256(str(
+                    metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
+                if (pda.get("version") != "charlie_pre_dispatch_authorization_v2"
+                        or pda.get("status") != "valid" or pda.get("mission_id") != mission_id
+                        or int(pda.get("execution_attempt") or 0) != attempt
+                        or pda.get("active_cursor_agent_id") != agent_id
+                        or state.get("cursor_agent_id") != agent_id
+                        or state.get("generation") != pda.get("generation")
+                        or pda.get("owner_instruction_digest") != owner_digest
+                        or expires_at <= datetime.now(timezone.utc)
+                        or (isinstance(metadata.get("mission_admission"), dict)
+                            and metadata["mission_admission"].get("status") in {"consumed", "revoked"})):
+                    return {"success": False, "status": "cursor_workspace_authorization_invalid"}, 409
+                allowed_files = list(pda.get("allowed_files") or [])
+                if set(changed) - set(allowed_files):
+                    return {"success": False, "status": "cursor_workspace_scope_drift"}, 403
+                if action in {"repository_file_write", "repository_file_delete", "after_file_edit"}:
+                    if target not in allowed_files or (action == "repository_file_delete" and "delete_allowed_file" not in pda.get("allowed_effects", [])):
+                        return {"success": False, "status": "cursor_workspace_scope_denied"}, 403
+                elif _normalize_pda_command(command) not in set(pda.get("allowed_test_commands") or []):
+                    return {"success": False, "status": "cursor_workspace_command_denied"}, 403
+                bound = str(pda.get("branch") or "")
+                if bound and bound != branch:
+                    return {"success": False, "status": "cursor_workspace_branch_conflict"}, 409
+                if not bound:
+                    if state.get("pr_number") or state.get("head_sha") or metadata.get("review_packet"):
+                        return {"success": False, "status": "cursor_workspace_candidate_conflict"}, 409
+                    pda.update({"branch": branch, "branch_binding_status": "bound"})
+                    identity_contract = {key: value for key, value in pda.items()
+                                         if key not in {"authorization_id", "status"}}
+                    pda["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                        identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                    state.update({"branch": branch, "branches": [branch]})
+                    metadata.update({"dispatch_authorization": pda, "external_supervisor_state": state})
+                    cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                        updated_at=now() where mission_id=%(mission_id)s""",
+                        {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                    _insert_event(cursor, mission_id, "workflow_updated",
+                        "Cursor OIDC branch bound to active workspace authorization.",
+                        {"authorization_id": pda.get("authorization_id"), "generation": pda.get("generation"),
+                         "execution_attempt": attempt, "cursor_agent_id": agent_id, "branch": branch,
+                         "recorded_by": authenticated_principal})
+    except Exception as exc:
+        return {"success": False, "status": "cursor_workspace_authorization_unavailable",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "cursor_workspace_authorized", "permission": "allow",
+            "authorization_id": pda.get("authorization_id"), "branch": branch,
+            "allowed_path": target if target else None, "command": command if command else None}, 200
+
+
+_BRANCH_FALLBACK_PROTECTED_PREFIXES = (
+    ".github/", ".cursor/", ".env", "supabase/migrations/", "migrations/",
+    "render.yaml", "Dockerfile", "Procfile", "scripts/charlie_mission_admission_guard.py",
+    "modules/charlie/mission_admission.py", "modules/charlie/mission_admission_delivery.py",
+    "modules/charlie/validation_receipt.py",
+    ".charlie_runner/", "credentials/", "secrets/",
+)
+
+
+def authorize_cursor_branch_workspace_hook(
+    *, repository, branch, current_head, action, target_path="", command="", changed_files=None,
+    database_url=None, connect_factory=None,
+):
+    """Authorize reversible work from an already Hermes-bound branch and PDA."""
+    repository = _clean_text(repository, 200)
+    branch = _clean_text(branch, 240)
+    current_head = _clean_text(current_head, 40)
+    action = _clean_text(action, 80)
+    target = _clean_text(target_path, 500).replace("\\", "/")
+    changed = sorted({_clean_text(item, 500).replace("\\", "/") for item in (changed_files or [])
+                      if _clean_text(item, 500)})
+    command = _clean_text(command, 1000)
+    if (repository != "Crewless9086/amadeus-pig-tracking-system"
+            or not re.fullmatch(r"[0-9a-f]{40}", current_head)
+            or not branch.startswith("cursor/") or branch in {"main", "master"}
+            or action not in {"repository_file_write", "shell_verify", "after_file_edit",
+                              "draft_branch_preparation"}):
+        return {"success": False, "status": "cursor_branch_fallback_identity_invalid"}, 403
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id,status,coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions
+                    where metadata_json->'dispatch_authorization'->>'branch'=%(branch)s
+                      and metadata_json->'dispatch_authorization'->>'branch_binding_status'='bound'
+                    for update""", {"branch": branch})
+                rows = cursor.fetchall()
+                if len(rows) != 1:
+                    return {"success": False, "status": "cursor_branch_binding_required"}, 409
+                mission_id, mission_status, raw_metadata = rows[0]
+                metadata = dict(raw_metadata or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                succession = dict(metadata.get("execution_succession") or {})
+                pda = dict(metadata.get("dispatch_authorization") or {})
+                attempt = int(succession.get("active_attempt") or state.get("execution_attempt") or 1)
+                try:
+                    expires_at = datetime.fromisoformat(str(pda.get("expires_at") or "").replace("Z", "+00:00"))
+                except ValueError:
+                    expires_at = datetime.min.replace(tzinfo=timezone.utc)
+                if (mission_status in {"completed", "cancelled", "closed"}
+                        or pda.get("version") != "charlie_pre_dispatch_authorization_v2"
+                        or pda.get("status") != "valid" or pda.get("mission_id") != mission_id
+                        or pda.get("repository") != repository or pda.get("branch") != branch
+                        or int(pda.get("execution_attempt") or 0) != attempt
+                        or pda.get("active_cursor_agent_id") != state.get("cursor_agent_id")
+                        or state.get("generation") != pda.get("generation")
+                        or state.get("branch") != branch or expires_at <= datetime.now(timezone.utc)
+                        or not state.get("cursor_agent_id") or state.get("agent_state") == "ARCHIVED"):
+                    return {"success": False, "status": "cursor_branch_authorization_invalid"}, 409
+                if state.get("pr_number") and int(pda.get("active_pr_number") or 0) not in {0, int(state["pr_number"])}:
+                    return {"success": False, "status": "cursor_branch_candidate_conflict"}, 409
+                cursor.execute("""select count(*) from public.charlie_missions
+                    where metadata_json->'external_supervisor_state'->>'agent_state' in ('ACTIVE','IDLE')
+                      and coalesce(metadata_json->'external_supervisor_state'->>'cursor_agent_id','') <> ''""")
+                writer_row = cursor.fetchone() or (0,)
+                active_writers = int(writer_row[0]) if len(writer_row) == 1 and isinstance(writer_row[0], (int, str)) else 1
+                if active_writers != 1:
+                    return {"success": False, "status": "cursor_branch_writer_conflict"}, 409
+                allowed_files = set(pda.get("allowed_files") or [])
+                protected = lambda value: any(value == prefix.rstrip("/") or value.startswith(prefix)
+                                              for prefix in _BRANCH_FALLBACK_PROTECTED_PREFIXES)
+                if target and protected(target) or any(protected(item) for item in changed):
+                    return {"success": False, "status": "cursor_branch_protected_path_denied"}, 403
+                if set(changed) - allowed_files:
+                    return {"success": False, "status": "cursor_workspace_scope_drift"}, 403
+                if action in {"repository_file_write", "after_file_edit"} and target not in allowed_files:
+                    return {"success": False, "status": "cursor_workspace_scope_denied"}, 403
+                if action == "shell_verify" and _normalize_pda_command(command) not in set(pda.get("allowed_test_commands") or []):
+                    return {"success": False, "status": "cursor_workspace_command_denied"}, 403
+                if state.get("base_sha") and pda.get("starting_main_sha") != state.get("base_sha"):
+                    return {"success": False, "status": "cursor_branch_base_conflict"}, 409
+                acceptable_heads = {str(pda.get("starting_main_sha") or ""), str(state.get("head_sha") or "")}
+                if current_head not in acceptable_heads:
+                    return {"success": False, "status": "cursor_branch_head_conflict"}, 409
+                digest = hashlib.sha256((str(pda.get("authorization_id")) + ":" + branch).encode()).hexdigest()
+    except Exception as exc:
+        return {"success": False, "status": "cursor_branch_authorization_unavailable",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "permission": "allow", "status": "cursor_branch_workspace_authorized",
+            "authorization_id": digest}, 200
+
+
+def _normalize_pda_command(command):
+    value = str(command or "").strip()
+    if not value or any(token in value for token in ("\n", "\r", ">", "<", "|", ";", "&&", "||", "`", "$(", "\x00")):
+        return ""
+    try:
+        words = shlex.split(value, posix=True)
+    except ValueError:
+        return ""
+    if not words:
+        return ""
+    if words[:2] == ["py", "-3"]:
+        words = ["python", *words[2:]]
+    elif words[0] in {"python3", "python"}:
+        words[0] = "python"
+    return " ".join(words)
+
+
+def refresh_external_dispatch_authorization_base(
+    mission_id, *, generation, cursor_agent_id, old_base_sha, new_base_sha,
+    changed_files, authenticated_principal, database_url=None, connect_factory=None,
+):
+    """Refresh only a pre-candidate authorization across a disjoint infrastructure merge."""
+    mission_id = _clean_text(mission_id, 90)
+    principal = _clean_text(authenticated_principal, 200)
+    files = sorted({_clean_text(item, 500) for item in (changed_files or []) if _clean_text(item, 500)})
+    infrastructure_files = {
+        ".cursor/hooks.json", ".cursor/hooks/charlie_mission_admission_guard.cjs",
+        "modules/charlie/cursor_cloud_identity.py",
+        "scripts/charlie_mission_admission_guard.py",
+        "tests/test_charlie_cursor_cloud_identity.py",
+        "tests/test_charlie_mission_admission.py",
+        "tests/test_cursor_mission_admission_hook_launcher.py",
+        "integrations/hermes/charlie_builder/supervisor.py", "modules/charlie/mission_store.py",
+        "modules/charlie/routes.py", "tests/test_charlie_hermes_supervisor.py",
+        "tests/test_charlie_mission_store.py",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md",
+        "docs/09-vault-brain/CHANGELOG.md",
+    }
+    if (not mission_id or principal != "hermes:charlie-builder"
+            or not re.fullmatch(r"[0-9a-f]{40}", str(old_base_sha or ""))
+            or not re.fullmatch(r"[0-9a-f]{40}", str(new_base_sha or ""))
+            or old_base_sha == new_base_sha or not files or set(files) - infrastructure_files):
+        return {"success": False, "status": "dispatch_base_refresh_invalid"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select coalesce(metadata_json,'{}'::jsonb)
+                    from public.charlie_missions where mission_id=%(mission_id)s for update""",
+                    {"mission_id": mission_id})
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                metadata = dict(row[0] or {})
+                state = dict(metadata.get("external_supervisor_state") or {})
+                authorization = dict(metadata.get("dispatch_authorization") or {})
+                current_owner_digest = hashlib.sha256(str(
+                    metadata.get("mission_vault", {}).get("problem_statement") or "").encode()).hexdigest()
+                if (authorization.get("base_sha") == new_base_sha
+                        and state.get("dispatch_base_sha") == new_base_sha):
+                    return {"success": True, "status": "exact_replay"}, 200
+                if (authorization.get("base_sha") != old_base_sha
+                        or authorization.get("generation") != generation
+                        or state.get("generation") != generation
+                        or state.get("cursor_agent_id") != cursor_agent_id
+                        or authorization.get("owner_instruction_digest") != current_owner_digest
+                        or state.get("pr_number") or state.get("head_sha")
+                        or metadata.get("review_packet") or metadata.get("mission_admission")
+                        or set(files) & set(authorization.get("allowed_files") or [])):
+                    return {"success": False, "status": "dispatch_base_refresh_conflict"}, 409
+                authorization["base_sha"] = new_base_sha
+                identity_contract = {key: value for key, value in authorization.items()
+                                     if key not in {"authorization_id", "status"}}
+                authorization["authorization_id"] = "PDA-" + hashlib.sha256(json.dumps(
+                    identity_contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest().upper()
+                state["dispatch_base_sha"] = new_base_sha
+                metadata.update({"dispatch_authorization": authorization,
+                                 "external_supervisor_state": state})
+                cursor.execute("""update public.charlie_missions set metadata_json=%(metadata)s::jsonb,
+                    updated_at=now() where mission_id=%(mission_id)s""",
+                    {"metadata": json.dumps(metadata, sort_keys=True), "mission_id": mission_id})
+                _insert_event(cursor, mission_id, "workflow_updated",
+                    "Pre-dispatch base refreshed after a disjoint protected infrastructure merge.",
+                    {"old_base_sha": old_base_sha, "new_base_sha": new_base_sha,
+                     "changed_files": files, "cursor_agent_id": cursor_agent_id,
+                     "generation": generation, "reason": "portable_cursor_admission_hook_recovery",
+                     "recorded_by": principal})
+    except Exception as exc:
+        return {"success": False, "status": "dispatch_base_refresh_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "dispatch_base_refreshed",
+            "old_base_sha": old_base_sha, "new_base_sha": new_base_sha}, 201
+
+
+def read_external_supervisor_state(idempotency_key="", *, database_url=None, connect_factory=None):
+    key = _clean_text(idempotency_key, 300)
+    database_url = _database_url(database_url)
+    if not key or (not database_url and connect_factory is None):
+        return {"success": False, "status": "external_supervisor_identity_required"}, 400
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select mission_id,metadata_json->'external_supervisor_state'
+                    from public.charlie_missions where metadata_json->'external_supervisor_state'->>'idempotency_key'=%(key)s limit 1""",
+                    {"key": key})
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {"success": False, "status": "external_supervisor_state_read_failed",
+                "error_type": exc.__class__.__name__}, 503
+    return ({"success": True, "status": "ok", "mission_id": row[0], "dispatch": row[1] or {}}, 200) \
+        if row else ({"success": True, "status": "not_found", "dispatch": {}}, 200)
 
 
 def invalidate_mission_admission_for_owner_correction(
@@ -2094,20 +3475,14 @@ def read_current_mission_admission_authority(
         separators=(",", ":"),
     ).encode("utf-8")).hexdigest()
     active_claims = _mission_admission_active_claims(claim_rows)
-    active_claim_ids = {claim["mission_id"] for claim in active_claims}
-    collision_observed_at = max(
-        [
-            _iso(row[3])
-            for row in claim_rows
-            if (
-                len(row) > 3
-                and row[3] is not None
-                and str(row[0]) in active_claim_ids
-            )
-        ]
-        or [str(correction_event.get("recorded_at") or _iso(mission_row[2]))]
+    # The claims themselves carry every collision-relevant path/effect/lease
+    # value.  Mission ``updated_at`` also changes when the admission projection
+    # is recorded, so using it as snapshot time makes a receipt invalidate
+    # itself without any collision change.  Anchor time to the authenticated
+    # owner correction; the claims digest still changes whenever claims change.
+    collision_observed_at = _mission_admission_collision_observed_at(
+        correction_event, mission_row[2]
     )
-    collision_observed_at = collision_observed_at.replace("+00:00", "Z")
     collision_digest = hashlib.sha256(json.dumps(
         {
             "captured_at": collision_observed_at,
@@ -2131,6 +3506,11 @@ def read_current_mission_admission_authority(
         "collision_observed_at": collision_observed_at,
         "collision_snapshot_sha256": collision_digest,
     }, 200
+
+
+def _mission_admission_collision_observed_at(correction_event, fallback):
+    value = str((correction_event or {}).get("recorded_at") or _iso(fallback))
+    return value.replace("+00:00", "Z")
 
 
 def _transition_mission_admission(

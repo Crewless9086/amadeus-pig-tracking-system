@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Mapping
 
 
@@ -29,7 +31,8 @@ def confirm_health_loss_preview(lifecycle: Mapping[str, Any], confirmation_text:
     if not bound_owner or not lifecycle_owner or actor_id != bound_owner or actor_id != lifecycle_owner:
         return _result(False, "authenticated_owner_confirmation_required"), 403
     prior = lifecycle.get("recording_result") if isinstance(lifecycle.get("recording_result"), Mapping) else {}
-    if prior.get("success") is True and str(prior.get("operation_id") or "") == operation_id:
+    if (prior.get("success") is True and str(prior.get("operation_id") or "") == operation_id
+            and not str(prior.get("status") or "").startswith("mortality_lifecycle_")):
         return _result(True, "health_loss_replayed_withheld", rows_created=0,
                        operation_id=operation_id), 200
     evaluator = preview.get("evaluator") if isinstance(preview.get("evaluator"), Mapping) else {}
@@ -118,21 +121,36 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
     if (not pig_id or (lifecycle_effect or {}).get("action") != "record_death"
             or not str(facts.get("date") or "") or facts.get("time") != "Unknown"):
         return _result(False, "mortality_lifecycle_effect_invalid"), 409
+    try:
+        event_date = date.fromisoformat(str(facts["date"]))
+        if event_date > datetime.now(ZoneInfo("Africa/Johannesburg")).date():
+            return _result(False, "mortality_event_date_in_future"), 409
+    except ValueError:
+        return _result(False, "mortality_event_date_invalid"), 409
     movement = next((row for row in evaluator.get("canonical_effects") or []
         if row.get("supported") and row.get("area") == "movement_pen"), {})
     movement_facts = dict(movement.get("facts") or {})
-    note_parts = ["Owner reported the pig found dead", "exact time of death Unknown"]
+    note_parts = ["Owner reported the pig dead", "exact time of death Unknown"]
     if movement_facts.get("owner_reported_outcome"):
         note_parts.append("body " + str(movement_facts["owner_reported_outcome"]))
     provider_message_id = str(binding.get("provider_message_id") or "")
     preview_sha256 = str(binding.get("preview_sha256") or "")
     evidence_generation = str(binding.get("evidence_generation") or "")
-    note_parts.append("source Telegram " + (provider_message_id or "Unknown"))
+    source_channel = str(lifecycle.get("source_channel") or "telegram")
+    note_parts.append("source " + source_channel + " " + (provider_message_id or "Unknown"))
+    reports = lifecycle.get("report_parts") or []
+    owner_report = " | ".join(str(row.get("text") or "") for row in reports)
+    if owner_report:
+        note_parts.append("owner report: " + owner_report)
     canonical = {"operation_id": operation_id, "pig_id": pig_id,
         "provider_message_id": provider_message_id, "preview_sha256": preview_sha256,
         "evidence_generation": evidence_generation, "event_date": str(facts["date"]),
         "exact_time_of_death": "Unknown", "removal": movement_facts,
         "actor_id": str(actor_id)}
+    if reports:
+        canonical.update({"source_channel": source_channel, "owner_reports": reports,
+            "owner_suspected_not_diagnosed": evaluator.get("owner_suspected_cause") or [],
+            "owner_reported_veterinary_evidence": evaluator.get("veterinary_evidence") or []})
     source_digest = hashlib.sha256(json.dumps(
         canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     event_id = "LIFE-HL-" + hashlib.sha256(operation_id.encode()).hexdigest()[:24].upper()
@@ -179,7 +197,9 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
                         preserved_distinct_work=readback["preserved_distinct_work"],
                         canonical_readback=readback), 200
                 current = evidence_loader()
-                if str(current.get("evidence_generation") or "") != evidence_generation:
+                current_generation = ((current.get("animal_evidence_generations") or {}).get(pig_id, "")
+                    if binding.get("evidence_scope") == "animal" else current.get("evidence_generation"))
+                if str(current_generation or "") != evidence_generation:
                     return _result(False, "canonical_evidence_changed_repreview_required"), 409
                 cursor.execute("""select status,on_farm,notes from public.pigs
                     where pig_id=%s for update""", (pig_id,))
@@ -187,7 +207,7 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
                 if not pig or str(pig[0] or "").casefold() != "active" or pig[1] is not True:
                     return _result(False, "current_active_on_farm_pig_required"), 409
                 prior_notes = str(pig[2] or "").strip()
-                lifecycle_note = f"{facts['date']} lifecycle outcome: Died recorded by oom_sakkie owner. Notes: {'; '.join(note_parts)}"
+                lifecycle_note = f"{facts['date']} lifecycle outcome: Died recorded by {actor_id}. Notes: {'; '.join(note_parts)}"
                 updated_notes = f"{prior_notes}\n{lifecycle_note}" if prior_notes else lifecycle_note
                 cursor.execute("""update public.pigs set status='Dead',on_farm=false,
                     exit_date=%s::date,exit_reason='Died',notes=%s,updated_at=now()
@@ -344,7 +364,7 @@ def _readback_mortality_welfare(cursor, *, pig_id, event_id, welfare_case_id):
         from public.pigs p
         join public.pig_lifecycle_events e on e.pig_id=p.pig_id and e.lifecycle_event_id=%s
         join public.pig_welfare_case_current current on current.welfare_case_id=%s
-        where p.pig_id=%s""", (event_id,welfare_case_id,pig_id))
+        where p.pig_id=%s and p.exit_date=(e.event_payload->>'event_date')::date""", (event_id,welfare_case_id,pig_id))
     row = cursor.fetchone()
     cursor.execute("""select count(*) from public.pig_current_state
         where pig_id=%s and status='Active' and on_farm is true

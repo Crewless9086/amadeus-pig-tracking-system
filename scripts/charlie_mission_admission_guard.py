@@ -4,14 +4,29 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import contextlib
+import errno
+import getpass
 import hashlib
 import json
+import http.client
 import os
+import secrets
+import socket
+import stat
 import shlex
 import subprocess
 import sys
+import tempfile
+import time
 from urllib import request as url_request
+from urllib import error as url_error
+from urllib import parse as url_parse
 from pathlib import Path
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -24,8 +39,18 @@ from modules.charlie.mission_admission import (  # noqa: E402
     sign_mission_admission_receipt,
     validate_mission_admission_receipt,
 )
+from modules.charlie.mission_admission import (  # noqa: E402
+    RECEIPT_CLOCK_SKEW_SECONDS,
+    _TOP_LEVEL_FIELDS,
+    _parse_timestamp,
+    _validate_body,
+    _validate_lifetime,
+)
+from modules.charlie.validation_receipt import canonical_json  # noqa: E402
 from modules.charlie.mission_store import (  # noqa: E402
     append_mission_admission_event,
+    get_mission,
+    list_missions,
     read_current_mission_admission_authority,
 )
 
@@ -82,6 +107,18 @@ INTERPRETERS = {
     "python", "python3", "py", "node", "ruby", "perl", "php",
     "bash", "sh", "zsh", "fish",
 } | WINDOWS_INTERPRETERS
+CURSOR_HOOK_AUDIENCE = "urn:amadeus:charlie:cursor-hook:v1"
+CURSOR_HOOK_ENDPOINT = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize"
+CURSOR_BRANCH_HOOK_ENDPOINT = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/cursor/hooks/authorize-branch"
+CURSOR_HOOK_OPERATION_SECONDS = 8.0
+CURSOR_OIDC_CACHE_SCHEMA = "charlie_cursor_oidc_cache_v1"
+PROTECTED_ADMISSION_ROUTE_PREFIX = "/api/charlie/hermes/missions/"
+_CURSOR_OIDC_CACHE = {"token": "", "expires_at": 0, "audience": "", "socket_identity": ""}
+
+EXTERNAL_ADMISSION_PUBLIC_KEY_B64 = "ZAY5VaAnbWY2hrgxXivez5eLaNX4RjiRxjqYmPkoG9o="
+EXTERNAL_CANONICAL_BINDING_ENV = "CHARLIE_ADMISSION_CANONICAL_BINDING_B64"
+ADMISSION_READ_DATABASE_ENV = "CHARLIE_ADMISSION_READ_DATABASE_URL"
+EXTERNAL_COLLISION_MAX_AGE_SECONDS = 900
 
 BOOTSTRAP_BASE_SHA = "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f"
 BOOTSTRAP_MISSION_ID = "CMQ-20260813-05"
@@ -174,6 +211,16 @@ def main(argv=None):
     ci_parser = subparsers.add_parser("ci")
     ci_parser.add_argument("--base", required=True)
     ci_parser.add_argument("--head", required=True)
+    external_parser = subparsers.add_parser("ci-external")
+    external_parser.add_argument("--base", required=True)
+    external_parser.add_argument("--head", required=True)
+    external_parser.add_argument("--receipt", required=True)
+    trusted_parser = subparsers.add_parser("trusted-check")
+    trusted_parser.add_argument("--event", required=True)
+    issuer_parser = subparsers.add_parser("issue-pr")
+    issuer_parser.add_argument("--pull-request-number", required=True, type=int)
+    issuer_parser.add_argument("--expected-head-sha", required=True)
+    issuer_parser.add_argument("--event-output")
     issue_parser = subparsers.add_parser("issue-bootstrap")
     issue_parser.add_argument("--base", required=True)
     issue_parser.add_argument("--head", required=True)
@@ -185,6 +232,12 @@ def main(argv=None):
         return hook_main(audit=args.audit)
     if args.mode in {"issue-bootstrap", "issue-stage2"}:
         return issue_bootstrap_main(args)
+    if args.mode == "ci-external":
+        return ci_external_main(args)
+    if args.mode == "trusted-check":
+        return trusted_check_main(args)
+    if args.mode == "issue-pr":
+        return issue_pr_main(args)
     return ci_main(args)
 
 
@@ -202,10 +255,19 @@ def hook_main(
         packet = json.load(stdin or sys.stdin)
         if not isinstance(packet, dict):
             raise MissionAdmissionError("hook_input_invalid")
-        if environ.get("CHARLIE_MISSION_ADMISSION_GUARD_URL"):
+        cloud_hook = _cursor_cloud_socket(environ)
+        if environ.get("CHARLIE_MISSION_ADMISSION_GUARD_URL") and not cloud_hook:
             _emit(_remote_authorization(packet, environ))
             return 0
         event = str(packet.get("hook_event_name") or "")
+        branch_fallback = not cloud_hook and _branch_fallback_context(os_name=os_name)
+        if (cloud_hook or branch_fallback) and (audit or event == "afterFileEdit"):
+            path = _tool_target_path(packet)
+            if not path:
+                raise MissionAdmissionError("after_file_edit_path_missing")
+            authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+            _emit(authorize({"action": "after_file_edit", "target_path": path}, environ))
+            return 0
         if audit or event == "afterFileEdit":
             _audit_after_file_edit(
                 packet,
@@ -221,7 +283,13 @@ def hook_main(
             if _references_trusted_authority(command, environ):
                 raise MissionAdmissionError("trusted_admission_read_denied")
             if _is_read_only_shell(command, os_name=os_name):
+                if (cloud_hook or branch_fallback) and not _cloud_read_only_shell_safe(command, os_name=os_name):
+                    raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_shell")
+            if cloud_hook or branch_fallback:
+                authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+                _emit(authorize({"action": "shell_verify", "command": command}, environ))
+                return 0
             raise MissionAdmissionError("stage1_shell_mutation_denied")
         if event == "preToolUse":
             tool_name = str(packet.get("tool_name") or "").strip()
@@ -229,11 +297,18 @@ def hook_main(
             if normalized in READ_ONLY_TOOLS:
                 if _references_trusted_authority(packet, environ):
                     raise MissionAdmissionError("trusted_admission_read_denied")
+                if (cloud_hook or branch_fallback) and normalized in {"read", "readfile"}:
+                    if not _cloud_repository_read_path_safe(_tool_target_path(packet), repo_root):
+                        raise MissionAdmissionError("cloud_read_scope_denied")
+                elif (cloud_hook or branch_fallback) and normalized in {"grep", "rg", "glob", "search"}:
+                    raise MissionAdmissionError("cloud_read_scope_denied")
                 return _allow("read_only_tool")
             if normalized == "shell":
                 command = str((packet.get("tool_input") or {}).get("command") or "")
                 if _references_trusted_authority(command, environ):
                     raise MissionAdmissionError("trusted_admission_read_denied")
+                if cloud_hook or branch_fallback:
+                    return _allow("deferred_to_fail_closed_before_shell_execution")
                 if _is_read_only_shell(command, os_name=os_name):
                     return _allow("read_only_shell")
                 raise MissionAdmissionError("stage1_shell_mutation_denied")
@@ -243,6 +318,13 @@ def hook_main(
                 raise MissionAdmissionError("stage1_mcp_execution_denied")
             effect = MUTATING_TOOL_EFFECTS.get(normalized)
             if effect:
+                if cloud_hook or branch_fallback:
+                    target = _tool_target_path(packet)
+                    if not target:
+                        raise MissionAdmissionError("mutation_target_path_required")
+                    authorize = _cursor_cloud_or_branch_authorization if cloud_hook else _cursor_branch_authorization
+                    _emit(authorize({"action": effect, "target_path": target}, environ))
+                    return 0
                 _require_admission(
                     packet,
                     effect,
@@ -258,6 +340,412 @@ def hook_main(
         return _deny(_reason(exc))
 
 
+def _cursor_cloud_socket(environ):
+    if os.name == "nt":
+        return ""
+    configured = str(environ.get("CURSOR_AGENT_SOCKET") or "").strip()
+    if configured:
+        # Cursor documents this variable as the managed-VM socket contract.  Do
+        # not silently fall back to the local MAR path merely because the socket
+        # is momentarily absent while the VM finishes starting; the OIDC mint
+        # will then fail closed with its specific bounded reason instead.
+        return configured
+    default = "/run/cursor/api.sock"
+    return default if Path(default).exists() else ""
+
+
+def _branch_fallback_context(*, os_name=None):
+    """Select the canonical branch handshake on Linux without inventing Agent identity."""
+    platform = os.name if os_name is None else os_name
+    if platform == "nt":
+        return False
+    try:
+        return (_repository_identity() == "Crewless9086/amadeus-pig-tracking-system"
+                and _git_text("branch", "--show-current").startswith("cursor/"))
+    except (OSError, subprocess.SubprocessError, MissionAdmissionError):
+        return False
+
+
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, socket_path, timeout=3):
+        super().__init__("cursor-agent", timeout=timeout)
+        self.socket_path = socket_path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.socket_path)
+
+
+def _cursor_cache_identity(environ):
+    socket_path = os.path.normcase(os.path.abspath(_cursor_cloud_socket(environ)))
+    if not socket_path:
+        raise MissionAdmissionError("cursor_oidc_cache_rejected")
+    user = str(os.geteuid()) if hasattr(os, "geteuid") else getpass.getuser()
+    digest = hashlib.sha256(
+        f"{user}\0{socket_path}\0{CURSOR_HOOK_AUDIENCE}".encode("utf-8")
+    ).hexdigest()
+    return user, socket_path, digest
+
+
+def _cursor_cache_paths(environ):
+    user, socket_path, digest = _cursor_cache_identity(environ)
+    runtime = str(environ.get("XDG_RUNTIME_DIR") or "").strip()
+    if runtime and not Path(runtime).is_absolute():
+        raise MissionAdmissionError("cursor_oidc_cache_rejected")
+    root = (Path(runtime) / "charlie-cursor-hook" if runtime
+            else Path(tempfile.gettempdir()) / f"charlie-cursor-hook-{user}")
+    # Inspect the spelling supplied by the runtime before resolving it.  A
+    # resolve-first check follows a hostile cache-root symlink and makes the
+    # subsequent is_symlink test meaningless.
+    unresolved_root = root
+    try:
+        root_stat = unresolved_root.lstat()
+    except FileNotFoundError:
+        try:
+            unresolved_root.mkdir(mode=0o700, parents=False)
+        except FileExistsError:
+            pass
+        root_stat = unresolved_root.lstat()
+    except OSError as exc:
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise MissionAdmissionError("cursor_oidc_cache_rejected")
+    root = unresolved_root.resolve(strict=True)
+    try:
+        if root == REPO_ROOT.resolve() or root.is_relative_to(REPO_ROOT.resolve()):
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
+    except AttributeError:  # pragma: no cover - Python < 3.9 compatibility
+        if str(root).startswith(str(REPO_ROOT.resolve()) + os.sep):
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
+    if os.name != "nt":
+        os.chmod(root, 0o700)
+        stat_result = root.stat()
+        if stat_result.st_uid != os.geteuid() or stat_result.st_mode & 0o077:
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
+    return root / f"token-{digest}.json", root / f"token-{digest}.lock", socket_path
+
+
+@contextlib.contextmanager
+def _verified_cache_directory(root):
+    """Anchor cache operations to one verified, non-symlink directory."""
+    if os.name == "nt":
+        root_stat = root.lstat()
+        if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
+        yield None
+        return
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(root, flags)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise MissionAdmissionError("cursor_oidc_cache_rejected") from exc
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    try:
+        root_stat = os.fstat(descriptor)
+        if (not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_uid != os.geteuid()
+                or root_stat.st_mode & 0o077):
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _safe_cache_read(path, socket_identity, *, observed):
+    try:
+        with _verified_cache_directory(path.parent) as directory:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(path.name if directory is not None else path,
+                                 flags, dir_fd=directory)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise MissionAdmissionError("cursor_oidc_cache_rejected") from exc
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    try:
+        stat_result = os.fstat(descriptor)
+        if not stat.S_ISREG(stat_result.st_mode):
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
+        if os.name != "nt" and (stat_result.st_uid != os.geteuid() or stat_result.st_mode & 0o077):
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
+        with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as handle:
+            packet = json.loads(handle.read(32768))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    finally:
+        os.close(descriptor)
+    expected = {"schema", "token", "expires_at", "audience", "socket_identity"}
+    if (not isinstance(packet, dict) or set(packet) != expected
+            or packet.get("schema") != CURSOR_OIDC_CACHE_SCHEMA
+            or packet.get("audience") != CURSOR_HOOK_AUDIENCE
+            or packet.get("socket_identity") != socket_identity
+            or not str(packet.get("token") or "")):
+        return None
+    try:
+        expires_at = int(packet.get("expires_at") or 0)
+    except (TypeError, ValueError):
+        return None
+    return packet if expires_at > observed + 30 else None
+
+
+def _safe_cache_write(path, socket_identity, token, expires_at):
+    packet = {"schema": CURSOR_OIDC_CACHE_SCHEMA, "token": token,
+              "expires_at": int(expires_at), "audience": CURSOR_HOOK_AUDIENCE,
+              "socket_identity": socket_identity}
+    temporary = path.name + "." + secrets.token_hex(16)
+    directory = None
+    directory_context = _verified_cache_directory(path.parent)
+    directory = directory_context.__enter__()
+    try:
+        existing = (os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+                    if directory is not None else path.lstat())
+        if stat.S_ISLNK(existing.st_mode):
+            raise MissionAdmissionError("cursor_oidc_cache_rejected")
+    except FileNotFoundError:
+        pass
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(temporary if directory is not None else path.parent / temporary,
+                         flags, 0o600, dir_fd=directory)
+    try:
+        if os.name != "nt":
+            os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8", closefd=False) as handle:
+            json.dump(packet, handle, sort_keys=True, separators=(",", ":"))
+            handle.flush()
+            os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary if directory is not None else path.parent / temporary,
+                   path.name if directory is not None else path,
+                   src_dir_fd=directory, dst_dir_fd=directory)
+        if os.name != "nt":
+            os.chmod(path, 0o600)
+    except MissionAdmissionError:
+        raise
+    except Exception as exc:
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            os.unlink(temporary if directory is not None else path.parent / temporary,
+                      dir_fd=directory)
+        except FileNotFoundError:
+            pass
+        directory_context.__exit__(None, None, None)
+
+
+@contextlib.contextmanager
+def _cursor_cache_lock(path, *, deadline, monotonic=time.monotonic, sleep=time.sleep):
+    flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        directory_context = _verified_cache_directory(path.parent)
+        directory = directory_context.__enter__()
+        anchored_path = path.name if directory is not None else path
+        try:
+            descriptor = os.open(anchored_path, flags | os.O_CREAT | os.O_EXCL,
+                                 0o600, dir_fd=directory)
+            created = True
+        except FileExistsError:
+            descriptor = os.open(anchored_path, flags, 0o600, dir_fd=directory)
+            created = False
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise MissionAdmissionError("cursor_oidc_cache_rejected") from exc
+        raise MissionAdmissionError("cursor_oidc_cache_unavailable") from exc
+    locked = False
+    try:
+        if os.name != "nt":
+            os.fchmod(descriptor, 0o600)
+            lock_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != os.geteuid():
+                raise MissionAdmissionError("cursor_oidc_cache_rejected")
+        if os.name == "nt":
+            import msvcrt
+            if created:
+                os.write(descriptor, b"\0")
+            while monotonic() < deadline:
+                try:
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                    locked = True
+                    break
+                except OSError:
+                    sleep(min(0.05, max(0.0, deadline - monotonic())))
+        else:
+            import fcntl
+            while monotonic() < deadline:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = True
+                    break
+                except BlockingIOError:
+                    sleep(min(0.05, max(0.0, deadline - monotonic())))
+        if not locked:
+            raise MissionAdmissionError("cursor_oidc_cache_lock_timeout")
+        yield
+    finally:
+        if locked:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+        directory_context.__exit__(None, None, None)
+
+
+def _retry_after_seconds(response, remaining):
+    try:
+        value = float(str(response.getheader("Retry-After") or "0").strip())
+    except (TypeError, ValueError):
+        value = 0.0
+    return min(max(0.0, value), max(0.0, remaining))
+
+
+def _mint_cursor_oidc(environ, *, now=None, deadline=None, monotonic=time.monotonic,
+                      sleep=time.sleep, connection_factory=None):
+    observed = int(time.time() if now is None else now)
+    deadline = float(deadline if deadline is not None else monotonic() + 4.0)
+    connection_factory = connection_factory or _UnixHTTPConnection
+    cache_path, lock_path, socket_identity = _cursor_cache_paths(environ)
+    if (_CURSOR_OIDC_CACHE["token"]
+            and _CURSOR_OIDC_CACHE.get("audience") == CURSOR_HOOK_AUDIENCE
+            and _CURSOR_OIDC_CACHE.get("socket_identity") == socket_identity
+            and observed < int(_CURSOR_OIDC_CACHE["expires_at"] or 0) - 30):
+        return _CURSOR_OIDC_CACHE["token"]
+    cached = _safe_cache_read(cache_path, socket_identity, observed=observed)
+    if cached:
+        _CURSOR_OIDC_CACHE.update({"token": cached["token"], "expires_at": cached["expires_at"],
+                                   "audience": CURSOR_HOOK_AUDIENCE, "socket_identity": socket_identity})
+        return cached["token"]
+    body = json.dumps({"aud": CURSOR_HOOK_AUDIENCE}, separators=(",", ":")).encode()
+    retryable_errors = (FileNotFoundError, ConnectionRefusedError, ConnectionResetError,
+                        BrokenPipeError, TimeoutError, socket.timeout)
+    with _cursor_cache_lock(lock_path, deadline=deadline, monotonic=monotonic, sleep=sleep):
+        cached = _safe_cache_read(cache_path, socket_identity, observed=observed)
+        if cached:
+            _CURSOR_OIDC_CACHE.update({"token": cached["token"], "expires_at": cached["expires_at"],
+                                       "audience": CURSOR_HOOK_AUDIENCE, "socket_identity": socket_identity})
+            return cached["token"]
+        attempt = 0
+        while monotonic() < deadline and attempt < 4:
+            attempt += 1
+            remaining = max(0.0, deadline - monotonic())
+            connection = connection_factory(socket_identity, timeout=max(0.1, min(1.0, remaining)))
+            response = None
+            try:
+                connection.request("POST", "/v1/tokens/oidc", body=body,
+                                   headers={"Content-Type": "application/json", "Content-Length": str(len(body))})
+                response = connection.getresponse()
+                status = int(response.status)
+                raw = response.read(16384)
+            except retryable_errors:
+                status, raw = 0, b""
+            except Exception as exc:
+                raise MissionAdmissionError("cursor_oidc_unavailable") from exc
+            finally:
+                connection.close()
+            if status == 200:
+                try:
+                    result = json.loads(raw)
+                    token = str(result.get("token") or "")
+                    expires_at = int(result.get("expires_at") or 0)
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise MissionAdmissionError("cursor_oidc_response_invalid") from exc
+                if not token or expires_at <= observed + 30:
+                    raise MissionAdmissionError("cursor_oidc_response_invalid")
+                _safe_cache_write(cache_path, socket_identity, token, expires_at)
+                _CURSOR_OIDC_CACHE.update({"token": token, "expires_at": expires_at,
+                                           "audience": CURSOR_HOOK_AUDIENCE,
+                                           "socket_identity": socket_identity})
+                return token
+            if status in {400, 403, 404, 405, 413, 415}:
+                raise MissionAdmissionError("cursor_oidc_request_rejected")
+            if status not in {0, 429, 500, 502, 503, 504}:
+                raise MissionAdmissionError("cursor_oidc_unavailable")
+            remaining = max(0.0, deadline - monotonic())
+            delay = (_retry_after_seconds(response, remaining)
+                     if response is not None and status in {429, 503}
+                     else min(0.1 * attempt, remaining))
+            if delay > 0:
+                sleep(delay)
+        raise MissionAdmissionError("cursor_oidc_unavailable")
+
+
+def _cursor_cloud_authorization(payload, environ, *, opener=url_request.urlopen):
+    deadline = time.monotonic() + CURSOR_HOOK_OPERATION_SECONDS
+    payload = dict(payload or {})
+    if payload.get("action") in {"repository_file_write", "repository_file_delete", "after_file_edit"}:
+        payload["changed_files"] = _worktree_changed_files("HEAD")
+    request = url_request.Request(
+        CURSOR_HOOK_ENDPOINT, data=json.dumps(payload, separators=(",", ":")).encode(),
+        headers={"Authorization": "Bearer " + _mint_cursor_oidc(environ, deadline=deadline),
+                 "Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+    try:
+        with opener(request, timeout=max(0.1, min(3.0, deadline - time.monotonic()))) as response:
+            result = json.loads(response.read(32768))
+    except url_error.HTTPError as exc:
+        try:
+            result = json.loads(exc.read(32768))
+        except Exception:
+            result = {"permission": "deny", "status": "cursor_hook_authorization_denied"}
+    except Exception as exc:
+        raise MissionAdmissionError("cursor_hook_authorization_unavailable") from exc
+    if not isinstance(result, dict) or result.get("permission") not in {"allow", "deny"}:
+        raise MissionAdmissionError("cursor_hook_authorization_invalid")
+    return result
+
+
+def _cursor_branch_facts():
+    root = Path(_git_text("rev-parse", "--show-toplevel")).resolve()
+    if root != REPO_ROOT.resolve():
+        raise MissionAdmissionError("cursor_branch_repository_invalid")
+    repository = _repository_identity()
+    branch = _git_text("branch", "--show-current")
+    head = _commit("HEAD")
+    if repository != "Crewless9086/amadeus-pig-tracking-system":
+        raise MissionAdmissionError("cursor_branch_repository_invalid")
+    if not branch.startswith("cursor/") or branch in {"main", "master"}:
+        raise MissionAdmissionError("cursor_branch_binding_required")
+    return {"repository": repository, "branch": branch, "current_head": head,
+            "changed_files": _worktree_changed_files("HEAD")}
+
+
+def _cursor_branch_authorization(payload, environ, *, opener=url_request.urlopen):
+    body = {**dict(payload or {}), **_cursor_branch_facts()}
+    request = url_request.Request(
+        CURSOR_BRANCH_HOOK_ENDPOINT, data=json.dumps(body, separators=(",", ":")).encode(),
+        headers={"Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+    try:
+        with opener(request, timeout=3.0) as response:
+            result = json.loads(response.read(32768))
+    except url_error.HTTPError as exc:
+        try:
+            result = json.loads(exc.read(32768))
+        except Exception:
+            result = {"permission": "deny", "status": "cursor_branch_authorization_denied"}
+    except Exception as exc:
+        raise MissionAdmissionError("cursor_branch_authorization_unavailable") from exc
+    if not isinstance(result, dict) or result.get("permission") not in {"allow", "deny"}:
+        raise MissionAdmissionError("cursor_branch_authorization_invalid")
+    return result
+
+
+def _cursor_cloud_or_branch_authorization(payload, environ):
+    """Prefer signed OIDC; fallback only for bounded socket/cache availability failures."""
+    try:
+        return _cursor_cloud_authorization(payload, environ)
+    except MissionAdmissionError as exc:
+        if _reason(exc) not in {"cursor_oidc_unavailable", "cursor_oidc_cache_unavailable"}:
+            raise
+        return _cursor_branch_authorization(payload, environ)
+
+
 def ci_main(
     args,
     *,
@@ -270,7 +758,10 @@ def ci_main(
         base = _commit(args.base)
         head = _commit(args.head)
         changed_files = _changed_files(base, head)
-        patch = _git_bytes("diff", "--binary", "--full-index", base, head, "--")
+        patch = _git_bytes(
+            "diff", "--no-ext-diff", "--no-textconv", "--binary",
+            "--full-index", base, head, "--",
+        )
         diff_sha256 = canonical_candidate_diff(changed_files, patch)
         receipt, identity, _authority = _validated_trusted_identity(
             authority_reader=authority_reader,
@@ -332,6 +823,743 @@ def ci_main(
             "reason_code": _reason(exc),
         }, sort_keys=True))
         return 2
+
+
+def ci_external_main(args, *, repo_root=REPO_ROOT, os_name=None):
+    """Verify an externally issued exact-candidate receipt without DB access."""
+    try:
+        base = _commit(args.base)
+        head = _commit(args.head)
+        changed_files = _changed_files(base, head)
+        patch = _git_bytes("diff", "--binary", "--full-index", base, head, "--")
+        diff_sha256 = canonical_candidate_diff(changed_files, patch)
+
+        receipt_path = Path(args.receipt)
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise MissionAdmissionError("external_admission_receipt_unavailable")
+        envelope = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt, identity = _validate_external_receipt_envelope(
+            envelope,
+            expected_repository=_repository_identity(),
+            expected_base_sha=base,
+            expected_head_sha=head,
+            expected_changed_files=changed_files,
+        )
+        _verify_governance_reads(receipt, head)
+        if receipt["candidate"]["diff_sha256"] != diff_sha256:
+            raise MissionAdmissionError("admission_candidate_changed")
+        if receipt["repository"]["base_sha"] != receipt["candidate"]["base_sha"]:
+            raise MissionAdmissionError("admission_base_changed")
+        if not receipt.get("required_tests"):
+            raise MissionAdmissionError("admission_required_tests_invalid")
+        if receipt.get("operational_acceptance", {}).get("business_outcome_authorized") is not False:
+            raise MissionAdmissionError("admission_business_outcome_authority_invalid")
+        _validate_paths_and_effects(
+            changed_files,
+            identity["allowed_files"],
+            identity["forbidden_files"],
+            "repository_candidate_validation",
+            identity["allowed_effects"],
+            identity["forbidden_effects"],
+        )
+        print(json.dumps({
+            "success": True,
+            "status": "mission_admission_verified",
+            "receipt_id": identity["receipt_id"],
+            "generation": identity["generation"],
+            "base_sha": base,
+            "head_sha": head,
+            "changed_files": changed_files,
+            "diff_sha256": diff_sha256,
+        }, sort_keys=True))
+        return 0
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        MissionAdmissionError,
+        subprocess.SubprocessError,
+    ) as exc:
+        print(json.dumps({
+            "success": False,
+            "status": "READMISSION_REQUIRED",
+            "reason_code": _reason(exc),
+        }, sort_keys=True))
+        return 2
+
+
+def _validate_external_receipt_envelope(
+    envelope,
+    *,
+    expected_repository,
+    expected_base_sha,
+    expected_head_sha,
+    expected_changed_files,
+    expected_canonical_binding=None,
+    now=None,
+):
+    if not isinstance(envelope, dict) or set(envelope) != {
+        "version", "receipt", "signature_ed25519"
+    } or envelope.get("version") != "mission_admission_ci_envelope_v1":
+        raise MissionAdmissionError("external_admission_envelope_invalid")
+    receipt = envelope.get("receipt")
+    try:
+        signature = base64.b64decode(envelope["signature_ed25519"], validate=True)
+        public_key = Ed25519PublicKey.from_public_bytes(
+            base64.b64decode(EXTERNAL_ADMISSION_PUBLIC_KEY_B64, validate=True)
+        )
+        public_key.verify(signature, canonical_json(receipt))
+    except (KeyError, TypeError, ValueError, InvalidSignature) as exc:
+        raise MissionAdmissionError("external_admission_signature_invalid") from exc
+    if not isinstance(receipt, dict) or set(receipt) != _TOP_LEVEL_FIELDS:
+        raise MissionAdmissionError("admission_receipt_schema_invalid")
+    body = {
+        key: value for key, value in receipt.items()
+        if key not in {"receipt_id", "content_sha256", "signature_hmac_sha256"}
+    }
+    _validate_body(body)
+    content_sha256 = hashlib.sha256(canonical_json(body)).hexdigest()
+    if (
+        receipt.get("content_sha256") != content_sha256
+        or receipt.get("receipt_id") != f"MAR-{content_sha256.upper()}"
+        or not __import__("re").fullmatch(
+            r"[0-9a-f]{64}", str(receipt.get("signature_hmac_sha256") or "")
+        )
+    ):
+        raise MissionAdmissionError("admission_content_digest_invalid")
+    issued = _parse_timestamp(receipt["issued_at"])
+    expiry = _parse_timestamp(receipt["expires_at"])
+    _validate_lifetime(issued, expiry)
+    clock = _parse_timestamp(now) if now else __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc
+    )
+    if issued > clock + __import__("datetime").timedelta(
+        seconds=RECEIPT_CLOCK_SKEW_SECONDS
+    ):
+        raise MissionAdmissionError("admission_not_yet_valid")
+    if clock >= expiry:
+        raise MissionAdmissionError("admission_expired")
+    mission = receipt["mission"]
+    repository = receipt["repository"]
+    candidate = receipt["candidate"]
+    changed_files = sorted(expected_changed_files)
+    if expected_canonical_binding is not None:
+        expected = {
+            "mission_id": mission["mission_id"],
+            "root_mission_id": mission["root_mission_id"],
+            "generation": mission["generation"],
+            "authority_key_sha256": receipt["authority_key_sha256"],
+            "latest_correction_digest": receipt["owner_instruction_chain"][
+                "latest_correction_digest"
+            ],
+            "collision_snapshot_sha256": receipt["collision_snapshot"][
+                "snapshot_sha256"
+            ],
+        }
+        observed_at = expected_canonical_binding.get("canonical_observed_at")
+        if {
+            key: value for key, value in expected_canonical_binding.items()
+            if key != "canonical_observed_at"
+        } != expected:
+            raise MissionAdmissionError("canonical_admission_authority_changed")
+        observed = _parse_timestamp(observed_at)
+        if observed > issued + __import__("datetime").timedelta(
+            seconds=RECEIPT_CLOCK_SKEW_SECONDS
+        ) or issued - observed > __import__("datetime").timedelta(
+            seconds=EXTERNAL_COLLISION_MAX_AGE_SECONDS
+        ):
+            raise MissionAdmissionError("canonical_admission_observation_stale")
+    if repository["repository"] != expected_repository:
+        raise MissionAdmissionError("admission_repository_changed")
+    if repository["base_sha"] != expected_base_sha:
+        raise MissionAdmissionError("admission_base_changed")
+    if candidate["head_sha"] != expected_head_sha:
+        raise MissionAdmissionError("admission_candidate_changed")
+    if candidate["changed_files"] != changed_files:
+        raise MissionAdmissionError("admission_candidate_changed")
+    return receipt, {
+        "receipt_id": receipt["receipt_id"],
+        "content_sha256": content_sha256,
+        "mission_id": mission["mission_id"],
+        "root_mission_id": mission["root_mission_id"],
+        "generation": mission["generation"],
+        "base_sha": repository["base_sha"],
+        "head_sha": candidate["head_sha"],
+        "allowed_files": list(receipt["scope"]["allowed_files"]),
+        "forbidden_files": list(receipt["scope"]["forbidden_files"]),
+        "allowed_effects": list(receipt["scope"]["allowed_effects"]),
+        "forbidden_effects": list(receipt["scope"]["forbidden_effects"]),
+        "changed_files": list(candidate["changed_files"]),
+    }
+
+
+def _protected_database_url(environ):
+    database_url = str(environ.get(ADMISSION_READ_DATABASE_ENV) or "").strip()
+    if not database_url or "sslmode=require" not in database_url.lower():
+        raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=3) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("set transaction read only")
+                cursor.execute("set local statement_timeout='10000ms'")
+                cursor.execute("set local lock_timeout='3000ms'")
+                cursor.execute("set local idle_in_transaction_session_timeout='10000ms'")
+                cursor.execute("show transaction_read_only")
+                if str(cursor.fetchone()[0]).lower() != "on":
+                    raise MissionAdmissionError("canonical_database_not_read_only")
+                for setting, allowed in (
+                    ("statement_timeout", {"10s", "10000ms"}),
+                    ("lock_timeout", {"3s", "3000ms"}),
+                    ("idle_in_transaction_session_timeout", {"10s", "10000ms"}),
+                ):
+                    cursor.execute(f"show {setting}")
+                    if str(cursor.fetchone()[0]).lower() not in allowed:
+                        raise MissionAdmissionError("canonical_database_timeout_invalid")
+                cursor.execute("select rolsuper,rolcreaterole,rolcreatedb,rolreplication,rolbypassrls from pg_roles where rolname=current_user")
+                role = cursor.fetchone()
+                if not role or any(role):
+                    raise MissionAdmissionError("canonical_database_privilege_invalid")
+                cursor.execute("select has_database_privilege(current_user,current_database(),'CREATE'),has_schema_privilege(current_user,'public','CREATE')")
+                if any(cursor.fetchone()):
+                    raise MissionAdmissionError("canonical_database_privilege_invalid")
+                for table in ("charlie_missions", "charlie_mission_events", "operational_events"):
+                    cursor.execute(
+                        "select has_table_privilege(current_user,%s,'SELECT'),has_table_privilege(current_user,%s,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')",
+                        (f"public.{table}", f"public.{table}"),
+                    )
+                    can_read, can_write = cursor.fetchone()
+                    if not can_read or can_write:
+                        raise MissionAdmissionError("canonical_database_privilege_invalid")
+    except MissionAdmissionError:
+        raise
+    except Exception as exc:
+        raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE") from exc
+    return database_url
+
+
+def _canonical_contract_for_pull(number, base, head, branch, diff_sha256, changed_files, database_url):
+    result, status = list_missions(limit=100, database_url=database_url)
+    if status >= 400 or not result.get("success"):
+        raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+    matches = []
+    for mission in result.get("missions") or []:
+        metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+        if (
+            packet.get("pr_number") == number
+            and packet.get("candidate_revision") == head
+            and packet.get("branch_name") == branch
+            and packet.get("candidate_diff_sha256") == diff_sha256
+        ):
+            matches.append((mission, metadata))
+    if len(matches) != 1:
+        dispatch_matches = []
+        for mission in result.get("missions") or []:
+            metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+            authorization = metadata.get("dispatch_authorization") \
+                if isinstance(metadata.get("dispatch_authorization"), dict) else {}
+            if (authorization.get("status") == "valid"
+                    and authorization.get("base_sha") == base
+                    and authorization.get("branch") == branch
+                    and sorted(authorization.get("allowed_files") or []) == sorted(changed_files)):
+                contract = {"generation": authorization.get("generation"), "branch": branch,
+                    "base_sha": base, "allowed_files": sorted(changed_files), "forbidden_files": ["*"],
+                    "allowed_effects": sorted(authorization.get("allowed_effects") or []),
+                    "forbidden_effects": sorted(authorization.get("forbidden_effects") or []),
+                    "required_tests": ["mission-admission", "charlie-core",
+                        "Unit tests with disposable Postgres audit rails",
+                        "Closed Render migration rail with disposable Postgres",
+                        "Playwright real-browser behavior gate"],
+                    "operational_acceptance": ["Independent review completed; stop before merge or deployment"]}
+                family = dict(metadata.get("mission_family") or {})
+                family["root_mission_id"] = family.get("root_mission_id") or mission.get("mission_id")
+                family["generation"] = authorization.get("generation")
+                dispatch_matches.append((mission, metadata, contract, family))
+        if len(dispatch_matches) != 1:
+            raise MissionAdmissionError("canonical_candidate_linkage_unavailable")
+        return dispatch_matches[0]
+    mission, metadata = matches[0]
+    contract = metadata.get("mission_admission_contract")
+    family = metadata.get("mission_family")
+    if not isinstance(contract, dict) or not isinstance(family, dict):
+        raise MissionAdmissionError("canonical_admission_contract_invalid")
+    return mission, metadata, contract, family
+
+
+def _require_canonical_review_linkage(metadata, number, head, branch, diff_sha256, changed_files):
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    if (
+        packet.get("pr_number") != number
+        or packet.get("candidate_revision") != head
+        or packet.get("branch_name") != branch
+        or packet.get("candidate_diff_sha256") != diff_sha256
+        or sorted(packet.get("changed_files") or []) != sorted(changed_files)
+    ):
+        raise MissionAdmissionError("canonical_candidate_linkage_changed")
+
+
+def _replace_receipt_marker(body, marker):
+    pattern = r"(?m)^Mission-Admission-Receipt-B64: .*(?:\r?\n|$)"
+    if len(__import__("re").findall(pattern, body)) > 1:
+        raise MissionAdmissionError("duplicate_external_admission_receipts")
+    preserved = __import__("re").sub(pattern, "", body).rstrip()
+    return (preserved + "\n\n" if preserved else "") + f"Mission-Admission-Receipt-B64: {marker}\n"
+
+
+def _compare_current_authority(receipt, authority, contract):
+    admission = authority.get("admission") if isinstance(authority.get("admission"), dict) else {}
+    mission = receipt["mission"]
+    if authority.get("mission_id") != mission["mission_id"] or authority.get("root_mission_id") != mission["root_mission_id"]:
+        raise MissionAdmissionError("mission_generation_changed")
+    if mission["generation"] != str(contract.get("generation") or mission["generation"]):
+        raise MissionAdmissionError("mission_generation_changed")
+    if admission.get("status") in {"revoked", "consumed"}:
+        raise MissionAdmissionError(f"admission_{admission['status']}")
+    if admission.get("status") != "valid":
+        raise MissionAdmissionError("projection_identity_mismatch")
+    if receipt["owner_instruction_chain"]["latest_correction_digest"] != authority.get("latest_correction_digest"):
+        raise MissionAdmissionError("owner_correction_changed")
+    if receipt["collision_snapshot"]["snapshot_sha256"] != authority.get("collision_snapshot_sha256"):
+        raise MissionAdmissionError("collision_snapshot_changed")
+    expected_projection = {
+        "mission_id": mission["mission_id"],
+        "root_mission_id": mission["root_mission_id"],
+        "generation": mission["generation"],
+        "base_sha": receipt["repository"]["base_sha"],
+        "head_sha": receipt["candidate"]["head_sha"],
+        "authority_key_sha256": receipt["authority_key_sha256"],
+        "latest_correction_digest": authority.get("latest_correction_digest"),
+        "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
+    }
+    if any(admission.get(key) != value for key, value in expected_projection.items()):
+        raise MissionAdmissionError("projection_identity_mismatch")
+    if (
+        admission.get("receipt_id") != receipt.get("receipt_id")
+        or admission.get("content_sha256") != receipt.get("content_sha256")
+    ):
+        raise MissionAdmissionError("receipt_content_mismatch")
+    comparisons = {
+        "allowed_files": receipt["scope"]["allowed_files"],
+        "forbidden_files": receipt["scope"]["forbidden_files"],
+        "allowed_effects": receipt["scope"]["allowed_effects"],
+        "forbidden_effects": receipt["scope"]["forbidden_effects"],
+        "required_tests": receipt["required_tests"],
+    }
+    for key, value in comparisons.items():
+        if sorted(value) != sorted(contract.get(key) or []):
+            raise MissionAdmissionError(
+                "required_test_mismatch" if key == "required_tests" else "scope_mismatch"
+            )
+    acceptance = receipt["operational_acceptance"]
+    if acceptance.get("business_outcome_authorized") is not False or sorted(acceptance.get("requirements") or []) != sorted(contract.get("operational_acceptance") or []):
+        raise MissionAdmissionError("operational_acceptance_mismatch")
+    if receipt["owner_instruction_chain"]["admission_packet_sha256"] != _canonical_packet_digest(authority, contract):
+        raise MissionAdmissionError("admission_packet_mismatch")
+
+
+def _canonical_packet_digest(authority, contract):
+    admission = authority.get("admission") if isinstance(authority.get("admission"), dict) else {}
+    binding = {
+        "admission": {
+            key: admission.get(key)
+            for key in (
+                "mission_id", "root_mission_id",
+                "generation", "base_sha", "head_sha", "authority_key_sha256",
+                "latest_correction_digest", "collision_snapshot_sha256", "status",
+            )
+        },
+        "contract": contract,
+        "latest_correction_digest": authority.get("latest_correction_digest"),
+        "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
+    }
+    return hashlib.sha256(canonical_json(binding)).hexdigest()
+
+
+def _require_exact_admission_projection(authority, mission, family, base, head, authority_key_sha256):
+    admission = authority.get("admission") if isinstance(authority.get("admission"), dict) else {}
+    expected = {
+        "status": "valid",
+        "mission_id": mission["mission_id"],
+        "root_mission_id": authority.get("root_mission_id"),
+        "generation": family.get("generation"),
+        "base_sha": base,
+        "head_sha": head,
+        "authority_key_sha256": authority_key_sha256,
+        "latest_correction_digest": authority.get("latest_correction_digest"),
+        "collision_snapshot_sha256": authority.get("collision_snapshot_sha256"),
+    }
+    mismatches = [key for key, value in expected.items() if admission.get(key) != value]
+    if mismatches:
+        status = admission.get("status")
+        if status in {"revoked", "consumed"}:
+            raise MissionAdmissionError(f"admission_{status}")
+        raise MissionAdmissionError("projection_identity_mismatch_" + mismatches[0])
+
+
+def _build_exact_candidate_payload(*, mission, family, authority, contract, base,
+                                   head, branch, diff_sha256, changed_files,
+                                   governance_reads, repository):
+    """Build the one canonical payload used by recording and protected issuance."""
+    return {
+        "mission": {"mission_id": mission["mission_id"], "root_mission_id": authority["root_mission_id"], "generation": str(family.get("generation") or "")},
+        "owner_instruction_chain": {"instruction_digests": [hashlib.sha256(str(mission.get("raw_text") or "").encode()).hexdigest(), authority["latest_correction_digest"]], "latest_correction_digest": authority["latest_correction_digest"], "admission_packet_sha256": _canonical_packet_digest(authority, contract)},
+        "repository": {"repository": repository, "base_ref": "main", "base_sha": base},
+        "governance_reads": governance_reads,
+        "existing_system_trace": {"smallest_genuine_gap": "Protected main lacked a dynamic canonical receipt issuer.", "reused_components": ["charlie_missions", "charlie_mission_events", "operational_events", "mission_admission_receipt_v1", "CHARLIE Admission Guard"], "implementation_sources": sorted(["modules/charlie/mission_admission.py", "modules/charlie/mission_store.py", "scripts/charlie_mission_admission_guard.py"])},
+        "scope": {key: sorted(contract.get(key) or []) for key in ("allowed_files", "forbidden_files", "allowed_effects", "forbidden_effects")},
+        "collision_snapshot": {"captured_at": authority["collision_observed_at"], "active_claims": list(authority["active_claims"]), "snapshot_sha256": authority["collision_snapshot_sha256"]},
+        "required_tests": sorted(contract.get("required_tests") or []),
+        "operational_acceptance": {"requirements": sorted(contract.get("operational_acceptance") or []), "business_outcome_authorized": False},
+        "candidate": {"candidate_id": f"{mission['mission_id']}:{family.get('generation')}:{head}", "branch": branch, "base_sha": base, "head_sha": head, "diff_sha256": diff_sha256, "changed_files": changed_files},
+    }
+
+
+def _github_pull_request(number, token, *, body=None):
+    url = f"https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/pulls/{number}"
+    payload = None if body is None else json.dumps({"body": body}, separators=(",", ":")).encode()
+    req = url_request.Request(url, data=payload, method="GET" if body is None else "PATCH", headers={
+        "Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json", "User-Agent": "CHARLIE-Admission-Issuer",
+        "X-GitHub-Api-Version": "2022-11-28",
+    })
+    with url_request.urlopen(req, timeout=15) as response:
+        return json.loads(response.read(1048576))
+
+
+def issue_pr_main(args, *, environ=None):
+    """Issue one exact signed receipt from protected canonical authority."""
+    environ = os.environ if environ is None else environ
+    try:
+        if args.pull_request_number <= 0 or not __import__("re").fullmatch(r"[0-9a-f]{40}", args.expected_head_sha):
+            raise MissionAdmissionError("issuer_input_invalid")
+        token = str(environ.get("GITHUB_TOKEN") or "")
+        if not token:
+            raise MissionAdmissionError("issuer_runtime_unavailable")
+        database_url = _protected_database_url(environ)
+        pull = _github_pull_request(args.pull_request_number, token)
+        if pull.get("state") != "open" or pull.get("merged_at") is not None:
+            raise MissionAdmissionError("issuer_target_not_open")
+        head = str((pull.get("head") or {}).get("sha") or "")
+        base = str((pull.get("base") or {}).get("sha") or "")
+        branch = str((pull.get("head") or {}).get("ref") or "")
+        if head != args.expected_head_sha or (pull.get("base") or {}).get("ref") != "main":
+            raise MissionAdmissionError("admission_candidate_changed")
+        subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=never", "fetch", "--no-tags", "--no-recurse-submodules", "origin", head], cwd=REPO_ROOT, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+        base, head = _commit(base), _commit(head)
+        changed_files = _changed_files(base, head)
+        patch = _git_bytes("diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", base, head, "--")
+        diff_sha256 = canonical_candidate_diff(changed_files, patch)
+        mission, metadata, contract, family = _canonical_contract_for_pull(
+            args.pull_request_number, base, head, branch, diff_sha256, changed_files, database_url)
+        if sorted(changed_files) != sorted(contract.get("allowed_files") or []) or base != contract.get("base_sha") or branch != contract.get("branch"):
+            raise MissionAdmissionError("canonical_candidate_linkage_changed")
+        if not str(family.get("generation") or ""):
+            raise MissionAdmissionError("mission_generation_changed")
+        authority, status = read_current_mission_admission_authority(mission["mission_id"], database_url=database_url)
+        if status >= 400 or not authority.get("success"):
+            raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+        collision_time, active_claims = authority["collision_observed_at"], list(authority["active_claims"])
+        if collision_snapshot_digest(collision_time, active_claims) != authority.get("collision_snapshot_sha256"):
+            raise MissionAdmissionError("canonical_collision_snapshot_invalid")
+        payload = _build_exact_candidate_payload(
+            mission=mission, family=family, authority=authority, contract=contract,
+            base=base, head=head, branch=branch, diff_sha256=diff_sha256,
+            changed_files=changed_files,
+            governance_reads=_governance_read_identities(base),
+            repository=_repository_identity(),
+        )
+        try:
+            hmac_key = base64.b64decode(str(environ.get("CHARLIE_VALIDATION_RECEIPT_KEY_B64") or ""), validate=True)
+            signing_seed = base64.b64decode(str(environ.get("CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64") or ""), validate=True)
+            if len(signing_seed) != 32:
+                raise ValueError
+        except Exception as exc:
+            raise MissionAdmissionError("issuer_signing_authority_unavailable") from exc
+        if not hmac_key:
+            raise MissionAdmissionError("issuer_signing_authority_unavailable")
+        authority_key_sha256 = hashlib.sha256(hmac_key).hexdigest()
+        protected_receipt, protected_marker = None, ""
+        try:
+            _require_exact_admission_projection(
+                authority, mission, family, base, head, authority_key_sha256)
+        except MissionAdmissionError as exc:
+            if not str(exc).startswith("projection_identity_mismatch_"):
+                raise
+            projected = dict(authority)
+            projected["admission"] = {"status": "valid", "mission_id": mission["mission_id"],
+                "root_mission_id": authority["root_mission_id"], "generation": family["generation"],
+                "base_sha": base, "head_sha": head, "authority_key_sha256": authority_key_sha256,
+                "latest_correction_digest": authority["latest_correction_digest"],
+                "collision_snapshot_sha256": authority["collision_snapshot_sha256"]}
+            payload = _build_exact_candidate_payload(
+                mission=mission, family=family, authority=projected, contract=contract,
+                base=base, head=head, branch=branch, diff_sha256=diff_sha256,
+                changed_files=changed_files, governance_reads=_governance_read_identities(base),
+                repository=_repository_identity())
+            protected_receipt = sign_mission_admission_receipt(payload, hmac_key)
+            envelope = {"version": "mission_admission_ci_envelope_v1", "receipt": protected_receipt,
+                "signature_ed25519": base64.b64encode(Ed25519PrivateKey.from_private_bytes(
+                    signing_seed).sign(canonical_json(protected_receipt))).decode()}
+            callback_base = str(environ.get("CHARLIE_CANONICAL_API_URL") or "").rstrip("/")
+            if not callback_base.startswith("https://"):
+                raise MissionAdmissionError("canonical_admission_callback_unavailable")
+            callback = url_request.Request(callback_base + PROTECTED_ADMISSION_ROUTE_PREFIX +
+                url_parse.quote(mission["mission_id"], safe="") + "/protected-admission",
+                data=canonical_json({"envelope": envelope, "pr_number": args.pull_request_number}), method="POST",
+                headers={"Content-Type": "application/json", "User-Agent": "CHARLIE-Admission-Issuer"})
+            try:
+                with url_request.urlopen(callback, timeout=15) as response:
+                    if response.status not in {200, 201}:
+                        raise OSError("unexpected_status")
+            except (url_error.URLError, OSError) as callback_error:
+                raise MissionAdmissionError("canonical_admission_callback_unavailable") from callback_error
+            authority, status = read_current_mission_admission_authority(
+                mission["mission_id"], database_url=database_url)
+            if status >= 400 or not authority.get("success"):
+                raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+            _require_exact_admission_projection(
+                authority, mission, family, base, head, authority_key_sha256)
+            protected_marker = base64.b64encode(canonical_json(envelope)).decode()
+        body = str(pull.get("body") or "")
+        pattern = r"(?m)^Mission-Admission-Receipt-B64: .*(?:\r?\n|$)"
+        existing = __import__("re").findall(pattern, body)
+        if len(existing) > 1:
+            raise MissionAdmissionError("duplicate_external_admission_receipts")
+        receipt = protected_receipt
+        marker = protected_marker
+        encoded_existing = __import__("re").findall(
+            r"(?m)^Mission-Admission-Receipt-B64: ([A-Za-z0-9+/]+={0,2})\r?$",
+            body,
+        )
+        if len(encoded_existing) == 1:
+            try:
+                existing_envelope = json.loads(base64.b64decode(
+                    encoded_existing[0], validate=True
+                ))
+                existing_receipt, _identity = _validate_external_receipt_envelope(
+                    existing_envelope,
+                    expected_repository=_repository_identity(),
+                    expected_base_sha=base,
+                    expected_head_sha=head,
+                    expected_changed_files=changed_files,
+                )
+                if existing_receipt["candidate"]["diff_sha256"] != diff_sha256:
+                    raise MissionAdmissionError("admission_candidate_changed")
+                _compare_current_authority(existing_receipt, authority, contract)
+                receipt = existing_receipt
+                marker = encoded_existing[0]
+            except Exception:
+                receipt = None
+        if receipt is None:
+            receipt = admission_receipt = authority.get("admission", {}).get("signed_receipt")
+            if not isinstance(admission_receipt, dict):
+                raise MissionAdmissionError("receipt_content_mismatch")
+            validate_mission_admission_receipt(
+                admission_receipt, hmac_key,
+                expected_repository=_repository_identity(),
+                expected_base_sha=base, expected_head_sha=head,
+                expected_generation=str(family.get("generation") or ""),
+                expected_mission_id=mission["mission_id"],
+                expected_root_mission_id=authority["root_mission_id"],
+                expected_changed_files=changed_files,
+            )
+            if {
+                key: admission_receipt.get(key)
+                for key in payload
+            } != payload:
+                raise MissionAdmissionError("receipt_content_mismatch")
+            _compare_current_authority(admission_receipt, authority, contract)
+            envelope = {"version": "mission_admission_ci_envelope_v1", "receipt": receipt, "signature_ed25519": base64.b64encode(Ed25519PrivateKey.from_private_bytes(signing_seed).sign(canonical_json(receipt))).decode()}
+            marker = base64.b64encode(canonical_json(envelope)).decode()
+        updated = _replace_receipt_marker(body, marker)
+        if updated != body:
+            _github_pull_request(args.pull_request_number, token, body=updated)
+        if args.event_output:
+            event_path = Path(args.event_output)
+            if event_path.is_symlink() or not event_path.parent.is_dir():
+                raise MissionAdmissionError("issuer_event_output_invalid")
+            event_path.write_text(json.dumps({
+                "number": args.pull_request_number,
+                "repository": {"full_name": _repository_identity()},
+                "pull_request": {
+                    "body": updated,
+                    "base": {"ref": "main", "sha": base},
+                    "head": {"ref": branch, "sha": head},
+                },
+            }, sort_keys=True), encoding="utf-8")
+        print(json.dumps({"success": True, "pr_number": args.pull_request_number, "head_sha": head, "receipt_id": receipt["receipt_id"], "expires_at": receipt["expires_at"]}, sort_keys=True))
+        hmac_key, signing_seed = b"", b""
+        return 0
+    except Exception as exc:
+        print(json.dumps({"success": False, "status": "READMISSION_REQUIRED", "reason_code": _reason(exc)}, sort_keys=True))
+        return 2
+
+
+def trusted_check_main(args, *, environ=None):
+    """Publish the exact check using only protected-base code and an App token."""
+    environ = os.environ if environ is None else environ
+    check_id = None
+    head = ""
+    token = str(environ.get("CHARLIE_ADMISSION_APP_TOKEN") or "")
+    try:
+        event_path = Path(args.event)
+        if event_path.is_symlink() or not event_path.is_file() or not token:
+            raise MissionAdmissionError("trusted_check_runtime_unavailable")
+        event = json.loads(event_path.read_text(encoding="utf-8"))
+        database_url = _protected_database_url(environ)
+        pull = event.get("pull_request") if isinstance(event, dict) else {}
+        repository = event.get("repository") if isinstance(event, dict) else {}
+        base_row = pull.get("base") if isinstance(pull, dict) else {}
+        head_row = pull.get("head") if isinstance(pull, dict) else {}
+        number = event.get("number")
+        base = str((base_row or {}).get("sha") or "")
+        head = str((head_row or {}).get("sha") or "")
+        if (
+            repository.get("full_name") != "Crewless9086/amadeus-pig-tracking-system"
+            or (base_row or {}).get("ref") != "main"
+            or not isinstance(number, int)
+            or number <= 0
+            or not __import__("re").fullmatch(r"[0-9a-f]{40}", base)
+            or not __import__("re").fullmatch(r"[0-9a-f]{40}", head)
+        ):
+            raise MissionAdmissionError("trusted_check_event_invalid")
+        pending = _app_check_request(
+            "POST", token, {
+                "name": "mission-admission",
+                "head_sha": head,
+                "status": "in_progress",
+                "output": {
+                    "title": "Mission Admission verification running",
+                    "summary": f"Verifying exact candidate {head}.",
+                },
+            },
+        )
+        check_id = pending.get("id")
+        if not isinstance(check_id, int):
+            raise MissionAdmissionError("trusted_check_publish_failed")
+        subprocess.run(
+            [
+                "git", "-c", "core.hooksPath=/dev/null",
+                "-c", "protocol.file.allow=never", "fetch", "--no-tags",
+                "--no-recurse-submodules", "origin", head,
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        base = _commit(base)
+        head = _commit(head)
+        changed_files = _changed_files(base, head)
+        patch = _git_bytes(
+            "diff", "--no-ext-diff", "--no-textconv", "--binary",
+            "--full-index", base, head, "--",
+        )
+        diff_sha256 = canonical_candidate_diff(changed_files, patch)
+        matches = __import__("re").findall(
+            r"(?m)^Mission-Admission-Receipt-B64: ([A-Za-z0-9+/]+={0,2})\r?$",
+            str(pull.get("body") or ""),
+        )
+        if len(matches) != 1:
+            raise MissionAdmissionError("exactly_one_external_admission_receipt_required")
+        try:
+            envelope = json.loads(base64.b64decode(matches[0], validate=True))
+        except Exception as exc:
+            raise MissionAdmissionError("external_admission_receipt_invalid") from exc
+        receipt, identity = _validate_external_receipt_envelope(
+            envelope,
+            expected_repository=repository["full_name"],
+            expected_base_sha=base,
+            expected_head_sha=head,
+            expected_changed_files=changed_files,
+        )
+        mission_result, mission_status = get_mission(
+            receipt["mission"]["mission_id"], database_url=database_url
+        )
+        authority, authority_status = read_current_mission_admission_authority(
+            receipt["mission"]["mission_id"], database_url=database_url
+        )
+        if (
+            mission_status >= 400 or not mission_result.get("success")
+            or authority_status >= 400 or not authority.get("success")
+        ):
+            raise MissionAdmissionError("CANONICAL_AUTHORITY_UNAVAILABLE")
+        metadata = mission_result["mission"].get("metadata") or {}
+        contract = metadata.get("mission_admission_contract") or {}
+        family = metadata.get("mission_family") or {}
+        if receipt["mission"]["generation"] != family.get("generation"):
+            raise MissionAdmissionError("mission_generation_changed")
+        _require_canonical_review_linkage(
+            metadata,
+            number,
+            head,
+            str((head_row or {}).get("ref") or ""),
+            diff_sha256,
+            changed_files,
+        )
+        _compare_current_authority(receipt, authority, contract)
+        _verify_governance_reads(receipt, head)
+        if receipt["candidate"]["diff_sha256"] != diff_sha256:
+            raise MissionAdmissionError("admission_candidate_changed")
+        _validate_paths_and_effects(
+            changed_files,
+            identity["allowed_files"],
+            identity["forbidden_files"],
+            "repository_candidate_validation",
+            identity["allowed_effects"],
+            identity["forbidden_effects"],
+        )
+        _app_check_request("PATCH", token, {
+            "status": "completed",
+            "conclusion": "success",
+            "output": {
+                "title": "Mission Admission verified",
+                "summary": (
+                    f"Receipt {identity['receipt_id']} verified for exact head {head}."
+                ),
+            },
+        }, check_id=check_id)
+        print(json.dumps({
+            "success": True, "receipt_id": identity["receipt_id"], "head_sha": head
+        }, sort_keys=True))
+        return 0
+    except Exception as exc:
+        reason = _reason(exc)
+        if check_id is not None:
+            try:
+                _app_check_request("PATCH", token, {
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "output": {
+                        "title": "Mission Admission rejected",
+                        "summary": f"Exact head {head}: {reason}",
+                    },
+                }, check_id=check_id)
+            except Exception:
+                pass
+        print(json.dumps({
+            "success": False, "status": "READMISSION_REQUIRED", "reason_code": reason
+        }, sort_keys=True))
+        return 2
+
+
+def _app_check_request(method, token, payload, *, check_id=None):
+    suffix = f"/{check_id}" if check_id is not None else ""
+    request = url_request.Request(
+        "https://api.github.com/repos/Crewless9086/amadeus-pig-tracking-system/check-runs" + suffix,
+        data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "CHARLIE-Admission-Guard",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method=method,
+    )
+    with url_request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read(131072))
 
 
 def issue_bootstrap_main(
@@ -522,6 +1750,7 @@ def issue_bootstrap_main(
             "collision_snapshot_sha256": authority[
                 "collision_snapshot_sha256"
             ],
+            "signed_receipt": receipt,
         }
         writer = admission_writer or append_mission_admission_event
         written, write_status = writer(
@@ -690,6 +1919,27 @@ def _references_trusted_authority(value, environ=None):
     environ = os.environ if environ is None else environ
     serialized = json.dumps(value, default=str).replace("\\", "/").lower()
     protected = {
+        "/.aws/",
+        "/.config/gh/",
+        "/.ssh/",
+        "/.charlie_runner/",
+        "/.env",
+        "/.git/config",
+        "/.git/credentials",
+        "/.netrc",
+        "/.npmrc",
+        "/.pypirc",
+        ".aws/",
+        ".config/gh/",
+        ".docker/config.json",
+        ".ssh/",
+        ".charlie_runner/",
+        ".env",
+        ".git/config",
+        ".git/credentials",
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
         "validation-receipt.key",
         "mission-admission-receipts",
     }
@@ -697,6 +1947,56 @@ def _references_trusted_authority(value, environ=None):
     if delivered:
         protected.add(str(Path(delivered).resolve()).replace("\\", "/").lower())
     return any(item and item in serialized for item in protected)
+
+
+def _cloud_repository_read_path_safe(path, repo_root=REPO_ROOT):
+    """Allow Cloud file reads only for tracked, non-secret repository files."""
+    raw = str(path or "").strip().replace("\\", "/")
+    if not raw or _references_trusted_authority(raw):
+        return False
+    root = Path(repo_root).resolve()
+    candidate = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+    try:
+        relative = candidate.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    if not relative or candidate.is_symlink():
+        return False
+    completed = subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", "ls-files", "--error-unmatch", "--", relative],
+        cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=3, check=False,
+    )
+    return completed.returncode == 0
+
+
+def _cloud_read_only_shell_safe(command, *, os_name=None):
+    """Narrow managed-VM discovery to Git operations scoped by repository objects."""
+    if not _is_read_only_shell(command, os_name=os_name) or _references_trusted_authority(command):
+        return False
+    try:
+        words = [word.strip("\"'") for word in shlex.split(
+            str(command), posix=(os_name or os.name) != "nt")]
+    except ValueError:
+        return False
+    executable = _executable_name(words[0])
+    normalized = tuple(word.lower() for word in words)
+    if normalized == ("pwd",):
+        return True
+    return normalized in {
+        ("git", "status"),
+        ("git", "status", "--short"),
+        ("git", "status", "--porcelain"),
+        ("git", "diff"),
+        ("git", "diff", "--check"),
+        ("git", "diff", "--stat"),
+        ("git", "diff", "--name-only"),
+        ("git", "diff", "--cached"),
+        ("git", "diff", "--staged"),
+        ("git", "rev-parse", "head"),
+        ("git", "rev-parse", "--show-toplevel"),
+        ("git", "ls-files"),
+    }
 
 
 def _remote_authorization(packet, environ):
@@ -913,7 +2213,10 @@ def _audit_after_file_edit(
 
 
 def _changed_files(base, head):
-    output = _git_text("diff", "--name-only", "--diff-filter=ACMRDTUXB", base, head, "--")
+    output = _git_text(
+        "diff", "--no-ext-diff", "--no-textconv", "--name-only",
+        "--diff-filter=ACMRDTUXB", base, head, "--",
+    )
     return sorted({line.strip().replace("\\", "/") for line in output.splitlines() if line.strip()})
 
 

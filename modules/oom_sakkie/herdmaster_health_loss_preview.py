@@ -55,6 +55,8 @@ def prepare_health_loss_owner_preview(
     }
     if not all(report.values()):
         return _failure("authenticated_envelope_incomplete")
+    if envelope.get("report_parts"):
+        report["report_parts"] = envelope["report_parts"]
     try:
         evaluated = evaluate_health_loss_intake(report, canonical_evidence)
     except IntakeEvidenceError as exc:
@@ -115,6 +117,8 @@ def _render_preview(value, report):
         (f"Aangemeld: {value['provider_report_time']}" if af else f"Reported: {value['provider_report_time']}"),
         ("Wat aangeteken sal word:" if af else "What will be recorded:"),
         *facts,
+        ("Jou verslag: " if af else "Your report: ") + html.escape(" | ".join(
+            str(row.get("display_text", row.get("text")) or "") for row in report.get("report_parts") or [{"text": report["text"]}])),
         _treatment_line(value["owner_report_text"], language="af" if af else "en"),
         ("Oorsaak en presiese tyd bly Onbekend tensy dit aangemeld is." if af else
          "Cause and exact time remain Unknown unless reported."),
@@ -157,6 +161,12 @@ def _localize_question(question, language):
     question = re.sub(r"\s+\(PIG-[^)]+\)", "", question)
     if not question or language != "af":
         return question
+    question = re.sub(r"^On which date did (.+?) die or get found dead\?$",
+                      r"Op watter datum is \1 dood of dood gevind?", question)
+    question = question.replace("The canonical chronology conflicts with this report; which event date or cycle is correct?",
+        "Die bestaande tydlyn bots met hierdie verslag; watter gebeurtenisdatum of siklus is korrek?")
+    question = re.sub(r"^What exactly did you observe about (.+?)\?$",
+                      r"Wat presies het jy by \1 waargeneem?", question)
     question = re.sub(r"^Has (.+?) been removed from the pen; if yes, when and what was the disposal/removal outcome\?$",
                       r"Is \1 uit die hok verwyder; indien wel, wanneer en wat was die verwydering/wegdoening?", question)
     question = question.replace("Can ", "Kan ").replace(" able to stand, breathe normally and drink water?", " staan, normaal asemhaal en water drink?")

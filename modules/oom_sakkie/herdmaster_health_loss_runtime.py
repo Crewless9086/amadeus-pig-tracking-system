@@ -13,6 +13,7 @@ import html
 import json
 import os
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
@@ -35,7 +36,7 @@ CONTEXT_WINDOW = timedelta(hours=24)
 HEALTH_PATTERN = re.compile(
     r"\b(?:pig|tag|vark)\s*[a-z0-9-]+\b.*\b(?:"
     r"not eating|won't eat|wont eat|laying down|lying down|acting weird|"
-    r"sick|ill|injured|limping|bleeding|dead|died|farrowing|stillborn|"
+    r"sick|ill|injured|limping|bleeding|dead|died|passed away|farrowing|stillborn|"
     r"infection|vomit|diarrh|cough|breath|cannot stand|can't stand|"
     r"dood|gesterf|siek|beseer|eet nie|mank|bloei"
     r")\b|\b(?:sick|injured|dead|died|farrowing|stillborn|dood|gesterf|siek|beseer)\b",
@@ -44,19 +45,20 @@ HEALTH_PATTERN = re.compile(
 FOLLOW_UP_PATTERN = re.compile(
     r"\b(?:cannot|can't|cant|yes|no|seen alive|last seen|stand|standing|breathe|breathing|"
     r"drink|drinking|water|bleed|bleeding|distress|responsive|unresponsive|"
-    r"removed|buried|disposed|cremated|body|verwyder|begrawe|weggegooi|liggaam)\b",
+    r"removed|buried|disposed|cremated|body|verwyder|begrawe|weggegooi|liggaam|"
+    r"today|yesterday|vandag|gister|eergister|20\d{2}-\d{2}-\d{2})\b",
     re.I,
 )
 UNRELATED_OPERATIONAL_PATTERN = re.compile(
     r"\b(?:reservoir|storage tanks?|borehole|irrigation|valves?|b camp|c camp|"
-    r"solar|soc|grid|inverter|power|fertili[sz]er)\b", re.I,
+    r"solar|soc|grid|inverter|power|fertili[sz]er|attention|aandag|brief|plan)\b", re.I,
 )
 ENTITY_PATTERN = re.compile(
     r"\b(?:pig|tag|vark)\b(?:\s+(?:nr|no|number|nommer))?\s*#?\s*([a-z0-9-]+)\b", re.I)
 CONFIRMATION_PATTERN = re.compile(r"^CONFIRM HERD-[A-Z0-9-]+$")
 CORRECTION_PATTERN = re.compile(
     r"\b(?:correction|incorrect|wrong|must be|should be|mark(?:ed)? as|"
-    r"no longer|exact time .{0,24}unknown|do not record this yet|don't record this yet)\b",
+    r"no longer|korreksie|verkeerd|dit was|rather|actually|exact time .{0,24}unknown|do not record this yet|don't record this yet)\b",
     re.I,
 )
 DECLINE_PATTERN = re.compile(r"^(?:cancel|decline|stop|do not record|don't record)[.! ]*$", re.I)
@@ -64,6 +66,51 @@ DECLINE_PATTERN = re.compile(r"^(?:cancel|decline|stop|do not record|don't recor
 
 class ActiveContextLoadError(RuntimeError):
     pass
+
+
+def handle_application_mortality(pig_id, payload, identity, *, resume=False):
+    """Adapt the authenticated form to the same retained intake and transaction."""
+    from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+    actor = identity["actor_id"]
+    contexts = _load_active_contexts(actor, owner_user_id=actor)
+    matching = [row for row in contexts if
+        str(((row.get("preview") or {}).get("evaluator") or {}).get("identity", {}).get("pig_id") or "") == pig_id]
+    if resume:
+        active = next((row for row in matching if row.get("status") in {
+            "preview_ready", "waiting_for_input", "waiting_for_confirmation"}), None)
+        return ({"success": True, "status": "no_pending_preview"} if not active else
+            _existing_lifecycle_result(active)), 200
+    phase = payload.get("phase")
+    if phase not in {"preview", "confirm"}:
+        return {"success": False, "status": "exact_preview_confirmation_required"}, 409
+    if phase == "confirm":
+        operation = str(payload.get("operation_id") or "")
+        active = next((row for row in matching if row.get("operation_id") == operation), None)
+        if not active:
+            return {"success": False, "status": "mortality_preview_actor_or_animal_mismatch"}, 409
+        text = "CONFIRM " + operation
+    else:
+        if str(payload.get("reason") or "Died") != "Died":
+            return {"success": False, "status": "mortality_death_reason_required"}, 409
+        day = str(payload.get("event_date") or "").strip()
+        if not re.fullmatch(r"20\d{2}-\d{2}-\d{2}", day):
+            return {"success": False, "status": "mortality_event_date_required"}, 400
+        text = f"Pig {pig_id} died on {day}. " + str(payload.get("notes") or "")[:3000]
+        if any(row.get("status") in {"preview_ready", "waiting_for_input", "waiting_for_confirmation"} for row in matching):
+            text = "Correction: " + text
+    authority = issue_gateway_owner_authority(actor, actor,
+        principal_role=identity["role"], capabilities=identity["capabilities"])
+    result, status = handle_authenticated_health_loss_message({
+        "telegram_user_id": actor, "telegram_chat_id": actor, "telegram_chat_type": "private",
+        "provider_message_id": "application-" + uuid.uuid4().hex,
+        "provider_timestamp": datetime.now(timezone.utc).isoformat(),
+        "source_channel": "application", "output_language": identity["language"],
+        "application_form": {"event_date": payload.get("event_date"), "notes": str(payload.get("notes") or "")[:3000]} if phase == "preview" else {},
+        "text": text}, authority)
+    # Button transport is channel-specific; the retained preview and operation
+    # identity are shared. A browser never dispatches a Telegram callback.
+    return {key: value for key, value in result.items()
+            if key not in {"reply_markup", "callback_token"}}, status
 
 
 def handle_authenticated_health_loss_message(
@@ -266,10 +313,8 @@ def handle_authenticated_health_loss_message(
         answer = _health_loss_message(output_language,
             "observation_recorded" if recorded.get("success") else "recording_contained")
         if recorded.get("success") and str(recorded.get("status") or "").startswith("mortality_lifecycle_"):
-            answer = ("✅ <b>PIG LIFECYCLE UPDATED</b>\n\n"
-                      "The confirmed outcome was recorded once: the pig is Deceased and no longer current/on farm. "
-                      "The current pen and availability projections will exclude the pig. Historical records remain preserved. "
-                       "Exact time of death, cause, diagnosis and treatment remain Unknown.")
+            identity = ((active.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
+            recorded = {**recorded, "pig_name": identity.get("name"), "tag_number": identity.get("tag_number")}
             answer = _mortality_completion_message(
                 recorded, str(active.get("output_language") or "en"))
         lifecycle = {**dict(active), "provider_message_id": provider_message_id,
@@ -292,7 +337,10 @@ def handle_authenticated_health_loss_message(
             "card_mission_id": mission_id, "records_audit_trace": True,
             "writes_farm_data": bool(recorded.get("writes_farm_data")),
             "rows_created": int(recorded.get("rows_created") or 0),
-            "protected_actions_performed": bool(recorded.get("writes_farm_data"))}, recorded_status
+            "protected_actions_performed": bool(recorded.get("writes_farm_data")),
+            "event_date": recorded.get("event_date"), "pig_id": recorded.get("pig_id"),
+            "lifecycle_event_id": recorded.get("lifecycle_event_id"),
+            "canonical_readback": recorded.get("canonical_readback") or {}}, recorded_status
 
     active_for_message = active if follow_up else None
     owner_intent = _classify_preview_owner_intent(text, active_for_message)
@@ -362,6 +410,14 @@ def handle_authenticated_health_loss_message(
                    and semantic_observation else "")
     current_text = (text + interpreted).strip()
     combined_text = f"{context_text} {joiner} {current_text}".strip() if context_text else current_text
+    report_parts = list((active_for_message or {}).get("report_parts") or [])
+    if context_text and not report_parts:
+        report_parts.append({"text": str((active_for_message or {}).get("owner_text_verbatim") or context_text),
+            "provider_timestamp": str((active_for_message or {}).get("evidence_provider_timestamp")
+                                      or (active_for_message or {}).get("provider_timestamp") or "")})
+    report_parts.append({"text": text, "provider_timestamp": evidence_provider_timestamp})
+    if parsed.get("application_form"):
+        report_parts[-1]["display_text"] = str(parsed["application_form"].get("notes") or "")
     evidence = load_canonical_health_loss_evidence(connect_factory=connect_factory)
     envelope = {
         "gateway_authority": gateway_authority,
@@ -370,6 +426,7 @@ def handle_authenticated_health_loss_message(
         "provider_timezone": "Africa/Johannesburg",
         "output_language": output_language,
         "text": combined_text,
+        "report_parts": report_parts,
     }
     preview = prepare_health_loss_owner_preview(envelope, evidence)
     owner_text = _owner_message(preview)
@@ -384,11 +441,14 @@ def handle_authenticated_health_loss_message(
         "evidence_provider_message_id": evidence_provider_message_id,
         "evidence_provider_timestamp": evidence_provider_timestamp,
         "combined_text": combined_text,
+        "report_parts": report_parts,
+        "source_channel": str(parsed.get("source_channel") or "telegram"),
+        "application_form": dict(parsed.get("application_form") or {}),
         "owner_text_verbatim": text,
         "semantic_interpretation": dict(semantic) if semantic else {},
         "status": "waiting_for_input" if int(preview.get("question_count") or 0) else "preview_ready",
         "operation_id": str((preview.get("confirmation_binding") or {}).get("operation_id") or ""),
-        "evidence_generation": str(evidence.get("evidence_generation") or ""),
+        "evidence_generation": str((preview.get("confirmation_binding") or {}).get("evidence_generation") or evidence.get("evidence_generation") or ""),
         "owner_text": owner_text,
         "output_language": output_language,
         "preview": preview,
@@ -447,6 +507,7 @@ def handle_authenticated_health_loss_message(
         "tool_used": "herdmaster_health_loss_preview",
         "question_count": int(preview.get("question_count") or 0),
         "operation_id": lifecycle["operation_id"],
+        "application_form": lifecycle["application_form"],
         "owner_intent": owner_intent,
         "invalidated_operation_ids": lifecycle["invalidated_operation_ids"],
         "mission_id": mission_id,
@@ -536,7 +597,7 @@ def _mortality_completion_message(recorded: Mapping[str, Any], language: str) ->
             lines.append("Die verwante lewende-welsynsaak is met afsterwe as rede gesluit.")
         if recorded.get("living_checks_reconciled"):
             lines.append("Toekomstige lewende-dier kontroles wat nie meer geldig is nie, is afgesluit.")
-        lines.append("Oorsaak en presiese tyd bly Onbekend.")
+        lines.append("Geen diagnose of presiese tyd is afgelei nie.")
         if int(recorded.get("preserved_distinct_work") or 0):
             lines.append("Afsonderlike wegdoenings- of biosekuriteitswerk bly sigbaar omdat dit nog oop is.")
     else:
@@ -546,9 +607,11 @@ def _mortality_completion_message(recorded: Mapping[str, Any], language: str) ->
             lines.append("The related living-welfare case was closed with death as the reason.")
         if recorded.get("living_checks_reconciled"):
             lines.append("Future living-animal checks that no longer apply were closed.")
-        lines.append("Cause and exact time remain Unknown.")
+        lines.append("No diagnosis or exact time has been inferred.")
         if int(recorded.get("preserved_distinct_work") or 0):
             lines.append("Separate disposal or biosecurity work stays visible because it is still open.")
+    if recorded.get("event_date"):
+        lines.append(("Afsterwedatum: " if af else "Death date: ") + html.escape(str(recorded["event_date"])))
     return "\n".join(lines)
 
 
@@ -578,6 +641,7 @@ def _existing_lifecycle_result(active: Mapping[str, Any]) -> dict:
         "tool_used": "herdmaster_health_loss_preview",
         "question_count": int(preview.get("question_count") or 0),
         "operation_id": str(active.get("operation_id") or ""),
+        "application_form": dict(active.get("application_form") or {}),
         "mission_id": str(active.get("mission_id") or ""),
         "card_mission_id": str(active.get("mission_id") or ""),
         "owner_intent": str(active.get("owner_intent") or "adds_evidence"),
@@ -613,8 +677,16 @@ def load_canonical_health_loss_evidence(*, connect_factory=None):
         "farrowing_date": str(row.get("Farrowing_Date") or ""),
     } for row in get_litter_register_rows(connect_factory=connect_factory)]
     material = json.dumps({"animals": animals, "matings": matings, "litters": litters}, sort_keys=True, separators=(",", ":"))
+    animal_generations = {}
+    for animal in animals:
+        pig_id = animal["pig_id"]
+        relevant = {"animal": animal,
+            "matings": sorted((row for row in matings if pig_id in {row["sow_pig_id"], row["boar_pig_id"]}), key=lambda row: row["mating_id"]),
+            "litters": sorted((row for row in litters if row["sow_pig_id"] == pig_id), key=lambda row: row["litter_id"])}
+        animal_generations[pig_id] = hashlib.sha256(json.dumps(relevant,sort_keys=True,separators=(",", ":")).encode()).hexdigest()
     return {
         "evidence_generation": hashlib.sha256(material.encode()).hexdigest(),
+        "animal_evidence_generations": animal_generations,
         "as_of_timestamp": datetime.now(timezone.utc).isoformat(),
         "animals": animals,
         "matings": matings,
@@ -872,7 +944,8 @@ def _resolve_active_context(text, contexts, provider_message_id="", *,
                         "_pending_claimed": str(pending.get("status") or "") == "waiting_for_context_consumption"}, False, []
         if len(pending_matches) > 1:
             return None, pending_matches, []
-        matches = [row for row in contexts if _context_tag(row) == tag
+        matches = [row for row in contexts if tag in {_context_tag(row), str(
+            (((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}).get("pig_id") or "").casefold()}
                    and str(row.get("status") or "") in {"waiting_for_input", "preview_ready",
                                                           "waiting_for_confirmation", "preview_correction_pending"}]
         if len(matches) == 1:

@@ -8,6 +8,8 @@ from modules.auth.owner_access import (
     require_owner_read_access,
     owner_admin_principal,
     strict_owner_admin_principal,
+    mortality_session_identity,
+    require_mortality_session,
 )
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
@@ -287,13 +289,29 @@ def pig_profile(pig_id):
     return jsonify(result), status_code
 
 
-@pig_weights_bp.route("/pig/<pig_id>/lifecycle/death", methods=["POST"])
+@pig_weights_bp.route("/pig/<pig_id>/lifecycle/death", methods=["GET", "POST"])
 def pig_lifecycle_death(pig_id):
-    denied = require_owner_admin_access()
+    payload = request.get_json(silent=True) or {}
+    # Preserve the existing non-mortality removal journey under its admin guard.
+    if request.method == "POST" and payload.get("reason") in {"Culled", "Lost", "Removed", "Other"}:
+        denied = require_owner_admin_access()
+        if denied:
+            return denied
+        payload = {**payload, "changed_by": owner_admin_principal()}
+        result, status_code = mark_pig_lifecycle_death(pig_id, payload)
+        return jsonify(result), status_code
+    identity = mortality_session_identity()
+    if not identity:
+        return jsonify(success=False, status="authenticated_mortality_permission_required"), 403
+    denied = require_mortality_session() if request.method == "POST" else None
     if denied:
         return denied
-    payload = request.get_json(silent=True) or {}
-    result, status_code = mark_pig_lifecycle_death(pig_id, payload)
+    from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_application_mortality
+    try:
+        result, status_code = handle_application_mortality(pig_id, payload, identity,
+            resume=request.method == "GET")
+    except Exception:
+        return jsonify(success=False, status="mortality_service_unavailable"), 503
     return jsonify(result), status_code
 
 

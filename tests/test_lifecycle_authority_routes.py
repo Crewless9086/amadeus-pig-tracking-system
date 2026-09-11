@@ -16,11 +16,6 @@ class LifecycleAuthorityRouteTests(unittest.TestCase):
         routes = [
             (
                 pig_weights_routes,
-                "/api/pig-weights/pig/PIG-1/lifecycle/death",
-                "mark_pig_lifecycle_death",
-            ),
-            (
-                pig_weights_routes,
                 "/api/pig-weights/litter/LITTER-1/piglet-deaths",
                 "mark_litter_profile_piglets_dead",
             ),
