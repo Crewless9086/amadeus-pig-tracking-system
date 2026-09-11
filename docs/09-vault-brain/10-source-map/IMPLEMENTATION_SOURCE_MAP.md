@@ -357,8 +357,9 @@
   `modules/oom_sakkie/family_access.py`, `telegram_gateway.py` and
   `protected_action_claims.py`. The family principal is canonical; no
   Telegram-specific preference store or second callback rail exists.
-- Current locally qualified mortality parity candidate (release status is in
-  the mission register): application `/api/pig-weights/pig/<pig_id>/lifecycle/death`
+- Mortality parity released through PR1332 (exact deployment and pending
+  genuine acceptance are in the mission register): application
+  `/api/pig-weights/pig/<pig_id>/lifecycle/death`
   adapts through `handle_application_mortality` in the existing health/loss
   runtime to its retained preview and canonical confirmed writer. Gateway and
   direct webhook reuse that same runtime and effective family capabilities.

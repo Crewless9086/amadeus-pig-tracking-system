@@ -10,6 +10,14 @@ to its visible acknowledged terminal without waiting for mortality acceptance;
 first treatment follows. Scheduler correction remains with OMQ/PR1309 and its
 separate production boundary. CHARLIE commissioning remains held.
 
+Reconciled the documented husbandry lineage to existing canonical parent
+OMQ-20260813-03 using an appended continuation event, preserving its separate
+morning-containment child and PR1309. Recorded actual isolated weaning failures
+and the active repair, with any capability/migration release still unapproved.
+Fresh passive readback found no new Anton mortality acceptance and repeated
+manager deadline failures; updated the existing mortality workflow/source map
+to distinguish the verified source deployment from pending genuine use.
+
 ## 2026-09-10 - Approved mortality release continuation
 
 Recorded Charl's exact approval of mortality candidate

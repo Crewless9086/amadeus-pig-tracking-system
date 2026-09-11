@@ -48,10 +48,33 @@ source writer and no live weaning authority. Its artifacts and full handover
 are under `C:/tmp/amadeus-weaning-20260911/`.
 
 HERDMASTER-CONTINUOUS-HUSBANDRY is the existing documented PR570/PR1291 lineage;
-fresh read found no canonical row under that exact label. Control Tower is
-reconciling the existing parent without creating a duplicate queue, while safe
-local reproduction continues. PR570's old source claim is released and its
-clean worktree preserved; PR1291 is merged. First treatment remains next.
+fresh read found no canonical row under that exact label. The canonical parent
+is existing `OMQ-20260813-03` (Oom Sakkie continuous farm manager, in_progress).
+Control Tower appended the authorized weaning -> first-treatment continuation
+through the existing mission-control API as event
+`CORE-MISSION-CONTROL-ACAF81E71CE7A846BD88CCD6`; no new mission or queue was
+created. Separate `OMQ-20260813-03-MORNING-CONTAINMENT` and PR1309 retain scheduler
+ownership. PR570's old source claim is released and its clean worktree preserved;
+PR1291 is merged. First treatment remains next.
+
+The weaning worker reproduced failures on unchanged deployed source using a
+separate real PostgreSQL test database: unsupplied weight/sex facts block basic
+weaning; future dates pass preview; removing a piglet after preview changes the
+cohort that an old confirmation commits; the legacy mark-weaned route bypasses
+confirmation/identity; a partial atomic packet marks the whole litter Weaned;
+the farm-manager app session is denied; both actual Telegram ingress adapters
+drop the simulated typed weaning request into generic clarification. These are
+local synthetic-record results, not live farm effects. One source writer is
+repairing the shared operation with explicit delegated scope and retained
+cohort evidence. Any new permission or constraint migration belongs in the
+future concrete release package and has no production approval here.
+
+Passive observation at `04:55:36Z` still verified deployed `00d1bfa9` and found
+no Anton mortality claim or matching event since deployment. Today's manager
+cycles at 04:30, 04:35 and 04:40 UTC again failed, each with five deadline
+deferrals, 313 candidate replays and zero confirmed deliveries. Their next
+04:45 cycle is overdue. Daily-manager reliability remains degraded independently
+of the mortality source release; current cron/web diagnosis stays with OMQ.
 
 OMQ/PR1309 keeps scheduler ownership. Its two-file containment was reproduced
 offline and 13 focused tests passed; underlying morning503 and earlier manager
@@ -65,7 +88,10 @@ Evidence: `C:/tmp/amadeus-herd-ops-20260910/MORTALITY_DEPLOYMENT.json`,
 `ANTON_MENU_BEFORE.json`, `ANTON_MENU_COMMISSIONED.json`,
 `MORTALITY_CANONICAL_DISPOSITION.json`, `PR1332_REQUIRED_CHECKS.json`,
 `MERGE_REQUIRED_CI.json`, `N8N_TELEGRAM_TRANSPORT_AUDIT.json` and
-`SCHEDULER_REPAIR_PREPARATION.md`. ACTION REQUIRED NOW: NONE.
+`SCHEDULER_REPAIR_PREPARATION.md`, `POST_RELEASE_OBSERVATION.json`, and
+`C:/tmp/amadeus-weaning-20260911/CANONICAL_HUSBANDRY_ADDENDUM.json`,
+`runtime/before-failing-layer-evidence.json`, `CONTROL_TOWER_INPUT.md`.
+ACTION REQUIRED NOW: NONE.
 
 ## 2026-09-10 - Owner priority: everyday herd operations under Control Tower
 

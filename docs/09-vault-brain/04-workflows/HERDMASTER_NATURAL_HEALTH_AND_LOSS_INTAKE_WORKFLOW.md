@@ -251,6 +251,17 @@ provider confirmation and canonical readback remain separate evidence gates.
 
 ### Production status
 
+The subsequent mortality parity repair was deployed through PR1332 on
+2026-09-11 and verified as `00d1bfa93e7abfad64f50cb828e4b03cf77e23e3`, including
+the served application client. Anton's existing private menu was snapshotted,
+changed to Plaas and read back. This supplements ordinary Afrikaans Telegram
+conversation. Genuine Anton authentication, a genuine current report and
+confirmation, delivered result and matching application/backend readback remain
+pending; passive observation found no new matching event. No historical report
+was replayed for acceptance. See the current mission register and its retained
+deployment/menu receipts for exact evidence. Local source qualification and
+menu configuration do not establish this complete live outcome.
+
 Production activation and canonical mortality acceptance were proven on
 2026-08-24 by one actor-bound provider interaction: the transaction recorded
 the lifecycle and welfare closure exactly once and canonical readback proved
