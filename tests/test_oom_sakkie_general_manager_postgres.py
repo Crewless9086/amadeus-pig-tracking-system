@@ -412,6 +412,52 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertTrue(all(state.rows[key] == value for key, value in old_daily.items()))
         self.assertFalse(any('RETRY' in identity for identity in family))
 
+    def test_delayed_owner_answer_rebuilds_current_day_without_reopening_old_day(self):
+        from modules.oom_sakkie import morning_runtime as morning
+        from modules.oom_sakkie import daily_farm_manager as daily
+        from tests.test_oom_sakkie_daily_farm_manager import store
+        from tests.test_oom_sakkie_morning_runtime import _two_manager_env, _specialist
+        state, loaded_dates, sends = store(), [], []
+        parsed = {'telegram_user_id': '77', 'telegram_chat_id': '77',
+            'telegram_chat_type': 'private', 'provider_message_id': 'old-answer',
+            'provider_timestamp': '2026-08-10T05:00:00+00:00', 'text': 'Recorded answer'}
+        original_parsed = dict(parsed)
+        historical = {'daily_identity': 'OOM-DAILY-FARM-MANAGER-2026-08-10',
+            'status': 'provider_ambiguous', 'delivery_definitely_not_sent': False}
+        state.rows['historical-ambiguous-outcome'] = dict(historical)
+        def daily_store(action, identity, payload):
+            if action == 'load_daily':
+                loaded_dates.append(identity)
+                if identity == historical['daily_identity']:
+                    self.fail('delayed answer reopened historical daily identity')
+            return state(action, identity, payload)
+        current_time = [datetime(2026, 8, 11, 2, 0, tzinfo=timezone.utc)]
+        class ProcessingClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current_time[0]
+        kwargs = dict(environ=_two_manager_env(), store=daily_store,
+            herd_loader=lambda: _specialist('herdmaster'),
+            rootline_loader=lambda: _specialist('rootline'),
+            litter_loader=lambda: {'allocation_inputs': {'litter_rows': []}},
+            sales_loader=lambda: ({'success': True, 'sales_transactions': []}, 200),
+            deliver=lambda *args, **kw: sends.append(kw['mission_id']) or {
+                'success': True, 'telegram_message_id': 'current-day-card', 'telegram_sends': 1})
+        with patch.object(morning, 'datetime', ProcessingClock), patch.object(daily, 'daily_farm_manager_store', daily_store):
+            before_due = morning.reassess_current_brief_after_owner_answer(parsed, **kwargs)
+            self.assertEqual(before_due['status'], 'daily_manager_not_due')
+            self.assertEqual(sends, [])
+            current_time[0] = datetime(2026, 8, 11, 5, 0, tzinfo=timezone.utc)
+            current = morning.reassess_current_brief_after_owner_answer(parsed, **kwargs)
+            repeated = morning.reassess_current_brief_after_owner_answer(parsed, **kwargs)
+        self.assertEqual(current['status'], 'daily_manager_presented')
+        self.assertEqual(repeated['status'], 'daily_manager_unchanged_silent')
+        self.assertEqual(len(sends), 1)
+        self.assertTrue(sends[0].startswith('OOM-DAILY-FARM-MANAGER-2026-08-11:'))
+        self.assertEqual(set(loaded_dates), {'OOM-DAILY-FARM-MANAGER-2026-08-11'})
+        self.assertEqual(parsed, original_parsed)
+        self.assertEqual(state.rows['historical-ambiguous-outcome'], historical)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def exact_migration():

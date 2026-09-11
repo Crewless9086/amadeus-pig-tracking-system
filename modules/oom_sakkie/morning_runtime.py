@@ -84,7 +84,10 @@ def reassess_current_brief_after_owner_answer(parsed, *, environ=None, deliver=N
     source = environ if environ is not None else os.environ
     owner = str(parsed.get("telegram_user_id") or "").strip()
     chat = str(parsed.get("telegram_chat_id") or "").strip()
-    now = _aware(_provider_time(parsed.get("provider_timestamp")))
+    # The durable answer retains its original provider timestamp. Rebuild the
+    # current projection at processing time: a delayed answer must not reopen
+    # a prior date's ambiguous daily delivery identity.
+    now = _aware(datetime.now(timezone.utc))
     principal = next((row for row in _configured_recipients(source)
                       if row.telegram_user_id == owner and row.private_chat_id == chat), None)
     if principal is None:
