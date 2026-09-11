@@ -522,7 +522,7 @@ physical irrigation effects require separate verification.
 
 | Terminal | Current Control Tower classification | Next trigger |
 |---|---|---|
-| HERDMASTER | DEPENDENCY IDLE: source workera0865257 exited0 at18:33:56Z, absent from18:35 process census; source and visual qualification accepted | Supported migration-owner resolution and both schema prerequisites qualified, then exact release/scoped weaning approval; daily plan remains subsequent |
+| HERDMASTER | DEPENDENCY IDLE: candidatea0865257 accepted; worker41656 exited0 at18:33:56Z and is absent from18:35 process census | Supported migration-owner resolution and both schema prerequisites qualified, then exact release/scoped weaning approval; daily plan remains subsequent |
 | OOM SAKKIE | DEPENDENCY IDLE for the qualified herd source release; deployed daily manager remains degraded | Same release dependency; existing OMQ/PR1309 owner retains separate scheduler correction and genuine follow-up gates |
 | CORE / CHARLIE | DEPENDENCY IDLE; commissioning held; same-owner isolated support turn stopped by automated rejection before work | Supported external-check resolution before reassessing the existing owner; separate commissioning authority remains held |
 | ROOTLINE | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Herd sequence or separately proved incident; verify ownership before dispatch |
