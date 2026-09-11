@@ -2,7 +2,56 @@
 
 Status: Active owner-facing dispatch authority
 
-## 2026-09-11 - Mortality deployed; weaning source continuation active
+## 2026-09-11 - Mortality deployed; weaning reviewed; first treatment active
+
+### Current source disposition and first-treatment dispatch
+
+Corrected weaning candidate `eeb9dc4a1910bc64fc6e954c8a0108b8b93e5bb1`,
+tree `91be84cde701cec130d32f8501e3e5a5f70b2b3b`, is locally qualified and
+independently reviewed. Both returned findings are resolved. The correction
+contains four production files and two tests; the provisional withdrawal
+changes were archived and excluded. Worker qualification passed111 PostgreSQL
+and183 shared tests. Control Tower verified all29 source/298 artifact hashes,
+then independently passed59 real PostgreSQL ingress/review tests in its own
+database; the separate reviewer passed30 source-function probes. The earlier
+75 independent DB passes and inspected browser evidence remain valid for the
+unchanged original scope. No browser behavior changed in the correction.
+
+The worker ended successfully at `11:11:44Z`; source ownership is released
+and its clean worktree, original117-artifact archive, separate scope-correction
+archive and REVIEW2 handover/manifest remain preserved. Its exact source
+disposition is **SOURCE_QUALIFIED / RELEASE_DEPENDENCY_PENDING**. No weaning
+deployment, migration, live delegation or business acceptance is approved or
+claimed. The next-day follow-up remains explicitly unscheduled retained intent.
+
+Control Tower reproduced a concrete release dependency: the new weaning
+constraint is absent from the closed migration-runner allowlist, and both
+predecessor action-constraint readbacks reject its17-action target. Existing
+CMQ DB-RELEASE-RAIL-01 sole ownership includes1418 inserted/48 removed lines of
+qualified uncommitted runner/test work. That candidate and CHARLIE hold remain
+untouched. `WEANING_RELEASE_DEPENDENCY_HANDOFF.md` identifies the exact SQL/hash,
+current/held source hashes, preserved ownership and required coordinated
+compatibility work. Do not apply production SQL through an alternate path or
+incidentally include CHARLIE privileges in a herd-operation release.
+
+At `15:42:13Z`, Control Tower directly launched visible
+**HERDMASTER / OOM SAKKIE FIRST TREATMENT**, launcher39756 / worker11132,
+worktree `C:/tmp/herdmaster-daily-first-treatment-20260911`, branch
+`fix/herdmaster-daily-first-treatment-20260911`, from the exact reviewed weaning
+candidate above. Fresh origin/main remained the deployed mortality revision.
+Prompt SHA256 `8d0fb5fe1ecd6d4b70b2bc3907b5f9e74424b6dacc7ce0735201334429d11e9d`;
+ACKNOWLEDGED.md at15:44:51Z and PROGRESS.md at15:44:59Z prove receipt and current
+source tracing. The original canonical parent/addendum governs this serialized
+continuation; no new queue was created. Artifacts are under
+`C:/tmp/amadeus-first-treatment-20260911/`. Only local source/isolated tests and
+the concrete release proposal are authorized. Charl has no prompt to relay.
+
+Control Tower review evidence:
+`C:/tmp/amadeus-weaning-20260911/WEANING_HANDOVER_REVIEW2.md`,
+`MANIFEST_REVIEW2.json`, `INDEPENDENT_REVIEW2_AUTH_REPLAY.md`, and
+the original workspace `.tmp/control-tower-weaning-review2/CONTROL_TOWER_VERIFICATION_REVIEW2.json`.
+The below initial review-return record is superseded by this corrected source
+disposition and remains retained as history.
 
 ### Current weaning review return - 10:39 UTC
 
@@ -333,13 +382,13 @@ physical irrigation effects require separate verification.
 
 | Terminal | Current Control Tower classification | Next trigger |
 |---|---|---|
-| HERDMASTER | ACTIVE - DO NOT INTERRUPT: weaning worker33280, fresh source edits and real ingress test logs; mortality worker released-retain | Freeze and independently review weaning, then directly dispatch prepared first-treatment continuation |
-| OOM SAKKIE | ACTIVE: shared weaning scope in the same visible terminal; separate bounded read-only Sep11 scheduler diagnosis under OMQ, no second source writer | Review weaning and finish precise existing scheduler diagnostic evidence; production correction separate |
+| HERDMASTER | ACTIVE - DO NOT INTERRUPT: first-treatment worker11132, fresh acknowledgment/governance/source-trace evidence; weaning eeb9dc4a and mortality workers released-retain | Reproduce, repair and independently review the first-treatment source candidate; release dependencies remain explicit |
+| OOM SAKKIE | ACTIVE: first-treatment conversation/app scope in the same visible terminal; Sep11 scheduler diagnosis complete under existing OMQ ownership | Review first treatment; coordinate the existing migration/scheduler owners separately without new production effects |
 | CORE / CHARLIE | Separate owner-directed hold retained; no activation dispatched | Explicit resolution/authorization for its held commissioning mission |
 | ROOTLINE | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Herd sequence or separately proved incident; verify ownership before dispatch |
 | SAM Livestock / SAM Meat | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered sales outcome becomes selected; verify ownership first |
 | BEACON | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered marketing outcome becomes selected; verify ownership first |
-| CODEX UI | Shared litter presentation belongs to the active weaning writer; no separate UI writer dispatched; old dirty matings work preserved | Complete weaning browser review, then treatment UI within its single source lane |
+| CODEX UI | Shared litter presentation belongs to the first-treatment source writer; no separate UI writer; weaning browser review retained and old dirty matings work preserved | Complete treatment browser/app review within its single source lane |
 | DOCUMENTS / GREEN / STORYWORKS | No new implementation dispatched; fresh terminal state Unknown | Existing registered outcome selected after current priority and ownership checks |
 
 No other open process is treated as active specialist work without mission-bound

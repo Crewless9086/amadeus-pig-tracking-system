@@ -529,6 +529,17 @@
   `tests/test_litter_weaning_atomic_postgres.py`. Browser identity/readback gates:
   `tests/dashboard_litter_attention_browser.spec.js` and
   `tests/litter_weaning_day_browser.spec.js`.
+- September11 local weaning successor `eeb9dc4a1910bc64fc6e954c8a0108b8b93e5bb1`
+  is independently reviewed, not deployed. `herdmaster_litter_weaning_runtime.py`
+  connects retained typed conversation to the shared exact-cohort preview and
+  atomic writer; `owner_access.py` adds explicit delegated weaning/CSRF access.
+  `test_litter_weaning_journey_postgres.py`, `test_litter_weaning_ingress_postgres.py`
+  and `test_litter_weaning_review_postgres.py` cover actual services, retained
+  consent chronology, one receipt and completion-card recovery. The new action
+  constraint still needs coordinated closed-migration-runner integration and
+  separate production approval. Follow-up is retained unscheduled intent.
+  First-treatment source continuation uses the same existing canonical parent
+  OMQ-20260813-03 and begins from this reviewed source, preserving mortality.
 
 ## Rootline owner daily brief
 

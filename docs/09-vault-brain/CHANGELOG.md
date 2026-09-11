@@ -2,6 +2,13 @@
 
 ## 2026-09-11 - Mortality deployed and private menu commissioned
 
+Accepted exact corrected weaning eeb9dc4a after59 independent PostgreSQL tests,
+30 independent review probes and29 source/298 artifact hash verification. Kept
+its migration integration/delegation/release and unscheduled follow-up gaps
+explicit. Preserved the held CMQ rail candidate and directly launched the next
+first-treatment worker from reviewed source under the existing parent. No new
+production release or business outcome was recorded.
+
 Returned initial weaning candidate781f4c7d for two independently reproduced
 confirmation-order/completion-delivery corrections after 75 independent
 PostgreSQL passes and source/evidence hash verification. Resumed the same
