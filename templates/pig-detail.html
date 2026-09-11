@@ -104,19 +104,26 @@
           </details>
 
           <details id="lifecycle_action_panel" class="profile-danger hidden">
-            <summary><strong>Lifecycle action</strong><span>Protected death or removal recording</span></summary>
-            <form id="lifecycle_death_form" class="compact-form">
-              <label>Date<input id="lifecycle_event_date" type="date" required></label>
-              <label>Reason<select id="lifecycle_reason" required><option value="">Select reason</option><option value="Died">Died</option><option value="Culled">Culled</option><option value="Lost">Lost</option><option value="Removed">Removed</option><option value="Other">Other</option></select></label>
-              <label>Recorded by<input id="lifecycle_changed_by" type="text" value="web_app" required></label>
-              <label>Notes<textarea id="lifecycle_notes" rows="3"></textarea></label>
-              <button id="lifecycle_submit_button" type="submit" class="button-danger">Record Death / Removal</button>
+            <summary><strong>{{ 'Afsterwe aanteken' if mortality_language == 'af' else 'Lifecycle action' }}</strong><span>{{ 'Record Death / Removal' if legacy_removal_authorized else 'Hersien en bevestig' if mortality_language == 'af' else 'Review and confirm' }}</span></summary>
+            <form id="lifecycle_death_form" class="compact-form" data-csrf="{{ mortality_csrf }}" data-language="{{ mortality_language }}">
+              {% if mortality_identity %}
+              <label>{{ 'Date' if legacy_removal_authorized else 'Afsterwedatum' if mortality_language == 'af' else 'Death date' }}<input id="lifecycle_event_date" type="date" required></label>
+              {% if legacy_removal_authorized %}
+              <label>Reason<select id="lifecycle_reason" required><option value="Died">Died</option><option value="Culled">Culled</option><option value="Lost">Lost</option><option value="Removed">Removed</option><option value="Other">Other</option></select></label>
+              {% else %}<input id="lifecycle_reason" type="hidden" value="Died">{% endif %}
+              <label>{{ 'Wat jy waargeneem het (opsioneel)' if mortality_language == 'af' else 'What you observed (optional)' }}<textarea id="lifecycle_notes" rows="3"></textarea></label>
+              <button id="lifecycle_submit_button" type="submit" class="button-danger">{{ 'Review death / removal' if legacy_removal_authorized else 'Hersien afsterwe' if mortality_language == 'af' else 'Review death' }}</button>
+              <div id="lifecycle_preview" class="hidden" role="status" style="white-space: pre-wrap"></div>
+              <button id="lifecycle_confirm_button" type="button" class="button-danger hidden">{{ 'Bevestig hierdie afsterwe' if mortality_language == 'af' else 'Confirm this death' }}</button>
+              {% else %}
+              <a href="/owner/login?next={{ request.path }}">Sign in with your farm identity to record a death.</a>
+              {% endif %}
             </form>
           </details>
         </aside>
       </div>
     </main>
   </div>
-  <script src="{{ url_for('static', filename='js/pigDetail.js') }}?v=20260811-life-record-v1"></script>
+  <script src="{{ url_for('static', filename='js/pigDetail.js') }}?v=20260910-mortality-preview"></script>
 </body>
 </html>

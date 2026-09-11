@@ -8,6 +8,10 @@ from modules.auth.owner_access import (
     configure_owner_access,
     owner_login_get,
     owner_login_post,
+    telegram_farm_login_post,
+    mortality_session_identity,
+    mortality_csrf_token,
+    owner_session_is_valid,
     owner_logout_post,
     owner_admin_principal,
     owner_status,
@@ -158,6 +162,11 @@ def owner_login_page():
 @app.route("/owner/login", methods=["POST"])
 def owner_login_submit():
     return owner_login_post()
+
+
+@app.route("/owner/telegram/login", methods=["POST"])
+def telegram_farm_login_submit():
+    return telegram_farm_login_post()
 
 
 @app.route("/owner/logout", methods=["POST"])
@@ -466,7 +475,11 @@ def breeding_analytics_detail_page(pig_id):
 
 @app.route("/pig/<pig_id>")
 def pig_detail_page(pig_id):
-    return render_template("pig-detail.html")
+    identity = mortality_session_identity()
+    return render_template("pig-detail.html", mortality_identity=identity,
+        legacy_removal_authorized=owner_session_is_valid("admin"),
+        mortality_csrf=mortality_csrf_token(),
+        mortality_language=(identity or {}).get("language", "en"))
 
 
 @app.route("/pig/<pig_id>/family-tree")

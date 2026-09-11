@@ -1,6 +1,10 @@
 import hmac
 import ipaddress
 import os
+import json
+import secrets
+import time
+from urllib.parse import parse_qsl, urlsplit
 from datetime import datetime, timezone
 from hashlib import sha256
 
@@ -55,6 +59,9 @@ def require_owner_page_access():
 
 def require_owner_read_access():
     if _access_disabled_or_local_allowed():
+        return None
+    # Pig profiles display reproductive history from this existing herd reader.
+    if request.method == "GET" and request.endpoint == "mating.mating_list" and farm_session_principal():
         return None
     if not _configured():
         body, status_code = _denied("owner_access_not_configured", 503)
@@ -162,6 +169,112 @@ def set_owner_session(role):
 
 def clear_owner_session():
     session.pop(SESSION_KEY, None)
+    session.pop("farm_access", None)
+
+
+def farm_session_principal():
+    """Recheck the existing family delegation; this never grants owner access."""
+    from modules.oom_sakkie.family_access import resolve_family_principal
+    data = session.get("farm_access")
+    if not isinstance(data, dict) or not _secret_configured():
+        return None
+    if not 0 <= time.time() - float(data.get("authenticated_at") or 0) <= 8 * 60 * 60:
+        return None
+    actor = str(data.get("principal_id") or "")
+    principal = resolve_family_principal({"telegram_user_id": actor,
+        "telegram_chat_id": actor, "telegram_chat_type": "private"}, os.environ)
+    if (not principal.authenticated or principal.binding_digest != data.get("binding_digest")
+            or not ({"*", "mortality_confirmation"} & principal.effective_permissions)):
+        return None
+    return principal
+
+
+def mortality_session_identity():
+    principal = farm_session_principal()
+    if principal:
+        return {"actor_id": principal.telegram_user_id, "role": principal.role.value,
+                "capabilities": principal.effective_permissions, "language": principal.language}
+    actor = _owner_admin_session_principal()
+    if actor:
+        return {"actor_id": actor, "role": "owner", "capabilities": frozenset({"*"}), "language": "en"}
+    return None
+
+
+def mortality_csrf_token():
+    if not mortality_session_identity():
+        return ""
+    if not session.get("mortality_csrf"):
+        session["mortality_csrf"] = secrets.token_urlsafe(32)
+    return session["mortality_csrf"]
+
+
+def require_mortality_session():
+    if not mortality_session_identity():
+        return jsonify(success=False, status="authenticated_mortality_permission_required"), 403
+    expected = str(session.get("mortality_csrf") or "")
+    supplied = str(request.headers.get("X-Mortality-CSRF") or "")
+    if not expected or not hmac.compare_digest(expected, supplied):
+        return jsonify(success=False, status="mortality_request_binding_required"), 403
+    return None
+
+
+def telegram_farm_login_post():
+    """Validate Telegram Mini App initData before resolving a farm principal.
+
+    Protocol: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+    The signed user identity is verified locally; no provider request is made.
+    """
+    token = str(os.environ.get("OOM_SAKKIE_TELEGRAM_BOT_TOKEN") or "")
+    if not token or not _secret_configured() or not owner_access_enabled():
+        return jsonify(success=False, status="farm_login_not_configured"), 503
+    # JSON-only input and same-origin browser fetch prevent form-based login CSRF.
+    if not request.is_json or request.headers.get("X-Farm-Login") != "telegram":
+        return jsonify(success=False, status="farm_login_request_invalid"), 403
+    origin = request.headers.get("Origin")
+    # TLS terminates at the deployment proxy; Host remains the public authority
+    # even when Flask sees an internal HTTP request.
+    try:
+        origin_url = urlsplit(origin or "")
+    except ValueError:
+        return jsonify(success=False, status="farm_login_origin_invalid"), 403
+    if origin and (origin_url.scheme not in {"http", "https"}
+                   or origin_url.netloc.casefold() != request.host.casefold()):
+        return jsonify(success=False, status="farm_login_origin_invalid"), 403
+    try:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise ValueError("object required")
+        raw = str(payload.get("init_data") or "")
+        if not raw or len(raw) > 16384:
+            raise ValueError("invalid init data")
+        pairs = parse_qsl(raw, keep_blank_values=True, strict_parsing=True)
+        fields = dict(pairs)
+        if len(fields) != len(pairs):
+            raise ValueError("duplicate keys")
+        received = fields.pop("hash", "")
+        secret = hmac.new(b"WebAppData", token.encode(), sha256).digest()
+        check = "\n".join(f"{key}={fields[key]}" for key in sorted(fields))
+        if not hmac.compare_digest(hmac.new(secret, check.encode(), sha256).hexdigest(), received):
+            raise ValueError("invalid signature")
+        authenticated_at = int(fields["auth_date"])
+        if not 0 <= time.time() - authenticated_at <= 300:
+            raise ValueError("expired authentication")
+        user = json.loads(fields["user"])
+        actor = str(user["id"])
+        if not actor.isdigit() or user.get("is_bot"):
+            raise ValueError("invalid user")
+        from modules.oom_sakkie.family_access import resolve_family_principal
+        principal = resolve_family_principal({"telegram_user_id": actor,
+            "telegram_chat_id": actor, "telegram_chat_type": "private"}, os.environ)
+        if not principal.authenticated or not ({"*", "mortality_confirmation"} & principal.effective_permissions):
+            raise ValueError("missing delegation")
+    except (ValueError, TypeError, KeyError):
+        return jsonify(success=False, status="farm_login_not_authorized"), 403
+    session.clear()
+    session["farm_access"] = {"principal_id": actor, "binding_digest": principal.binding_digest,
+                              "authenticated_at": authenticated_at}
+    session.permanent = False
+    return jsonify(success=True, role=principal.role.value, language=principal.language)
 
 
 def owner_admin_principal():

@@ -87,6 +87,22 @@ def evaluate_health_loss_intake(report: Mapping, canonical: Mapping) -> dict:
             question=f"What exactly did you observe about {_display(animal)}?",
             provider_time=provider_time,
         )
+    if parsed["dead"]:
+        parsed["observed"] = [row for row in parsed["observed"] if row["fact"] != "event_date"]
+        scoped_generation = (canonical.get("animal_evidence_generations") or {}).get(animal["pig_id"])
+        if scoped_generation:
+            canonical = {**canonical, "evidence_generation": scoped_generation, "evidence_scope": "animal"}
+        event_date = _mortality_event_date(report, provider_time)
+        if not event_date:
+            return _result(status="event_date_required", identity=identity,
+                family=parsed["family"], question=f"On which date did {_display(animal)} die or get found dead?",
+                provider_time=provider_time, observed=parsed["observed"])
+        parsed["event_date"] = event_date.isoformat()
+        parsed["observed"].append({"fact": "event_date", "value": parsed["event_date"]})
+        if event_date > provider_time.date():
+            return _result(status="chronology_conflict", identity=identity, family=parsed["family"],
+                question="The canonical chronology conflicts with this report; which event date or cycle is correct?",
+                provider_time=provider_time, conflicts=["event date is after the report date"])
     chronology = _chronology(animal, parsed, canonical)
     if chronology["conflicts"]:
         return _result(
@@ -160,6 +176,7 @@ def evaluate_health_loss_intake(report: Mapping, canonical: Mapping) -> dict:
             "preview_sha256": preview_sha256,
             "evidence_generation": _clean(canonical.get("evidence_generation"), 120),
             "required_confirmations": confirmations,
+            "evidence_scope": canonical.get("evidence_scope", "farm"),
         },
         "evidence_generation": _clean(canonical.get("evidence_generation"), 120),
         "transaction_policy": TRANSACTION_POLICY,
@@ -251,9 +268,13 @@ def _parse_report(text, provider_time):
     found_dead = bool(
         re.search(r"\bfound(?:\s+.+?)?\s+dead\b", lower)
         or re.search(r"\bwas dead(?:\s+when|\s+in|\s+at|[.!?]|$)", lower)
-        or re.search(r"\bdood gevind\b|\bwas dood(?:\s+toe|\s+in|\s+by|[.!?]|$)", lower)
+        or re.search(r"\bdood (?:gevind|aangetref)\b|\bwas dood(?:\s+toe|\s+in|\s+by|[.!?]|$)", lower)
     )
     dead = reported_died or found_dead
+    dead = dead or bool(re.search(
+        r"\b(?:passed away|(?:is|was) (?:today |yesterday )?dead|is (?:vandag |gister |eergister )?dood|het (?:vandag |gister |eergister )?gesterf)\b", lower))
+    if re.search(r"\b(?:not dead|did not die|isn't dead|nie dood nie|het nie gesterf nie)\b", lower):
+        dead = False
     farrowing = bool(re.search(r"\b(farrow|farrowing|gave birth)\b", lower))
     stillborn_match = re.search(r"(all\s+)?(\d+)\s+piglets?\s+(?:were\s+)?stillborn", lower)
     later_death_match = re.search(
@@ -489,6 +510,8 @@ def _parse_report(text, provider_time):
     last_seen_supplied = bool(last_seen)
     found_time_supplied = bool(found_time)
     removal_supplied = bool(re.search(r"\b(?:removed from (?:the )?pen|buried|disposed|cremated|verwyder|begrawe|weggedoen)\b", lower))
+    if re.search(r"\b(?:not|never|will be|going to be|nog nie|nie|sal)\b.{0,30}\b(?:removed|buried|disposed|cremated|verwyder|begrawe|weggedoen)\b", lower):
+        removal_supplied = False
     removal_outcome = (
         "removed and buried" if re.search(r"\b(?:removed|verwyder)\b.{0,40}\b(?:buried|begrawe)\b", lower)
         else "buried" if re.search(r"\b(?:buried|begrawe)\b", lower)
@@ -496,6 +519,8 @@ def _parse_report(text, provider_time):
         else "disposed" if re.search(r"\bdisposed\b", lower)
         else "removed from pen" if removal_supplied else ""
     )
+    if not removal_supplied:
+        removal_outcome = ""
     if last_seen_supplied:
         observed.append({"fact": "last_seen_alive_context_reported",
                          "value": (last_seen.group("when") if last_seen and last_seen.group("when") else True)})
@@ -578,9 +603,62 @@ def _explicit_event_dates(text):
     return sorted(values)
 
 
+def _mortality_event_date(report, provider_time):
+    """Use owner text and each message's local date, never generated prose.
+
+    Death reports and short date replies/corrections can supply the date. A
+    dated observation about something else cannot replace a retained death date.
+    """
+    parts = report.get("report_parts") or [{"text": report["text"],
+        "provider_timestamp": provider_time.isoformat()}]
+    for index in range(len(parts) - 1, -1, -1):
+        part = parts[index]
+        text = str(part.get("text") or "").casefold().strip()
+        if not text:
+            continue
+        death_words = re.search(r"\b(?:died|dead|death|passed away|dood|gesterf|afsterwe)\b", text)
+        other_event = re.search(r"\b(?:buried|removed|begrawe|verwyder|seen alive|lewend gesien)\b", text)
+        if other_event and not death_words:
+            continue
+        if death_words:
+            clauses = re.split(r"[.!?;,]\s*", text)
+            text = " ".join(clause for clause in clauses if re.search(
+                r"\b(?:died|dead|death|passed away|dood|gesterf|afsterwe)\b", clause))
+        text = re.sub(r"\b(?:this (?:morning|afternoon|evening)|vanoggend|vanmiddag|vanaand)\b", "today", text)
+        text = re.sub(r"\b(?:last night|gisteraand)\b", "yesterday", text)
+        date_pattern = r"\b(?:20\d{2}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]20\d{2}|\d{1,2}\s+[a-z]+\s+20\d{2})\b"
+        relative_pattern = r"\b(today|vandag|yesterday|gister|eergister|tomorrow|môre)\b"
+        if index and not death_words:
+            # Accept an actual short answer to the date question. Do not infer
+            # that a treatment, symptom or other dated follow-up corrects it.
+            remainder = re.sub(date_pattern, "", text)
+            remainder = re.sub(relative_pattern, "", remainder)
+            remainder = re.sub(r"\b(?:correction|korreksie|actually|rather|no|nee|"
+                r"it|dit|was|is|on|op|the|die|date|datum|should|be|must)\b", "", remainder)
+            if re.search(r"\w", remainder):
+                continue
+        dates = _explicit_event_dates(text)
+        date_shaped = re.search(date_pattern, text)
+        relative = set(re.findall(relative_pattern, text))
+        if date_shaped or dates:
+            return dates[0] if len(dates) == 1 else None
+        if relative:
+            offsets = {"today": 0, "vandag": 0, "yesterday": -1, "gister": -1,
+                       "eergister": -2, "tomorrow": 1, "môre": 1}
+            days = {offsets[word] for word in relative}
+            if len(days) != 1:
+                return None
+            moment = _provider_time({"provider_timestamp": part.get("provider_timestamp"),
+                                     "provider_timezone": "Africa/Johannesburg"})
+            return moment.date() + timedelta(days=days.pop())
+    return None
+
+
 def _chronology(animal, parsed, canonical):
     event_date = datetime.fromisoformat(parsed["event_date"]).date()
     conflicts = []
+    if event_date > _strict_datetime(canonical.get("as_of_timestamp"), "as_of_timestamp").astimezone(ZoneInfo("Africa/Johannesburg")).date():
+        conflicts.append("reported event date is in the future")
     status_date = _clean(animal.get("lifecycle_effective_date"), 20)
     if status_date:
         try:
@@ -655,7 +733,6 @@ def _effects(animal, parsed, canonical, chronology):
             }, "confirm_movement_pen_context")
         else:
             add("movement_pen", "leave_physical_removal_and_disposal_unknown", {}, "", supported=False)
-            missing.append("physical removal/disposal evidence")
     if parsed["farrowing"]:
         mating = chronology["mating"]
         if mating:
@@ -676,7 +753,7 @@ def _effects(animal, parsed, canonical, chronology):
         else:
             add("litter", "no_count_change_until_birth_outcomes_known", {}, "", supported=False)
             missing.append("piglet birth outcome counts")
-    if (parsed["current_signs"] or parsed["suspected"] or parsed["veterinary"]
+    if (not parsed["dead"] or parsed["farrowing"]) and (parsed["current_signs"] or parsed["suspected"] or parsed["veterinary"]
             or parsed["farrowing"] or parsed["family"] == "welfare_update"):
         add("medical_observation", "record_reported_observation_context", {
             "observed": parsed["observed"], "owner_suspected": parsed["suspected"],
@@ -694,6 +771,8 @@ def _smallest_question(parsed, missing, animal):
         return f"Has {_display(animal)} been removed from the pen; if yes, when and what was the disposal/removal outcome?"
     if "exact current mating cycle" in missing:
         return f"Which exact current mating cycle applies to {_display(animal)}?"
+    if parsed["dead"]:
+        return ""
     unknown = [key for key in ("standing", "breathing", "drinking")
                if parsed.get("welfare_check_evidence", {}).get(key) == "unknown"]
     if parsed["current_signs"] and unknown:
