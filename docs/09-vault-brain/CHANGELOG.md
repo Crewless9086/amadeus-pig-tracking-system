@@ -2,6 +2,17 @@
 
 ## 2026-09-11 - Mortality deployed and private menu commissioned
 
+Accepted first-treatment6e1520df functional source after independent161 real
+PostgreSQL tests,87 authentication/chronology/delivery probes and28 source/172
+artifact hash checks. Retained original evidence and directly resumed the same
+writer for the final demonstrated weaning-table overlap, scoped to CSS and its
+cache reference. A fresh610-worktree census protects historical observation JS.
+Read-only live inspection confirmed the deployed mortality/menu and identified
+missing existing first-treatment skip columns/constraint as another release
+prerequisite. Treatment permission is present; weaning permission is absent.
+No genuine mortality claim/event or later daily-manager recovery was found.
+The external migration-owner rejection and CHARLIE hold remain unchanged.
+
 Preserved the completed weaning-rail integration proposal and same-owner
 isolated dispatch. Automated safety rejection stopped that saved session before
 acknowledgement/source work. Recorded the external dependency and unchanged

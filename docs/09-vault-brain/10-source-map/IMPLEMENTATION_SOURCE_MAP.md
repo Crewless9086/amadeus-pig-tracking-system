@@ -540,6 +540,22 @@
   separate production approval. Follow-up is retained unscheduled intent.
   First-treatment source continuation uses the same existing canonical parent
   OMQ-20260813-03 and begins from this reviewed source, preserving mortality.
+- First-treatment successor `6e1520dffa8e7fa408c428529aea6884034e6908` is locally
+  qualified and independently reviewed, not deployed. Existing newborn-health
+  service, atomic writer and canonical receipt now preserve reported product,
+  dose/date/earmark/tally facts and bind own-actor confirmation/recovery across
+  the application and both Telegram adapters. Generic due-litter projection
+  retains the legacy source identity while admitting unrelated eligible litters.
+  `test_litter_first_treatment_journey_postgres.py`,
+  `test_litter_first_treatment_ingress_postgres.py`,
+  `test_litter_first_treatment_atomic_postgres.py` and
+  `litter_first_treatment_browser.spec.js` provide isolated actual-service gates.
+  Final weaning-table CSS correction remains in the same source lane. Production
+  lacks existing first-treatment skip columns/constraint as of17:38UTC, in
+  addition to the weaning constraint/delegation prerequisites. The blocked rail
+  owner must qualify the additional transition before release; the weaning-only
+  proposal does not qualify first-treatment schema readiness. No autonomous
+  follow-up or genuine live treatment outcome is established by source tests.
 
 ## Rootline owner daily brief
 

@@ -2,7 +2,58 @@
 
 Status: Active owner-facing dispatch authority
 
-## 2026-09-11 - Mortality deployed; weaning reviewed; first treatment active
+## 2026-09-11 - Mortality deployed; husbandry source reviewed; final table correction
+
+### Latest first-treatment review and live prerequisites - 18:00 UTC
+
+Clean first-treatment candidate `6e1520dffa8e7fa408c428529aea6884034e6908`,
+tree `2bbba60f6d3f0f49f69802d3a22efb63d1121c77`, is independently accepted
+for its functional/authentication scope. Control Tower verified all28 source
+and172 artifact hashes, independently passed161 actual PostgreSQL tests in a
+separate database, inspected the actual browser evidence and completed source
+review. A separate reviewer passed87 synthetic source-function probes. Worker
+qualification additionally reports444 shared/unit tests,32 subtests and two
+actual browser journeys. Synthetic provider evidence is not live acceptance.
+The source worker exited0 at17:37:40Z; original candidate and evidence remain
+immutable. Manifest SHA256 is
+`42537e3aac77c5cd0f31a9a3d776fc872420ca62995b359621794703905e7566`.
+
+Final visual inspection found overlapping sex/earmark/observation controls in
+the inherited weaning table on the same target page. Control Tower directly
+resumed the SAME source session `01a09122-38e8-7211-954c-2059bb4506ae` at
+17:59:00Z, launcher41916 / worker41656, for a CSS-only correction and actual
+browser requalification. Fresh command events prove started source/test
+inspection. Scope: `static/css/litterLifecycle.css` and the template CSS cache
+reference; no backend or JS behavior changes. Fresh610-worktree census found
+two retained observation worktrees with overlapping JS dirt, so their JS is
+explicitly excluded and preserved. CSS has no dirty census match; historical
+template-panel changes are disjoint from the cache reference. Original28/172
+manifest remains unchanged; the small successor receives separate UI_REVIEW
+artifacts and a new local commit. This source lane remains ACTIVE; no prompt
+relay or duplicate writer is required.
+
+Read-only production inspection at17:38UTC confirms exact mortality revision
+`00d1bfa93e7abfad64f50cb828e4b03cf77e23e3`, Anton's own farm_manager/af binding,
+existing treatment permission and private Plaas menu. Explicit weaning
+permission remains absent. All three existing `litters.first_treatment_skip*`
+columns and their completeness constraint are absent. Consequently the existing
+`202608100003_add_litter_first_treatment_skip.sql` is an additional release
+prerequisite; “no new migration in this commit” does not mean production is
+ready. The current closed runner does not allowlist it or catalogue `litters`.
+The existing weaning-only8->9 integration proposal does not qualify this
+additional schema transition. Its supported integration/compatibility work
+belongs to the existing rail owner after the external check is resolved.
+No rail retry, alternate writer, direct SQL or production correction occurred.
+
+The same passive inspection found no Anton mortality claim/event since
+deployment and no manager cycle later than failed04:40:30Z, with next04:45
+overdue. Genuine mortality acceptance and independent daily follow-up remain
+unverified. Evidence: `C:/tmp/amadeus-first-treatment-20260911/control-tower-review/`
+contains `MANIFEST_VERIFICATION.json`, `LIVE_PREREQUISITES.json`,
+`POST_RELEASE_OBSERVATION_FINAL.json` and `UI_SOURCE_CENSUS.json`;
+the separate reviewer report/manifest is under `independent-auth-review/`.
+The preceding first-treatment in-progress narrative below is historical and
+superseded by this review disposition. ACTION REQUIRED NOW: NONE.
 
 ### Current source disposition and first-treatment dispatch
 
@@ -412,13 +463,13 @@ physical irrigation effects require separate verification.
 
 | Terminal | Current Control Tower classification | Next trigger |
 |---|---|---|
-| HERDMASTER | ACTIVE - DO NOT INTERRUPT: first-treatment worker11132, fresh acknowledgment/governance/source-trace evidence; weaning eeb9dc4a and mortality workers released-retain | Reproduce, repair and independently review the first-treatment source candidate; release dependencies remain explicit |
-| OOM SAKKIE | ACTIVE: first-treatment conversation/app scope in the same visible terminal; Sep11 scheduler diagnosis complete under existing OMQ ownership | Review first treatment; coordinate the existing migration/scheduler owners separately without new production effects |
+| HERDMASTER | ACTIVE - DO NOT INTERRUPT: same source session now worker41656 for bounded litter-table CSS correction; first-treatment6e1520df functional review accepted, original writer11132 exited0 | Complete actual browser review of the small CSS successor; retained migration/delegation/release dependencies remain explicit |
+| OOM SAKKIE | First-treatment conversation source accepted; shares the active HERDMASTER review lane; Sep11 scheduler diagnosis complete under existing OMQ ownership | Exact combined source disposition, then supported migration/scheduler coordination and separately authorized release |
 | CORE / CHARLIE | Commissioning held; same owner's isolated weaning-rail source turn rejected by automated safety check before work | External check resolved before reassessing the existing owner; separate commissioning authority remains held |
 | ROOTLINE | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Herd sequence or separately proved incident; verify ownership before dispatch |
 | SAM Livestock / SAM Meat | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered sales outcome becomes selected; verify ownership first |
 | BEACON | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered marketing outcome becomes selected; verify ownership first |
-| CODEX UI | Shared litter presentation belongs to the first-treatment source writer; no separate UI writer; weaning browser review retained and old dirty matings work preserved | Complete treatment browser/app review within its single source lane |
+| CODEX UI | ACTIVE in the same HERDMASTER source lane: CSS-only weaning table correction, no separate UI writer; old observation JS and matings dirt preserved | Actual desktop/tablet/mobile readability, retained weaning preview and first-treatment browser journeys |
 | DOCUMENTS / GREEN / STORYWORKS | No new implementation dispatched; fresh terminal state Unknown | Existing registered outcome selected after current priority and ownership checks |
 
 No other open process is treated as active specialist work without mission-bound
