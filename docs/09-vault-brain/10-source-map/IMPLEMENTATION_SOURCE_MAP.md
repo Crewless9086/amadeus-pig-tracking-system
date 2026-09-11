@@ -1,5 +1,21 @@
 # Implementation Source Map
 
+## 2026-09-11 - Reviewed PR1309 scheduler containment
+
+Prepared unchanged two-file scheduler/test source on current main at
+`9b102c035aba16835ee21836569800f859376354`; tree
+`4866354de8e20da4a50b90649244e51c9c8c6cea`. Source paths:
+`scripts/oom_sakkie_morning_scheduler.py` and
+`tests/test_oom_sakkie_morning_scheduler.py`. Thirteen focused tests, four
+loopback HTTP transport checks and independent review qualify containment
+only. Existing OMQ/PR1309 owns the source; RELEASE_HOLD awaits one exact
+gated cron-release decision. Morning delivery/manager deadline repairs and
+genuine unattended verification remain open. Preserved herd a0865257 must
+include Anton's explicit weaning capability in its eventual reviewed release.
+Retained-file Support addendum identifies the cybersecurity-risk rejection
+without guessing the check/model/client version; migration/CHARLIE holds
+remain. Full evidence is in root `.tmp/control-tower-scheduler-review/`.
+
 ## Livestock quotation journeys
 
 - Contract/lifecycle: `modules/orders/livestock_quotation.py`

@@ -1,5 +1,58 @@
 # Control Tower Mission Register
 
+## 2026-09-11 - PR1309 scheduler containment prepared; herd release preserved
+
+Control Tower completed the owner-requested local scheduler preparation on
+existing OMQ-20260813-03-MORNING-CONTAINMENT / PR1309. Final local head
+`9b102c035aba16835ee21836569800f859376354`, tree
+`4866354de8e20da4a50b90649244e51c9c8c6cea`, integrates current main00d1bfa9
+while preserving original5181b675 as an ancestor. Its two-file patch is
+byte-identical to PR1309; 13 focused tests and four actual urllib loopback HTTP
+checks passed. Independent review found no blocking source finding. Full tree
+equality carries this evidence from review7ffcdbb9 to final9b102c03 without
+repeating completed qualification.
+
+Fresh18:57 UTC evidence still shows the enabled five-minute cron aborting on
+morning503 at18:40/45/50/55. Latest manager remains failed04:40, five deadline
+deferrals and313 candidate replays. The patch enables one bounded manager
+attempt after the morning failure; it does not repair morning delivery or
+manager starvation. Whole-cycle provider effects cannot be inferred from
+zero counters. Genuine scheduled and later independent-cycle proof is pending.
+
+Canonical child evidence handover is RELEASE_HOLD, read back19:33:36Z, finding
+`CORE-MISSION-CONTROL-E360A806A10BB78D418E8630`. Existing technical status `new`,
+family, scope, old admission and dispatch authority are preserved; all11 genuine
+acceptance rows remain open. The prepared local exact binding uses canonical
+digest `2b5ad2b3a584d90700a98e7b669bc4e0dbc72bfc54054c7d1f514dfe3b7c2f2b`.
+Publication, supported lifecycle/admission reconciliation, hosted checks,
+protected merge and cron release await one exact owner decision. No new mission,
+source owner, production trigger, deployment, message, farm or hardware action.
+
+The proposal targets only cron crn-d9us4d3ncjis73adehrg, whose main auto-deploy
+is enabled. Web auto-deploy is disabled; mortality remains00d1bfa9. Verification
+must distinguish the new cron revision from unchanged web/manager revision.
+Rollback reverses only the two scheduler files and preserves farm/provider
+receipts. Existing legacy daily cron stays suspended. Control Tower owns the
+release continuation and passive natural-cycle verification; no owner relay.
+
+Herd a0865257, private Plaas menu and all ownership remain preserved. Its eventual
+reviewed release must explicitly add `weaning` to Anton's existing
+OOM-FAMILY-AUTH-ANTON-20260815 farm-manager identity alongside qualified skip
+and weaning migration integration. Mortality live acceptance remains pending.
+Rejected migration continuation and CHARLIE commissioning stay held.
+
+The Support addendum uses only the seven retained rail files. Exact rejection
+cites possible cybersecurity risk; rejecting component, model/client version
+and request/turn IDs are unknown in those records. The thread is
+01a07684-7f3b-7362-b625-d3d598863476; launch17:21:54.1322966Z and failure
+completion17:22:09.2174400Z. No retry, rephrasing or alternate writer occurred.
+The addendum has not been sent externally.
+
+Artifacts: root workspace `.tmp/control-tower-scheduler-review/`, including
+SCHEDULER_RELEASE_PROPOSAL.md, SUPPORT_CASE_ADDENDUM.md, exact source/binding,
+tests, independent review, canonical readback and Control Tower Check Receipt.
+Daily-plan conversation and irrigation remain in their subsequent queue.
+
 Status: Active owner-facing dispatch authority
 
 ## 2026-09-11 - Mortality deployed; husbandry source qualified; release dependency held
