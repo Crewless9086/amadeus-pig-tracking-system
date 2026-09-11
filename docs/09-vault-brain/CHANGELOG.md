@@ -2,6 +2,13 @@
 
 ## 2026-09-11 - Mortality deployed and private menu commissioned
 
+Recorded first-treatment unchanged-source reproduction through real local
+services/PostgreSQL, including dose substitution, app actor forgery, dropped
+facts, recovery/duplicate protection and generic due-litter omission. Bound the
+saved worker session and its own full governance preflight to declared source
+ownership. Fixture/setup failures are retained separately; no live outcome is
+inferred from the isolated tests.
+
 Accepted exact corrected weaning eeb9dc4a after59 independent PostgreSQL tests,
 30 independent review probes and29 source/298 artifact hash verification. Kept
 its migration integration/delegation/release and unscheduled follow-up gaps

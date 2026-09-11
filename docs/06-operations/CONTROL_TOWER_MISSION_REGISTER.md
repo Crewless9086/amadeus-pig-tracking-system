@@ -46,6 +46,23 @@ continuation; no new queue was created. Artifacts are under
 `C:/tmp/amadeus-first-treatment-20260911/`. Only local source/isolated tests and
 the concrete release proposal are authorized. Charl has no prompt to relay.
 
+Saved worker session `01a09122-38e8-7211-954c-2059bb4506ae` completed its own
+tracked/full-read governance preflight at15:46:06Z, matching the four current
+document blobs. Unchanged-source actual-service/PostgreSQL reproduction now
+proves reported `1 ml` persisted as product-default `2.0 ml`, an anonymous app
+POST recorded a forged client actor, earmarking failed on reconstructed missing
+columns, configured-Afrikaans presentation was English and omitted date/tally,
+a future date preview passed, and recovery after commit demanded a new preview.
+Supplemental reproduction proves sparse typed corrections lose facts, a second
+operation can duplicate treatment, and a generic due litter is omitted by the
+actual collector. The initial collector configuration and fixture errors remain
+separate setup evidence. All records/provider envelopes are synthetic and local.
+The worker declared exact bounded service/identity/ingress/UI/projection paths
+before editing in PROGRESS.md. It is **WORKING / REPAIR_IN_PROGRESS**; there is
+no qualified first-treatment candidate or production disposition yet. Existing
+treatment capability and tables are intended to suffice without a new grant or
+migration. The separate scheduler and held rail remain excluded.
+
 Control Tower review evidence:
 `C:/tmp/amadeus-weaning-20260911/WEANING_HANDOVER_REVIEW2.md`,
 `MANIFEST_REVIEW2.json`, `INDEPENDENT_REVIEW2_AUTH_REPLAY.md`, and
