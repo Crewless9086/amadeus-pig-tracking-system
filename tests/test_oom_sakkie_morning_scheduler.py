@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import importlib
+from urllib.error import HTTPError
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 
@@ -153,6 +154,41 @@ def test_manager_timeout_is_contained_without_blocking_beacon_or_morning(monkeyp
                 if url.endswith("beacon-publication-cycle")) < manager_position
     assert next(index for index,url in enumerate(calls)
                 if url.endswith("morning-schedule")) < manager_position
+
+
+def test_morning_http_error_is_not_retried_and_manager_still_runs(monkeypatch):
+    module = _script_module(monkeypatch); calls = []
+
+    def call(url, payload):
+        calls.append(url)
+        if url.endswith("protected-payment-recovery"):
+            return {"status": "payment_recovery_idle"}
+        if url.endswith("green-print-recovery"):
+            return {"status": "documents_green_recovery_idle"}
+        if url.endswith("beacon-publication-cycle"):
+            return {"success": True, "status": "beacon_publication_cycle_completed"}
+        if url.endswith("morning-schedule"):
+            raise HTTPError(url, 503, "Service Unavailable", {}, None)
+        if url.endswith("general-manager-cycle"):
+            return {"status": "general_manager_cycle_completed"}
+        raise AssertionError(url)
+
+    result, code = module.run_scheduler(
+        now=datetime(2026, 8, 26, 14, 45, tzinfo=timezone.utc), post_fn=call)
+
+    assert code == 1 and result["success"] is False
+    assert result["morning_status"] == "morning_schedule_request_contained"
+    assert result["morning_failure_kind"] == "HTTPError"
+    assert result["manager_status"] == "general_manager_cycle_completed"
+    assert sum(url.endswith("morning-schedule") for url in calls) == 1
+    assert sum(url.endswith("general-manager-cycle") for url in calls) == 1
+    beacon_position = next(index for index, url in enumerate(calls)
+                           if url.endswith("beacon-publication-cycle"))
+    morning_position = next(index for index, url in enumerate(calls)
+                            if url.endswith("morning-schedule"))
+    manager_position = next(index for index, url in enumerate(calls)
+                            if url.endswith("general-manager-cycle"))
+    assert beacon_position < morning_position < manager_position
 
 
 def test_multi_recipient_runtime_success_is_scheduler_success(monkeypatch):
