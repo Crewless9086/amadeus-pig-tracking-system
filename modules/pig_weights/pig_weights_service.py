@@ -3279,11 +3279,160 @@ def assign_litter_piglet_tag_numbers(
     }, 200
 
 
+def _first_treatment_failure(status, *, missing=None, code=409):
+    return {"success": False, "status": status, "missing": missing or [],
+        "operation_committed": False,
+        "writes_farm_data": False, "source": {"writes_to_sheets": False, "writes_to_supabase": False}}, code
+
+
+def _first_treatment_binding(packet, *, issued_at=None):
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import treatment_digest
+    issued_at = int(datetime.now().timestamp()) if issued_at is None else issued_at
+    digest = treatment_digest(packet)
+    material = f"herdmaster_first_treatment_v2|{digest}|{packet['principal']}|{issued_at}"
+    secret = _weaning_confirmation_secret()
+    return {"contract_version": "herdmaster_first_treatment_confirmation_v2",
+        "preview_digest": digest, "actor_id": packet["principal"], "issued_at": issued_at,
+        "signature": hmac.new(secret, material.encode(), hashlib.sha256).hexdigest() if secret else "",
+        "packet": packet}
+
+
+def _valid_first_treatment_binding(binding, actor, *, allow_expired=False):
+    if not isinstance(binding, dict) or not isinstance(binding.get("packet"), dict):
+        return False
+    try:
+        issued = binding["issued_at"]
+        if type(issued) is not int:
+            return False
+        age = int(datetime.now().timestamp()) - issued
+        if age < 0 or (not allow_expired and age > WEANING_PREVIEW_TTL_SECONDS):
+            return False
+        expected = _first_treatment_binding(binding["packet"], issued_at=issued)
+        return (expected["signature"] and binding.get("actor_id") == actor
+            and binding["packet"].get("principal") == actor
+            and all(binding.get(key) == expected[key] for key in ("contract_version", "preview_digest"))
+            and hmac.compare_digest(str(binding.get("signature") or ""), expected["signature"]))
+    except (TypeError, ValueError, KeyError):
+        return False
+
+
+def _first_treatment_readback(packet, atomic, *, connect_factory=None):
+    try:
+        verified = farm_supabase_write_service.read_litter_first_treatment_receipt(packet, connect_factory=connect_factory)
+        detail = farm_supabase_read_service.get_litter_detail(packet["litter_id"], connect_factory=connect_factory)
+        if not verified or not detail or detail.get("first_treatment_complete") is not True:
+            raise ValueError("first_treatment_readback_mismatch")
+    except Exception:
+        return {"success": False, "status": "first_treatment_readback_recovery_required",
+            "operation_id": packet["operation_id"], "operation_committed": True, "recovery_required": True,
+            "writes_farm_data": False, "source": {"writes_to_sheets": False, "writes_to_supabase": False}}, 503
+    return {"success": True, "status": atomic["status"], "action": "record_litter_newborn_health",
+        "dry_run": False, "operation_id": packet["operation_id"], "operation_committed": True,
+        "replay_withheld": atomic.get("replay_withheld", False), "litter_id": packet["litter_id"],
+        "action_date": packet["action_date"], "changed_by": packet["principal"],
+        "pig_ids": packet["pig_ids"], "piglet_count": packet["total_count"],
+        "male_count": packet["male_count"], "female_count": packet["female_count"],
+        "earmarked": packet["earmarked"], "dose": packet["dose"], "dose_unit": packet["dose_unit"],
+        "route": packet["route"], "batch_lot_number": packet["batch_lot_number"], "products": packet["products"],
+        "notes": packet["notes"], "sex_count_scope": "litter_tally_only", "individual_piglet_sexes_assigned": False,
+        "treatment_rows_created": atomic["treatment_rows_created"], "pig_rows_updated": atomic["pig_rows_updated"],
+        "litter_rows_updated": 0, "medical_readback": verified["medical_readback"],
+        "canonical_readback": detail, "canonical_readback_verified": True,
+        "follow_up": {"owner": "HERDMASTER", "status": "recorded_outcome_retires_due_treatment",
+            "scheduled": False},
+        "writes_farm_data": not atomic.get("replay_withheld", False),
+        "source": {"writes_to_sheets": False, "writes_to_supabase": not atomic.get("replay_withheld", False)}}, 200
+
+
+def _record_litter_first_treatment(litter_id, facts, actor, *, dry_run, confirmed, binding, connect_factory=None):
+    """One actual-facts preview, confirmation, transaction and recovery for both channels."""
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import (
+        canonical_treatment_evidence, prepare_litter_first_treatment_preview, treatment_digest,
+    )
+    actor, litter_id = to_clean_string(actor), to_clean_string(litter_id)
+    if not actor or not litter_id or type(dry_run) is not bool or type(confirmed) is not bool:
+        return _first_treatment_failure("first_treatment_request_invalid", code=400)
+    if not farm_supabase_write_service.farm_supabase_writes_available() and connect_factory is None:
+        return _first_treatment_failure("canonical_first_treatment_store_required", code=503)
+    try:
+        input_digest = treatment_digest({"facts": facts, "actor": actor, "litter_id": litter_id})
+    except (TypeError, ValueError):
+        return _first_treatment_failure("first_treatment_request_invalid", code=400)
+    if not dry_run:
+        if not confirmed or not _valid_first_treatment_binding(binding, actor, allow_expired=True):
+            return _first_treatment_failure("exact_first_treatment_confirmation_required")
+        packet = binding["packet"]
+        if packet.get("input_digest") != input_digest or packet.get("litter_id") != litter_id:
+            return _first_treatment_failure("exact_first_treatment_confirmation_required")
+        if not _valid_first_treatment_binding(binding, actor):
+            try:
+                receipt = farm_supabase_write_service.read_litter_first_treatment_receipt(packet, connect_factory=connect_factory)
+            except Exception:
+                return {"success": False, "status": "first_treatment_readback_recovery_required",
+                    "operation_id": packet["operation_id"], "operation_committed": None,
+                    "recovery_required": True, "writes_farm_data": None}, 503
+            if receipt:
+                return _first_treatment_readback(packet, receipt, connect_factory=connect_factory)
+            return _first_treatment_failure("first_treatment_preview_expired")
+        try:
+            atomic = farm_supabase_write_service.apply_litter_first_treatment_packet(packet, connect_factory=connect_factory)
+        except ValueError:
+            return _first_treatment_failure("first_treatment_evidence_changed_repreview_required")
+        except Exception:
+            try:
+                receipt = farm_supabase_write_service.read_litter_first_treatment_receipt(packet, connect_factory=connect_factory)
+                if receipt:
+                    return _first_treatment_readback(packet, receipt, connect_factory=connect_factory)
+            except Exception:
+                pass
+            LOGGER.exception("First-treatment completion remains unproven for litter %s", litter_id)
+            return {"success": False, "status": "first_treatment_transaction_recovery_required",
+                "operation_id": packet["operation_id"], "operation_committed": None,
+                "recovery_required": True, "writes_farm_data": None,
+                "source": {"writes_to_sheets": False, "writes_to_supabase": None}}, 503
+        return _first_treatment_readback(packet, atomic, connect_factory=connect_factory)
+    try:
+        snapshot = farm_supabase_read_service.get_litter_first_treatment_snapshot(litter_id, connect_factory=connect_factory)
+        products = farm_supabase_read_service.get_products(connect_factory=connect_factory)
+        prepared = prepare_litter_first_treatment_preview({"authenticated": True,
+            "authenticated_principal_id": actor, "provider_message_id": "shared_first_treatment_service",
+            "litter_first_treatment": facts}, canonical_treatment_evidence(snapshot, products))
+    except Exception:
+        LOGGER.exception("First-treatment preview evidence unavailable for litter %s", litter_id)
+        return _first_treatment_failure("first_treatment_evidence_unavailable", code=503)
+    if not prepared.get("success"):
+        return _first_treatment_failure(prepared["status"], missing=prepared.get("missing"))
+    preview = prepared["preview"]
+    rows = []
+    for pig_id in preview["pig_ids"]:
+        for product in preview["products"]:
+            rows.append(_build_litter_health_treatment_row(pig_id, parse_sheet_date(preview["action_date"]),
+                product["treatment_type"], {**product, "dose_unit": preview["dose_unit"]},
+                preview["dose"], preview["route"], preview["batch_lot_number"], actor, preview["notes"],
+                litter_id, protected_operation_id=preview["operation_id"]))
+    packet = {**preview, "expected_snapshot": snapshot, "input_digest": input_digest, "facts": facts,
+        "treatment_rows": rows}
+    binding = _first_treatment_binding(packet)
+    if not binding["signature"]:
+        return _first_treatment_failure("first_treatment_confirmation_unavailable", code=503)
+    return {"success": True, "status": "first_treatment_preview_ready", "action": "record_litter_newborn_health",
+        "dry_run": True, "preview": preview, "litter_id": litter_id, "pig_ids": preview["pig_ids"],
+        "piglet_count": preview["total_count"], "earmarked": preview["earmarked"],
+        "male_count": preview["male_count"], "female_count": preview["female_count"],
+        "sex_count_recorded": preview["male_count"] is not None, "sex_count_scope": "litter_tally_only",
+        "individual_piglet_sexes_assigned": False, "planned_treatment_rows": rows,
+        "treatment_rows_planned": len(rows), "treatment_rows_created": 0, "pig_rows_updated": 0,
+        "litter_rows_updated": 0, "confirmation_binding": binding, "preview_digest": binding["preview_digest"],
+        "operation_id": preview["operation_id"], "confirmation_required": True, "writes_farm_data": False,
+        "source": {"writes_to_sheets": False, "writes_to_supabase": False}}, 200
+
+
+
 def record_litter_newborn_health(
     litter_id: str,
     action_date_value,
     changed_by: str = "web_app",
-    earmarked: bool = False,
+    earmarked=None,
     antiparasitic_product_id: str = "",
     deworming_product_id: str = "",
     vaccination_product_id: str = "",
@@ -3299,7 +3448,25 @@ def record_litter_newborn_health(
     canonical_detail=None,
     canonical_products=None,
     protected_operation_id: str = "",
+    dose_unit=None,
+    total_count=None,
+    confirmed: bool = False,
+    confirmation_binding=None,
+    connect_factory=None,
 ):
+    treatment_context = to_clean_string(treatment_context) or "first_treatment"
+    if treatment_context == "first_treatment":
+        return _record_litter_first_treatment(litter_id, {
+            "litter_ref": litter_id, "action_date": str(action_date_value or ""),
+            "earmarked": earmarked, "antiparasitic_product_ref": antiparasitic_product_id,
+            "deworming_product_ref": deworming_product_id, "vaccination_product_ref": vaccination_product_id,
+            "dose": dose, "dose_unit": dose_unit, "route": route, "batch_lot_number": batch_lot_number,
+            "notes": notes, "male_count": male_count, "female_count": female_count, "total_count": total_count,
+        }, changed_by, dry_run=dry_run, confirmed=confirmed, binding=confirmation_binding,
+            connect_factory=connect_factory)
+    if treatment_context != "weaning_day":
+        return {"success": False, "errors": ["Unsupported litter treatment context."]}, 400
+    earmarked = False if earmarked is None else earmarked
     litter_id = to_clean_string(litter_id)
     action_date = parse_sheet_date(action_date_value)
     changed_by = to_clean_string(changed_by) or "web_app"
@@ -3311,12 +3478,9 @@ def record_litter_newborn_health(
     notes = to_clean_string(notes)
     dose_value = to_float(dose)
     dry_run = dry_run is True
-    treatment_context = to_clean_string(treatment_context) or "first_treatment"
     protected_operation_id = to_clean_string(protected_operation_id)
 
     errors = []
-    if treatment_context not in {"first_treatment", "weaning_day"}:
-        errors.append("Unsupported litter treatment context.")
     if not litter_id:
         errors.append("Litter ID is required.")
     if not action_date:
@@ -3370,22 +3534,6 @@ def record_litter_newborn_health(
             "success": False,
             "errors": ["No active on-farm piglets were found for this litter."],
             "litter_id": litter_id,
-        }, 409
-
-    existing_detail = _try_supabase_read(farm_supabase_read_service.get_litter_detail, litter_id)
-    if treatment_context == "first_treatment" and isinstance(existing_detail, dict) and (
-        existing_detail.get("first_treatment_complete") is True
-        or existing_detail.get("first_treatment_partial") is True
-    ):
-        return {
-            "success": False,
-            "status": "first_treatment_already_closed",
-            "errors": [
-                "First treatment already has canonical medical evidence. Use the correction history instead of recording the whole-litter action again."
-            ],
-            "litter_id": litter_id,
-            "first_treatment_complete": existing_detail.get("first_treatment_complete") is True,
-            "first_treatment_partial": existing_detail.get("first_treatment_partial") is True,
         }, 409
 
     male_count_int = int(male_count_value) if male_count_value is not None else None
@@ -3497,31 +3645,15 @@ def record_litter_newborn_health(
                 "errors": ["Canonical Supabase treatment writes are unavailable."],
                 "source": {"writes_to_sheets": False, "writes_to_supabase": False}}, 503
         if supabase_available:
-            if treatment_context == "first_treatment" and require_supabase:
-                atomic = farm_supabase_write_service.apply_litter_first_treatment_packet({
-                    "litter_id": litter_id,
-                    "sow_pig_id": (canonical_detail or {}).get("mother_pig_id"),
-                    "pig_ids": [to_clean_string(row.get(columns["pig_id"], "")) for row in active_piglets],
-                    "action_date": action_date,
-                    "protected_operation_id": protected_operation_id,
-                    "earmarked": earmarked,
-                    "male_count": male_count_int,
-                    "female_count": female_count_int,
-                    "treatment_rows": treatment_rows,
-                })
-                pig_rows_updated = atomic["pig_rows_updated"]
-                treatment_rows_created = atomic["treatment_rows_created"]
-                litter_rows_updated = atomic["litter_rows_updated"]
-            else:
-                pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
-                if pig_rows_updated is None:
-                    pig_rows_updated = 0
-                treatment_result = farm_supabase_write_service.insert_missing_medical_events_from_sheet_rows(
-                    treatment_rows
-                )
-                treatment_rows_created = treatment_result["created"]
-                if litter_tally_updates:
-                    litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
+            pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
+            if pig_rows_updated is None:
+                pig_rows_updated = 0
+            treatment_result = farm_supabase_write_service.insert_missing_medical_events_from_sheet_rows(
+                treatment_rows
+            )
+            treatment_rows_created = treatment_result["created"]
+            if litter_tally_updates:
+                litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
             writes_to_supabase = True
         elif not require_supabase:
             pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
@@ -3582,35 +3714,13 @@ def skip_litter_first_treatment(litter_id: str, changed_by: str = "web_app", rea
     if not litter_id:
         return {"success": False, "errors": ["Litter ID is required."]}, 400
 
-    detail = _try_supabase_read(farm_supabase_read_service.get_litter_detail, litter_id)
-    if not isinstance(detail, dict):
-        return {"success": False, "errors": ["Litter was not found in canonical readback."]}, 404
-    if detail.get("first_treatment_complete") is True or detail.get("first_treatment_partial") is True:
-        return {
-            "success": False,
-            "status": "first_treatment_has_medical_evidence",
-            "errors": ["First treatment has canonical medical evidence and cannot be marked as skipped."],
-        }, 409
-    if detail.get("first_treatment_skipped") is True:
-        return {"success": True, "status": "already_skipped", "litter_id": litter_id}, 200
     if not farm_supabase_write_service.farm_supabase_writes_available():
-        return {"success": False, "errors": ["Canonical litter writes are unavailable."]}, 503
+        return {"success": False, "status": "canonical_first_treatment_store_required"}, 503
+    try:
+        return farm_supabase_write_service.apply_litter_first_treatment_skip(litter_id, changed_by, reason), 200
+    except ValueError as exc:
+        return {"success": False, "status": str(exc), "writes_farm_data": False}, 409
 
-    skipped_at = datetime.now().astimezone()
-    updated = farm_supabase_write_service.update_litter_by_id(litter_id, {
-        "First_Treatment_Skipped_At": skipped_at,
-        "First_Treatment_Skipped_By": changed_by,
-        "First_Treatment_Skip_Reason": reason,
-    })
-    if updated != 1:
-        return {"success": False, "errors": ["The skip decision was not recorded."]}, 409
-    return {
-        "success": True,
-        "status": "first_treatment_skipped",
-        "litter_id": litter_id,
-        "first_treatment_skipped": True,
-        "message": "Eerste behandeling is as oorgeslaan gemerk en die stap is gesluit.",
-    }, 200
 
 
 def _build_litter_health_treatment_row(

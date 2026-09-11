@@ -787,92 +787,186 @@ def insert_missing_medical_events_from_sheet_rows(rows, connect_factory=None):
     return {"created": created, "skipped": skipped}
 
 
-def apply_litter_first_treatment_packet(packet, connect_factory=None):
-    """Apply and read back one exact first-treatment packet atomically."""
-    packet = packet if isinstance(packet, dict) else {}
-    litter_id = to_clean_string(packet.get("litter_id"))
-    sow_pig_id = to_clean_string(packet.get("sow_pig_id"))
-    pig_ids = sorted({to_clean_string(value) for value in packet.get("pig_ids", []) if to_clean_string(value)})
-    rows = [list(value or []) + [""] * 18 for value in packet.get("treatment_rows", [])]
-    operation_id = to_clean_string(packet.get("protected_operation_id"))
-    male_count, female_count = _int_or_none(packet.get("male_count")), _int_or_none(packet.get("female_count"))
-    if not litter_id or not sow_pig_id or not pig_ids or not operation_id:
-        raise ValueError("complete_first_treatment_packet_required")
-    if (male_count is None) != (female_count is None):
-        raise ValueError("first_treatment_tally_conflict")
-    if male_count is not None and male_count + female_count != len(pig_ids):
-        raise ValueError("first_treatment_tally_conflict")
-    if not rows or {to_clean_string(row[1]) for row in rows} != set(pig_ids):
+def _first_treatment_medical_rows(packet):
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import reported_dose
+    products = {(item["treatment_type"], item["product_id"]): item for item in packet["products"]}
+    expected_pairs = {(pig_id, kind, product_id) for pig_id in packet["pig_ids"] for kind, product_id in products}
+    rows = []
+    for raw in packet["treatment_rows"]:
+        if not isinstance(raw, (list, tuple)) or len(raw) != 18:
+            raise ValueError("first_treatment_medical_row_invalid")
+        pig_id, kind, product_id = str(raw[1]), str(raw[3]), str(raw[4])
+        product = products.get((kind, product_id))
+        amount, unit = reported_dose(raw[6], raw[7])
+        action_date = _date_or_none(packet["action_date"])
+        if (not product or (pig_id, kind, product_id) not in expected_pairs
+                or _date_or_none(raw[2]) != action_date or amount != packet["dose"]
+                or unit != packet["dose_unit"] or raw[8] != packet["route"]
+                or raw[10] != packet["batch_lot_number"] or raw[13] != packet["principal"]
+                or raw[5] != product["product_name"]
+                or raw[0] != stable_first_treatment_event_id(packet["operation_id"], pig_id, kind, product_id)):
+            raise ValueError("first_treatment_medical_fact_conflict")
+        expected_pairs.remove((pig_id, kind, product_id))
+        rows.append({"medical_event_id": raw[0], "pig_id": pig_id, "treatment_date": action_date,
+            "treatment_type": kind, "product_id": product_id, "product_name": str(raw[5]),
+            "dose": format(amount, ".15g"), "dose_unit": unit, "route": str(raw[8]),
+            "reason_for_treatment": str(raw[9]), "batch_lot_number": str(raw[10]),
+            "withdrawal_days": _int_or_none(raw[11]), "withdrawal_end_date": _date_or_none(raw[12]),
+            "given_by": str(raw[13]), "follow_up_required": _bool_or_none_from_sheet(raw[14]) is True,
+            "follow_up_date": _date_or_none(raw[15]), "medical_notes": str(raw[16])})
+    if expected_pairs or not rows:
         raise ValueError("every_active_piglet_requires_medical_evidence")
-    created = updated = litter_updated = 0
+    return sorted(rows, key=lambda row: row["medical_event_id"])
+
+
+def _verify_first_treatment_medical(cursor, packet):
+    expected = _first_treatment_medical_rows(packet)
+    columns = tuple(expected[0])
+    cursor.execute("select " + ",".join(columns) + """ from public.pig_medical_events
+        where medical_event_id=any(%s) order by medical_event_id""",
+        ([row["medical_event_id"] for row in expected],))
+    actual = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    earmarks = []
+    if packet.get("earmarked") is True:
+        cursor.execute("select pig_id,earmarked,earmark_date from public.pigs where pig_id=any(%s)", (packet["pig_ids"],))
+        earmarks = [dict(zip(("pig_id", "earmarked", "earmark_date"), row)) for row in cursor.fetchall()]
+    return verify_litter_first_treatment_evidence(packet, actual, earmarks)
+
+
+def verify_litter_first_treatment_evidence(packet, medical, earmarks):
+    """Same exact comparison for the writer readback and bounded due projection."""
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import treatment_digest
+    expected = _first_treatment_medical_rows(packet)
+    actual = sorted(({key: row.get(key) for key in expected[0]} for row in medical), key=lambda row: row["medical_event_id"])
+    if treatment_digest(actual) != treatment_digest(expected):
+        raise RuntimeError("first_treatment_medical_readback_incomplete")
+    if packet.get("earmarked") is True:
+        before = {row["pig_id"]: row for row in packet["expected_snapshot"]["piglets"]}
+        if len(earmarks) != len(packet["pig_ids"]) or any(
+                row.get("earmarked") is not True or _date_or_none(row.get("earmark_date")) != _date_or_none(
+                    before[row["pig_id"]].get("earmark_date") if before[row["pig_id"]].get("earmarked") is True else packet["action_date"])
+                for row in earmarks):
+            raise RuntimeError("first_treatment_earmark_readback_incomplete")
+    return json.loads(json.dumps(actual, default=str))
+
+
+def _first_treatment_receipt(cursor, packet):
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import treatment_digest
+    cursor.execute("""select payload_json from public.operational_events
+        where event_id=%s and event_type='litter.first_treatment_recorded'""", (packet["operation_id"],))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    saved = row[0]
+    if saved.get("packet_digest") != treatment_digest(packet) or treatment_digest(saved.get("packet")) != treatment_digest(packet):
+        raise ValueError("conflicting_first_treatment_replay")
+    medical = _verify_first_treatment_medical(cursor, packet)
+    return {**saved["result"], "status": "first_treatment_replayed_noop", "replay_withheld": True,
+        "medical_readback": medical, "treatment_rows_created": 0, "pig_rows_updated": 0, "litter_rows_updated": 0}
+
+
+def read_litter_first_treatment_receipt(packet, connect_factory=None):
+    """Recover only the exact receipt and medical facts, even after later piglet exits."""
+    with _connect(connect_factory=connect_factory) as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            return _first_treatment_receipt(cursor, packet)
+
+
+def apply_litter_first_treatment_packet(packet, connect_factory=None):
+    """Commit the complete confirmed cohort and one receipt, or change nothing."""
+    from psycopg.errors import SerializationFailure
+    if not isinstance(packet, dict) or not all(packet.get(key) for key in (
+            "operation_id", "expected_snapshot", "principal", "facts", "treatment_rows")):
+        raise ValueError("complete_first_treatment_packet_required")
+    for attempt in range(3):
+        try:
+            return _apply_litter_first_treatment_packet(packet, connect_factory=connect_factory)
+        except SerializationFailure:
+            if attempt == 2:
+                raise
+
+
+def _apply_litter_first_treatment_packet(packet, connect_factory=None):
+    from modules.pig_weights.farm_supabase_read_service import litter_first_treatment_snapshot
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import (
+        canonical_treatment_evidence, prepare_litter_first_treatment_preview, treatment_digest,
+    )
+    litter_id = str(packet.get("litter_id") or "")
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
-            # The transaction-scoped litter advisory lock is the serialization
-            # boundary. Read committed lets a waiter acquire a fresh snapshot
-            # after the predecessor commits, so it can prove a deterministic
-            # replay no-op instead of failing on a stale serializable snapshot.
-            cursor.execute("set transaction isolation level read committed")
+            cursor.execute("set transaction isolation level serializable")
             cursor.execute("set local statement_timeout = '15s'")
             cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))", ("herdmaster-first-treatment:" + litter_id,))
-            cursor.execute("select sow_pig_id,male_count,female_count from public.litters where litter_id=%s for update", (litter_id,))
-            litter = cursor.fetchone()
-            if not litter or to_clean_string(litter[0]) != sow_pig_id:
-                raise ValueError("stale_litter_or_sow_identity")
-            cursor.execute("""select pig_id,status,on_farm from public.pigs
-                where litter_id=%s order by pig_id for update""", (litter_id,))
-            active = sorted(to_clean_string(row[0]) for row in cursor.fetchall()
-                            if to_clean_string(row[1]).casefold() == "active" and row[2] is True)
-            if active != pig_ids:
-                raise ValueError("stale_active_piglet_membership")
+            receipt = _first_treatment_receipt(cursor, packet)
+            if receipt:
+                return receipt
+            cursor.execute("select litter_id from public.litters where litter_id=%s for update", (litter_id,))
+            cursor.execute("select pig_id from public.pigs where litter_id=%s order by pig_id for update", (litter_id,))
+            snapshot = litter_first_treatment_snapshot(cursor, litter_id)
+            if snapshot != packet["expected_snapshot"]:
+                raise ValueError("first_treatment_preview_evidence_changed")
+            cursor.execute("""select product_id,product_name,product_category,dose_unit,default_withdrawal_days
+                from public.farm_products where product_id=any(%s) and is_active is true order by product_id for share""",
+                ([row["product_id"] for row in packet["products"]],))
+            names = [column.name for column in cursor.description]
+            products = [dict(zip(names, row)) for row in cursor.fetchall()]
+            prepared = prepare_litter_first_treatment_preview({"authenticated": True,
+                "authenticated_principal_id": packet["principal"], "provider_message_id": "shared_first_treatment_service",
+                "litter_first_treatment": packet["facts"]}, canonical_treatment_evidence(snapshot, products))
+            if not prepared.get("success") or any(treatment_digest(packet.get(key)) != treatment_digest(value)
+                    for key, value in prepared["preview"].items()):
+                raise ValueError("first_treatment_facts_or_evidence_conflict")
+            expected = _first_treatment_medical_rows(packet)
+            updated = 0
             if packet.get("earmarked") is True:
                 cursor.execute("""update public.pigs set earmarked=true,earmark_date=%s,updated_at=now()
-                    where pig_id=any(%s) and (earmarked is distinct from true or earmark_date is distinct from %s)""",
-                    (_date_or_none(packet.get("action_date")), pig_ids, _date_or_none(packet.get("action_date"))))
+                    where pig_id=any(%s) and earmarked is distinct from true""",
+                    (_date_or_none(packet["action_date"]), packet["pig_ids"]))
                 updated = cursor.rowcount
-            for raw in rows:
-                params = {"event_id": to_clean_string(raw[0]), "pig_id": to_clean_string(raw[1]),
-                    "date": _date_or_none(raw[2]), "type": to_clean_string(raw[3]),
-                    "product_id": to_clean_string(raw[4]) or None, "product_name": to_clean_string(raw[5]),
-                    "dose": "" if raw[6] is None else str(raw[6]), "unit": to_clean_string(raw[7]),
-                    "route": to_clean_string(raw[8]), "reason": to_clean_string(raw[9]),
-                    "batch": to_clean_string(raw[10]), "withdrawal_days": _int_or_none(raw[11]),
-                    "withdrawal_end": _date_or_none(raw[12]), "given_by": to_clean_string(raw[13]),
-                    "follow_up": _bool_or_none_from_sheet(raw[14]) is True,
-                    "follow_up_date": _date_or_none(raw[15]), "notes": to_clean_string(raw[16])}
-                expected_event_id = stable_first_treatment_event_id(
-                    operation_id, params["pig_id"], params["type"], params["product_id"])
-                if params["event_id"] != expected_event_id:
-                    raise ValueError("first_treatment_event_identity_conflict")
-                cursor.execute("""select product_name,dose,dose_unit,route,batch_lot_number
-                    from public.pig_medical_events where medical_event_id=%(event_id)s""", params)
-                existing = cursor.fetchone()
-                expected = (params["product_name"], params["dose"], params["unit"], params["route"], params["batch"])
-                if existing and tuple(existing) != expected:
-                    raise ValueError("conflicting_first_treatment_replay")
-                if not existing:
-                    cursor.execute("""insert into public.pig_medical_events(
-                        medical_event_id,pig_id,treatment_date,treatment_type,product_id,product_name,dose,dose_unit,
-                        route,reason_for_treatment,batch_lot_number,withdrawal_days,withdrawal_end_date,given_by,
-                        follow_up_required,follow_up_date,medical_notes) values(
-                        %(event_id)s,%(pig_id)s,%(date)s,%(type)s,%(product_id)s,%(product_name)s,%(dose)s,%(unit)s,
-                        %(route)s,%(reason)s,%(batch)s,%(withdrawal_days)s,%(withdrawal_end)s,%(given_by)s,
-                        %(follow_up)s,%(follow_up_date)s,%(notes)s)""", params)
-                    created += 1
-            if male_count is not None and (litter[1] != male_count or litter[2] != female_count):
-                cursor.execute("update public.litters set male_count=%s,female_count=%s,unknown_sex_count=0,updated_at=now() where litter_id=%s",
-                               (male_count, female_count, litter_id))
-                litter_updated = cursor.rowcount
-            cursor.execute("""select medical_event_id,pig_id,treatment_type,product_id
-                from public.pig_medical_events where medical_event_id=any(%s) order by medical_event_id""",
-                           ([to_clean_string(row[0]) for row in rows],))
-            medical_readback = [{"medical_event_id": row[0], "pig_id": row[1],
-                "treatment_type": row[2], "product_id": row[3]} for row in cursor.fetchall()]
-            if len(medical_readback) != len(rows):
-                raise RuntimeError("first_treatment_medical_readback_incomplete")
-    return {"success": True, "status": "first_treatment_replayed_noop" if not (created or updated or litter_updated)
-            else "first_treatment_committed", "treatment_rows_created": created, "pig_rows_updated": updated,
-            "litter_rows_updated": litter_updated, "medical_readback": medical_readback,
-            "pig_ids": pig_ids, "male_count": male_count, "female_count": female_count}
+            columns = tuple(expected[0])
+            for row in expected:
+                cursor.execute("insert into public.pig_medical_events(" + ",".join(columns) + ") values ("
+                    + ",".join("%(" + key + ")s" for key in columns) + ")", row)
+            medical = _verify_first_treatment_medical(cursor, packet)
+            # The reported current-cohort tally belongs to this operation. Birth
+            # tallies and unknown individual sexes retain their existing meaning.
+            result = {"success": True, "status": "first_treatment_committed",
+                "operation_id": packet["operation_id"], "replay_withheld": False,
+                "treatment_rows_created": len(expected), "pig_rows_updated": updated, "litter_rows_updated": 0,
+                "medical_readback": medical, "pig_ids": packet["pig_ids"],
+                "male_count": packet["male_count"], "female_count": packet["female_count"]}
+            cursor.execute("""insert into public.operational_events(
+                event_id,idempotency_key,event_type,domain,aggregate_type,aggregate_id,
+                source_system,authority_tier,privacy_class,actor_type,actor_id,correlation_id,
+                occurred_at,freshness_at,payload_json,provenance_json)
+                values(%s,%s,'litter.first_treatment_recorded','animals','litter',%s,
+                'herdmaster_first_treatment','owner_approved','internal','farm_operator',%s,%s,
+                now(),now(),%s::jsonb,%s::jsonb)""",
+                (packet["operation_id"], packet["operation_id"], litter_id, packet["principal"], packet["operation_id"],
+                 json.dumps({"packet_digest": treatment_digest(packet), "packet": packet, "result": result}, default=str),
+                 json.dumps({"source_ref": "current_canonical_litters", "action_kind": packet["action_kind"]})))
+    return result
+
+
+def apply_litter_first_treatment_skip(litter_id, actor, reason, connect_factory=None):
+    from modules.pig_weights.farm_supabase_read_service import litter_first_treatment_snapshot
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("set transaction isolation level serializable")
+            cursor.execute("set local statement_timeout = '15s'")
+            cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))", ("herdmaster-first-treatment:" + litter_id,))
+            cursor.execute("select litter_id from public.litters where litter_id=%s for update", (litter_id,))
+            snapshot = litter_first_treatment_snapshot(cursor, litter_id)
+            if not snapshot or snapshot["litter"]["litter_status"] != "Active":
+                raise ValueError("current_litter_required")
+            if snapshot["medical"] or snapshot["treatment_receipts"]:
+                raise ValueError("first_treatment_has_medical_evidence")
+            if snapshot["skip"].get("first_treatment_skipped_at"):
+                return {"success": True, "status": "already_skipped", "litter_id": litter_id}
+            cursor.execute("""update public.litters set first_treatment_skipped_at=now(),
+                first_treatment_skipped_by=%s,first_treatment_skip_reason=%s where litter_id=%s""", (actor, reason, litter_id))
+            return {"success": True, "status": "first_treatment_skipped", "litter_id": litter_id, "first_treatment_skipped": True}
 
 
 def stable_first_treatment_event_id(operation_id, pig_id, treatment_type, product_id):

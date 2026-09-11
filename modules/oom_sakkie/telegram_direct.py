@@ -237,6 +237,8 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
         from modules.oom_sakkie.herdmaster_litter_weaning_runtime import weaning_delivery_input
         parsed = weaning_delivery_input(parsed, action_result)
+        from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
+        parsed = first_treatment_delivery_input(parsed, action_result)
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
           if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else
           deliver_family_result(parsed,action_result,
@@ -353,10 +355,15 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
             from modules.oom_sakkie.herdmaster_litter_weaning_runtime import handle_litter_weaning_message
             health_result, health_status = handle_litter_weaning_message(parsed, authority)
             if not health_result.get("handled"):
+                from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import handle_litter_first_treatment_message
+                health_result, health_status = handle_litter_first_treatment_message(parsed, authority)
+            if not health_result.get("handled"):
                 health_result, health_status = handle_authenticated_health_loss_message(parsed, authority)
         if health_result.get("handled"):
             from modules.oom_sakkie.herdmaster_litter_weaning_runtime import weaning_delivery_input
             parsed = weaning_delivery_input(parsed, health_result)
+            from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
+            parsed = first_treatment_delivery_input(parsed, health_result)
             delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
                 if health_result.get("suppress_owner_delivery") else
                 deliver_family_result(parsed, health_result, specialist="HERDMASTER",

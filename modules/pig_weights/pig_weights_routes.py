@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from modules.auth.owner_access import (
     require_weaning_session, weaning_session_identity,
+    require_treatment_session, treatment_session_identity,
     correction_batch_owner_admin_principal,
     require_correction_batch_owner_admin_access,
     require_owner_admin_access,
@@ -438,14 +439,26 @@ def litter_piglet_observations_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/newborn-health", methods=["POST"])
 def litter_newborn_health_route(litter_id):
-    payload = request.get_json(silent=True) or {}
+    denied = require_treatment_session()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, status="first_treatment_request_invalid"), 400
+    payload["changed_by"] = treatment_session_identity()["actor_id"]
     result, status_code = record_litter_profile_newborn_health(litter_id, payload)
     return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/litter/<litter_id>/first-treatment/skip", methods=["POST"])
 def litter_first_treatment_skip_route(litter_id):
-    payload = request.get_json(silent=True) or {}
+    denied = require_treatment_session()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or payload.get("confirmed") is not True:
+        return jsonify(success=False, status="explicit_treatment_skip_confirmation_required"), 409
+    payload["changed_by"] = treatment_session_identity()["actor_id"]
     result, status_code = skip_litter_profile_first_treatment(litter_id, payload)
     return jsonify(result), status_code
 

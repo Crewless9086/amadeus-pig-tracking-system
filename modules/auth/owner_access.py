@@ -184,7 +184,7 @@ def farm_session_principal():
     principal = resolve_family_principal({"telegram_user_id": actor,
         "telegram_chat_id": actor, "telegram_chat_type": "private"}, os.environ)
     if (not principal.authenticated or principal.binding_digest != data.get("binding_digest")
-            or not ({"*", "mortality_confirmation", "weaning"} & principal.effective_permissions)):
+            or not ({"*", "mortality_confirmation", "weaning", "treatment"} & principal.effective_permissions)):
         return None
     return principal
 
@@ -247,6 +247,35 @@ def require_weaning_session():
     return None
 
 
+def treatment_session_identity():
+    principal = farm_session_principal()
+    if principal and {"*", "treatment"} & principal.effective_permissions:
+        return {"actor_id": principal.telegram_user_id, "role": principal.role.value,
+                "capabilities": principal.effective_permissions, "language": principal.language}
+    actor = _owner_admin_session_principal()
+    if actor:
+        return {"actor_id": actor, "role": "owner", "capabilities": frozenset({"*"}), "language": "en"}
+    return None
+
+
+def treatment_csrf_token():
+    if not treatment_session_identity():
+        return ""
+    if not session.get("treatment_csrf"):
+        session["treatment_csrf"] = secrets.token_urlsafe(32)
+    return session["treatment_csrf"]
+
+
+def require_treatment_session():
+    if not treatment_session_identity():
+        return jsonify(success=False, status="authenticated_treatment_permission_required"), 403
+    expected = str(session.get("treatment_csrf") or "")
+    supplied = str(request.headers.get("X-Treatment-CSRF") or "")
+    if not expected or not hmac.compare_digest(expected, supplied):
+        return jsonify(success=False, status="treatment_request_binding_required"), 403
+    return None
+
+
 def telegram_farm_login_post():
     """Validate Telegram Mini App initData before resolving a farm principal.
 
@@ -295,7 +324,7 @@ def telegram_farm_login_post():
         from modules.oom_sakkie.family_access import resolve_family_principal
         principal = resolve_family_principal({"telegram_user_id": actor,
             "telegram_chat_id": actor, "telegram_chat_type": "private"}, os.environ)
-        if not principal.authenticated or not ({"*", "mortality_confirmation", "weaning"} & principal.effective_permissions):
+        if not principal.authenticated or not ({"*", "mortality_confirmation", "weaning", "treatment"} & principal.effective_permissions):
             raise ValueError("missing delegation")
     except (ValueError, TypeError, KeyError):
         return jsonify(success=False, status="farm_login_not_authorized"), 403

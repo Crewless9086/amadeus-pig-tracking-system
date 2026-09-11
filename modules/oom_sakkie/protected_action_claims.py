@@ -283,7 +283,8 @@ def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
 
 def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_message_id,
                    provider_timestamp, source_card_message_id="", connect_factory=None,
-                   allowed_action_kinds=None, weaning_semantic_confirmation=False):
+                   allowed_action_kinds=None, weaning_semantic_confirmation=False,
+                   first_treatment_semantic_confirmation=False):
     data=str(callback_data or "")
     try:
         provider_time=datetime.fromisoformat(str(provider_timestamp or "").replace("Z","+00:00"))
@@ -308,11 +309,15 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
             return {"success":False,"status":"protected_callback_card_unbound"},409
         semantic_weaning = (weaning_semantic_confirmation is True
             and row[0] == "herdmaster_record_litter_weaning" and action == "confirm")
+        semantic_treatment = (first_treatment_semantic_confirmation is True
+            and row[0] == "herdmaster_record_litter_first_treatment" and action == "confirm")
         if weaning_semantic_confirmation and not semantic_weaning:
             return {"success":False,"status":"protected_callback_invalid"},409
-        if str(row[10])!=str(source_card_message_id or "") and (source_card_message_id or not semantic_weaning):
+        if first_treatment_semantic_confirmation and not semantic_treatment:
+            return {"success":False,"status":"protected_callback_invalid"},409
+        if str(row[10])!=str(source_card_message_id or "") and (source_card_message_id or not (semantic_weaning or semantic_treatment)):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
-        if semantic_weaning:
+        if semantic_weaning or semantic_treatment:
             # The server's typed adapter may accept an ordinary-language yes
             # without a reply reference. Validate chronology under this row lock;
             # a selected active card is never itself evidence of consent.
@@ -340,14 +345,14 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
                 except (ValueError, TypeError):
                     ordered = False
                 if not ordered:
-                    return {"success":False,"status":"weaning_confirmation_not_unambiguous",
+                    return {"success":False,"status":("weaning_confirmation_not_unambiguous" if semantic_weaning else "first_treatment_confirmation_not_unambiguous"),
                         "writes_farm_data":False},409
         if row[7]=="completed":
             if row[0] in {"mortality", "rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
                     "rootline_fertilizer_mixer_presence_refresh",
                     "sam_sale_payment", "beacon_media_review",
                     "herdmaster_record_farrowing_litter", "herdmaster_record_litter_piglet_deaths",
-                    "herdmaster_record_litter_weaning"}:
+                    "herdmaster_record_litter_weaning", "herdmaster_record_litter_first_treatment"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
                   "result":row[9],"preview_payload":row[6],"telegram_sends":0,"telegram_edits":0},200

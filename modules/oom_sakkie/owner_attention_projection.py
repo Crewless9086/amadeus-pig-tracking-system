@@ -437,6 +437,8 @@ def _supported_retained_identity(raw: Mapping[str, Any], source_key: str) -> tup
     reference = _ref_value(refs, "litter:") or _ref_value(refs, "pig:")
     if source_key == "herdmaster:molly-active-litter":
         return "Molly", "", reference
+    if source_key.startswith("herdmaster:litter-first-treatment:"):
+        return "", "Litter first treatment", reference
     if source_key.startswith("herdmaster:welfare:") and " has an active " in summary:
         label = summary.split(" has an active ", 1)[0].strip()
         if label and label.casefold() not in {"name unavailable", "animal name unavailable"}:

@@ -270,11 +270,16 @@ def process_litter_profile_weaning_day(litter_id: str, payload: dict):
 
 def record_litter_profile_newborn_health(litter_id: str, payload: dict):
     payload = payload or {}
+    if set(payload) - {"action_date", "changed_by", "earmarked", "antiparasitic_product_id",
+            "deworming_product_id", "vaccination_product_id", "dose", "dose_unit", "route",
+            "batch_lot_number", "notes", "male_count", "female_count", "total_count", "dry_run",
+            "confirmed", "confirmation_binding"}:
+        return {"success": False, "status": "first_treatment_unsupported_facts"}, 400
     return record_litter_newborn_health(
         litter_id=litter_id,
         action_date_value=payload.get("action_date", ""),
         changed_by=payload.get("changed_by", "web_app"),
-        earmarked=payload.get("earmarked", False) is True,
+        earmarked=payload.get("earmarked"),
         antiparasitic_product_id=payload.get("antiparasitic_product_id", ""),
         deworming_product_id=payload.get("deworming_product_id", ""),
         vaccination_product_id=payload.get("vaccination_product_id", ""),
@@ -284,7 +289,12 @@ def record_litter_profile_newborn_health(litter_id: str, payload: dict):
         notes=payload.get("notes", ""),
         male_count=payload.get("male_count", None),
         female_count=payload.get("female_count", None),
-        dry_run=payload.get("dry_run", True) is True,
+        dry_run=payload.get("dry_run", True),
+        dose_unit=payload.get("dose_unit"),
+        total_count=payload.get("total_count"),
+        confirmed=payload.get("confirmed", False),
+        confirmation_binding=payload.get("confirmation_binding"),
+        require_supabase=True,
     )
 
 

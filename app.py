@@ -13,6 +13,8 @@ from modules.auth.owner_access import (
     mortality_csrf_token,
     weaning_csrf_token,
     weaning_session_identity,
+    treatment_session_identity,
+    treatment_csrf_token,
     owner_session_is_valid,
     owner_logout_post,
     owner_admin_principal,
@@ -517,7 +519,8 @@ def pig_movement_history_page(pig_id):
 @app.route("/litter/<litter_id>")
 def litter_detail_page(litter_id):
     return render_template("litter-detail.html", weaning_identity=weaning_session_identity(),
-        weaning_csrf=weaning_csrf_token())
+        weaning_csrf=weaning_csrf_token(), treatment_identity=treatment_session_identity(),
+        treatment_csrf=treatment_csrf_token())
 
 
 @app.route("/pig-weights")

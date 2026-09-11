@@ -19,6 +19,11 @@ const newbornHealthGivenBy = document.getElementById("newborn_health_given_by");
 const newbornHealthMaleCount = document.getElementById("newborn_health_male_count");
 const newbornHealthFemaleCount = document.getElementById("newborn_health_female_count");
 const newbornHealthNotes = document.getElementById("newborn_health_notes");
+const newbornHealthDose = document.getElementById("newborn_health_dose");
+const newbornHealthDoseUnit = document.getElementById("newborn_health_dose_unit");
+const newbornHealthRoute = document.getElementById("newborn_health_route");
+const newbornHealthBatch = document.getElementById("newborn_health_batch");
+const newbornHealthTotalCount = document.getElementById("newborn_health_total_count");
 const newbornHealthPreview = document.getElementById("newborn_health_preview");
 const newbornHealthPreviewButton = document.getElementById("newborn_health_preview_button");
 const newbornHealthApplyButton = document.getElementById("newborn_health_apply_button");
@@ -276,9 +281,16 @@ async function loadProductsForNewbornHealth() {
     throw new Error("Could not load products.");
   }
   const products = data.products || [];
-  setSelectOptions(newbornHealthAntiparasitic, products, ["antiparasitic", "parasite", "ecomectin"], "ecomectin");
-  setSelectOptions(newbornHealthDeworming, products, ["deworm", "panacur"], "panacur");
+  setSelectOptions(newbornHealthAntiparasitic, products, ["antiparasitic", "parasite"], "");
+  setSelectOptions(newbornHealthDeworming, products, ["deworm"], "");
   setSelectOptions(newbornHealthVaccination, products, ["vacc"], "");
+  [newbornHealthAntiparasitic, newbornHealthDeworming, newbornHealthVaccination].forEach(select => {
+    select.value = "";
+    Array.from(select.options).forEach(option => {
+      const product = products.find(item => item.product_id === option.value);
+      if (product) option.textContent = `${product.product_name || product.product_id} (${product.product_id})`;
+    });
+  });
   productsLoaded = true;
 }
 
@@ -350,9 +362,6 @@ function renderAttention(litter) {
     || "Confirm the litter status and update the weaning details when ready.";
   renderAttentionLinks(litter.litter_id, attention.action_type);
   markWeanedDate.value = attention.wean_date || todayIsoDate();
-  if (newbornHealthDate && !newbornHealthDate.value) {
-    newbornHealthDate.value = todayIsoDate();
-  }
   if (canRecordNewbornHealth) {
     loadProductsForNewbornHealth().catch(() => {
       showLitterMessage("Could not load products for newborn health.", "error");
@@ -1056,46 +1065,113 @@ function setMarkWeanedSubmitting(isSubmitting) {
 }
 
 function newbornHealthPayload(dryRun) {
+  const count = input => input.value === "" ? null : Number(input.value);
   return {
     action_date: newbornHealthDate.value,
-    changed_by: newbornHealthGivenBy.value || "web_app",
-    earmarked: newbornHealthEarmarked.checked,
+    earmarked: newbornHealthEarmarked.value === "" ? null : newbornHealthEarmarked.value === "true",
     antiparasitic_product_id: newbornHealthAntiparasitic.value,
     deworming_product_id: newbornHealthDeworming.value,
     vaccination_product_id: newbornHealthVaccination.value,
-    notes: newbornHealthNotes.value,
-    male_count: newbornHealthMaleCount.value,
-    female_count: newbornHealthFemaleCount.value,
-    dry_run: dryRun,
+    dose: newbornHealthDose.value, dose_unit: newbornHealthDoseUnit.value,
+    route: newbornHealthRoute.value, batch_lot_number: newbornHealthBatch.value,
+    notes: newbornHealthNotes.value, male_count: count(newbornHealthMaleCount),
+    female_count: count(newbornHealthFemaleCount), total_count: count(newbornHealthTotalCount), dry_run: dryRun,
   };
 }
 
+function treatmentFactsHtml(facts) {
+  const tally = facts.male_count == null ? "Geslagtelling nie opgegee nie." :
+    `${facts.male_count} manlik, ${facts.female_count} vroulik as werpseltelling. Individuele geslagte bly soos aangeteken.`;
+  return `<p><strong>${escapeHtml(facts.sow_name || facts.sow_pig_id || "")} · ${escapeHtml(facts.litter_id)}</strong></p>
+    <p>Werklike datum: ${escapeHtml(facts.action_date)} · ${facts.total_count ?? facts.piglet_count} huidige varkies</p>
+    <p>${(facts.pig_ids || []).map(escapeHtml).join(", ")}</p>
+    <p>${(facts.products || []).map(product => `${escapeHtml(product.product_name)} (${escapeHtml(product.product_id)})`).join(", ")}</p>
+    <p>${escapeHtml(String(facts.dose))} ${escapeHtml(facts.dose_unit)} per varkie · ${escapeHtml(facts.route)} · lot ${escapeHtml(facts.batch_lot_number)}</p>
+    <p>Oormerke: ${facts.earmarked == null ? "nie opgegee nie" : facts.earmarked ? "aangebring" : "nie aangebring nie"}. ${tally}</p>
+    ${facts.notes ? `<p>Nota: ${escapeHtml(facts.notes)}</p>` : ""}`;
+}
+
 function renderNewbornHealthPreview(preview) {
-  if (!newbornHealthPreview) return;
   newbornHealthPreview.classList.remove("hidden");
-  const treatmentCount = preview.treatment_rows_planned || 0;
-  const pigletCount = preview.piglet_count || 0;
-  newbornHealthPreview.innerHTML = `
-    <div class="bulk-review-header">
-      <strong>Preview ready</strong>
-      <span>${pigletCount} piglet${pigletCount === 1 ? "" : "s"} / ${treatmentCount} treatment row${treatmentCount === 1 ? "" : "s"}</span>
-    </div>
-    <p class="form-helper"><strong>Geslagtelling:</strong> ${preview.sex_count_recorded ? `${preview.male_count} beertjies en ${preview.female_count} sogvarkies as 'n werpseltelling. Geen anonieme varkie word outomaties 'n geslag toegeken nie.` : "Nie by hierdie stap aangeteken nie; voltooi dit by speen."}</p>
-    <p class="form-helper">Earmarks and selected treatments will be saved for all active on-farm piglets in this litter.</p>
-  `;
+  newbornHealthPreview.innerHTML = `<strong>Kontroleer die presiese behandeling</strong>${treatmentFactsHtml(preview.preview)}`;
 }
 
 function resetNewbornHealthPreview() {
   latestNewbornHealthPreview = null;
-  if (newbornHealthApplyButton) newbornHealthApplyButton.disabled = true;
-  if (newbornHealthPreview) newbornHealthPreview.classList.add("hidden");
+  newbornHealthApplyButton.disabled = true;
+  newbornHealthPreview.classList.add("hidden");
+}
+
+function treatmentStorageKey() {
+  return `herdmaster-first-treatment:${newbornHealthForm.dataset.actorId || "anonymous"}:${getLitterIdFromUrl()}`;
+}
+
+function pendingTreatment() {
+  try { return JSON.parse(sessionStorage.getItem(treatmentStorageKey()) || "null"); }
+  catch (_) { return null; }
+}
+
+function renderTreatmentRecovery() {
+  const pending = pendingTreatment();
+  document.getElementById("treatment_recovery").classList.toggle("hidden", !pending);
+  newbornHealthForm.querySelectorAll(".form-grid, .form-actions, .litter-first-care-skip").forEach(node => node.classList.toggle("hidden", Boolean(pending)));
+  if (pending) {
+    newbornHealthForm.classList.remove("hidden");
+    const packet = pending.confirmation_binding?.packet;
+    document.getElementById("treatment_recovery_details").textContent =
+      `${packet?.litter_id || getLitterIdFromUrl()} · ${packet?.action_date || ""} · ${packet?.total_count || 0} varkies`;
+  }
+  return pending;
+}
+
+function renderTreatmentPresentation(litter) {
+  const completed = litter.first_treatment_complete || litter.first_treatment_partial || litter.first_treatment_skipped || detailState(litter) !== "active";
+  const authorized = Boolean(newbornHealthForm.dataset.actorId);
+  newbornHealthForm.classList.toggle("hidden", completed || !authorized);
+  const summary = document.getElementById("lifecycle_first_care_summary");
+  if (litter.first_treatment_receipt && litter.first_treatment_receipt_verified) {
+    summary.classList.remove("hidden");
+    summary.innerHTML = `<strong>Eerste behandeling gestoor en teruggelees</strong>${treatmentFactsHtml(litter.first_treatment_receipt)}`;
+  } else if (!completed && !authorized) {
+    summary.classList.remove("hidden");
+    summary.textContent = "Maak hierdie werpsel uit jou eie private Plaas-menu oop met behandelingstoestemming.";
+  }
+  renderTreatmentRecovery();
 }
 
 function setNewbornHealthSubmitting(isSubmitting, mode = "preview") {
-  newbornHealthPreviewButton.disabled = isSubmitting;
-  newbornHealthApplyButton.disabled = isSubmitting || !latestNewbornHealthPreview;
-  newbornHealthPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
-  newbornHealthApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Newborn Health";
+  newbornHealthPreviewButton.disabled = isSubmitting || Boolean(pendingTreatment());
+  newbornHealthApplyButton.disabled = isSubmitting || !latestNewbornHealthPreview || Boolean(pendingTreatment());
+  newbornHealthPreviewButton.textContent = isSubmitting && mode === "preview" ? "Kontroleer..." : "Kontroleer behandeling";
+  newbornHealthApplyButton.textContent = isSubmitting && mode === "apply" ? "Stoor en lees terug..." : "Bevestig en stoor behandeling";
+  document.getElementById("treatment_recovery_button").disabled = isSubmitting || !newbornHealthForm.dataset.actorId;
+}
+
+function treatmentHeaders() {
+  return {"Content-Type": "application/json", "X-Treatment-CSRF": newbornHealthForm.dataset.treatmentCsrf || ""};
+}
+
+function treatmentError(data) {
+  const fields = {product:"die presiese produk", dose:"die werklike dosis", dose_unit:"die dosiseenheid", route:"die toedieningsroete",
+    batch_lot_number:"die lotnommer", action_date:"die werklike datum vanaf geboorte tot vandag", total_count:"die getal huidige varkies",
+    male_count:"albei geslagtellings", female_count:"albei geslagtellings", earmarked:"die werklike oormerkfeit"};
+  if (data.missing?.length) return `Kontroleer ${fields[data.missing[0]] || "die ontbrekende feit"}. Jou ander besonderhede bly in die vorm.`;
+  const messages = {
+    authenticated_treatment_permission_required:"Jou eie rekening het behandelingstoestemming nodig.",
+    treatment_request_binding_required:"Jou sessie het verander. Maak die werpsel weer uit jou private Plaas-menu oop.",
+    exact_first_treatment_confirmation_required:"Die presiese voorskou stem nie ooreen nie. Kontroleer die feite weer.",
+    first_treatment_preview_expired:"Die voorskou het verval sonder 'n gestoorde behandeling. Kontroleer weer.",
+    first_treatment_evidence_changed_repreview_required:"Die werpsel of sy besonderhede het verander. Lees die huidige rekord en kontroleer weer.",
+    first_treatment_already_has_canonical_evidence:"Daar is reeds behandelings- of oorslaanbewys. Lees die bestaande rekord terug.",
+  };
+  return messages[data.status] || "Die behandelingsuitslag kon nie bevestig word nie. Herstel jou behoue bevestiging voordat jy weer probeer.";
+}
+
+async function readTreatmentResponse(response) {
+  if (!(response.headers.get("content-type") || "").includes("application/json")) {
+    throw new Error("Die behandelingsuitslag kon nie teruggelees word nie. Herlaai die werpsel en herstel jou behoue bevestiging.");
+  }
+  return response.json();
 }
 
 function renderPigletDeathPanel(litter) {
@@ -1515,81 +1591,80 @@ async function submitPigletDeath(event) {
 
 async function previewNewbornHealth() {
   clearLitterMessage();
-  latestNewbornHealthPreview = null;
-  newbornHealthApplyButton.disabled = true;
-
-  if (!newbornHealthDate.value) {
-    showLitterMessage("Choose an action date before previewing.", "error");
-    return;
-  }
-
+  resetNewbornHealthPreview();
+  if (pendingTreatment()) return renderTreatmentRecovery();
+  if (!newbornHealthDate.value) return showLitterMessage("Gee die werklike behandelingsdatum voordat jy kontroleer.", "error");
   setNewbornHealthSubmitting(true, "preview");
   try {
-    const litterId = getLitterIdFromUrl();
-    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/newborn-health`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newbornHealthPayload(true)),
+    const payload = newbornHealthPayload(true);
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/newborn-health`, {
+      method: "POST", headers: treatmentHeaders(), body: JSON.stringify(payload),
     });
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.error || "Could not preview newborn health action."]).join(" "));
-    }
-    latestNewbornHealthPreview = data;
+    const data = await readTreatmentResponse(response);
+    if (!response.ok || !data.success) throw new Error(treatmentError(data));
+    latestNewbornHealthPreview = {...data, request_payload: payload};
     renderNewbornHealthPreview(data);
   } catch (error) {
-    showLitterMessage(error.message || "Could not preview newborn health action.", "error");
+    showLitterMessage(error.message || "Kon nie die behandeling kontroleer nie.", "error");
   } finally {
     setNewbornHealthSubmitting(false, "preview");
   }
 }
 
-async function submitNewbornHealth(event) {
-  event.preventDefault();
-  clearLitterMessage();
-
-  if (!latestNewbornHealthPreview) {
-    showLitterMessage("Preview the newborn health action before saving.", "error");
-    return;
-  }
-  if (!window.confirm("Save newborn health records for all active piglets in this litter?")) {
-    return;
-  }
-
+async function saveConfirmedTreatment(payload) {
   setNewbornHealthSubmitting(true, "apply");
   try {
-    const litterId = getLitterIdFromUrl();
-    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/newborn-health`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newbornHealthPayload(false)),
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/newborn-health`, {
+      method: "POST", headers: treatmentHeaders(), body: JSON.stringify(payload),
     });
-    const data = await response.json();
+    const data = await readTreatmentResponse(response);
     if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.error || "Could not save newborn health action."]).join(" "));
+      if (data.operation_committed === false) sessionStorage.removeItem(treatmentStorageKey());
+      throw new Error(treatmentError(data));
     }
-    latestNewbornHealthPreview = null;
-    newbornHealthPreview.classList.add("hidden");
-    showLitterMessage(data.message || "Newborn health action saved.", "success");
-    await loadLitterDetail({ keepMessage: true });
+    sessionStorage.removeItem(treatmentStorageKey());
+    resetNewbornHealthPreview();
+    showLitterMessage(`Eerste behandeling is gestoor en teruggelees: ${data.piglet_count} varkies op ${data.action_date}, ${data.dose} ${data.dose_unit} per varkie.`, "success");
+    await loadLitterDetail({keepMessage: true});
   } catch (error) {
-    showLitterMessage(error.message || "Could not save newborn health action.", "error");
+    showLitterMessage(error instanceof TypeError ? "Die verbinding is onderbreek. Herstel jou behoue bevestiging om die uitslag terug te lees." : error.message, "error");
   } finally {
+    renderTreatmentRecovery();
     setNewbornHealthSubmitting(false, "apply");
   }
 }
 
+async function submitNewbornHealth(event) {
+  event.preventDefault();
+  if (!latestNewbornHealthPreview || pendingTreatment()) return;
+  if (JSON.stringify(newbornHealthPayload(true)) !== JSON.stringify(latestNewbornHealthPreview.request_payload)) {
+    resetNewbornHealthPreview();
+    return showLitterMessage("Die besonderhede het verander. Kontroleer weer voordat jy bevestig.", "error");
+  }
+  if (!window.confirm("Bevestig hierdie presiese behandelingsdatum, varkies, produkte en dosis en stoor dit een keer?")) return;
+  const confirmed = {...latestNewbornHealthPreview.request_payload, dry_run: false, confirmed: true,
+    confirmation_binding: latestNewbornHealthPreview.confirmation_binding};
+  try { sessionStorage.setItem(treatmentStorageKey(), JSON.stringify(confirmed)); }
+  catch (_) { return showLitterMessage("Jou blaaier kon die bevestiging nie behou nie. Maak berging beskikbaar en probeer weer.", "error"); }
+  await saveConfirmedTreatment(confirmed);
+}
+
+document.getElementById("treatment_recovery_button").addEventListener("click", () => {
+  const confirmed = pendingTreatment();
+  if (confirmed) saveConfirmedTreatment(confirmed);
+});
+
 async function skipNewbornHealth() {
   clearLitterMessage();
-  if (!newbornHealthSkip.checked) return;
+  if (!newbornHealthSkip.checked || pendingTreatment()) return;
   if (!window.confirm("Slaan Eerste Behandeling oor en sluit hierdie stap?")) return;
   newbornHealthSkipButton.disabled = true;
   try {
     const litterId = getLitterIdFromUrl();
     const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/first-treatment/skip`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ changed_by: newbornHealthGivenBy.value || "web_app" }),
+      headers: treatmentHeaders(),
+      body: JSON.stringify({confirmed: true}),
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
@@ -1796,6 +1871,7 @@ async function loadLitterDetail(options = {}) {
     if (window.renderLitterLifecyclePresentation) {
       window.renderLitterLifecyclePresentation(litter);
     }
+    renderTreatmentPresentation(litter);
     renderClosedLitterView(litter);
     litterPigletsList.innerHTML = "";
 
@@ -1857,7 +1933,7 @@ manualActionsToggle.addEventListener("click", () => {
   if (element) element.addEventListener("change", resetWeaningDayPreview);
 });
 [
-  newbornHealthDate,
+  newbornHealthDate, newbornHealthDose, newbornHealthDoseUnit, newbornHealthRoute, newbornHealthBatch, newbornHealthTotalCount,
   newbornHealthEarmarked,
   newbornHealthAntiparasitic,
   newbornHealthDeworming,
@@ -1866,7 +1942,7 @@ manualActionsToggle.addEventListener("click", () => {
   newbornHealthVaccination,
   newbornHealthNotes,
 ].forEach((element) => {
-  if (element) element.addEventListener("change", resetNewbornHealthPreview);
+  if (element) { element.addEventListener("change", resetNewbornHealthPreview); element.addEventListener("input", resetNewbornHealthPreview); }
 });
 [
   pigletDeathDate,

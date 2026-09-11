@@ -347,14 +347,23 @@
               <p class="form-helper">If a piglet has no latest weight, the backend will stop and ask for weights before saving.</p>
               <button type="submit" id="mark_weaned_button">Mark as Weaned</button>
             </form>
-            <form id="newborn_health_form" class="attention-action-form hidden">
+            <form id="newborn_health_form" class="attention-action-form hidden"
+                  data-actor-id="{{ treatment_identity.actor_id if treatment_identity else '' }}"
+                  data-treatment-csrf="{{ treatment_csrf or '' }}">
+              <p class="form-helper">Teken die behandeling aan wat jy werklik toegedien het. Kontroleer die presiese feite en bevestig voordat jy stoor.</p>
+              <div id="treatment_recovery" class="bulk-review-panel hidden" role="status">
+                <strong>Bevestiging behou</strong>
+                <p>Lees die uitslag van jou presiese bevestiging terug voordat jy verder werk.</p>
+                <p id="treatment_recovery_details"></p>
+                <button type="button" id="treatment_recovery_button">Herstel bevestiging en lees terug</button>
+              </div>
               <div class="form-grid">
                 <div class="form-field">
                   <label for="newborn_health_date">Datum</label>
                   <input type="date" id="newborn_health_date" required />
                 </div>
                 <div class="form-field">
-                  <label for="newborn_health_antiparasitic">Ecomectin / antiparasities</label>
+                  <label for="newborn_health_antiparasitic">Antiparasitiese produk wat gebruik is</label>
                   <select id="newborn_health_antiparasitic">
                     <option value="">Geen</option>
                   </select>
@@ -366,14 +375,42 @@
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="newborn_health_vaccination">Ander entstof, indien nodig</label>
+                  <label for="newborn_health_vaccination">Entstof wat gebruik is</label>
                   <select id="newborn_health_vaccination">
                     <option value="">Geen</option>
                   </select>
                 </div>
                 <div class="form-field">
                   <label for="newborn_health_given_by">Aangeteken deur</label>
-                  <input type="text" id="newborn_health_given_by" value="web_app" required />
+                  <input type="text" id="newborn_health_given_by" value="{{ treatment_identity.actor_id if treatment_identity else 'Geen behandelingstoestemming' }}" readonly />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_dose">Werklike dosis per varkie</label>
+                  <input type="text" id="newborn_health_dose" inputmode="decimal" placeholder="Dosis wat toegedien is" required />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_dose_unit">Dosiseenheid</label>
+                  <input type="text" id="newborn_health_dose_unit" placeholder="Eenheid wat gebruik is" />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_route">Werklike toedieningsroete</label>
+                  <input type="text" id="newborn_health_route" required />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_batch">Lotnommer</label>
+                  <input type="text" id="newborn_health_batch" required />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_total_count">Getal behandel, indien getel</label>
+                  <input type="number" id="newborn_health_total_count" min="1" step="1" />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_earmarked">Oormerke aangebring</label>
+                  <select id="newborn_health_earmarked">
+                    <option value="">Nie opgegee nie</option>
+                    <option value="true">Ja</option>
+                    <option value="false">Nee</option>
+                  </select>
                 </div>
                 <div class="form-field form-field-wide litter-first-care-tally">
                   <span class="litter-tally-title">Geslagtelling</span>
@@ -390,10 +427,6 @@
                   <textarea id="newborn_health_notes" rows="3"></textarea>
                 </div>
               </div>
-              <label class="checkbox-row hidden">
-                <input type="checkbox" id="newborn_health_earmarked" />
-                <span>Mark all active piglets as earmarked</span>
-              </label>
               <div id="newborn_health_preview" class="bulk-review-panel hidden"></div>
               <div class="litter-first-care-skip">
                 <label class="checkbox-row">
@@ -579,6 +612,6 @@
   </div>
 
   <script src="{{ url_for('static', filename='js/litterLifecycleLayout.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260810-closed-outcomes"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260911-first-treatment"></script>
 </body>
 </html>
