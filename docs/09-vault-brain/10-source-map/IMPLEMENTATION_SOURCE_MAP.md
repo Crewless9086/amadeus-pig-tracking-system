@@ -550,7 +550,11 @@
   `test_litter_first_treatment_ingress_postgres.py`,
   `test_litter_first_treatment_atomic_postgres.py` and
   `litter_first_treatment_browser.spec.js` provide isolated actual-service gates.
-  Final weaning-table CSS correction remains in the same source lane. Production
+  Final CSS/cache correction `a0865257e6e5d2382bbac5fee3d03cfed2334a2b` is
+  independently accepted: scoped responsive table cells,11 actual browser checks
+  including preview/commit/recovery at1440/768/390px, with unchanged backend/JS.
+  The source writer is released and the canonical parent retains EXTERNAL_HOLD.
+  Production
   lacks existing first-treatment skip columns/constraint as of17:38UTC, in
   addition to the weaning constraint/delegation prerequisites. The blocked rail
   owner must qualify the additional transition before release; the weaning-only

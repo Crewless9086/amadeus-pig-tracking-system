@@ -2,6 +2,15 @@
 
 ## 2026-09-11 - Mortality deployed and private menu commissioned
 
+Accepted finala0865257 CSS/cache successor after11 browser checks, independent
+visual/source review and29 source/174 UI artifact plus172 preserved original
+artifact verification. Source writer exited0; its app helpers are stopped.
+Persisted and read back the structured OMQ-20260813-03 EXTERNAL_HOLD handover and
+source finding1B088C6F9DD02F9ACFFD1051, retaining every genuine acceptance gate.
+Fresh18:35 live/process/queue checks preserve deployed mortality/menu, absent
+skip/weaning prerequisites, degraded manager, held CHARLIE and all source dirt.
+Source/UI lanes are dependency idle; no expansion, release or owner relay.
+
 Accepted first-treatment6e1520df functional source after independent161 real
 PostgreSQL tests,87 authentication/chronology/delivery probes and28 source/172
 artifact hash checks. Retained original evidence and directly resumed the same

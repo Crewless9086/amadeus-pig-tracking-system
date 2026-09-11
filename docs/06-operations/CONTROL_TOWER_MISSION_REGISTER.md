@@ -2,7 +2,66 @@
 
 Status: Active owner-facing dispatch authority
 
-## 2026-09-11 - Mortality deployed; husbandry source reviewed; final table correction
+## 2026-09-11 - Mortality deployed; husbandry source qualified; release dependency held
+
+### Final Control Tower disposition - 18:35 UTC
+
+Final cumulative application candidate
+`a0865257e6e5d2382bbac5fee3d03cfed2334a2b`, tree
+`faf09b2c6b6ffb44b5ffeca63cea60ca9941c962`, is **SOURCE_QUALIFIED**.
+The separate CSS/cache correction is two files,52 insertions/one deletion over
+accepted first-treatment6e1520df; all backend, JavaScript and checked-in tests
+are unchanged. Control Tower verified29 cumulative source files,174 new UI
+artifacts and the172 unchanged original artifacts. UI manifest SHA256:
+`47a701f205efd7e694692f4aa6be8d2bff99c678fea63f7d809ed6360518ee61`.
+All11 final browser checks passed, including1440/768/390px geometry and actual
+preview/commit/response-loss recovery. Control Tower inspected nine final
+screenshots and the source/geometry/canonical records. The161 independent
+PostgreSQL passes and87 independent authentication probes remain applicable.
+
+Worker41656 exited0 at18:33:56Z. Its local app helpers are stopped and the
+18:35 terminal census finds no active source worker. Tracked source/index is
+clean; one generated inaccessible test directory is retained with its warning,
+not claimed inspected. No permissions change or deletion was used. All original
+candidate/evidence packages, the two old observation worktrees' staged/unstaged
+diffs and the held CHARLIE runner/test/frozen-producer hashes remain preserved.
+The610 worktrees and original root's eight visible changes remain intact.
+
+Control Tower submitted the structured handover through the existing canonical
+outcome-handover rail and read back **VALID_HANDOVER / EXTERNAL_HOLD** on
+`OMQ-20260813-03`, technical status still `in_progress`:
+`OMQ-20260813-03-HUSBANDRY-SOURCE-a0865257e6e5d2382bbac5fee3d03cfed2334a2b`.
+Appended finding `CORE-MISSION-CONTROL-1B088C6F9DD02F9ACFFD1051` records the exact
+source verdict, release dependencies, owner and wake condition. All11 genuine
+acceptance rows remain open; no BUSINESS_COMPLETE, new mission, farm/provider,
+migration/delegation, scheduler-child or held CHARLIE mutation occurred. The
+initial helper classified a successful created-status finding as failure;
+same-identity readback/idempotent recovery confirmed the existing event without
+a second identity. Its bookkeeping receipt is retained.
+
+The18:35:25Z read-only closeout still verifies exact deployed00d1bfa9 and Anton's
+private Plaas menu. Own farm_manager/af treatment permission is present; weaning
+permission, first-treatment skip columns/constraint and the new weaning action
+kind remain absent. No matching Anton mortality claim/event since deployment
+or later successful manager cycle was found. Latest manager remains failed at
+04:40:30Z; next04:45 is overdue. PR1309 retains the separately prepared scheduler
+correction; unscheduled weaning follow-up and daily-manager reliability remain
+separate outcome gaps.
+
+Disposition: **WAIT FOR INPUT - VERIFIED DEPENDENCY**, not business closeout.
+Herd source/UI lanes are DEPENDENCY IDLE on supported migration-owner resolution,
+qualification of both schema prerequisites, and then one exact release/scoped
+weaning-authority approval. No retry or bypass of the automated rejection is
+assigned. Daily-plan conversation and later irrigation follow-ups remain in the
+subsequent existing queue; recovery mode does not dispatch expansion merely to
+fill a released terminal. CHARLIE commissioning remains held. No owner relay or
+repeated approval is requested. ACTION REQUIRED NOW: NONE.
+
+Final source handover: `C:/tmp/amadeus-first-treatment-20260911/UI_REVIEW_HANDOVER.md`.
+Control Tower evidence, canonical receipt, final passive/terminal snapshots,
+concrete release/rollback dependencies and complete Check Receipt are under
+`C:/tmp/amadeus-first-treatment-20260911/control-tower-review/`.
+The18:00 active-correction section below is superseded and retained as history.
 
 ### Latest first-treatment review and live prerequisites - 18:00 UTC
 
@@ -463,13 +522,13 @@ physical irrigation effects require separate verification.
 
 | Terminal | Current Control Tower classification | Next trigger |
 |---|---|---|
-| HERDMASTER | ACTIVE - DO NOT INTERRUPT: same source session now worker41656 for bounded litter-table CSS correction; first-treatment6e1520df functional review accepted, original writer11132 exited0 | Complete actual browser review of the small CSS successor; retained migration/delegation/release dependencies remain explicit |
-| OOM SAKKIE | First-treatment conversation source accepted; shares the active HERDMASTER review lane; Sep11 scheduler diagnosis complete under existing OMQ ownership | Exact combined source disposition, then supported migration/scheduler coordination and separately authorized release |
-| CORE / CHARLIE | Commissioning held; same owner's isolated weaning-rail source turn rejected by automated safety check before work | External check resolved before reassessing the existing owner; separate commissioning authority remains held |
+| HERDMASTER | DEPENDENCY IDLE: source workera0865257 exited0 at18:33:56Z, absent from18:35 process census; source and visual qualification accepted | Supported migration-owner resolution and both schema prerequisites qualified, then exact release/scoped weaning approval; daily plan remains subsequent |
+| OOM SAKKIE | DEPENDENCY IDLE for the qualified herd source release; deployed daily manager remains degraded | Same release dependency; existing OMQ/PR1309 owner retains separate scheduler correction and genuine follow-up gates |
+| CORE / CHARLIE | DEPENDENCY IDLE; commissioning held; same-owner isolated support turn stopped by automated rejection before work | Supported external-check resolution before reassessing the existing owner; separate commissioning authority remains held |
 | ROOTLINE | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Herd sequence or separately proved incident; verify ownership before dispatch |
 | SAM Livestock / SAM Meat | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered sales outcome becomes selected; verify ownership first |
 | BEACON | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered marketing outcome becomes selected; verify ownership first |
-| CODEX UI | ACTIVE in the same HERDMASTER source lane: CSS-only weaning table correction, no separate UI writer; old observation JS and matings dirt preserved | Actual desktop/tablet/mobile readability, retained weaning preview and first-treatment browser journeys |
+| CODEX UI | DEPENDENCY IDLE in the released shared herd source lane; final CSS/cache correction accepted; old observation JS and matings dirt preserved | Same combined release prerequisite; no separate overlapping UI dispatch |
 | DOCUMENTS / GREEN / STORYWORKS | No new implementation dispatched; fresh terminal state Unknown | Existing registered outcome selected after current priority and ownership checks |
 
 No other open process is treated as active specialist work without mission-bound
