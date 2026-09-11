@@ -34,6 +34,19 @@ current/held source hashes, preserved ownership and required coordinated
 compatibility work. Do not apply production SQL through an alternate path or
 incidentally include CHARLIE privileges in a herd-operation release.
 
+The completed `WEANING_RAIL_OWNER_INTEGRATION_PROPOSAL.md` explains the immutable
+order: existing8 -> weaning on v5, followed only later by a separately qualified
+CHARLIE successor on v6. At17:21:54Z Control Tower attempted necessary weaning
+source support through the SAME exclusive rail-owner session in a new isolated
+worktree, preserving every held file. An automated safety check rejected the
+turn for possible cybersecurity risk at17:22:09Z before acknowledgement or
+source work. Exact prompt/exit/error and the fresh609-worktree collision census
+are preserved in `C:/tmp/amadeus-weaning-rail-20260911/`; its new clean worktree
+makes610 registrations. Status **DELIVERY_REJECTED / EXTERNAL_DEPENDENCY_HOLD**.
+No retry/rephrasing, alternate writer or safety bypass is assigned. Existing
+ownership and CHARLIE commissioning holds remain. Resume assessment only after
+the external check is resolved; first-treatment review continues independently.
+
 At `15:42:13Z`, Control Tower directly launched visible
 **HERDMASTER / OOM SAKKIE FIRST TREATMENT**, launcher39756 / worker11132,
 worktree `C:/tmp/herdmaster-daily-first-treatment-20260911`, branch
@@ -401,7 +414,7 @@ physical irrigation effects require separate verification.
 |---|---|---|
 | HERDMASTER | ACTIVE - DO NOT INTERRUPT: first-treatment worker11132, fresh acknowledgment/governance/source-trace evidence; weaning eeb9dc4a and mortality workers released-retain | Reproduce, repair and independently review the first-treatment source candidate; release dependencies remain explicit |
 | OOM SAKKIE | ACTIVE: first-treatment conversation/app scope in the same visible terminal; Sep11 scheduler diagnosis complete under existing OMQ ownership | Review first treatment; coordinate the existing migration/scheduler owners separately without new production effects |
-| CORE / CHARLIE | Separate owner-directed hold retained; no activation dispatched | Explicit resolution/authorization for its held commissioning mission |
+| CORE / CHARLIE | Commissioning held; same owner's isolated weaning-rail source turn rejected by automated safety check before work | External check resolved before reassessing the existing owner; separate commissioning authority remains held |
 | ROOTLINE | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Herd sequence or separately proved incident; verify ownership before dispatch |
 | SAM Livestock / SAM Meat | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered sales outcome becomes selected; verify ownership first |
 | BEACON | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered marketing outcome becomes selected; verify ownership first |
@@ -414,7 +427,8 @@ implementation track plus bounded diagnostic work, and preserves separate held
 work. Nine retained Claude processes are not proof of current specialist work.
 The latest manager-cycle truth is degraded as recorded above; the genuine
 mortality acceptance outcome remains pending. Release lock was absent in the
-fresh Sep11 sweep. No held commissioning process was activated.
+fresh Sep11 sweep. The attempted source-support turn stopped before work; no
+deployed CHARLIE commissioning process or held source was changed.
 
 Control Tower's local repository-scan repair reduced Git status from 20,707
 entries to eight through backed-up repository-local exclusions. All seven

@@ -2,6 +2,11 @@
 
 ## 2026-09-11 - Mortality deployed and private menu commissioned
 
+Preserved the completed weaning-rail integration proposal and same-owner
+isolated dispatch. Automated safety rejection stopped that saved session before
+acknowledgement/source work. Recorded the external dependency and unchanged
+held candidate, with no retries, source takeover or commissioning activation.
+
 Recorded first-treatment unchanged-source reproduction through real local
 services/PostgreSQL, including dose substitution, app actor forgery, dropped
 facts, recovery/duplicate protection and generic due-litter omission. Bound the
