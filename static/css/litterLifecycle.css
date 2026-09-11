@@ -35,6 +35,16 @@
 .lifecycle-corrections { border: 1px solid var(--border); border-radius: 14px; background: #faf8f3; }.lifecycle-corrections summary { cursor: pointer; padding: 15px 18px; font-weight: 800; }.lifecycle-corrections summary span { margin-left: 8px; color: var(--text-soft); font-size: 12px; font-weight: 400; }.lifecycle-corrections-body { display: grid; gap: 14px; padding: 0 16px 16px; }.lifecycle-corrections-body > section { margin: 0; }
 @media(max-width:1000px){.lifecycle-birth-snapshot{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.lifecycle-stage-header{grid-template-columns:34px 1fr}.lifecycle-stage-status{grid-column:2}.lifecycle-birth-snapshot{grid-template-columns:repeat(2,1fr)}.lifecycle-next-action{grid-template-columns:1fr}.lifecycle-next-kicker{grid-row:auto;width:max-content}}
+/* Completed weaning readback must fit a phone, including long canonical IDs. */
+.litter-detail-app-shell .closed-litter-view > *,
+.litter-detail-app-shell .closed-litter-hero > * { min-width: 0; }
+.litter-detail-app-shell .closed-litter-hero h2,
+.litter-detail-app-shell .closed-litter-parent-line strong { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .litter-detail-app-shell .closed-litter-hero { grid-template-columns: minmax(0, 1fr); }
+  .litter-detail-app-shell .closed-litter-hero button { white-space: normal; max-width: 100%; }
+}
+
 .litter-first-care-skip {
   display: flex;
   align-items: center;

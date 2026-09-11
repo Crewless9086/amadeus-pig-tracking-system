@@ -40,6 +40,7 @@ class SemanticInterpretation:
     breeding_actions: tuple[Mapping[str, Any], ...] = ()
     farrowing_litter: Mapping[str, Any] | None = None
     litter_first_treatment: Mapping[str, Any] | None = None
+    litter_weaning: Mapping[str, Any] | None = None
     confirmation_facts: Mapping[str, bool] | None = None
     commissioning_facts: Mapping[str, bool] | None = None
     protected_preview_required: bool = False
@@ -169,7 +170,10 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         breeding_actions = _breeding_actions(value.get("breeding_actions"))
         farrowing_litter = _farrowing_litter(value.get("farrowing_litter"))
         litter_first_treatment = _litter_first_treatment(value.get("litter_first_treatment"))
-        if farrowing_litter and litter_first_treatment:
+        litter_weaning = _litter_weaning(value.get("litter_weaning"))
+        if value.get("litter_weaning") is not None and litter_weaning is None:
+            return None
+        if sum(item is not None for item in (farrowing_litter, litter_first_treatment, litter_weaning)) > 1:
             return None
         confirmation_facts = _confirmation_facts(value.get("confirmation_facts"))
         commissioning_facts = _commissioning_facts(value.get("commissioning_facts"))
@@ -182,6 +186,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             breeding_actions=breeding_actions,
             farrowing_litter=farrowing_litter,
             litter_first_treatment=litter_first_treatment,
+            litter_weaning=litter_weaning,
             confirmation_facts=confirmation_facts,
             commissioning_facts=commissioning_facts,
             protected_preview_required=value.get("protected_preview_required") is True,
@@ -210,8 +215,10 @@ def load_bounded_owner_context(parsed: Mapping[str, Any]) -> dict[str, Any]:
             "tag": str(identity.get("tag_number") or row.get("tag_number") or "")[:40],
             "card_message_id": str(row.get("card_message_id") or "")[:40]})
     recent = _load_recent_specialist_context(parsed)
+    from modules.oom_sakkie.herdmaster_litter_weaning_runtime import load_weaning_context
+    weaning = load_weaning_context(parsed)
     return {"reply_to_message_id": str(parsed.get("reply_to_message_id") or "")[:40],
-            "active_cases": active, "recent_turns": recent}
+            "active_cases": active, "recent_turns": recent, "litter_weaning_context": weaning}
 
 
 def _load_recent_specialist_context(parsed):
@@ -289,6 +296,13 @@ def _payload(parsed, context, source):
         "Allowed farrowing_litter keys are sow_ref,farrowing_date,total_born,born_alive,stillborn,mummified,died_after_live_birth,mating_ref,father_ref,correction_of_litter_id,correction_reason. "
         "For an already-born litter's first treatment, use herd_management with stable intent record_litter_first_treatment and return litter_first_treatment, never farrowing_litter. "
         "Allowed litter_first_treatment keys are sow_ref,litter_ref,action_date,male_count,female_count,total_count,earmarked,antiparasitic_product_ref,deworming_product_ref,vaccination_product_ref,dose,route,batch_lot_number,notes. Preserve only facts explicitly reported; never invent a product,dose,route or batch. "
+        "For an actual litter weaning report use herd_management, stable intent record_litter_weaning, and the additional JSON field litter_weaning. "
+        "Allowed keys: sow_ref,litter_ref,action_date,scope,total_count,male_count,female_count,assignments,piglet_refs,target_pen_id,medicine,notes. "
+        "scope is all_current or exact_piglets only when the speaker supplied that scope. Preserve actual date words such as vandag/gister/today/yesterday for deterministic timezone resolution; never substitute a planned date. "
+        "Each optional assignment uses pig_ref,wean_weight_kg,sex,tag_number,earmarked,observation. Sex is Male/Female/Castrated_Male only when supplied. "
+        "Medicine uses antiparasitic_product_id,deworming_product_id,vaccination_product_id,dose,route,batch_lot_number,notes; preserve product references for canonical resolution. "
+        "Weight, sex, earmarking, treatment and notes are optional; preserve unknown facts as omitted. Short replies and corrections may continue litter_weaning_context; set continuation true and return only supplied changes. "
+        "A confirmation must unambiguously approve the displayed exact preview; use message_kind confirmation, continuation true and no invented additional facts. Questions about weaning and future plans are not actual weaning reports. "
         "Use correction_of_litter_id and correction_reason only when the owner explicitly corrects an existing litter; preserve both exactly. "
         "Separate dates and outcome counts from animal identity. Preserve omitted mating_ref and father_ref as null; never invent them. "
         "Use integer counts only when explicitly supplied and keep born_alive distinct from alive_now: died_after_live_birth is a subset of born_alive, not another birth outcome."
@@ -320,6 +334,7 @@ def _bounded_context(value):
     value = value if isinstance(value, Mapping) else {}
     return {"reply_to_message_id": str(value.get("reply_to_message_id") or "")[:40],
             "active_cases": list(value.get("active_cases") or [])[:MAX_CONTEXT_ITEMS],
+            "litter_weaning_context": value.get("litter_weaning_context"),
             "recent_turns": list(value.get("recent_turns") or [])[-MAX_CONTEXT_ITEMS:]}
 
 
@@ -470,6 +485,37 @@ def _litter_first_treatment(value):
     if dose is not None and not isinstance(dose, (int, float, str)):
         return None
     result["dose"] = dose
+    return result
+
+
+def _litter_weaning(value):
+    if not isinstance(value, Mapping):
+        return None
+    allowed = {"sow_ref", "litter_ref", "action_date", "scope", "total_count", "male_count",
+               "female_count", "assignments", "piglet_refs", "target_pen_id", "medicine", "notes"}
+    if set(value) - allowed:
+        return None
+    result = {}
+    for key, raw in value.items():
+        if raw is None:
+            continue
+        if key in {"total_count", "male_count", "female_count"}:
+            if type(raw) is not int or not 0 <= raw <= 40:
+                return None
+        elif key == "assignments":
+            if not isinstance(raw, list) or len(raw) > 40 or any(not isinstance(item, dict) or set(item) - {
+                    "pig_ref", "wean_weight_kg", "sex", "tag_number", "earmarked", "observation"} for item in raw):
+                return None
+        elif key == "piglet_refs":
+            if not isinstance(raw, list) or len(raw) > 40 or any(not isinstance(item, str) or len(item) > 80 for item in raw):
+                return None
+        elif key == "medicine":
+            if not isinstance(raw, dict) or set(raw) - {"antiparasitic_product_id", "deworming_product_id",
+                    "vaccination_product_id", "dose", "route", "batch_lot_number", "notes"}:
+                return None
+        elif not isinstance(raw, str) or len(raw) > (1000 if key == "notes" else 100):
+            return None
+        result[key] = raw
     return result
 
 

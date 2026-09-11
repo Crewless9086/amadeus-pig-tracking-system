@@ -165,7 +165,8 @@ def resolve_natural_confirmation(*, owner_user_id, private_chat_id, reply_to_mes
     reply=str(reply_to_message_id or "")
     if reply:rows=[row for row in rows if str(row[3] or "")==reply]
     if len(rows)!=1:return None
-    return {"callback_token":rows[0][0],"mission_id":rows[0][1],"preview_payload":rows[0][2]}
+    return {"callback_token":rows[0][0],"mission_id":rows[0][1],"preview_payload":rows[0][2],
+            "preview_card_message_id": str(rows[0][3])}
 
 def bind_claim_card(token, card_message_id, *, connect_factory=None):
     with (connect_factory() if connect_factory else _connect()) as db:
@@ -311,10 +312,11 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
             if row[0] in {"mortality", "rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
                     "rootline_fertilizer_mixer_presence_refresh",
                     "sam_sale_payment", "beacon_media_review",
-                    "herdmaster_record_farrowing_litter", "herdmaster_record_litter_piglet_deaths"}:
+                    "herdmaster_record_farrowing_litter", "herdmaster_record_litter_piglet_deaths",
+                    "herdmaster_record_litter_weaning"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
-                  "result":row[9],"telegram_sends":0,"telegram_edits":0},200
+                  "result":row[9],"preview_payload":row[6],"telegram_sends":0,"telegram_edits":0},200
             return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
         if row[7] in {"cancelled", "changed"}:
             return {"success":True,

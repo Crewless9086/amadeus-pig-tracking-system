@@ -184,14 +184,14 @@ def farm_session_principal():
     principal = resolve_family_principal({"telegram_user_id": actor,
         "telegram_chat_id": actor, "telegram_chat_type": "private"}, os.environ)
     if (not principal.authenticated or principal.binding_digest != data.get("binding_digest")
-            or not ({"*", "mortality_confirmation"} & principal.effective_permissions)):
+            or not ({"*", "mortality_confirmation", "weaning"} & principal.effective_permissions)):
         return None
     return principal
 
 
 def mortality_session_identity():
     principal = farm_session_principal()
-    if principal:
+    if principal and {"*", "mortality_confirmation"} & principal.effective_permissions:
         return {"actor_id": principal.telegram_user_id, "role": principal.role.value,
                 "capabilities": principal.effective_permissions, "language": principal.language}
     actor = _owner_admin_session_principal()
@@ -215,6 +215,35 @@ def require_mortality_session():
     supplied = str(request.headers.get("X-Mortality-CSRF") or "")
     if not expected or not hmac.compare_digest(expected, supplied):
         return jsonify(success=False, status="mortality_request_binding_required"), 403
+    return None
+
+
+def weaning_session_identity():
+    principal = farm_session_principal()
+    if principal and {"*", "weaning"} & principal.effective_permissions:
+        return {"actor_id": principal.telegram_user_id, "role": principal.role.value,
+                "capabilities": principal.effective_permissions, "language": principal.language}
+    actor = _owner_admin_session_principal()
+    if actor:
+        return {"actor_id": actor, "role": "owner", "capabilities": frozenset({"*"}), "language": "en"}
+    return None
+
+
+def weaning_csrf_token():
+    if not weaning_session_identity():
+        return ""
+    if not session.get("weaning_csrf"):
+        session["weaning_csrf"] = secrets.token_urlsafe(32)
+    return session["weaning_csrf"]
+
+
+def require_weaning_session():
+    if not weaning_session_identity():
+        return jsonify(success=False, status="authenticated_weaning_permission_required"), 403
+    expected = str(session.get("weaning_csrf") or "")
+    supplied = str(request.headers.get("X-Weaning-CSRF") or "")
+    if not expected or not hmac.compare_digest(expected, supplied):
+        return jsonify(success=False, status="weaning_request_binding_required"), 403
     return None
 
 
@@ -266,7 +295,7 @@ def telegram_farm_login_post():
         from modules.oom_sakkie.family_access import resolve_family_principal
         principal = resolve_family_principal({"telegram_user_id": actor,
             "telegram_chat_id": actor, "telegram_chat_type": "private"}, os.environ)
-        if not principal.authenticated or not ({"*", "mortality_confirmation"} & principal.effective_permissions):
+        if not principal.authenticated or not ({"*", "mortality_confirmation", "weaning"} & principal.effective_permissions):
             raise ValueError("missing delegation")
     except (ValueError, TypeError, KeyError):
         return jsonify(success=False, status="farm_login_not_authorized"), 403

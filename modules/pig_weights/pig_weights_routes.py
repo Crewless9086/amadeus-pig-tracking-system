@@ -1,6 +1,7 @@
 from flask import Blueprint, current_app, jsonify, request
 
 from modules.auth.owner_access import (
+    require_weaning_session, weaning_session_identity,
     correction_batch_owner_admin_principal,
     require_correction_batch_owner_admin_access,
     require_owner_admin_access,
@@ -370,22 +371,30 @@ def litter_profile(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/mark-weaned", methods=["POST"])
 def mark_litter_weaned_route(litter_id):
-    payload = request.get_json(silent=True) or {}
-    result, status_code = mark_litter_profile_weaned(litter_id, payload)
-    return jsonify(result), status_code
+    return litter_weaning_day_route(litter_id)
 
 
 @pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
 def litter_weaning_day_route(litter_id):
-    denied = require_owner_admin_access()
-    if not denied:
-        denied = require_strict_owner_admin_access()
+    denied = require_weaning_session()
     if denied:
         return denied
-    payload = dict(request.get_json(silent=True) or {})
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, status="weaning_request_invalid"), 400
+    payload = dict(payload)
+    if request.path.endswith("/mark-weaned"):
+        if payload.pop("use_latest_weights_as_wean_weights", False):
+            return jsonify(success=False, status="explicit_weaning_weights_required",
+                operation_committed=False, errors=["Supply actual weights; historical weights are not copied."]), 409
+        weights = payload.pop("wean_weights", None)
+        if weights is not None:
+            if not isinstance(weights, dict) or "assignments" in payload:
+                return jsonify(success=False, status="weaning_request_invalid", operation_committed=False), 400
+            payload["assignments"] = [{"pig_id": key, "wean_weight_kg": value} for key, value in weights.items()]
     # Audit identity is always derived from the authenticated server session.
     # A browser-supplied changed_by value has no authority.
-    payload["changed_by"] = owner_admin_principal() or strict_owner_admin_principal()
+    payload["changed_by"] = weaning_session_identity()["actor_id"]
     try:
         result, status_code = process_litter_profile_weaning_day(litter_id, payload)
         return jsonify(result), status_code

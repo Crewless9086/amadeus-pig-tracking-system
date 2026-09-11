@@ -11,6 +11,8 @@ from modules.auth.owner_access import (
     telegram_farm_login_post,
     mortality_session_identity,
     mortality_csrf_token,
+    weaning_csrf_token,
+    weaning_session_identity,
     owner_session_is_valid,
     owner_logout_post,
     owner_admin_principal,
@@ -514,7 +516,8 @@ def pig_movement_history_page(pig_id):
 
 @app.route("/litter/<litter_id>")
 def litter_detail_page(litter_id):
-    return render_template("litter-detail.html")
+    return render_template("litter-detail.html", weaning_identity=weaning_session_identity(),
+        weaning_csrf=weaning_csrf_token())
 
 
 @app.route("/pig-weights")

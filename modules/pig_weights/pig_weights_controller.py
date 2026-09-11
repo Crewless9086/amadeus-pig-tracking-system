@@ -258,6 +258,9 @@ def mark_litter_profile_weaned(litter_id: str, payload: dict):
         changed_by=payload.get("changed_by", "web_app"),
         use_latest_weights_as_wean_weights=payload.get("use_latest_weights_as_wean_weights", False) is True,
         wean_weights=payload.get("wean_weights", {}),
+        dry_run=payload.get("dry_run", True),
+        confirmed=payload.get("confirmed", False),
+        confirmation_binding=payload.get("confirmation_binding"),
     )
 
 

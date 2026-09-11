@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import date, datetime, timedelta
 from time import monotonic
 
@@ -1833,6 +1834,54 @@ def list_litter_overview(connect_factory=None):
             "writes_to_supabase": False,
         },
     }
+
+
+def litter_weaning_snapshot(cursor, litter_id):
+    """Exact effective litter/cohort evidence, shared by preview and the writer.
+
+    Read through the canonical supersession projections. Terminal piglets remain
+    in history; only active on-farm members may be selected for weaning.
+    This function also works inside the writer's serializable transaction.
+    """
+    def rows(sql, params):
+        cursor.execute(sql, params)
+        names = [column.name for column in cursor.description]
+        return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+    litters = rows("""select litter_id,sow_pig_id,sow_tag_number,boar_pig_id,
+        farrowing_date,total_born,born_alive,stillborn_count,mummified_count,
+        male_count,female_count,wean_date,weaned_count,litter_status,litter_notes
+        from public.current_canonical_litters where litter_id=%s""", (litter_id,))
+    if len(litters) != 1:
+        return None
+    litter = litters[0]
+    pigs = rows("""select p.pig_id,p.tag_number,p.pig_name,p.sex,p.animal_type,
+        p.litter_id,p.mother_pig_id,p.date_of_birth,p.status,p.on_farm,
+        p.wean_date,p.wean_weight_kg,p.litter_size_weaned,p.earmarked,p.earmark_date,
+        p.exit_date,p.exit_reason,p.notes,s.current_pen_id
+        from public.current_canonical_pigs p
+        join public.current_canonical_pig_state s on s.pig_id=p.pig_id
+        where p.litter_id=%s order by p.pig_id""", (litter_id,))
+    sows = rows("""select pig_id,tag_number,pig_name,sex,animal_type,status,on_farm
+        from public.current_canonical_pigs where pig_id=%s""", (litter['sow_pig_id'],))
+    snapshot = {"litter": litter, "piglets": pigs, "sow": sows[0] if len(sows) == 1 else None,
+                "reconciliation": _litter_reconciliation(litter, pigs)}
+    # The signed preview and transaction compare the same date/decimal values.
+    return json.loads(json.dumps(snapshot, default=str, sort_keys=True))
+
+
+def get_active_herd_count(connect_factory=None):
+    rows = _fetch_all("""select count(*) as count from public.current_canonical_pigs
+        where status='Active' and on_farm is true""", connect_factory=connect_factory)
+    return int(rows[0]['count'])
+
+
+def get_litter_weaning_snapshot(litter_id, connect_factory=None):
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("set transaction isolation level repeatable read read only")
+            cursor.execute("set local statement_timeout = '10s'")
+            return litter_weaning_snapshot(cursor, _text(litter_id))
 
 
 def get_litter_detail(litter_id, connect_factory=None):
