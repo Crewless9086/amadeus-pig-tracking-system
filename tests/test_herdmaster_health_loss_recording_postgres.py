@@ -152,3 +152,13 @@ class HealthLossRecordingPostgresTests(unittest.TestCase):
                                         (self.pig_id,)).fetchone()[0], 0)
             self.assertEqual(db.execute("select count(*) from public.pig_active_outlets where pig_id=%s and active",
                                         (self.pig_id,)).fetchone()[0], 1)
+
+    def test_competing_operations_for_one_pig_create_only_one_death(self):
+        packets = [self._packet("HERD-COMPETING-" + self.suffix + str(number)) for number in range(2)]
+        with patch.dict(os.environ, {"PIG_WELFARE_CASE_RUNTIME_ENABLED":"true"}):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(self._confirm, packets))
+        self.assertEqual(sorted(code for _, code in results), [201,409], results)
+        with psycopg.connect(DATABASE_URL) as db:
+            self.assertEqual(db.execute("select count(*) from public.pig_lifecycle_events where pig_id=%s", (self.pig_id,)).fetchone()[0],1)
+            self.assertEqual(db.execute("select count(*) from public.pig_welfare_case_events where welfare_case_id=%s", (self.case_id,)).fetchone()[0],2)

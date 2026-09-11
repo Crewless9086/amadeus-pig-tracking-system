@@ -406,7 +406,7 @@ def test_new_found_dead_report_does_not_reuse_another_pigs_active_lifecycle(load
     assert recorded[0]["provider_message_id"] == "3179"
     assert recorded[0]["combined_text"] == "Pig 125 is found dead in the pen."
     assert recorded[0]["preview"]["writes_farm_data"] is False
-    assert "removed from the pen" in result["answer"].lower()
+    assert "on which date" in result["answer"].lower()
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
@@ -435,10 +435,10 @@ def test_exact_natural_answer_reenters_existing_pig125_mission_without_repeating
         issue_gateway_owner_authority("42", "42"), context_store=store)
     assert status == 200
     assert result["mission_id"] == "OOM-HERDMASTER-7F3E42E3FD65581696E065D8"
-    assert result["question_count"] == 1
+    assert result["question_count"] == 0
     assert "last seen alive" not in result["answer"].lower()
     assert "when was the body found" not in result["answer"].lower()
-    assert "removed from the pen" in result["answer"].lower()
+    assert "removed from the pen" not in result["answer"].lower()
     facts = recorded[0]["preview"]["evaluator"]["observed_facts"]
     assert {row["fact"]: row["value"] for row in facts}["last_seen_alive_context_reported"] == "this morning"
     assert {row["fact"]: row["value"] for row in facts}["body_found_time_context_reported"] == "this evening"
