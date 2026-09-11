@@ -274,35 +274,40 @@ follow-up. Local qualification is not a verified live result.
 ### Forward pipeline and terminal sweep
 
 Weaning and first treatment continue the existing HERDMASTER continuous-husbandry
-and canonical litter-action lineage after mortality's applicable gate. Reuse
+and canonical litter-action lineage under canonical parent OMQ-20260813-03.
+Mortality has reached verified deployment disposition. Reuse
 the existing atomic litter writers, protected claims and read models; do not
-create a separate treatment/weaning store. The follow-on audit is read-only;
-its code-supported reproduction targets are not yet reproduced defects.
+create a separate treatment/weaning store. Initial weaning failures are now
+reproduced in isolation as recorded above; first-treatment targets remain
+read-only hypotheses until that subsequent worker reproduces them.
 Daily farm plans remain in `OMQ-20260813-03`; irrigation status and follow-ups
 retain the existing ROOTLINE mission lineage. Provider message delivery and
 physical irrigation effects require separate verification.
 
 | Terminal | Current Control Tower classification | Next trigger |
 |---|---|---|
-| HERDMASTER | Source-qualified, reviewed, worker exited successfully; released-retain | Exact owner release approval; Control Tower resumes directly |
-| OOM SAKKIE | Mortality source scope coordinated through the same terminal; no second overlapping writer | Mortality review; later existing farm-plan mission |
+| HERDMASTER | ACTIVE - DO NOT INTERRUPT: weaning worker33280, fresh source edits and real ingress test logs; mortality worker released-retain | Freeze and independently review weaning, then directly dispatch prepared first-treatment continuation |
+| OOM SAKKIE | ACTIVE: shared weaning scope in the same visible terminal; separate bounded read-only Sep11 scheduler diagnosis under OMQ, no second source writer | Review weaning and finish precise existing scheduler diagnostic evidence; production correction separate |
 | CORE / CHARLIE | Separate owner-directed hold retained; no activation dispatched | Explicit resolution/authorization for its held commissioning mission |
-| ROOTLINE | No new implementation dispatched; terminal-specific fresh progress Unknown | Herd sequence or separately proved incident; verify ownership before dispatch |
-| SAM Livestock / SAM Meat | No new implementation dispatched; fresh terminal state Unknown | Registered sales outcome becomes selected; verify ownership first |
-| BEACON | No new implementation dispatched; fresh terminal state Unknown | Registered marketing outcome becomes selected; verify ownership first |
-| CODEX UI | Shared presentation scope reserved to mortality; old dirty matings work preserved | Qualified backend contract and bounded browser scope |
+| ROOTLINE | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Herd sequence or separately proved incident; verify ownership before dispatch |
+| SAM Livestock / SAM Meat | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered sales outcome becomes selected; verify ownership first |
+| BEACON | UNKNOWN - VERIFY: no current mission-bound terminal feedback; no new dispatch during selected herd work | Registered marketing outcome becomes selected; verify ownership first |
+| CODEX UI | Shared litter presentation belongs to the active weaning writer; no separate UI writer dispatched; old dirty matings work preserved | Complete weaning browser review, then treatment UI within its single source lane |
 | DOCUMENTS / GREEN / STORYWORKS | No new implementation dispatched; fresh terminal state Unknown | Existing registered outcome selected after current priority and ownership checks |
 
 No other open process is treated as active specialist work without mission-bound
 fresh evidence. The recovery WIP cap remains three; this direction opens one
-implementation track and preserves separate held work. Current live worker,
-last/next independent cycle and genuine mortality outcome remain unverified.
+implementation track plus bounded diagnostic work, and preserves separate held
+work. Nine retained Claude processes are not proof of current specialist work.
+The latest manager-cycle truth is degraded as recorded above; the genuine
+mortality acceptance outcome remains pending. Release lock was absent in the
+fresh Sep11 sweep. No held commissioning process was activated.
 
 Control Tower's local repository-scan repair reduced Git status from 20,707
 entries to eight through backed-up repository-local exclusions. All seven
 tracked changes and their hashes are unchanged; untracked qualification evidence
-remains on disk. There are 607 registered worktrees after the two isolated
-workspaces were created. Relevant old mortality/Anton source heads were merged
+remains on disk. The fresh Sep11 sweep found 608 registered worktrees after the
+isolated weaning worktree was added. Relevant old mortality/Anton source heads were merged
 and are retained; the old deployed-commission worktree's `.tmp` remains for
 reconciliation. No bulk worktree cleanup or deletion occurred.
 
