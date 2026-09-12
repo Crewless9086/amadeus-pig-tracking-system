@@ -1,5 +1,54 @@
 # Control Tower Mission Register
 
+## 2026-09-12 - Approved scheduler repair merged; fresh-date deployment pending
+
+Charl approved exact scheduler candidate 0e30c9a9d2113435f860e977a900f3bd3a73b240
+for publication, existing-mission admission, required hosted checks, serialized
+merge, web-only deployment and the reviewed six-file rollback. PR1333 is merged
+as d3cbd663b79fe51ba197f42868d4f758dc8b955d with the identical complete reviewed
+tree and [skip render]. Every required candidate and merged hosted check passed.
+The retained merged job log proves 22 persistence tests executed, including all
+12 new scheduler regression methods and 12 subtests, without skips. The 19 legacy
+pytest failures remain the documented same-baseline comparison.
+
+No web deployment has started. Web remains 00d1bfa9, cron remains 203a7e9b with its
+existing schedule, and all nine services retain their previous deployment/config
+scope. The next eligible date opens at 00:00 SAST on 13 September (22:00 UTC on
+12 September). The exact reviewed release operator requires fresh actual clock,
+recipient bindings and empty delivery identities, and promotion, loaded revision
+and a second empty-identity check before 06:30 SAST. Forty independent boundary
+scenarios and two historical controls passed; durable one-shot deployment intent,
+under-lock duplicate checks and bounded cancellation preserve uncertain receipts.
+
+Existing OMQ-20260813-03-MORNING-CONTAINMENT / PR1309 ownership remains. Canonical
+finding CORE-MISSION-CONTROL-25F99E5AA4D26ACA6940ED65 and the merged/fresh-date
+handover were read back: child in_progress / WORKING, eleven business acceptance
+rows still open; parent herd EXTERNAL_HOLD and its ownership/authority unchanged.
+Control Tower retains responsibility for two consecutive useful scheduled manager
+cycles, genuine 06:45 recipient-specific delivery and the intended Afrikaans plan,
+then later natural duplicate suppression/follow-up. No manual run, test message or
+manufactured farm event can substitute. Latest old-web observation remains failed
+with five deadline deferrals, 313 replays and no confirmed manager delivery.
+
+Preserved herd a0865257 is unchanged. A separate unpublished local integration,
+a975988af416f7e7493ebfcec343f1700cfb8687, combines it with the scheduler merge and
+fixes actual required-test selection. Independent review and local qualification
+passed 207 PostgreSQL tests, five real browser checks, 324 units/eight subtests,
+41 isolation/collector probes and twelve additional scheduler regression methods.
+Existing gates and the held migration job are unchanged. Hosted execution for
+this derivative has not occurred. The three absent treatment-skip columns and
+constraint, 16-action predecessor lacking weaning, Anton's disabled weaning
+capability, combined rail qualification and separate herd release authority remain
+dependencies. DB-RELEASE-RAIL-01's rejected continuation and CHARLIE stay held.
+
+The owner outcome remains Anton recording mortality, weaning and first treatment
+through Telegram, confirming details and seeing each saved in the same application
+backend, with reliable plans and follow-ups. Deployed mortality, Anton's private
+Plaas menu, permissions and existing ownership are preserved. Full release,
+canonical and local integration evidence is in root
+`.tmp/control-tower-scheduler-web-release-20260912/`. This entry supersedes the
+previous scheduler approval hold; it does not close genuine operational acceptance.
+
 ## 2026-09-11 - OMQ cron containment verified; reviewed application repair held
 
 Existing OMQ-20260813-03-MORNING-CONTAINMENT / PR1309 retained ownership.

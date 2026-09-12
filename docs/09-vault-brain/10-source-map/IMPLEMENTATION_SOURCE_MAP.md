@@ -1,5 +1,26 @@
 # Implementation Source Map
 
+## 2026-09-12 - Scheduler release approved and merged; herd integration qualified locally
+
+PR1333 protected-merged exact approved 0e30c9a9 as d3cbd663b79fe51ba197f42868d4f758dc8b955d
+with identical tree and [skip render]. All required candidate/merged checks passed;
+retained hosted logs show 22 persistence tests including 12 recovery methods and
+12 subtests, zero skips. The 19 known legacy failures retain their baseline record.
+Web is still 00d1bfa9; cron is 203a7e9b. Approved web-only deployment awaits the
+13 September SAST fresh date, two empty identity reads and completed revision
+verification before 06:30. Genuine manager/morning/later-cycle proof remains open.
+Canonical finding CORE-MISSION-CONTROL-25F99E5AA4D26ACA6940ED65 records child
+WORKING with all eleven business rows open; parent herd/rail/CHARLIE holds persist.
+
+Unpublished local herd integration a975988af416f7e7493ebfcec343f1700cfb8687 preserves
+a0865257 and the scheduler merge, and makes relevant pytest/browser tests execute.
+207 PostgreSQL, five browser, 324 unit/eight subtests, 41 independent probes and
+twelve scheduler regression methods passed locally. Hosted derivative checks,
+combined skip/weaning rail authority, Anton weaning capability and genuine farm
+acceptance remain pending. Mortality and private Plaas menu are preserved.
+Evidence: root `.tmp/control-tower-scheduler-web-release-20260912/`, including
+`HERD_INTEGRATION_READINESS.md` and the exact local qualification receipts.
+
 ## 2026-09-11 - Verified OMQ containment and reviewed recovery candidate
 
 PR1309 candidate 9b102c03 deployed only to the existing cron as 203a7e9b with
