@@ -1,5 +1,49 @@
 # Implementation Source Map
 
+## 2026-09-13 - Manager failure diagnosed; local successor qualified for a scoped decision
+
+Continue existing OMQ-20260813-03-MORNING-CONTAINMENT. Web remains on the approved
+scheduler merge d3cbd663; the genuine 01:15 SAST manager cycle still deferred all
+five claims. The first two post-deploy cycles also failed useful-progress
+acceptance. The genuine 06:45 SAST morning and later follow-up remain pending.
+
+Passive 00:25 SAST observation found 314 point reconciliation reads after a
+282-row prefetch; ClientRead samples span roughly 36 seconds, not an aggregate
+measured waiting duration. A separate
+current read-only projection found 32 absent terminal findings. This corroborates
+the incomplete-prefetch fallback cause without claiming retained historical
+candidate payloads or complete production phase timing.
+
+Local successor 626654067bdf59bf654459bd3002d9b31ac94030, tree
+afb106b9490d1637d57769a3ea1c595754b3ebba, combines safe existing-run reconciliation
+with independent ready-owner refresh dispatch. Only general_manager_worker.py
+and two test files change. Existing claim ordering, protected methods, 80-second
+budget and 30-second reserve are preserved. The worktree is clean and unpublished.
+
+Qualification: 64 unit tests; 20 PostgreSQL tests plus 12 subtests; unittest
+discovery executes all 20 manager regressions. The same 19 legacy failures remain
+unresolved on base and successor, with 14 passing and the same unrelated fixture
+omitted. Independent source, boundary and real-thread fixture review found no
+remaining blocker. Under explicit synthetic source/SQL timing with real local
+PostgreSQL and threads, slow-owner cohorts finish four fake deliveries and defer
+one; retry confirms that one and suppresses the four replays. This is not
+production latency or provider acceptance; the slow first cohorts remain failed.
+
+FOLLOWON_RELEASE_PROPOSAL.md requests a separate exact decision for publication,
+existing-mission admission, required hosted checks, serialized merge, web-only
+deployment and a three-file rollback. No such action has occurred. The earlier
+0e30c9a9 approval is not extended to this successor. Preserve the deployed morning
+repairs, cron 203a7e9b and schedule, mortality, Anton's Plaas menu, qualified herd
+work, and all migration/capability/ROOTLINE/CHARLIE holds. The child remains
+WORKING/in_progress; all eleven business requirements remain open.
+
+Evidence: .tmp/control-tower-manager-followon-20260913/FOLLOWON_CANDIDATE_IDENTITY.json,
+FOLLOWON_QUALIFICATION.json, FOLLOWON_RELEASE_PROPOSAL.md and independent-review/;
+.tmp/control-tower-scheduler-web-release-20260912/OBSERVATION_followon_preparation_2320.json.
+Disposition CONTINUE: observe the authorized scheduled release and await only the
+new scoped decision; no manual invocation, fabricated event or test send.
+
+
 ## 2026-09-13 - Scheduler web deployed; first two genuine manager cycles still fail
 
 Continue existing OMQ-20260813-03-MORNING-CONTAINMENT. Charl's approved scheduler
