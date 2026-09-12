@@ -1,5 +1,75 @@
 # Control Tower Mission Register
 
+## 2026-09-12 - Farm voice, Telegram transport and hosted fixture successor reviewed locally
+
+Continue existing OMQ-20260813-03. The completed local successor is
+4744bdecd1a592bbd75b39fe58bf4eef8bc3e284, tree
+8a9eed93dbf5cfbb68b37c5a3276b1cc2ce1e09e. Its 22-file delta from published
+77227a67 preserves all 17 independently reviewed native voice files and all four
+independently reviewed relay proposal files. The remaining CI file contains the
+reviewed weaning fixture correction and selection of the new relay unit module.
+The source is clean, locally committed and unpublished. PR #1334 and its valid
+review admission remain bound to 77227a67; four required checks passed, the audit
+gate failed, and later dedicated hosted database/browser selectors did not run.
+No successor publication, integration merge or production deployment is approved.
+
+Read-only inspection traced the actually registered Telegram webhook to published
+GateKeeper s8QaxmqT69Z5mhvE, active version
+00c44771-9a6c-4a4e-bcb4-087a0502908e. Its authorized media branch rejects native
+voice into an unconnected output. Published 2.0B TlKy9kUgJJE0msU4, active version
+b90f2f4d-399b-4d1d-beb2-eb28551105bb, also rejects voice-only input and drops the
+native reply message ID on typed question-card replies. Offline probes used
+synthetic identities and assumed existing authorization, not real Google Sheets
+authorization or cloud execution. Backend deployment alone cannot repair this
+actual transport. A four-field UI patch and exact guarded inverse are reviewed
+and unapplied; older workflow exports, credentials and registered webhook remain
+unchanged. Backend release and fresh exact live comparison must precede any
+separately approved transport change.
+
+The native adapter authenticates private family input before audio retrieval,
+requests configured Afrikaans transcription, retains transcript and native
+provenance before semantic processing, and enters the existing clarification,
+preview, authenticated bound-button confirmation and canonical operation flow.
+Spoken consent does not create protected-action authority. Focused qualification
+passed 50 methods and 27 subtests with zero skips using actual isolated HTTP routes
+and PostgreSQL, with supplied provider/semantic responses. Independent concurrent
+input probes showed one claim winner, stable transcript replay and changed-card
+binding denial. The final relay selection passed nine methods and 29 subtests with
+zero skips. The CI correction's existing eleven weaning tests passed with zero
+skips. Completed farm suites were not repeated.
+
+Chromium decoded the actual 318-byte synthetic Ogg/Opus silence fixture to one
+second of 48,000 mono PCM frames. This is audio-format evidence, not Afrikaans
+recognition. Actual recognition, cloud n8n execution and real Telegram farm
+acceptance remain unqualified. The isolated port 55840 container is stopped and
+retained. No provider call, private audio retrieval or live message was performed.
+
+The pending production decisions are consolidated in the new immutable-history
+successor packet. The held combined migration continuation remains with existing
+DB-RELEASE-RAIL-01/session 01a07684-7f3b-7362-b625-d3d598863476 after the prior
+automatic approval review rejection; it was not retried. The already-qualified
+LF/CRLF weaning migration identity remains reconciled. Anton's precise existing
+OOM-FAMILY-AUTH-ANTON-20260815 weaning-only permission and reversal remain prepared
+and unapplied. Exact successor publication, hosted gates, supported migration
+resolution, integration deployment, transport activation, permission approval and
+genuine business acceptance remain outstanding in their respective scopes.
+
+The approved scheduler candidate, web-only fresh-date release, original preflight,
+cutoff and genuine scheduled acceptance remain unchanged and take precedence.
+The existing active session clock watch is running for 21:40/21:55/22:00 UTC; it
+cannot restart a terminated app. Existing OMQ status in_progress / EXTERNAL_HOLD,
+LEVEL3, scheduler child authority, paused ROOTLINE and held CHARLIE are preserved.
+No business completion or owner monitoring task is created.
+
+Evidence: .tmp/control-tower-farm-release-review-20260912/,
+COMBINED_SUCCESSOR_INDEPENDENT_COMPOSITION.json,
+voice-combined-evidence/COMBINED_SUCCESSOR.json,
+voice-independent/NATIVE_VOICE_INDEPENDENT_REVIEW.json,
+n8n-independent-review/REVIEW_RECEIPT.json,
+VOICE_N8N_WORKFLOW_READONLY.json, VOICE_N8N_PUBLISHED_ROUTE_PROBE.json and
+CONSOLIDATED_SUCCESSOR_PRODUCTION_DECISIONS.md. Disposition CONTINUE.
+
+
 ## 2026-09-12 - Combined farm review published and admitted; production remains held
 
 Continue existing OMQ-20260813-03. Charl approved exact combined farm candidate

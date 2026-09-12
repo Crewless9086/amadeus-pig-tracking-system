@@ -1,5 +1,34 @@
 # Implementation Source Map
 
+## 2026-09-12 - Reviewed local farm voice and Telegram transport successor
+
+Existing OMQ-20260813-03 now has reviewed local successor
+4744bdecd1a592bbd75b39fe58bf4eef8bc3e284, tree
+8a9eed93dbf5cfbb68b37c5a3276b1cc2ce1e09e: authenticated native voice intake through
+existing confirmed farm flows, exact reversible n8n transport/reply-card proposal,
+and the qualified hosted weaning fixture correction. The 22-file composition
+preserves the independently reviewed component bytes. Native qualification passed
+50 methods plus 27 subtests; final relay qualification passed nine methods plus
+29 subtests; both have zero skips. Existing CI fixture qualification is eleven
+passing methods. Independent concurrency and relay inverse checks passed.
+
+Actual published GateKeeper rejects authorized native voice before the backend;
+the actual 2.0B text relay loses native reply-card IDs. Both defects were reproduced
+offline against read-only published Code-node bodies. Decoding a synthetic
+one-second Opus fixture and using supplied transcripts do not establish actual
+Afrikaans recognition, cloud workflow execution or genuine Telegram acceptance.
+No production transport, private audio/provider or farm action was performed.
+
+The successor is local and unpublished; PR #1334/admission remain exact 77227a67
+with four required checks passed and the audit gate failed. Its later dedicated
+hosted selectors remain unexecuted. New consolidated successor decisions retain
+the held combined migration, prepared unapplied Anton permission, separate exact
+publication/release/transport scopes and real business acceptance. The approved
+scheduler window, service scope and acceptance have priority and are unchanged;
+its in-session clock watch remains running. See the matching mission register and
+.tmp/control-tower-farm-release-review-20260912/CONSOLIDATED_SUCCESSOR_PRODUCTION_DECISIONS.md.
+
+
 ## 2026-09-12 - Farm integration review/admission and demonstrated voice/CI gaps
 
 Existing OMQ parent remains in_progress/EXTERNAL_HOLD. Exact 77227a67 is published
