@@ -341,3 +341,21 @@ jobs:
         env:
           PLAN_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/plan_dialogue_test
         run: npx playwright test --config=tests/plan_dialogue_playwright.config.js
+
+      - name: Create separate disposable irrigation dialogue database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host=127.0.0.1 --username=postgres irrigation_dialogue_test
+
+      - name: Prove irrigation dialogue, exact recovery and retained physical-stop observations
+        env:
+          IRRIGATION_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/irrigation_dialogue_test
+        run: |
+          python tests/irrigation_dialogue_qualification.py bootstrap
+          python tests/irrigation_dialogue_qualification.py unit
+          python tests/irrigation_dialogue_qualification.py postgres
+
+      - name: Read canonical water and execution evidence in the irrigation application
+        env:
+          IRRIGATION_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/irrigation_dialogue_test
+        run: npx playwright test --config=tests/irrigation_dialogue_playwright.config.js

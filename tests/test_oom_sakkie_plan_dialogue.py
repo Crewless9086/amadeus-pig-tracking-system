@@ -13,8 +13,17 @@ OWNER='990001'
 MANAGER='990002'
 
 
+def _freeze_manager_clock(monkeypatch):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (NOW+timedelta(minutes=10)).astimezone(tz or timezone.utc)
+    monkeypatch.setattr(questions, 'datetime', Clock)
+
+
 def setup_question_reply(monkeypatch, *, actor=MANAGER, language='af',
                          specialist_status='preview_ready'):
+    _freeze_manager_clock(monkeypatch)
     token='synthetic-dialogue-token-'+'x'*40
     env={'OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED':'1',
         'OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN':token,
@@ -100,6 +109,7 @@ def test_plan_reply_preserves_the_specialist_next_step(monkeypatch,actor,languag
 
 
 def partial_journey(monkeypatch, *, pig=False):
+    _freeze_manager_clock(monkeypatch)
     from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
     question={'daily_identity':'OOM-DAILY-FARM-MANAGER-2026-09-13:OWNER:SYNTHETIC',
         'telegram_message_id':'700','presented_at':(NOW-timedelta(minutes=5)).isoformat(),

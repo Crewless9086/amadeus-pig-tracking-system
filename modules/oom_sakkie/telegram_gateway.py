@@ -672,9 +672,16 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                     "status": "current_brief_reassessment_contained",
                     "failure_class": exc.__class__.__name__,
                     "telegram_sends": 0, "telegram_edits": 0}
-            manager_reply = {**manager_reply, "answer": "",
-                "suppress_owner_delivery": True,
-                "rolling_current_brief": refreshed}
+            canonical_water = manager_reply.get("canonical_observation") or {}
+            if refreshed.get("success") is not True and canonical_water.get("success") is True:
+                # A failed plan refresh cannot hide an independently proven
+                # water receipt. Deliver its original attributable response.
+                manager_reply = {**manager_reply, "rolling_current_brief": refreshed}
+                refreshed = None
+            else:
+                manager_reply = {**manager_reply, "answer": "",
+                    "suppress_owner_delivery": True,
+                    "rolling_current_brief": refreshed}
         delivery = (refreshed if refreshed is not None else
                     {"success": True, "telegram_sends": 0, "telegram_edits": 0,
                      "status": "owner_delivery_suppressed_replay"}

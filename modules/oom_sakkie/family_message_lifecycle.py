@@ -77,7 +77,17 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
         trusted_health = (localized.get("tool_used") == "herdmaster_health_loss_preview"
             and localized.get("recipient_render_contract") == "herdmaster_health_loss_recipient_v1"
             and status in {"preview_ready", "waiting_for_input"})
-        preserves_recipient_text = (trusted_question or trusted_health) and str(
+        trusted_irrigation = (localized.get("specialist_identity") == "ROOTLINE"
+            and localized.get("recipient_render_contract") == "rootline_owner_observation_recipient_v1"
+            and status in {"owner_irrigation_observation_recorded", "owner_operational_transition_replayed_noop"}
+            and localized.get("verification_pending") is True
+            and localized.get("execution_completed") is False)
+        trusted_irrigation_question = (specialist == "ROOTLINE"
+            and localized.get("recipient_render_contract") == "rootline_owner_clarification_recipient_v1"
+            and status in {"owner_context_clarification_required", "owner_clarification_delivery_reconciliation_required"}
+            and localized.get("question_count") == 1 and localized.get("hardware_commands") == 0)
+        preserves_recipient_text = (trusted_question or trusted_health or trusted_irrigation
+            or trusted_irrigation_question) and str(
             localized.get("recipient_language") or "").casefold().startswith("af")
         if preserves_recipient_text:
             answer = original_answer
@@ -693,6 +703,7 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     payload = _event(parsed, mission_id, card_mission_id, "OOM_SAKKIE",
                      "brief_generation", digest)
     payload.update({"generation_digest": digest,
+                    "rendered_text_sha256": hashlib.sha256(text.encode()).hexdigest(),
                     "previous_telegram_message_id": prior_id})
     sends = 0
     if delivered:

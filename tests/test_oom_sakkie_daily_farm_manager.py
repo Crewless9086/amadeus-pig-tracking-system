@@ -281,6 +281,12 @@ def test_changed_owner_action_remains_material():
 def test_scheduler_daily_delivery_and_unchanged_replay_are_exact_once():
     state=store(); deliveries=[]
     def deliver(parsed,outcome,**kwargs):
+        from hashlib import sha256
+        claim = state.rows[kwargs["mission_id"]]
+        assert claim["owner_user_id"] == claim["chat_id"] == "42"
+        assert claim["card_mission_id"] == kwargs["card_mission_id"]
+        assert "question" in claim and "question_binding" in claim
+        assert claim["answer_sha256"] == sha256(outcome["answer"].strip().encode()).hexdigest()
         deliveries.append((parsed,outcome,kwargs))
         return {"success":True,"telegram_message_id":"4000","telegram_sends":1,
                 "telegram_edits":0}

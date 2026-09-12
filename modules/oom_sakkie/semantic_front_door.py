@@ -39,6 +39,8 @@ class SemanticInterpretation:
     welfare_observation: Mapping[str, str] | None = None
     clinical_observation: Mapping[str, str] | None = None
     observation_facts: tuple[Mapping[str, Any], ...] = ()
+    water_observation_context: Mapping[str, str] | None = None
+    irrigation_observation: Mapping[str, str] | None = None
     breeding_actions: tuple[Mapping[str, Any], ...] = ()
     farrowing_litter: Mapping[str, Any] | None = None
     litter_first_treatment: Mapping[str, Any] | None = None
@@ -149,7 +151,7 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
     except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError, ValueError):
         return None
     result = parse_semantic_response(body)
-    if result and result.observation_facts and not _facts_context_allowed(parsed, context):
+    if result and result.observation_facts and not _facts_context_allowed(parsed, context, result):
         return replace(result, observation_facts=(), needs_clarification=True,
             clarification_question="Are you reporting the storage tanks, the reservoir, or both?")
     return result
@@ -168,6 +170,8 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         if message_kind not in MESSAGE_KINDS:
             return None
         facts = _observation_facts(value.get("observation_facts"))
+        water_context = _water_observation_context(value.get("water_observation_context"))
+        irrigation = _irrigation_observation(value.get("irrigation_observation"))
         welfare = _welfare_observation(value.get("welfare_observation"))
         clinical = _clinical_observation(value.get("clinical_observation"))
         breeding_actions = _breeding_actions(value.get("breeding_actions"))
@@ -185,6 +189,8 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             welfare_observation=welfare,
             clinical_observation=clinical,
             observation_facts=facts,
+            water_observation_context=water_context,
+            irrigation_observation=irrigation,
             breeding_actions=breeding_actions,
             farrowing_litter=farrowing_litter,
             litter_first_treatment=litter_first_treatment,
@@ -196,6 +202,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             language=str(value.get("language") or "unknown").strip()[:20],
             confidence=max(0.0, min(1.0, float(value.get("confidence") or 0))),
             needs_clarification=bool(value.get("needs_clarification"))
+                or any(fact.get("state") == "UNKNOWN" for fact in facts)
                 or any(state == "unknown" for state in {**(welfare or {}), **(clinical or {})}.values()),
             clarification_question=str(value.get("clarification_question") or "").strip()[:240])
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
@@ -245,6 +252,7 @@ def _load_recent_specialist_context(parsed):
              "task_state": str(row.get("task_state") or "")[:40],
              "card_mission_id": str(row.get("card_mission_id") or "")[:80],
              "provider_message_id": str(row.get("provider_message_id") or "")[:40],
+             "telegram_message_id": str(row.get("telegram_message_id") or "")[:40],
              "provider_timestamp": str(row.get("provider_timestamp") or "")[:40],
              "delivery_provider_timestamp": str(row.get("delivery_provider_timestamp") or "")[:40],
              "semantic_domain": str(row.get("semantic_domain") or "")[:40],
@@ -283,7 +291,7 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,welfare_observation,clinical_observation,observation_facts,breeding_actions,farrowing_litter,litter_first_treatment,confirmation_facts,commissioning_facts,"
+        "observation,welfare_observation,clinical_observation,observation_facts,water_observation_context,irrigation_observation,breeding_actions,farrowing_litter,litter_first_treatment,confirmation_facts,commissioning_facts,"
         "protected_preview_required,recording_prohibited,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
         " For a factual welfare observation or correction, welfare_observation may contain only eating, drinking, "
@@ -313,10 +321,19 @@ def _payload(parsed, context, source):
         "Separate dates and outcome counts from animal identity. Preserve omitted mating_ref and father_ref as null; never invent them. "
         "Use integer counts only when explicitly supplied and keep born_alive distinct from alive_now: died_after_live_birth is a subset of born_alive, not another birth outcome."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
-        "subject storage_tanks or reservoir and either state LOW/OK/FULL or an exact fraction numerator/denominator. "
+        "subject storage_tanks or reservoir and either state LOW/OK/FULL/UNKNOWN or an exact fraction numerator/denominator. "
+        "Retain an explicitly unknown level as UNKNOWN and ask about that subject; never invent its level. "
         "Resolve phrases such as both tanks or their Afrikaans equivalents from the message and bounded active question; "
         "do not invent a missing tank or value. A short reply may answer only a chronologically earlier active question; "
         "never use stale context to satisfy a newer unrelated question. "
+        "For water observation_facts, always return water_observation_context with source current_message when "
+        "the current message identifies the observed tank group and level, or source active_question and the exact "
+        "telegram_message_id of the displayed question needed to resolve a short reply. Never invent that ID. "
+        "The facts describe the current corrected value, not an earlier value quoted in the message. "
+        "For an explicitly observed irrigation state, irrigation_observation may contain state stopped, running or "
+        "unknown and optionally zone_id B12345 or C12345. Omit an unresolved zone; use current bounded execution "
+        "context to resolve a short reply. A stop request, a question about stopping, a predicted stop or an OFF "
+        "command receipt is not a physical stop observation. These fields grant no hardware or completion authority. "
         "Treat natural readiness replies such as 'Done; at the valves now', 'Ek is nou by die kleppe', or mixed-language "
         "equivalents as a continuation of one unambiguous recent specialist setup question, not as a new physical tank observation."
         " When the active question asks about a supervised mixer proof, return commissioning_facts only for facts explicitly "
@@ -393,7 +410,7 @@ def _observation_facts(value):
         numerator, denominator = raw.get("numerator"), raw.get("denominator")
         if subject not in {"storage_tanks", "reservoir"}:
             return ()
-        if state in {"LOW", "OK", "FULL"} and numerator is None and denominator is None:
+        if state in {"LOW", "OK", "FULL", "UNKNOWN"} and numerator is None and denominator is None:
             result.append({"subject": subject, "state": state})
         elif (not state and type(numerator) is int and type(denominator) is int
               and denominator > 0 and 0 <= numerator <= denominator):
@@ -403,6 +420,31 @@ def _observation_facts(value):
     if len({row["subject"] for row in result}) != len(result):
         return ()
     return tuple(result)
+
+
+def _water_observation_context(value):
+    if value is None or value == {}:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValueError("water_observation_context_invalid")
+    if dict(value) == {"source": "current_message"}:
+        return dict(value)
+    if (set(value) == {"source", "telegram_message_id"}
+            and value.get("source") == "active_question"
+            and isinstance(value.get("telegram_message_id"), str)
+            and re.fullmatch(r"[0-9]{1,20}", value["telegram_message_id"])):
+        return dict(value)
+    raise ValueError("water_observation_context_invalid")
+
+
+def _irrigation_observation(value):
+    if value is None or value == {}:
+        return None
+    if (not isinstance(value, Mapping) or set(value) - {"zone_id", "state"}
+            or value.get("state") not in {"stopped", "running", "unknown"}
+            or ("zone_id" in value and value["zone_id"] not in {"B12345", "C12345"})):
+        raise ValueError("irrigation_observation_invalid")
+    return dict(value)
 
 
 def _breeding_actions(value):
@@ -584,7 +626,36 @@ def _eligible_clarification_context(rows, parsed):
     return newest_rows if len(newest_rows) == 1 else []
 
 
-def _facts_context_allowed(parsed, context):
+def _facts_context_allowed(parsed, context, semantic=None):
+    basis = getattr(semantic, "water_observation_context", None)
+    if basis:
+        if (semantic.domain != "rootline" or semantic.message_kind not in {"observation", "correction"}
+                or semantic.confidence < .8):
+            return False
+        if basis["source"] == "current_message":
+            return True
+        identity = basis["telegram_message_id"]
+        reply_to = str(parsed.get("reply_to_message_id") or "").strip()
+        if reply_to and reply_to != identity:
+            return False
+        incoming = _timestamp(parsed.get("provider_timestamp"))
+        matches = []
+        for row in context.get("recent_turns") or ():
+            if (not isinstance(row, Mapping) or row.get("task_state") != "waiting_for_input"
+                    or (reply_to and str(row.get("telegram_message_id") or "") != reply_to)
+                    or not str(row.get("clarification_question") or "").strip()):
+                continue
+            delivered = _timestamp(row.get("delivery_provider_timestamp"))
+            if (incoming is not None and delivered is not None
+                    and 0 <= (incoming - delivered).total_seconds() <= CONTEXT_MAX_AGE_SECONDS):
+                matches.append((delivered, row))
+        if not matches:
+            return False
+        newest = max(delivered for delivered, row in matches)
+        selected = [row for delivered, row in matches if delivered == newest]
+        return (len(selected) == 1 and selected[0].get("semantic_domain") in {"rootline", "water_energy"}
+            and str(selected[0].get("telegram_message_id") or "") == identity)
+    # Compatibility for interpretations produced before the explicit source contract.
     text = str(parsed.get("text") or "").lower()
     explicit_subject = re.search(
         r"\b(reservoir|storage(?:\s+tanks?)?|opgaartenks?|both\s+tanks?|albei\s+tenks?|beide\s+tenks?)\b",

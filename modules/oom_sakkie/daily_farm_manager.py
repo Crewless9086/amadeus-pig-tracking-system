@@ -71,6 +71,10 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                         and prior.get("delivery_definitely_not_sent") is True
                         and prior.get("material_digest") == digest)
     claim = store("claim_daily", claim_id, {"daily_identity": identity,
+        "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+        "card_mission_id": projection_identity,
+        "question": packet["question"], "question_binding": packet["question_binding"],
+        "answer_sha256": sha256(packet["answer"].strip().encode()).hexdigest(),
         "material_digest": digest, "status": "detected", "observed_at": now.isoformat(),
         "task_identities": [row["task_id"] for row in packet["all_tasks"]],
         "contract_version": CONTRACT_VERSION})
@@ -167,6 +171,7 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
             and receipt.get("success") is True
     outcome = store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
         "material_digest": digest, "status": "presented", "observed_at": now.isoformat(),
+        "answer_sha256": sha256(packet["answer"].strip().encode()).hexdigest(),
         "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
         "question": packet["question"], "question_binding": packet["question_binding"],
         "telegram_message_id": str(delivery.get("telegram_message_id")),

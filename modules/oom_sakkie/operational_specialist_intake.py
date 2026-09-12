@@ -181,7 +181,11 @@ def handle_operational_specialist_message(
     semantic_present = bool(semantic)
     semantic_rootline_observation = (semantic.get("domain") == "rootline"
         and semantic.get("message_kind") in {"observation", "correction"}
-        and not semantic.get("needs_clarification"))
+        and isinstance(semantic.get("confidence"), (int, float))
+        and semantic["confidence"] >= .8
+        and not semantic.get("needs_clarification")
+        and not semantic.get("recording_prohibited")
+        and not semantic.get("protected_preview_required"))
     commissioning_request = is_exact_fertilizer_commissioning_request(parsed)
     commissioning_command = bool(_FERTILIZER_COMMISSIONING_COMMAND.fullmatch(text))
     pending = _pending_specialist_context(
@@ -303,8 +307,9 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
             or bound.owner_user_id != str(parsed.get("telegram_user_id") or "")
             or bound.private_chat_id != str(parsed.get("telegram_chat_id") or "")):
         return _contained(parsed, "operational_specialist_auth_or_chronology_invalid", now), 409
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     observations = []
-    for label, numerator, denominator in _FRACTION.findall(str(parsed.get("text") or "")):
+    for label, numerator, denominator in (() if semantic else _FRACTION.findall(str(parsed.get("text") or ""))):
         denominator = int(denominator)
         numerator = int(numerator)
         if denominator < 1 or numerator < 0 or numerator > denominator:
@@ -315,7 +320,6 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
             "provider_message_id": provider_id, "observed_at": provider_at.isoformat(),
         })
     raw_text = str(parsed.get("text") or "")
-    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     visible_need = "C12345" if _C_NEED.search(raw_text) and not _C_NO_NEED.search(raw_text) else None
     semantic_observation = str(semantic.get("observation") or "").strip()
     semantic_facts = semantic.get("observation_facts") if isinstance(semantic.get("observation_facts"), (list, tuple)) else ()
@@ -324,9 +328,14 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
     # Retain each independently evidenced kind exactly once.
     typed_observations = _typed_water_observations(
         semantic_facts, provider_id, provider_at.isoformat())
-    observed_kinds = {item["kind"] for item in observations}
-    observations.extend(item for item in typed_observations
-                        if item["kind"] not in observed_kinds)
+    # A validated current fact replaces quoted earlier wording for that kind.
+    # Do not let the literal parser turn a correction back into the old value.
+    if semantic:
+        observations = typed_observations
+    else:
+        observed_kinds = {item["kind"] for item in observations}
+        observations.extend(item for item in typed_observations
+                            if item["kind"] not in observed_kinds)
     if not observations and not visible_need and not semantic_observation:
         return {"handled": False, "status": "operational_specialist_intake_not_applicable"}, 200
     mission = _mission(parsed)
@@ -459,13 +468,19 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         return result, 503
     digest = _digest({"context": context, "result": evidence})
     recommendation = str(evidence.get("recommendation") or "Needs Data")
+    language = "af" if str(parsed.get("output_language") or "").casefold().startswith("af") else "en"
+    af = language == "af"
     recorded_labels = []
     for item in observations:
-        label = "Storage tanks" if item["kind"] == "storage_level" else "Reservoir"
+        label = ("Opgaartenks" if af else "Storage tanks") if item["kind"] == "storage_level" else "Reservoir"
         value = str(item.get("semantic_state") or item.get("value") or "")
+        if af:
+            value = {"FULL": "VOL", "LOW": "LAAG", "OK": "OK"}.get(value, value)
         recorded_labels.append(f"{label} {value}")
-    answer = ("<b>WATER LEVELS RECORDED</b>\n\nRecorded: " + "; ".join(recorded_labels) +
-              ".\n\nROOTLINE will reassess automatically.")
+    answer = (("<b>WATERVLAKKE AANGETEKEN</b>\n\nAangeteken: " if af else
+               "<b>WATER LEVELS RECORDED</b>\n\nRecorded: ") + "; ".join(recorded_labels) +
+              (".\n\nROOTLINE sal die plan outomaties heroorweeg." if af else
+               ".\n\nROOTLINE will reassess automatically."))
     outcome = {"handled": True, "success": True, "status": "specialist_accepted",
         "dispatch_state": "specialist_accepted", "specialist_identity": "ROOTLINE",
         "mission_id": mission, "card_mission_id": mission, "provider_message_id": provider_id,
@@ -474,6 +489,8 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         "canonical_observation": observation_result,
         "evidence_generation": str(evidence.get("evidence_generation") or ""),
         "adapter_version": CONTRACT_VERSION, "result_digest": digest, "answer": answer,
+        "recipient_render_contract": "specialist_structured_recipient_v1",
+        "recipient_language": language,
         **ZERO_AUTHORITY}
     if recoverable:
         binding = {"owner": context["owner_user_id"], "chat": context["chat_id"],
@@ -529,6 +546,8 @@ def _pending_specialist_context(parsed, loader):
         and str(item.get("contextual_task_kind") or item.get("semantic_intent") or "")
             == "fertilizer_commissioning"]
     reply_to = str(parsed.get("reply_to_message_id") or "")
+    if not matches:
+        return None
     if reply_to:
         exact = [item for item in matches
                  if reply_to in {str(item.get("telegram_message_id") or ""),
@@ -844,8 +863,14 @@ def _mission(parsed):
 
 
 def _typed_water_observations(facts, provider_id, observed_at):
+    from modules.oom_sakkie.semantic_front_door import _observation_facts
+    validated = _observation_facts(list(facts))
+    if not validated or validated != tuple(facts):
+        return []
     result = []
-    for fact in facts:
+    for fact in validated:
+        if fact.get("state") == "UNKNOWN":
+            continue
         if not isinstance(fact, Mapping):
             return []
         subject = str(fact.get("subject") or "").lower()
