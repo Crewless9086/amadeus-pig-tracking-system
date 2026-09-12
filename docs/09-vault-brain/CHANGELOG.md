@@ -1,5 +1,27 @@
 # Vault Brain Changelog
 
+## 2026-09-12 - Farm integration review/admission and demonstrated voice/CI gaps
+
+Existing OMQ parent remains in_progress/EXTERNAL_HOLD. Exact77227a67 is published
+as draft PR1334 under Charl's review/admission/hosted-testing-only approval;
+protected admission passed. Core, general browser and disposable migration checks
+passed; audit job34707013476 fails because its early weaning step uses a database
+without canonical views, leaving later herd/plan/irrigation selectors unexecuted.
+Local CI successor5da57a2a passes11methods on the existing qualified herd fixture
+while preserving all other workflow steps/jobs/triggers. Published772 is immutable.
+
+Actual Telegram voice-only input is unsupported on deployed/main/candidate;
+96synthetic ingress probes and three canned multipart probes are explicitly not
+actual transcription. A local authenticated-af voice successor is in progress.
+Weaning SQL hashes16d4dd94/d57d92e2 are the already-reviewed LF/CRLF byte forms;
+fresh comparison confirms identical Git blobs across four revisions. Anton's
+existing-identity weaning-only permission/reversal is prepared and unapplied.
+Held combined migration procedure, separate exact merge/deployment authority and
+genuine farm/physical acceptance remain unresolved. The scheduler candidate,
+web-only window and all acceptance conditions remain unchanged; its session clock
+watch is running but cannot restart a terminated app. See the matching mission
+register entry and root .tmp/control-tower-farm-release-review-20260912/ receipts.
+
 ## 2026-09-12 - Scheduler release approved and merged; herd integration qualified locally
 
 PR1333 protected-merged exact approved 0e30c9a9 as d3cbd663b79fe51ba197f42868d4f758dc8b955d
