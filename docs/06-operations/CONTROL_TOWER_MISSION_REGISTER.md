@@ -4,30 +4,30 @@
 
 Continue existing OMQ-20260813-03. Charl approved exact combined farm candidate
 77227a67e84ced22b45f046e588b310d82dd8ff9 for PR review, existing-mission admission
-and hosted testing only. Draft PR1334 preserves that exact commit and its81-file
-review. Publication preflight verified all8workflow triggers, repository hooks,
-disabled Render PR previews and unchanged9-service scope. No feature publication
+and hosted testing only. Draft PR1334 preserves that exact commit and its 81-file
+review. Publication preflight verified all eight workflow triggers, repository hooks,
+disabled Render PR previews and unchanged nine-service scope. No feature publication
 can deploy this candidate or dispatch the manual production migration workflow.
 Owner correction CORE-MISSION-CONTROL-D7C59D295B848260CAA40AB2 and the existing
 protected issuer record the approved review scope. Exact admission passed; parent
-in_progress / EXTERNAL_HOLD, LEVEL3 and business_complete=false remain unchanged.
+in_progress / EXTERNAL_HOLD, LEVEL 3 and business_complete=false remain unchanged.
 The scheduler child, held CHARLIE work and paused ROOTLINE authority are preserved.
 
-The original local qualification remains895units/eight subtests/one named Windows
-POSIX skip,281PostgreSQL executions including32repeated shared controls,
-eight browser checks and52independent probes. Hosted core, general browser and
-closed migration rail disposable checks passed. The required audit job34707013476
+The original local qualification remains 895 units/eight subtests/one named Windows
+POSIX skip,281 PostgreSQL executions including 32 repeated shared controls,
+eight browser checks and 52 independent probes. Hosted core, general browser and
+closed migration rail disposable checks passed. The required audit job 34707013476
 failed at weaning unittest setup because its amadeus_test fixture lacks canonical
 pig/litter views. It ran zero methods at that step; downstream herd, plan and
 irrigation database/browser selections were skipped and are not reported green.
-Local CI-only successor5da57a2ac5a209a34adade24104d807fca74ffd4 retains that exact
+Local CI-only successor 5da57a2ac5a209a34adade24104d807fca74ffd4 retains that exact
 named test command after the existing qualified herd suite and targets its fixture.
-All11weaning unittest methods pass locally with zero skips; other steps, jobs and
+All 11 weaning unittest methods pass locally with zero skips; other steps, jobs and
 triggers are identical. The reviewed published77227a67 is not rewritten.
 
 Dad's actual Telegram voice path has a demonstrated gap on deployed, main and
 77227a67 sources: voice-only messages fail telegram_text_required before STT.
-Both ingress paths were exercised with synthetic envelopes;96source-function
+Both ingress paths were exercised with synthetic envelopes; 96 source-function
 observations and three canned-provider multipart observations confirm the gap and
 the separate browser helper's hardcoded English. This is not actual transcription.
 A local isolated successor is in progress for authenticated private voice intake,
@@ -35,12 +35,12 @@ configured Afrikaans, retained transcript/provenance and existing clarification,
 preview, bound-button confirmation and canonical replay protection. No live audio,
 provider, farm or physical execution is part of that local work.
 
-Migration identity is reconciled without editing historical records:16d4dd94 is
-the weaning SQL's committed LF-byte hash, d57d92e2 its Windows126-CRLF checkout.
+Migration identity is reconciled without editing historical records: 16d4dd94 is
+the weaning SQL's committed LF-byte hash, d57d92e2 its Windows 126-CRLF checkout.
 All four reviewed source revisions contain the identical blob. The explanation
 was already qualified in HERD_PREREQUISITE_REVIEW.md and is now bound by a fresh
 binary receipt. The combined first-treatment-skip/weaning production procedure
-still belongs to externally held DB-RELEASE-RAIL-01/session01a07684-7f3b-7362-b625-d3d598863476.
+still belongs to externally held DB-RELEASE-RAIL-01/session 01a07684-7f3b-7362-b625-d3d598863476.
 No rejected continuation retry, replacement owner or direct SQL is authorized.
 
 Anton permission preparation names only existing OOM-FAMILY-AUTH-ANTON-20260815:
@@ -51,10 +51,10 @@ Nothing has been applied. Scheduler acceptance must precede any binding change.
 Integration merge/deployment, production migrations, capability activation and
 genuine farm/hardware acceptance remain separate pending decisions.
 
-The approved scheduler assignment remains unchanged:0e30c9a9, merge d3cbd663,
-web-only fresh date from13September00:00SAST, original preflight/cutoffs and
+The approved scheduler assignment remains unchanged: 0e30c9a9, merge d3cbd663,
+web-only fresh date from 13 September 00:00 SAST, original preflight/cutoffs and
 genuine manager/morning/later-cycle acceptance. An active in-session clock watch
-passed its real callback self-test and remains running for21:40/21:55/22:00UTC.
+passed its real callback self-test and remains running for 21:40/21:55/22:00 UTC.
 It cannot restart a terminated app/session; no independent durable job is claimed.
 Control Tower continues the existing ownership without assigning owner monitoring.
 

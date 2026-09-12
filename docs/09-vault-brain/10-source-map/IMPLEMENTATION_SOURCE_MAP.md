@@ -2,18 +2,18 @@
 
 ## 2026-09-12 - Farm integration review/admission and demonstrated voice/CI gaps
 
-Existing OMQ parent remains in_progress/EXTERNAL_HOLD. Exact77227a67 is published
+Existing OMQ parent remains in_progress/EXTERNAL_HOLD. Exact 77227a67 is published
 as draft PR1334 under Charl's review/admission/hosted-testing-only approval;
 protected admission passed. Core, general browser and disposable migration checks
-passed; audit job34707013476 fails because its early weaning step uses a database
+passed; audit job 34707013476 fails because its early weaning step uses a database
 without canonical views, leaving later herd/plan/irrigation selectors unexecuted.
-Local CI successor5da57a2a passes11methods on the existing qualified herd fixture
+Local CI successor 5da57a2a passes 11 methods on the existing qualified herd fixture
 while preserving all other workflow steps/jobs/triggers. Published772 is immutable.
 
 Actual Telegram voice-only input is unsupported on deployed/main/candidate;
-96synthetic ingress probes and three canned multipart probes are explicitly not
+96 synthetic ingress probes and three canned multipart probes are explicitly not
 actual transcription. A local authenticated-af voice successor is in progress.
-Weaning SQL hashes16d4dd94/d57d92e2 are the already-reviewed LF/CRLF byte forms;
+Weaning SQL hashes 16d4dd94/d57d92e2 are the already-reviewed LF/CRLF byte forms;
 fresh comparison confirms identical Git blobs across four revisions. Anton's
 existing-identity weaning-only permission/reversal is prepared and unapplied.
 Held combined migration procedure, separate exact merge/deployment authority and
