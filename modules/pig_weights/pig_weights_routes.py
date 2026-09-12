@@ -289,6 +289,16 @@ def pig_profile(pig_id):
     return jsonify(result), status_code
 
 
+@pig_weights_bp.route("/pig/<pig_id>/welfare-observations", methods=["GET"])
+def pig_welfare_observations(pig_id):
+    from modules.auth.owner_access import farm_session_principal, owner_session_is_valid
+    if not (farm_session_principal() or owner_session_is_valid("read")):
+        return jsonify(success=False, status="authenticated_welfare_read_required"), 403
+    from modules.pig_weights.herdmaster_health_loss_recording import list_health_observations
+    result, status_code = list_health_observations(pig_id)
+    return jsonify(result), status_code
+
+
 @pig_weights_bp.route("/pig/<pig_id>/lifecycle/death", methods=["GET", "POST"])
 def pig_lifecycle_death(pig_id):
     payload = request.get_json(silent=True) or {}

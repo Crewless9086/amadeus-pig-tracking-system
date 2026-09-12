@@ -13,6 +13,7 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
 EVENT_SOURCE = "oom_sakkie_family_message_lifecycle"
@@ -70,7 +71,17 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
         identity = str(localized.get("specialist_identity") or localized.get("specialist")
                        or specialist or "OOM SAKKIE").replace("_", " ")
         campaign = localized.get("campaign_review_preview")
-        if status == "media_album_received":
+        trusted_question = (status == "manager_question_partial_reply_recorded"
+            and localized.get("recipient_render_contract") == "manager_question_clarification_v1"
+            and localized.get("question_count") == 1)
+        trusted_health = (localized.get("tool_used") == "herdmaster_health_loss_preview"
+            and localized.get("recipient_render_contract") == "herdmaster_health_loss_recipient_v1"
+            and status in {"preview_ready", "waiting_for_input"})
+        preserves_recipient_text = (trusted_question or trusted_health) and str(
+            localized.get("recipient_language") or "").casefold().startswith("af")
+        if preserves_recipient_text:
+            answer = original_answer
+        elif status == "media_album_received":
             count = int(localized.get("album_stored_count") or 0)
             answer = (f"<b>BEACON — PRIVAAT GESTOOR</b>\n\n{count} foto('s) is veilig in hierdie album gestoor. "
                 "Voeg die oorblywende foto's by en kies Voltooi album. Biblioteekaanvaarding, openbare gebruik, "
@@ -137,7 +148,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             rows.append(translated)
         localized["reply_markup"] = {**markup, "inline_keyboard": rows}
     localized["recipient_language"] = "af"
-    if answer and answer == original_answer and not _looks_afrikaans(answer):
+    if answer and answer == original_answer and not preserves_recipient_text and not _looks_afrikaans(answer):
         localized["recipient_language_render_unrecognized"] = True
     return localized
 
@@ -1005,7 +1016,8 @@ def _send_telegram(chat_id, text, reply_markup=None, *, deadline_monotonic=None)
     except Exception:return {"success":False,"status":"telegram_delivery_ambiguous"}
     result=response.get("result") if isinstance(response,dict) else {}
     return {"success":response.get("ok") is True and bool((result or {}).get("message_id")),
-            "telegram_message_id":str((result or {}).get("message_id") or "")}
+            "telegram_message_id":str((result or {}).get("message_id") or ""),
+            "provider_timestamp": _provider_message_timestamp(result)}
 
 
 def _edit_telegram(chat_id, message_id, text, reply_markup=None, *,
@@ -1026,7 +1038,18 @@ def _edit_telegram(chat_id, message_id, text, reply_markup=None, *,
     except Exception:
         return {"success": False, "status": "telegram_edit_ambiguous"}
     return {"success": response.get("ok") is True,
-            "telegram_message_id": str(((response.get("result") or {}).get("message_id") if isinstance(response, dict) else "") or "")}
+            "telegram_message_id": str(((response.get("result") or {}).get("message_id") if isinstance(response, dict) else "") or ""),
+            "provider_timestamp": _provider_message_timestamp(response.get("result"), edited=True)}
+
+
+def _provider_message_timestamp(result, *, edited=False):
+    value = result.get("edit_date" if edited else "date") if isinstance(result, Mapping) else None
+    if type(value) is not int or value <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(value, timezone.utc).isoformat()
+    except (ValueError, OverflowError, OSError):
+        return ""
 
 
 def _delete_telegram(chat_id, message_id):

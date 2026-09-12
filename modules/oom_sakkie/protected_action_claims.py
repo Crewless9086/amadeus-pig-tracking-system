@@ -295,7 +295,7 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
     if action not in {"confirm","change","cancel","details","nomedia"}:return {"success":False,"status":"protected_callback_invalid"},400
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
-        cur.execute("select action_kind,owner_user_id,private_chat_id,mission_id,preview_digest,evidence_generation,preview_payload,status,expires_at,result_payload,preview_card_message_id from app_private.oom_protected_action_claims where callback_token=%s for update",(token,))
+        cur.execute("select action_kind,owner_user_id,private_chat_id,mission_id,preview_digest,evidence_generation,preview_payload,status,expires_at,result_payload,preview_card_message_id,confirmation_provider_message_id,confirmation_provider_timestamp from app_private.oom_protected_action_claims where callback_token=%s for update",(token,))
         row=cur.fetchone()
         if not row:return {"success":False,"status":"protected_callback_unknown"},404
         if str(row[1])!=str(owner_user_id) or str(row[2])!=str(private_chat_id):return {"success":False,"status":"protected_callback_unauthorized"},403
@@ -314,6 +314,11 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
                     "herdmaster_record_farrowing_litter", "herdmaster_record_litter_piglet_deaths"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
+                  "preview_payload":row[6],
+                  "delivery_callback_binding": ({"owner_user_id":str(row[1]),"chat_id":str(row[2]),
+                    "provider_message_id":str(row[11]),"provider_timestamp":row[12].isoformat(),
+                    "reply_to_message_id":str(row[10])}
+                    if len(row)>12 and str(row[11] or "")==str(provider_message_id) and row[12] else {}),
                   "result":row[9],"telegram_sends":0,"telegram_edits":0},200
             return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
         if row[7] in {"cancelled", "changed"}:

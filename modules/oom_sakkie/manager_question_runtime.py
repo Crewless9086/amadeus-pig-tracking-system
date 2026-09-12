@@ -45,8 +45,7 @@ def load_active_manager_question(parsed, *, loader=None):
         age = (provider_at - presented).total_seconds()
         if age < 0 or age > MAX_AGE_SECONDS:
             continue
-        card = str(row.get("telegram_message_id") or "")
-        if reply_to and reply_to != card:
+        if reply_to and reply_to not in _question_message_ids(row):
             continue
         candidates.append((presented, row))
     if not candidates:
@@ -62,14 +61,6 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
     if not question:
         return context
     recent = list(context.get("recent_turns") or [])
-    for prior in question.get("partial_replies") or ():
-        if isinstance(prior, dict) and str(prior.get("owner_evidence") or "").strip():
-            recent.append({"specialist": "OWNER", "task_state": "partial_answer",
-                "provider_message_id": str(prior.get("provider_message_id") or "")[:40],
-                "provider_timestamp": str(prior.get("provider_timestamp") or "")[:40],
-                "semantic_domain": str(prior.get("domain") or "")[:40],
-                "semantic_intent": "manager_question_partial_reply",
-                "observation": str(prior.get("owner_evidence") or "")[:240]})
     recent.append({"specialist": "OOM_SAKKIE",
         "task_state": "waiting_for_input",
         "card_mission_id": str(question.get("daily_identity") or "")[:80],
@@ -80,6 +71,29 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
         "semantic_domain": str((question.get("question_binding") or {}).get("domain") or "manager_round")[:40],
         "semantic_intent": "manager_question_reply",
         "clarification_question": str(question.get("question") or "")[:240]})
+    for prior in question.get("partial_replies") or ():
+        if isinstance(prior, dict) and str(prior.get("owner_evidence") or "").strip():
+            if not _reply_follows(parsed, prior):
+                continue
+            recent.append({"specialist": "OWNER", "task_state": "partial_answer",
+                "provider_message_id": str(prior.get("provider_message_id") or "")[:40],
+                "provider_timestamp": str(prior.get("provider_timestamp") or "")[:40],
+                "semantic_domain": str(prior.get("domain") or "")[:40],
+                "semantic_intent": "manager_question_partial_reply",
+                "observation": str(prior.get("owner_evidence") or "")[:240]})
+            clarification = str(prior.get("clarification_question") or "").strip()
+            delivered_at = _timestamp(prior.get("clarification_presented_at"))
+            inbound_at = _timestamp(parsed.get("provider_timestamp"))
+            if (clarification and str(prior.get("clarification_telegram_message_id") or "").strip()
+                    and delivered_at is not None and inbound_at is not None
+                    and delivered_at <= inbound_at):
+                recent.append({"specialist": "OOM_SAKKIE", "task_state": "waiting_for_input",
+                    "provider_timestamp": str(prior.get("provider_timestamp") or "")[:40],
+                    "delivery_provider_timestamp": str(prior.get("clarification_presented_at") or "")[:40],
+                    "telegram_message_id": str(prior.get("clarification_telegram_message_id") or "")[:40],
+                    "semantic_domain": str(prior.get("domain") or "")[:40],
+                    "semantic_intent": "manager_question_reply",
+                    "clarification_question": clarification[:240]})
     context["recent_turns"] = recent[-8:]
     return context
 
@@ -89,6 +103,19 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                                   event_loader=None, health_handler=None):
     if authority is None:
         return {"handled": False, **ZERO}, 200
+    if event_store is None:
+        bound = bind_gateway_owner_authority(authority, "farm_manager_round")
+        if (bound is not None and str(bound.owner_user_id) == str(parsed.get("telegram_user_id") or "")
+                and str(bound.private_chat_id) == str(parsed.get("telegram_chat_id") or "")):
+            try:
+                retained = _load_herd_provider_reply(parsed)
+            except Exception as exc:
+                return {"handled": True, "success": False,
+                    "status": "manager_question_receipt_lookup_unavailable",
+                    "failure_class": exc.__class__.__name__, "answer": "",
+                    "suppress_owner_delivery": True, **ZERO}, 503
+            if retained:
+                return _recover_herd_reply(parsed, retained)
     active = question or load_active_manager_question(parsed, loader=question_loader)
     if not active:
         return {"handled": False, **ZERO}, 200
@@ -98,7 +125,7 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             or not 0 <= (provider_at_value - presented).total_seconds() <= MAX_AGE_SECONDS):
         return {"handled": False, **ZERO}, 200
     reply_to = str(parsed.get("reply_to_message_id") or "").strip()
-    exact_reply = bool(reply_to and reply_to == str(active.get("telegram_message_id") or ""))
+    exact_reply = bool(reply_to and reply_to in _question_message_ids(active))
     # A protected specialist packet owns its own preview/confirmation lifecycle.
     # Broad manager context must never consume it merely because it is conversational.
     if semantic is not None and (getattr(semantic, "protected_preview_required", False)
@@ -106,6 +133,9 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             or bool(getattr(semantic, "breeding_actions", ()) )):
         return {"handled": False, **ZERO}, 200
     expected_domain = str((active.get("question_binding") or {}).get("domain") or "")
+    if (expected_domain in {"herd", "herd_health", "herd_management"} and semantic is not None
+            and getattr(semantic, "message_kind", "") not in {"observation", "correction"}):
+        return {"handled": False, **ZERO}, 200
     rootline_question = expected_domain in {"rootline", "water_energy"}
     if rootline_question and semantic is not None:
         semantic = _bind_literal_rootline_observation(parsed, semantic)
@@ -164,8 +194,15 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         f"{question_identity}|{generation}".encode()).hexdigest()[:24].upper()
     completion_event_id = event_id + "-COMPLETED"
     facts = _semantic_facts(semantic)
+    accumulated = _merge_semantic_facts(
+        [item.get("semantic_facts") for item in partials] + [facts])
     clarification = str(getattr(semantic, "clarification_question", "") or "").strip()
-    partial = bool(getattr(semantic, "needs_clarification", False) and clarification)
+    partial = (bool(getattr(semantic, "needs_clarification", False))
+        or any(state == "unknown" for field in ("welfare_observation", "clinical_observation")
+               for state in accumulated[field].values()))
+    if partial and not clarification:
+        clarification = str((partials[-1] if partials else {}).get("clarification_question")
+            or active.get("question") or "").strip()
     binding = {"owner_user_id": str(parsed.get("telegram_user_id") or ""),
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
         "provider_message_id": provider, "provider_timestamp": provider_at,
@@ -201,11 +238,15 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         recovered = (terminal.get("downstream_result")
             if isinstance(terminal.get("downstream_result"), dict) else None)
         if recovered:
+            if recovered.get("tool_used") == "herdmaster_health_loss_preview":
+                return _recover_herd_reply(parsed, terminal)
             return {**recovered, "handled": True, "answer": "",
                 "suppress_owner_delivery": True, "replay_suppressed": True,
                 "manager_question_status": "manager_question_reply_replay_recovered",
                 "manager_question_event_id": event_id,
                 "records_audit_trace": True}, int(terminal.get("downstream_status") or 200)
+        if terminal.get("status") == "partial" and terminal.get("clarification_question"):
+            return _partial_reply_result(terminal), 200
         return {"handled": True, "success": True,
             "status": "manager_question_reply_replay_suppressed", "answer": "",
             "suppress_owner_delivery": True, **ZERO}, 200
@@ -213,6 +254,8 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         prior_binding = prior.get("provider_binding") if isinstance(
             prior.get("provider_binding"), dict) else {}
         if prior_binding == binding:
+            if prior.get("clarification_question"):
+                return _partial_reply_result(prior), 200
             return {"handled": True, "success": True,
                 "status": "manager_question_reply_replay_suppressed", "answer": "",
                 "suppress_owner_delivery": True, **ZERO}, 200
@@ -223,8 +266,16 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                 "status": "manager_question_provider_binding_conflict",
                 "answer": "I retained the original attributable reply and did not overwrite it.",
                 "requires_visible_notification": True, **ZERO}, 409
-    accumulated = _merge_semantic_facts(
-        [item.get("semantic_facts") for item in partials] + [facts])
+    # An exact replay was handled above. A different reply must follow every
+    # retained partial in provider order, including messages in the same second.
+    for prior in partials:
+        if not _reply_follows(parsed, prior):
+            af = str(parsed.get("output_language") or "").casefold().startswith("af")
+            return {"handled": True, "success": False,
+                "status": "manager_question_reply_chronology_conflict",
+                "answer": ("Ek het die jongste antwoord behou. Beantwoord asseblief die oop vraag weer."
+                    if af else "I kept the latest answer. Please answer the open question again."),
+                "requires_visible_notification": True, **ZERO}, 409
     record = {"event_id": event_id, "status": "partial" if partial else "recorded",
         "owner_user_id": str(parsed.get("telegram_user_id") or ""),
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
@@ -234,6 +285,8 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "task_id": str((active.get("question_binding") or {}).get("task_id") or ""),
         "dedupe_key": dedupe_key, "domain": expected_domain,
         "question": str(active.get("question") or ""), "owner_evidence": text,
+        "clarification_question": clarification if partial else "",
+        "recipient_language": str(parsed.get("output_language") or "en"),
         "semantic_facts": facts, "accumulated_semantic_facts": accumulated,
         "generation": generation, "provider_binding": binding,
         "content_sha256": binding["content_sha256"]}
@@ -255,9 +308,21 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             from modules.oom_sakkie.herdmaster_health_loss_runtime import (
                 handle_authenticated_health_loss_message)
             health_handler = handle_authenticated_health_loss_message
+        report_parts = [{"text": str(item.get("owner_evidence") or ""),
+                         "provider_timestamp": str(item.get("provider_timestamp") or "")}
+                        for item in partials]
+        report_parts.append({"text": text, "provider_timestamp": provider_at})
         forwarded = {**parsed, "text": f"Pig {pig_id}: {text}",
-            "semantic": {"domain": "herd_health", "continuation": True,
-                "entity_refs": [f"pig:{pig_id}"], "observation": text}}
+            # The daily card has been authenticated above. It is not a health
+            # preview card; hand the typed pig to a fresh specialist intake.
+            "reply_to_message_id": "",
+            "manager_question_report_parts": report_parts,
+            "semantic": {**semantic.as_hint(), "domain": "herd_health", "continuation": True,
+                "entity_refs": [f"pig:{pig_id}"],
+                "observation": " ".join(accumulated["observations"]),
+                "welfare_observation": accumulated["welfare_observation"] or None,
+                "clinical_observation": accumulated["clinical_observation"] or None,
+                "observation_facts": accumulated["observation_facts"]}}
         downstream, downstream_status = health_handler(forwarded, authority)
         if (not isinstance(downstream, dict) or downstream.get("handled") is not True
                 or downstream.get("success") is not True):
@@ -405,6 +470,18 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             ("specialist_identity", "mission_id", "card_mission_id",
              "provider_message_id", "provider_timestamp")
             if downstream is not None and downstream.get(key) is not None})
+        if downstream_applied and herd_question:
+            af = str(parsed.get("output_language") or "").casefold().startswith("af")
+            return {"handled": True, "success": False,
+                "status": "manager_question_receipt_unavailable",
+                "answer": ("Die gesondheidsvoorskou is behou, maar die gesprek se ontvangsbewys kon nie gestoor word nie. "
+                    "Dieselfde boodskap kan hervat word; geen plaasrekord is verander nie." if af else
+                    "The health preview was retained, but its conversation receipt could not be saved. "
+                    "The same message can resume; no farm record was changed."),
+                "mission_id": str(active.get("daily_identity") or ""),
+                "card_mission_id": event_id + ":RECEIPT-RECOVERY",
+                "downstream_retention_possible": True,
+                "requires_visible_notification": True, **ZERO}, 503
         return {"handled": True, "success": False,
             "status": "manager_question_receipt_unavailable",
             "answer": (("ROOTLINE retained the attributable update, but the linked manager receipt "
@@ -437,18 +514,88 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "manager_question_event_id": event_id,
             "records_audit_trace": True}, downstream_status
     if partial:
-        answer = clarification
-        status = "manager_question_partial_reply_recorded"
+        return _partial_reply_result(record), 200
     else:
         answer = "Thanks — I recorded that against the active farm question."
         status = "manager_question_reply_recorded"
     return {"handled": True, "success": True, "status": status,
-        "answer": answer, "mission_id": str(active.get("daily_identity") or ""),
-        "card_mission_id": str(active.get("daily_identity") or ""),
+        "answer": answer, "mission_id": event_id if partial else str(active.get("daily_identity") or ""),
+        "card_mission_id": event_id if partial else str(active.get("daily_identity") or ""),
         "requires_visible_notification": True, "question_count": int(bool(clarification)),
         "records_audit_trace": True, "specialist_identity": "HERDMASTER"
         if expected_domain in {"herd", "herd_health", "herd_management"} else "OOM_SAKKIE",
         **ZERO}, 200
+
+
+def _partial_reply_result(record):
+    language = str(record.get("recipient_language") or
+        (record.get("semantic_facts") or {}).get("language") or "en")
+    facts = record.get("accumulated_semantic_facts") or record.get("semantic_facts") or {}
+    answer = str(record.get("clarification_question") or "")
+    if (record.get("domain") in {"herd", "herd_health", "herd_management"}
+            and (any(state == "yes" for state in (facts.get("clinical_observation") or {}).values())
+                 or any(state == "no" for state in (facts.get("welfare_observation") or {}).values()))):
+        from modules.oom_sakkie.herdmaster_health_loss_preview import _welfare_priority_text
+        urgent = _welfare_priority_text({"immediate_welfare_priority":{"level":"urgent_assessment"}},
+            "af" if language.casefold().startswith("af") else "en")
+        answer = urgent + "\n\n" + answer
+    return {"handled": True, "success": True,
+        "status": "manager_question_partial_reply_recorded",
+        "answer": answer,
+        "mission_id": str(record.get("event_id") or ""),
+        "card_mission_id": str(record.get("event_id") or ""),
+        "requires_visible_notification": True, "question_count": 1,
+        "records_audit_trace": True, "specialist_identity": "HERDMASTER"
+        if record.get("domain") in {"herd", "herd_health", "herd_management"} else "OOM_SAKKIE",
+        "recipient_render_contract": "manager_question_clarification_v1",
+        "recipient_language": language,
+        **ZERO}
+
+
+def _recover_herd_reply(parsed, record):
+    binding = {"owner_user_id": str(parsed.get("telegram_user_id") or ""),
+        "chat_id": str(parsed.get("telegram_chat_id") or ""),
+        "provider_message_id": str(parsed.get("provider_message_id") or ""),
+        "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
+        "reply_to_message_id": str(parsed.get("reply_to_message_id") or ""),
+        "content_sha256": sha256(str(parsed.get("text") or "").strip().encode()).hexdigest()}
+    if record.get("provider_binding") != binding:
+        return {"handled": True, "success": False,
+            "status": "manager_question_provider_binding_conflict", "answer": "",
+            "suppress_owner_delivery": True, **ZERO}, 409
+    downstream = record.get("downstream_result") or {}
+    if downstream.get("tool_used") == "herdmaster_health_loss_preview":
+        return {**downstream, "handled": True,
+            "manager_question_status": "manager_question_reply_replay_recovered",
+            "manager_question_event_id": str(record.get("event_id") or ""),
+            "records_audit_trace": True}, int(record.get("downstream_status") or 200)
+    if record.get("status") == "partial" and record.get("clarification_question"):
+        return _partial_reply_result(record), 200
+    return {"handled": True, "success": True,
+        "status": "manager_question_reply_replay_suppressed", "answer": "",
+        "suppress_owner_delivery": True, **ZERO}, 200
+
+
+def _load_herd_provider_reply(parsed):
+    if not str(os.environ.get("DATABASE_URL") or "").strip():
+        return {}
+    with connect_bounded_rootline_postgres(read_only=True, connect_deadline_seconds=3) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""select review_json->'manager_question_reply'
+                from public.sam_live_stock_conversation_review_events
+                where event_source='oom_sakkie_manager_question_reply'
+                  and review_json->'manager_question_reply'->>'owner_user_id'=%s
+                  and review_json->'manager_question_reply'->>'chat_id'=%s
+                  and review_json->'manager_question_reply'->>'provider_message_id'=%s
+                  and review_json->'manager_question_reply'->>'domain' in ('herd','herd_health','herd_management')
+                  and review_json->'manager_question_reply'->>'status' in ('partial','recorded')
+                order by created_at desc, review_event_id desc limit 2""",
+                (str(parsed.get("telegram_user_id") or ""),str(parsed.get("telegram_chat_id") or ""),
+                 str(parsed.get("provider_message_id") or "")))
+            rows = cursor.fetchall()
+            if len(rows) > 1:
+                raise ValueError("manager_question_provider_receipt_ambiguous")
+            return dict(rows[0][0]) if rows else {}
 
 
 def manager_question_event_store(event_id, record):
@@ -530,6 +677,26 @@ def _load_questions(owner, chat):
                 question["partial_replies"] = list(partials or [])
                 questions.append(question)
             if questions:
+                partial_ids = [str(partial.get("event_id") or "") for question in questions
+                    for partial in question["partial_replies"] if isinstance(partial, dict)]
+                if partial_ids:
+                    cursor.execute("""select review_json->'family_message_lifecycle'
+                        from public.sam_live_stock_conversation_review_events
+                        where event_source='oom_sakkie_family_message_lifecycle'
+                          and review_json->'family_message_lifecycle'->>'owner_user_id'=%s
+                          and review_json->'family_message_lifecycle'->>'chat_id'=%s
+                          and review_json->'family_message_lifecycle'->>'mission_id'=any(%s)
+                          and review_json->'family_message_lifecycle'->>'state' in ('delivered','updated')
+                        order by created_at desc, review_event_id desc""",(owner,chat,partial_ids))
+                    delivered = {}
+                    for row in cursor.fetchall():
+                        value = dict(row[0] or {})
+                        delivered.setdefault(str(value.get("mission_id") or ""),value)
+                    for question in questions:
+                        for partial in question["partial_replies"]:
+                            value = delivered.get(str(partial.get("event_id") or ""),{})
+                            partial["clarification_telegram_message_id"] = str(value.get("telegram_message_id") or "")
+                            partial["clarification_presented_at"] = str(value.get("delivery_provider_timestamp") or "")
                 return questions
             # A provider-confirmed morning card can outlive an ambiguous daily
             # outcome receipt when the post-send database read stalls. Preserve
@@ -574,6 +741,24 @@ def _load_questions(owner, chat):
                     "task_id": str(body.get("card_mission_id") or "") + ":contextual-update",
                     "dedupe_key": str(body.get("card_mission_id") or "") + ":contextual-update",
                     "domain": "rootline", "contextual_card_recovery": True}}]
+
+
+def _question_message_ids(question):
+    cards = {str(question.get("telegram_message_id") or "")}
+    partials = question.get("partial_replies") or ()
+    if partials:
+        cards.add(str(partials[-1].get("clarification_telegram_message_id") or ""))
+    return cards - {""}
+
+
+def _reply_follows(parsed, prior):
+    current_at = _timestamp(parsed.get("provider_timestamp"))
+    prior_at = _timestamp(prior.get("provider_timestamp"))
+    current_id = str(parsed.get("provider_message_id") or "")
+    prior_id = str(prior.get("provider_message_id") or "")
+    return bool(current_at is not None and prior_at is not None and
+        (current_at > prior_at or (current_at == prior_at and current_id.isdecimal()
+         and prior_id.isdecimal() and int(current_id) > int(prior_id))))
 
 
 def _compatible(expected, actual):
@@ -687,18 +872,23 @@ def _semantic_facts(semantic):
     return {"domain": str(getattr(semantic, "domain", "") or ""),
         "intent": str(getattr(semantic, "intent", "") or ""),
         "observation": str(getattr(semantic, "observation", "") or ""),
+        "welfare_observation": dict(getattr(semantic, "welfare_observation", None) or {}),
+        "clinical_observation": dict(getattr(semantic, "clinical_observation", None) or {}),
         "observation_facts": list(getattr(semantic, "observation_facts", ()) or ()),
         "language": str(getattr(semantic, "language", "") or "")}
 
 
 def _merge_semantic_facts(rows):
-    merged = {"observations": [], "observation_facts": []}
+    merged = {"observations": [], "observation_facts": [], "welfare_observation": {},
+              "clinical_observation": {}}
     for row in rows:
         if not isinstance(row, dict):
             continue
         observation = str(row.get("observation") or "").strip()
         if observation and observation not in merged["observations"]:
             merged["observations"].append(observation)
+        merged["welfare_observation"].update(row.get("welfare_observation") or {})
+        merged["clinical_observation"].update(row.get("clinical_observation") or {})
         for fact in row.get("observation_facts") or ():
             if fact not in merged["observation_facts"]:
                 merged["observation_facts"].append(fact)

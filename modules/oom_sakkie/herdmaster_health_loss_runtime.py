@@ -247,6 +247,28 @@ def handle_authenticated_health_loss_message(
                     and str(active.get("provider_timestamp") or "") == provider_timestamp)
                    or (str(active.get("clarification_provider_message_id") or "") == provider_message_id
                        and str(active.get("clarification_provider_timestamp") or "") == provider_timestamp)):
+        manager_parts = parsed.get("manager_question_report_parts")
+        if isinstance(manager_parts, list) and manager_parts:
+            retained_parts = active.get("report_parts") or []
+            if (str(active.get("owner_user_id") or "") != str(parsed.get("telegram_user_id") or "")
+                    or str(active.get("chat_id") or "") != str(parsed.get("telegram_chat_id") or "")
+                    or str(active.get("owner_text_verbatim") or "") != text
+                    or retained_parts[-len(manager_parts):] != manager_parts):
+                return {"handled": True, "success": False,
+                    "status": "health_loss_manager_replay_binding_conflict",
+                    "writes_farm_data": False}, 409
+            # The specialist preview may have committed before the manager's
+            # receipt. Reuse that exact preview/claim and its original expiry;
+            # the delivery lifecycle reconciles any already presented card.
+            if active_status in {"preview_ready", "waiting_for_input"}:
+                try:
+                    protected = _protected_preview_fields(active, claim_creator=claim_creator)
+                except Exception:
+                    return {"handled": True, "success": False,
+                        "status": "health_loss_protected_claim_unavailable",
+                        "answer": _health_loss_message(output_language, "claim_unavailable"),
+                        "writes_farm_data": False}, 503
+                return {**_existing_lifecycle_result(active), **protected}, 200
         result = _existing_lifecycle_result(active)
         result.update({"status": "health_loss_inbound_replay_suppressed",
                        "answer": "", "suppress_owner_delivery": True,
@@ -409,13 +431,24 @@ def handle_authenticated_health_loss_message(
                    and float(semantic.get("confidence") or 0) >= 0.8
                    and semantic_observation else "")
     current_text = (text + interpreted).strip()
+    # The manager conversation passes already attributable partial answers.
+    # Keep their original evidence times for date interpretation and retain
+    # the resolved meaning inside the existing owner-confirmed preview.
+    manager_parts = parsed.get("manager_question_report_parts")
+    manager_parts = manager_parts if isinstance(manager_parts, list) else []
+    if manager_parts:
+        prior_text = " ".join(str(part.get("text") or "") for part in manager_parts[:-1])
+        current_text = f"{prior_text} {current_text}".strip()
     combined_text = f"{context_text} {joiner} {current_text}".strip() if context_text else current_text
     report_parts = list((active_for_message or {}).get("report_parts") or [])
     if context_text and not report_parts:
         report_parts.append({"text": str((active_for_message or {}).get("owner_text_verbatim") or context_text),
             "provider_timestamp": str((active_for_message or {}).get("evidence_provider_timestamp")
                                       or (active_for_message or {}).get("provider_timestamp") or "")})
-    report_parts.append({"text": text, "provider_timestamp": evidence_provider_timestamp})
+    if manager_parts:
+        report_parts.extend(dict(part) for part in manager_parts)
+    else:
+        report_parts.append({"text": text, "provider_timestamp": evidence_provider_timestamp})
     if parsed.get("application_form"):
         report_parts[-1]["display_text"] = str(parsed["application_form"].get("notes") or "")
     evidence = load_canonical_health_loss_evidence(connect_factory=connect_factory)
@@ -428,6 +461,15 @@ def handle_authenticated_health_loss_message(
         "text": combined_text,
         "report_parts": report_parts,
     }
+    if (semantic.get("domain") == "herd_health"
+            and semantic.get("message_kind") in {"observation", "correction"}
+            and float(semantic.get("confidence") or 0) >= 0.8):
+        for field in ("welfare_observation", "clinical_observation"):
+            prior = ((active_for_message or {}).get("semantic_interpretation") or {}).get(field) or {}
+            states = {**prior, **(semantic.get(field) or {})}
+            if states:
+                envelope[field] = states
+                semantic = {**semantic, field: states}
     preview = prepare_health_loss_owner_preview(envelope, evidence)
     owner_text = _owner_message(preview)
     mission_id = str((active_for_message or {}).get("mission_id") or "") or "OOM-HERDMASTER-" + hashlib.sha256(
@@ -474,37 +516,20 @@ def handle_authenticated_health_loss_message(
     welfare_case = stored.get("welfare_case") or {
         "success": True, "status": "welfare_case_test_store_not_applicable", "rows_created": 0,
     }
-    protected={}
-    if lifecycle["status"]=="preview_ready" and lifecycle["operation_id"] and (claim_creator or os.getenv("DATABASE_URL")):
-        from modules.oom_sakkie.protected_action_claims import (
-            build_buttons, create_claim, protected_card_mission_id)
-        creator=claim_creator or create_claim
-        try:
-            claim=creator(action_kind="mortality",owner_user_id=lifecycle["owner_user_id"],
-              private_chat_id=lifecycle["chat_id"],mission_id=mission_id,
-              provider_message_id=provider_message_id,evidence_generation=lifecycle["evidence_generation"],
-              preview_payload={"operation_id":lifecycle["operation_id"],
-                "preview_sha256":str((preview.get("confirmation_binding") or {}).get("preview_sha256") or ""),
-                "identity":(preview.get("evaluator") or {}).get("identity") or {},
-                "event_family":str((preview.get("evaluator") or {}).get("event_family") or ""),
-                "effect_kind":("mortality" if _preview_is_mortality(preview)
-                               else "health_observation")})
-            protected={"preview_digest":claim["preview_digest"],"callback_token":claim["callback_token"],
-                       "action_kind":str(claim.get("action_kind") or "mortality"),
-                       "card_mission_id":protected_card_mission_id(
-                           mission_id, claim["preview_digest"]),
-                       "reply_markup":build_buttons(claim["callback_token"],grouped=False,
-                           language=output_language)}
-        except Exception:
-            return {"handled":True,"success":False,"status":"health_loss_protected_claim_unavailable",
-                    "answer":_health_loss_message(output_language, "claim_unavailable"),
-                    "writes_farm_data":False},503
+    try:
+        protected = _protected_preview_fields(lifecycle, claim_creator=claim_creator)
+    except Exception:
+        return {"handled":True,"success":False,"status":"health_loss_protected_claim_unavailable",
+                "answer":_health_loss_message(output_language, "claim_unavailable"),
+                "writes_farm_data":False},503
     return {
         "handled": True,
         "success": True,
         "status": lifecycle["status"],
         "answer": owner_text,
         "tool_used": "herdmaster_health_loss_preview",
+        "recipient_render_contract": "herdmaster_health_loss_recipient_v1",
+        "recipient_language": output_language,
         "question_count": int(preview.get("question_count") or 0),
         "operation_id": lifecycle["operation_id"],
         "application_form": lifecycle["application_form"],
@@ -522,6 +547,29 @@ def handle_authenticated_health_loss_message(
         "welfare_case_persistence_degraded": welfare_case.get("success") is not True,
         **protected,
     }, 200
+
+
+def _protected_preview_fields(lifecycle, *, claim_creator=None):
+    if (lifecycle.get("status") != "preview_ready" or not lifecycle.get("operation_id")
+            or not (claim_creator or os.getenv("DATABASE_URL"))):
+        return {}
+    from modules.oom_sakkie.protected_action_claims import (
+        build_buttons, create_claim, protected_card_mission_id)
+    preview = lifecycle["preview"]
+    claim = (claim_creator or create_claim)(action_kind="mortality",
+        owner_user_id=lifecycle["owner_user_id"], private_chat_id=lifecycle["chat_id"],
+        mission_id=lifecycle["mission_id"], provider_message_id=lifecycle["provider_message_id"],
+        evidence_generation=lifecycle["evidence_generation"],
+        preview_payload={"operation_id":lifecycle["operation_id"],
+            "preview_sha256":str((preview.get("confirmation_binding") or {}).get("preview_sha256") or ""),
+            "identity":(preview.get("evaluator") or {}).get("identity") or {},
+            "event_family":str((preview.get("evaluator") or {}).get("event_family") or ""),
+            "effect_kind":"mortality" if _preview_is_mortality(preview) else "health_observation"})
+    return {"preview_digest":claim["preview_digest"], "callback_token":claim["callback_token"],
+        "action_kind":str(claim.get("action_kind") or "mortality"),
+        "card_mission_id":protected_card_mission_id(lifecycle["mission_id"], claim["preview_digest"]),
+        "reply_markup":build_buttons(claim["callback_token"], grouped=False,
+            language=str(lifecycle.get("output_language") or "en"))}
 
 
 def _classify_preview_owner_intent(text: str, active: Mapping[str, Any] | None) -> str:
@@ -625,7 +673,9 @@ def mortality_completion_recovery_result(stored: Mapping[str, Any],
         "pig_name": str(identity.get("name") or identity.get("pig_name") or ""),
         "tag_number": str(identity.get("tag_number") or identity.get("tag") or "")}
     return {**dict(stored),
-        "answer": _mortality_completion_message(presentation_facts, language),
+        "answer": (_health_loss_message(language,"observation_recorded")
+            if preview_payload.get("effect_kind") == "health_observation" else
+            _mortality_completion_message(presentation_facts, language)),
         "recipient_render_contract": "specialist_structured_recipient_v1",
         "recipient_language": "af" if str(language).casefold().startswith("af") else "en",
         "owner_visible_completion_policy": "verified_edit_or_new_message",
@@ -639,6 +689,8 @@ def _existing_lifecycle_result(active: Mapping[str, Any]) -> dict:
         "status": str(active.get("status") or "preview_ready"),
         "answer": str(active.get("owner_text") or ""),
         "tool_used": "herdmaster_health_loss_preview",
+        "recipient_render_contract": "herdmaster_health_loss_recipient_v1",
+        "recipient_language": str(active.get("output_language") or "en"),
         "question_count": int(preview.get("question_count") or 0),
         "operation_id": str(active.get("operation_id") or ""),
         "application_form": dict(active.get("application_form") or {}),

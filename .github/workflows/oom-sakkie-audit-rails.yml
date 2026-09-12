@@ -312,3 +312,32 @@ jobs:
 
       - name: Run Oom Sakkie browser behavior smoke
         run: node tests/oom_sakkie_browser_behavior_smoke.js
+
+      - name: Create separate disposable plan dialogue database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host=127.0.0.1 --username=postgres plan_dialogue_test
+
+      - name: Prove plan dialogue, confirmation recovery and canonical application history
+        env:
+          PLAN_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/plan_dialogue_test
+        run: |
+          python -m pip install pytest
+          python tests/plan_dialogue_qualification.py bootstrap
+          python tests/plan_dialogue_qualification.py unit
+          python tests/plan_dialogue_qualification.py postgres
+
+      - name: Set up Node for plan dialogue browser proof
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install plan dialogue browser dependencies
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: View confirmed English and Afrikaans welfare records in the real application
+        env:
+          PLAN_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/plan_dialogue_test
+        run: npx playwright test --config=tests/plan_dialogue_playwright.config.js

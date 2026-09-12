@@ -63,6 +63,11 @@
             <div id="breeding_records" class="profile-record-list"></div>
           </section>
 
+          <section class="profile-panel" aria-labelledby="welfare_history_heading">
+            <div class="profile-panel-heading"><div><span class="farm-eyebrow">HERDMASTER</span><h2 id="welfare_history_heading">{{ 'Onlangse welstandswaarnemings' if mortality_language == 'af' else 'Recent welfare observations' }}</h2></div></div>
+            <div id="welfare_observation_records" class="profile-record-list" aria-live="polite"></div>
+          </section>
+
           <section class="profile-panel split-panel">
             <div>
               <div class="profile-panel-heading"><div><span class="farm-eyebrow">Health</span><h2>Treatments</h2></div><a id="view_treatment_history_button" href="#">History →</a></div>
@@ -124,6 +129,6 @@
       </div>
     </main>
   </div>
-  <script src="{{ url_for('static', filename='js/pigDetail.js') }}?v=20260910-mortality-preview"></script>
+  <script src="{{ url_for('static', filename='js/pigDetail.js') }}?v=20260912-welfare-history"></script>
 </body>
 </html>

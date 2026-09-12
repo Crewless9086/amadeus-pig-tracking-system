@@ -192,8 +192,13 @@ def reconcile_manager_question_answer(result, receipt):
     facts = facts if isinstance(facts, dict) else {}
     task_id = str(receipt.get("task_id") or "")
     dedupe = str(receipt.get("dedupe_key") or "")
+    observations = facts.get("observations")
+    has_observation = (isinstance(observations, list) and any(
+        isinstance(value, str) and value.strip() for value in observations))
+    has_observation = has_observation or bool(str(facts.get("observation") or "").strip())
     if (str(receipt.get("domain") or "") not in {"herd", "herd_health", "herd_management"}
-            or not str(facts.get("observation") or "").strip()
+            or receipt.get("status", "recorded") != "recorded"
+            or not has_observation
             or not str(receipt.get("owner_evidence") or "").strip()):
         return result
     matched = False

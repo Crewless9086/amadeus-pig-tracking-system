@@ -36,6 +36,8 @@ class SemanticInterpretation:
     entity_refs: tuple[str, ...] = ()
     continuation: bool = False
     observation: str = ""
+    welfare_observation: Mapping[str, str] | None = None
+    clinical_observation: Mapping[str, str] | None = None
     observation_facts: tuple[Mapping[str, Any], ...] = ()
     breeding_actions: tuple[Mapping[str, Any], ...] = ()
     farrowing_litter: Mapping[str, Any] | None = None
@@ -166,6 +168,8 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         if message_kind not in MESSAGE_KINDS:
             return None
         facts = _observation_facts(value.get("observation_facts"))
+        welfare = _welfare_observation(value.get("welfare_observation"))
+        clinical = _clinical_observation(value.get("clinical_observation"))
         breeding_actions = _breeding_actions(value.get("breeding_actions"))
         farrowing_litter = _farrowing_litter(value.get("farrowing_litter"))
         litter_first_treatment = _litter_first_treatment(value.get("litter_first_treatment"))
@@ -178,6 +182,8 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             message_kind=message_kind,
             continuation=bool(value.get("continuation")),
             observation=str(value.get("observation") or "").strip()[:500],
+            welfare_observation=welfare,
+            clinical_observation=clinical,
             observation_facts=facts,
             breeding_actions=breeding_actions,
             farrowing_litter=farrowing_litter,
@@ -189,7 +195,8 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             requested_action=str(value.get("requested_action") or "").strip()[:120],
             language=str(value.get("language") or "unknown").strip()[:20],
             confidence=max(0.0, min(1.0, float(value.get("confidence") or 0))),
-            needs_clarification=bool(value.get("needs_clarification")),
+            needs_clarification=bool(value.get("needs_clarification"))
+                or any(state == "unknown" for state in {**(welfare or {}), **(clinical or {})}.values()),
             clarification_question=str(value.get("clarification_question") or "").strip()[:240])
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         return None
@@ -276,9 +283,22 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,observation_facts,breeding_actions,farrowing_litter,litter_first_treatment,confirmation_facts,commissioning_facts,"
+        "observation,welfare_observation,clinical_observation,observation_facts,breeding_actions,farrowing_litter,litter_first_treatment,confirmation_facts,commissioning_facts,"
         "protected_preview_required,recording_prohibited,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
+        " For a factual welfare observation or correction, welfare_observation may contain only eating, drinking, "
+        "standing, moving and breathing (breathing normally), each with the exact state yes, no or unknown. Resolve the meaning from the current "
+        "message and its bounded question context in any language; do not infer an unreported state. Omit fields "
+        "not addressed by this reply. Use unknown for explicitly uncertain states and keep needs_clarification true "
+        "when an answer remains unresolved. Questions, requests, future intentions and protected confirmations "
+        "are not welfare observations. For explicitly reported current clinical signs, clinical_observation may "
+        "contain only injury, limping, wound, bleeding, broken_bone, swelling, illness, vomiting, diarrhoea, cough "
+        "and fever, each yes, no or unknown. Preserve these signs even when another welfare state is positive. "
+        "Interpret any language, including Afrikaans and mixed language, without translating away clinical meaning. "
+        "Omit unreported signs; unknown means explicitly uncertain. A reported suspicion or veterinary diagnosis "
+        "is not a current observed sign. Neither map grants any confirmation or recording authority. "
+        "Never add a cause, diagnosis, treatment or dose. Keep observation faithful "
+        "to the supplied facts and clarification_question in the recipient's configured language."
         " For an owner report of actual boar placements, removals, a body-condition recovery hold or clearance, or a sow appearing close to farrowing, "
         "return breeding_actions with one object per supplied sow. Use animal_ref and, for exposure, boar_ref; supported action values are exposure, "
         "exposure_removal, recovery_hold, recovery_clearance, and near_farrowing. Preserve only explicitly supplied exposure_started_on, "
@@ -338,6 +358,27 @@ def _strip_fence(value):
             lines.pop()
         return "\n".join(lines).strip()
     return text
+
+
+def _welfare_observation(value):
+    if value is None or value == {}:
+        return None
+    if (not isinstance(value, Mapping) or set(value) - {"eating", "drinking", "standing", "moving", "breathing"}
+            or any(type(state) is not str or state not in {"yes", "no", "unknown"}
+                   for state in value.values())):
+        raise ValueError("welfare_observation_invalid")
+    return dict(value)
+
+
+def _clinical_observation(value):
+    from modules.pig_weights.herdmaster_natural_health_loss_intake import CLINICAL_SIGNS
+    if value is None or value == {}:
+        return None
+    if (not isinstance(value, Mapping) or set(value) - set(CLINICAL_SIGNS)
+            or any(type(state) is not str or state not in {"yes", "no", "unknown"}
+                   for state in value.values())):
+        raise ValueError("clinical_observation_invalid")
+    return dict(value)
 
 
 def _observation_facts(value):

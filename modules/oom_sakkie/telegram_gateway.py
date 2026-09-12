@@ -51,6 +51,9 @@ TRUTHY = {"1", "true", "yes", "on"}
 
 def _bind_protected_preview_card(result, delivery):
     token=str(result.get("callback_token") or "")
+    if (delivery.get("status") == "protected_delivery_replayed_noop"
+            and delivery.get("delivery_confirmed") is True):
+        delivery = {**delivery, "telegram_message_id": str(delivery.get("provider_card_message_id") or "")}
     message_id=str(delivery.get("telegram_message_id") or "")
     if not token or not delivery.get("success"):
         return delivery
@@ -469,6 +472,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
 
     protected_result, protected_status = handle_protected_action_input(parsed,gateway_authority)
     if protected_result.get("handled"):
+        parsed = _retained_callback_delivery_parsed(parsed,protected_result)
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0,"status":"protected_replay_noop"}
           if protected_result.get("suppress_owner_delivery") else deliver_family_result(
             parsed,protected_result,specialist=str(protected_result.get("specialist") or "HERDMASTER"),
@@ -643,6 +647,15 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         if operational_result.get("handled") else handle_manager_question_reply(
             parsed, gateway_authority, semantic, question=active_manager_question))
     if manager_reply.get("handled"):
+        # A retained answer can produce a specialist preview or a missing-fact
+        # question. Its receipt proves intake, not completion of that action.
+        # Keep the existing HERDMASTER delivery/card binding contract so a
+        # refreshed daily brief cannot hide the required next step.
+        if (manager_reply.get("tool_used") == "herdmaster_health_loss_preview"
+                and manager_reply.get("manager_question_status") in {
+                    "manager_question_reply_recorded", "manager_question_reply_replay_recovered"}):
+            return _health_gateway_response(parsed, policy, manager_reply,
+                                            manager_reply_status)
         refreshed = None
         complete_receipt = (manager_reply.get("success") is True
             and (manager_reply.get("status") == "manager_question_reply_recorded"
@@ -1540,6 +1553,7 @@ def _health_gateway_response(parsed, policy, health_result, health_status):
 
 
 def _protected_gateway_response(parsed, policy, result, status):
+    parsed = _retained_callback_delivery_parsed(parsed,result)
     delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
                  "status": "protected_replay_noop"}
                 if result.get("suppress_owner_delivery") else deliver_family_result(
@@ -1607,6 +1621,18 @@ def _acknowledge_family_callback(callback_query_id, source):
     return {"success": response.get("ok") is True,
         "status": "family_callback_acknowledged" if response.get("ok") is True
                   else "family_callback_acknowledgement_failed"}
+
+
+def _retained_callback_delivery_parsed(parsed, result):
+    binding = result.get("delivery_callback_binding") or {}
+    expected = {"owner_user_id":str(parsed.get("telegram_user_id") or ""),
+        "chat_id":str(parsed.get("telegram_chat_id") or ""),
+        "provider_message_id":str(parsed.get("provider_message_id") or ""),
+        "reply_to_message_id":str(parsed.get("reply_to_message_id") or "")}
+    if (parsed.get("callback_query_id") and binding.get("provider_timestamp")
+            and all(str(binding.get(key) or "") == value for key,value in expected.items())):
+        return {**parsed,"provider_timestamp":str(binding["provider_timestamp"])}
+    return parsed
 
 
 def _send_owner_task_telegram(chat_id, text, source):

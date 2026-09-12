@@ -61,6 +61,7 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
                 claimed.get("preview_payload") or {},
                 str(parsed.get("output_language") or "en"))
             return {"handled":True,**result,"specialist":"HERDMASTER",
+              "delivery_callback_binding":claimed.get("delivery_callback_binding") or {},
               "mission_id":claimed["mission_id"],
               "card_mission_id":generic_protected_card_mission_id(
                   claimed["mission_id"], claimed["preview_digest"]),

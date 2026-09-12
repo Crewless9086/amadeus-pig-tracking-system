@@ -57,6 +57,10 @@ def prepare_health_loss_owner_preview(
         return _failure("authenticated_envelope_incomplete")
     if envelope.get("report_parts"):
         report["report_parts"] = envelope["report_parts"]
+    if envelope.get("welfare_observation") is not None:
+        report["welfare_observation"] = envelope["welfare_observation"]
+    if envelope.get("clinical_observation") is not None:
+        report["clinical_observation"] = envelope["clinical_observation"]
     try:
         evaluated = evaluate_health_loss_intake(report, canonical_evidence)
     except IntakeEvidenceError as exc:
@@ -70,7 +74,8 @@ def prepare_health_loss_owner_preview(
             "success": False,
             "status": evaluated["status"],
             "message_type": "single_clarification",
-            "owner_text": question,
+            "owner_text": "\n\n".join(part for part in (
+                _welfare_priority_text(evaluated, report["output_language"]), question) if part),
             "question_count": 1 if question else 0,
             "evaluator": evaluated,
             **ZERO_AUTHORITY,
@@ -117,6 +122,8 @@ def _render_preview(value, report):
         (f"Aangemeld: {value['provider_report_time']}" if af else f"Reported: {value['provider_report_time']}"),
         ("Wat aangeteken sal word:" if af else "What will be recorded:"),
         *facts,
+        *([_welfare_priority_text(value, report["output_language"])]
+          if _welfare_priority_text(value, report["output_language"]) else []),
         ("Jou verslag: " if af else "Your report: ") + html.escape(" | ".join(
             str(row.get("display_text", row.get("text")) or "") for row in report.get("report_parts") or [{"text": report["text"]}])),
         _treatment_line(value["owner_report_text"], language="af" if af else "en"),
@@ -137,6 +144,21 @@ def _render_preview(value, report):
     return "\n".join(lines)
 
 
+def _welfare_priority_text(value, language):
+    priority = value.get("immediate_welfare_priority") or {}
+    level = priority.get("level")
+    if level not in {"urgent_assessment", "emergency", "urgent_follow_up"}:
+        return ""
+    if language == "af":
+        return {"urgent_assessment": "Dringend: Gaan asemhaling, staan, waterinname, bloeding en nood nou fisies na. Kry veeartshulp vir ernstige tekens.",
+            "emergency": "Noodgeval: Gaan die sog en enige lewende varkies dadelik na. Kry ervare hulp of veeartshulp voordat jy rekords afhandel.",
+            "urgent_follow_up": "Gaan die hok, oorlewende diere en biosekuriteit nou na. 'n Veearts- of afsterwe-ondersoek kan nodig wees."}[level]
+    if level == "urgent_assessment":
+        from modules.pig_weights.herdmaster_natural_health_loss_intake import URGENT_WELFARE_ASSESSMENT
+        return URGENT_WELFARE_ASSESSMENT
+    return str(priority.get("action") or "")
+
+
 def _owner_fact_summary(value, *, af):
     facts = []
     for effect in value.get("canonical_effects") or []:
@@ -151,9 +173,20 @@ def _owner_fact_summary(value, *, af):
         elif area == "medical_observation":
             for row in data.get("observed") or []:
                 label = str(row.get('fact') or '').replace('_', ' ')
+                if label == "breathing reported" and not af:
+                    label = "breathing normally"
                 if af:
-                    label = {"not eating":"eet nie", "injured":"beseer", "bleeding":"bloei"}.get(label, label)
-                facts.append(f"- {html.escape(label)}: {html.escape(str(row.get('value')))}")
+                    label = {"not eating":"eet nie", "injured":"beseer", "bleeding":"bloei",
+                        "injury":"besering", "limping":"mank", "wound":"wond",
+                        "broken bone":"gebreekte been", "swelling":"swelling", "illness":"siek",
+                        "vomiting":"braking", "diarrhoea":"diarree", "cough":"hoes", "fever":"koors",
+                        "breathing reported":"haal normaal asem",
+                        "eating reported":"eet", "drinking reported":"drink water",
+                        "standing reported":"staan", "moving reported":"beweeg",
+                        "event date":"Waarnemingsdatum"}.get(label, label)
+                value_text = ({True:"Ja",False:"Nee"} if af else {True:"Yes",False:"No"}).get(
+                    row.get('value'),str(row.get('value'))) if type(row.get('value')) is bool else str(row.get('value'))
+                facts.append(f"- {html.escape(label)}: {html.escape(value_text)}")
     return facts or ["- Geen ondersteunde feit" if af else "- No supported fact"]
 
 
@@ -161,6 +194,17 @@ def _localize_question(question, language):
     question = re.sub(r"\s+\(PIG-[^)]+\)", "", question)
     if not question or language != "af":
         return question
+    for english, afrikaans in (("eating", "Eet"), ("drinking water", "Drink"),
+                               ("standing", "Staan"), ("moving normally", "Beweeg")):
+        question = re.sub(r"^Is (.+?) " + re.escape(english) + r" now\?$",
+            afrikaans + r" \1 nou" + (" water?" if english == "drinking water" else "?"), question)
+    question = re.sub(r"^Is (.+?) breathing normally now\?$", r"Haal \1 nou normaal asem?", question)
+    for english, afrikaans in {"injury":"besering", "limping":"mankheid", "wound":"wond",
+            "bleeding":"bloeding", "broken bone":"gebreekte been", "swelling":"swelling",
+            "illness":"siekte", "vomiting":"braking", "diarrhoea":"diarree",
+            "cough":"hoes", "fever":"koors"}.items():
+        question = re.sub(r"^Is (.+?) currently showing " + re.escape(english) + r"\?$",
+            r"Toon \1 tans " + afrikaans + "?", question)
     question = re.sub(r"^On which date did (.+?) die or get found dead\?$",
                       r"Op watter datum is \1 dood of dood gevind?", question)
     question = question.replace("The canonical chronology conflicts with this report; which event date or cycle is correct?",

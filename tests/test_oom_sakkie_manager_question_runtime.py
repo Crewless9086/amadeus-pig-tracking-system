@@ -736,6 +736,9 @@ def test_partial_reply_keeps_one_smallest_visible_follow_up():
 def test_partial_facts_are_retained_in_context_and_accumulated_on_completion():
     prior = {"owner_evidence": "They are eating.", "provider_message_id": "3530",
         "provider_timestamp": NOW.isoformat(), "domain": "herd_health",
+        "clarification_question": "Are they also drinking and moving normally?",
+        "clarification_telegram_message_id": "SYNTHETIC-DELIVERED-3530",
+        "clarification_presented_at": NOW.isoformat(),
         "semantic_facts": {"observation": "They are eating.", "observation_facts": []}}
     active = question(); active["partial_replies"] = [prior]
     context = semantic_context_with_manager_question(parsed(message="3531"),
@@ -776,7 +779,7 @@ def test_changed_provider_binding_cannot_be_suppressed_as_replay():
     assert status == 409 and changed["status"] == "manager_question_concurrent_reply_conflict"
 
 
-def test_reloaded_partial_exact_replay_is_silent_and_does_not_advance_generation():
+def test_reloaded_partial_exact_replay_preserves_delivery_identity_without_advancing_generation():
     partial = SemanticInterpretation(domain="herd_health", intent="group_welfare_follow_up",
         message_kind="observation", continuation=True, observation="They are eating.",
         language="en", confidence=.9, needs_clarification=True,
@@ -788,8 +791,10 @@ def test_reloaded_partial_exact_replay_is_silent_and_does_not_advance_generation
     replay, status = handle_manager_question_reply(parsed("They are eating"), authority,
         partial, question=active, event_store=state)
     assert first["status"] == "manager_question_partial_reply_recorded"
-    assert status == 200 and replay["status"] == "manager_question_reply_replay_suppressed"
-    assert replay["suppress_owner_delivery"] is True and len(state.rows) == 1
+    assert status == 200 and replay["status"] == "manager_question_partial_reply_recorded"
+    assert replay["mission_id"] == first["mission_id"]
+    assert replay["card_mission_id"] == first["card_mission_id"]
+    assert replay["answer"] == first["answer"] and len(state.rows) == 1
 
 
 def test_answered_attributable_question_is_consumed_across_daily_identity_changes():
