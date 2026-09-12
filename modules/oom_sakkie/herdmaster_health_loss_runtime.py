@@ -127,6 +127,9 @@ def handle_authenticated_health_loss_message(
     explicit_health = bool(HEALTH_PATTERN.search(text) or (
         semantic.get("domain") == "herd_health" and not semantic.get("needs_clarification")))
     confirmation_shaped = bool(CONFIRMATION_PATTERN.fullmatch(text))
+    if confirmation_shaped and (parsed.get("input_provenance") or {}).get("source_kind") == "telegram_voice":
+        from modules.oom_sakkie.telegram_voice import voice_confirmation_required
+        return voice_confirmation_required(parsed)
     plausible_follow_up = bool(
         FOLLOW_UP_PATTERN.search(text)
         and not UNRELATED_OPERATIONAL_PATTERN.search(text)

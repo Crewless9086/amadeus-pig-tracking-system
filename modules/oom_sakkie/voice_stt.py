@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 import urllib.error
 import urllib.request
@@ -14,6 +15,7 @@ DEFAULT_STT_MODEL = "whisper-1"
 DEFAULT_STT_URL = "https://api.openai.com/v1/audio/transcriptions"
 MAX_AUDIO_BYTES = 6 * 1024 * 1024
 MAX_AUDIO_SECONDS = 10
+MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024
 
 
 def backend_voice_stt_policy(environ=None):
@@ -40,12 +42,16 @@ def backend_voice_stt_policy(environ=None):
     }
 
 
-def transcribe_oom_sakkie_voice_audio(file_storage, environ=None):
+def transcribe_oom_sakkie_voice_audio(file_storage, environ=None, *, language="en",
+                                     filename="oom-sakkie-voice.webm", http_open=None,
+                                     timeout=25):
     policy = backend_voice_stt_policy(environ=environ)
     if not policy["explicitly_enabled"]:
         return _result(False, "backend_stt_disabled", policy, 503)
     if not policy["configured"]:
         return _result(False, "backend_stt_not_configured", policy, 503)
+    if language not in {"en", "af"} or not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", filename):
+        return _result(False, "backend_stt_input_metadata_invalid", policy, 400)
     if not file_storage:
         return _result(False, "audio_file_required", policy, 400)
 
@@ -60,7 +66,9 @@ def transcribe_oom_sakkie_voice_audio(file_storage, environ=None):
         return _result(False, "audio_too_large", policy, 413)
 
     try:
-        text = _call_openai_transcription(audio_bytes, content_type or "audio/webm", policy, environ=environ)
+        text = _call_openai_transcription(audio_bytes, content_type or "audio/webm", policy,
+            environ=environ, language=language, filename=filename, http_open=http_open,
+            timeout=timeout)
     except urllib.error.HTTPError as error:
         return _result(False, "backend_stt_http_error", policy, error.code if 400 <= error.code < 500 else 502)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
@@ -74,15 +82,17 @@ def transcribe_oom_sakkie_voice_audio(file_storage, environ=None):
     return body, status_code
 
 
-def _call_openai_transcription(audio_bytes, content_type, policy, environ=None):
+def _call_openai_transcription(audio_bytes, content_type, policy, environ=None, *,
+                               language="en", filename="oom-sakkie-voice.webm",
+                               http_open=None, timeout=25):
     source = environ if environ is not None else os.environ
     api_key = str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()
     boundary = f"oom-sakkie-{uuid.uuid4().hex}"
     fields = [
         ("model", policy["model"]),
-        ("language", "en"),
+        ("language", language),
     ]
-    body = _multipart_body(boundary, fields, "file", "oom-sakkie-voice.webm", content_type, audio_bytes)
+    body = _multipart_body(boundary, fields, "file", filename, content_type, audio_bytes)
     request = urllib.request.Request(
         policy["endpoint"],
         data=body,
@@ -93,8 +103,13 @@ def _call_openai_transcription(audio_bytes, content_type, policy, environ=None):
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=25) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    with (http_open or urllib.request.urlopen)(request, timeout=timeout) as response:
+        response_bytes = response.read(MAX_TRANSCRIPTION_RESPONSE_BYTES + 1)
+    if len(response_bytes) > MAX_TRANSCRIPTION_RESPONSE_BYTES:
+        raise ValueError("transcription_response_too_large")
+    payload = json.loads(response_bytes.decode("utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("text", ""), str):
+        raise ValueError("transcription_response_invalid")
     return payload.get("text", "")
 
 

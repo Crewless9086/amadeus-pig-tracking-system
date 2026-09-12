@@ -26,6 +26,8 @@ MODULES = [
     'tests/test_litter_weaning_review_postgres.py',
     'tests/test_herdmaster_mortality_journey_postgres.py',
     'tests/test_mortality_date_correction_postgres.py',
+    'tests/test_telegram_voice.py',
+    'tests/test_telegram_voice_ingress_postgres.py',
 ]
 
 

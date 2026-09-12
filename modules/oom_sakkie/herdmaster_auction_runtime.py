@@ -83,6 +83,9 @@ def handle_auction_confirmation(parsed: Mapping[str, Any], gateway_authority, *,
         return {"handled": True, "success": False,
             "status": "auction_confirmation_authority_denied", "answer": "",
             "writes_farm_data": False}, 403
+    if (parsed.get("input_provenance") or {}).get("source_kind") == "telegram_voice":
+        from modules.oom_sakkie.telegram_voice import voice_confirmation_required
+        return voice_confirmation_required(parsed)
     provider_message_id = str(parsed.get("provider_message_id") or "").strip()
     provider_timestamp = str(parsed.get("provider_timestamp") or "").strip()
     text_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()

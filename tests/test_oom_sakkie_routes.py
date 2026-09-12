@@ -162,7 +162,9 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertTrue(data["backend_owns_oom_sakkie_chat"])
         self.assertFalse(data["n8n_required_for_oom_sakkie_chat"])
         self.assertIn("farm attention", data["carried_over_backend_capabilities"])
-        self.assertIn("Telegram voice-note transcription", data["not_carried_over_yet"])
+        self.assertNotIn("Telegram voice-note transcription", data["not_carried_over_yet"])
+        self.assertTrue(any('native Telegram Ogg/Opus voice input' in item
+            for item in data["carried_over_backend_capabilities"]))
         self.assertFalse(data["can_trigger_outbound_llm"])
         self.assertFalse(data["writes"])
         self.assertFalse(data["dispatch_enabled"])

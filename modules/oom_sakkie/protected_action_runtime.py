@@ -34,6 +34,9 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         active=resolve_natural_confirmation(owner_user_id=owner,private_chat_id=chat,
             reply_to_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
         if not active:return {"handled":False,"status":"protected_confirmation_not_unambiguous"},200
+        if (parsed.get("input_provenance") or {}).get("source_kind") == "telegram_voice":
+            from modules.oom_sakkie.telegram_voice import voice_confirmation_required
+            return voice_confirmation_required(parsed)
         if (active.get("preview_payload") or {}).get("contract_version") == "herdmaster_record_litter_weaning":
             # Weaning's natural language confirmation goes through the typed
             # semantic adapter; callback buttons remain deterministic inputs.
@@ -41,6 +44,11 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         if (active.get("preview_payload") or {}).get("contract_version") == "herdmaster_record_litter_first_treatment":
             return {"handled":False,"status":"first_treatment_semantic_confirmation_required"},200
         data=f"{CALLBACK_PREFIX}{active['callback_token']}:confirm"
+    # Includes callbacks synthesized by the weaning/treatment semantic adapters.
+    # Ordinary affirmative answers with no resolved protected card continue.
+    if (parsed.get("input_provenance") or {}).get("source_kind") == "telegram_voice":
+        from modules.oom_sakkie.telegram_voice import voice_confirmation_required
+        return voice_confirmation_required(parsed)
     try:
         allowed = None
         if getattr(gateway_authority, "principal_role", "owner") == "farm_manager":

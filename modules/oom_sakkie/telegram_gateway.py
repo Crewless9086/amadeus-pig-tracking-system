@@ -23,6 +23,7 @@ from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline
 from modules.oom_sakkie.family_access import (
     FamilyRole, authorize_family_message, family_access_policy, resolve_family_principal,
 )
+from modules.oom_sakkie.telegram_voice import is_telegram_voice_payload, prepare_telegram_voice_input
 from modules.oom_sakkie.family_runtime import handle_family_runtime_message
 from modules.oom_sakkie.family_rootline_callback import (
     CALLBACK_PREFIX as FAMILY_CALLBACK_PREFIX, bind_family_rootline_preview_card,
@@ -271,6 +272,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if family_principal.role is FamilyRole.UNKNOWN_SENDER:
         return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
     parsed["output_language"] = family_principal.language
+    if is_telegram_voice_payload(payload):
+        parsed, voice_response = prepare_telegram_voice_input(payload, parsed, environ=source)
+        if voice_response is not None:
+            return voice_response
     farm_manager_principal = family_principal.role is FamilyRole.FARM_MANAGER
     if str(parsed.get("callback_data") or "").startswith(FAMILY_CALLBACK_PREFIX):
         if family_principal.role is not FamilyRole.FARM_MANAGER:

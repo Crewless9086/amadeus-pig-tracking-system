@@ -1075,7 +1075,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("farm attention", report["carried_over_backend_capabilities"])
         self.assertIn("daily command brief", report["carried_over_backend_capabilities"])
         self.assertIn("/brief", {item["command"] for item in report["telegram_commands"]})
-        self.assertIn("Telegram voice-note transcription", report["not_carried_over_yet"])
+        self.assertNotIn("Telegram voice-note transcription", report["not_carried_over_yet"])
+        self.assertTrue(any('native Telegram Ogg/Opus voice input' in item
+            for item in report["carried_over_backend_capabilities"]))
         self.assertFalse(report["can_trigger_outbound_llm"])
         self.assertFalse(report["writes"])
         self.assertFalse(report["dispatch_enabled"])

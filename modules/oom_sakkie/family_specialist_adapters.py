@@ -129,6 +129,9 @@ def retain_family_question_reply(*, parsed, principal, context, replay_identity)
 def rootline_family_handoff(*, parsed, principal, capability, replay_identity,
         authorization_loader=None, eligibility_loader=None, executor=None, environ=None):
     """Call the sealed ROOTLINE boundary without minting owner authority."""
+    if (parsed.get("input_provenance") or {}).get("source_kind") == "telegram_voice":
+        from modules.oom_sakkie.telegram_voice import voice_confirmation_required
+        return voice_confirmation_required(parsed)[0]
     from modules.telemetry.rootline_delegated_principal import (
         CAPABILITY, CONTRACT_VERSION, EXCLUDED, delegated_replay_identity,
         handle_delegated_rootline_request, load_delegated_authorization)
