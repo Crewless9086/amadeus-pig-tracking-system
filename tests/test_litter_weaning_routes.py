@@ -54,12 +54,12 @@ class LitterWeaningRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
     @patch(
-        "modules.pig_weights.pig_weights_routes.require_owner_admin_access",
+        "modules.pig_weights.pig_weights_routes.require_weaning_session",
         return_value=None,
     )
     @patch(
-        "modules.pig_weights.pig_weights_routes.owner_admin_principal",
-        return_value="owner-admin:server-derived",
+        "modules.pig_weights.pig_weights_routes.weaning_session_identity",
+        return_value={"actor_id": "owner-admin:server-derived"},
     )
     @patch(
         "modules.pig_weights.pig_weights_routes.process_litter_profile_weaning_day",
@@ -82,12 +82,12 @@ class LitterWeaningRoutesTests(unittest.TestCase):
         self.assertNotIn("private database detail", str(payload))
 
     @patch(
-        "modules.pig_weights.pig_weights_routes.require_owner_admin_access",
+        "modules.pig_weights.pig_weights_routes.require_weaning_session",
         return_value=None,
     )
     @patch(
-        "modules.pig_weights.pig_weights_routes.owner_admin_principal",
-        return_value="owner-admin:server-derived",
+        "modules.pig_weights.pig_weights_routes.weaning_session_identity",
+        return_value={"actor_id": "owner-admin:server-derived"},
     )
     @patch("modules.pig_weights.pig_weights_routes.process_litter_profile_weaning_day")
     def test_structured_transaction_failure_is_preserved(
@@ -108,12 +108,12 @@ class LitterWeaningRoutesTests(unittest.TestCase):
         )
 
     @patch(
-        "modules.pig_weights.pig_weights_routes.require_owner_admin_access",
+        "modules.pig_weights.pig_weights_routes.require_weaning_session",
         return_value=None,
     )
     @patch(
-        "modules.pig_weights.pig_weights_routes.owner_admin_principal",
-        return_value="owner-admin:server-derived",
+        "modules.pig_weights.pig_weights_routes.weaning_session_identity",
+        return_value={"actor_id": "owner-admin:server-derived"},
     )
     @patch("modules.pig_weights.pig_weights_routes.process_litter_profile_weaning_day")
     def test_browser_changed_by_is_replaced_with_server_principal(

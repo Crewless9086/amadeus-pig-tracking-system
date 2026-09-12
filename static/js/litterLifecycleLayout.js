@@ -23,7 +23,7 @@ function prepareLitterLifecycleLayout() {
   const identity = lifecycleStage("1", "Paring en identiteit", "Die bekende sog, beer en belangrike datums.", "lifecycle_identity");
   const birth = lifecycleStage("2", "Geboorte", "Geboortetellings en die huidige werpselbalans.", "lifecycle_birth");
   const firstCare = lifecycleStage("3", "Eerste behandeling", "4–7 dae, indien dit gedoen word.", "lifecycle_first_care");
-  const weaning = lifecycleStage("4", "Speen en tweede behandeling", "Tags, geslag, speengewig, kamp en behandeling op een plek.", "lifecycle_weaning");
+  const weaning = lifecycleStage("4", "Speen", "Werklike speendatum en varkies; ander feite en behandeling is opsioneel.", "lifecycle_weaning");
   const notes = lifecycleStage("5", "Vrektes en notas", "Teken ’n vrekte of belangrike werpselnota aan.", "lifecycle_notes");
 
   const summary = document.getElementById("litter_summary_panel");

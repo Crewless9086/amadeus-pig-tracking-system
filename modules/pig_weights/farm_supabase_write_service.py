@@ -787,92 +787,186 @@ def insert_missing_medical_events_from_sheet_rows(rows, connect_factory=None):
     return {"created": created, "skipped": skipped}
 
 
-def apply_litter_first_treatment_packet(packet, connect_factory=None):
-    """Apply and read back one exact first-treatment packet atomically."""
-    packet = packet if isinstance(packet, dict) else {}
-    litter_id = to_clean_string(packet.get("litter_id"))
-    sow_pig_id = to_clean_string(packet.get("sow_pig_id"))
-    pig_ids = sorted({to_clean_string(value) for value in packet.get("pig_ids", []) if to_clean_string(value)})
-    rows = [list(value or []) + [""] * 18 for value in packet.get("treatment_rows", [])]
-    operation_id = to_clean_string(packet.get("protected_operation_id"))
-    male_count, female_count = _int_or_none(packet.get("male_count")), _int_or_none(packet.get("female_count"))
-    if not litter_id or not sow_pig_id or not pig_ids or not operation_id:
-        raise ValueError("complete_first_treatment_packet_required")
-    if (male_count is None) != (female_count is None):
-        raise ValueError("first_treatment_tally_conflict")
-    if male_count is not None and male_count + female_count != len(pig_ids):
-        raise ValueError("first_treatment_tally_conflict")
-    if not rows or {to_clean_string(row[1]) for row in rows} != set(pig_ids):
+def _first_treatment_medical_rows(packet):
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import reported_dose
+    products = {(item["treatment_type"], item["product_id"]): item for item in packet["products"]}
+    expected_pairs = {(pig_id, kind, product_id) for pig_id in packet["pig_ids"] for kind, product_id in products}
+    rows = []
+    for raw in packet["treatment_rows"]:
+        if not isinstance(raw, (list, tuple)) or len(raw) != 18:
+            raise ValueError("first_treatment_medical_row_invalid")
+        pig_id, kind, product_id = str(raw[1]), str(raw[3]), str(raw[4])
+        product = products.get((kind, product_id))
+        amount, unit = reported_dose(raw[6], raw[7])
+        action_date = _date_or_none(packet["action_date"])
+        if (not product or (pig_id, kind, product_id) not in expected_pairs
+                or _date_or_none(raw[2]) != action_date or amount != packet["dose"]
+                or unit != packet["dose_unit"] or raw[8] != packet["route"]
+                or raw[10] != packet["batch_lot_number"] or raw[13] != packet["principal"]
+                or raw[5] != product["product_name"]
+                or raw[0] != stable_first_treatment_event_id(packet["operation_id"], pig_id, kind, product_id)):
+            raise ValueError("first_treatment_medical_fact_conflict")
+        expected_pairs.remove((pig_id, kind, product_id))
+        rows.append({"medical_event_id": raw[0], "pig_id": pig_id, "treatment_date": action_date,
+            "treatment_type": kind, "product_id": product_id, "product_name": str(raw[5]),
+            "dose": format(amount, ".15g"), "dose_unit": unit, "route": str(raw[8]),
+            "reason_for_treatment": str(raw[9]), "batch_lot_number": str(raw[10]),
+            "withdrawal_days": _int_or_none(raw[11]), "withdrawal_end_date": _date_or_none(raw[12]),
+            "given_by": str(raw[13]), "follow_up_required": _bool_or_none_from_sheet(raw[14]) is True,
+            "follow_up_date": _date_or_none(raw[15]), "medical_notes": str(raw[16])})
+    if expected_pairs or not rows:
         raise ValueError("every_active_piglet_requires_medical_evidence")
-    created = updated = litter_updated = 0
+    return sorted(rows, key=lambda row: row["medical_event_id"])
+
+
+def _verify_first_treatment_medical(cursor, packet):
+    expected = _first_treatment_medical_rows(packet)
+    columns = tuple(expected[0])
+    cursor.execute("select " + ",".join(columns) + """ from public.pig_medical_events
+        where medical_event_id=any(%s) order by medical_event_id""",
+        ([row["medical_event_id"] for row in expected],))
+    actual = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    earmarks = []
+    if packet.get("earmarked") is True:
+        cursor.execute("select pig_id,earmarked,earmark_date from public.pigs where pig_id=any(%s)", (packet["pig_ids"],))
+        earmarks = [dict(zip(("pig_id", "earmarked", "earmark_date"), row)) for row in cursor.fetchall()]
+    return verify_litter_first_treatment_evidence(packet, actual, earmarks)
+
+
+def verify_litter_first_treatment_evidence(packet, medical, earmarks):
+    """Same exact comparison for the writer readback and bounded due projection."""
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import treatment_digest
+    expected = _first_treatment_medical_rows(packet)
+    actual = sorted(({key: row.get(key) for key in expected[0]} for row in medical), key=lambda row: row["medical_event_id"])
+    if treatment_digest(actual) != treatment_digest(expected):
+        raise RuntimeError("first_treatment_medical_readback_incomplete")
+    if packet.get("earmarked") is True:
+        before = {row["pig_id"]: row for row in packet["expected_snapshot"]["piglets"]}
+        if len(earmarks) != len(packet["pig_ids"]) or any(
+                row.get("earmarked") is not True or _date_or_none(row.get("earmark_date")) != _date_or_none(
+                    before[row["pig_id"]].get("earmark_date") if before[row["pig_id"]].get("earmarked") is True else packet["action_date"])
+                for row in earmarks):
+            raise RuntimeError("first_treatment_earmark_readback_incomplete")
+    return json.loads(json.dumps(actual, default=str))
+
+
+def _first_treatment_receipt(cursor, packet):
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import treatment_digest
+    cursor.execute("""select payload_json from public.operational_events
+        where event_id=%s and event_type='litter.first_treatment_recorded'""", (packet["operation_id"],))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    saved = row[0]
+    if saved.get("packet_digest") != treatment_digest(packet) or treatment_digest(saved.get("packet")) != treatment_digest(packet):
+        raise ValueError("conflicting_first_treatment_replay")
+    medical = _verify_first_treatment_medical(cursor, packet)
+    return {**saved["result"], "status": "first_treatment_replayed_noop", "replay_withheld": True,
+        "medical_readback": medical, "treatment_rows_created": 0, "pig_rows_updated": 0, "litter_rows_updated": 0}
+
+
+def read_litter_first_treatment_receipt(packet, connect_factory=None):
+    """Recover only the exact receipt and medical facts, even after later piglet exits."""
+    with _connect(connect_factory=connect_factory) as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            return _first_treatment_receipt(cursor, packet)
+
+
+def apply_litter_first_treatment_packet(packet, connect_factory=None):
+    """Commit the complete confirmed cohort and one receipt, or change nothing."""
+    from psycopg.errors import SerializationFailure
+    if not isinstance(packet, dict) or not all(packet.get(key) for key in (
+            "operation_id", "expected_snapshot", "principal", "facts", "treatment_rows")):
+        raise ValueError("complete_first_treatment_packet_required")
+    for attempt in range(3):
+        try:
+            return _apply_litter_first_treatment_packet(packet, connect_factory=connect_factory)
+        except SerializationFailure:
+            if attempt == 2:
+                raise
+
+
+def _apply_litter_first_treatment_packet(packet, connect_factory=None):
+    from modules.pig_weights.farm_supabase_read_service import litter_first_treatment_snapshot
+    from modules.pig_weights.herdmaster_litter_first_treatment_intake import (
+        canonical_treatment_evidence, prepare_litter_first_treatment_preview, treatment_digest,
+    )
+    litter_id = str(packet.get("litter_id") or "")
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
-            # The transaction-scoped litter advisory lock is the serialization
-            # boundary. Read committed lets a waiter acquire a fresh snapshot
-            # after the predecessor commits, so it can prove a deterministic
-            # replay no-op instead of failing on a stale serializable snapshot.
-            cursor.execute("set transaction isolation level read committed")
+            cursor.execute("set transaction isolation level serializable")
             cursor.execute("set local statement_timeout = '15s'")
             cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))", ("herdmaster-first-treatment:" + litter_id,))
-            cursor.execute("select sow_pig_id,male_count,female_count from public.litters where litter_id=%s for update", (litter_id,))
-            litter = cursor.fetchone()
-            if not litter or to_clean_string(litter[0]) != sow_pig_id:
-                raise ValueError("stale_litter_or_sow_identity")
-            cursor.execute("""select pig_id,status,on_farm from public.pigs
-                where litter_id=%s order by pig_id for update""", (litter_id,))
-            active = sorted(to_clean_string(row[0]) for row in cursor.fetchall()
-                            if to_clean_string(row[1]).casefold() == "active" and row[2] is True)
-            if active != pig_ids:
-                raise ValueError("stale_active_piglet_membership")
+            receipt = _first_treatment_receipt(cursor, packet)
+            if receipt:
+                return receipt
+            cursor.execute("select litter_id from public.litters where litter_id=%s for update", (litter_id,))
+            cursor.execute("select pig_id from public.pigs where litter_id=%s order by pig_id for update", (litter_id,))
+            snapshot = litter_first_treatment_snapshot(cursor, litter_id)
+            if snapshot != packet["expected_snapshot"]:
+                raise ValueError("first_treatment_preview_evidence_changed")
+            cursor.execute("""select product_id,product_name,product_category,dose_unit,default_withdrawal_days
+                from public.farm_products where product_id=any(%s) and is_active is true order by product_id for share""",
+                ([row["product_id"] for row in packet["products"]],))
+            names = [column.name for column in cursor.description]
+            products = [dict(zip(names, row)) for row in cursor.fetchall()]
+            prepared = prepare_litter_first_treatment_preview({"authenticated": True,
+                "authenticated_principal_id": packet["principal"], "provider_message_id": "shared_first_treatment_service",
+                "litter_first_treatment": packet["facts"]}, canonical_treatment_evidence(snapshot, products))
+            if not prepared.get("success") or any(treatment_digest(packet.get(key)) != treatment_digest(value)
+                    for key, value in prepared["preview"].items()):
+                raise ValueError("first_treatment_facts_or_evidence_conflict")
+            expected = _first_treatment_medical_rows(packet)
+            updated = 0
             if packet.get("earmarked") is True:
                 cursor.execute("""update public.pigs set earmarked=true,earmark_date=%s,updated_at=now()
-                    where pig_id=any(%s) and (earmarked is distinct from true or earmark_date is distinct from %s)""",
-                    (_date_or_none(packet.get("action_date")), pig_ids, _date_or_none(packet.get("action_date"))))
+                    where pig_id=any(%s) and earmarked is distinct from true""",
+                    (_date_or_none(packet["action_date"]), packet["pig_ids"]))
                 updated = cursor.rowcount
-            for raw in rows:
-                params = {"event_id": to_clean_string(raw[0]), "pig_id": to_clean_string(raw[1]),
-                    "date": _date_or_none(raw[2]), "type": to_clean_string(raw[3]),
-                    "product_id": to_clean_string(raw[4]) or None, "product_name": to_clean_string(raw[5]),
-                    "dose": "" if raw[6] is None else str(raw[6]), "unit": to_clean_string(raw[7]),
-                    "route": to_clean_string(raw[8]), "reason": to_clean_string(raw[9]),
-                    "batch": to_clean_string(raw[10]), "withdrawal_days": _int_or_none(raw[11]),
-                    "withdrawal_end": _date_or_none(raw[12]), "given_by": to_clean_string(raw[13]),
-                    "follow_up": _bool_or_none_from_sheet(raw[14]) is True,
-                    "follow_up_date": _date_or_none(raw[15]), "notes": to_clean_string(raw[16])}
-                expected_event_id = stable_first_treatment_event_id(
-                    operation_id, params["pig_id"], params["type"], params["product_id"])
-                if params["event_id"] != expected_event_id:
-                    raise ValueError("first_treatment_event_identity_conflict")
-                cursor.execute("""select product_name,dose,dose_unit,route,batch_lot_number
-                    from public.pig_medical_events where medical_event_id=%(event_id)s""", params)
-                existing = cursor.fetchone()
-                expected = (params["product_name"], params["dose"], params["unit"], params["route"], params["batch"])
-                if existing and tuple(existing) != expected:
-                    raise ValueError("conflicting_first_treatment_replay")
-                if not existing:
-                    cursor.execute("""insert into public.pig_medical_events(
-                        medical_event_id,pig_id,treatment_date,treatment_type,product_id,product_name,dose,dose_unit,
-                        route,reason_for_treatment,batch_lot_number,withdrawal_days,withdrawal_end_date,given_by,
-                        follow_up_required,follow_up_date,medical_notes) values(
-                        %(event_id)s,%(pig_id)s,%(date)s,%(type)s,%(product_id)s,%(product_name)s,%(dose)s,%(unit)s,
-                        %(route)s,%(reason)s,%(batch)s,%(withdrawal_days)s,%(withdrawal_end)s,%(given_by)s,
-                        %(follow_up)s,%(follow_up_date)s,%(notes)s)""", params)
-                    created += 1
-            if male_count is not None and (litter[1] != male_count or litter[2] != female_count):
-                cursor.execute("update public.litters set male_count=%s,female_count=%s,unknown_sex_count=0,updated_at=now() where litter_id=%s",
-                               (male_count, female_count, litter_id))
-                litter_updated = cursor.rowcount
-            cursor.execute("""select medical_event_id,pig_id,treatment_type,product_id
-                from public.pig_medical_events where medical_event_id=any(%s) order by medical_event_id""",
-                           ([to_clean_string(row[0]) for row in rows],))
-            medical_readback = [{"medical_event_id": row[0], "pig_id": row[1],
-                "treatment_type": row[2], "product_id": row[3]} for row in cursor.fetchall()]
-            if len(medical_readback) != len(rows):
-                raise RuntimeError("first_treatment_medical_readback_incomplete")
-    return {"success": True, "status": "first_treatment_replayed_noop" if not (created or updated or litter_updated)
-            else "first_treatment_committed", "treatment_rows_created": created, "pig_rows_updated": updated,
-            "litter_rows_updated": litter_updated, "medical_readback": medical_readback,
-            "pig_ids": pig_ids, "male_count": male_count, "female_count": female_count}
+            columns = tuple(expected[0])
+            for row in expected:
+                cursor.execute("insert into public.pig_medical_events(" + ",".join(columns) + ") values ("
+                    + ",".join("%(" + key + ")s" for key in columns) + ")", row)
+            medical = _verify_first_treatment_medical(cursor, packet)
+            # The reported current-cohort tally belongs to this operation. Birth
+            # tallies and unknown individual sexes retain their existing meaning.
+            result = {"success": True, "status": "first_treatment_committed",
+                "operation_id": packet["operation_id"], "replay_withheld": False,
+                "treatment_rows_created": len(expected), "pig_rows_updated": updated, "litter_rows_updated": 0,
+                "medical_readback": medical, "pig_ids": packet["pig_ids"],
+                "male_count": packet["male_count"], "female_count": packet["female_count"]}
+            cursor.execute("""insert into public.operational_events(
+                event_id,idempotency_key,event_type,domain,aggregate_type,aggregate_id,
+                source_system,authority_tier,privacy_class,actor_type,actor_id,correlation_id,
+                occurred_at,freshness_at,payload_json,provenance_json)
+                values(%s,%s,'litter.first_treatment_recorded','animals','litter',%s,
+                'herdmaster_first_treatment','owner_approved','internal','farm_operator',%s,%s,
+                now(),now(),%s::jsonb,%s::jsonb)""",
+                (packet["operation_id"], packet["operation_id"], litter_id, packet["principal"], packet["operation_id"],
+                 json.dumps({"packet_digest": treatment_digest(packet), "packet": packet, "result": result}, default=str),
+                 json.dumps({"source_ref": "current_canonical_litters", "action_kind": packet["action_kind"]})))
+    return result
+
+
+def apply_litter_first_treatment_skip(litter_id, actor, reason, connect_factory=None):
+    from modules.pig_weights.farm_supabase_read_service import litter_first_treatment_snapshot
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("set transaction isolation level serializable")
+            cursor.execute("set local statement_timeout = '15s'")
+            cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))", ("herdmaster-first-treatment:" + litter_id,))
+            cursor.execute("select litter_id from public.litters where litter_id=%s for update", (litter_id,))
+            snapshot = litter_first_treatment_snapshot(cursor, litter_id)
+            if not snapshot or snapshot["litter"]["litter_status"] != "Active":
+                raise ValueError("current_litter_required")
+            if snapshot["medical"] or snapshot["treatment_receipts"]:
+                raise ValueError("first_treatment_has_medical_evidence")
+            if snapshot["skip"].get("first_treatment_skipped_at"):
+                return {"success": True, "status": "already_skipped", "litter_id": litter_id}
+            cursor.execute("""update public.litters set first_treatment_skipped_at=now(),
+                first_treatment_skipped_by=%s,first_treatment_skip_reason=%s where litter_id=%s""", (actor, reason, litter_id))
+            return {"success": True, "status": "first_treatment_skipped", "litter_id": litter_id, "first_treatment_skipped": True}
 
 
 def stable_first_treatment_event_id(operation_id, pig_id, treatment_type, product_id):
@@ -891,12 +985,52 @@ def _stable_weaning_event_id(prefix, operation_id, pig_id, discriminator):
     return f"{prefix}-{digest}"
 
 
+def weaning_packet_digest(packet):
+    """Keep the same identity across Python, JSONB and browser JSON round trips."""
+    def normalize(value):
+        if isinstance(value, dict):
+            return {key: normalize(item) for key, item in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [normalize(item) for item in value]
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+    return hashlib.sha256(json.dumps(normalize(packet), sort_keys=True,
+        separators=(",", ":"), default=str, allow_nan=False).encode("utf-8")).hexdigest()
+
+
+def _weaning_operation_id(packet):
+    return "WEAN-" + weaning_packet_digest(packet)[:32].upper()
+
+
+def _weaning_receipt(cursor, operation_id):
+    cursor.execute("""select payload_json from public.operational_events
+        where event_id=%s and event_type='litter.weaned'""", (operation_id,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    result = dict(row[0]["result"])
+    result['observation_readback'] = [{**item, 'replay': True} for item in result.get('observation_readback', [])]
+    for key in ("tags_created", "treatments_created", "weights_created", "movements_created",
+                "piglets_updated", "litter_updated", "observations_created"):
+        result[key] = 0
+    result.update(status="weaning_day_replayed_withheld", replay_withheld=True)
+    return result
+
+
+def read_litter_weaning_receipt(packet, connect_factory=None):
+    """Recover only the exact previously committed packet; never write on recovery."""
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            return _weaning_receipt(cursor, _weaning_operation_id(packet))
+
+
 def apply_litter_weaning_day_packet(packet, connect_factory=None):
     """Apply one canonical Weaning Day packet in one bounded transaction."""
     packet = packet if isinstance(packet, dict) else {}
     litter_id = to_clean_string(packet.get("litter_id"))
     wean_date = _date_or_none(packet.get("wean_date"))
-    changed_by = to_clean_string(packet.get("changed_by")) or "web_app"
+    changed_by = to_clean_string(packet.get("changed_by"))
     piglets = sorted(
         [row for row in packet.get("piglets", []) if isinstance(row, dict)],
         key=lambda row: to_clean_string(row.get("pig_id")),
@@ -906,54 +1040,12 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
         for row in packet.get("treatment_rows", [])
     ]
     observation_action = packet.get("observation_action") if isinstance(packet.get("observation_action"), dict) else None
-    if not litter_id or not wean_date or not piglets:
+    if not litter_id or not wean_date or not piglets or not changed_by or not packet.get("expected_snapshot"):
         raise ValueError("complete_weaning_packet_required")
     pig_ids = [to_clean_string(row.get("pig_id")) for row in piglets]
     if not all(pig_ids) or len(set(pig_ids)) != len(pig_ids):
         raise ValueError("unique_weaning_pig_ids_required")
-    identity_packet = {
-        "version": "herdmaster_weaning_day_v1",
-        "litter_id": litter_id,
-        "wean_date": wean_date.isoformat(),
-        "changed_by": changed_by,
-        "piglets": [{
-            "pig_id": to_clean_string(row.get("pig_id")),
-            "tag_number": to_clean_string(row.get("tag_number")),
-            "weight_kg": to_float(row.get("weight_kg")),
-            "sex": to_clean_string(row.get("sex")),
-            "from_pen_id": to_clean_string(row.get("from_pen_id")),
-            "to_pen_id": to_clean_string(row.get("to_pen_id")),
-            "notes": to_clean_string(row.get("notes")),
-        } for row in piglets],
-        "treatments": sorted([{
-            "pig_id": to_clean_string(row[1]),
-            "date": str(_date_or_none(row[2]) or ""),
-            "type": to_clean_string(row[3]),
-            "product_id": to_clean_string(row[4]),
-            "product_name": to_clean_string(row[5]),
-            "dose": "" if row[6] is None else str(row[6]),
-            "dose_unit": to_clean_string(row[7]),
-            "route": to_clean_string(row[8]),
-            "reason": to_clean_string(row[9]),
-            "batch": to_clean_string(row[10]),
-            "withdrawal_days": _int_or_none(row[11]),
-            "withdrawal_end": str(_date_or_none(row[12]) or ""),
-            "given_by": to_clean_string(row[13]),
-            "follow_up": _bool_or_none_from_sheet(row[14]) is True,
-            "follow_up_date": str(_date_or_none(row[15]) or ""),
-            "notes": to_clean_string(row[16]),
-        } for row in treatments], key=lambda row: (
-            row["pig_id"], row["date"], row["type"], row["product_id"],
-            row["product_name"], row["dose"], row["dose_unit"], row["route"],
-            row["reason"], row["batch"], row["withdrawal_days"] or -1,
-            row["withdrawal_end"], row["given_by"], row["follow_up"],
-            row["follow_up_date"], row["notes"],
-        )),
-        "observations": observation_action,
-    }
-    operation_id = "WEAN-" + hashlib.sha256(json.dumps(
-        identity_packet, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")).hexdigest()[:32].upper()
+    operation_id = _weaning_operation_id(packet)
     counts = {
         "tags_created": 0, "treatments_created": 0,
         "weights_created": 0, "movements_created": 0,
@@ -969,6 +1061,50 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                 "select pg_advisory_xact_lock(hashtextextended(%s,0))",
                 ("herdmaster-weaning-day:" + litter_id,),
             )
+            receipt = _weaning_receipt(cursor, operation_id)
+            if receipt:
+                return receipt
+            cursor.execute("""select event_id from public.operational_events
+                where event_type='litter.weaned' and aggregate_id=%s""", (litter_id,))
+            if cursor.fetchone():
+                raise ValueError("litter_weaning_already_recorded")
+            from modules.pig_weights.farm_supabase_read_service import litter_weaning_snapshot
+            from zoneinfo import ZoneInfo
+            snapshot = litter_weaning_snapshot(cursor, litter_id)
+            if not snapshot or snapshot != packet["expected_snapshot"]:
+                raise ValueError("weaning_preview_evidence_changed")
+            expected_products = packet.get('expected_treatment_products', [])
+            if packet.get('contract_version') == 'herdmaster_weaning_day_v3' and treatments and not expected_products:
+                raise ValueError('weaning_treatment_evidence_required')
+            for product in expected_products:
+                cursor.execute("""select product_name,dose_unit,default_withdrawal_days from public.farm_products
+                    where product_id=%s and is_active is true""", (product['product_id'],))
+                actual = cursor.fetchone()
+                if not actual or (actual[0] or '', actual[1] or '', actual[2]) != (
+                        product['product_name'], product['dose_unit'], product['default_withdrawal_days']):
+                    raise ValueError('weaning_treatment_evidence_changed')
+            sow = snapshot.get("sow")
+            if not sow or sow.get("sex") != "Female":
+                raise ValueError("canonical_sow_identity_required")
+            if snapshot["litter"]["litter_status"] != "Active" or snapshot["litter"]["weaned_count"] not in (None, 0):
+                raise ValueError("litter_weaning_already_recorded")
+            if snapshot["reconciliation"].get("mismatch"):
+                raise ValueError("litter_membership_reconciliation_required")
+            if any((row["status"] == "Active") != (row["on_farm"] is True) for row in snapshot["piglets"]):
+                raise ValueError("litter_membership_conflict")
+            active = [row for row in snapshot["piglets"] if row["status"] == "Active" and row["on_farm"] is True]
+            if sorted(row["pig_id"] for row in active) != pig_ids:
+                raise ValueError("exact_current_weaning_cohort_required")
+            if any(row.get("mother_pig_id") not in (None, "", sow["pig_id"]) for row in active):
+                raise ValueError("canonical_sow_identity_conflict")
+            if any(row.get("wean_date") or row.get("wean_weight_kg") is not None or row["animal_type"] == "Weaner" for row in active):
+                raise ValueError("partial_weaning_reconciliation_required")
+            births = [value for value in [snapshot["litter"].get("farrowing_date"), *[row.get("date_of_birth") for row in active]] if value]
+            if (wean_date > datetime.now(ZoneInfo("Africa/Johannesburg")).date()
+                    or not births or any(wean_date < _date_or_none(value) for value in births)):
+                raise ValueError("actual_weaning_date_invalid")
+            cursor.execute("select count(*) from public.current_canonical_pigs where status='Active' and on_farm is true")
+            active_herd_before = cursor.fetchone()[0]
             cursor.execute(
                 """
                 select litter_id, wean_date, weaned_count, litter_status
@@ -1026,9 +1162,9 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                     raise ValueError("conflicting_piglet_wean_date")
                 if row[6] is not None and float(row[6]) != weight:
                     raise ValueError("conflicting_piglet_wean_weight")
-                if requested_sex not in {"Male", "Female", "Castrated_Male"}:
+                if requested_sex not in {"", "Male", "Female", "Castrated_Male"}:
                     raise ValueError("valid_weaning_sex_required")
-                if to_clean_string(row[8]) not in ("", requested_sex) and to_clean_string(row[1]):
+                if to_clean_string(row[8]) not in ("", requested_sex):
                     raise ValueError("conflicting_piglet_sex")
                 if tag_number:
                     if to_clean_string(row[1]) not in ("", tag_number):
@@ -1042,58 +1178,75 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                     if not to_clean_string(row[1]):
                         cursor.execute(
                             """
-                            update public.pigs set tag_number=%s, earmarked=true,
-                                earmark_date=%s, updated_at=now()
+                            update public.pigs set tag_number=%s, updated_at=now()
                             where pig_id=%s
                             """,
-                            (tag_number, wean_date, pig_id),
+                            (tag_number, pig_id),
                         )
                         counts["tags_created"] += 1
 
-                cursor.execute(
-                    """
-                    select weight_kg,coalesce(weighed_by,''),
-                           coalesce(condition_notes,''),coalesce(source,'')
-                    from public.pig_weight_events
-                    where pig_id=%s and weight_date=%s
-                    """,
-                    (pig_id, wean_date),
-                )
-                weight_rows = cursor.fetchall()
-                weights = [float(value[0]) for value in weight_rows]
-                if len(weights) > 1:
-                    raise ValueError("duplicate_weaning_weight_fact")
-                if weights and any(value != weight for value in weights):
-                    raise ValueError("conflicting_weaning_weight_fact")
-                expected_weight_evidence = (
-                    changed_by, item_notes or "Weaning day weight.",
-                    "litter_weaning_day",
-                )
-                if weight_rows and any(
-                    tuple(value[1:]) != expected_weight_evidence
-                    for value in weight_rows
-                ):
-                    raise ValueError("conflicting_weaning_weight_evidence")
-                if not weights:
+                if item.get("earmarked") is not None:
+                    if type(item["earmarked"]) is not bool:
+                        raise ValueError("explicit_earmark_fact_required")
+                    prior = next(p for p in active if p["pig_id"] == pig_id)
+                    if item["earmarked"] is False and prior["earmarked"] is True:
+                        raise ValueError("conflicting_earmark_history")
+                    cursor.execute("""update public.pigs set earmarked=%s,
+                        earmark_date=case when %s then coalesce(earmark_date,%s) else earmark_date end
+                        where pig_id=%s""", (item["earmarked"], item["earmarked"], wean_date, pig_id))
+
+                if weight is not None:
+                    import math
+                    if isinstance(item.get("weight_kg"), bool) or not math.isfinite(weight) or weight <= 0:
+                        raise ValueError("positive_measured_weaning_weight_required")
                     cursor.execute(
                         """
-                        insert into public.pig_weight_events(
-                            weight_event_id,pig_id,weight_date,weight_kg,
-                            weighed_by,condition_notes,source,created_at
-                        ) values(%s,%s,%s,%s,%s,%s,'litter_weaning_day',now())
+                        select weight_kg,coalesce(weighed_by,''),
+                               coalesce(condition_notes,''),coalesce(source,'')
+                        from public.pig_weight_events
+                        where pig_id=%s and weight_date=%s
                         """,
-                        (
-                            _stable_weaning_event_id(
-                                "WGT", operation_id, pig_id, wean_date
-                            ),
-                            pig_id, wean_date, weight, changed_by,
-                                item_notes or "Weaning day weight.",
-                        ),
+                        (pig_id, wean_date),
                     )
-                    counts["weights_created"] += 1
+                    weight_rows = cursor.fetchall()
+                    weights = [float(value[0]) for value in weight_rows]
+                    if len(weights) > 1:
+                        raise ValueError("duplicate_weaning_weight_fact")
+                    if weights and any(value != weight for value in weights):
+                        raise ValueError("conflicting_weaning_weight_fact")
+                    expected_weight_evidence = (
+                        changed_by, item_notes or "Weaning day weight.",
+                        "litter_weaning_day",
+                    )
+                    if weight_rows and any(
+                        tuple(value[1:]) != expected_weight_evidence
+                        for value in weight_rows
+                    ):
+                        raise ValueError("conflicting_weaning_weight_evidence")
+                    if not weights:
+                        cursor.execute(
+                            """
+                            insert into public.pig_weight_events(
+                                weight_event_id,pig_id,weight_date,weight_kg,
+                                weighed_by,condition_notes,source,created_at
+                            ) values(%s,%s,%s,%s,%s,%s,'litter_weaning_day',now())
+                            """,
+                            (
+                                _stable_weaning_event_id(
+                                    "WGT", operation_id, pig_id, wean_date
+                                ),
+                                pig_id, wean_date, weight, changed_by,
+                                    item_notes or "Weaning day weight.",
+                            ),
+                        )
+                        counts["weights_created"] += 1
 
                 from_pen = to_clean_string(item.get("from_pen_id"))
                 to_pen = to_clean_string(item.get("to_pen_id"))
+                if to_pen and to_pen != from_pen:
+                    cursor.execute("select pen_id from public.pens where pen_id=%s and is_active is true", (to_pen,))
+                    if not cursor.fetchone():
+                        raise ValueError("canonical_destination_pen_required")
                 cursor.execute(
                     """
                     select current_pen_id
@@ -1168,8 +1321,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                 if (
                     row[4] != "Weaner"
                     or row[5] != wean_date
-                    or row[6] is None
-                    or float(row[6]) != weight
+                    or (row[6] is not None and float(row[6]) != weight)
                     or row[7] != len(piglets)
                     or to_clean_string(row[8]) != requested_sex
                 ):
@@ -1180,7 +1332,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                             wean_date=%s, wean_weight_kg=%s, sex=%s, updated_at=now()
                         where pig_id=%s
                         """,
-                        (len(piglets), wean_date, weight, requested_sex, pig_id),
+                        (len(piglets), wean_date, weight, requested_sex or None, pig_id),
                     )
                     counts["piglets_updated"] += cursor.rowcount
 
@@ -1284,15 +1436,27 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                     (len(piglets), wean_date, litter_id),
                 )
                 counts["litter_updated"] = cursor.rowcount
-    return {
-        "success": True,
-        "status": "weaning_day_replayed_withheld"
-        if exact_complete and not any(counts.values())
-        else "weaning_day_committed",
-        "operation_id": operation_id,
-        "observation_readback": observation_readback,
-        **counts,
-    }
+            cursor.execute("select count(*) from public.current_canonical_pigs where status='Active' and on_farm is true")
+            active_herd_after = cursor.fetchone()[0]
+            if active_herd_after != active_herd_before:
+                raise ValueError("weaning_must_preserve_active_herd")
+            result = {"success": True, "status": "weaning_day_committed",
+                "operation_id": operation_id, "observation_readback": observation_readback,
+                "active_herd_count": active_herd_after, "sow_readback": snapshot["sow"],
+                "follow_up": {"owner_id": changed_by,
+                    "due_date": (wean_date + timedelta(days=1)).isoformat(),
+                    "action": "Suggested review of sow and weaners",
+                    "status": "retained_follow_up_intent", "scheduled": False}, **counts}
+            cursor.execute("""insert into public.operational_events(
+                event_id,idempotency_key,event_type,domain,aggregate_type,aggregate_id,
+                source_system,authority_tier,privacy_class,actor_type,actor_id,correlation_id,
+                occurred_at,freshness_at,payload_json,provenance_json)
+                values(%s,%s,'litter.weaned','animals','litter',%s,'herdmaster_weaning_day',
+                'owner_approved','internal','farm_operator',%s,%s,now(),now(),%s::jsonb,%s::jsonb)""",
+                (operation_id, operation_id, litter_id, changed_by, operation_id,
+                 json.dumps({"packet": packet, "result": result}, default=str),
+                 json.dumps({"source_ref": "current_canonical_litters", "channel": packet.get("source_channel", "application")})))
+    return result
 
 
 def insert_location_event(location_event_id, cleaned_data, connect_factory=None):

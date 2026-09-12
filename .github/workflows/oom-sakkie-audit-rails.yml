@@ -242,7 +242,44 @@ jobs:
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres tests.test_herdmaster_breeding_observation_postgres
 
       - name: Run Herdmaster litter treatment atomic transaction gates
-        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres tests.test_litter_first_treatment_atomic_postgres
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
+
+      - name: Prepare separate disposable herd journey database
+        env:
+          HERDMASTER_QUALIFICATION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ['DATABASE_URL'], autocommit=True) as db:
+              db.execute('CREATE DATABASE herd_first_treatment_test_weaning_test')
+          PY
+          python -m tests.herd_qualification bootstrap
+
+      - name: Run herd database journeys and owner projections without skips
+        env:
+          HERDMASTER_QUALIFICATION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
+        run: python -m tests.herd_qualification postgres
+
+      - name: Set up Node for herd browser journeys
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Run first-treatment and weaning browser confirmation and recovery
+        env:
+          HERDMASTER_QUALIFICATION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          npx playwright test --config=playwright.herd.config.js
+
+      - name: Retain synthetic herd browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-herd-browser-evidence
+          path: test-results/
 
       - name: Run Herdmaster mortality and welfare atomic transaction gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_herdmaster_health_loss_recording_postgres
