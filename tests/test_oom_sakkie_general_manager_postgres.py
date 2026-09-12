@@ -175,6 +175,180 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertEqual(row, (2, changed['summary'], sorted(changed['evidence_refs'])))
         self.assertEqual(counts, {'created': 1, 'evidence_changed': 1})
 
+    def test_314_candidates_with_32_absent_terminal_findings_keep_progress(self):
+        values = sorted([self.value('mixed-' + str(i),
+            next_reassessment_at=self.now.isoformat()) for i in range(314)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        missing_positions = {(i + 1) * len(values) // 33 for i in range(32)}
+        self.seed([row for i, row in enumerate(values) if i not in missing_positions])
+        newer = self.now + timedelta(seconds=1)
+        values = [{**row, 'evidence_refs': [row['evidence_refs'][0], 'observed:' + newer.isoformat()],
+            **({'terminal_state': 'completed'} if i in missing_positions else {})}
+            for i, row in enumerate(values)]
+        values[0] = {**values[0], 'summary': 'One changed canonical finding'}
+        by_key = {row['dedupe_key']: row for row in values}
+        self.statements = 0
+        lookups, initial_lookup_counts, initial_statement_counts, sends = [], [], [], []
+        original = _IsolatedCursor.execute
+        def counted(cursor, sql, params=None):
+            if 'with eligible as materialized' in sql:
+                initial_lookup_counts.append(len(lookups))
+                initial_statement_counts.append(self.statements)
+            if ('select dedupe_key,evidence_digest,generation,status' in sql
+                    or 'select evidence_digest,generation,status' in sql):
+                lookups.append(sql)
+            return original(cursor, sql, params)
+        # These are explicit synthetic timings around real PostgreSQL SQL:
+        # 14 seconds before reconciliation and 120ms per protocol command.
+        clock = SimpleNamespace(monotonic=lambda: 14 + self.statements * 0.12)
+        started = time.perf_counter()
+        with patch.object(_IsolatedCursor, 'execute', counted), patch.object(worker_module, 'time', clock):
+            result = self.cycle(values, deadline_monotonic=80,
+                refresh_batch=lambda cases: {row['case_id']: by_key[row['dedupe_key']] for row in cases},
+                deliver=lambda row, **_kwargs: sends.append(row['case_id']) or {
+                    'success': True, 'status': 'delivery_confirmed', 'delivery_confirmed': True,
+                    'next_reassessment_at': (self.now + timedelta(minutes=5)).isoformat()})
+        self.benchmark = {'candidates': 314, 'present': 282, 'absent_terminal': 32,
+            'statements': self.statements, 'reconciliation_lookup_statements': initial_lookup_counts[0],
+            'statements_through_initial_reconciliation': initial_statement_counts[0],
+            'total_lookup_statements_including_claim_refresh': len(lookups),
+            'real_database_wall_seconds': time.perf_counter() - started,
+            'simulated_elapsed_seconds': clock.monotonic(), 'result': result}
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['candidate_replays'], 313)
+        self.assertEqual(result['candidates_changed'], 1)
+        self.assertEqual(result['candidates_created'], 0)
+        self.assertEqual(result['deliveries_confirmed'], 5)
+        self.assertEqual(result['deadline_deferrals'], 0)
+        self.assertLessEqual(initial_lookup_counts[0], 66)
+        # Audit insert + failed whole prefetch + 33 complete run prefetches +
+        # 32 fresh gap reads + changed-case write/event + batched epoch update.
+        self.assertLessEqual(initial_statement_counts[0], 1 + 4 + 33 * 3 + 32 + 2 + 1)
+        with self.db() as db:
+            rows = db.execute('select generation,evidence_refs from app_private.oom_manager_cases').fetchall()
+        self.assertEqual(len(rows), 282)
+        self.assertEqual(sum(generation == 2 for generation, _refs in rows), 1)
+        self.assertTrue(all('observed:' + newer.isoformat() in refs for _generation, refs in rows))
+
+    def test_absent_terminal_is_reread_after_concurrent_insert(self):
+        values = sorted([self.value('terminal-insert-' + str(i)) for i in range(3)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        lower, *higher = values
+        self.seed(higher)
+        terminal = {**lower, 'terminal_state': 'completed'}
+        original, inserted = _IsolatedCursor.execute, []
+        def after_release(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch' and not inserted:
+                inserted.append(True)
+                # The incomplete initial prefetch has released its locks.
+                # Commit a competing writer before the missing key's turn.
+                with self.db() as db, db.cursor() as other:
+                    self.store._reconcile(other, normalize_candidate(lower, now=self.now), self.now)
+            return result
+        with patch.object(_IsolatedCursor, 'execute', after_release):
+            result = self.cycle([terminal, *higher])
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['candidates_changed'], 1)
+        with self.db() as db:
+            row = db.execute('select status,generation from app_private.oom_manager_cases where dedupe_key=%s',
+                (lower['dedupe_key'],)).fetchone()
+            completed = db.execute("select count(*) from app_private.oom_manager_case_events where event_type='completed'").fetchone()[0]
+        self.assertEqual(row, ('completed', 2))
+        self.assertEqual(completed, 1)
+
+    def test_planned_run_relocks_changed_prior_and_preserves_duplicate_epochs(self):
+        values = sorted([self.value('relock-' + str(i)) for i in range(4)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        lower, *higher = values
+        self.seed(higher)
+        latest = {**higher[0], 'summary': 'Concurrent latest material',
+            'evidence_refs': ['event:concurrent', 'observed:' + (self.now + timedelta(minutes=2)).isoformat()]}
+        replay = {**higher[-1], 'evidence_refs': [higher[-1]['evidence_refs'][0],
+            'observed:' + (self.now + timedelta(minutes=1)).isoformat()]}
+        original, changed = _IsolatedCursor.execute, []
+        def after_release(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch' and not changed:
+                changed.append(True)
+                with self.db() as db, db.cursor() as other:
+                    self.store._reconcile(other, normalize_candidate(latest, now=self.now), self.now)
+            return result
+        with patch.object(_IsolatedCursor, 'execute', after_release):
+            result = self.cycle([{**lower, 'terminal_state': 'completed'}, *higher, replay, higher[-1]])
+        self.assertTrue(result['success'], result)
+        with self.db() as db:
+            rows = {row[0]: row[1:] for row in db.execute('select dedupe_key,generation,summary,evidence_refs from app_private.oom_manager_cases').fetchall()}
+        self.assertEqual(rows[latest['dedupe_key']], (2, latest['summary'], sorted(latest['evidence_refs'])))
+        self.assertEqual(rows[replay['dedupe_key']][2], sorted(replay['evidence_refs']))
+
+    def test_deleted_run_key_releases_only_run_prelocks_before_point_fallback(self):
+        threading = __import__('threading')
+        values = sorted([self.value('delete-reinsert-' + str(i)) for i in range(5)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        prefix, gap, lower, middle, higher = values
+        self.seed([prefix, middle, higher])
+        # Model a valid case row with no referring event, so deletion can commit
+        # without altering the append-only event trigger or its foreign key.
+        with patch.object(self.store, '_event'):
+            self.seed([lower])
+        external = self.db()
+        self.addCleanup(external.close)
+        external_pid = external.connection.info.backend_pid
+        run_locked, release_run = threading.Event(), threading.Event()
+        original, prepared, prefix_lock_checks = _IsolatedCursor.execute, [], []
+        def gate(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if sql == 'rollback to savepoint oom_manager_reconciliation_prefetch' and run_locked.is_set():
+                # The failed run has released middle/higher locks, but the
+                # already reconciled lower prefix must remain locked.
+                with self.assertRaises(psycopg.errors.LockNotAvailable):
+                    with self.db() as observer:
+                        observer.execute('select case_id from app_private.oom_manager_cases where dedupe_key=%s for update nowait',
+                            (prefix['dedupe_key'],))
+                prefix_lock_checks.append('55P03')
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch' and not prepared:
+                prepared.append(True)
+                with self.db() as db:
+                    db.execute('delete from app_private.oom_manager_cases where dedupe_key=%s', (lower['dedupe_key'],))
+                # The next run's snapshot cannot see this uncommitted insert.
+                with external.cursor() as other:
+                    self.store._reconcile(other, normalize_candidate(lower, now=self.now), self.now)
+            elif ('select dedupe_key,evidence_digest,generation,status' in sql
+                    and prepared and set(params[0]) == {row['dedupe_key'] for row in (lower, middle, higher)}):
+                run_locked.set()
+                if not release_run.wait(timeout=5):
+                    raise AssertionError('run prefetch test gate timed out')
+            return result
+        def finish_external():
+            with external:
+                external.execute('select case_id from app_private.oom_manager_cases where dedupe_key=%s for update',
+                    (middle['dedupe_key'],))
+        with patch.object(_IsolatedCursor, 'execute', gate), ThreadPoolExecutor(max_workers=2) as pool:
+            running = pool.submit(self.cycle, [prefix, {**gap, 'terminal_state': 'completed'}, lower, middle, higher])
+            if not run_locked.wait(timeout=5):
+                self.fail('run prefetch not reached: ' + str(running.result(timeout=5)))
+            competing = pool.submit(finish_external)
+            try:
+                limit, blocked = time.monotonic() + 3, False
+                with connect() as observer:
+                    while time.monotonic() < limit:
+                        blocked = bool(observer.execute('select cardinality(pg_blocking_pids(%s)) > 0',
+                            (external_pid,)).fetchone()[0])
+                        if blocked:
+                            break
+                        time.sleep(0.01)
+                self.assertTrue(blocked, 'competing transaction never reached the run prelock')
+            finally:
+                release_run.set()
+            competing.result(timeout=5)
+            result = running.result(timeout=5)
+        self.assertTrue(result['success'], result)
+        self.assertEqual(prefix_lock_checks, ['55P03'])
+        with self.db() as db:
+            rows = db.execute('select count(*),max(generation) from app_private.oom_manager_cases').fetchone()
+        self.assertEqual(rows, (4, 1))
+
     def test_overlapping_reversed_batches_with_new_keys_serialize(self):
         values = [self.value(str(i)) for i in range(30)]
         self.seed(values[:15])

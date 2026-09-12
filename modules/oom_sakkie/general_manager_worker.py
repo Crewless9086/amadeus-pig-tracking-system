@@ -9,6 +9,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, wait
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from itertools import groupby
 import hashlib
 import html
 import json
@@ -156,28 +157,10 @@ class PostgresManagerCaseStore:
                         (normalize_candidate(raw, now=now) for raw in candidates),
                         key=lambda item: item["case_id"])
                     key_counts = Counter(item["dedupe_key"] for item in normalized_candidates)
-                    locked_priors = {}
                     replay_epochs = []
-                    if normalized_candidates:
-                        # Fast-path an existing cohort in case-id lock order.
-                        # Missing keys need the original sorted path: retaining
-                        # higher prelocks before inserting a lower missing key
-                        # could invert another transaction's lock order.
-                        cur.execute("savepoint oom_manager_reconciliation_prefetch")
-                        cur.execute("""select dedupe_key,evidence_digest,generation,status,
-                                assigned_worker_id,lease_until,evidence_refs
-                            from app_private.oom_manager_cases
-                            where dedupe_key=any(%s) order by case_id for update""",
-                            (list(key_counts),))
-                        locked_priors = {row[0]: row[1:] for row in cur.fetchall()}
-                        if len(locked_priors) != len(key_counts):
-                            cur.execute("rollback to savepoint oom_manager_reconciliation_prefetch")
-                            locked_priors.clear()
-                        cur.execute("release savepoint oom_manager_reconciliation_prefetch")
-                    for candidate in normalized_candidates:
+                    for candidate, prior in self._reconciliation_priors(cur, normalized_candidates):
                         result = self._reconcile(cur, candidate, now,
-                            locked_prior=locked_priors.pop(candidate["dedupe_key"],
-                                _RECONCILIATION_PRIOR_UNREAD),
+                            locked_prior=prior,
                             replay_epochs=(replay_epochs
                                 if key_counts[candidate["dedupe_key"]] == 1 else None))
                         if candidate["specialist"] == "BEACON":
@@ -418,6 +401,57 @@ class PostgresManagerCaseStore:
         finally:
             if connection is not None:
                 connection.close()
+
+    @staticmethod
+    def _lock_reconciliation_priors(cur, keys):
+        """Lock a complete existing run, or release it and return planning hints."""
+        cur.execute("savepoint oom_manager_reconciliation_prefetch")
+        cur.execute("""select dedupe_key,evidence_digest,generation,status,
+                assigned_worker_id,lease_until,evidence_refs
+            from app_private.oom_manager_cases
+            where dedupe_key=any(%s) order by case_id for update""", (list(keys),))
+        priors = {row[0]: row[1:] for row in cur.fetchall()}
+        complete = len(priors) == len(keys)
+        if not complete:
+            # A missing lower key might be inserted during reconciliation.
+            # Higher prelocks must be released before that sorted point read.
+            cur.execute("rollback to savepoint oom_manager_reconciliation_prefetch")
+        cur.execute("release savepoint oom_manager_reconciliation_prefetch")
+        return priors, complete
+
+    def _reconciliation_priors(self, cur, candidates):
+        """Yield fresh priors lazily, preserving global case-id lock order.
+
+        Absent terminal findings are legitimate replays and remain absent on
+        every cycle. One such key must not force every existing case back to an
+        individual query. After releasing an incomplete whole-cohort prefetch,
+        use its key set only to plan contiguous existing runs. Re-lock each run
+        at its sorted position, and use the original point path for gaps or a
+        run made incomplete by concurrent deletion. Absence is never cached.
+        """
+        if not candidates:
+            return
+        keys = set(item["dedupe_key"] for item in candidates)
+        priors, complete = self._lock_reconciliation_priors(cur, keys)
+        if complete:
+            for candidate in candidates:
+                yield candidate, priors.pop(candidate["dedupe_key"],
+                    _RECONCILIATION_PRIOR_UNREAD)
+            return
+        observed_present = set(priors)
+        for was_present, values in groupby(candidates,
+                key=lambda item: item["dedupe_key"] in observed_present):
+            run = list(values)
+            run_keys = set(item["dedupe_key"] for item in run)
+            locked = {}
+            if was_present and len(run_keys) > 1:
+                locked, complete = self._lock_reconciliation_priors(cur, run_keys)
+                if not complete:
+                    locked = {}
+            for candidate in run:
+                # A repeated key must re-read its preceding candidate's update.
+                yield candidate, locked.pop(candidate["dedupe_key"],
+                    _RECONCILIATION_PRIOR_UNREAD)
 
     def _reconcile(self, cur, candidate, now, *, lease_owner=None,
                    replace_delegated_owner=False,
