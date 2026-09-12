@@ -241,9 +241,6 @@ jobs:
       - name: Run pig observation privilege gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres tests.test_herdmaster_breeding_observation_postgres
 
-      - name: Run Herdmaster litter treatment atomic transaction gates
-        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
-
       - name: Prepare separate disposable herd journey database
         env:
           HERDMASTER_QUALIFICATION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
@@ -260,6 +257,11 @@ jobs:
         env:
           HERDMASTER_QUALIFICATION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
         run: python -m tests.herd_qualification postgres
+
+      - name: Run Herdmaster litter treatment atomic transaction gates
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
 
       - name: Set up Node for herd browser journeys
         uses: actions/setup-node@v4
