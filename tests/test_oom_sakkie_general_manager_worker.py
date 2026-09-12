@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timedelta, timezone
 import time
+from concurrent.futures import Future
+from types import SimpleNamespace
 
 import pytest
 
@@ -133,7 +135,13 @@ def test_cycle_wrapper_refreshes_claimed_specialists_as_one_batch(monkeypatch):
 
     class Store:
         def run_cycle(self, _candidates, **kwargs):
-            return kwargs["refresh_batch"](cases)
+            batch = kwargs["refresh_batch"](cases)
+            try:
+                while len(batch.poll()) < len(cases):
+                    batch.wait_for_ready()
+                return batch.poll()
+            finally:
+                batch.close()
 
     result = run_general_manager_cycle(
         now=NOW, source_revision="abc123", store=Store(),
@@ -144,6 +152,75 @@ def test_cycle_wrapper_refreshes_claimed_specialists_as_one_batch(monkeypatch):
         "CASE-ONE": snapshot[("herdmaster:first", "HERDMASTER")],
         "CASE-TWO": snapshot[("herdmaster:second", "HERDMASTER")],
     }
+
+
+def test_refresh_batch_distinguishes_pending_missing_and_frozen_late_result(monkeypatch):
+    from modules.oom_sakkie import general_manager_worker as worker
+    clock, futures, closed = [0.0], [], []
+    class Executor:
+        def __init__(self, **_kwargs): pass
+        def submit(self, *_args):
+            future = Future()
+            future.set_running_or_notify_cancel()
+            futures.append(future)
+            return future
+        def shutdown(self, **kwargs): closed.append(kwargs)
+    monkeypatch.setattr(worker, 'ThreadPoolExecutor', Executor)
+    monkeypatch.setattr(worker, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
+    cases = [{'case_id': 'CASE-' + str(i), 'dedupe_key': 'herdmaster:' + str(i),
+              'specialist': 'HERDMASTER'} for i in range(3)]
+    batch = worker._ManagerRefreshBatch([((case,), lambda: {}) for case in cases], deadline_monotonic=80)
+    futures[0].set_result((1.0, {}))
+    futures[1].set_result((20.0, {('herdmaster:1', 'HERDMASTER'): cases[1]}))
+    assert batch.poll()['CASE-0'] is None
+    assert isinstance(batch.poll()['CASE-1'], TimeoutError)
+    assert 'CASE-2' not in batch.poll()
+    clock[0] = 20.0
+    timeout = batch.poll()['CASE-2']
+    assert isinstance(timeout, TimeoutError)
+    futures[2].set_result((21.0, {('herdmaster:2', 'HERDMASTER'): cases[2]}))
+    assert batch.poll()['CASE-2'] is timeout
+    batch.close()
+    assert closed == [{'wait': False, 'cancel_futures': True}]
+
+
+def test_refresh_batch_does_not_wait_past_a_just_completed_future(monkeypatch):
+    from modules.oom_sakkie import general_manager_worker as worker
+    ready, slow = Future(), Future()
+    ready.set_result((1.0, {}))
+    batch = worker._ManagerRefreshBatch.__new__(worker._ManagerRefreshBatch)
+    batch.jobs, batch.deadline = {ready: (), slow: ()}, 20.0
+    monkeypatch.setattr(worker, 'wait', lambda *_args, **_kwargs: pytest.fail('ready result bypassed'))
+    batch.wait_for_ready()
+
+
+def test_refresh_batch_checks_completion_after_observing_timeout_boundary(monkeypatch):
+    from modules.oom_sakkie import general_manager_worker as worker
+    future = Future()
+    row = {'case_id': 'CASE-A', 'dedupe_key': 'herdmaster:a', 'specialist': 'HERDMASTER'}
+    def observe_deadline():
+        # The on-time read becomes visible as the caller observes the cutoff.
+        if not future.done():
+            future.set_result((19.9, {('herdmaster:a', 'HERDMASTER'): row}))
+        return 20.0
+    batch = worker._ManagerRefreshBatch.__new__(worker._ManagerRefreshBatch)
+    batch.results, batch.jobs, batch.deadline = {}, {future: (row,)}, 20.0
+    monkeypatch.setattr(worker, 'time', SimpleNamespace(monotonic=observe_deadline))
+    assert batch.poll() == {'CASE-A': row}
+
+
+@pytest.mark.parametrize('failure', [KeyError('unexpected'), ManagerCaseError('manager_failure')])
+def test_refresh_batch_submission_failure_closes_executor(monkeypatch, failure):
+    from modules.oom_sakkie import general_manager_worker as worker
+    closed = []
+    class Executor:
+        def __init__(self, **_kwargs): pass
+        def submit(self, *_args): raise failure
+        def shutdown(self, **kwargs): closed.append(kwargs)
+    monkeypatch.setattr(worker, 'ThreadPoolExecutor', Executor)
+    with pytest.raises(type(failure)):
+        worker._ManagerRefreshBatch([(({},), lambda: {})], deadline_monotonic=time.monotonic() + 80)
+    assert closed == [{'wait': False, 'cancel_futures': True}]
 
 
 def test_failed_brain_guard_is_persisted_and_blocks_case_delivery():
