@@ -1,5 +1,46 @@
 # Vault Brain Changelog
 
+## 2026-09-13 - Scheduler web deployed; first two genuine manager cycles still fail
+
+Continue existing OMQ-20260813-03-MORNING-CONTAINMENT. Charl's approved scheduler
+candidate 0e30c9a9d2113435f860e977a900f3bd3a73b240, protected-merged as
+d3cbd663b79fe51ba197f42868d4f758dc8b955d, is deployed only on web service
+srv-d6sijjkhg0os73f7regg as dep-daisn795efls73epqfag. Render promotion completed
+2026-09-13 00:02:09 SAST. The first fresh-date identity check passed at 00:01:00;
+two exact loaded-revision checks and the second empty identity check completed
+by 00:02:38. Bindings, Anton's private Plaas menu, all nine service configurations
+and all unrelated deployment IDs/revisions are unchanged. Cron remains on
+203a7e9b and its five-minute schedule. The release lane is released.
+
+The genuine 00:05 and 00:10 SAST manager cycles both ran on d3cbd663 and failed:
+each claimed five cases, replayed 313 candidates, deferred all five claims at the
+deadline and confirmed no deliveries. Provider-generated cron runs and HTTP 503
+request logs corroborate the canonical failures. Request durations were 57.924
+and 57.135 seconds. This fails the two-useful-cycle acceptance requirement.
+The existing canonical completion field reuses the supplied start timestamp;
+it does not measure elapsed time or establish source/refresh phase timing.
+
+Control Tower retains authorized diagnosis and local repair preparation from
+these failures, with no additional production change. The genuine 06:45 SAST
+morning cycle and later natural suppression/follow-up check remain pending.
+No manual invocation, manufactured event or test message supplies acceptance.
+Canonical activation finding CORE-MISSION-CONTROL-21EB5B2E31471BD666603163 records
+technical deployment only. The child remains WORKING / in_progress, all eleven
+business acceptance requirements remain open, and business_complete is false.
+
+The farm integration parent remains separately held with PR #1334/admission on
+77227a67 and local reviewed successor 4744bdec unpublished. The rejected combined
+migration continuation, prepared unapplied Anton permission, held CHARLIE and
+paused ROOTLINE remain unchanged. Actual farm and physical outcomes are unproven.
+
+Evidence: .tmp/control-tower-scheduler-web-release-20260912/WEB_DEPLOYMENT.json,
+ACTIVATION_FIRST_IDENTITY_CHECK.json, ACTIVATION_SECOND_IDENTITY_CHECK.json and
+OBSERVATION_activation_cycle_1.json / OBSERVATION_activation_cycle_2.json;
+.tmp/control-tower-scheduler-window-20260913/INITIAL_SCHEDULED_ACCEPTANCE.json,
+CANONICAL_WEB_ACTIVATION.json and DEPLOY_OPERATOR_STDOUT_CAPTURE.json.
+Disposition CONTINUE with failed manager acceptance and pending genuine morning.
+
+
 ## 2026-09-12 - Reviewed local farm voice and Telegram transport successor
 
 Existing OMQ-20260813-03 now has reviewed local successor
