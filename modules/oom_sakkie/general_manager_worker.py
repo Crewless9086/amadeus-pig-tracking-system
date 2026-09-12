@@ -7,6 +7,7 @@ Those effects remain owned by the existing protected and specialist rails.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, wait
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 import hashlib
 import html
@@ -35,6 +36,7 @@ OPEN_STATES = frozenset({"open", "delegated", "waiting_reassessment", "exception
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
 _PRODUCTION_RETAINED_RECOVERY = object()
 _MESSAGE_FAMILY_REF = "manager_message_family:"
+_RECONCILIATION_PRIOR_UNREAD = object()
 
 
 class ManagerCaseError(ValueError):
@@ -153,13 +155,46 @@ class PostgresManagerCaseStore:
                     normalized_candidates = sorted(
                         (normalize_candidate(raw, now=now) for raw in candidates),
                         key=lambda item: item["case_id"])
+                    key_counts = Counter(item["dedupe_key"] for item in normalized_candidates)
+                    locked_priors = {}
+                    replay_epochs = []
+                    if normalized_candidates:
+                        # Fast-path an existing cohort in case-id lock order.
+                        # Missing keys need the original sorted path: retaining
+                        # higher prelocks before inserting a lower missing key
+                        # could invert another transaction's lock order.
+                        cur.execute("savepoint oom_manager_reconciliation_prefetch")
+                        cur.execute("""select dedupe_key,evidence_digest,generation,status,
+                                assigned_worker_id,lease_until,evidence_refs
+                            from app_private.oom_manager_cases
+                            where dedupe_key=any(%s) order by case_id for update""",
+                            (list(key_counts),))
+                        locked_priors = {row[0]: row[1:] for row in cur.fetchall()}
+                        if len(locked_priors) != len(key_counts):
+                            cur.execute("rollback to savepoint oom_manager_reconciliation_prefetch")
+                            locked_priors.clear()
+                        cur.execute("release savepoint oom_manager_reconciliation_prefetch")
                     for candidate in normalized_candidates:
-                        result = self._reconcile(cur, candidate, now)
+                        result = self._reconcile(cur, candidate, now,
+                            locked_prior=locked_priors.pop(candidate["dedupe_key"],
+                                _RECONCILIATION_PRIOR_UNREAD),
+                            replay_epochs=(replay_epochs
+                                if key_counts[candidate["dedupe_key"]] == 1 else None))
                         if candidate["specialist"] == "BEACON":
                             self._retire_stale_beacon_claims(cur, candidate["dedupe_key"], now)
                         created += result == "created"
                         changed += result == "changed"
                         replayed += result == "replayed"
+                    if replay_epochs:
+                        # These exact rows are already locked and each key was
+                        # reconciled once. Retain newer observation epochs even
+                        # when the material did not change, in one round trip.
+                        cur.execute("""update app_private.oom_manager_cases m
+                            set evidence_refs=e.evidence_refs,updated_at=%s
+                            from jsonb_to_recordset(%s::jsonb)
+                                as e(dedupe_key text,evidence_refs jsonb)
+                            where m.dedupe_key=e.dedupe_key""",
+                            (now, json.dumps(replay_epochs)))
                     cur.execute("""with eligible as materialized (
                             select case_id,specialist,urgency,next_reassessment_at,
                                 row_number() over (partition by specialist order by
@@ -195,8 +230,13 @@ class PostgresManagerCaseStore:
             delivered = suppressed = exceptions = deadline_deferrals = 0
             case_results = []
             batch_refreshes = {}
-            if deliver and refresh_batch and claimed:
-                batch_refreshes = dict(refresh_batch(tuple(claimed)) or {})
+            refresh_needed = tuple(case for case in claimed
+                if case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
+                and case.get("last_delivery_digest") != case["evidence_digest"])
+            if (deliver and refresh_batch and refresh_needed
+                    and (deadline_monotonic is None or time.monotonic()
+                         < deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS)):
+                batch_refreshes = dict(refresh_batch(refresh_needed) or {})
             for case_index, case in enumerate(claimed):
                 current_case = case
                 specialist_failure = None
@@ -380,12 +420,16 @@ class PostgresManagerCaseStore:
                 connection.close()
 
     def _reconcile(self, cur, candidate, now, *, lease_owner=None,
-                   replace_delegated_owner=False):
-        cur.execute("""select evidence_digest,generation,status,assigned_worker_id,lease_until,
-                evidence_refs
-            from app_private.oom_manager_cases where dedupe_key=%s for update""",
-                    (candidate["dedupe_key"],))
-        prior = cur.fetchone()
+                   replace_delegated_owner=False,
+                   locked_prior=_RECONCILIATION_PRIOR_UNREAD, replay_epochs=None):
+        if locked_prior is _RECONCILIATION_PRIOR_UNREAD:
+            cur.execute("""select evidence_digest,generation,status,assigned_worker_id,lease_until,
+                    evidence_refs
+                from app_private.oom_manager_cases where dedupe_key=%s for update""",
+                        (candidate["dedupe_key"],))
+            prior = cur.fetchone()
+        else:
+            prior = locked_prior
         if candidate.get("terminal_state") == "completed":
             if not prior:
                 return "replayed"
@@ -420,9 +464,13 @@ class PostgresManagerCaseStore:
             candidate_epoch = _evidence_epoch(candidate["evidence_refs"])
             prior_epoch = _evidence_epoch(prior[5])
             if candidate_epoch and (not prior_epoch or candidate_epoch > prior_epoch):
-                cur.execute("""update app_private.oom_manager_cases
-                    set evidence_refs=%s::jsonb,updated_at=%s where dedupe_key=%s""",
-                    (json.dumps(candidate["evidence_refs"]), now, candidate["dedupe_key"]))
+                if replay_epochs is not None:
+                    replay_epochs.append({"dedupe_key": candidate["dedupe_key"],
+                        "evidence_refs": candidate["evidence_refs"]})
+                else:
+                    cur.execute("""update app_private.oom_manager_cases
+                        set evidence_refs=%s::jsonb,updated_at=%s where dedupe_key=%s""",
+                        (json.dumps(candidate["evidence_refs"]), now, candidate["dedupe_key"]))
             return "replayed"
         if (prior and _evidence_epoch(candidate["evidence_refs"])
                 and _evidence_epoch(prior[5])
@@ -735,6 +783,9 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                 collectors=collectors)
         def refresh_batch(cases):
             cases = tuple(cases)
+            if (not cases or time.monotonic()
+                    >= deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS):
+                return {}
             regular = tuple(case for case in cases
                 if not str(case.get("dedupe_key") or "").startswith("rootline-readiness:"))
             readiness = tuple(case for case in cases

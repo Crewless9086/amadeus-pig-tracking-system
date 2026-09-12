@@ -6,6 +6,13 @@ from pathlib import Path
 
 import psycopg
 import pytest
+import unittest
+import uuid
+import time
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from modules.oom_sakkie import general_manager_worker as worker_module
 
 from modules.oom_sakkie.manager_case_sources import _completed_bulk_batch_findings
 from modules.oom_sakkie.general_manager_worker import (
@@ -20,6 +27,436 @@ pytestmark = pytest.mark.skipif(not URL, reason="disposable PostgreSQL URL is re
 
 def connect():
     return psycopg.connect(URL)
+
+
+class _IsolatedCursor:
+    def __init__(self, cursor, owner):
+        self.cursor, self.owner = cursor, owner
+
+    def __enter__(self):
+        self.cursor.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self.cursor.__exit__(*args)
+
+    def execute(self, sql, params=None):
+        # Relocate only the schema; execute the real worker SQL and migrations.
+        self.owner.statements += 1
+        self.cursor.execute(sql.replace('app_private.', self.owner.schema + '.'), params)
+        return self
+
+    def __getattr__(self, name):
+        return getattr(self.cursor, name)
+
+
+class _IsolatedConnection:
+    def __init__(self, connection, owner):
+        self.connection, self.owner = connection, owner
+
+    def __enter__(self):
+        self.connection.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self.connection.__exit__(*args)
+
+    def cursor(self):
+        return _IsolatedCursor(self.connection.cursor(), self.owner)
+
+    def execute(self, sql, params=None):
+        return self.cursor().execute(sql, params)
+
+    def close(self):
+        self.connection.close()
+
+
+@unittest.skipUnless(URL, 'disposable PostgreSQL URL is required')
+class SchedulerRecoveryPostgresTests(unittest.TestCase):
+    """Discovered by both pytest and the existing hosted unittest command.
+
+    Every test owns a fresh schema, preserving other tests' rows and avoiding
+    dependence on their clocks, leases or queue positions. No provider is used.
+    """
+    def setUp(self):
+        self.schema = 'omq_recovery_' + uuid.uuid4().hex
+        self.statements = 0
+        self.now = datetime.now(timezone.utc)
+        with connect() as db:
+            db.execute('create schema ' + self.schema)
+        self.addCleanup(self.drop_schema)
+        with self.db() as db:
+            db.execute('create table app_private.migration_log(migration_id text primary key,description text not null)')
+            db.execute('''create table app_private.oom_protected_action_claims(
+                callback_token text primary key,action_kind text not null,
+                provider_message_id text,status text,result_payload jsonb,completed_at timestamptz)''')
+            migrations = Path(__file__).parents[1] / 'supabase' / 'migrations'
+            for name in ('202608170002_create_oom_manager_case_runtime.sql',
+                         '202608190002_create_beacon_protected_publication_consumer.sql'):
+                db.execute((migrations / name).read_text(encoding='utf-8'))
+        self.store = worker_module.PostgresManagerCaseStore(connect_factory=self.db)
+
+    def drop_schema(self):
+        assert self.schema.startswith('omq_recovery_') and len(self.schema) == 45
+        with connect() as db:
+            db.execute('drop schema ' + self.schema + ' cascade')
+
+    def db(self):
+        return _IsolatedConnection(psycopg.connect(URL, options='-c statement_timeout=10000'), self)
+
+    def value(self, key, **changes):
+        value = candidate('event:' + key, self.now + timedelta(hours=1),
+            dedupe_key='local:' + key, specialist='HERDMASTER', unknowns=[],
+            evidence_refs=['event:' + key, 'observed:' + self.now.isoformat()])
+        value.update(changes)
+        return value
+
+    def seed(self, values):
+        with self.db() as db, db.cursor() as cur:
+            for value in sorted(values, key=lambda row: worker_module.normalize_candidate(row, now=self.now)['case_id']):
+                self.store._reconcile(cur, worker_module.normalize_candidate(value, now=self.now), self.now)
+
+    def cycle(self, values, **kwargs):
+        return self.store.run_cycle(values, now=self.now, source_revision='local-regression',
+            brain_guard_audit={'passed': True}, **kwargs)
+
+    def test_313_replays_keep_epochs_and_make_progress_with_latency_budget(self):
+        values = [self.value(str(i), next_reassessment_at=self.now.isoformat()) for i in range(313)]
+        self.seed(values)
+        newer = self.now + timedelta(seconds=1)
+        values = [{**value, 'evidence_refs': [value['evidence_refs'][0], 'observed:' + newer.isoformat()]}
+                  for value in values]
+        by_key = {value['dedupe_key']: value for value in values}
+        sends = []
+        self.statements = 0
+        started = time.perf_counter()
+        # A 100ms cost per real SQL statement models round-trip sensitivity;
+        # it is deliberately separate from measured local database wall time.
+        clock = SimpleNamespace(monotonic=lambda: self.statements * 0.1)
+        with patch.object(worker_module, 'time', clock):
+            result = self.cycle(values, deadline_monotonic=80,
+                refresh_batch=lambda cases: {row['case_id']: by_key[row['dedupe_key']] for row in cases},
+                deliver=lambda row, **_kwargs: sends.append(row['case_id']) or {
+                    'success': True, 'status': 'delivery_confirmed', 'delivery_confirmed': True,
+                    'next_reassessment_at': (self.now + timedelta(minutes=5)).isoformat()})
+        measured_statements = self.statements
+        self.benchmark = {'statements': measured_statements,
+            'real_database_wall_seconds': time.perf_counter() - started,
+            'simulated_sql_latency_seconds': measured_statements * 0.1,
+            'result': result}
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['candidate_replays'], 313)
+        self.assertEqual(result['deliveries_confirmed'], 5)
+        self.assertEqual(result['deadline_deferrals'], 0)
+        self.assertLess(measured_statements, 100)
+        with self.db() as db:
+            rows = db.execute('select generation,evidence_refs from app_private.oom_manager_cases').fetchall()
+        self.assertEqual(len(rows), 313)
+        self.assertTrue(all(generation == 1 and 'observed:' + newer.isoformat() in refs for generation, refs in rows))
+        repeat = self.cycle(values, deliver=lambda *_a, **_k: self.fail('duplicate provider call'),
+            refresh_batch=lambda cases: {})
+        self.assertEqual(repeat['deliveries_confirmed'], 0)
+        self.assertEqual(len(sends), 5)
+
+    def test_duplicate_keys_observe_prior_updates_and_stale_epochs_do_not_replace(self):
+        initial = self.value('repeat')
+        self.seed([initial])
+        newer = self.now + timedelta(minutes=1)
+        newest = self.now + timedelta(minutes=2)
+        first = {**initial, 'evidence_refs': ['event:repeat', 'observed:' + newer.isoformat()]}
+        changed = {**initial, 'summary': 'New canonical evidence',
+                   'evidence_refs': ['event:new', 'observed:' + newest.isoformat()]}
+        result = self.cycle([first, changed, initial, changed])
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['candidates_changed'], 1)
+        with self.db() as db:
+            row = db.execute('select generation,summary,evidence_refs from app_private.oom_manager_cases').fetchone()
+            counts = dict(db.execute('select event_type,count(*) from app_private.oom_manager_case_events group by event_type').fetchall())
+        self.assertEqual(row, (2, changed['summary'], sorted(changed['evidence_refs'])))
+        self.assertEqual(counts, {'created': 1, 'evidence_changed': 1})
+
+    def test_overlapping_reversed_batches_with_new_keys_serialize(self):
+        values = [self.value(str(i)) for i in range(30)]
+        self.seed(values[:15])
+        barrier = __import__('threading').Barrier(2)
+        def run(reverse):
+            barrier.wait(timeout=10)
+            return self.cycle(list(reversed(values)) if reverse else values)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(run, (False, True)))
+        self.assertTrue(all(row['success'] for row in results), results)
+        with self.db() as db:
+            count = db.execute('select count(*),max(generation) from app_private.oom_manager_cases').fetchone()
+            events = db.execute('select count(*) from app_private.oom_manager_case_events').fetchone()[0]
+        self.assertEqual(count, (30, 1))
+        self.assertEqual(events, 30)
+
+    def test_missing_lower_key_releases_higher_prefetch_lock_before_fallback(self):
+        threading = __import__('threading')
+        values = sorted([self.value('new-low-or-high'), self.value('existing-low-or-high')],
+            key=lambda row: worker_module.normalize_candidate(row, now=self.now)['case_id'])
+        lower, higher = values
+        self.seed([higher])
+        external = self.db()
+        self.addCleanup(external.close)
+        with external.cursor() as cur:
+            self.store._reconcile(cur, worker_module.normalize_candidate(lower, now=self.now), self.now)
+        external_pid = external.connection.info.backend_pid
+        prefetched, release_prefetch = threading.Event(), threading.Event()
+        original = _IsolatedCursor.execute
+        def gate(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if 'select dedupe_key,evidence_digest,generation,status' in sql:
+                prefetched.set()
+                if not release_prefetch.wait(timeout=5):
+                    raise AssertionError('prefetch test gate timed out')
+            return result
+        def finish_external():
+            with external:
+                external.execute('select case_id from app_private.oom_manager_cases where dedupe_key=%s for update',
+                                 (higher['dedupe_key'],))
+        with patch.object(_IsolatedCursor, 'execute', gate), ThreadPoolExecutor(max_workers=2) as pool:
+            worker = pool.submit(self.cycle, values)
+            self.assertTrue(prefetched.wait(timeout=5))
+            competing = pool.submit(finish_external)
+            try:
+                # Force the old inversion: the external transaction owns the
+                # lower key and is demonstrably waiting on our higher prelock.
+                limit = time.monotonic() + 3
+                blocked = False
+                with connect() as observer:
+                    while time.monotonic() < limit:
+                        blocked = bool(observer.execute('select cardinality(pg_blocking_pids(%s)) > 0',
+                                                        (external_pid,)).fetchone()[0])
+                        if blocked:
+                            break
+                        time.sleep(0.01)
+                self.assertTrue(blocked, 'competing transaction never reached the higher lock')
+            finally:
+                release_prefetch.set()
+            competing.result(timeout=5)
+            result = worker.result(timeout=5)
+        self.assertTrue(result['success'], result)
+        with self.db() as db:
+            count = db.execute('select count(*),max(generation) from app_private.oom_manager_cases').fetchone()
+        self.assertEqual(count, (2, 1))
+
+    def test_active_and_expired_delegated_generations_remain_immutable(self):
+        values = [self.value('active'), self.value('expired')]
+        self.seed(values)
+        with self.db() as db:
+            for index, value in enumerate(values):
+                db.execute('''update app_private.oom_manager_cases set status='delegated',
+                    assigned_worker_id='another-worker',lease_until=%s where dedupe_key=%s''',
+                    (self.now + timedelta(minutes=5 if index == 0 else -5), value['dedupe_key']))
+        self.cycle([{**row, 'summary': 'Competing changed evidence'} for row in values])
+        with self.db() as db:
+            rows = db.execute('select generation,summary,assigned_worker_id from app_private.oom_manager_cases').fetchall()
+        self.assertTrue(all(row == (1, values[0]['summary'], 'another-worker') for row in rows))
+
+    def test_expired_budget_starts_no_refresh_and_releases_only_its_claims(self):
+        values = [self.value(str(i), next_reassessment_at=self.now.isoformat()) for i in range(6)]
+        self.seed(values)
+        with self.db() as db:
+            db.execute('''update app_private.oom_manager_cases set assigned_worker_id='other',
+                status='delegated',lease_until=%s where dedupe_key=%s''',
+                (self.now + timedelta(minutes=5), values[0]['dedupe_key']))
+        with patch.object(worker_module, 'time', SimpleNamespace(monotonic=lambda: 51)):
+            result = self.cycle(values, deadline_monotonic=80,
+                refresh_batch=lambda _: self.fail('refresh after reserve'),
+                deliver=lambda *_a, **_k: self.fail('send after reserve'))
+        self.assertEqual(result['deadline_deferrals'], 5)
+        self.assertFalse(result['success'])
+        with self.db() as db:
+            owners = db.execute('select assigned_worker_id,count(*) from app_private.oom_manager_cases group by assigned_worker_id').fetchall()
+        self.assertEqual(dict(owners), {None: 5, 'other': 1})
+
+    def test_refresh_filters_confirmed_and_non_specialist_cases(self):
+        values = [self.value('confirmed', next_reassessment_at=self.now.isoformat()),
+                  self.value('nonfarm', specialist='SAM', next_reassessment_at=self.now.isoformat()),
+                  self.value('needed', next_reassessment_at=self.now.isoformat())]
+        self.seed(values)
+        with self.db() as db:
+            db.execute('update app_private.oom_manager_cases set last_delivery_digest=evidence_digest where dedupe_key=%s',
+                       (values[0]['dedupe_key'],))
+        refreshed = []
+        def refresh(cases):
+            refreshed.extend(row['dedupe_key'] for row in cases)
+            return {row['case_id']: values[2] for row in cases}
+        result = self.cycle(values, refresh_batch=refresh,
+            deliver=lambda row: {'success': True, 'delivery_confirmed': False, 'status': 'local_suppressed'})
+        self.assertTrue(result['success'], result)
+        self.assertEqual(refreshed, [values[2]['dedupe_key']])
+
+    def test_canonical_short_morning_language_and_replay_boundary(self):
+        from tests.test_oom_sakkie_daily_farm_manager import (
+            test_canonical_morning_briefs_cross_family_delivery_once,
+            test_morning_language_guard_reads_visible_html_and_still_rejects_english)
+        for language in ('af', 'en'):
+            for watchers in ('weaning', 'payment', 'both', 'empty'):
+                with self.subTest(language=language, watchers=watchers):
+                    test_canonical_morning_briefs_cross_family_delivery_once(language, watchers)
+        for answer, accepted in (
+            ('<b>AKSIE NODIG</b>\nBetaal die faktuur.', True),
+            ('<b>Aksie&nbsp;nodig!</b>\nBetaal die faktuur.', True),
+            ('<b>AKSIE NODIG</b>\nPlease confirm the payment.', False),
+            ('<b>AKSIE NODIG</b>\n<b>Please</b> confirm&#32;the payment.', False)):
+            with self.subTest(answer=answer):
+                test_morning_language_guard_reads_visible_html_and_still_rejects_english(answer, accepted)
+
+    def test_beacon_claimed_consumer_blocks_successor_then_retires_only_unconsumed_claim(self):
+        initial = self.value('beacon', specialist='BEACON')
+        self.seed([initial])
+        case_id = worker_module.normalize_candidate(initial, now=self.now)['case_id']
+        with self.db() as db:
+            for token in ('consumed', 'unconsumed'):
+                db.execute('''insert into app_private.oom_protected_action_claims
+                    (callback_token,action_kind,provider_message_id,status)
+                    values(%s,'beacon_campaign_review',%s,'active')''',
+                    (token, 'scheduled:' + case_id + ':G1'))
+            db.execute('''insert into app_private.beacon_protected_publication_consumers
+                (consumer_id,callback_token,worker_id,status,claimed_at,updated_at)
+                values('consumer','consumed','existing-worker','claimed',%s,%s)''', (self.now, self.now))
+        changed = {**initial, 'summary': 'New current canonical publication proposal'}
+        deferred = self.cycle([changed])
+        self.assertTrue(deferred['success'], deferred)
+        self.assertEqual(deferred['candidates_changed'], 0)
+        with self.db() as db:
+            self.assertEqual(db.execute('select generation from app_private.oom_manager_cases').fetchone()[0], 1)
+            db.execute("update app_private.beacon_protected_publication_consumers set status='contained'")
+        accepted = self.cycle([changed, changed])
+        self.assertEqual(accepted['candidates_changed'], 1)
+        with self.db() as db:
+            claims = dict(db.execute('select callback_token,status from app_private.oom_protected_action_claims').fetchall())
+            generation = db.execute('select generation from app_private.oom_manager_cases').fetchone()[0]
+        self.assertEqual(generation, 2)
+        self.assertEqual(claims, {'consumed': 'active', 'unconsumed': 'changed'})
+
+    def test_terminal_replay_is_one_transition_and_database_error_stays_fatal(self):
+        initial = self.value('terminal')
+        self.seed([initial])
+        terminal = {**initial, 'terminal_state': 'completed', 'summary': 'Canonical work completed'}
+        result = self.cycle([terminal, terminal])
+        self.assertEqual(result['candidates_changed'], 1)
+        with self.db() as db:
+            row = db.execute('select status,generation from app_private.oom_manager_cases').fetchone()
+            count = db.execute("select count(*) from app_private.oom_manager_case_events where event_type='completed'").fetchone()[0]
+        self.assertEqual(row, ('completed', 2))
+        self.assertEqual(count, 1)
+        with patch.object(self.store, '_reconcile', side_effect=worker_module.ManagerCaseError('local_invariant_failure')):
+            failed = self.cycle([initial])
+        self.assertFalse(failed['success'])
+        self.assertEqual(failed['failure_kind'], 'ManagerCaseError')
+        with self.db() as db:
+            record = db.execute('select status,case_counts from app_private.oom_manager_worker_cycles where cycle_id=%s',
+                                (failed['cycle_id'],)).fetchone()
+        self.assertEqual(record[0], 'failed')
+        self.assertEqual(record[1]['failure']['code'], 'local_invariant_failure')
+
+    def test_native_daily_restart_does_not_repeat_an_ambiguous_provider_attempt(self):
+        from modules.oom_sakkie import daily_farm_manager as daily
+        from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+        from tests.test_oom_sakkie_daily_farm_manager import store, NOW
+        state, family, sends = store(), {}, []
+        def daily_store(action, identity, payload):
+            if action == 'load_daily':
+                rows = [row for row in state.rows.values()
+                    if row.get('daily_identity') == identity
+                    and row.get('status') in {'presented', 'unchanged', 'provider_ambiguous'}
+                    and row.get('owner_user_id') == str(payload.get('owner_user_id'))
+                    and row.get('chat_id') == str(payload.get('chat_id'))]
+                return rows[-1] if rows else None
+            return state(action, identity, payload)
+        def family_store(action, identity, payload):
+            if action == 'load':
+                return [row for row in family.values() if row.get('card_mission_id') == identity]
+            created = identity not in family
+            if created:
+                family[identity] = dict(payload)
+            return {'success': True, 'created': created}
+        def sender(*args):
+            sends.append(args)
+            return ({'success': False, 'status': 'provider_outcome_ambiguous'} if len(sends) == 1
+                    else {'success': True, 'telegram_message_id': 'local-new-day'})
+        def deliver(parsed, value, **kwargs):
+            self.assertIsNone(kwargs.get('delivery_retry_authority'))
+            return deliver_family_result(parsed, value, event_store=family_store, sender=sender, **kwargs)
+        kwargs = dict(owner_user_id='77', chat_id='77', specialist_results=[],
+            litter_rows=[{'Litter_ID': 'LOCAL-LITTER', 'Sow_Pig_ID': 'LOCAL-SOW',
+                'Sow_Tag_Number': 'X100', 'Litter_Status': 'Active',
+                'Wean_Date': '2026-08-09', 'Weaned_Count': None}],
+            now=NOW, language='af', deliver=deliver, store=daily_store,
+            semantic_prioritizer=lambda rows, **_: list(rows))
+        # Match the production store identity so the duplicate daily claim
+        # re-enters the actual family lifecycle, where attempt identity guards it.
+        with patch.object(daily, 'daily_farm_manager_store', daily_store):
+            first = daily.run_daily_farm_manager(**kwargs)
+            repeat = daily.run_daily_farm_manager(**kwargs)
+        self.assertFalse(first['success'])
+        self.assertFalse(repeat['success'])
+        self.assertEqual(len(sends), 1)
+        self.assertEqual(sum(row['state'] == 'delivery_attempted' for row in family.values()), 1)
+        self.assertFalse(any('RETRY' in identity for identity in family))
+        old_family = dict(family)
+        old_daily = dict(state.rows)
+        with patch.object(daily, 'daily_farm_manager_store', daily_store):
+            before_due = daily.run_daily_farm_manager(**{**kwargs, 'now': NOW + timedelta(days=1, hours=-1)})
+            self.assertEqual(before_due['status'], 'daily_manager_not_due')
+            self.assertEqual(len(sends), 1)
+            next_day = daily.run_daily_farm_manager(**{**kwargs, 'now': NOW + timedelta(days=1)})
+            repeat_next_day = daily.run_daily_farm_manager(**{**kwargs, 'now': NOW + timedelta(days=1)})
+        self.assertEqual(next_day['status'], 'daily_manager_presented')
+        self.assertEqual(repeat_next_day['status'], 'daily_manager_unchanged_silent')
+        self.assertEqual(len(sends), 2)
+        self.assertTrue(all(family[key] == value for key, value in old_family.items()))
+        self.assertTrue(all(state.rows[key] == value for key, value in old_daily.items()))
+        self.assertFalse(any('RETRY' in identity for identity in family))
+
+    def test_delayed_owner_answer_rebuilds_current_day_without_reopening_old_day(self):
+        from modules.oom_sakkie import morning_runtime as morning
+        from modules.oom_sakkie import daily_farm_manager as daily
+        from tests.test_oom_sakkie_daily_farm_manager import store
+        from tests.test_oom_sakkie_morning_runtime import _two_manager_env, _specialist
+        state, loaded_dates, sends = store(), [], []
+        parsed = {'telegram_user_id': '77', 'telegram_chat_id': '77',
+            'telegram_chat_type': 'private', 'provider_message_id': 'old-answer',
+            'provider_timestamp': '2026-08-10T05:00:00+00:00', 'text': 'Recorded answer'}
+        original_parsed = dict(parsed)
+        historical = {'daily_identity': 'OOM-DAILY-FARM-MANAGER-2026-08-10',
+            'status': 'provider_ambiguous', 'delivery_definitely_not_sent': False}
+        state.rows['historical-ambiguous-outcome'] = dict(historical)
+        def daily_store(action, identity, payload):
+            if action == 'load_daily':
+                loaded_dates.append(identity)
+                if identity == historical['daily_identity']:
+                    self.fail('delayed answer reopened historical daily identity')
+            return state(action, identity, payload)
+        current_time = [datetime(2026, 8, 11, 2, 0, tzinfo=timezone.utc)]
+        class ProcessingClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current_time[0]
+        kwargs = dict(environ=_two_manager_env(), store=daily_store,
+            herd_loader=lambda: _specialist('herdmaster'),
+            rootline_loader=lambda: _specialist('rootline'),
+            litter_loader=lambda: {'allocation_inputs': {'litter_rows': []}},
+            sales_loader=lambda: ({'success': True, 'sales_transactions': []}, 200),
+            deliver=lambda *args, **kw: sends.append(kw['mission_id']) or {
+                'success': True, 'telegram_message_id': 'current-day-card', 'telegram_sends': 1})
+        with patch.object(morning, 'datetime', ProcessingClock), patch.object(daily, 'daily_farm_manager_store', daily_store):
+            before_due = morning.reassess_current_brief_after_owner_answer(parsed, **kwargs)
+            self.assertEqual(before_due['status'], 'daily_manager_not_due')
+            self.assertEqual(sends, [])
+            current_time[0] = datetime(2026, 8, 11, 5, 0, tzinfo=timezone.utc)
+            current = morning.reassess_current_brief_after_owner_answer(parsed, **kwargs)
+            repeated = morning.reassess_current_brief_after_owner_answer(parsed, **kwargs)
+        self.assertEqual(current['status'], 'daily_manager_presented')
+        self.assertEqual(repeated['status'], 'daily_manager_unchanged_silent')
+        self.assertEqual(len(sends), 1)
+        self.assertTrue(sends[0].startswith('OOM-DAILY-FARM-MANAGER-2026-08-11:'))
+        self.assertEqual(set(loaded_dates), {'OOM-DAILY-FARM-MANAGER-2026-08-11'})
+        self.assertEqual(parsed, original_parsed)
+        self.assertEqual(state.rows['historical-ambiguous-outcome'], historical)
 
 
 @pytest.fixture(scope="module", autouse=True)

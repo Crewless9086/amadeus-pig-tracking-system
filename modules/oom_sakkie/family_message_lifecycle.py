@@ -11,6 +11,7 @@ import hashlib
 import html
 import json
 import os
+import re
 import time
 from typing import Any, Callable, Mapping
 
@@ -153,7 +154,8 @@ def _afrikaans_campaign_objective(value: Any) -> str:
 
 
 def _looks_afrikaans(text: str) -> bool:
-    words = {word.strip(".,:;!?()[]<>").casefold() for word in str(text).split()}
+    visible = html.unescape(re.sub(r"<[^>]*>", " ", str(text)))
+    words = {word.strip(".,:;!?()[]<>").casefold() for word in visible.split()}
     english = {"the", "and", "confirm", "please", "which", "want", "completed",
         "received", "recorded", "nothing", "printed", "stored", "remaining"}
     afrikaans = words & {"die", "het", "is", "nie", "geen", "word", "bevestig",
