@@ -67,6 +67,20 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
     status = str(localized.get("status") or "").casefold()
     answer = str(localized.get("answer") or "").strip()
     original_answer = answer
+    # These messages are assembled by the typed treatment renderer. Reported
+    # product names and notes retain their original language inside its output.
+    structured_treatment = (
+        localized.get("recipient_render_contract") == "specialist_structured_recipient_v1"
+        and localized.get("recipient_language") == "af"
+        and answer.startswith("<b>Eerste behandeling</b>\n")
+        and ((status in {"first_treatment_committed", "first_treatment_replayed_noop"}
+              and localized.get("canonical_readback_verified") is True)
+             or (status == "litter_first_treatment_preview_ready"
+                 and localized.get("action_kind") == "herdmaster_record_litter_first_treatment"
+                 and bool(localized.get("callback_token")))
+             or (status == "litter_first_treatment_clarification_required"
+                 and localized.get("question_count") == 1
+                 and isinstance(localized.get("retained_facts"), Mapping))))
     if answer:
         identity = str(localized.get("specialist_identity") or localized.get("specialist")
                        or specialist or "OOM SAKKIE").replace("_", " ")
@@ -120,7 +134,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
         elif (localized.get("recipient_render_contract") == "specialist_structured_recipient_v1"
               and str(localized.get("recipient_language") or "").casefold().startswith("af")
               and answer.startswith("<b>") and "</b>" in answer
-              and _looks_afrikaans(answer)):
+              and (structured_treatment or _looks_afrikaans(answer))):
             # A specialist structured renderer already owns recipient wording.
             answer = original_answer
         elif "change" in status or "correct" in status:
@@ -158,7 +172,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             rows.append(translated)
         localized["reply_markup"] = {**markup, "inline_keyboard": rows}
     localized["recipient_language"] = "af"
-    if answer and answer == original_answer and not preserves_recipient_text and not _looks_afrikaans(answer):
+    if answer and answer == original_answer and not preserves_recipient_text and not structured_treatment and not _looks_afrikaans(answer):
         localized["recipient_language_render_unrecognized"] = True
     return localized
 
@@ -294,6 +308,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         and str(result.get("status") or "") in {
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded",
             "payment_state_recorded", "payment_state_replay_noop",
+            "weaning_day_committed", "weaning_day_replayed_withheld",
+            "first_treatment_committed", "first_treatment_replayed_noop",
             "protected_preview_cancelled", "protected_preview_change_requested",
             "segment_started", "active_segment_owned", "private_media_review_recorded",
             "private_media_review_presented"

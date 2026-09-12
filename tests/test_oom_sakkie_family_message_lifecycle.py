@@ -438,12 +438,13 @@ def test_claim_bound_recovery_restores_earlier_truth_after_false_latest_edit_onc
     assert replay["telegram_edits"]==0 and len(memory.sent)==1 and len(memory.edited)==3
 
 
-def test_orphaned_exclusive_completion_edit_claim_gets_one_idempotent_recovery():
+@pytest.mark.parametrize('completion_status', ['completed', 'weaning_day_committed', 'weaning_day_replayed_withheld'])
+def test_orphaned_exclusive_completion_edit_claim_gets_one_idempotent_recovery(completion_status):
     memory=Memory();mission="OOM-BEACON-MEDIA-ALBUM"
     deliver_family_result(PARSED,RESULT,specialist="BEACON_MEDIA",mission_id=mission,
         card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
     follow_parsed={**PARSED,"provider_message_id":"504"}
-    completion={**RESULT,"status":"completed","answer":"Album complete.",
+    completion={**RESULT,"status":completion_status,"answer":"Album complete.",
         "owner_visible_completion_policy":"verified_edit_or_new_message"}
     interrupted=True
     def crash_after_claim(action,identity,payload):
@@ -864,11 +865,12 @@ def test_protected_completion_without_card_sends_one_message_only():
     assert replay["telegram_sends"]==replay["telegram_edits"]==0
 
 
-def test_protected_completion_ambiguous_edit_retries_same_card_once_without_second_message():
+@pytest.mark.parametrize('completion_status', ['completed', 'weaning_day_committed', 'weaning_day_replayed_withheld'])
+def test_protected_completion_ambiguous_edit_retries_same_card_once_without_second_message(completion_status):
     memory=Memory();mission="OOM-PROTECTED-AMBIGUOUS"
     deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
         card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
-    completed={"success":True,"status":"completed","answer":"Recorded once.",
+    completed={"success":True,"status":completion_status,"answer":"Recorded once.",
         "owner_visible_completion_policy":"verified_edit_or_new_message"}
     inbound={**PARSED,"provider_message_id":"501"}
     edits=[]

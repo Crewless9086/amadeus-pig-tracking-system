@@ -54,7 +54,8 @@ def _bind_protected_preview_card(result, delivery):
     if (delivery.get("status") == "protected_delivery_replayed_noop"
             and delivery.get("delivery_confirmed") is True):
         delivery = {**delivery, "telegram_message_id": str(delivery.get("provider_card_message_id") or "")}
-    message_id=str(delivery.get("telegram_message_id") or "")
+    message_id=str(delivery.get("telegram_message_id") or (
+        delivery.get("provider_card_message_id") if delivery.get("delivery_confirmed") is True else "") or "")
     if not token or not delivery.get("success"):
         return delivery
     if not message_id:
@@ -473,8 +474,12 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     protected_result, protected_status = handle_protected_action_input(parsed,gateway_authority)
     if protected_result.get("handled"):
         parsed = _retained_callback_delivery_parsed(parsed,protected_result)
+        from modules.oom_sakkie.herdmaster_litter_weaning_runtime import weaning_delivery_input
+        parsed = weaning_delivery_input(parsed, protected_result)
+        from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
+        parsed = first_treatment_delivery_input(parsed, protected_result)
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0,"status":"protected_replay_noop"}
-          if protected_result.get("suppress_owner_delivery") else deliver_family_result(
+          if protected_result.get("suppress_owner_delivery") or not protected_result.get("answer") else deliver_family_result(
             parsed,protected_result,specialist=str(protected_result.get("specialist") or "HERDMASTER"),
             mission_id=str(protected_result.get("mission_id") or ""),
             card_mission_id=str(protected_result.get("card_mission_id") or protected_result.get("mission_id") or "")))
@@ -519,6 +524,15 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
+
+    treatment_result, treatment_status = handle_litter_first_treatment_message(parsed, gateway_authority)
+    if treatment_result.get("handled"):
+        return _protected_gateway_response(parsed, policy, treatment_result, treatment_status)
+
+    from modules.oom_sakkie.herdmaster_litter_weaning_runtime import handle_litter_weaning_message
+    weaning_result, weaning_status = handle_litter_weaning_message(parsed, gateway_authority)
+    if weaning_result.get("handled"):
+        return _protected_gateway_response(parsed, policy, weaning_result, weaning_status)
 
     documents_result, documents_status = handle_documents_green_request(parsed, environ=source)
     if documents_result.get("handled"):
@@ -796,22 +810,6 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "reply_transport": "backend_handles_owner_task_delivery",
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, weight_status if delivery.get("success") else 202
-
-    treatment_result, treatment_status = handle_litter_first_treatment_message(parsed, gateway_authority)
-    if treatment_result.get("handled"):
-        delivery = deliver_family_result(parsed, treatment_result, specialist="HERDMASTER",
-            mission_id=str(treatment_result.get("mission_id") or ""),
-            card_mission_id=str(treatment_result.get("card_mission_id") or ""))
-        delivery = _bind_protected_preview_card(treatment_result, delivery)
-        body, _ = _gateway_result(delivery.get("success") is True,
-            str(treatment_result.get("status") or "litter_first_treatment_contained"), policy, treatment_status)
-        body.update({"telegram_user_id": parsed["telegram_user_id"],
-            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
-            "answer": treatment_result.get("answer", ""), "message": treatment_result,
-            "delivery": delivery, "records_audit_trace": True,
-            "reply_transport": "backend_handles_owner_task_delivery",
-            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
-        return body, treatment_status if delivery.get("success") else 202
 
     litter_result, litter_status = handle_farrowing_litter_message(parsed, gateway_authority)
     if litter_result.get("handled"):
@@ -1561,9 +1559,13 @@ def _health_gateway_response(parsed, policy, health_result, health_status):
 
 def _protected_gateway_response(parsed, policy, result, status):
     parsed = _retained_callback_delivery_parsed(parsed,result)
+    from modules.oom_sakkie.herdmaster_litter_weaning_runtime import weaning_delivery_input
+    parsed = weaning_delivery_input(parsed, result)
+    from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
+    parsed = first_treatment_delivery_input(parsed, result)
     delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
                  "status": "protected_replay_noop"}
-                if result.get("suppress_owner_delivery") else deliver_family_result(
+                if result.get("suppress_owner_delivery") or not str(result.get("answer") or "").strip() else deliver_family_result(
                     parsed, result, specialist=str(result.get("specialist") or "HERDMASTER"),
                     mission_id=str(result.get("mission_id") or ""),
                     card_mission_id=str(result.get("card_mission_id") or result.get("mission_id") or "")))

@@ -305,17 +305,26 @@ def _herdmaster(now):
     for row in snapshot.get("litter_rows") or ():
         sow = str(row.get("Sow_Tag_Number") or "").strip()
         status = str(row.get("Litter_Status") or "").strip().casefold()
-        if sow.casefold() == "molly" and status not in {"completed", "closed", "weaned"}:
+        if status == "active" and (row.get("Active_Pig_Count") is None or int(row.get("Active_Pig_Count") or 0) > 0):
             litter_id = str(row.get("Litter_ID") or "unknown")
             farrowing = str(row.get("Farrowing_Date") or "unknown")
             wean = str(row.get("Wean_Date") or "unknown")
             weaned = row.get("Weaned_Count")
             treatment_state = str(row.get("first_treatment_evidence_state") or "unknown").casefold()
+            if treatment_state in {"completed", "skipped"}:
+                continue
+            if treatment_state == "not_due" and sow.casefold() != "molly":
+                continue
+            if litter_id == "unknown":
+                continue
+            identity = str(row.get("Sow_Name") or sow or row.get("Sow_Pig_ID") or litter_id)
+            case_key = ("herdmaster:molly-active-litter" if sow.casefold() == "molly"
+                else "herdmaster:litter-first-treatment:" + litter_id)
             treatment_due = (treatment_state == "due"
                              and row.get("first_treatment_attention_due") is True
                              and int(row.get("Active_Pig_Count") or 0) > 0)
             treatment_date = str(row.get("first_treatment_attention_date") or "unknown")
-            candidates.append(_candidate("herdmaster:molly-active-litter", "HERDMASTER", "due",
+            candidates.append(_candidate(case_key, "HERDMASTER", "due",
                 [f"litter:{litter_id}", f"status:{status or 'unknown'}",
                  f"farrowing:{farrowing}", f"wean_due:{wean}",
                  f"weaned_count:{weaned if weaned is not None else 'unknown'}",
@@ -325,12 +334,16 @@ def _herdmaster(now):
                  f"observed:{snapshot_observed.isoformat()}"],
                 ([] if treatment_due or treatment_state in {"not_due", "completed", "skipped"}
                  else [f"first_treatment_{treatment_state}_reconciliation"]),
-                ("Molly's litter first treatment is due and ready."
+                (f"{identity}'s litter first treatment is due and ready."
                  if treatment_due else
-                 f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}."),
-                ("Molly's litter — perform the first treatment now in the existing litter treatment journey."
+                 (f"{identity}'s litter {litter_id} has {treatment_state} first-treatment evidence."
+                  if treatment_state != "not_due" else
+                  f"{identity}'s litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}.")),
+                (f"{identity}'s litter — report the actual first treatment in the existing litter treatment journey."
                  if treatment_due else
-                 "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation."),
+                 ("HERDMASTER must reconcile the existing first-treatment records and current piglets before another treatment preview."
+                  if treatment_state != "not_due" else
+                  "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.")),
                 now + timedelta(minutes=30),
                 task_class=("physical_action_due" if treatment_due else
                             ("informational_watch" if treatment_state in {
@@ -340,7 +353,7 @@ def _herdmaster(now):
                 physical_work_ready=treatment_due,
                 physical_assignee=("Farm team" if treatment_due else None),
                 message_family=("litter_first_treatment" if treatment_due else "litter_care"),
-                presentation_identity={"human_name": "Molly",
+                presentation_identity={"human_name": identity,
                                        "stable_reference": litter_id}))
     return candidates
 

@@ -9,16 +9,19 @@ from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authori
 
 NATURAL_CONFIRM=re.compile(r"^(?:i\s+confirm(?:\s+this)?|confirm(?:\s+all)?|yes[, ]*confirm|ek\s+bevestig(?:\s+alles)?|bevestig(?:\s+alles)?)\s*[.!]?$",re.I)
 OOM_SAKKIE_MANAGER_ACTION_KINDS=frozenset({"mortality", "herdmaster_record_litter_first_treatment",
-    "herdmaster_record_litter_piglet_deaths"})
+    "herdmaster_record_litter_piglet_deaths", "herdmaster_record_litter_weaning"})
 OOM_SAKKIE_MANAGER_ACTION_CAPABILITIES={
     "mortality": "mortality_confirmation",
     "herdmaster_record_litter_first_treatment": "treatment",
     "herdmaster_record_litter_piglet_deaths": "mortality_confirmation",
+    "herdmaster_record_litter_weaning": "weaning",
 }
 
 def handle_protected_action_input(parsed, gateway_authority, *, callback_data="",
                                   connect_factory=None, health_handler=None,
-                                  irrigation_handler=None, documents_handler=None):
+                                  irrigation_handler=None, documents_handler=None,
+                                  weaning_semantic_confirmation=False,
+                                  first_treatment_semantic_confirmation=False):
     owner=str(parsed.get("telegram_user_id") or "");chat=str(parsed.get("telegram_chat_id") or "")
     if (not validates_gateway_owner_authority(gateway_authority) or not owner or owner!=chat
             or gateway_authority.owner_user_id != owner
@@ -31,6 +34,12 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         active=resolve_natural_confirmation(owner_user_id=owner,private_chat_id=chat,
             reply_to_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
         if not active:return {"handled":False,"status":"protected_confirmation_not_unambiguous"},200
+        if (active.get("preview_payload") or {}).get("contract_version") == "herdmaster_record_litter_weaning":
+            # Weaning's natural language confirmation goes through the typed
+            # semantic adapter; callback buttons remain deterministic inputs.
+            return {"handled":False,"status":"weaning_semantic_confirmation_required"},200
+        if (active.get("preview_payload") or {}).get("contract_version") == "herdmaster_record_litter_first_treatment":
+            return {"handled":False,"status":"first_treatment_semantic_confirmation_required"},200
         data=f"{CALLBACK_PREFIX}{active['callback_token']}:confirm"
     try:
         allowed = None
@@ -42,7 +51,9 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           provider_message_id=str(parsed.get("provider_message_id") or parsed.get("callback_query_id") or ""),
           provider_timestamp=str(parsed.get("provider_timestamp") or ""),
           source_card_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory,
-          allowed_action_kinds=allowed)
+          allowed_action_kinds=allowed,
+          weaning_semantic_confirmation=weaning_semantic_confirmation,
+          first_treatment_semantic_confirmation=first_treatment_semantic_confirmation)
     except Exception as exc:
         from modules.oom_sakkie.bounded_postgres_read import is_database_unavailable
         if not is_database_unavailable(exc):
@@ -54,6 +65,10 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "durable_claim_truth_loaded":False,"current_segment_consumed":None,
           "segment_consumption_proven":False,"recovery_required":True},503
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
+        if claimed.get("action_kind")=="herdmaster_record_litter_weaning":
+            from modules.oom_sakkie.herdmaster_litter_weaning_runtime import execute_claimed_litter_weaning
+            result, result_status = execute_claimed_litter_weaning(claimed, parsed, connect_factory=connect_factory)
+            return {"handled":True, **result, "delivery_recovery_required":True}, result_status
         if claimed.get("action_kind")=="mortality":
             result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
             from modules.oom_sakkie.herdmaster_health_loss_runtime import mortality_completion_recovery_result
@@ -77,12 +92,9 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
               "owner_visible_completion_policy":"verified_edit_or_new_message",
               "delivery_recovery_required":True,"writes_farm_data":False},200
         if claimed.get("action_kind")=="herdmaster_record_litter_first_treatment":
-            result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
-            return {"handled":True,**result,"specialist":"HERDMASTER",
-              "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
-              "reply_markup":{"inline_keyboard":[]},
-              "owner_visible_completion_policy":"verified_edit_or_new_message",
-              "delivery_recovery_required":True,"writes_farm_data":False},200
+            from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import execute_claimed_litter_first_treatment
+            result, result_status = execute_claimed_litter_first_treatment(claimed, parsed, connect_factory=connect_factory)
+            return {"handled":True, **result, "delivery_recovery_required":True}, result_status
         if claimed.get("action_kind")=="herdmaster_record_litter_piglet_deaths":
             result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
             return {"handled":True,**result,"specialist":"HERDMASTER",
@@ -360,6 +372,23 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         else:
             contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         return {"handled":True,**result},result_status
+    if claimed["action_kind"]=="herdmaster_record_litter_weaning":
+        from modules.oom_sakkie.herdmaster_litter_weaning_runtime import execute_claimed_litter_weaning
+        try:
+            result, result_status = execute_claimed_litter_weaning(claimed, parsed, connect_factory=connect_factory)
+        except Exception:
+            return {"handled":True,"success":False,"status":"litter_weaning_recovery_pending",
+                "recovery_required":True,"writes_farm_data":None},503
+        if result.get("success"):
+            try:
+                complete_claim(claimed["callback_token"], result, connect_factory=connect_factory)
+            except Exception:
+                return {"handled":True,"success":False,"status":"litter_weaning_recovery_pending",
+                    "recovery_required":True,"operation_committed":True,"operation_id":result['operation_id'],
+                    "writes_farm_data":not result.get('replay_withheld')},503
+        elif not result.get("recovery_required"):
+            contain_claim(claimed["callback_token"], result, connect_factory=connect_factory)
+        return {"handled":True, **result}, result_status
     if claimed["action_kind"]=="herdmaster_record_litter_first_treatment":
         from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import (
             execute_claimed_litter_first_treatment,
@@ -371,15 +400,16 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             return {"handled":True,"success":False,
                 "status":"litter_first_treatment_recovery_pending",
                 "answer":"The protected confirmation was retained, but canonical completion is not yet proven. Do not confirm again.",
-                "writes_farm_data":False,"recovery_required":True,
+                "writes_farm_data":None,"recovery_required":True,
                 "error_type":type(exc).__name__},503
         if result.get("success") is True:
-            completion=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
-            result=completion.get("result") if isinstance(completion.get("result"),dict) else result
-            if completion.get("replayed") is True:
-                result={**result,"answer":"","suppress_owner_delivery":True,
-                    "writes_farm_data":False,"status":"litter_first_treatment_replayed_noop"}
-        elif result_status < 500:
+            try:
+                complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            except Exception:
+                return {"handled":True,"success":False,"status":"litter_first_treatment_recovery_pending",
+                    "recovery_required":True,"operation_committed":True,"operation_id":result['operation_id'],
+                    "writes_farm_data":not result.get('replay_withheld')},503
+        elif not result.get("recovery_required"):
             contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         return {"handled":True,**result},result_status
     if claimed["action_kind"]=="herdmaster_record_litter_piglet_deaths":

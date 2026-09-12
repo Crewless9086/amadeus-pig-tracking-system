@@ -101,18 +101,19 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         )
         self.assertEqual(connection.exit_count, 1)
 
-    def test_litter_skip_projection_tolerates_pre_migration_canonical_view(self):
-        source = inspect.getsource(
-            farm_supabase_read_service._get_allocation_input_rows_queries
-        )
-        self.assertIn(
-            "to_jsonb(litter)->>'first_treatment_skipped_at'",
-            source,
-        )
-        self.assertNotIn(
-            "litter.litter_status, litter.first_treatment_skipped_at",
-            source,
-        )
+    def test_explicit_skip_retires_first_treatment_in_litter_projection(self):
+        def fetched(query, *args, **kwargs):
+            if 'from public.current_canonical_litters litter' in query:
+                return [{'litter_id':'LIT-SYNTHETIC-SKIP','litter_status':'Active',
+                    'farrowing_date':date(2026,8,1),'active_pig_count':2,
+                    'first_treatment_skipped_at':date(2026,8,6)}]
+            return []
+        with patch.object(farm_supabase_read_service,'_current_state_rows',return_value=[]), \
+             patch.object(farm_supabase_read_service,'_fetch_all',side_effect=fetched):
+            result = farm_supabase_read_service._get_allocation_input_rows_queries(None,today=date(2026,8,10))
+        row = result['litter_rows'][0]
+        self.assertEqual(row['first_treatment_evidence_state'],'skipped')
+        self.assertFalse(row['first_treatment_attention_due'])
 
     def test_breeding_attention_snapshot_fails_whole_inventory_on_slow_supporting_stage(self):
         connection = self._SnapshotConnection("from public.mating_events")
