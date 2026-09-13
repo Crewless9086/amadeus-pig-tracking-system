@@ -137,14 +137,22 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     provider_confirmed = bool(message_id and ((delivery or {}).get("success") is True
         or (delivery or {}).get("provider_delivery_confirmed") is True))
     if not provider_confirmed:
+        # Only this exact guard result proves rejection before family store or
+        # provider access. Transport failures retain their existing ambiguity.
+        language_rejected = ((delivery or {}).get("status") == "recipient_language_render_unrecognized"
+                             and (delivery or {}).get("delivery_definitely_not_sent") is True)
+        failure_status = "recipient_language_render_unrecognized" if language_rejected else "provider_ambiguous"
         store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
-            "material_digest": digest, "status": "provider_ambiguous",
+            "material_digest": digest, "status": failure_status,
             "observed_at": now.isoformat(), "telegram_sends": 0,
             "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
             "delivery_definitely_not_sent":
                 (delivery or {}).get("delivery_definitely_not_sent") is True})
-        return {"success": False, "status": "daily_manager_delivery_ambiguous",
+        return {"success": False, "status": ("daily_manager_recipient_language_rejected" if language_rejected else
+                                            "daily_manager_delivery_ambiguous"),
                 "daily_identity": identity, "material_digest": digest,
+                **({"delivery_definitely_not_sent": True, "delivery_failure_reason": failure_status}
+                   if language_rejected else {}),
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
     if delivery.get("success") is not True:
         store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
@@ -375,6 +383,8 @@ def daily_farm_manager_store(action, identity, payload):
 
 
 def _load_daily(identity, binding):
+    # A rendering rejection is retained as an outcome, but cannot supersede
+    # the confirmed card used as the baseline for a later replacement.
     with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'daily_farm_manager'

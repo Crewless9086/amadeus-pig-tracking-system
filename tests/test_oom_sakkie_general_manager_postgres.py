@@ -682,6 +682,50 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertTrue(result['success'], result)
         self.assertEqual(refreshed, [values[2]['dedupe_key']])
 
+    def test_language_rejection_retains_confirmed_replacement_baseline(self):
+        from modules.oom_sakkie import daily_farm_manager as daily
+        identity = 'OOM-DAILY-FARM-MANAGER-2026-09-13'
+        confirmed = {'daily_identity': identity, 'owner_user_id': 'local-af',
+            'chat_id': 'local-af', 'material_digest': 'A', 'status': 'presented',
+            'telegram_message_id': 'confirmed-A'}
+        rejected = {**confirmed, 'material_digest': 'B',
+            'status': 'recipient_language_render_unrecognized',
+            'delivery_definitely_not_sent': True}
+        rejected.pop('telegram_message_id')
+        other_owner = {**confirmed, 'owner_user_id': 'other', 'chat_id': 'other',
+                       'telegram_message_id': 'other-owner-card'}
+        other_date = {**confirmed, 'daily_identity': 'OOM-DAILY-FARM-MANAGER-2026-09-14',
+                      'telegram_message_id': 'other-date-card'}
+        with self.db() as db:
+            db.execute('''create table app_private.daily_receipts(
+                review_event_id text primary key,event_source text,review_json jsonb,created_at timestamptz)''')
+            for index, value in enumerate((confirmed, rejected, other_owner, other_date)):
+                db.execute('insert into app_private.daily_receipts values(%s,%s,%s::jsonb,%s)',
+                    (str(index), daily.EVENT_SOURCE, json.dumps({'daily_farm_manager': value}),
+                     self.now + timedelta(seconds=index)))
+
+        class ReceiptCursor(_IsolatedCursor):
+            def execute(self, sql, params=None):
+                return super().execute(sql.replace('public.sam_live_stock_conversation_review_events',
+                                                   'app_private.daily_receipts'), params)
+
+        class ReceiptConnection(_IsolatedConnection):
+            def cursor(self):
+                return ReceiptCursor(self.connection.cursor(), self.owner)
+
+        # Execute the actual production selection SQL; relocate only its table.
+        with patch.object(daily, 'connect_bounded_read',
+                lambda: ReceiptConnection(psycopg.connect(URL), self)):
+            prior = daily._load_daily(identity, {'owner_user_id': 'local-af', 'chat_id': 'local-af'})
+            self.assertEqual(prior, confirmed)
+            self.assertIsNone(daily._load_daily(identity,
+                {'owner_user_id': 'local-af', 'chat_id': 'other'}))
+        with self.db() as db:
+            retained = db.execute('select review_json from app_private.daily_receipts where review_event_id=%s',
+                                  ('1',)).fetchone()[0]
+            self.assertEqual(retained, {'daily_farm_manager': rejected})
+            self.assertEqual(db.execute('select count(*) from app_private.daily_receipts').fetchone()[0], 4)
+
     def test_canonical_short_morning_language_and_replay_boundary(self):
         from tests.test_oom_sakkie_daily_farm_manager import (
             test_canonical_morning_briefs_cross_family_delivery_once,
