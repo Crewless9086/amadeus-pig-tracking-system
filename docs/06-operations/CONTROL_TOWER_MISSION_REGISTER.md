@@ -1,5 +1,38 @@
 # Control Tower Mission Register
 
+## 2026-09-13 - PR1335 hosted fixture failure and local one-line amendment
+
+Approved 4859d8f1 was published as PR1335 and admitted under the existing morning
+containment child. Four of five required checks passed. Audit34748218737 attempt1
+executed31 PostgreSQL tests successfully, then177 language tests passed and one
+mocked lifecycle test failed because the hosted DATABASE_URL was configured.
+Later audit steps were skipped following that failure. No merge or deployment
+occurred; the required audit gate remains mandatory. The trusted issuer completed.
+
+Local descendant b7e9afed8269d395602f9c3b48abc6235e38a8ee, tree
+3cb828d64ad81c3f7db554f734dbc93041018645, adds one explicit environment-fixture
+line to the existing mocked test. All ten predecessor files remain identical;
+the combined rollback therefore covers eleven files. The configured-environment
+language selection passed178 and the absent-environment combined selection242,
+without skips. Independent execution proved both parent environment cases pass
+and restore environment/helper state. Application code and workflow are unchanged.
+The prior configured-source negative control reproduced177pass/1fail. The retained
+19 legacy failures are unresolved; no hosted or business gate is waived.
+
+The owner's approval explicitly requires a revised decision for the changed tree.
+The exact amended proposal and execution requirements are sealed in
+.tmp/control-tower-morning-ci-fixture-20260913/. Actual successor and merge
+31/178 hosted qualification remains required, with all five candidate checks,
+four merge push test checks and current candidate admission authority. Earliest
+activation remains September14 SAST, followed by prompt first-two-cycle review,
+immediate diagnosis of a failure, genuine06:45 Afrikaans delivery and later follow-up.
+
+Existing4859 admission, all eleven open business acceptance rows, deployed webd3,
+cron203a, mortality/Plaas, qualified herd/farm work, prepared voice edits and all
+migration/capability/ROOTLINE/CHARLIE holds remain preserved. This record grants
+no authority for the amended tree or any production, provider or farm operation.
+
+
 ## 2026-09-13 - Genuine morning failure has a qualified combined local repair
 
 Continue existing OMQ-20260813-03-MORNING-CONTAINMENT. The approved web repair
