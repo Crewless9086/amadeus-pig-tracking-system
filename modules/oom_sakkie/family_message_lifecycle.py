@@ -215,7 +215,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     if result.get("recipient_language_render_unrecognized") is True:
         return {"success": False, "status": "recipient_language_render_unrecognized",
             "telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0,
-            "writes_farm_data": False}
+            "writes_farm_data": False, "delivery_definitely_not_sent": True}
     mission_id = mission_id or mission_identity(parsed, specialist)
     card_mission_id = card_mission_id or mission_id
     protected_fields = tuple(bool(result.get(key)) for key in
@@ -580,6 +580,12 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                           event_store=None, sender=None, deleter=None,
                           projection_lock=None, _projection_lock_held=False) -> dict[str, Any]:
     """Confirm a new Brief generation before superseding and cleaning the old one."""
+    result = localize_recipient_result(parsed, result, "OOM_SAKKIE")
+    if result.get("recipient_language_render_unrecognized") is True:
+        return {"success": False, "status": "recipient_language_render_unrecognized",
+            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0,
+            "hardware_commands": 0, "writes_farm_data": False,
+            "delivery_definitely_not_sent": True}
     text = str(result.get("answer") or "").strip()
     digest = str(generation_digest or "").lower()
     prior_id = str(previous_message_id or "").strip()

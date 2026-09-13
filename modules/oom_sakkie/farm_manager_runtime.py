@@ -294,10 +294,10 @@ def _provenance_union(actor_rows):
 
 def _project_herdmaster_snapshot(snapshot, authority, owner, now, language="en"):
     if snapshot.get("failed"):
-        return _active_welfare_result(snapshot.get("active_current") or (), now)
+        return _active_welfare_result(snapshot.get("active_current") or (), now, language)
     active = snapshot.get("active") or ()
     herd = _whole_herd_specialist_result(snapshot["canonical"],
-        snapshot["observations"], snapshot.get("active_current") or (), now)
+        snapshot["observations"], snapshot.get("active_current") or (), now, language)
     daily = consume_daily_manager_evidence(snapshot.get("daily_packet"), observed_at=now,
         active_lifecycles=active, language=language)
     combined_id = herd.result_id + ":" + daily.result_id
@@ -368,7 +368,8 @@ def _append_mortality_receipt(packet, authority, owner, observed_at, language):
     return herd
 
 
-def _active_welfare_result(active, now):
+def _active_welfare_result(active, now, language="en"):
+    is_af = str(language).casefold().startswith("af")
     items = []
     for row in active or ():
         question = str(row.get("current_question") or "").strip()
@@ -376,6 +377,7 @@ def _active_welfare_result(active, now):
         if not question and not reported_dead:
             continue
         tag = str(row.get("tag_number") or row.get("pig_id") or "the pig")
+        label = str(row.get("tag_number") or row.get("pig_id") or ("die vark" if is_af else "the pig"))
         observed = _time(row.get("provider_timestamp"), now)
         result_id = "herdmaster-active-welfare-" + str(row.get("lifecycle_id") or tag)
         provenance = Provenance("herdmaster", result_id,
@@ -383,12 +385,17 @@ def _active_welfare_result(active, now):
              "telegram-card-" + str(row.get("card_message_id") or "unknown")), observed, 1.0)
         if reported_dead:
             question = ""
-            title = f"Pig {tag} mortality record follow-up"
-            why = "The owner reported this pig dead; the governed mortality lifecycle remains the only current follow-up."
-            next_action = "Review the retained mortality preview and confirm only when its proposed effects are correct."
+            title = f"Vark {label} se sterfterekordopvolging" if is_af else f"Pig {tag} mortality record follow-up"
+            why = ("Die eienaar het aangemeld dat hierdie vark dood is; die beheerde sterftelewensiklus bly die enigste huidige opvolg." if is_af else
+                   "The owner reported this pig dead; the governed mortality lifecycle remains the only current follow-up.")
+            next_action = ("Hersien die behoue sterftevoorskou en bevestig slegs wanneer die voorgestelde gevolge korrek is." if is_af else
+                           "Review the retained mortality preview and confirm only when its proposed effects are correct.")
         else:
-            title = f"Pig {tag} welfare follow-up"
-            why = "An existing welfare case is waiting for one physical observation before HERDMASTER can prepare the record preview."
+            title = f"Vark {label} se welstandsopvolging" if is_af else f"Pig {tag} welfare follow-up"
+            why = ("'n Bestaande welstandsaak wag op een fisiese waarneming voordat HERDMASTER die rekordvoorskou kan voorberei." if is_af else
+                   "An existing welfare case is waiting for one physical observation before HERDMASTER can prepare the record preview.")
+            # This is retained specialist evidence. Do not replace an unknown
+            # question with a generic translated observation or change its facts.
             next_action = question
         items.append(SpecialistWorkItem(
             item_id=result_id + ":follow-up", dedupe_key="herdmaster:" + str(row.get("pig_id")),
@@ -404,7 +411,8 @@ def _active_welfare_result(active, now):
         work_items=rebound)
 
 
-def _whole_herd_specialist_result(canonical, observations, active, now):
+def _whole_herd_specialist_result(canonical, observations, active, now, language="en"):
+    is_af = str(language).casefold().startswith("af")
     tasks = _canonical_tasks_with_current_mating(canonical)
     observations = _current_cycle_observations(
         tasks, observations, _time(canonical.get("generated_at"), now))
@@ -450,19 +458,21 @@ def _whole_herd_specialist_result(canonical, observations, active, now):
     observed = _time(packet["evidence_generation"], now)
     provenance = Provenance("herdmaster", result_id,
         (packet["source_evidence_identity"], packet["packet_identity"]), observed, 1.0)
-    items = list(_active_welfare_result(active, now).work_items)
+    items = list(_active_welfare_result(active, now, language).work_items)
     assumed = [row for row in packet["reproductive_reviews"]
                if row["operational_status"] == "Assumed Pregnant"]
     if assumed:
-        labels = " and ".join(str(row["tag_number"]) for row in assumed)
+        labels = (" en " if is_af else " and ").join(str(row["tag_number"]) for row in assumed)
         window = assumed[0]["projected_farrowing_range"]
         prep = assumed[0]["preparation_window"]
         items.append(SpecialistWorkItem(
             item_id=result_id + ":farrowing-round", dedupe_key="herdmaster:farrowing-preparation",
-            domain="herd", title=f"Prepare {labels}",
-            why=(f"{labels} remain operationally Assumed Pregnant, not clinically confirmed; farrowing is approximately "
-                 f"{window['start']} to {window['end']}, with proportional preparation {prep['start']} to {prep['end']}."),
-            next_action="Prepare their farrowing areas proportionally.",
+            domain="herd", title=f"Berei {labels} voor" if is_af else f"Prepare {labels}",
+            why=((f"{labels} word vir plaasbeplanning steeds as dragtig aanvaar, maar dit is nie klinies bevestig nie; verwagte werping is ongeveer "
+                  f"{window['start']} tot {window['end']}, met gepaste voorbereiding {prep['start']} tot {prep['end']}.") if is_af else
+                 (f"{labels} remain operationally Assumed Pregnant, not clinically confirmed; farrowing is approximately "
+                  f"{window['start']} to {window['end']}, with proportional preparation {prep['start']} to {prep['end']}.")),
+            next_action="Berei hul werpareas in gepaste mate voor." if is_af else "Prepare their farrowing areas proportionally.",
             assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
             provenance=provenance, business_value=110))
     rebound = tuple(replace(item, provenance=provenance) for item in items)

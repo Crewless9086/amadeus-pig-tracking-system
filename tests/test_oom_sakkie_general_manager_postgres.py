@@ -1,6 +1,6 @@
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ALL_COMPLETED, FIRST_COMPLETED, Future, ThreadPoolExecutor, wait as real_wait
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -9,6 +9,7 @@ import pytest
 import unittest
 import uuid
 import time
+import threading
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -175,6 +176,399 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertEqual(row, (2, changed['summary'], sorted(changed['evidence_refs'])))
         self.assertEqual(counts, {'created': 1, 'evidence_changed': 1})
 
+    def test_314_candidates_with_32_absent_terminal_findings_keep_progress(self):
+        values = sorted([self.value('mixed-' + str(i),
+            next_reassessment_at=self.now.isoformat()) for i in range(314)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        missing_positions = {(i + 1) * len(values) // 33 for i in range(32)}
+        self.seed([row for i, row in enumerate(values) if i not in missing_positions])
+        newer = self.now + timedelta(seconds=1)
+        values = [{**row, 'evidence_refs': [row['evidence_refs'][0], 'observed:' + newer.isoformat()],
+            **({'terminal_state': 'completed'} if i in missing_positions else {})}
+            for i, row in enumerate(values)]
+        values[0] = {**values[0], 'summary': 'One changed canonical finding'}
+        by_key = {row['dedupe_key']: row for row in values}
+        self.statements = 0
+        lookups, initial_lookup_counts, initial_statement_counts, sends = [], [], [], []
+        original = _IsolatedCursor.execute
+        def counted(cursor, sql, params=None):
+            if 'with eligible as materialized' in sql:
+                initial_lookup_counts.append(len(lookups))
+                initial_statement_counts.append(self.statements)
+            if ('select dedupe_key,evidence_digest,generation,status' in sql
+                    or 'select evidence_digest,generation,status' in sql):
+                lookups.append(sql)
+            return original(cursor, sql, params)
+        # These are explicit synthetic timings around real PostgreSQL SQL:
+        # 14 seconds before reconciliation and 120ms per protocol command.
+        clock = SimpleNamespace(monotonic=lambda: 14 + self.statements * 0.12)
+        started = time.perf_counter()
+        with patch.object(_IsolatedCursor, 'execute', counted), patch.object(worker_module, 'time', clock):
+            result = self.cycle(values, deadline_monotonic=80,
+                refresh_batch=lambda cases: {row['case_id']: by_key[row['dedupe_key']] for row in cases},
+                deliver=lambda row, **_kwargs: sends.append(row['case_id']) or {
+                    'success': True, 'status': 'delivery_confirmed', 'delivery_confirmed': True,
+                    'next_reassessment_at': (self.now + timedelta(minutes=5)).isoformat()})
+        self.benchmark = {'candidates': 314, 'present': 282, 'absent_terminal': 32,
+            'statements': self.statements, 'reconciliation_lookup_statements': initial_lookup_counts[0],
+            'statements_through_initial_reconciliation': initial_statement_counts[0],
+            'total_lookup_statements_including_claim_refresh': len(lookups),
+            'real_database_wall_seconds': time.perf_counter() - started,
+            'simulated_elapsed_seconds': clock.monotonic(), 'result': result}
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['candidate_replays'], 313)
+        self.assertEqual(result['candidates_changed'], 1)
+        self.assertEqual(result['candidates_created'], 0)
+        self.assertEqual(result['deliveries_confirmed'], 5)
+        self.assertEqual(result['deadline_deferrals'], 0)
+        self.assertLessEqual(initial_lookup_counts[0], 66)
+        # Audit insert + failed whole prefetch + 33 complete run prefetches +
+        # 32 fresh gap reads + changed-case write/event + batched epoch update.
+        self.assertLessEqual(initial_statement_counts[0], 1 + 4 + 33 * 3 + 32 + 2 + 1)
+        with self.db() as db:
+            rows = db.execute('select generation,evidence_refs from app_private.oom_manager_cases').fetchall()
+        self.assertEqual(len(rows), 282)
+        self.assertEqual(sum(generation == 2 for generation, _refs in rows), 1)
+        self.assertTrue(all('observed:' + newer.isoformat() in refs for _generation, refs in rows))
+
+    def _full_wrapper_with_slow_owner(self, slow_owner):
+        from modules.oom_sakkie import manager_case_sources as sources
+        from modules.telemetry import rootline_mixer_readiness_observer as readiness
+        values = [self.value('wrapper-' + str(i), dedupe_key='herdmaster:wrapper-' + str(i))
+                  for i in range(309)]
+        values.sort(key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        absent = {(i + 1) * len(values) // 33 for i in range(32)}
+        due = [self.value(owner, dedupe_key=owner + ':wrapper-due', specialist=specialist,
+                         urgency=urgency, next_reassessment_at=self.now.isoformat())
+               for owner, specialist, urgency in (
+                   ('herdmaster', 'HERDMASTER', 'critical'),
+                   ('rootline-readiness' if slow_owner == 'rootline-readiness' else 'rootline',
+                    'ROOTLINE', 'urgent'),
+                   ('beacon', 'BEACON', 'due'), ('sam', 'SAM', 'planned'),
+                   ('runtime', 'RUNTIME', 'watch'))]
+        self.seed([row for i, row in enumerate(values) if i not in absent] + due)
+        values = [{**row, **({'terminal_state': 'completed'} if i in absent else {})}
+                  for i, row in enumerate(values)] + due
+        values[0] = {**values[0], 'summary': 'One changed canonical finding'}
+        gate, slow_started, slow_finished = threading.Event(), threading.Event(), threading.Event()
+        counts, sends, waits, refresh_futures = {}, [], [], []
+        elapsed = [0.0]
+        self.statements = 0
+        clock = SimpleNamespace(monotonic=lambda: elapsed[0] + self.statements * 0.12)
+        def capture_executor(**kwargs):
+            executor = ThreadPoolExecutor(**kwargs)
+            original_submit = executor.submit
+            def submit(*args, **submit_kwargs):
+                future = original_submit(*args, **submit_kwargs)
+                refresh_futures.append(future)
+                return future
+            executor.submit = submit
+            return executor
+
+        def block_once(owner):
+            slow_started.set()
+            try:
+                if not gate.wait(10):
+                    raise AssertionError('test failed to release slow collector')
+            finally:
+                slow_finished.set()
+
+        def collector(owner):
+            def read(_now):
+                counts[owner] = counts.get(owner, 0) + 1
+                if owner == slow_owner and counts[owner] == 2:
+                    block_once(owner)
+                return [row for row in values if row['dedupe_key'].split(':')[0] == owner
+                        or (owner == 'rootline' and row['dedupe_key'].startswith('rootline-readiness:'))]
+            read.__name__ = '_' + owner
+            return read
+        collectors = tuple(collector(owner) for owner in ('herdmaster', 'rootline', 'beacon', 'sam', 'runtime'))
+        original_collect = sources.collect_manager_candidates
+        initial_calls = [0]
+        def collect_with_source_cost(**kwargs):
+            rows = original_collect(**kwargs)
+            if threading.current_thread() is threading.main_thread():
+                initial_calls[0] += 1
+                elapsed[0] += 14.0
+            return rows
+        readiness_calls = [0]
+        def read_mixer(**_kwargs):
+            readiness_calls[0] += 1
+            if readiness_calls[0] == 1:
+                block_once('rootline-readiness')
+            return [row for row in values if row['dedupe_key'].startswith('rootline-readiness:')]
+        def bounded_wait(futures, timeout=None, return_when=ALL_COMPLETED):
+            # Real threads and real FIRST/ALL completion semantics. Advance a
+            # virtual timeout only after the blocked collector is observed.
+            done, pending = real_wait(futures, timeout=0.2, return_when=return_when)
+            if pending and (return_when == ALL_COMPLETED or not done):
+                self.assertTrue(slow_started.wait(1))
+                elapsed[0] += float(timeout or 0)
+            waits.append({'mode': return_when, 'done': len(done), 'pending': len(pending)})
+            return done, pending
+        def deliver(case, **_kwargs):
+            sends.append((case['case_id'], case['generation'], clock.monotonic()))
+            return {'success': True, 'status': 'delivery_confirmed', 'delivery_confirmed': True,
+                    'next_reassessment_at': (self.now + timedelta(minutes=5)).isoformat()}
+        started = time.perf_counter()
+        try:
+            with patch.object(worker_module, 'time', clock), patch.object(worker_module, 'wait', bounded_wait), \
+                    patch.object(worker_module, 'ThreadPoolExecutor', capture_executor), \
+                    patch.object(sources, 'collect_manager_candidates', collect_with_source_cost), \
+                    patch.object(readiness, 'collect_mixer_readiness', read_mixer):
+                result = worker_module.run_general_manager_cycle(now=self.now, source_revision='local-full-wrapper',
+                    store=self.store, collectors=collectors, deliver=deliver)
+                measured = {'statements': self.statements, 'simulated_elapsed_seconds': clock.monotonic(),
+                    'real_database_and_thread_wall_seconds': time.perf_counter() - started,
+                    'result': result, 'collector_calls': dict(counts), 'waits': list(waits), 'sends': list(sends)}
+                self.benchmark = measured
+                self.assertEqual(initial_calls[0], 1)
+                self.assertEqual(result['cases_claimed'], 5, result)
+                self.assertEqual(result['candidate_replays'], 313, result)
+                self.assertEqual(result['candidates_changed'], 1, result)
+                self.assertEqual(result['deliveries_confirmed'], 4, result)
+                self.assertEqual(result['deadline_deferrals'], 1, result)
+                self.assertTrue(all(when < 50 for _key, _generation, when in sends))
+                self.assertEqual(len({(key, generation) for key, generation, _when in sends}), 4)
+                self.assertEqual(counts['herdmaster'], 2)
+                gate.set()
+                self.assertTrue(slow_finished.wait(2))
+                completed, pending = real_wait(tuple(refresh_futures), timeout=2)
+                self.assertFalse(pending, 'abandoned collector future has not actually returned')
+                measured['first_cohort_futures_completed_before_retry'] = len(completed)
+                before_retry = list(sends)
+                with self.db() as db:
+                    rows = db.execute('''select dedupe_key,assigned_worker_id,lease_until,last_delivery_digest,
+                        evidence_digest from app_private.oom_manager_cases where next_reassessment_at=%s''',
+                        (self.now + timedelta(minutes=5),)).fetchall()
+                self.assertEqual(len(rows), 5)
+                self.assertTrue(all(row[1:3] == (None, None) for row in rows))
+                self.assertEqual(sum(row[3] == row[4] for row in rows), 4)
+                # The late read has no effect; the next genuine-style cohort
+                # must reclaim its own generation and suppress the four replays.
+                self.statements = 0
+                elapsed[0] = 0.0
+                retry = worker_module.run_general_manager_cycle(now=self.now + timedelta(minutes=5),
+                    source_revision='local-full-wrapper', store=self.store, collectors=collectors, deliver=deliver)
+                self.assertTrue(retry['success'], retry)
+                self.assertEqual(retry['deliveries_confirmed'], 1, retry)
+                self.assertEqual(retry['deliveries_suppressed'], 4, retry)
+                self.assertEqual(retry['deadline_deferrals'], 0, retry)
+                self.assertEqual(sends[:4], before_retry)
+                self.assertEqual(len({(key, generation) for key, generation, _when in sends}), 5)
+                measured['retry'] = retry
+                self.benchmark = measured
+        finally:
+            gate.set()
+            if slow_started.is_set():
+                self.assertTrue(slow_finished.wait(2))
+            if refresh_futures:
+                _completed, pending = real_wait(tuple(refresh_futures), timeout=2)
+                self.assertFalse(pending, 'test leaked a running collector')
+
+    def test_full_wrapper_slow_herd_does_not_block_ready_specialists(self):
+        self._full_wrapper_with_slow_owner('herdmaster')
+
+    def test_full_wrapper_slow_readiness_does_not_block_ready_specialists(self):
+        self._full_wrapper_with_slow_owner('rootline-readiness')
+
+    def test_ready_claim_order_rechecks_pending_head_before_next_dispatch(self):
+        values = [self.value(owner, dedupe_key=owner + ':ordered', specialist=owner.upper(),
+            urgency=urgency, next_reassessment_at=self.now.isoformat())
+            for owner, urgency in (('herdmaster', 'critical'), ('rootline', 'urgent'),
+                                   ('beacon', 'due'), ('sam', 'planned'), ('runtime', 'watch'))]
+        by_key = {row['dedupe_key']: row for row in values}
+        futures, original_order, delivered, closed = {}, [], [], []
+        def start(cases):
+            batch = worker_module._ManagerRefreshBatch.__new__(worker_module._ManagerRefreshBatch)
+            batch.results, batch.jobs, batch.deadline = {}, {}, 20.0
+            batch.executor = SimpleNamespace(shutdown=lambda **kwargs: closed.append(kwargs))
+            for case in cases:
+                original_order.append(case['dedupe_key'])
+                future = futures[case['dedupe_key']] = Future()
+                batch.jobs[future] = (case,)
+                if case['specialist'] != 'HERDMASTER':
+                    future.set_result((1.0, {(case['dedupe_key'], case['specialist']): by_key[case['dedupe_key']]}))
+            return batch
+        def deliver(case, **_kwargs):
+            delivered.append(case['dedupe_key'])
+            if case['specialist'] == 'ROOTLINE':
+                row = by_key['herdmaster:ordered']
+                futures[row['dedupe_key']].set_result((2.0, {(row['dedupe_key'], row['specialist']): row}))
+            return {'success': True, 'status': 'delivery_confirmed', 'delivery_confirmed': True}
+        with patch.object(worker_module, 'time', SimpleNamespace(monotonic=lambda: 3.0)):
+            result = self.cycle(values, deadline_monotonic=80, refresh_batch=start, deliver=deliver)
+        self.assertTrue(result['success'], result)
+        self.assertEqual(original_order, ['herdmaster:ordered', 'rootline:ordered', 'beacon:ordered'])
+        self.assertEqual(delivered, ['rootline:ordered', 'herdmaster:ordered', 'beacon:ordered',
+                                     'sam:ordered', 'runtime:ordered'])
+        self.assertEqual(len(closed), 1)
+        with self.db() as db:
+            owned = db.execute('''select count(*) from app_private.oom_manager_cases
+                where assigned_worker_id is not null or lease_until is not null''').fetchone()[0]
+        self.assertEqual(owned, 0)
+
+    def test_late_refresh_completion_during_delivery_cannot_start_another_delivery(self):
+        values = [self.value(owner, dedupe_key=owner + ':late', specialist=owner.upper(),
+            urgency=urgency, next_reassessment_at=self.now.isoformat())
+            for owner, urgency in (('herdmaster', 'critical'), ('rootline', 'urgent'), ('beacon', 'due'))]
+        by_key = {row['dedupe_key']: row for row in values}
+        clock, futures, sends, closed = [1.0], {}, [], []
+        def start(cases):
+            batch = worker_module._ManagerRefreshBatch.__new__(worker_module._ManagerRefreshBatch)
+            batch.results, batch.jobs, batch.deadline = {}, {}, 20.0
+            batch.executor = SimpleNamespace(shutdown=lambda **kwargs: closed.append(kwargs))
+            for case in cases:
+                future = futures[case['dedupe_key']] = Future()
+                batch.jobs[future] = (case,)
+                if case['specialist'] == 'ROOTLINE':
+                    future.set_result((1.0, {(case['dedupe_key'], case['specialist']): by_key[case['dedupe_key']]}))
+            return batch
+        def deliver(case, **_kwargs):
+            sends.append(case['dedupe_key'])
+            # Caller-owned delivery occupies the loop while both reads finish.
+            clock[0] = 25.0
+            for owner, finished_at in (('herdmaster', 21.0), ('beacon', 19.0)):
+                if not futures[owner + ':late'].done():
+                    row = by_key[owner + ':late']
+                    futures[row['dedupe_key']].set_result((finished_at, {(row['dedupe_key'], row['specialist']): row}))
+            return {'success': True, 'status': 'delivery_confirmed', 'delivery_confirmed': True}
+        with patch.object(worker_module, 'time', SimpleNamespace(monotonic=lambda: clock[0])):
+            result = self.cycle(values, deadline_monotonic=80, refresh_batch=start, deliver=deliver)
+        self.assertTrue(result['success'], result)
+        self.assertEqual(sends, ['rootline:late', 'beacon:late'])
+        self.assertEqual(result['exceptions'], 1)
+        self.assertEqual(result['deadline_deferrals'], 0)
+        self.assertEqual(len(closed), 1)
+        with self.db() as db:
+            row = db.execute('''select status,last_delivery_digest,assigned_worker_id,lease_until,next_reassessment_at
+                from app_private.oom_manager_cases where dedupe_key='herdmaster:late' ''').fetchone()
+            event = db.execute('''select event_payload from app_private.oom_manager_case_events
+                where case_id=%s and event_type='exception' ''',
+                (normalize_candidate(by_key['herdmaster:late'], now=self.now)['case_id'],)).fetchone()[0]
+        self.assertEqual(row, ('waiting_reassessment', None, None, None, self.now + timedelta(minutes=5)))
+        self.assertEqual(event['failure_kind'], 'TimeoutError')
+        self.assertEqual(event['outcome_status'], 'manager_specialist_processing_exception_contained')
+
+    def test_absent_terminal_is_reread_after_concurrent_insert(self):
+        values = sorted([self.value('terminal-insert-' + str(i)) for i in range(3)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        lower, *higher = values
+        self.seed(higher)
+        terminal = {**lower, 'terminal_state': 'completed'}
+        original, inserted = _IsolatedCursor.execute, []
+        def after_release(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch' and not inserted:
+                inserted.append(True)
+                # The incomplete initial prefetch has released its locks.
+                # Commit a competing writer before the missing key's turn.
+                with self.db() as db, db.cursor() as other:
+                    self.store._reconcile(other, normalize_candidate(lower, now=self.now), self.now)
+            return result
+        with patch.object(_IsolatedCursor, 'execute', after_release):
+            result = self.cycle([terminal, *higher])
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['candidates_changed'], 1)
+        with self.db() as db:
+            row = db.execute('select status,generation from app_private.oom_manager_cases where dedupe_key=%s',
+                (lower['dedupe_key'],)).fetchone()
+            completed = db.execute("select count(*) from app_private.oom_manager_case_events where event_type='completed'").fetchone()[0]
+        self.assertEqual(row, ('completed', 2))
+        self.assertEqual(completed, 1)
+
+    def test_planned_run_relocks_changed_prior_and_preserves_duplicate_epochs(self):
+        values = sorted([self.value('relock-' + str(i)) for i in range(4)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        lower, *higher = values
+        self.seed(higher)
+        latest = {**higher[0], 'summary': 'Concurrent latest material',
+            'evidence_refs': ['event:concurrent', 'observed:' + (self.now + timedelta(minutes=2)).isoformat()]}
+        replay = {**higher[-1], 'evidence_refs': [higher[-1]['evidence_refs'][0],
+            'observed:' + (self.now + timedelta(minutes=1)).isoformat()]}
+        original, changed = _IsolatedCursor.execute, []
+        def after_release(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch' and not changed:
+                changed.append(True)
+                with self.db() as db, db.cursor() as other:
+                    self.store._reconcile(other, normalize_candidate(latest, now=self.now), self.now)
+            return result
+        with patch.object(_IsolatedCursor, 'execute', after_release):
+            result = self.cycle([{**lower, 'terminal_state': 'completed'}, *higher, replay, higher[-1]])
+        self.assertTrue(result['success'], result)
+        with self.db() as db:
+            rows = {row[0]: row[1:] for row in db.execute('select dedupe_key,generation,summary,evidence_refs from app_private.oom_manager_cases').fetchall()}
+        self.assertEqual(rows[latest['dedupe_key']], (2, latest['summary'], sorted(latest['evidence_refs'])))
+        self.assertEqual(rows[replay['dedupe_key']][2], sorted(replay['evidence_refs']))
+
+    def test_deleted_run_key_releases_only_run_prelocks_before_point_fallback(self):
+        threading = __import__('threading')
+        values = sorted([self.value('delete-reinsert-' + str(i)) for i in range(5)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        prefix, gap, lower, middle, higher = values
+        self.seed([prefix, middle, higher])
+        # Model a valid case row with no referring event, so deletion can commit
+        # without altering the append-only event trigger or its foreign key.
+        with patch.object(self.store, '_event'):
+            self.seed([lower])
+        external = self.db()
+        self.addCleanup(external.close)
+        external_pid = external.connection.info.backend_pid
+        run_locked, release_run = threading.Event(), threading.Event()
+        original, prepared, prefix_lock_checks = _IsolatedCursor.execute, [], []
+        def gate(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if sql == 'rollback to savepoint oom_manager_reconciliation_prefetch' and run_locked.is_set():
+                # The failed run has released middle/higher locks, but the
+                # already reconciled lower prefix must remain locked.
+                with self.assertRaises(psycopg.errors.LockNotAvailable):
+                    with self.db() as observer:
+                        observer.execute('select case_id from app_private.oom_manager_cases where dedupe_key=%s for update nowait',
+                            (prefix['dedupe_key'],))
+                prefix_lock_checks.append('55P03')
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch' and not prepared:
+                prepared.append(True)
+                with self.db() as db:
+                    db.execute('delete from app_private.oom_manager_cases where dedupe_key=%s', (lower['dedupe_key'],))
+                # The next run's snapshot cannot see this uncommitted insert.
+                with external.cursor() as other:
+                    self.store._reconcile(other, normalize_candidate(lower, now=self.now), self.now)
+            elif ('select dedupe_key,evidence_digest,generation,status' in sql
+                    and prepared and set(params[0]) == {row['dedupe_key'] for row in (lower, middle, higher)}):
+                run_locked.set()
+                if not release_run.wait(timeout=5):
+                    raise AssertionError('run prefetch test gate timed out')
+            return result
+        def finish_external():
+            with external:
+                external.execute('select case_id from app_private.oom_manager_cases where dedupe_key=%s for update',
+                    (middle['dedupe_key'],))
+        with patch.object(_IsolatedCursor, 'execute', gate), ThreadPoolExecutor(max_workers=2) as pool:
+            running = pool.submit(self.cycle, [prefix, {**gap, 'terminal_state': 'completed'}, lower, middle, higher])
+            if not run_locked.wait(timeout=5):
+                self.fail('run prefetch not reached: ' + str(running.result(timeout=5)))
+            competing = pool.submit(finish_external)
+            try:
+                limit, blocked = time.monotonic() + 3, False
+                with connect() as observer:
+                    while time.monotonic() < limit:
+                        blocked = bool(observer.execute('select cardinality(pg_blocking_pids(%s)) > 0',
+                            (external_pid,)).fetchone()[0])
+                        if blocked:
+                            break
+                        time.sleep(0.01)
+                self.assertTrue(blocked, 'competing transaction never reached the run prelock')
+            finally:
+                release_run.set()
+            competing.result(timeout=5)
+            result = running.result(timeout=5)
+        self.assertTrue(result['success'], result)
+        self.assertEqual(prefix_lock_checks, ['55P03'])
+        with self.db() as db:
+            rows = db.execute('select count(*),max(generation) from app_private.oom_manager_cases').fetchone()
+        self.assertEqual(rows, (4, 1))
+
     def test_overlapping_reversed_batches_with_new_keys_serialize(self):
         values = [self.value(str(i)) for i in range(30)]
         self.seed(values[:15])
@@ -287,6 +681,50 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
             deliver=lambda row: {'success': True, 'delivery_confirmed': False, 'status': 'local_suppressed'})
         self.assertTrue(result['success'], result)
         self.assertEqual(refreshed, [values[2]['dedupe_key']])
+
+    def test_language_rejection_retains_confirmed_replacement_baseline(self):
+        from modules.oom_sakkie import daily_farm_manager as daily
+        identity = 'OOM-DAILY-FARM-MANAGER-2026-09-13'
+        confirmed = {'daily_identity': identity, 'owner_user_id': 'local-af',
+            'chat_id': 'local-af', 'material_digest': 'A', 'status': 'presented',
+            'telegram_message_id': 'confirmed-A'}
+        rejected = {**confirmed, 'material_digest': 'B',
+            'status': 'recipient_language_render_unrecognized',
+            'delivery_definitely_not_sent': True}
+        rejected.pop('telegram_message_id')
+        other_owner = {**confirmed, 'owner_user_id': 'other', 'chat_id': 'other',
+                       'telegram_message_id': 'other-owner-card'}
+        other_date = {**confirmed, 'daily_identity': 'OOM-DAILY-FARM-MANAGER-2026-09-14',
+                      'telegram_message_id': 'other-date-card'}
+        with self.db() as db:
+            db.execute('''create table app_private.daily_receipts(
+                review_event_id text primary key,event_source text,review_json jsonb,created_at timestamptz)''')
+            for index, value in enumerate((confirmed, rejected, other_owner, other_date)):
+                db.execute('insert into app_private.daily_receipts values(%s,%s,%s::jsonb,%s)',
+                    (str(index), daily.EVENT_SOURCE, json.dumps({'daily_farm_manager': value}),
+                     self.now + timedelta(seconds=index)))
+
+        class ReceiptCursor(_IsolatedCursor):
+            def execute(self, sql, params=None):
+                return super().execute(sql.replace('public.sam_live_stock_conversation_review_events',
+                                                   'app_private.daily_receipts'), params)
+
+        class ReceiptConnection(_IsolatedConnection):
+            def cursor(self):
+                return ReceiptCursor(self.connection.cursor(), self.owner)
+
+        # Execute the actual production selection SQL; relocate only its table.
+        with patch.object(daily, 'connect_bounded_read',
+                lambda: ReceiptConnection(psycopg.connect(URL), self)):
+            prior = daily._load_daily(identity, {'owner_user_id': 'local-af', 'chat_id': 'local-af'})
+            self.assertEqual(prior, confirmed)
+            self.assertIsNone(daily._load_daily(identity,
+                {'owner_user_id': 'local-af', 'chat_id': 'other'}))
+        with self.db() as db:
+            retained = db.execute('select review_json from app_private.daily_receipts where review_event_id=%s',
+                                  ('1',)).fetchone()[0]
+            self.assertEqual(retained, {'daily_farm_manager': rejected})
+            self.assertEqual(db.execute('select count(*) from app_private.daily_receipts').fetchone()[0], 4)
 
     def test_canonical_short_morning_language_and_replay_boundary(self):
         from tests.test_oom_sakkie_daily_farm_manager import (

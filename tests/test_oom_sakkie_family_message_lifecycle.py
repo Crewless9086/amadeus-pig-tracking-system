@@ -159,6 +159,7 @@ def _null_context():
 
 def test_postgres_lifecycle_load_uses_bounded_transaction_read_only(monkeypatch):
     from modules.oom_sakkie import bounded_postgres_read, family_message_lifecycle
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
     class Cursor:
         def __enter__(self): return self
