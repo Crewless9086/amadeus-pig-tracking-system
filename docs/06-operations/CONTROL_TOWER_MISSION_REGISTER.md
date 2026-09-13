@@ -1,5 +1,28 @@
 # Control Tower Mission Register
 
+## 2026-09-13 - Genuine morning acceptance failed for Anton
+
+The approved scheduler web repair is deployed as `d3cbd663b79fe51ba197f42868d4f758dc8b955d`, but operational acceptance has failed. This finding records actual scheduled evidence, not local test output.
+
+The genuine 06:45 SAST cron run `crn-d9us4d3ncjis73adehrg-29821245` started at 04:45:03 UTC and ended unsuccessfully at 04:47:06 UTC. Its morning HTTP request returned 503 after 46.034 seconds. The configured English recipient nevertheless received Telegram message `4323`: the canonical daily outcome is `presented`, the family lifecycle records `delivered`, and offline reconstruction matches the retained outgoing text SHA-256 `c2c6393646e9d4d6a3140a296f776fa472a924af0710c095b01e050d1e6264ec`.
+
+Anton's separate Afrikaans identity has a daily claim and an outcome recorded at 04:46:02 UTC with `provider_ambiguous` and `delivery_definitely_not_sent=false`. No family attempt, provider-confirmed delivery, message ID or retained outgoing text hash was found for that identity. This does not establish that a message was sent or definitely not sent. Anton's required Afrikaans delivery is unconfirmed and fails acceptance.
+
+The genuine 06:50 run again returned a morning failure. The English recipient received replacement `4324` for `4323`, with delivery, supersession and previous-message deletion receipts. The underlying ROOTLINE task changed from its current plan to `rootline-current-reassessment-needed`, so this cannot be called an unchanged-plan duplicate merely because the next tick sent a replacement. That replacement retains a material digest, not a verbatim outgoing-text hash. Anton's two records remained unchanged with no family delivery confirmation.
+
+The manager cycles belonging to both scheduled runs failed, each claiming five cases and deferring all five with no manager delivery confirmation. Their actual start identities are `OOM-MANAGER-CYCLE-20260913T044602788560Z-8AE811BE2123476FB34310C5F8695C64` and `OOM-MANAGER-CYCLE-20260913T045108560853Z-90F10F5346ED483BAD30C5CF39C68D0B`. Deadline deferrals do not satisfy useful-progress or duplicate-suppression acceptance.
+
+The genuine 06:55 follow-up also failed with five deadline deferrals. Its retained daily, task and family records are exactly equal to the 06:50 observation: no additional English delivery is recorded and Anton remains unconfirmed. A complete read-only canonical history through 06:59 SAST contains 83 completed manager cycles since activation, all failed, with 415 deadline deferrals and zero manager confirmations. These manager counts are separate from the two provider-confirmed English morning messages.
+
+Source diagnosis found an additional concrete language gap. The whole-herd and active-welfare projections generate English text without receiving the requested language. The daily evidence adapter accepts a language parameter but does not use its Afrikaans flag. The daily renderer embeds those task strings directly. The retained farrowing title, `Prepare Mysikind and Mona`, contains the English token `and`, which the final Afrikaans guard rejects before its store or sender. The daily caller records an unconfirmed return as `provider_ambiguous` without preserving the underlying rejection status. This source chain explains a reproducible failure consistent with the observed missing family attempt; it is not a recovered historical response body or verified Afrikaans outgoing text. Existing application logs retain the HTTP failures but no more specific rejection reason.
+
+The separate manager successor `626654067bdf59bf654459bd3002d9b31ac94030` remains sealed, unpublished and unapproved. Its 06:00 SAST deployment-request window passed without a request. A new isolated local branch based on that candidate is being prepared for this fresh morning failure; no additional application release, recipient grant, farm write or provider message has been performed by Control Tower. The existing language guard will be preserved. Local source reproduction and qualification must precede any new concrete production proposal.
+
+The overall objective remains Anton recording mortality, weaning and first treatment through Telegram, confirming the details, and seeing each operation in the application's same backend, with reliable plans and follow-ups. The qualified herd candidate, deployed mortality, Anton's private Plaas menu, cron `203a7e9b` and schedule, migration hold, paused ROOTLINE and CHARLIE commissioning hold remain preserved. The existing mission stays in progress; business completion is false.
+
+Evidence: the five retained files for `genuine_morning_20260913_0448`, `genuine_followup_20260913_0453` and `genuine_followup_20260913_0458` in `.tmp/control-tower-scheduler-web-release-20260912/`; this directory's `OVERNIGHT_CANONICAL_through_genuine_morning_and_0655.json`, `MORNING_WEB_APP_LOGS_READONLY.json` and `RELEASE_WINDOW_DEFERRAL.json`; and the read-only service-scope check `LOCAL_PREFLIGHT_window_cutoff_0600_sast.json` in the prepared successor operator directory.
+
+
 ## 2026-09-13 - Manager failure diagnosed; local successor qualified for a scoped decision
 
 Continue existing OMQ-20260813-03-MORNING-CONTAINMENT. Web remains on the approved
