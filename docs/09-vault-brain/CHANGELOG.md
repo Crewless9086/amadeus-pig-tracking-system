@@ -1,5 +1,59 @@
 # Vault Brain Changelog
 
+## 2026-09-13 - Genuine morning failure has a qualified combined local repair
+
+Continue existing OMQ-20260813-03-MORNING-CONTAINMENT. The approved web repair
+0e30c9a9 deployed as d3cbd663; its genuine acceptance failed. Through the retained
+06:55 SAST observation, 83 manager cycles failed with 415 deadline deferrals and
+zero manager confirmations. The 06:45 English plan is provider-confirmed as card
+4323 with verified outgoing text hash; Anton's Afrikaans outcome remains
+provider_ambiguous with no retained family delivery confirmation. English card
+4324 followed a materially changed ROOTLINE task; later receipts were unchanged.
+
+Local candidate 4859d8f1a8ee5f38b4e05935a1b161dc4bcf7f57, tree
+c028f301a37deb2f3b2e46fde5609186424fdecc, combines the unchanged reviewed manager
+repair 62665406 with generated HERDMASTER recipient-language wording and truthful
+rendering-rejection handling. Initial and replacement plans share the existing
+language guard. The rejected-replacement recovery finding is fixed: a rejected
+plan cannot displace the last confirmed card as the baseline for a later valid
+replacement. Raw retained questions and farm facts remain exact; arbitrary
+question translation remains outside the repair. The failed live outgoing text
+was not retained; offline reproduction establishes a sufficient matching cause,
+not a recovered production exception.
+
+Final local qualification: 242 unit tests; 31 PostgreSQL tests without skips
+(6 breeding, 4 irrigation, 21 manager), including actual baseline-selection SQL;
+14 independently executed integration tests. New language regressions against
+verified deployed modules produced 22 expected failures and 3 passing controls.
+The inherited sealed 19-failure/14-pass legacy comparison remains unresolved,
+unchanged and not represented as a new run. The new unconditional hosted language
+step must execute 178 tests; the existing hosted persistence command must execute
+all 31 tests on both candidate and merge, under unchanged protected checks.
+
+The ten-file candidate is clean, local and unapproved for publication or release.
+Its exact proposal supersedes the unanswered 62665406 request; it does not inherit
+the earlier 0e30c9a9 approval. The earliest remaining fresh operating date is
+September 14, opening September 13 at 22:00 UTC/00:00 SAST. Any approved release
+must preserve the 06:00 request, 06:25 cancellation, 06:30 verification and
+25-minute elapsed limits, both unused recipient/date checks, the one-web-service
+scope, unchanged cron and all genuine scheduled acceptance requirements.
+
+Mortality, Anton's private Plaas menu, qualified herd a0865257, farm successor
+4744bdec and every existing migration/capability/ROOTLINE/CHARLIE hold remain
+preserved. No business acceptance is claimed; the child remains WORKING and
+in_progress with all eleven business acceptance rows open. The overall outcome
+remains Telegram mortality, weaning and first treatment with bound confirmation,
+canonical application readback, and reliable plans/follow-up.
+
+Evidence: .tmp/control-tower-morning-language-followon-20260913/
+FOLLOWON_CANDIDATE_IDENTITY.json, FOLLOWON_QUALIFICATION.json,
+FOLLOWON_RELEASE_PROPOSAL.md, FOLLOWON_REVIEW_PACKAGE_MANIFEST.json and
+independent-review/SOURCE_TEST_REVIEW.md; .tmp/control-tower-morning-acceptance-20260913/
+ACCEPTANCE_EVIDENCE_MANIFEST.json. Deployment/admission/issuer/merge remain future
+gates for the exact new decision. No farm, provider, capability or schema effect
+is authorized or performed by recording this finding.
+
+
 ## 2026-09-13 - Genuine morning acceptance failed for Anton
 
 The approved scheduler web repair is deployed as `d3cbd663b79fe51ba197f42868d4f758dc8b955d`, but operational acceptance has failed. This finding records actual scheduled evidence, not local test output.
