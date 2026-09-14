@@ -71,6 +71,10 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                         and prior.get("delivery_definitely_not_sent") is True
                         and prior.get("material_digest") == digest)
     claim = store("claim_daily", claim_id, {"daily_identity": identity,
+        "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+        "card_mission_id": projection_identity,
+        "question": packet["question"], "question_binding": packet["question_binding"],
+        "answer_sha256": sha256(packet["answer"].strip().encode()).hexdigest(),
         "material_digest": digest, "status": "detected", "observed_at": now.isoformat(),
         "task_identities": [row["task_id"] for row in packet["all_tasks"]],
         "contract_version": CONTRACT_VERSION})
@@ -175,6 +179,7 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
             and receipt.get("success") is True
     outcome = store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
         "material_digest": digest, "status": "presented", "observed_at": now.isoformat(),
+        "answer_sha256": sha256(packet["answer"].strip().encode()).hexdigest(),
         "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
         "question": packet["question"], "question_binding": packet["question_binding"],
         "telegram_message_id": str(delivery.get("telegram_message_id")),
@@ -235,8 +240,8 @@ def build_litter_watch_result(rows, *, now=None, language="en"):
                     "is still Active and no weaned count proves completion."))
             items.append(SpecialistWorkItem(item_id=result_id, dedupe_key="weaning:"+litter_id,
                 domain="herd", title=(f"Speenwerk laat — {sow_tag}" if af else f"Weaning overdue — {sow_tag}"), why=why,
-                next_action=("Berei die presiese varkie-, merk-, gewig- en skuifvoorskou voor; teken speen eers ná bevestiging aan."
-                    if af else "Prepare the exact piglet, tag, weight and movement preview; record weaning only after confirmation."),
+                next_action=(f"Is {sow_tag} se werpsel reeds gespeen? Indien wel, gee die datum en aantal; ek sal die ontbrekende besonderhede vra en die bevestiging voorberei."
+                    if af else f"Has {sow_tag}'s litter been weaned? If so, give the date and count; I will ask for missing details and prepare the confirmation."),
                 assignee="charl", state=WorkState.URGENT if overdue > 1 else WorkState.DUE_TODAY,
                 authority=Authority.OWNER_DECISION, provenance=provenance,
                 business_value=130, due_at=datetime.combine(expected, datetime.min.time(), SAST)))
@@ -334,18 +339,27 @@ def build_daily_management_packet(results, *, now=None, language="en",
             prior = by_key.get(key)
             if prior is None or _priority(item) < _priority(prior):
                 by_key[key] = item
-    ordered = sorted(by_key.values(), key=_priority)
-    selected = (semantic_prioritizer or _semantic_prioritize)(ordered, language=language)
-    ordered = _validated_semantic_order(ordered, selected)
-    priorities = ordered[:3]; watch = ordered[3:6]
-    question = next((item.genuine_question for item in ordered
+    ranked = sorted(by_key.values(), key=_priority)
+    selected = (semantic_prioritizer or _semantic_prioritize)(ranked, language=language)
+    ordered = _validated_semantic_order(ranked, selected)
+    # The evidence-backed priority, value and due date choose visible work.
+    # A model may arrange those items for reading, but its ordering alone must
+    # not move an unchanged task across the three/six-item visibility cutoffs.
+    priority_keys = {row.dedupe_key for row in ranked[:3]}
+    watch_keys = {row.dedupe_key for row in ranked[3:6]}
+    priorities = [row for row in ordered if row.dedupe_key in priority_keys]
+    watch = [row for row in ordered if row.dedupe_key in watch_keys]
+    question = next((item.genuine_question for item in ranked
                      if item.genuine_question.strip()), "")
+    question_item = next((item for item in ranked
+                          if question and item.genuine_question.strip() == question), None)
     tasks = [_task(row) for row in ordered]
-    material = {"priorities": [_material(row) for row in priorities],
-        "watch": [_material(row) for row in watch], "question": question}
+    material = {"priorities": [_material(row) for row in sorted(priorities, key=lambda row: row.dedupe_key)],
+        "watch": [_material(row) for row in sorted(watch, key=lambda row: row.dedupe_key)],
+        "question": question,
+        "question_context": ({"dedupe_key": question_item.dedupe_key, "domain": question_item.domain}
+                             if question_item else {})}
     digest = sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    question_item = next((item for item in ordered
-                          if item.genuine_question.strip() == question), None)
     pig_refs = ([str(value).removeprefix("pig:")
                  for value in question_item.provenance.source_refs
                  if str(value).startswith("pig:") and str(value).removeprefix("pig:")]
@@ -439,13 +453,16 @@ def _render(priorities, watch, question, now, language):
              else "<b>TODAY'S FARM PLAN</b>"]
     if owner_work:
         lines.append("<b>AKSIE NODIG</b>" if af else "<b>ACTION NEEDED</b>")
-        lines.extend(f"{index}. <b>{html.escape(_compact(row.title, 110))}</b> "
-                     f"{html.escape(_compact(row.next_action, 170))}"
+        lines.extend(f"{index}. <b>{html.escape(_compact(row.title, 130))}</b>\n"
+                     f"{html.escape(_compact(row.why, 300))}\n"
+                     f"{html.escape(_compact(row.next_action, 300))}"
                      for index, row in enumerate(owner_work, 1))
     if automatic_work:
         lines.extend(("", "<b>OOM SAKKIE KONTROLEER OUTOMATIES</b>" if af
                       else "<b>OOM SAKKIE IS CHECKING AUTOMATICALLY</b>"))
-        lines.extend(f"• <b>{html.escape(_compact(row.title, 110))}</b>"
+        lines.extend(f"• <b>{html.escape(_compact(row.title, 130))}</b>\n"
+                     f"{html.escape(_compact(row.why, 300))}\n"
+                     f"{html.escape(_automatic_followup(row, af))}"
                      for row in automatic_work)
     if not owner_work and not automatic_work:
         lines.append("Geen nuwe werk nie." if af else "No new work.")
@@ -465,6 +482,17 @@ def _owner_action_required(item):
             or item.metadata.get("physical_work_ready") is True)
 
 
+def _automatic_followup(item, af):
+    # Only stable specialist follow-up belongs in this daily card. Internal
+    # retry timestamps are deliberately absent from its replacement material.
+    followup = str(item.metadata.get("owner_followup") or "").strip()
+    if followup:
+        return _compact(followup, 260)
+    specialist = item.provenance.specialist.upper()
+    return (f"{specialist} gaan die verwante rekords na en volg op wanneer nuwe bewyse beskikbaar is."
+            if af else f"{specialist} is checking the related records and will follow up when new evidence is available.")
+
+
 def _task(item):
     return {"task_id": item.item_id, "dedupe_key": item.dedupe_key,
         "domain": item.domain, "title": item.title, "why": item.why,
@@ -476,7 +504,11 @@ def _task(item):
 
 def _material(item):
     material = {"dedupe_key": item.dedupe_key, "title": item.title, "why": item.why,
-        "state": item.state.value, "authority": item.authority.value}
+        "state": item.state.value, "authority": item.authority.value,
+        "business_value": item.business_value,
+        "owner_action_required": _owner_action_required(item)}
+    if not _owner_action_required(item):
+        material["owner_followup"] = str(item.metadata.get("owner_followup") or "")
     if _owner_action_required(item):
         material.update({"next_action": item.next_action,
             "due_at": item.due_at.isoformat() if item.due_at else None})
@@ -493,7 +525,7 @@ def _priority(item):
         WorkState.PROTECTED_OWNER_DECISION: 2, WorkState.PLANNED: 3,
         WorkState.WAITING_EVIDENCE: 4}.get(item.state, 9)
     return (rank, -item.business_value,
-            item.due_at or datetime.max.replace(tzinfo=timezone.utc), item.item_id)
+            item.due_at or datetime.max.replace(tzinfo=timezone.utc), item.dedupe_key)
 
 
 def _semantic_prioritize(items, *, language="en"):

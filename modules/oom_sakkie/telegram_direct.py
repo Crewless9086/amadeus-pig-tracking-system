@@ -15,6 +15,7 @@ from modules.oom_sakkie.protected_action_claims import CALLBACK_PREFIX
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.family_access import FamilyRole, resolve_family_principal
+from modules.oom_sakkie.telegram_voice import is_telegram_voice_payload, prepare_telegram_voice_input
 from modules.oom_sakkie.family_runtime import handle_family_runtime_message
 from modules.oom_sakkie.family_specialist_adapters import (
     family_replay_store, herdmaster_family_observation, load_family_question,
@@ -145,7 +146,6 @@ def telegram_direct_parity_report(environ=None):
         "telegram_commands": _telegram_command_catalog(),
         "not_carried_over_yet": [
             "Generic Telegram inline buttons and callback actions outside the SAM Live owner-review path",
-            "Telegram voice-note transcription",
             "Persistent task/reminder/project memory",
             "Write actions, dispatch, runtime changes, physical controls, or financial actions",
         ],
@@ -182,6 +182,13 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     if not authenticated:
         _record_auth_failure()
         return _direct_result(False, "telegram_direct_auth_denied", policy, 403)
+
+    voice_parsed = None
+    if is_telegram_voice_payload(payload):
+        voice_parsed, voice_response = prepare_telegram_voice_input(
+            payload, parse_telegram_gateway_payload(payload), environ=environ)
+        if voice_response is not None:
+            return voice_response
 
     callback = _parse_telegram_callback_payload(payload)
     if callback["callback_data"].startswith(FAMILY_CALLBACK_PREFIX):
@@ -235,6 +242,10 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         authority=issue_gateway_owner_authority(callback["telegram_user_id"],callback["telegram_chat_id"],
           principal_role=principal.role.value,capabilities=principal.effective_permissions)
         action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
+        from modules.oom_sakkie.herdmaster_litter_weaning_runtime import weaning_delivery_input
+        parsed = weaning_delivery_input(parsed, action_result)
+        from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
+        parsed = first_treatment_delivery_input(parsed, action_result)
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
           if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else
           deliver_family_result(parsed,action_result,
@@ -314,7 +325,7 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
             receipt_sender=receipt_sender,
         )
 
-    parsed = parse_telegram_gateway_payload(payload)
+    parsed = voice_parsed if voice_parsed is not None else parse_telegram_gateway_payload(payload)
     if not parsed["text"]:
         return _direct_result(False, "telegram_text_required", policy, 400)
     allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
@@ -348,8 +359,18 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
                 semantic = interpret_owner_message(parsed, environ=source)
                 if semantic is not None:
                     parsed = {**parsed, "semantic": semantic.as_hint()}
-            health_result, health_status = handle_authenticated_health_loss_message(parsed, authority)
+            from modules.oom_sakkie.herdmaster_litter_weaning_runtime import handle_litter_weaning_message
+            health_result, health_status = handle_litter_weaning_message(parsed, authority)
+            if not health_result.get("handled"):
+                from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import handle_litter_first_treatment_message
+                health_result, health_status = handle_litter_first_treatment_message(parsed, authority)
+            if not health_result.get("handled"):
+                health_result, health_status = handle_authenticated_health_loss_message(parsed, authority)
         if health_result.get("handled"):
+            from modules.oom_sakkie.herdmaster_litter_weaning_runtime import weaning_delivery_input
+            parsed = weaning_delivery_input(parsed, health_result)
+            from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
+            parsed = first_treatment_delivery_input(parsed, health_result)
             delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
                 if health_result.get("suppress_owner_delivery") else
                 deliver_family_result(parsed, health_result, specialist="HERDMASTER",
@@ -406,11 +427,15 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     if command["kind"] == "help":
         message_result, message_status = _help_message_result(parsed["text"]), 200
     elif command["kind"] == "approve_campaign":
-        action_result, action_status = approve_first_waiting_sales_campaign({
-            "recorded_by": "telegram_owner",
-            "notes": "Approved from owner direct Telegram command.",
-        })
-        message_result, message_status = _campaign_action_message_result(action_result), action_status
+        if parsed.get("input_provenance", {}).get("source_kind") == "telegram_voice":
+            from modules.oom_sakkie.telegram_voice import voice_confirmation_required
+            message_result, message_status = voice_confirmation_required(parsed)
+        else:
+            action_result, action_status = approve_first_waiting_sales_campaign({
+                "recorded_by": "telegram_owner",
+                "notes": "Approved from owner direct Telegram command.",
+            })
+            message_result, message_status = _campaign_action_message_result(action_result), action_status
     else:
         routed_text = command["text"] or parsed["text"]
         allow_specialist_llm = command.get("allow_specialist_llm") is True
@@ -1219,6 +1244,7 @@ def _allowed_user_ids(source):
 
 def _carried_over_capabilities():
     return [
+        "authenticated native Telegram Ogg/Opus voice input when shared STT is enabled and configured; reported facts require the existing confirmation flow",
         "farm attention",
         "daily command brief",
         "farm operating brief",

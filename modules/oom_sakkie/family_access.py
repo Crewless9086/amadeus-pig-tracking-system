@@ -23,7 +23,7 @@ SUPPORTED_OUTPUT_LANGUAGES = frozenset({"en", "af"})
 PROTECTED_CAPABILITIES = frozenset({
     "mortality_confirmation", "sales_decision", "reservation", "payment",
     "mating_execution", "treatment", "hardware_exception",
-    "permission_change", "publication", "customer_send",
+    "permission_change", "publication", "customer_send", "weaning",
 })
 OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES = PROTECTED_CAPABILITIES - {
     # These are platform/owner-administration escape hatches, not governed
@@ -37,7 +37,7 @@ FARM_MANAGER_CAPABILITIES = frozenset({
     "welfare_hold", "welfare_escalation", "herdmaster_management_input",
     "herdmaster_reassessment", "found_dead_observation", "mortality_confirmation",
     "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
-    *OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES,
+    *(OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES - {"weaning"}),
 })
 DELEGATED_ROOTLINE_CAPABILITIES = frozenset({
     "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
@@ -198,7 +198,8 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
     if capability in PROTECTED_CAPABILITIES:
         allowed = (principal.is_owner or
             (principal.role is FamilyRole.FARM_MANAGER
-             and capability in OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES))
+             and capability in OOM_SAKKIE_MANAGER_PROTECTED_CAPABILITIES
+             and (capability != "weaning" or capability in principal.permissions)))
         return FamilyAccessDecision(allowed,
             "governed_farm_lifecycle_authority" if allowed else "owner_authority_required",
             principal, attribution, may_read_private_context=allowed,
@@ -276,7 +277,9 @@ def _principal_from_record(record: Mapping[str, Any], owner_id: str, chat_id: st
     permissions = frozenset(_clean(item) for item in record.get("permissions", []) if _clean(item))
     summaries = frozenset(_clean(item).lower() for item in record.get("summary_domains", []) if _clean(item))
     language = _clean(record.get("language")).lower()
-    allowed_permissions = FARM_MANAGER_CAPABILITIES | {READ_ONLY_CAPABILITY}
+    # Weaning needs an explicit delegated scope. Mortality authority and the
+    # historic manager role do not silently authorize this new action.
+    allowed_permissions = FARM_MANAGER_CAPABILITIES | {READ_ONLY_CAPABILITY, "weaning"}
     if not permissions <= allowed_permissions:
         return None
     if language not in SUPPORTED_OUTPUT_LANGUAGES:

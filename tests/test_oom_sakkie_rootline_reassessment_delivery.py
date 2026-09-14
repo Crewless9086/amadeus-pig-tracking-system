@@ -343,7 +343,7 @@ def test_owner_plan_fingerprint_preserves_lifecycle_completion_and_question_text
             "<b>What I need from you:</b> Nothing\n"
             "<b>Next automatic reassessment:</b> around 14:16")
     assert _owner_plan_fingerprint(base) != _owner_plan_fingerprint(
-        base.replace("Ready after the final safety check", "Completed — off and verified"))
+        base.replace("Ready after the final safety check", "Controller OFF verified"))
     assert _owner_plan_fingerprint(base) != _owner_plan_fingerprint(
         base.replace("Nothing", "Is the tank low?"))
 

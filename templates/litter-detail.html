@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="af">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Amadeus Litter Detail</title>
+  <title>Amadeus · Werpselrekord</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/litterLifecycle.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/litterLifecycle.css') }}?v=20260911-weaning-controls">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
 </head>
 <body>
@@ -21,11 +21,17 @@
         </div>
         <div class="inline-action-group">
           <a id="litter_record_print_link" href="/paring-werpselrekord" class="button-link button-link-secondary">Druk Parings- en Werpselrekord</a>
-          <a id="litter_detail_back_link" href="/" class="secondary-link">&larr; Back to Dashboard</a>
+          <a id="litter_detail_back_link" href="/" class="secondary-link">&larr; Terug na plaasoorsig</a>
         </div>
       </div>
 
       <div id="litter_message" class="message-box hidden"></div>
+      <section id="weaning_recovery" class="bulk-review-panel hidden" aria-live="polite">
+        <strong>Lees jou bevestigde speeninskrywing terug</strong>
+        <p id="weaning_recovery_details"></p>
+        <p>Jou bevestigde versoek is behou. Gebruik dieselfde versoek om die uitslag te herstel.</p>
+        <button id="weaning_recovery_button" type="button" {% if not weaning_identity %}disabled{% endif %}>Herstel hierdie bevestiging</button>
+      </section>
 
       <section id="lifecycle_next_panel" class="lifecycle-next-action" aria-live="polite">
         <span class="lifecycle-next-kicker">Volgende stap</span>
@@ -217,13 +223,17 @@
         </main>
 
         <aside class="litter-side-column">
-          <section id="weaning_day_panel" class="litter-side-panel">
-            <div class="section-subtitle">Speen en tweede behandeling</div>
-            <p class="form-helper">Vul tags en speengewigte in die tabel in. Kontroleer dan kamp, behandeling en die volledige speenaksie een keer.</p>
+          <section id="weaning_day_panel" class="litter-side-panel"
+            data-actor-id="{{ weaning_identity.actor_id if weaning_identity else '' }}"
+            data-weaning-csrf="{{ weaning_csrf }}">
+            <div class="section-subtitle">Teken speen aan</div>
+            <p class="form-helper">Gee die werklike speendatum vir al die huidige varkies. Gewig, geslag, oornommers, waarnemings, verskuiwing en behandeling is opsioneel.</p>
+            {% if not weaning_identity %}<p class="form-helper">Maak hierdie rekord uit jou private Plaas-menu oop met jou eie speentoestemming.</p>{% endif %}
             <form id="weaning_day_form" class="attention-action-form">
+              <fieldset style="border:0;padding:0;min-width:0" {% if not weaning_identity %}disabled{% endif %}>
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="weaning_day_date">Speendatum</label>
+                  <label for="weaning_day_date">Werklike speendatum</label>
                   <input type="date" id="weaning_day_date" required />
                 </div>
                 <div class="form-field">
@@ -233,7 +243,7 @@
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="weaning_day_antiparasitic">Ecomectin / antiparasities</label>
+                  <label for="weaning_day_antiparasitic">Antiparasities, indien gegee</label>
                   <select id="weaning_day_antiparasitic">
                     <option value="">Geen</option>
                   </select>
@@ -251,12 +261,32 @@
                   </select>
                 </div>
                 <div class="form-field">
+                  <label for="weaning_day_dose">Werklike dosis, indien behandel</label>
+                  <input id="weaning_day_dose" type="number" min="0.001" step="any" />
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_route">Toedieningsroete</label>
+                  <input id="weaning_day_route" type="text" />
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_batch">Lotnommer</label>
+                  <input id="weaning_day_batch" type="text" />
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_males">Manlike telling, indien bekend</label>
+                  <input id="weaning_day_males" type="number" min="0" step="1" />
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_females">Vroulike telling, indien bekend</label>
+                  <input id="weaning_day_females" type="number" min="0" step="1" />
+                </div>
+                <div class="form-field">
                   <label for="weaning_day_recorded_by">Aangeteken deur</label>
-                  <input type="text" id="weaning_day_recorded_by" value="web_app" required />
+                  <input type="text" id="weaning_day_recorded_by" value="{{ weaning_identity.actor_id if weaning_identity else '' }}" readonly />
                 </div>
                 <div class="form-field form-field-wide">
                   <label for="weaning_day_notes">Notas</label>
-                  <textarea id="weaning_day_notes" rows="3" placeholder="Opsionele notas oor tags, verskuiwing of behandeling"></textarea>
+                  <textarea id="weaning_day_notes" rows="3" placeholder="Opsionele feite oor die speen"></textarea>
                 </div>
               </div>
               <div id="weaning_day_preview" class="bulk-review-panel hidden"></div>
@@ -264,6 +294,7 @@
                 <button type="button" id="weaning_day_preview_button" class="button-link button-link-secondary">Kontroleer speen</button>
                 <button type="submit" id="weaning_day_apply_button" disabled>Bevestig en voltooi speen</button>
               </div>
+              </fieldset>
             </form>
           </section>
 
@@ -316,14 +347,23 @@
               <p class="form-helper">If a piglet has no latest weight, the backend will stop and ask for weights before saving.</p>
               <button type="submit" id="mark_weaned_button">Mark as Weaned</button>
             </form>
-            <form id="newborn_health_form" class="attention-action-form hidden">
+            <form id="newborn_health_form" class="attention-action-form hidden"
+                  data-actor-id="{{ treatment_identity.actor_id if treatment_identity else '' }}"
+                  data-treatment-csrf="{{ treatment_csrf or '' }}">
+              <p class="form-helper">Teken die behandeling aan wat jy werklik toegedien het. Kontroleer die presiese feite en bevestig voordat jy stoor.</p>
+              <div id="treatment_recovery" class="bulk-review-panel hidden" role="status">
+                <strong>Bevestiging behou</strong>
+                <p>Lees die uitslag van jou presiese bevestiging terug voordat jy verder werk.</p>
+                <p id="treatment_recovery_details"></p>
+                <button type="button" id="treatment_recovery_button">Herstel bevestiging en lees terug</button>
+              </div>
               <div class="form-grid">
                 <div class="form-field">
                   <label for="newborn_health_date">Datum</label>
                   <input type="date" id="newborn_health_date" required />
                 </div>
                 <div class="form-field">
-                  <label for="newborn_health_antiparasitic">Ecomectin / antiparasities</label>
+                  <label for="newborn_health_antiparasitic">Antiparasitiese produk wat gebruik is</label>
                   <select id="newborn_health_antiparasitic">
                     <option value="">Geen</option>
                   </select>
@@ -335,14 +375,42 @@
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="newborn_health_vaccination">Ander entstof, indien nodig</label>
+                  <label for="newborn_health_vaccination">Entstof wat gebruik is</label>
                   <select id="newborn_health_vaccination">
                     <option value="">Geen</option>
                   </select>
                 </div>
                 <div class="form-field">
                   <label for="newborn_health_given_by">Aangeteken deur</label>
-                  <input type="text" id="newborn_health_given_by" value="web_app" required />
+                  <input type="text" id="newborn_health_given_by" value="{{ treatment_identity.actor_id if treatment_identity else 'Geen behandelingstoestemming' }}" readonly />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_dose">Werklike dosis per varkie</label>
+                  <input type="text" id="newborn_health_dose" inputmode="decimal" placeholder="Dosis wat toegedien is" required />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_dose_unit">Dosiseenheid</label>
+                  <input type="text" id="newborn_health_dose_unit" placeholder="Eenheid wat gebruik is" />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_route">Werklike toedieningsroete</label>
+                  <input type="text" id="newborn_health_route" required />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_batch">Lotnommer</label>
+                  <input type="text" id="newborn_health_batch" required />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_total_count">Getal behandel, indien getel</label>
+                  <input type="number" id="newborn_health_total_count" min="1" step="1" />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_earmarked">Oormerke aangebring</label>
+                  <select id="newborn_health_earmarked">
+                    <option value="">Nie opgegee nie</option>
+                    <option value="true">Ja</option>
+                    <option value="false">Nee</option>
+                  </select>
                 </div>
                 <div class="form-field form-field-wide litter-first-care-tally">
                   <span class="litter-tally-title">Geslagtelling</span>
@@ -359,10 +427,6 @@
                   <textarea id="newborn_health_notes" rows="3"></textarea>
                 </div>
               </div>
-              <label class="checkbox-row hidden">
-                <input type="checkbox" id="newborn_health_earmarked" />
-                <span>Mark all active piglets as earmarked</span>
-              </label>
               <div id="newborn_health_preview" class="bulk-review-panel hidden"></div>
               <div class="litter-first-care-skip">
                 <label class="checkbox-row">
@@ -548,6 +612,6 @@
   </div>
 
   <script src="{{ url_for('static', filename='js/litterLifecycleLayout.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260810-closed-outcomes"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260911-first-treatment"></script>
 </body>
 </html>

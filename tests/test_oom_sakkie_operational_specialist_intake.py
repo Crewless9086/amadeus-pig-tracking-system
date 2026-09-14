@@ -192,7 +192,7 @@ def test_plain_storage_fraction_and_visible_c_need_are_both_retained():
 def test_semantic_water_observation_family_is_typed_without_phrase_rules(text, language, facts):
     item={**operational(text),"semantic":{"domain":"rootline","intent":"water_levels_observed",
         "message_kind":"observation","observation":text,"observation_facts":facts,
-        "language":language,"needs_clarification":False}}
+        "language":language,"needs_clarification":False,"confidence":.99}}
     value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),now=NOW,
         rootline_operations_dispatcher=lambda _context:operational_result(recommendation="Hold"))
     assert status==200 and [row["kind"] for row in value["observations"]]==[
@@ -844,7 +844,7 @@ def test_invalid_parent_provider_chronology_fails_closed(parent_at):
 
 def test_recoverable_zero_write_containment_advances_same_mission_once():
     item={**operational("Storage tanks and Reservoir is full"),"semantic":{"domain":"rootline",
-        "intent":"water_levels_observed","message_kind":"observation","observation":"Both are full.",
+        "intent":"water_levels_observed","message_kind":"observation","observation":"Both are full.","confidence":.99,
         "observation_facts":[{"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}],
         "needs_clarification":False}}
     mission=operational_specialist_intake._mission(item)

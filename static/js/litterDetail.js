@@ -19,6 +19,11 @@ const newbornHealthGivenBy = document.getElementById("newborn_health_given_by");
 const newbornHealthMaleCount = document.getElementById("newborn_health_male_count");
 const newbornHealthFemaleCount = document.getElementById("newborn_health_female_count");
 const newbornHealthNotes = document.getElementById("newborn_health_notes");
+const newbornHealthDose = document.getElementById("newborn_health_dose");
+const newbornHealthDoseUnit = document.getElementById("newborn_health_dose_unit");
+const newbornHealthRoute = document.getElementById("newborn_health_route");
+const newbornHealthBatch = document.getElementById("newborn_health_batch");
+const newbornHealthTotalCount = document.getElementById("newborn_health_total_count");
 const newbornHealthPreview = document.getElementById("newborn_health_preview");
 const newbornHealthPreviewButton = document.getElementById("newborn_health_preview_button");
 const newbornHealthApplyButton = document.getElementById("newborn_health_apply_button");
@@ -276,9 +281,16 @@ async function loadProductsForNewbornHealth() {
     throw new Error("Could not load products.");
   }
   const products = data.products || [];
-  setSelectOptions(newbornHealthAntiparasitic, products, ["antiparasitic", "parasite", "ecomectin"], "ecomectin");
-  setSelectOptions(newbornHealthDeworming, products, ["deworm", "panacur"], "panacur");
+  setSelectOptions(newbornHealthAntiparasitic, products, ["antiparasitic", "parasite"], "");
+  setSelectOptions(newbornHealthDeworming, products, ["deworm"], "");
   setSelectOptions(newbornHealthVaccination, products, ["vacc"], "");
+  [newbornHealthAntiparasitic, newbornHealthDeworming, newbornHealthVaccination].forEach(select => {
+    select.value = "";
+    Array.from(select.options).forEach(option => {
+      const product = products.find(item => item.product_id === option.value);
+      if (product) option.textContent = `${product.product_name || product.product_id} (${product.product_id})`;
+    });
+  });
   productsLoaded = true;
 }
 
@@ -290,9 +302,16 @@ async function loadProductsForWeaningDay() {
     throw new Error("Could not load products.");
   }
   const products = data.products || [];
-  setSelectOptions(weaningDayAntiparasitic, products, ["antiparasitic", "parasite", "ecomectin"], "ecomectin");
-  setSelectOptions(weaningDayDeworming, products, ["deworm", "panacur"], "panacur");
+  setSelectOptions(weaningDayAntiparasitic, products, ["antiparasitic", "parasite", "ecomectin"], "");
+  setSelectOptions(weaningDayDeworming, products, ["deworm", "panacur"], "");
   setSelectOptions(weaningDayVaccination, products, ["vacc"], "");
+  [weaningDayAntiparasitic, weaningDayDeworming, weaningDayVaccination].forEach(select => {
+    select.value = "";
+    Array.from(select.options).forEach(option => {
+      const product = products.find(item => item.product_id === option.value);
+      if (product) option.textContent = `${product.product_name || product.product_id}${product.dose_unit ? ` (${product.dose_unit})` : ""}`;
+    });
+  });
   weaningProductsLoaded = true;
 }
 
@@ -329,7 +348,8 @@ function renderAttention(litter) {
     || attentionTextValue.includes("newborn health");
 
   attentionPanel.classList.toggle("hidden", !hasReason && !canMarkWeaned && !canRecordNewbornHealth);
-  markWeanedForm.classList.toggle("hidden", !canMarkWeaned);
+  // The Weaning Day panel owns preview and exact confirmation for this action.
+  markWeanedForm.classList.add("hidden");
   newbornHealthForm.classList.toggle("hidden", !canRecordNewbornHealth);
   if (attentionLinks) {
     attentionLinks.innerHTML = "";
@@ -342,9 +362,6 @@ function renderAttention(litter) {
     || "Confirm the litter status and update the weaning details when ready.";
   renderAttentionLinks(litter.litter_id, attention.action_type);
   markWeanedDate.value = attention.wean_date || todayIsoDate();
-  if (newbornHealthDate && !newbornHealthDate.value) {
-    newbornHealthDate.value = todayIsoDate();
-  }
   if (canRecordNewbornHealth) {
     loadProductsForNewbornHealth().catch(() => {
       showLitterMessage("Could not load products for newborn health.", "error");
@@ -422,8 +439,10 @@ function renderClosedLitterView(litter) {
   const weanedCount = Number(litter.weaned_count);
   setText("closed_survival_rate", bornAlive > 0 && Number.isFinite(weanedCount) ? `${formatNumber((weanedCount / bornAlive) * 100, 1)}%` : "-");
   setText("closed_average_wean_weight", litter.average_wean_weight_kg !== null && litter.average_wean_weight_kg !== undefined ? `${formatNumber(litter.average_wean_weight_kg, 2)} kg` : "Onbekend");
-  setText("closed_male_count", litter.weaned_male_count);
-  setText("closed_female_count", litter.weaned_female_count);
+  const weanedPiglets = (litter.piglets || []).filter(pig => pig.wean_date);
+  const sexCountsKnown = weanedPiglets.length === weanedCount && weanedPiglets.every(pig => ["Male", "Female", "Castrated_Male"].includes(pig.sex));
+  setText("closed_male_count", sexCountsKnown ? weanedPiglets.filter(pig => ["Male", "Castrated_Male"].includes(pig.sex)).length : "Onbekend");
+  setText("closed_female_count", sexCountsKnown ? weanedPiglets.filter(pig => pig.sex === "Female").length : "Onbekend");
 
   const labels = [
     ["active_on_farm", "Aktief op plaas"], ["breeding", "Teelvarke"],
@@ -699,74 +718,74 @@ function renderManualActionsPanel(litter) {
   manualActionsToggle.textContent = manualActionsExpanded ? "Hide Manual Actions" : "Show Manual Actions";
 }
 
-function renderWeaningDayPanel(litter) {
-  const isActive = detailState(litter) === "active";
-  if (weaningDayPanel) {
-    weaningDayPanel.classList.toggle("hidden", !isActive);
+function weaningStorageKey() {
+  return `herdmaster-weaning:${weaningDayPanel?.dataset.actorId || "anonymous"}:${getLitterIdFromUrl()}`;
+}
+
+function pendingWeaning() {
+  try { return JSON.parse(sessionStorage.getItem(weaningStorageKey()) || "null"); }
+  catch (_) { return null; }
+}
+
+function renderWeaningRecovery() {
+  const pending = pendingWeaning();
+  document.getElementById("weaning_recovery").classList.toggle("hidden", !pending);
+  if (pending) {
+    const packet = pending.confirmation_binding?.packet;
+    document.getElementById("weaning_recovery_details").textContent =
+      `${packet?.litter_id || getLitterIdFromUrl()} · ${packet?.wean_date || ""} · ${packet?.piglets?.length || 0} varkies`;
   }
-  if (!isActive) {
+  return pending;
+}
+
+function renderWeaningDayPanel(litter) {
+  const pending = renderWeaningRecovery();
+  const isActive = detailState(litter) === "active";
+  weaningDayPanel?.classList.toggle("hidden", !isActive || Boolean(pending));
+  if (!isActive || pending) {
     resetWeaningDayPreview();
     return;
   }
-  if (weaningDayDate && !weaningDayDate.value) {
-    weaningDayDate.value = todayIsoDate();
-  }
-  loadProductsForWeaningDay().catch(() => {
-    showLitterMessage("Could not load products for weaning day.", "error");
-  });
-  loadPensForWeaningDay().catch(() => {
-    showLitterMessage("Could not load pens for weaning day.", "error");
-  });
+  // A planned date and today's date are not evidence of completed weaning.
+  loadProductsForWeaningDay().catch(() => showLitterMessage("Die produklys kon nie laai nie.", "error"));
+  loadPensForWeaningDay().catch(() => showLitterMessage("Die kamplys kon nie laai nie.", "error"));
 }
 
 function weaningDayPayload(dryRun) {
-  const assignmentByPigId = new Map();
-  document.querySelectorAll(".piglet-tag-input").forEach((input) => {
-    const pigId = input.dataset.pigId || "";
-    if (!assignmentByPigId.has(pigId)) {
-      assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
-    }
-    assignmentByPigId.get(pigId).tag_number = input.value.trim();
+  const assignments = new Map();
+  function fact(input, key, value) {
+    const pigId = input.dataset.pigId;
+    if (!assignments.has(pigId)) assignments.set(pigId, {pig_id: pigId});
+    if (value !== "") assignments.get(pigId)[key] = value;
+  }
+  document.querySelectorAll(".piglet-tag-input").forEach(input => fact(input, "tag_number", input.value.trim()));
+  document.querySelectorAll(".piglet-wean-weight-input").forEach(input => fact(input, "wean_weight_kg", input.value.trim()));
+  document.querySelectorAll(".piglet-sex-input").forEach(input => fact(input, "sex", input.value));
+  document.querySelectorAll(".piglet-earmarked-input").forEach(input => {
+    if (input.value !== "") fact(input, "earmarked", input.value === "true");
   });
-  document.querySelectorAll(".piglet-wean-weight-input").forEach((input) => {
-    const pigId = input.dataset.pigId || "";
-    if (!assignmentByPigId.has(pigId)) {
-      assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
-    }
-    assignmentByPigId.get(pigId).wean_weight_kg = input.value.trim();
+  document.querySelectorAll(".piglet-observation-note").forEach(input => {
+    const selector = `[data-pig-id="${CSS.escape(input.dataset.pigId)}"]`;
+    const trait = document.querySelector(`.piglet-observation-trait${selector}`)?.value || "";
+    if (input.value.trim() || trait) fact(input, "observation", {
+      factual_note: input.value.trim(), traits: trait ? [trait] : [],
+      sentiment: document.querySelector(`.piglet-observation-sentiment${selector}`)?.value || "neutral",
+      watch_flag: document.querySelector(`.piglet-observation-watch${selector}`)?.checked === true,
+    });
   });
-  document.querySelectorAll(".piglet-sex-input").forEach((input) => {
-    const pigId = input.dataset.pigId || "";
-    if (!assignmentByPigId.has(pigId)) assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
-    assignmentByPigId.get(pigId).sex = input.value;
-  });
-  document.querySelectorAll(".piglet-observation-note").forEach((input) => {
-    const pigId = input.dataset.pigId || "";
-    if (!assignmentByPigId.has(pigId)) assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
-    const trait = document.querySelector(`.piglet-observation-trait[data-pig-id="${CSS.escape(pigId)}"]`)?.value || "";
-    const sentiment = document.querySelector(`.piglet-observation-sentiment[data-pig-id="${CSS.escape(pigId)}"]`)?.value || "neutral";
-    const watchFlag = document.querySelector(`.piglet-observation-watch[data-pig-id="${CSS.escape(pigId)}"]`)?.checked === true;
-    if (input.value.trim() || trait) assignmentByPigId.get(pigId).observation = {
-      factual_note: input.value.trim(), traits: trait ? [trait] : [], sentiment, watch_flag: watchFlag,
-    };
-  });
-  const assignments = Array.from(assignmentByPigId.values())
-    .filter((assignment) => assignment.pig_id || assignment.tag_number || assignment.wean_weight_kg);
+  const value = id => document.getElementById(id)?.value.trim() || "";
   const payload = {
-    wean_date: weaningDayDate.value,
-    assignments,
-    target_pen_id: weaningDayTargetPen.value,
-    changed_by: weaningDayRecordedBy.value || "web_app",
-    notes: weaningDayNotes.value,
+    wean_date: weaningDayDate.value, assignments: Array.from(assignments.values()),
+    target_pen_id: weaningDayTargetPen.value, notes: weaningDayNotes.value, dry_run: dryRun,
     medicine: {
       antiparasitic_product_id: weaningDayAntiparasitic.value,
       deworming_product_id: weaningDayDeworming.value,
       vaccination_product_id: weaningDayVaccination.value,
-      notes: weaningDayNotes.value,
+      dose: value("weaning_day_dose"), route: value("weaning_day_route"), batch_lot_number: value("weaning_day_batch"),
     },
-    dry_run: dryRun,
   };
-  if (!dryRun && latestWeaningDayPreview?.confirmation_binding) payload.confirmation_binding = latestWeaningDayPreview.confirmation_binding;
+  if (value("weaning_day_males") !== "") payload.male_count = Number(value("weaning_day_males"));
+  if (value("weaning_day_females") !== "") payload.female_count = Number(value("weaning_day_females"));
   return payload;
 }
 
@@ -777,108 +796,143 @@ function resetWeaningDayPreview() {
 }
 
 function setWeaningDaySubmitting(isSubmitting, mode = "preview") {
-  weaningDayPreviewButton.disabled = isSubmitting;
-  weaningDayApplyButton.disabled = isSubmitting || !latestWeaningDayPreview;
-  weaningDayPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview Weaning Day";
-  weaningDayApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Weaning Day";
+  weaningDayPreviewButton.disabled = isSubmitting || Boolean(pendingWeaning());
+  weaningDayApplyButton.disabled = isSubmitting || !latestWeaningDayPreview || Boolean(pendingWeaning());
+  weaningDayPreviewButton.textContent = isSubmitting && mode === "preview" ? "Kontroleer..." : "Kontroleer speen";
+  weaningDayApplyButton.textContent = isSubmitting && mode === "apply" ? "Stoor en lees terug..." : "Bevestig en voltooi speen";
+  document.getElementById("weaning_recovery_button").disabled = isSubmitting || !weaningDayPanel.dataset.actorId;
 }
 
 async function readWeaningDayResponse(response) {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("application/json")) {
     const requestId = response.headers.get("x-request-id");
-    throw new Error(
-      `The server could not complete the weaning-day save${requestId ? ` (request ${requestId})` : ""}. ` +
-      "Do not press Save again; reload the litter to check what was recorded."
-    );
+    throw new Error(`Die speenuitslag kon nie teruggelees word nie${requestId ? ` (${requestId})` : ""}. ` +
+      "Herlaai die werpsel en herstel jou behoue bevestiging om te sien wat gestoor is.");
   }
   return response.json();
 }
 
+function weaningError(data) {
+  const messages = {
+    authenticated_weaning_permission_required: "Jou eie rekening het speentoestemming nodig.",
+    weaning_request_binding_required: "Jou sessie het verander. Maak die rekord weer uit jou private Plaas-menu oop.",
+    weaning_date_required: "Gee die werklike speendatum.",
+    weaning_date_before_birth: "Die speendatum mag nie vóór geboorte wees nie.",
+    weaning_actual_date_in_future: "Die werklike speendatum mag nie in die toekoms wees nie.",
+    reported_weaning_count_conflict: "Die getal stem nie met die huidige werpsel ooreen nie.",
+    weaning_facts_invalid: "Kontroleer die opsionele gewigte, geslagte en oornommers. Enige opgegewe geslagtelling moet al die huidige varkies dek.",
+    weaning_treatment_details_required: "Gee die werklike dosis, toedieningsroete en lotnommer vir die behandeling wat jy gekies het.",
+    weaning_treatment_product_required: "Gee die presiese produk vir die behandelingsbesonderhede wat jy opgegee het.",
+    weaning_treatment_invalid: "Kontroleer die presiese aktiewe produk en sy bekende dosiseenheid.",
+    weaning_evidence_changed_repreview_required: "Die werpsel of sy besonderhede het verander. Niks nuuts is gestoor nie; laai die huidige rekord en kontroleer weer.",
+    exact_weaning_preview_confirmation_required: "Die presiese voorskou het verander of verval. Kontroleer die besonderhede weer.",
+  };
+  return messages[data.status] || "Die speenuitslag kon nie bevestig word nie. Lees die werpsel terug en herstel jou behoue bevestiging voordat jy 'n nuwe versoek maak.";
+}
+
 function renderWeaningDayPreview(preview) {
-  if (!weaningDayPreview) return;
+  const packet = preview.confirmation_binding.packet;
+  const sow = preview.sow;
+  const rows = preview.piglet_effects.map(pig => {
+    const facts = [pig.weight_kg == null ? "gewig nie opgegee nie" : `${pig.weight_kg} kg`,
+      pig.sex ? pigletSexText(pig.sex) : "geslag onbekend"];
+    if (pig.tag_number) facts.push(`oornommer ${pig.tag_number}`);
+    if (pig.earmarked !== null) facts.push(pig.earmarked ? "oormerk aangebring" : "geen oormerk aangebring nie");
+    if (pig.from_pen_id !== pig.to_pen_id) facts.push(`skuif: ${pig.from_pen_id || "onbekend"} → ${pig.to_pen_id}`);
+    return `<li><strong>${escapeHtml(pig.pig_id)}</strong><br>${escapeHtml(facts.join(" · "))}</li>`;
+  }).join("");
+  const medicine = packet.treatment_rows.map(row =>
+    `<li>${escapeHtml(`${row[1]}: ${row[5]}, ${row[6]} ${row[7]}, ${row[8]}, lot ${row[10]}`)}${row[16] ? `<br>${escapeHtml(row[16])}` : ""}</li>`).join("");
+  const tally = preview.reported_sex_counts;
   weaningDayPreview.classList.remove("hidden");
   weaningDayPreview.innerHTML = `
-    <div class="bulk-review-header">
-      <strong>${preview.dry_run ? "Preview ready" : "Saved"}</strong>
-      <span>${preview.active_piglet_count || 0} piglet${preview.active_piglet_count === 1 ? "" : "s"}</span>
-    </div>
-    <div class="sales-meta-grid">
-      <div><span class="history-label">Tags</span><span class="history-value">${preview.tag_count || 0}</span></div>
-      <div><span class="history-label">Weight Log</span><span class="history-value">${preview.weight_count || 0}</span></div>
-      <div><span class="history-label">Wean Weights</span><span class="history-value">${preview.wean_weights_captured || 0}</span></div>
-      <div><span class="history-label">Geslag</span><span class="history-value">${preview.sex_count || 0}</span></div>
-      <div><span class="history-label">Treatments</span><span class="history-value">${preview.treatment_count || 0}</span></div>
-      <div><span class="history-label">Pen Moves</span><span class="history-value">${preview.movement_count || 0}</span></div>
-      <div><span class="history-label">Waarnemings</span><span class="history-value">${preview.observation_count || 0}</span></div>
-    </div>
-    ${(preview.observation_result?.observation_effects || []).map((row) => `<p class="form-helper"><strong>${escapeHtml(row.visible_identity)}</strong>: ${escapeHtml(row.factual_note)} (${escapeHtml(row.sentiment)})</p>`).join("")}
-    ${(Array.isArray(preview.observation_result) ? preview.observation_result : []).map((row) => `<p class="form-helper"><strong>${escapeHtml(row.pig_id)}</strong>: ${escapeHtml(row.factual_note)} · ${escapeHtml(row.observed_at)} · ${escapeHtml(row.observer)} · ${escapeHtml(row.observation_event_id)}</p>`).join("")}
-    <p class="form-helper">${escapeHtml(preview.message || "Review the packet before saving.")}</p>
-  `;
+    <strong>Kontroleer voor jy bevestig</strong>
+    <p>${escapeHtml(sow.pig_name || sow.tag_number || sow.pig_id)} · ${escapeHtml(sow.pig_id)}<br>
+      ${escapeHtml(preview.litter_id)} · ${escapeHtml(packet.wean_date)} · <strong>${preview.weaned_count} varkies</strong></p>
+    <ul>${rows}</ul>
+    ${tally.male_count !== undefined ? `<p>Opgegewe telling: ${tally.male_count} manlik, ${tally.female_count} vroulik. Individuele geslagte bly soos aangeteken.</p>` : ""}
+    ${medicine ? `<p>Opgegewe behandeling:</p><ul>${medicine}</ul>` : "<p>Geen behandeling opgegee nie.</p>"}
+    ${(preview.observation_result?.observation_effects || []).map(row => `<p>Waarneming vir ${escapeHtml(row.visible_identity)}: ${escapeHtml(row.factual_note)}</p>`).join("")}
+    ${packet.piglets[0]?.notes ? `<p>Nota: ${escapeHtml(packet.piglets[0].notes)}</p>` : ""}
+    <p>Sog: ${escapeHtml(pigletStatusText(sow))}; ${sow.on_farm ? "op die plaas" : "nie op die plaas nie"}. Die aktiewe kuddetelling verander nie. Dooie en verkoopte varkies se geskiedenis bly behoue.</p>`;
+}
+
+function weaningHeaders() {
+  return {"Content-Type": "application/json", "X-Weaning-CSRF": weaningDayPanel.dataset.weaningCsrf || ""};
 }
 
 async function previewWeaningDay() {
   clearLitterMessage();
-  latestWeaningDayPreview = null;
-  if (weaningDayApplyButton) weaningDayApplyButton.disabled = true;
-  if (!weaningDayDate.value) {
-    showLitterMessage("Choose a wean date before previewing.", "error");
-    return;
-  }
+  resetWeaningDayPreview();
+  if (pendingWeaning()) return renderWeaningRecovery();
+  if (!weaningDayDate.value) return showLitterMessage("Gee die werklike speendatum voordat jy kontroleer.", "error");
   setWeaningDaySubmitting(true, "preview");
   try {
-    const litterId = getLitterIdFromUrl();
-    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/weaning-day`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(weaningDayPayload(true)),
+    const payload = weaningDayPayload(true);
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/weaning-day`, {
+      method: "POST", headers: weaningHeaders(), body: JSON.stringify(payload),
     });
     const data = await readWeaningDayResponse(response);
-    if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.error || "Could not preview weaning day."]).join(" "));
-    }
-    latestWeaningDayPreview = data;
+    if (!response.ok || !data.success) throw new Error(weaningError(data));
+    latestWeaningDayPreview = {...data, request_payload: payload};
     renderWeaningDayPreview(data);
   } catch (error) {
-    showLitterMessage(error.message || "Could not preview weaning day.", "error");
+    showLitterMessage(error.message || "Die speenvoorskou kon nie laai nie.", "error");
   } finally {
     setWeaningDaySubmitting(false, "preview");
   }
 }
 
-async function submitWeaningDay(event) {
-  event.preventDefault();
-  clearLitterMessage();
-  if (!latestWeaningDayPreview) {
-    showLitterMessage("Preview the weaning day packet before saving.", "error");
-    return;
-  }
-  if (!window.confirm("Save this full weaning day packet?")) {
-    return;
-  }
+async function saveConfirmedWeaning(payload) {
   setWeaningDaySubmitting(true, "apply");
   try {
-    const litterId = getLitterIdFromUrl();
-    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/weaning-day`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(weaningDayPayload(false)),
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/weaning-day`, {
+      method: "POST", headers: weaningHeaders(), body: JSON.stringify(payload),
     });
     const data = await readWeaningDayResponse(response);
     if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.error || "Could not save weaning day."]).join(" "));
+      if (data.operation_committed === false) sessionStorage.removeItem(weaningStorageKey());
+      throw new Error(weaningError(data));
     }
+    sessionStorage.removeItem(weaningStorageKey());
     resetWeaningDayPreview();
-    renderWeaningDayPreview(data);
-    showLitterMessage(data.message || "Weaning day saved.", "success");
-    await loadLitterDetail({ keepMessage: true });
+    const summary = `Speen is gestoor en teruggelees: ${data.weaned_count} varkies op ${data.wean_date}. ` +
+      `Aktiewe kudde: ${data.active_herd_count}. Sog: ${pigletStatusText(data.sow_readback)}, ${data.sow_readback.on_farm ? "op die plaas" : "nie op die plaas nie"}. ` +
+      `Voorgestelde kontrole vir ${data.changed_by} op ${data.follow_up.due_date}: die sog en gespeende varkies. Hierdie opvolgvoorneme is behou; dit is nog nie geskeduleer nie.`;
+    showLitterMessage(summary, "success");
+    await loadLitterDetail({keepMessage: true});
   } catch (error) {
-    showLitterMessage(error.message || "Could not save weaning day.", "error");
+    showLitterMessage(error instanceof TypeError ? "Die verbinding is onderbreek. Herstel jou behoue bevestiging om die uitslag terug te lees." :
+      error.message || "Herstel jou behoue bevestiging om die uitslag terug te lees.", "error");
   } finally {
+    renderWeaningRecovery();
     setWeaningDaySubmitting(false, "apply");
   }
 }
+
+async function submitWeaningDay(event) {
+  event.preventDefault();
+  if (!latestWeaningDayPreview || pendingWeaning()) return;
+  if (JSON.stringify(weaningDayPayload(true)) !== JSON.stringify(latestWeaningDayPreview.request_payload)) {
+    resetWeaningDayPreview();
+    return showLitterMessage("Die besonderhede het verander. Kontroleer weer voordat jy bevestig.", "error");
+  }
+  if (!window.confirm("Bevestig hierdie presiese speendatum en varkies en stoor dit een keer?")) return;
+  const confirmed = {...latestWeaningDayPreview.request_payload, dry_run: false, confirmed: true,
+    confirmation_binding: latestWeaningDayPreview.confirmation_binding};
+  // Preserve the authorized request before sending; recovery uses this exact
+  // signed packet even if the browser reloads or the response is lost.
+  try { sessionStorage.setItem(weaningStorageKey(), JSON.stringify(confirmed)); }
+  catch (_) { return showLitterMessage("Jou blaaier kon die bevestiging nie behou nie. Maak berging beskikbaar en probeer weer.", "error"); }
+  await saveConfirmedWeaning(confirmed);
+}
+
+document.getElementById("weaning_recovery_button").addEventListener("click", () => {
+  const confirmed = pendingWeaning();
+  if (confirmed) saveConfirmedWeaning(confirmed);
+});
+
 
 async function previewStillbornReclassify() {
   clearLitterMessage();
@@ -1011,46 +1065,113 @@ function setMarkWeanedSubmitting(isSubmitting) {
 }
 
 function newbornHealthPayload(dryRun) {
+  const count = input => input.value === "" ? null : Number(input.value);
   return {
     action_date: newbornHealthDate.value,
-    changed_by: newbornHealthGivenBy.value || "web_app",
-    earmarked: newbornHealthEarmarked.checked,
+    earmarked: newbornHealthEarmarked.value === "" ? null : newbornHealthEarmarked.value === "true",
     antiparasitic_product_id: newbornHealthAntiparasitic.value,
     deworming_product_id: newbornHealthDeworming.value,
     vaccination_product_id: newbornHealthVaccination.value,
-    notes: newbornHealthNotes.value,
-    male_count: newbornHealthMaleCount.value,
-    female_count: newbornHealthFemaleCount.value,
-    dry_run: dryRun,
+    dose: newbornHealthDose.value, dose_unit: newbornHealthDoseUnit.value,
+    route: newbornHealthRoute.value, batch_lot_number: newbornHealthBatch.value,
+    notes: newbornHealthNotes.value, male_count: count(newbornHealthMaleCount),
+    female_count: count(newbornHealthFemaleCount), total_count: count(newbornHealthTotalCount), dry_run: dryRun,
   };
 }
 
+function treatmentFactsHtml(facts) {
+  const tally = facts.male_count == null ? "Geslagtelling nie opgegee nie." :
+    `${facts.male_count} manlik, ${facts.female_count} vroulik as werpseltelling. Individuele geslagte bly soos aangeteken.`;
+  return `<p><strong>${escapeHtml(facts.sow_name || facts.sow_pig_id || "")} · ${escapeHtml(facts.litter_id)}</strong></p>
+    <p>Werklike datum: ${escapeHtml(facts.action_date)} · ${facts.total_count ?? facts.piglet_count} huidige varkies</p>
+    <p>${(facts.pig_ids || []).map(escapeHtml).join(", ")}</p>
+    <p>${(facts.products || []).map(product => `${escapeHtml(product.product_name)} (${escapeHtml(product.product_id)})`).join(", ")}</p>
+    <p>${escapeHtml(String(facts.dose))} ${escapeHtml(facts.dose_unit)} per varkie · ${escapeHtml(facts.route)} · lot ${escapeHtml(facts.batch_lot_number)}</p>
+    <p>Oormerke: ${facts.earmarked == null ? "nie opgegee nie" : facts.earmarked ? "aangebring" : "nie aangebring nie"}. ${tally}</p>
+    ${facts.notes ? `<p>Nota: ${escapeHtml(facts.notes)}</p>` : ""}`;
+}
+
 function renderNewbornHealthPreview(preview) {
-  if (!newbornHealthPreview) return;
   newbornHealthPreview.classList.remove("hidden");
-  const treatmentCount = preview.treatment_rows_planned || 0;
-  const pigletCount = preview.piglet_count || 0;
-  newbornHealthPreview.innerHTML = `
-    <div class="bulk-review-header">
-      <strong>Preview ready</strong>
-      <span>${pigletCount} piglet${pigletCount === 1 ? "" : "s"} / ${treatmentCount} treatment row${treatmentCount === 1 ? "" : "s"}</span>
-    </div>
-    <p class="form-helper"><strong>Geslagtelling:</strong> ${preview.sex_count_recorded ? `${preview.male_count} beertjies en ${preview.female_count} sogvarkies as 'n werpseltelling. Geen anonieme varkie word outomaties 'n geslag toegeken nie.` : "Nie by hierdie stap aangeteken nie; voltooi dit by speen."}</p>
-    <p class="form-helper">Earmarks and selected treatments will be saved for all active on-farm piglets in this litter.</p>
-  `;
+  newbornHealthPreview.innerHTML = `<strong>Kontroleer die presiese behandeling</strong>${treatmentFactsHtml(preview.preview)}`;
 }
 
 function resetNewbornHealthPreview() {
   latestNewbornHealthPreview = null;
-  if (newbornHealthApplyButton) newbornHealthApplyButton.disabled = true;
-  if (newbornHealthPreview) newbornHealthPreview.classList.add("hidden");
+  newbornHealthApplyButton.disabled = true;
+  newbornHealthPreview.classList.add("hidden");
+}
+
+function treatmentStorageKey() {
+  return `herdmaster-first-treatment:${newbornHealthForm.dataset.actorId || "anonymous"}:${getLitterIdFromUrl()}`;
+}
+
+function pendingTreatment() {
+  try { return JSON.parse(sessionStorage.getItem(treatmentStorageKey()) || "null"); }
+  catch (_) { return null; }
+}
+
+function renderTreatmentRecovery() {
+  const pending = pendingTreatment();
+  document.getElementById("treatment_recovery").classList.toggle("hidden", !pending);
+  newbornHealthForm.querySelectorAll(".form-grid, .form-actions, .litter-first-care-skip").forEach(node => node.classList.toggle("hidden", Boolean(pending)));
+  if (pending) {
+    newbornHealthForm.classList.remove("hidden");
+    const packet = pending.confirmation_binding?.packet;
+    document.getElementById("treatment_recovery_details").textContent =
+      `${packet?.litter_id || getLitterIdFromUrl()} · ${packet?.action_date || ""} · ${packet?.total_count || 0} varkies`;
+  }
+  return pending;
+}
+
+function renderTreatmentPresentation(litter) {
+  const completed = litter.first_treatment_complete || litter.first_treatment_partial || litter.first_treatment_skipped || detailState(litter) !== "active";
+  const authorized = Boolean(newbornHealthForm.dataset.actorId);
+  newbornHealthForm.classList.toggle("hidden", completed || !authorized);
+  const summary = document.getElementById("lifecycle_first_care_summary");
+  if (litter.first_treatment_receipt && litter.first_treatment_receipt_verified) {
+    summary.classList.remove("hidden");
+    summary.innerHTML = `<strong>Eerste behandeling gestoor en teruggelees</strong>${treatmentFactsHtml(litter.first_treatment_receipt)}`;
+  } else if (!completed && !authorized) {
+    summary.classList.remove("hidden");
+    summary.textContent = "Maak hierdie werpsel uit jou eie private Plaas-menu oop met behandelingstoestemming.";
+  }
+  renderTreatmentRecovery();
 }
 
 function setNewbornHealthSubmitting(isSubmitting, mode = "preview") {
-  newbornHealthPreviewButton.disabled = isSubmitting;
-  newbornHealthApplyButton.disabled = isSubmitting || !latestNewbornHealthPreview;
-  newbornHealthPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
-  newbornHealthApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Newborn Health";
+  newbornHealthPreviewButton.disabled = isSubmitting || Boolean(pendingTreatment());
+  newbornHealthApplyButton.disabled = isSubmitting || !latestNewbornHealthPreview || Boolean(pendingTreatment());
+  newbornHealthPreviewButton.textContent = isSubmitting && mode === "preview" ? "Kontroleer..." : "Kontroleer behandeling";
+  newbornHealthApplyButton.textContent = isSubmitting && mode === "apply" ? "Stoor en lees terug..." : "Bevestig en stoor behandeling";
+  document.getElementById("treatment_recovery_button").disabled = isSubmitting || !newbornHealthForm.dataset.actorId;
+}
+
+function treatmentHeaders() {
+  return {"Content-Type": "application/json", "X-Treatment-CSRF": newbornHealthForm.dataset.treatmentCsrf || ""};
+}
+
+function treatmentError(data) {
+  const fields = {product:"die presiese produk", dose:"die werklike dosis", dose_unit:"die dosiseenheid", route:"die toedieningsroete",
+    batch_lot_number:"die lotnommer", action_date:"die werklike datum vanaf geboorte tot vandag", total_count:"die getal huidige varkies",
+    male_count:"albei geslagtellings", female_count:"albei geslagtellings", earmarked:"die werklike oormerkfeit"};
+  if (data.missing?.length) return `Kontroleer ${fields[data.missing[0]] || "die ontbrekende feit"}. Jou ander besonderhede bly in die vorm.`;
+  const messages = {
+    authenticated_treatment_permission_required:"Jou eie rekening het behandelingstoestemming nodig.",
+    treatment_request_binding_required:"Jou sessie het verander. Maak die werpsel weer uit jou private Plaas-menu oop.",
+    exact_first_treatment_confirmation_required:"Die presiese voorskou stem nie ooreen nie. Kontroleer die feite weer.",
+    first_treatment_preview_expired:"Die voorskou het verval sonder 'n gestoorde behandeling. Kontroleer weer.",
+    first_treatment_evidence_changed_repreview_required:"Die werpsel of sy besonderhede het verander. Lees die huidige rekord en kontroleer weer.",
+    first_treatment_already_has_canonical_evidence:"Daar is reeds behandelings- of oorslaanbewys. Lees die bestaande rekord terug.",
+  };
+  return messages[data.status] || "Die behandelingsuitslag kon nie bevestig word nie. Herstel jou behoue bevestiging voordat jy weer probeer.";
+}
+
+async function readTreatmentResponse(response) {
+  if (!(response.headers.get("content-type") || "").includes("application/json")) {
+    throw new Error("Die behandelingsuitslag kon nie teruggelees word nie. Herlaai die werpsel en herstel jou behoue bevestiging.");
+  }
+  return response.json();
 }
 
 function renderPigletDeathPanel(litter) {
@@ -1470,81 +1591,80 @@ async function submitPigletDeath(event) {
 
 async function previewNewbornHealth() {
   clearLitterMessage();
-  latestNewbornHealthPreview = null;
-  newbornHealthApplyButton.disabled = true;
-
-  if (!newbornHealthDate.value) {
-    showLitterMessage("Choose an action date before previewing.", "error");
-    return;
-  }
-
+  resetNewbornHealthPreview();
+  if (pendingTreatment()) return renderTreatmentRecovery();
+  if (!newbornHealthDate.value) return showLitterMessage("Gee die werklike behandelingsdatum voordat jy kontroleer.", "error");
   setNewbornHealthSubmitting(true, "preview");
   try {
-    const litterId = getLitterIdFromUrl();
-    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/newborn-health`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newbornHealthPayload(true)),
+    const payload = newbornHealthPayload(true);
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/newborn-health`, {
+      method: "POST", headers: treatmentHeaders(), body: JSON.stringify(payload),
     });
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.error || "Could not preview newborn health action."]).join(" "));
-    }
-    latestNewbornHealthPreview = data;
+    const data = await readTreatmentResponse(response);
+    if (!response.ok || !data.success) throw new Error(treatmentError(data));
+    latestNewbornHealthPreview = {...data, request_payload: payload};
     renderNewbornHealthPreview(data);
   } catch (error) {
-    showLitterMessage(error.message || "Could not preview newborn health action.", "error");
+    showLitterMessage(error.message || "Kon nie die behandeling kontroleer nie.", "error");
   } finally {
     setNewbornHealthSubmitting(false, "preview");
   }
 }
 
-async function submitNewbornHealth(event) {
-  event.preventDefault();
-  clearLitterMessage();
-
-  if (!latestNewbornHealthPreview) {
-    showLitterMessage("Preview the newborn health action before saving.", "error");
-    return;
-  }
-  if (!window.confirm("Save newborn health records for all active piglets in this litter?")) {
-    return;
-  }
-
+async function saveConfirmedTreatment(payload) {
   setNewbornHealthSubmitting(true, "apply");
   try {
-    const litterId = getLitterIdFromUrl();
-    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/newborn-health`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newbornHealthPayload(false)),
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/newborn-health`, {
+      method: "POST", headers: treatmentHeaders(), body: JSON.stringify(payload),
     });
-    const data = await response.json();
+    const data = await readTreatmentResponse(response);
     if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.error || "Could not save newborn health action."]).join(" "));
+      if (data.operation_committed === false) sessionStorage.removeItem(treatmentStorageKey());
+      throw new Error(treatmentError(data));
     }
-    latestNewbornHealthPreview = null;
-    newbornHealthPreview.classList.add("hidden");
-    showLitterMessage(data.message || "Newborn health action saved.", "success");
-    await loadLitterDetail({ keepMessage: true });
+    sessionStorage.removeItem(treatmentStorageKey());
+    resetNewbornHealthPreview();
+    showLitterMessage(`Eerste behandeling is gestoor en teruggelees: ${data.piglet_count} varkies op ${data.action_date}, ${data.dose} ${data.dose_unit} per varkie.`, "success");
+    await loadLitterDetail({keepMessage: true});
   } catch (error) {
-    showLitterMessage(error.message || "Could not save newborn health action.", "error");
+    showLitterMessage(error instanceof TypeError ? "Die verbinding is onderbreek. Herstel jou behoue bevestiging om die uitslag terug te lees." : error.message, "error");
   } finally {
+    renderTreatmentRecovery();
     setNewbornHealthSubmitting(false, "apply");
   }
 }
 
+async function submitNewbornHealth(event) {
+  event.preventDefault();
+  if (!latestNewbornHealthPreview || pendingTreatment()) return;
+  if (JSON.stringify(newbornHealthPayload(true)) !== JSON.stringify(latestNewbornHealthPreview.request_payload)) {
+    resetNewbornHealthPreview();
+    return showLitterMessage("Die besonderhede het verander. Kontroleer weer voordat jy bevestig.", "error");
+  }
+  if (!window.confirm("Bevestig hierdie presiese behandelingsdatum, varkies, produkte en dosis en stoor dit een keer?")) return;
+  const confirmed = {...latestNewbornHealthPreview.request_payload, dry_run: false, confirmed: true,
+    confirmation_binding: latestNewbornHealthPreview.confirmation_binding};
+  try { sessionStorage.setItem(treatmentStorageKey(), JSON.stringify(confirmed)); }
+  catch (_) { return showLitterMessage("Jou blaaier kon die bevestiging nie behou nie. Maak berging beskikbaar en probeer weer.", "error"); }
+  await saveConfirmedTreatment(confirmed);
+}
+
+document.getElementById("treatment_recovery_button").addEventListener("click", () => {
+  const confirmed = pendingTreatment();
+  if (confirmed) saveConfirmedTreatment(confirmed);
+});
+
 async function skipNewbornHealth() {
   clearLitterMessage();
-  if (!newbornHealthSkip.checked) return;
+  if (!newbornHealthSkip.checked || pendingTreatment()) return;
   if (!window.confirm("Slaan Eerste Behandeling oor en sluit hierdie stap?")) return;
   newbornHealthSkipButton.disabled = true;
   try {
     const litterId = getLitterIdFromUrl();
     const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/first-treatment/skip`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ changed_by: newbornHealthGivenBy.value || "web_app" }),
+      headers: treatmentHeaders(),
+      body: JSON.stringify({confirmed: true}),
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
@@ -1558,46 +1678,11 @@ async function skipNewbornHealth() {
   }
 }
 
-async function submitMarkWeaned(event) {
+function submitMarkWeaned(event) {
   event.preventDefault();
-  clearLitterMessage();
-
-  const litterId = getLitterIdFromUrl();
-  const weanDate = markWeanedDate.value;
-
-  if (!weanDate) {
-    showLitterMessage("Choose a wean date before saving.", "error");
-    return;
-  }
-
-  setMarkWeanedSubmitting(true);
-
-  try {
-    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/mark-weaned`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        wean_date: weanDate,
-        changed_by: "web_app",
-        use_latest_weights_as_wean_weights: markWeanedUseLatestWeights ? markWeanedUseLatestWeights.checked : false,
-      }),
-    });
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      showLitterMessage((data.errors || [data.error || "Could not mark litter as weaned."]).join(" "), "error");
-      return;
-    }
-
-    showLitterMessage(data.message || "Litter was marked as weaned.", "success");
-    await loadLitterDetail({ keepMessage: true });
-  } catch (error) {
-    showLitterMessage("Something went wrong while saving the litter action.", "error");
-  } finally {
-    setMarkWeanedSubmitting(false);
-  }
+  showLitterMessage("Gebruik die speenpaneel: gee die werklike datum, kontroleer die varkies en bevestig die presiese voorskou.", "info");
+  weaningDayPanel.scrollIntoView({behavior: "smooth", block: "start"});
+  weaningDayDate.focus();
 }
 
 function pigletWeightText(piglet) {
@@ -1605,7 +1690,7 @@ function pigletWeightText(piglet) {
   const weight = state === "active" ? piglet.current_weight_kg : piglet.wean_weight_kg;
   return weight !== null && weight !== undefined && weight !== ""
     ? `${formatNumber(weight, 2)} kg`
-    : "No weight";
+    : "Geen gewig";
 }
 
 function pigletStatusText(piglet) {
@@ -1616,7 +1701,7 @@ function pigletStatusText(piglet) {
 }
 
 function pigletSexText(value) {
-  return ({ Male: "Beer", Female: "Sog" })[value] || value || "-";
+  return ({ Male: "Reuntjie", Female: "Soggie", Castrated_Male: "Gekastreerde reuntjie" })[value] || value || "Onbekend";
 }
 
 function pigletWeanWeightText(piglet) {
@@ -1636,11 +1721,11 @@ function buildPigletTable(piglets) {
       ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Tag nr." aria-label="Voeg tag by vir ${escapeHtml(piglet.pig_id || "varkie")}" />`
       : `<strong>${escapeHtml(piglet.tag_number || "-")}</strong>`;
     const weanWeightCell = canEditWeanWeight
-      ? `<input class="piglet-wean-weight-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="number" min="0.1" step="0.1" placeholder="kg" aria-label="Wean weight for ${escapeHtml(piglet.pig_id || "piglet")}" />`
+      ? `<input class="piglet-wean-weight-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="number" min="0.001" step="any" placeholder="Opsioneel, kg" aria-label="Speengewig vir ${escapeHtml(piglet.pig_id || "varkie")}" />`
       : escapeHtml(pigletWeanWeightText(piglet));
     const sexValue = pigletSexText(piglet.sex);
     const sexCell = canEditWeanWeight
-      ? `<select class="piglet-sex-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Geslag vir ${escapeHtml(piglet.tag_number || piglet.pig_id || "varkie")}"><option value="">Kies geslag</option><option value="Male" ${sexValue === "Reuntjie" ? "selected" : ""}>Reuntjie</option><option value="Female" ${sexValue === "Soggie" ? "selected" : ""}>Soggie</option><option value="Castrated_Male" ${sexValue === "Gekastreerde reuntjie" ? "selected" : ""}>Gekastreer</option></select>`
+      ? `<select class="piglet-sex-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Geslag vir ${escapeHtml(piglet.tag_number || piglet.pig_id || "varkie")}"><option value="">${escapeHtml(sexValue)} — behou</option><option value="Male">Reuntjie</option><option value="Female">Soggie</option><option value="Castrated_Male">Gekastreer</option></select>`
       : escapeHtml(sexValue);
     const observationCell = canEditWeanWeight ? `<div class="piglet-observation-control">
       <select class="piglet-observation-trait" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Waarnemingstipe"><option value="">Geen</option><option value="good_build">Goeie bou</option><option value="strong_legs">Sterk bene</option><option value="good_growth">Goeie groei</option><option value="broad_body">Breë lyf</option><option value="good_temperament">Goeie temperament</option><option value="potential_breeding_review">Potensiële teeldier (hersien)</option><option value="concern">Kommer</option><option value="other">Ander</option></select>
@@ -1651,7 +1736,7 @@ function buildPigletTable(piglets) {
     return `
       <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">
         <td>${tagCell}<span class="table-subtext">${escapeHtml(piglet.pig_id || "")}</span></td>
-        <td>${sexCell}</td>
+        <td>${sexCell}${canEditWeanWeight ? `<label>Oormerk<select class="piglet-earmarked-input" data-pig-id="${escapeHtml(piglet.pig_id)}" aria-label="Oormerk vir ${escapeHtml(piglet.pig_id)}"><option value="">Geen nuwe feit</option><option value="true">Aangebring</option><option value="false">Nie aangebring nie</option></select></label>` : ""}</td>
         <td>${escapeHtml(pigletWeightText(piglet))}</td>
         <td>${weanWeightCell}</td>
         <td>${observationCell}</td>
@@ -1688,7 +1773,7 @@ function wirePigletTableRows() {
       window.location.href = row.dataset.pigProfile;
     });
     row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
+      if (!event.target.closest("a, input, button, select, textarea") && (event.key === "Enter" || event.key === " ")) {
         event.preventDefault();
         window.location.href = row.dataset.pigProfile;
       }
@@ -1704,7 +1789,7 @@ function wirePigletTableRows() {
     input.addEventListener("input", resetWeaningDayPreview);
     input.addEventListener("change", resetWeaningDayPreview);
   });
-  document.querySelectorAll(".piglet-sex-input").forEach((input) => {
+  document.querySelectorAll(".piglet-sex-input, .piglet-earmarked-input").forEach((input) => {
     input.addEventListener("change", resetWeaningDayPreview);
   });
   document.querySelectorAll(".piglet-observation-control input, .piglet-observation-control select").forEach((input) => {
@@ -1786,6 +1871,7 @@ async function loadLitterDetail(options = {}) {
     if (window.renderLitterLifecyclePresentation) {
       window.renderLitterLifecyclePresentation(litter);
     }
+    renderTreatmentPresentation(litter);
     renderClosedLitterView(litter);
     litterPigletsList.innerHTML = "";
 
@@ -1842,11 +1928,12 @@ manualActionsToggle.addEventListener("click", () => {
   weaningDayDeworming,
   weaningDayVaccination,
   weaningDayNotes,
+  ...["weaning_day_dose", "weaning_day_route", "weaning_day_batch", "weaning_day_males", "weaning_day_females"].map(id => document.getElementById(id)),
 ].forEach((element) => {
   if (element) element.addEventListener("change", resetWeaningDayPreview);
 });
 [
-  newbornHealthDate,
+  newbornHealthDate, newbornHealthDose, newbornHealthDoseUnit, newbornHealthRoute, newbornHealthBatch, newbornHealthTotalCount,
   newbornHealthEarmarked,
   newbornHealthAntiparasitic,
   newbornHealthDeworming,
@@ -1855,7 +1942,7 @@ manualActionsToggle.addEventListener("click", () => {
   newbornHealthVaccination,
   newbornHealthNotes,
 ].forEach((element) => {
-  if (element) element.addEventListener("change", resetNewbornHealthPreview);
+  if (element) { element.addEventListener("change", resetNewbornHealthPreview); element.addEventListener("input", resetNewbornHealthPreview); }
 });
 [
   pigletDeathDate,

@@ -40,7 +40,7 @@ def branch_packet(branch):
     ("complete", "Weeklikse weging gedek: 1/1 toepaslike gemerkte varke", "2026-08-11 tot 2026-08-12 bly Onbekend", "Geen verdere opdrag"),
     ("findings", "Weeklikse weging gedek: 1/1 toepaslike gemerkte varke", "+2 kg (+20%)", "slegs die beskrywende veranderinge"),
     ("individual", "Vark Maya se individuele weging is nou nodig", "uitdruklik", "Weeg Vark Maya nou"),
-    ("mortality_new", "Sterfteopvolging — P1", "een opvolg geopen", "nie 'n diagnose raai nie"),
+    ("mortality_new", "Sterfteopvolging — P1", "2026-08-14 aangeteken", "nie 'n diagnose raai nie"),
     ("mortality_open", "Sterfteopvolging — P1", "steeds oop", "slegs een duidelike vraag"),
     ("mortality_unavailable", "Bewyse vir sterfteopvolging is nie beskikbaar nie", "duursaam verwerk", "dieselfde duursame identiteit"),
 ])
@@ -58,6 +58,8 @@ def test_actual_adapter_localizes_every_generated_branch_without_changing_eviden
         af = {field.name: getattr(afrikaans, field.name) for field in fields(afrikaans)}
         for field in ("title", "why", "next_action"):
             assert en.pop(field) != af.pop(field), (branch, field)
+        en["metadata"] = {key: value for key, value in en["metadata"].items() if key != "owner_followup"}
+        af["metadata"] = {key: value for key, value in af["metadata"].items() if key != "owner_followup"}
         assert en == af  # IDs, all provenance, state, authority and mortality fingerprints.
         generated = " ".join((afrikaans.title, afrikaans.why, afrikaans.next_action))
         assert not re.search(r"\b(the|and|recorded|weekly|weighing|unknown|follow-up|diagnosis)\b", generated, re.I)
@@ -66,7 +68,7 @@ def test_actual_adapter_localizes_every_generated_branch_without_changing_eviden
     if branch == "findings":
         assert "Geen oorsaak of diagnose word afgelei nie" in selected.why
     if branch == "missing":
-        assert "Onbekende geskiktheid bly afsonderlik" in selected.why
+        assert "2026-08-11 tot 2026-08-12" in selected.why
         assert "voordat daardie bewyse bestaan nie" in selected.next_action
 
 

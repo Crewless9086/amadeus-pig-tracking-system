@@ -31,17 +31,23 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
     if not provider_message_id or not principal or not generation:
         raise FarrowingEvidenceError("provider_principal_and_generation_required")
     facts = _map(report.get("farrowing_litter"), "farrowing_litter")
+    language = _text(report.get("language") or "en").casefold()
+    af = language.startswith("af")
     sow = _resolve_one(facts.get("sow_ref"), canonical.get("animals") or [])
     if sow["state"] != "resolved":
-        return _hold("sow_identity_required", sow=sow)
+        return _hold("sow_identity_required", sow=sow,
+                     question=("Watter sog het gekraam? Gee haar unieke naam, oornommer of ID." if af else
+                               "Which sow gave birth? Give her unique name, tag or ID."))
     if (sow.get("status", "").casefold() != "active"
             or sow.get("on_farm") is not True
             or sow.get("sex", "").casefold() not in {"female", "sow"}):
         return _hold("current_active_on_farm_sow_required", sow=sow)
-    farrowing_date = _date(facts.get("farrowing_date"), "farrowing_date")
-    counts = _counts(facts)
-    if counts.get("error"):
-        return _hold(counts["error"], sow=sow, counts=counts)
+    farrowing_date = _date_or_none(facts.get("farrowing_date"))
+    reported_on = _date_or_none(report.get("reported_on"))
+    if not farrowing_date or (reported_on and farrowing_date > reported_on):
+        return _hold("farrowing_date_required", sow=sow,
+                     question=("Op watter datum het sy werklik gekraam?" if af else
+                               "On what date did she actually give birth?"))
 
     existing = [dict(row) for row in canonical.get("litters") or []
                 if _text(row.get("sow_pig_id")) == sow["pig_id"]
@@ -49,15 +55,33 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
     correction_of = _text(facts.get("correction_of_litter_id"))
     correction_reason = _text(facts.get("correction_reason"))
     if existing and not correction_of:
-        return _hold("canonical_litter_already_exists", sow=sow,
+        count_columns = {"total_born": "total_born", "born_alive": "born_alive",
+                         "stillborn": "stillborn_count", "mummified": "mummified_count"}
+        reported_counts = {key: facts[key] for key in count_columns if facts.get(key) is not None}
+        conflict = len(existing) == 1 and any(
+            existing[0].get(column) is not None and facts.get(key) is not None
+            and facts[key] != existing[0][column] for key, column in count_columns.items())
+        return _hold("canonical_litter_count_conflict" if conflict else "canonical_litter_already_exists",
+                     sow=sow, farrowing_date=farrowing_date.isoformat(),
+                     reported_counts=reported_counts,
+                     existing_litters=[{key: row.get(key) for key in (
+                         "litter_id", "sow_pig_id", "farrowing_date", "total_born", "born_alive",
+                         "stillborn_count", "mummified_count")} for row in existing],
                      existing_litter_ids=sorted(_text(row.get("litter_id")) for row in existing))
     if correction_of:
         if not correction_reason:
-            return _hold("litter_correction_reason_required", sow=sow)
+            return _hold("litter_correction_reason_required", sow=sow,
+                         question=("Waarom moet die bestaande werpselrekord reggestel word?" if af else
+                                   "Why does the saved litter record need correcting?"))
         matching = [row for row in existing if _text(row.get("litter_id")) == correction_of]
         if len(matching) != 1:
             return _hold("litter_correction_target_invalid", sow=sow,
                          existing_litter_ids=sorted(_text(row.get("litter_id")) for row in existing))
+
+    counts = _counts(facts)
+    if counts.get("error"):
+        return _hold(counts["error"], sow=sow, counts=counts,
+                     question=_count_question(counts, af=af))
 
     mating = _mating_result(sow["pig_id"], farrowing_date,
                             canonical.get("matings") or [],
@@ -65,7 +89,8 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
     if mating["state"] == "multiple_candidates":
         return _hold("mating_clarification_required", sow=sow, counts=counts,
                      mating=mating,
-                     question="Which mating applies: " + ", ".join(mating["candidate_mating_ids"]) + "?")
+                     question=("Watter paring geld: " if af else "Which mating applies: ")
+                     + ", ".join(mating["candidate_mating_ids"]) + "?")
 
     operation_material = {
         "contract_version": CONTRACT_VERSION,
@@ -73,8 +98,8 @@ def prepare_farrowing_litter_preview(report: Mapping, canonical: Mapping) -> dic
         "principal": principal,
         "evidence_generation": generation,
         "sow_pig_id": sow["pig_id"],
-        "sow_display_name": sow.get("name") or "",
-        "language": _text(report.get("language") or "en").casefold(),
+        "sow_display_name": sow.get("name") or sow.get("tag_number") or "",
+        "language": language,
         "farrowing_date": farrowing_date.isoformat(),
         "counts": counts,
         "mating": mating,
@@ -140,6 +165,25 @@ def _counts(facts):
     values["arithmetic"] = (f"{values['total_born']}={values['born_alive']}+"
                             f"{values['stillborn']}+{values['mummified']}")
     return values
+
+
+def _count_question(counts, *, af=False):
+    error = counts.get("error")
+    if error == "total_and_born_alive_required":
+        if counts.get("total_born") is None:
+            return "Hoeveel varkies is altesaam gebore?" if af else "How many piglets were born in total?"
+        return "Hoeveel is lewend gebore?" if af else "How many were born alive?"
+    if error == "nonlive_outcome_breakdown_required":
+        return ("Hoeveel was doodgebore, uitgesluit gemummifiseerde varkies?" if af else
+                "How many were stillborn, excluding mummified piglets?")
+    if error == "later_deaths_exceed_born_alive":
+        return ("Hoeveel van die lewend gebore varkies het daarna gevrek?" if af else
+                "How many of the live-born piglets died afterwards?")
+    if error == "litter_count_invalid":
+        return ("Watter geboortetelling moet reggestel word na 'n heelgetal van 0 tot 40?" if af else
+                "Which birth count should be corrected to a whole number from 0 to 40?")
+    return ("Die totaal en geboortetellings stem nie ooreen nie. Watter telling moet verander?" if af else
+            "The total and birth counts do not add up. Which count should change?")
 
 
 def _mating_result(sow_id, farrowing_date, rows, animals, facts):

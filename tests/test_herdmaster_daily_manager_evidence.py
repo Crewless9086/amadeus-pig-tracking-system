@@ -271,8 +271,9 @@ def test_multiple_new_deaths_receive_one_bounded_attributable_cluster():
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
     mortality_items = [item for item in result.work_items if "mortality-cluster:" in item.dedupe_key]
     assert len(mortality_items) == 1
-    assert "P1, P10, P2, P3, P4, P5, and 4 more" in mortality_items[0].why
-    assert "Each identity remains separate" in mortality_items[0].why
+    assert "Recorded deaths: 2026-08-14" in mortality_items[0].why
+    assert "does not report new deaths today" in mortality_items[0].why
+    assert len(mortality_items[0].metadata["mortality_fingerprints"]) == 10
     assert len(mortality_items[0].why) < 300
 
 

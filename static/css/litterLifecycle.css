@@ -35,6 +35,16 @@
 .lifecycle-corrections { border: 1px solid var(--border); border-radius: 14px; background: #faf8f3; }.lifecycle-corrections summary { cursor: pointer; padding: 15px 18px; font-weight: 800; }.lifecycle-corrections summary span { margin-left: 8px; color: var(--text-soft); font-size: 12px; font-weight: 400; }.lifecycle-corrections-body { display: grid; gap: 14px; padding: 0 16px 16px; }.lifecycle-corrections-body > section { margin: 0; }
 @media(max-width:1000px){.lifecycle-birth-snapshot{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.lifecycle-stage-header{grid-template-columns:34px 1fr}.lifecycle-stage-status{grid-column:2}.lifecycle-birth-snapshot{grid-template-columns:repeat(2,1fr)}.lifecycle-next-action{grid-template-columns:1fr}.lifecycle-next-kicker{grid-row:auto;width:max-content}}
+/* Completed weaning readback must fit a phone, including long canonical IDs. */
+.litter-detail-app-shell .closed-litter-view > *,
+.litter-detail-app-shell .closed-litter-hero > * { min-width: 0; }
+.litter-detail-app-shell .closed-litter-hero h2,
+.litter-detail-app-shell .closed-litter-parent-line strong { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .litter-detail-app-shell .closed-litter-hero { grid-template-columns: minmax(0, 1fr); }
+  .litter-detail-app-shell .closed-litter-hero button { white-space: normal; max-width: 100%; }
+}
+
 .litter-first-care-skip {
   display: flex;
   align-items: center;
@@ -200,6 +210,57 @@
 .litter-detail-app-shell .simple-table-wrap { border-color: var(--farm-line); border-radius: 13px; }
 .litter-detail-app-shell .litter-piglet-table-wrap thead,
 .litter-detail-app-shell .simple-table-wrap thead { background: var(--farm-green-soft); }
+
+/* Keep the seven weaning columns readable within their own scroll container. */
+.litter-detail-app-shell .litter-piglet-table {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.litter-detail-app-shell .litter-weaning-table { min-width: 1200px; }
+.litter-detail-app-shell .litter-weaning-table th:nth-child(1) { width: 16%; }
+.litter-detail-app-shell .litter-weaning-table th:nth-child(2) { width: 18%; }
+.litter-detail-app-shell .litter-weaning-table th:nth-child(3) { width: 10%; }
+.litter-detail-app-shell .litter-weaning-table th:nth-child(4) { width: 14%; }
+.litter-detail-app-shell .litter-weaning-table th:nth-child(5) { width: 22%; }
+.litter-detail-app-shell .litter-weaning-table th:nth-child(6) { width: 10%; }
+.litter-detail-app-shell .litter-weaning-table th:nth-child(7) { width: 10%; }
+.litter-detail-app-shell .litter-weaning-table td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.litter-detail-app-shell .litter-weaning-table input:not([type="checkbox"]),
+.litter-detail-app-shell .litter-weaning-table select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+}
+.litter-detail-app-shell .litter-weaning-table td > label {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.litter-detail-app-shell .litter-weaning-table .piglet-observation-control {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.litter-detail-app-shell .litter-weaning-table .piglet-observation-control > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.litter-detail-app-shell .litter-weaning-table .piglet-observation-watch {
+  flex: none;
+  width: 18px;
+  max-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
+}
 
 @media(max-width:900px) {
   .litter-detail-app-shell #lifecycle_identity .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

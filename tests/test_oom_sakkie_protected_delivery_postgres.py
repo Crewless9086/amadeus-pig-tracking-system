@@ -127,7 +127,8 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
     expired=datetime.now(timezone.utc)-timedelta(days=1)
     live=datetime.now(timezone.utc)+timedelta(minutes=5)
     insert(tokens[0],"rootline_fertilizer_mixer_presence_refresh",mission,"STALE",expired)
-    insert(tokens[1],"foreign_action",foreign_mission,"FOREIGN-MISSION",expired)
+    # Exercise another valid protected action under the full canonical schema.
+    insert(tokens[1],"herdmaster_breeding_grouped",foreign_mission,"FOREIGN-MISSION",expired)
     def create(provider):
       payload={"mission_id":mission,"provider":provider}
       return create_claim(action_kind="rootline_fertilizer_mixer_presence_refresh",
@@ -160,7 +161,7 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
     for action, is_live, bound in (
         ("rootline_fertilizer_mixer_presence_refresh",False,True),
         ("rootline_fertilizer_mixer_presence_refresh",True,False),
-        ("foreign_action",False,False)):
+        ("herdmaster_breeding_grouped",False,False)):
       target="NEG-"+uuid.uuid4().hex
       token="D"+uuid.uuid4().hex
       insert(token,action,target,"BLOCKER",live if is_live else expired,

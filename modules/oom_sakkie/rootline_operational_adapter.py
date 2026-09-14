@@ -125,8 +125,7 @@ def persist_rootline_observations(context: Mapping[str, Any], authority, *, data
         payloads.append({f"{kind}_fraction": [item["numerator"], item["denominator"]],
             f"{kind}_state": _fraction_state(item), "provider_message_id": provider_id,
             "observed_at": provider_at, "source": "oom_sakkie_owner",
-            "idempotency_key": (f"telegram:{context.get('mission_id')}:{provider_id}:"
-                                f"rootline-water:{kind}:{context.get('content_sha256')}")})
+            "idempotency_key": _observation_key(context, kind)})
     actor = "telegram-owner:" + __import__("hashlib").sha256(owner.encode()).hexdigest()[:16]
     result, status = record_tank_observations_transactional(payloads, actor, database_url)
     if status >= 400 or result.get("success") is not True:
@@ -149,6 +148,72 @@ def persist_rootline_observations(context: Mapping[str, Any], authority, *, data
         "status": str(result.get("status")), "created": result.get("created_count", 0) > 0,
         "canonical_writes": result.get("created_count"), "observation_ids": result.get("observation_ids"),
         "observation_generation": result.get("observation_generation"), "readback": expected}
+
+
+def _observation_key(context, kind):
+    return (f"telegram:{context.get('mission_id')}:{context.get('provider_message_id')}:"
+            f"rootline-water:{kind}:{context.get('content_sha256')}")
+
+
+def read_rootline_observations(context, *, database_url=None):
+    """Reconcile exact canonical rows without invoking any write or dispatcher."""
+    from hashlib import sha256
+    import json
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    observations = context.get("observations") or []
+    owner = str(context.get("owner_user_id") or "")
+    failed = {"success": False, "status": "canonical_reconciliation_unproven", "canonical_writes": 0}
+    if (not owner or owner != str(context.get("chat_id") or "")
+            or not 1 <= len(observations) <= 2
+            or len(str(context.get("content_sha256") or "")) != 64
+            or not all(_valid_observation(item, context) for item in observations)):
+        return failed
+    expected = {}
+    for item in observations:
+        kind = "storage" if item["kind"] == "storage_level" else "reservoir"
+        expected[_observation_key(context, kind)] = (kind, item)
+    if len(expected) != len(observations):
+        return failed
+    try:
+        with connect_bounded_rootline_postgres(database_url=database_url,
+                read_only=True, connect_deadline_seconds=3) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select idempotency_key, observation_id,
+                    storage_state, reservoir_state, observed_at, reporter_identity, source,
+                    storage_fraction_numerator, storage_fraction_denominator,
+                    reservoir_fraction_numerator, reservoir_fraction_denominator, provider_message_id
+                    from public.rootline_tank_observations
+                    where idempotency_key=any(%s) order by idempotency_key limit 3""", (list(expected),))
+                rows = cursor.fetchall()
+        if len(rows) != len(expected) or len({row[0] for row in rows}) != len(expected):
+            return failed
+        actor = "telegram-owner:" + sha256(owner.encode()).hexdigest()[:16]
+        readback = []
+        for row in rows:
+            kind, item = expected[row[0]]
+            storage = kind == "storage"
+            fraction = list(row[7:9] if storage else row[9:11])
+            state = row[2] if storage else row[3]
+            opposite_fraction = row[9:11] if storage else row[7:9]
+            identity = "ROOTLINE-TANK-" + sha256(row[0].encode()).hexdigest()[:24].upper()
+            if (row[1] != identity or state != _fraction_state(item)
+                    or _timestamp(row[4].isoformat()) != _timestamp(context["provider_timestamp"])
+                    or row[5] != actor or row[6] != "oom_sakkie_owner"
+                    or fraction != [item["numerator"], item["denominator"]]
+                    or (row[3] if storage else row[2]) != "Unknown"
+                    or any(value is not None for value in opposite_fraction)
+                    or row[11] != context["provider_message_id"]):
+                return failed
+            readback.append({"observation_id": row[1], "kind": kind, "fraction": fraction,
+                "state": state, "provider_message_id": row[11], "observed_at": row[4].isoformat()})
+        readback.sort(key=lambda row: (row["kind"] != "storage", row["kind"]))
+        generation = sha256(json.dumps(readback, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        return {"success": True, "contract_version": "rootline_owner_observation_bridge_v1",
+            "status": "canonical_reconciled", "created": False, "canonical_writes": 0,
+            "observation_ids": [row["observation_id"] for row in readback],
+            "observation_generation": generation, "readback": readback}
+    except Exception:
+        return failed
 
 
 def _fraction_state(item):

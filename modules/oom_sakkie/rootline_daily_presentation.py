@@ -195,7 +195,8 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
         "why": _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af),
         "next_action": (("ROOTLINE heroorweeg outomaties" if af else
                          "ROOTLINE will reassess automatically")
-                        + (f" {reassess}" if reassess else "")),
+                        + (" wanneer vars lesings of veranderde toestande beskikbaar is." if af else
+                           " when fresh readings or changed conditions are available.")),
         "question": question,
     }
 
@@ -231,7 +232,10 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
         return "Gereed — begin veilig" if af else "Ready — starting safely"
     if state == "Eligible":
         reason = str(recommendation.get("reason") or "").casefold()
-        if "insufficient" in reason or "not establish enough" in reason:
+        held_recommendation = any(str(recommendation.get(key) or "").casefold() in {
+            "hold", "held", "defer", "deferred", "do not run", "do_not_run"}
+            for key in ("status", "recommendation"))
+        if held_recommendation or "insufficient" in reason or "not establish enough" in reason:
             # Conflicting readiness and watering-need evidence is not a ready
             # instruction. Keep it on ROOTLINE's automatic safe revalidation
             # path until one coherent canonical result exists.
@@ -252,7 +256,7 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
                 "Held safely — problem under automatic review")
     if state == "Completed":
         if _verified_completion(lifecycle, zone):
-            return "Voltooi — af en geverifieer" if af else "Completed — off and verified"
+            return "Beheerder AF geverifieer" if af else "Controller OFF verified"
         return "Loop nie" if af else "Not running"
     return "Data nodig" if af else "Needs Data"
 
@@ -272,6 +276,8 @@ def _verified_completion(lifecycle: Mapping[str, Any], zone: str) -> bool:
 
 def _short_reason(value: str, af: bool) -> str:
     text = " ".join(str(value or "").split())
+    if af and text.casefold().startswith("fresh local evidence records rain"):
+        return "Vars plaaslike bewyse toon reën; ROOTLINE kontroleer weer of besproeiing nodig is."
     if "durable parent objective" in text.casefold() or "_" in text:
         return ("ROOTLINE heroorweeg die plan outomaties." if af else
                 "ROOTLINE is reassessing the plan automatically.")

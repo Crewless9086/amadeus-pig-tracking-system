@@ -241,8 +241,47 @@ jobs:
       - name: Run pig observation privilege gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres tests.test_herdmaster_breeding_observation_postgres
 
+      - name: Prepare separate disposable herd journey database
+        env:
+          HERDMASTER_QUALIFICATION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ['DATABASE_URL'], autocommit=True) as db:
+              db.execute('CREATE DATABASE herd_first_treatment_test_weaning_test')
+          PY
+          python -m tests.herd_qualification bootstrap
+
+      - name: Run herd database journeys and owner projections without skips
+        env:
+          HERDMASTER_QUALIFICATION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
+        run: python -m tests.herd_qualification postgres
+
       - name: Run Herdmaster litter treatment atomic transaction gates
-        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres tests.test_litter_first_treatment_atomic_postgres
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
+
+      - name: Set up Node for herd browser journeys
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Run first-treatment and weaning browser confirmation and recovery
+        env:
+          HERDMASTER_QUALIFICATION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/herd_first_treatment_test_weaning_test
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          npx playwright test --config=playwright.herd.config.js
+
+      - name: Retain synthetic herd browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-herd-browser-evidence
+          path: test-results/
 
       - name: Run Herdmaster mortality and welfare atomic transaction gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_herdmaster_health_loss_recording_postgres
@@ -251,7 +290,13 @@ jobs:
         run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_oom_sakkie_protected_breeding_claim_postgres tests.test_rootline_protected_irrigation_postgres tests.test_oom_sakkie_general_manager_postgres
 
       - name: Run canonical HERDMASTER morning recipient-language gates
-        run: python -m pytest -q tests/test_herdmaster_daily_manager_evidence.py tests/test_herdmaster_daily_manager_language.py tests/test_oom_sakkie_herd_morning_language.py tests/test_oom_sakkie_daily_farm_manager.py tests/test_oom_sakkie_family_message_lifecycle.py tests/test_oom_sakkie_farm_manager_runtime.py tests/test_oom_sakkie_morning_runtime.py
+        run: python -m pytest -q tests/test_herdmaster_daily_manager_evidence.py tests/test_herdmaster_daily_manager_language.py tests/test_oom_sakkie_herd_morning_language.py tests/test_oom_sakkie_daily_farm_manager.py tests/test_oom_sakkie_family_message_lifecycle.py tests/test_oom_sakkie_farm_manager_runtime.py tests/test_oom_sakkie_morning_runtime.py tests/test_oom_sakkie_daily_plan_material.py tests/test_oom_sakkie_plan_content.py
+
+      - name: Run retained farrowing conversation gates
+        env:
+          DATABASE_URL: ""
+          PYTHON_DOTENV_DISABLED: "1"
+        run: python -m pytest -q tests/test_farrowing_conversation.py tests/test_herdmaster_farrowing_litter_intake.py tests/test_oom_sakkie_herdmaster_farrowing_runtime.py tests/test_herdmaster_farrowing_channel_equivalence.py tests/test_oom_sakkie_semantic_front_door.py tests/test_oom_sakkie_automatic_reassessment_scheduler.py
 
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
@@ -304,7 +349,7 @@ jobs:
           SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}
         run: python -m unittest tests.test_sam_meat_truth_snapshot_postgres
       - name: Run Oom Sakkie audit-rail suite with live checks enabled
-        run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign tests.test_beacon_media_intake tests.test_beacon_media_intake_routes
+        run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign tests.test_beacon_media_intake tests.test_beacon_media_intake_routes tests.test_oom_sakkie_native_voice_transport
 
       - name: Check Oom Sakkie JavaScript syntax
         run: |
@@ -315,3 +360,50 @@ jobs:
 
       - name: Run Oom Sakkie browser behavior smoke
         run: node tests/oom_sakkie_browser_behavior_smoke.js
+
+      - name: Create separate disposable plan dialogue database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host=127.0.0.1 --username=postgres plan_dialogue_test
+
+      - name: Prove plan dialogue, confirmation recovery and canonical application history
+        env:
+          PLAN_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/plan_dialogue_test
+        run: |
+          python -m pip install pytest
+          python tests/plan_dialogue_qualification.py bootstrap
+          python tests/plan_dialogue_qualification.py unit
+          python tests/plan_dialogue_qualification.py postgres
+
+      - name: Set up Node for plan dialogue browser proof
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install plan dialogue browser dependencies
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: View confirmed English and Afrikaans welfare records in the real application
+        env:
+          PLAN_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/plan_dialogue_test
+        run: npx playwright test --config=tests/plan_dialogue_playwright.config.js
+
+      - name: Create separate disposable irrigation dialogue database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host=127.0.0.1 --username=postgres irrigation_dialogue_test
+
+      - name: Prove irrigation dialogue, exact recovery and retained physical-stop observations
+        env:
+          IRRIGATION_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/irrigation_dialogue_test
+        run: |
+          python tests/irrigation_dialogue_qualification.py bootstrap
+          python tests/irrigation_dialogue_qualification.py unit
+          python tests/irrigation_dialogue_qualification.py postgres
+
+      - name: Read canonical water and execution evidence in the irrigation application
+        env:
+          IRRIGATION_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/irrigation_dialogue_test
+        run: npx playwright test --config=tests/irrigation_dialogue_playwright.config.js

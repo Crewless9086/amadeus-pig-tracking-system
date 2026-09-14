@@ -6,6 +6,7 @@ from modules.oom_sakkie.automatic_reassessment_scheduler import (
 from modules.oom_sakkie.telegram_gateway import handle_rootline_reassessment_trigger
 from modules.oom_sakkie.telegram_gateway import (
     _canonical_rootline_plan_receipt, _rootline_irrigation_completion_summary,
+    _rootline_irrigation_start_summary,
 )
 
 NOW = datetime(2026, 8, 5, 8, 15, tzinfo=timezone.utc)
@@ -29,17 +30,38 @@ def test_existing_plan_receipt_rejects_missing_canonical_binding():
     assert receipt["success"] is receipt["readback_bound"] is False
 
 
-def test_completion_summary_reports_verified_runtime_and_omits_unproven_fertilizer():
+def test_completion_summary_does_not_treat_planned_credit_as_measured_watering():
     text = _rootline_irrigation_completion_summary("B12345", {
         "current_segment": 2, "expected_segment_count": 2,
         "verified_runtime_seconds": 3599,
         "cumulative_verified_runtime_seconds": 7198,
         "fertilizer_delivery_verified": False,
+        "job_completed": False,
+        "start_evidence": {"authoritative": True, "state": "ON", "observed_at": "2026-09-13T22:03:15.073429+00:00"},
+        "shutdown_evidence": {"authoritative": True, "state": "OFF", "observed_at": "2026-09-13T23:32:17.253550+00:00"},
     })
-    assert "stopped and verified off" in text
-    assert "Segment 2/2 ran for 59m 59s" in text
-    assert "Total verified watering: 119m 58s" in text
+    assert "controller OFF verified at 2026-09-14 01:32:17 SAST" in text
+    assert "ON was observed at 2026-09-14 00:03:15 SAST" in text
+    assert "Actual watering duration and delivered volume are unverified" in text
+    assert "full watering job remains incomplete" in text
+    assert "ran for" not in text and "Total verified watering" not in text
     assert "fertilizer" not in text.casefold()
+
+
+def test_notification_requires_authoritative_timestamped_readback():
+    for evidence in ({}, {"authoritative": False, "state": "OFF", "observed_at": "2026-09-13T23:32:17Z"},
+                     {"authoritative": True, "state": "OFF", "observed_at": "2026-09-13T23:32:17"}):
+        text = _rootline_irrigation_completion_summary("B12345", {"shutdown_verified": True, "shutdown_evidence": evidence})
+        assert "OFF verified at" not in text
+        assert "reading is unavailable" in text
+
+
+def test_start_labels_configured_limit_separately_from_controller_reading():
+    text = _rootline_irrigation_start_summary("B12345", {"planned_runtime_seconds": 3599,
+        "start_evidence": {"authoritative": True, "state": "ON", "observed_at": "2026-09-13T22:03:15Z"}})
+    assert "Configured segment limit: 59m 59s" in text
+    assert "controller ON observed at 2026-09-14 00:03:15 SAST" in text
+    assert "not measured" in text and "no more than" not in text
 
 
 def test_completion_summary_includes_only_commissioned_verified_fertilizer_counts():

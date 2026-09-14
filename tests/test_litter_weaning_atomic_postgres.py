@@ -12,6 +12,7 @@ import psycopg
 from modules.pig_weights.farm_supabase_write_service import (
     apply_litter_weaning_day_packet,
 )
+from modules.pig_weights.farm_supabase_read_service import get_litter_weaning_snapshot
 from scripts.recover_litter_2026_322b import recover
 
 
@@ -22,19 +23,8 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
         if not cls.url:
             raise unittest.SkipTest("CHARLIE_DISPOSABLE_POSTGRES_URL not configured")
         with psycopg.connect(cls.url) as connection:
-            connection.execute(
-                """
-                create or replace view public.current_canonical_pig_state as
-                select * from public.pig_current_state
-                """
-            )
-
-    @classmethod
-    def tearDownClass(cls):
-        with psycopg.connect(cls.url) as connection:
-            connection.execute(
-                "drop view if exists public.current_canonical_pig_state"
-            )
+            assert connection.execute("select to_regclass('public.current_canonical_pig_state')").fetchone()[0]
+            assert connection.execute("select to_regclass('public.current_canonical_litters')").fetchone()[0]
 
     def setUp(self):
         with psycopg.connect(self.url) as connection:
@@ -45,6 +35,8 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
         self.pen_from = f"PEN-WF-{suffix}"
         self.pen_to = f"PEN-WT-{suffix}"
         self.pigs = [f"PIG-WEAN-{suffix}-1", f"PIG-WEAN-{suffix}-2"]
+        self.sow_id = f"SOW-WEAN-{suffix}"
+        self.preview_snapshot = None
         with psycopg.connect(self.url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("alter table public.pig_observation_events disable trigger trg_pig_observation_events_no_update_delete")
@@ -58,12 +50,15 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
                     (self.pen_from, self.pen_to),
                 )
                 cursor.execute(
+                    """insert into public.pigs(pig_id,sex,status,on_farm,animal_type)
+                        values(%s,'Female','Active',true,'Sow')""", (self.sow_id,))
+                cursor.execute(
                     """
                     insert into public.litters(
-                        litter_id,farrowing_date,born_alive,litter_status
-                    ) values(%s,'2026-06-01',2,'Active')
+                        litter_id,sow_pig_id,farrowing_date,total_born,born_alive,litter_status
+                    ) values(%s,%s,'2026-06-01',2,2,'Active')
                     """,
-                    (self.litter_id,),
+                    (self.litter_id,self.sow_id),
                 )
                 for pig_id in self.pigs:
                     cursor.execute(
@@ -71,7 +66,7 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
                         insert into public.pigs(
                             pig_id,status,on_farm,animal_type,sex,litter_id,
                             initial_pen_id
-                        ) values(%s,'Active',true,'Piglet','Female',%s,%s)
+                        ) values(%s,'Active',true,'Piglet',null,%s,%s)
                         """,
                         (pig_id, self.litter_id, self.pen_from),
                     )
@@ -121,6 +116,9 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
                 )
 
     def packet(self):
+        if self.preview_snapshot is None:
+            self.preview_snapshot = get_litter_weaning_snapshot(self.litter_id,
+                connect_factory=lambda _url: psycopg.connect(self.url))
         treatment_rows = []
         for pig_id in self.pigs:
             treatment_rows.append([
@@ -130,6 +128,7 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
                 "2026-07-28",
             ])
         return {
+            "expected_snapshot": self.preview_snapshot,
             "litter_id": self.litter_id,
             "wean_date": date(2026, 7, 28),
             "changed_by": "owner-admin:test",
@@ -245,7 +244,7 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
         )
         changed = copy.deepcopy(self.packet())
         changed["wean_date"] = date(2026, 7, 29)
-        with self.assertRaisesRegex(ValueError, "conflicting_litter_wean_date"):
+        with self.assertRaisesRegex(ValueError, "litter_weaning_already_recorded"):
             apply_litter_weaning_day_packet(
                 changed,
                 connect_factory=lambda _url: psycopg.connect(self.url),
@@ -261,14 +260,14 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
         conflicting["treatment_rows"][0][12] = "2026-08-04"
         conflicting["treatment_rows"][0][14] = "Yes"
         conflicting["treatment_rows"][0][15] = "2026-08-04"
-        with self.assertRaisesRegex(ValueError, "conflicting_treatment_fact"):
+        with self.assertRaisesRegex(ValueError, "litter_weaning_already_recorded"):
             apply_litter_weaning_day_packet(
                 conflicting,
                 connect_factory=lambda _url: psycopg.connect(self.url),
             )
         self.assertEqual(self.counts(), (2, 2, 2))
 
-    def test_incomplete_pig_projection_is_repaired_but_never_called_replay(self):
+    def test_exact_receipt_replay_never_rewrites_later_projection_changes(self):
         apply_litter_weaning_day_packet(
             self.packet(),
             connect_factory=lambda _url: psycopg.connect(self.url),
@@ -287,8 +286,8 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
             self.packet(),
             connect_factory=lambda _url: psycopg.connect(self.url),
         )
-        self.assertEqual(result["status"], "weaning_day_committed")
-        self.assertEqual(result["piglets_updated"], 1)
+        self.assertEqual(result["status"], "weaning_day_replayed_withheld")
+        self.assertEqual(result["piglets_updated"], 0)
         self.assertEqual(result["litter_updated"], 0)
         self.assertEqual(self.counts(), (2, 2, 2))
 
@@ -349,10 +348,11 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
         self.assertEqual(self.counts(), (2, 2, 2))
 
     def test_concurrent_exact_packets_never_duplicate_facts(self):
+        packet = self.packet()
         def apply_once():
             try:
                 return apply_litter_weaning_day_packet(
-                    self.packet(),
+                    packet,
                     connect_factory=lambda _url: psycopg.connect(self.url),
                 )["status"]
             except psycopg.errors.SerializationFailure:

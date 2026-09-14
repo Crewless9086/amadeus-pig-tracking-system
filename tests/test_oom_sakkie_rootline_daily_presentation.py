@@ -116,7 +116,7 @@ def test_completed_canonical_lifecycle_never_maps_to_hold():
                     "next_action": "Reassess when weather changes."},
     }
     text = compose_daily_rootline_plan(value)
-    assert "<b>B Camp:</b> Completed — off and verified" in text
+    assert "<b>B Camp:</b> Controller OFF verified" in text
     assert "Lifecycle:" not in text
     assert "B Camp:</b> Not running" not in text
 
@@ -222,7 +222,7 @@ def test_live_backend_tokens_are_not_exposed_and_hold_never_claims_eligibility()
     }
     text = compose_daily_rootline_plan(value)
     assert "B Camp:</b> Ready after the final safety check" in text
-    assert "C Camp:</b> Ready after the final safety check" in text
+    assert "C Camp:</b> Checking safely" in text
     for internal in ("Lifecycle", "Eligible", "now_after", "zone_decision", "claim existing"):
         assert internal not in text
 
@@ -280,13 +280,13 @@ def test_every_validated_lifecycle_state_has_human_en_af_projection():
         "Eligible": ("Ready after the final safety check", "Gereed na die finale veiligheidskontrole"),
         "Authorized": ("Ready — starting safely", "Gereed — begin veilig"),
         "Started": ("Currently running", "Loop tans"),
-        "Completed": ("Completed — off and verified", "Voltooi — af en geverifieer"),
+        "Completed": ("Controller OFF verified", "Beheerder AF geverifieer"),
         "Held": ("Not running", "Loop nie"),
         "Failed": ("Held safely — problem under automatic review",
                    "Veilig teruggehou — probleem word outomaties nagegaan"),
     }
     for state, (en, af) in expected.items():
-        value = result(b="Hold", c="Hold")
+        value = result(b="Recommend", c="Recommend") if state == "Eligible" else result(b="Hold", c="Hold")
         value["irrigation_lifecycle"] = {zone: {
             "contract_version":"rootline_zone_lifecycle.v1","zone_id":zone,
             "state":state,"reason":"internal_reason_token","next_action_owner":"ROOTLINE",
@@ -328,8 +328,8 @@ def test_completed_owner_wording_requires_exact_canonical_zone_bound_off_evidenc
         "contract_version":"rootline_zone_lifecycle.v1","zone_id":"B12345",
         "state":"Completed","reason":"verified","next_action_owner":"ROOTLINE",
         "next_action":"reassess","completion_evidence":genuine}}
-    assert "Completed — off and verified" in compose_daily_rootline_plan(value,language="en")
-    assert "Voltooi — af en geverifieer" in compose_daily_rootline_plan(value,language="af")
+    assert "Controller OFF verified" in compose_daily_rootline_plan(value,language="en")
+    assert "Beheerder AF geverifieer" in compose_daily_rootline_plan(value,language="af")
 
 
 def test_held_only_claims_no_watering_need_when_specific_evidence_proves_it():
@@ -359,6 +359,6 @@ def test_manager_item_uses_same_completed_projection_without_internal_tokens():
             "shutdown_verified": True, "objective_satisfied": True,
             "shutdown_evidence": {"authoritative": True, "state": "OFF"}}}}
     item = compose_daily_rootline_manager_item(value, language="en")
-    assert "B Camp: Completed" in item["title"] and "off and verified" in item["title"]
+    assert "B Camp: Controller OFF verified" in item["title"]
     assert "now_after" not in " ".join(item.values())
     assert item["question"] == ""

@@ -48,6 +48,23 @@ function renderWeights(data){const rows=data?.history||[];const box=document.get
 }
 function renderTreatments(data,pig){const rows=data?.history||[];const box=document.getElementById("treatment_records");box.innerHTML=rows.length?rows.slice(0,5).map(row=>recordRow(dateValue(row.treatment_date_display||row.treatment_date),value(row.product_name||row.product),value(row.withdrawal_end_date,""))).join(""):'<div class="profile-empty">No treatments recorded for this animal.</div>';if(!rows.length&&pig.last_treatment_date)box.innerHTML=recordRow(pig.last_treatment_date,value(pig.last_product_name),value(pig.current_withdrawal_end_date,""))}
 function renderMovements(data){const rows=data?.history||[];const box=document.getElementById("movement_records");box.innerHTML=rows.length?rows.slice(0,5).map(row=>recordRow(dateValue(row.move_date_display),`${value(row.from_pen_name||row.from_pen_id)} → ${value(row.to_pen_name||row.to_pen_id)}`,value(row.reason_for_move||row.move_notes,""))).join(""):'<div class="profile-empty">No movements recorded for this animal.</div>'}
+function renderWelfareObservations(data){
+  const box=document.getElementById("welfare_observation_records");if(!box)return;
+  box.replaceChildren();
+  if(!data?.success){box.textContent=mortalityAf?"Welstandsgeskiedenis kon nie gelaai word nie.":"Welfare history could not be loaded.";return}
+  const rows=data.history||[];
+  if(!rows.length){box.textContent=mortalityAf?"Geen bevestigde welstandswaarnemings is aangeteken nie.":"No confirmed welfare observations are recorded.";return}
+  const labels=mortalityAf?{eating_reported:"Eet",drinking_reported:"Drink water",standing_reported:"Staan",moving_reported:"Beweeg",event_date:"Waarnemingsdatum",not_eating:"Eet nie",not_drinking:"Drink nie",breathing_reported:"Haal normaal asem"}:{eating_reported:"Eating",drinking_reported:"Drinking water",standing_reported:"Standing",moving_reported:"Moving",event_date:"Observation date",not_eating:"Not eating",not_drinking:"Not drinking",breathing_reported:"Breathing normally"};
+  for(const row of rows){
+    Object.assign(labels,mortalityAf?{injury:"Besering",limping:"Mank",wound:"Wond",bleeding:"Bloei",broken_bone:"Gebreekte been",swelling:"Swelling",illness:"Siek",vomiting:"Braking",diarrhoea:"Diarree",cough:"Hoes",fever:"Koors"}:{injury:"Injury",limping:"Limping",wound:"Wound",bleeding:"Bleeding",broken_bone:"Broken bone",swelling:"Swelling",illness:"Illness",vomiting:"Vomiting",diarrhoea:"Diarrhoea",cough:"Cough",fever:"Fever"});
+    const card=document.createElement("div");card.className="profile-record";card.dataset.observationId=row.observation_event_id;
+    const date=document.createElement("span");date.textContent=new Intl.DateTimeFormat(mortalityAf?"af-ZA":"en-ZA",{timeZone:"Africa/Johannesburg",dateStyle:"medium",timeStyle:"short"}).format(new Date(row.observed_at));
+    const facts=document.createElement("strong");facts.textContent=(row.observed||[]).map(f=>`${labels[f.fact]||String(f.fact).replaceAll("_"," ")}: ${typeof f.value==="boolean"?(f.value?(mortalityAf?"Ja":"Yes"):(mortalityAf?"Nee":"No")):String(f.value)}`).join("; ");
+    const notes=document.createElement("small");notes.textContent=[mortalityAf?"Bevestigde waarneming":"Confirmed observation",...(row.owner_suspected_not_diagnosed||[]).map(item=>`${mortalityAf?"Eienaar vermoed (geen diagnose)":"Owner suspects (not diagnosed)"}: ${item.cause}`),...(row.owner_reported_veterinary_evidence||[]).map(item=>`${mortalityAf?"Veeartsbewys deur eienaar aangemeld":"Veterinary evidence reported by owner"}: ${item.diagnosis}`)].join(". ");
+    card.append(date,facts,notes);box.append(card);
+    for(const report of row.owner_report_parts||[]){const context=document.createElement("small");context.textContent=(mortalityAf?"Oorspronklike verslag: ":"Original report: ")+String(report.display_text??report.text??"");card.append(context)}
+  }
+}
 function renderFamily(data){const tree=data?.tree||{};setText("detail_siblings",tree.sibling_count,tree.sibling_count===1?" sibling":" siblings")}
 function matchingMatings(data,pigId){return (data?.records||[]).filter(row=>row.sow_pig_id===pigId||row.boar_pig_id===pigId)}
 function renderBreeding(matings,pig){const records=matchingMatings(matings,pig.pig_id);const box=document.getElementById("breeding_records");const isBoar=String(pig.animal_type||"").toLowerCase().includes("boar")||pig.sex==="Male"&&pig.purpose==="Breeding";document.getElementById("breeding_section_title").textContent=isBoar?"Services and offspring":"Breeding and offspring";
@@ -64,8 +81,8 @@ function renderAttention(pig,weights,matings){const items=[];const latest=weight
   const box=document.getElementById("profile_attention_items");document.getElementById("profile_attention_title").textContent=items.length?`${items.length} item${items.length===1?"":"s"} to review`:"No immediate exception";box.innerHTML=(items.length?items:["Current canonical evidence contains no immediate exception for this profile."]).map(x=>`<p>${x}</p>`).join("")}
 
 async function loadPigDetail(){const pigId=getPigIdFromUrl();if(!pigId){showMessage("No pig ID found in URL.");return}const detail=await getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}`);if(!detail?.success){showMessage(detail?.error||"Could not load pig detail.");return}const pig=detail.pig;currentPigId=pig.pig_id;renderIdentity(pig);setActionLinks(pig.pig_id);
-  const [weights,treatments,movements,family,matings]=await Promise.all([getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/weights`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/treatments`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/movements`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/family-tree`),getJson("/api/pig-weights/matings")]);
-  renderWeights(weights);renderTreatments(treatments,pig);renderMovements(movements);renderFamily(family);renderBreeding(matings,pig);renderTimeline(pig,weights,treatments,movements,matings);renderAttention(pig,weights,matings)}
+  const [weights,treatments,movements,family,matings,welfare]=await Promise.all([getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/weights`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/treatments`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/movements`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/family-tree`),getJson("/api/pig-weights/matings"),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/welfare-observations`)]);
+  renderWeights(weights);renderTreatments(treatments,pig);renderMovements(movements);renderFamily(family);renderBreeding(matings,pig);renderTimeline(pig,weights,treatments,movements,matings);renderAttention(pig,weights,matings);renderWelfareObservations(welfare)}
 
 function mortalityText(html){return new DOMParser().parseFromString(String(html || ''),'text/html').body.textContent || ''}
 function setLifecycleSubmitting(busy){

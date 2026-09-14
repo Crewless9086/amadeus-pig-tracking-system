@@ -229,6 +229,8 @@ def _pregnancy_planning(result, observation, known, generated_at):
                 "mating_date": mating_date.isoformat(),
                 "cycle_age_days": cycle_age_days,
                 "current_applicability": False,
+                "historical_projected_farrowing_range": {
+                    "earliest": earliest.isoformat(), "latest": latest.isoformat()},
                 "monitoring_phase": "post_applicability_reproductive_status_review",
                 "smallest_next_visual_observation": "Whether farrowing occurred, she returned to heat, or another current reproductive-status sign is now visible.",
                 "change_triggers": ["attributable farrowing evidence", "return to heat", "new governed mating", "current reproductive-status evidence"],

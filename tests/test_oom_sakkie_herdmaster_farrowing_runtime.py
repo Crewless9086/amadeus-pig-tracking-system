@@ -1,3 +1,6 @@
+from datetime import datetime
+import pytest
+
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.oom_sakkie import herdmaster_farrowing_runtime as litter_runtime
@@ -7,6 +10,18 @@ from modules.oom_sakkie.herdmaster_farrowing_runtime import (
 from modules.pig_weights.herdmaster_farrowing_litter_intake import (
     ACTION_KIND, prepare_farrowing_litter_preview,
 )
+from tests.farrowing_conversation_test_support import MemoryFarrowingStore, STAMP, saved_readback
+
+
+@pytest.fixture(autouse=True)
+def isolated_conversation(monkeypatch):
+    store = MemoryFarrowingStore()
+    monkeypatch.setattr(litter_runtime, "PostgresFarrowingStore", lambda *_: store)
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return STAMP.astimezone(tz) if tz else STAMP.replace(tzinfo=None)
+    monkeypatch.setattr(litter_runtime, "datetime", Clock)
 
 
 def parsed(facts=None):
@@ -70,24 +85,27 @@ def test_ambiguous_name_never_selects_an_arbitrary_sow():
         issue_gateway_owner_authority("42", "42"),
         evidence_loader=lambda **_: evidence(animals=animals),
         claim_creator=lambda **_: (_ for _ in ()).throw(AssertionError("claim forbidden")))
-    assert status == 409
+    assert status == 200 and result["question_count"] == 1
     assert result["status"] == "sow_identity_required"
     assert result["writes_farm_data"] is False
 
 
-def _execute(monkeypatch, facts, canonical):
+def _execute(monkeypatch, facts, canonical, *, language="en"):
     prepared = prepare_farrowing_litter_preview({
         "authenticated": True, "authenticated_principal_id": "42",
-        "provider_message_id": "TG-EXECUTE", "farrowing_litter": facts,
+        "provider_message_id": "TG-EXECUTE", "farrowing_litter": facts, "language": language,
     }, canonical)
     assert prepared["success"] is True
     preview = prepared["preview"]
     monkeypatch.setattr(litter_runtime, "load_canonical_farrowing_evidence", lambda **_: canonical)
-    monkeypatch.setattr(litter_runtime, "create_governed_farrowing_litter",
-                        lambda preview, **_: {"success": True, "litter_id": "LIT-NEW",
-                                              "writes_farm_data": True})
-    monkeypatch.setattr(litter_runtime, "load_litter_readback", lambda *_args, **_kwargs: {
-        "litter_id": "LIT-NEW", "total_born": preview["counts"]["total_born"]})
+    readback = saved_readback(preview)
+    saved = False
+    def write(preview, **_):
+        nonlocal saved
+        saved = True
+        return {"success": True, "litter_id": readback["litter_id"], "writes_farm_data": True}
+    monkeypatch.setattr(litter_runtime, "create_governed_farrowing_litter", write)
+    monkeypatch.setattr(litter_runtime, "load_litter_readback", lambda *_args, **_kwargs: readback if saved else None)
     claimed = {"preview_payload": preview,
                "preview_digest": canonical_preview_digest(ACTION_KIND, preview)}
     return execute_claimed_farrowing_litter(claimed, {"telegram_user_id": "42"})
@@ -115,18 +133,7 @@ def test_preview_and_completion_use_escaped_name_in_afrikaans(monkeypatch):
     assert preview_status == 200
     assert "Linda &lt;Hoof&gt; (PIG-2026-5AA8)" in preview_result["answer"]
     assert "Bevestig die presiese beskermde rekord" in preview_result["answer"]
-    prepared = prepare_farrowing_litter_preview({"authenticated": True,
-        "authenticated_principal_id": "42", "provider_message_id": "TG-AF",
-        "language": "af", "farrowing_litter": facts}, canonical)
-    preview = prepared["preview"]
-    monkeypatch.setattr(litter_runtime, "load_canonical_farrowing_evidence", lambda **_: canonical)
-    monkeypatch.setattr(litter_runtime, "create_governed_farrowing_litter",
-        lambda preview, **_: {"success": True, "litter_id": "LIT-NEW", "writes_farm_data": True})
-    monkeypatch.setattr(litter_runtime, "load_litter_readback",
-        lambda *_args, **_kwargs: {"litter_id": "LIT-NEW", "total_born": 9})
-    claimed = {"preview_payload": preview,
-        "preview_digest": canonical_preview_digest(ACTION_KIND, preview)}
-    result, status = execute_claimed_farrowing_litter(claimed, {"telegram_user_id": "42"})
+    result, status = _execute(monkeypatch, facts, canonical, language="af")
     assert status == 201
     assert result["answer"].startswith("Linda &lt;Hoof&gt; (PIG-2026-5AA8) se werpsel")
 

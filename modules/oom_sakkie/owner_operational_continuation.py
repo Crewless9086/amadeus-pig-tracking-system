@@ -25,8 +25,8 @@ _ROOTLINE = re.compile(r"\b(irrigation|water|rootline|[bc]\s*camp|[bc]\s*kamp)\b
 _ENTITY = {"C12345": re.compile(r"\bc\s*(?:camp|kamp)\b", re.I),
            "B12345": re.compile(r"\bb\s*(?:camp|kamp)\b", re.I)}
 _ENTITY_ASSERTION = re.compile(
-    r"\b(?P<entity>[bc])\s*(?:camp|kamp)\b.{0,24}\b"
-    r"(?:has\s+|is\s+|het\s+)?(?:physically\s+)?(?:stopped|off|af|gestop)\b", re.I)
+    r"^\s*(?P<entity>[bc])\s*(?:camp|kamp)\s+"
+    r"(?:has\s+|is\s+|het\s+)?(?:physically\s+)?(?:stopped|off|af|gestop)[.!\s]*$", re.I)
 
 
 def handle_owner_operational_continuation(parsed: Mapping[str, Any], authority, *,
@@ -41,6 +41,13 @@ def handle_owner_operational_continuation(parsed: Mapping[str, Any], authority, 
             and authority.owner_user_id == owner and authority.private_chat_id == chat
             and provider and provider_at and text):
         return {"handled": False}, 200
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
+    if semantic and (semantic.get("domain") != "rootline"
+            or semantic.get("message_kind") not in {"observation", "correction", "confirmation", "general"}
+            or semantic.get("needs_clarification") is True
+            or semantic.get("protected_preview_required") is True
+            or semantic.get("recording_prohibited") is True):
+        return {"handled": False}, 200
     now = _time(now) or datetime.now(timezone.utc)
     if provider_at > now + timedelta(seconds=30):
         return _contained("owner_operational_chronology_invalid"), 409
@@ -54,17 +61,27 @@ def handle_owner_operational_continuation(parsed: Mapping[str, Any], authority, 
 
     for prior in exact:
         if (str(prior.get("provider_timestamp") or "") != provider_at.isoformat()
-                or str(prior.get("text_sha256") or "") != hashlib.sha256(text.encode()).hexdigest()):
+                or str(prior.get("text_sha256") or "") != hashlib.sha256(text.encode()).hexdigest()
+                or ("reply_to_message_id" in prior and str(prior.get("reply_to_message_id") or "")
+                    != str(parsed.get("reply_to_message_id") or ""))):
             return _contained("owner_operational_replay_binding_conflict"), 409
-        if prior.get("state") == "execution_completed":
-            return {**_completion_result(prior),
+        if prior.get("state") == "physical_stop_reported":
+            return {**_stop_observation_result(prior),
                     "status": "owner_operational_transition_replayed_noop",
                     "writes_operational_outcome": False,
                     "operational_outcome_recorded": True,
                     "outcome_replayed": True}, 200
+        if prior.get("state") == "execution_completed":
+            # Historical dialogue markers never proved canonical completion.
+            # Preserve their audit identity without repeating that claim.
+            return {**_replay(prior, "owner_operational_transition_replayed_noop"),
+                    "verification_pending": True, "execution_completed": False,
+                    "operational_outcome_recorded": True}, 200
         if prior.get("state") == "clarification_consumed":
             return _replay(prior, "clarification_replayed_noop"), 200
         if prior.get("state") == "clarification_pending":
+            if prior.get("clarification_resolved") is True:
+                return _replay(prior, "clarification_replayed_noop"), 200
             labels = ", ".join(dict.fromkeys(
                 "C Camp irrigation" if item.get("entity_id") == "C12345" else
                 "B Camp irrigation" if item.get("entity_id") == "B12345" else
@@ -74,33 +91,73 @@ def handle_owner_operational_continuation(parsed: Mapping[str, Any], authority, 
                     "status": "owner_clarification_delivery_reconciliation_required",
                     "mission_id": prior.get("mission_id"),
                     "card_mission_id": prior.get("card_mission_id"),
-                    "answer": f"<b>OOM SAKKIE - ONE DETAIL NEEDED</b>\n\nIs this about {labels}?",
-                    "question_count": 1, **_zero_authority()}, 200
+                    "answer": str(prior.get("clarification_question") or
+                        f"<b>OOM SAKKIE - ONE DETAIL NEEDED</b>\n\nIs this about {labels}?"),
+                    "question_count": 1,
+                    "recipient_render_contract": "rootline_owner_clarification_recipient_v1",
+                    "recipient_language": str(prior.get("recipient_language") or "en"),
+                    **_zero_authority()}, 200
 
-    entity = next((key for key, pattern in _ENTITY.items() if pattern.search(text)), "")
-    terminal_state = "Stopped" if _affirmative_stop(text, entity) else ""
-    candidates = _compatible(active, entity, terminal_state, parsed)
+    irrigation = semantic.get("irrigation_observation")
+    resolved = _resolve_pending_stop(pending, parsed, semantic)
+    retained_source = resolved[1] if resolved else None
+    if resolved:
+        entity = str(resolved[0].get("entity_id") or "")
+        terminal_state = "Stopped"
+    elif isinstance(irrigation, Mapping):
+        if semantic.get("message_kind") not in {"observation", "correction"}:
+            return {"handled": False}, 200
+        entity = str(irrigation.get("zone_id") or "")
+        terminal_state = "Stopped" if irrigation.get("state") == "stopped" else ""
+        if not terminal_state or float(semantic.get("confidence") or 0) < .8:
+            return {"handled": False}, 200
+    else:
+        if semantic:
+            return {"handled": False}, 200
+        entity = next((key for key, pattern in _ENTITY.items() if pattern.search(text)), "")
+        terminal_state = "Stopped" if _affirmative_stop(text, entity) else ""
+    source_parsed = ({**parsed, "provider_timestamp": retained_source["provider_timestamp"],
+        "reply_to_message_id": ""} if retained_source else parsed)
+    candidates = _compatible(active, entity, terminal_state, source_parsed)
+    if resolved:
+        candidates = [row for row in candidates if all(str(row.get(key) or "") ==
+            str(resolved[0].get(key) or "") for key in ("mission_id", "card_mission_id", "execution_id"))]
     if len(candidates) == 1 and terminal_state:
         target = candidates[0]
         resolved_entity = entity or str(target.get("entity_id") or "")
         label = "C Camp" if resolved_entity == "C12345" else "B Camp"
-        completion_card = str(target.get("completion_card_mission_id") or
-                              (str(target.get("card_mission_id") or target.get("mission_id") or "") + "-COMPLETION"))
-        event = _event(parsed, target, "execution_completed", entity=resolved_entity,
+        observation_card = (str(target.get("card_mission_id") or target.get("mission_id") or "")
+                            + "-OBSERVATION-" + provider)
+        event = _event(parsed, target, "physical_stop_reported", entity=resolved_entity,
                        label=label, terminal_state=terminal_state,
-                       completion_card_mission_id=completion_card)
+                       observation_card_mission_id=observation_card,
+                       owner_evidence=text,
+                       recipient_language=str(parsed.get("output_language") or "en"))
+        if retained_source:
+            # One unresolved source can select only one execution, even when
+            # competing clarifiers loaded the same pending snapshot.
+            event.update({"event_id": resolved[2] + "-PHYSICAL_STOP_REPORTED",
+                "owner_evidence": retained_source["owner_evidence"],
+                "observation_provider_message_id": retained_source["provider_message_id"],
+                "observation_provider_timestamp": retained_source["provider_timestamp"],
+                "retained_provider_binding": {key: retained_source.get(key, "") for key in
+                    ("owner_user_id", "chat_id", "provider_message_id", "provider_timestamp",
+                     "reply_to_message_id", "text_sha256")},
+                "clarification_mission_id": resolved[2]})
         outcome_authority = issue_owner_operational_outcome_authority(authority,
             mission_id=str(target.get("mission_id") or ""),
             execution_id=str(target.get("execution_id") or ""), provider_message_id=provider,
             provider_timestamp=provider_at.isoformat(), content_sha256=event["text_sha256"])
         if not validates_owner_operational_outcome_authority(outcome_authority):
             return _contained("owner_operational_outcome_authority_denied"), 403
-        result = _completion_result(event)
+        result = _stop_observation_result(event)
         try:
             recorded = store("record", event["event_id"], event)
         except Exception:
             return _indeterminate("owner_operational_transition_persistence_indeterminate"), 503
         if recorded.get("created") is False:
+            if retained_source:
+                return _contained("owner_stop_observation_clarification_already_bound"), 409
             return {**result, "status": "owner_operational_transition_replayed_noop",
                     "writes_operational_outcome": False,
                     "operational_outcome_recorded": True,
@@ -121,7 +178,17 @@ def handle_owner_operational_continuation(parsed: Mapping[str, Any], authority, 
             "state": "clarification_pending", "candidate_domains": candidate_domains,
             "candidate_bindings": candidate_bindings,
             "clarification_provider_timestamp": provider_at.isoformat(),
-            "retained_text_sha256": hashlib.sha256(text.encode()).hexdigest()}
+            "retained_text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "reply_to_message_id": str(parsed.get("reply_to_message_id") or ""),
+            "recipient_language": str(parsed.get("output_language") or "en")}
+        if terminal_state == "Stopped":
+            event["retained_observation"] = {"state": "stopped", "owner_evidence": text,
+                "owner_user_id": owner, "chat_id": chat, "provider_message_id": provider,
+                "provider_timestamp": provider_at.isoformat(), "text_sha256": event["text_sha256"],
+                "reply_to_message_id": event["reply_to_message_id"]}
+        event["clarification_question"] = _clarification_text(candidate_bindings,
+            event["recipient_language"], physical_stop=terminal_state == "Stopped")
         try: recorded = store("record", event["event_id"], event)
         except Exception: return _contained("owner_operational_transition_persistence_failed"), 503
         if recorded.get("created") is False:
@@ -134,8 +201,10 @@ def handle_owner_operational_continuation(parsed: Mapping[str, Any], authority, 
             str(item.get("domain") or "farm work") for item in candidates))
         return {"handled": True, "success": True, "status": "owner_context_clarification_required",
             "mission_id": mission, "card_mission_id": mission,
-            "answer": f"<b>OOM SAKKIE — ONE DETAIL NEEDED</b>\n\nIs this about {labels}?",
-            "question_count": 1, **_zero_authority()}, 200
+            "answer": event["clarification_question"],
+            "question_count": 1,
+            "recipient_render_contract": "rootline_owner_clarification_recipient_v1",
+            "recipient_language": event["recipient_language"], **_zero_authority()}, 200
     clarification = _unique_pending(pending, parsed)
     if clarification:
         domain = _domain(text)
@@ -173,8 +242,54 @@ def handle_owner_operational_continuation(parsed: Mapping[str, Any], authority, 
     return {"handled": False}, 200
 
 
+def _clarification_text(bindings, language, *, physical_stop=False):
+    af = str(language).casefold().startswith("af")
+    labels = list(dict.fromkeys(("B Kamp" if af else "B Camp") if row.get("entity_id") == "B12345"
+        else ("C Kamp" if af else "C Camp") if row.get("entity_id") == "C12345"
+        else str(row.get("domain") or "farm work") for row in bindings))
+    options = (" of " if af else " or ").join(labels)
+    if physical_stop:
+        return (f"By watter kamp het jy die water sien stop: {options}?" if af else
+            f"Where did you observe the water stop: {options}?")
+    return f"Gaan dit oor {options}?" if af else f"Is this about {options}?"
+
+
+def _resolve_pending_stop(pending, parsed, semantic):
+    question = _unique_pending(pending, parsed)
+    if not question or not isinstance(question.get("retained_observation"), Mapping):
+        return None
+    source = question["retained_observation"]
+    if (source.get("state") != "stopped"
+            or source.get("owner_user_id") != str(parsed.get("telegram_user_id") or "")
+            or source.get("chat_id") != str(parsed.get("telegram_chat_id") or "")
+            or not str(source.get("provider_message_id") or "")
+            or not str(source.get("owner_evidence") or "")
+            or _time(source.get("provider_timestamp")) is None):
+        return None
+    if semantic:
+        if semantic.get("continuation") is not True or float(semantic.get("confidence") or 0) < .8:
+            return None
+        irrigation = semantic.get("irrigation_observation") or {}
+        refs = {str(value) for value in semantic.get("entity_refs") or ()
+                if str(value) in {"B12345", "C12345"}}
+        if irrigation.get("zone_id"):
+            refs.add(str(irrigation["zone_id"]))
+        if irrigation.get("state") not in {None, "stopped"}:
+            return None
+    else:
+        refs = {key for key, pattern in _ENTITY.items() if pattern.search(str(parsed.get("text") or ""))}
+    matches = [row for row in question.get("candidate_bindings") or ()
+        if row.get("domain") == "irrigation" and row.get("entity_id") in refs]
+    if len(refs) != 1 or len(matches) != 1:
+        return None
+    return matches[0], dict(source), str(question.get("mission_id") or "")
+
+
 def _compatible(active, entity, terminal_state, parsed):
     result = []
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
+    typed_stop = isinstance(semantic.get("irrigation_observation"), Mapping) and \
+        semantic["irrigation_observation"].get("state") == "stopped"
     for item in active or ():
         if str(item.get("state") or "") not in {"Active", "active", "StoppedAwaitingVerification", "StoppedUnverifiedContained"}:
             continue
@@ -187,7 +302,9 @@ def _compatible(active, entity, terminal_state, parsed):
             continue
         reply = str(parsed.get("reply_to_message_id") or "")
         exact_reply = bool(reply and reply == str(item.get("telegram_message_id") or ""))
-        if not entity and not exact_reply and not _IMPLICIT_STOP.fullmatch(str(parsed.get("text") or "")):
+        if reply and not exact_reply:
+            continue
+        if not entity and not exact_reply and not typed_stop and not _IMPLICIT_STOP.fullmatch(str(parsed.get("text") or "")):
             continue
         started = _time(item.get("execution_started_at"))
         observed = _time(parsed.get("provider_timestamp"))
@@ -232,6 +349,7 @@ def _event(parsed, target, state, **extra):
         "owner_user_id": str(parsed.get("telegram_user_id") or ""),
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
         "provider_message_id": provider, "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
+        "reply_to_message_id": str(parsed.get("reply_to_message_id") or ""),
         "text_sha256": hashlib.sha256(str(parsed.get("text") or "").encode()).hexdigest(),
         "state": state, **extra}
 
@@ -289,10 +407,13 @@ def _load_active_context(owner, chat, provider=""):
     delivered_questions = {str(item.get("card_mission_id") or ""): item for item in family
                            if item.get("state") == "delivered"
                            and str(item.get("delivery_provider_timestamp") or "")}
+    resolved_questions = {str(item.get("clarification_mission_id") or "") for item in own
+        if item.get("state") == "physical_stop_reported"}
     pending = [{**item,
                 "telegram_message_id": delivered_questions[str(item.get("card_mission_id") or "")].get("telegram_message_id"),
                 "clarification_delivered_at": delivered_questions[str(item.get("card_mission_id") or "")].get("delivery_provider_timestamp")}
                for item in own if item.get("state") == "clarification_pending"
+               and str(item.get("mission_id") or "") not in resolved_questions
                and str(item.get("card_mission_id") or "") in delivered_questions
                and not any(later.get("mission_id") == item.get("mission_id") and
                            later.get("state") == "clarification_consumed" for later in own)]
@@ -304,11 +425,7 @@ def _load_active_context(owner, chat, provider=""):
     active = []
     bindings = {str(item.get("card_mission_id") or ""): item for item in own
                 if item.get("state") == "active_lifecycle_bound"}
-    completed = {str(item.get("card_mission_id") or "") for item in own
-                 if item.get("state") == "execution_completed"}
     for card, item in latest.items():
-        if card in completed:
-            continue
         task = str(item.get("task_state") or "")
         if item.get("specialist_identity") == "ROOTLINE" and task in {"Active", "Stopped", "Failed"}:
             binding = bindings.get(card, {})
@@ -320,27 +437,35 @@ def _load_active_context(owner, chat, provider=""):
                 "execution_started_at": binding.get("execution_started_at"),
                 "telegram_message_id": item.get("telegram_message_id"),
                 "completion_card_mission_id": card + "-COMPLETION"})
-    exact = [item for item in own if str(item.get("provider_message_id") or "") == provider]
+    exact = [{**item, "clarification_resolved": str(item.get("mission_id") or "") in resolved_questions}
+             for item in own if str(item.get("provider_message_id") or "") == provider]
     return pending, active, exact
 
 
-def _completion_result(event):
+def _stop_observation_result(event):
     entity = str(event.get("entity") or event.get("entity_id") or "")
     label = str(event.get("label") or ("C Camp" if entity == "C12345" else "B Camp"))
     mission = str(event.get("mission_id") or "")
-    return {"handled": True, "success": True, "status": "Completed",
+    af = str(event.get("recipient_language") or "en").casefold().startswith("af")
+    visible_label = label.replace("Camp", "Kamp") if af else label
+    answer = (f"<b>BESPROEIINGSWAARNEMING — {visible_label.upper()}</b>\n\n"
+        f"Ek het jou waarneming dat die water by {visible_label} gestop het, aangeteken. "
+        "ROOTLINE moet die uitvoering se afsluiting nog verifieer."
+        if af else f"<b>IRRIGATION OBSERVATION — {visible_label.upper()}</b>\n\n"
+        f"I recorded your observation that water at {visible_label} has stopped. "
+        "ROOTLINE still needs to verify the execution's shutdown.")
+    return {"handled": True, "success": True, "status": "owner_irrigation_observation_recorded",
         "specialist_identity": "ROOTLINE", "mission_id": mission,
-        "card_mission_id": str(event.get("completion_card_mission_id") or
-                                (str(event.get("card_mission_id") or mission) + "-COMPLETION")),
+        "card_mission_id": str(event.get("observation_card_mission_id") or event.get("event_id") or ""),
         "execution_id": str(event.get("execution_id") or ""),
         "observation": {"state": "Stopped", "entity_id": entity,
-            "provider_message_id": str(event.get("provider_message_id") or ""),
-            "observed_at": str(event.get("provider_timestamp") or ""),
+            "provider_message_id": str(event.get("observation_provider_message_id") or event.get("provider_message_id") or ""),
+            "observed_at": str(event.get("observation_provider_timestamp") or event.get("provider_timestamp") or ""),
             "owner_reported": True, "continuous_flow": "Unknown",
             "delivered_volume": "Unknown", "exact_runtime": "Unknown"},
-        "answer": (f"<b>IRRIGATION COMPLETE - {label.upper()}</b>\n\n"
-                   f"{label} is physically stopped. I closed this irrigation segment from your "
-                   "timestamped observation. No second segment was started."),
+        "answer": answer, "verification_pending": True, "execution_completed": False,
+        "recipient_render_contract": "rootline_owner_observation_recipient_v1",
+        "recipient_language": "af" if af else "en",
         **_zero_authority(), "writes_operational_outcome": True}
 
 

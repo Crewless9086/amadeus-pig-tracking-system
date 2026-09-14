@@ -13,7 +13,7 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
                 connect_factory=lambda _url: self.fail("database must not be opened"),
             )
 
-    def test_atomic_first_treatment_rejects_tally_conflict_before_connecting(self):
+    def test_legacy_unbound_first_treatment_packet_cannot_open_database(self):
         packet = {
             "litter_id": "LIT-1",
             "sow_pig_id": "SOW-1",
@@ -23,13 +23,13 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
             "female_count": 1,
             "treatment_rows": [["MED-1", "PIG-1"], ["MED-2", "PIG-2"]],
         }
-        with self.assertRaisesRegex(ValueError, "first_treatment_tally_conflict"):
+        with self.assertRaisesRegex(ValueError, "complete_first_treatment_packet_required"):
             farm_supabase_write_service.apply_litter_first_treatment_packet(
                 packet,
                 connect_factory=lambda _url: self.fail("database must not be opened"),
             )
 
-    def test_atomic_first_treatment_requires_medical_evidence_for_every_piglet(self):
+    def test_legacy_partial_medical_packet_requires_canonical_binding(self):
         packet = {
             "litter_id": "LIT-1",
             "sow_pig_id": "SOW-1",
@@ -39,7 +39,7 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
             "female_count": 1,
             "treatment_rows": [["MED-1", "PIG-1"]],
         }
-        with self.assertRaisesRegex(ValueError, "every_active_piglet_requires_medical_evidence"):
+        with self.assertRaisesRegex(ValueError, "complete_first_treatment_packet_required"):
             farm_supabase_write_service.apply_litter_first_treatment_packet(
                 packet,
                 connect_factory=lambda _url: self.fail("database must not be opened"),
@@ -220,29 +220,15 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
         update_litter.assert_called_once()
         sheet_update.assert_not_called()
 
-    def test_mark_litter_weaned_prefers_supabase_litter_and_pig_updates(self):
-        pig_rows = [
-            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
-            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
-        ]
-        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
-             patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
-             patch.object(pig_weights_service.farm_supabase_write_service, "update_litter_by_id", return_value=1) as update_litter, \
-             patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id", return_value=2) as update_pigs, \
-             patch.object(pig_weights_service, "update_row_by_first_column_match") as sheet_litter_update, \
-             patch.object(pig_weights_service, "batch_update_rows_by_id") as sheet_pig_update:
-            result, status_code = pig_weights_service.mark_litter_weaned("LIT-1", "2026-05-26")
-
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["source"]["writes_to_supabase"])
-        self.assertFalse(result["source"]["writes_to_sheets"])
-        update_litter.assert_called_once()
-        update_pigs.assert_called_once()
-        updates_by_pig_id = update_pigs.call_args.args[0]
-        self.assertEqual(updates_by_pig_id["PIG-1"]["Animal_Type"], "Weaner")
-        self.assertEqual(updates_by_pig_id["PIG-2"]["Animal_Type"], "Weaner")
-        sheet_litter_update.assert_not_called()
-        sheet_pig_update.assert_not_called()
+    def test_bare_weaning_call_preserves_reviewed_confirmation_guard(self):
+        with patch.object(pig_weights_service.farm_supabase_write_service,'update_litter_by_id') as litter_write, \
+             patch.object(pig_weights_service.farm_supabase_write_service,'update_pigs_by_id') as pig_write, \
+             patch.object(pig_weights_service.farm_supabase_write_service,'farm_supabase_writes_available',return_value=True):
+            result,code = pig_weights_service.mark_litter_weaned('LIT-SYNTHETIC','2026-08-25',changed_by='synthetic-manager',dry_run=False)
+        self.assertEqual(code,409)
+        self.assertFalse(result['success'])
+        litter_write.assert_not_called()
+        pig_write.assert_not_called()
 
     def test_mark_pig_death_or_removal_prefers_supabase_pig_update(self):
         pig_rows = [{"Pig_ID": "PIG-1", "Status": "Active", "On_Farm": "Yes", "General_Notes": ""}]
@@ -263,45 +249,19 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
         update_pigs.assert_called_once()
         sheet_update.assert_not_called()
 
-    def test_record_litter_newborn_health_prefers_supabase_pig_and_medical_writes(self):
-        pig_rows = [
-            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Earmarked": "", "Earmark_Date": ""},
-        ]
-        product = {
-            "product_id": "PRD-1",
-            "product_name": "Iron",
-            "product_category": "Treatment",
-            "default_dose": 1,
-            "dose_unit": "ml",
-            "default_withdrawal_days": 0,
-        }
-        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
-             patch.object(pig_weights_service, "_get_products_from_sheets", return_value=[product]), \
-             patch.object(pig_weights_service, "generate_medical_log_id", return_value="MED-1"), \
-             patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
-             patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id", return_value=1) as update_pigs, \
-             patch.object(
-                 pig_weights_service.farm_supabase_write_service,
-                 "insert_missing_medical_events_from_sheet_rows",
-                 return_value={"created": 1, "skipped": 0},
-             ) as insert_medical, \
-             patch.object(pig_weights_service, "batch_update_rows_by_id") as sheet_pig_update, \
-             patch.object(pig_weights_service, "append_row") as append_row:
-            result, status_code = pig_weights_service.record_litter_newborn_health(
-                "LIT-1",
-                "2026-06-29",
-                earmarked=True,
-                antiparasitic_product_id="PRD-1",
-                dry_run=False,
-            )
-
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["source"]["writes_to_supabase"])
-        self.assertFalse(result["source"]["writes_to_sheets"])
-        update_pigs.assert_called_once()
-        insert_medical.assert_called_once()
-        sheet_pig_update.assert_not_called()
-        append_row.assert_not_called()
+    def test_first_treatment_cannot_use_legacy_split_writes_without_confirmation(self):
+        with patch.object(pig_weights_service.farm_supabase_write_service,'farm_supabase_writes_available',return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_write_service,'update_pigs_by_id') as pig_write, \
+             patch.object(pig_weights_service.farm_supabase_write_service,'insert_missing_medical_events_from_sheet_rows') as medical_write, \
+             patch.object(pig_weights_service,'append_row') as sheet_write:
+            result,code = pig_weights_service.record_litter_newborn_health('LIT-SYNTHETIC','2026-08-25',
+                earmarked=True,antiparasitic_product_id='PROD-SYNTHETIC',dry_run=False,
+                treatment_context=' first_treatment ')
+        self.assertEqual(code,409)
+        self.assertEqual(result['status'],'exact_first_treatment_confirmation_required')
+        pig_write.assert_not_called()
+        medical_write.assert_not_called()
+        sheet_write.assert_not_called()
 
 
 if __name__ == "__main__":
