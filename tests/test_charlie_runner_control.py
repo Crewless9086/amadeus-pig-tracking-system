@@ -1128,6 +1128,17 @@ class CharlieRunnerControlTests(unittest.TestCase):
             python.parent.mkdir(parents=True)
             python.touch()
             self.assertEqual(runner_control._python_executable(worktree), str(python))
+
+    def test_shallow_cloud_checkout_falls_back_to_active_python(self):
+        with patch("pathlib.Path.exists", return_value=False), patch(
+            "modules.charlie.runner_control.sys.executable",
+            "/usr/bin/python3",
+        ):
+            self.assertEqual(
+                runner_control._python_executable(Path("/workspace")),
+                "/usr/bin/python3",
+            )
+
     @patch("modules.charlie.runner_control._pid_descends_from", return_value=True)
     @patch("modules.charlie.runner_control._current_git_commit", return_value="same")
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)

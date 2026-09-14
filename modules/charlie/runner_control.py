@@ -77,10 +77,14 @@ def _python_executable(repo_root=REPO_ROOT):
         and str(getattr(sys, "_base_executable", "") or "")
     ):
         return str(Path(sys._base_executable))
+    repo_root = Path(repo_root)
     candidates = [
-        Path(repo_root) / "venv" / "Scripts" / "python.exe",
-        Path(repo_root).parents[1] / "venv" / "Scripts" / "python.exe",
+        repo_root / "venv" / "Scripts" / "python.exe",
     ]
+    if len(repo_root.parents) > 1:
+        candidates.append(
+            repo_root.parents[1] / "venv" / "Scripts" / "python.exe"
+        )
     return str(next((path for path in candidates if path.exists()), Path(sys.executable)))
 
 
