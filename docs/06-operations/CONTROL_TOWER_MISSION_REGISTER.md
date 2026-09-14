@@ -2854,6 +2854,62 @@ message or farm effect. **NO BUSINESS OUTCOME. OWNER ACTION: NONE** until the
 reviewed workflow is deployed and a later genuine provider interaction proves
 the full actor-bound mortality journey and terminal-independent continuity.
 
+## 2026-08-25 - AGENTIC FARM RUNTIME active n8n retirement audit
+
+The existing programme's read-only live inventory found 20 active n8n
+workflows and records their exact identities, triggers, dependencies and
+retirement classification in
+`docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`. This creates no new
+mission or priority.
+
+Legacy workflow `UNwNmx0TwtFf8mjo`, `2.3.1 - Build Daily Irrigation Plan`, is
+still independently scheduled at 00:05 and writes Google Sheets `DAILY_PLAN`,
+`STATE` and `LOG`; executions `66129`, `66338` and `66561` succeeded on the last
+three observed days. Backend ROOTLINE now owns canonical planning and lifecycle
+truth, so this is an active dual-planner/output collision. It cannot be disabled
+until caller/consumer absence, evidence preservation, backend-only natural
+cycles, inactive hardware controller `2.3.2` and rollback are proved.
+
+Weather delivery workflow `leo7eCFlo2Ilbvk7` remains the apparent thin delivery
+owner after backend evaluation. Its last three executions `66643`, `66645` and
+`66647` reached `Telegram - Send Weather Alert` and failed HTTP 400. No alternate
+backend Telegram scheduler is proven, so retirement would lose delivery. Exact
+payload/error diagnosis is required without replaying or manually sending old
+alerts. **NO BUSINESS OUTCOME. OWNER ACTION: NONE.** No workflow, provider,
+schedule, canonical row or farm state was changed by this audit.
+
+Charl then confirmed Google Sheets is no longer authoritative and authorized
+retirement where the exact caller graph was empty. The active graph proved no
+active caller for `UNwNmx0TwtFf8mjo`, `6UscGE44eTfdLp1A`,
+`L4c34rFmN0kUJvWc`, `tKVKoCcxhT7CAydT` or `oyGH9ynKZ38IQY48`. Their exact
+exports and available execution identities were preserved, and each workflow
+was deactivated serially. Post-readback proved all five inactive and zero new
+executions; active inventory fell from 20 to 15. Backend health remained exact
+at live revision `82fa843d2142d417724005c20c617c8e4f8e3930`. This removes the
+legacy Sheets plan writer and four unused backend wrappers, but does not yet
+claim a ROOTLINE owner outcome: a later natural backend schedule/lifecycle
+cycle must prove continuity. Thin Telegram/outbound connectors, weather
+delivery and uncertain SAM/order workflows remain active and untouched.
+
+Deferred continuation is now registered once in canonical Mission Control as
+`AFRP-N8N-DECOMMISSION-1`. Before intake the exact identity was absent; governed
+`record_mission(..., exact_identity=True)` created one `paused` P3 non-runnable
+owner-work row, and exact replay returned `duplicate_exact_mission` without a
+second row. Lifecycle is `DEFERRED / REGISTERED / NOT BUSINESS COMPLETE`.
+Current active count is 15: ten temporary thin ingress/backend/provider adapters
+and five unresolved SAM/order/email caller candidates, all listed exactly in the
+programme register. Supabase/backend is sole operational authority and Google
+Sheets is not operational state.
+
+The backlog is deliberately deferred behind genuine agent closed-loop outcomes.
+It resumes automatically only when an agent/provider replacement proves
+terminal-independent or an active n8n failure blocks an owner outcome. Every
+workflow then requires caller/replacement proof, exact journey acceptance,
+provider replay safety, preserved export/history and bounded rollback. Final
+programme acceptance is zero n8n reasoning and schedules, with only temporary
+thin adapters until equivalent provider transport is proven. **OWNER ACTION:
+NONE.**
+
 ## 2026-08-25 - RMQ-20260813-06 Borehole 1 exact connector and standing authority
 
 Charl supplied the existing Borehole 1 connector binding: eWeLink device
