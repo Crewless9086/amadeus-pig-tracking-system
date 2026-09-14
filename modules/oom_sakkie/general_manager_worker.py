@@ -491,7 +491,7 @@ class PostgresManagerCaseStore:
         """Lock a complete existing run, or release it and return planning hints."""
         cur.execute("savepoint oom_manager_reconciliation_prefetch")
         cur.execute("""select dedupe_key,evidence_digest,generation,status,
-                assigned_worker_id,lease_until,evidence_refs
+                assigned_worker_id,lease_until,evidence_refs,case_id
             from app_private.oom_manager_cases
             where dedupe_key=any(%s) order by case_id for update""", (list(keys),))
         priors = {row[0]: row[1:] for row in cur.fetchall()}
@@ -523,6 +523,12 @@ class PostgresManagerCaseStore:
                     _RECONCILIATION_PRIOR_UNREAD)
             return
         observed_present = set(priors)
+        # A canonical service can create a task with its own durable case ID.
+        # Order existing runs by those database identities, including mixed
+        # cohorts, rather than by the worker's ID for a hypothetical new row.
+        candidates = sorted(candidates, key=lambda item:
+            priors[item["dedupe_key"]][6] if item["dedupe_key"] in priors
+            and len(priors[item["dedupe_key"]]) > 6 else item["case_id"])
         for was_present, values in groupby(candidates,
                 key=lambda item: item["dedupe_key"] in observed_present):
             run = list(values)
@@ -542,12 +548,16 @@ class PostgresManagerCaseStore:
                    locked_prior=_RECONCILIATION_PRIOR_UNREAD, replay_epochs=None):
         if locked_prior is _RECONCILIATION_PRIOR_UNREAD:
             cur.execute("""select evidence_digest,generation,status,assigned_worker_id,lease_until,
-                    evidence_refs
+                    evidence_refs,case_id
                 from app_private.oom_manager_cases where dedupe_key=%s for update""",
                         (candidate["dedupe_key"],))
             prior = cur.fetchone()
         else:
             prior = locked_prior
+        # Bind all events and provider identities to the locked canonical row.
+        # Never trust a caller-supplied case_id or rename the writer's task.
+        if prior and len(prior) > 6:
+            candidate = {**candidate, "case_id": str(prior[6])}
         if candidate.get("terminal_state") == "completed":
             if not prior:
                 return "replayed"

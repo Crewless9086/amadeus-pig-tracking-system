@@ -48,21 +48,82 @@ def _time(value):
 
 
 def _context_rows(cursor, actor):
-    cursor.execute("""select review_json->'litter_weaning'
+    return _retained_context_rows(cursor, actor, EVENT_SOURCE, CONTEXT_KEY, ACTION_KIND)
+
+
+def _retained_context_rows(cursor, actor, event_source, context_key, action_kind):
+    """Read the existing claim/card state with the retained private facts."""
+    cursor.execute("""select review_json->%s
         from public.sam_live_stock_conversation_review_events
         where event_source=%s and chatwoot_conversation_id=%s
-        order by created_at desc,review_event_id desc limit 100""", (EVENT_SOURCE, actor))
-    return [row[0] for row in cursor.fetchall()]
+        order by created_at desc,review_event_id desc limit 100""", (context_key, event_source, actor))
+    rows = [dict(row[0]) for row in cursor.fetchall() if isinstance(row[0], dict)]
+    tokens = list({str((row.get('outcome') or {}).get('callback_token')) for row in rows
+                   if (row.get('outcome') or {}).get('callback_token')})
+    claims = {}
+    if tokens:
+        cursor.execute("""select callback_token,status,preview_card_message_id
+            from app_private.oom_protected_action_claims where callback_token=any(%s)
+            and action_kind=%s and owner_user_id=%s and private_chat_id=%s""",
+            (tokens, action_kind, actor, actor))
+        claims = {str(row[0]): row[1:] for row in cursor.fetchall()}
+    cards = list({str((row.get('outcome') or {}).get('card_mission_id') or row.get('context_id'))
+                  for row in rows if row.get('context_id')})
+    bindings = []
+    if cards:
+        cursor.execute("""select review_json->'family_message_lifecycle'
+            from public.sam_live_stock_conversation_review_events
+            where event_source='oom_sakkie_family_message_lifecycle'
+            and chatwoot_conversation_id=any(%s)
+            and review_json->'family_message_lifecycle'->>'owner_user_id'=%s
+            and review_json->'family_message_lifecycle'->>'chat_id'=%s
+            and review_json->'family_message_lifecycle'->>'telegram_message_id' is not null
+            order by created_at desc,review_event_id desc limit 200""", (cards, actor, actor))
+        bindings = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
+    for row in rows:
+        outcome = row.get('outcome') or {}
+        claim = claims.get(str(outcome.get('callback_token') or ''))
+        row['_claim_status'] = claim[0] if claim else ''
+        card = str(outcome.get('card_mission_id') or row.get('context_id') or '')
+        row['_card_ids'] = [str(item['telegram_message_id']) for item in bindings
+                            if item.get('card_mission_id') == card]
+        if claim and claim[1]:
+            row['_card_ids'].append(str(claim[1]))
+    return rows
 
 
-def _eligible_context(rows, parsed):
+def _eligible_context(rows, parsed, supplied=None):
     stamp = _time(parsed.get('provider_timestamp'))
     if not stamp:
         return None
-    # Source chronology, never arrival order, determines a short reply's context.
-    eligible = [row for row in rows if _time(row.get('provider_timestamp'))
-        and 0 <= (stamp - _time(row['provider_timestamp'])).total_seconds() <= 6 * 3600]
-    return max(eligible, key=_source_order, default=None)
+    # First retain the latest facts in each conversation, then require an
+    # exact card or a unique current context. Never borrow another litter's
+    # facts because its message happened to arrive last.
+    latest = {}
+    for row in rows:
+        key = row.get('context_id')
+        if key and _time(row.get('provider_timestamp')) and (
+                key not in latest or _source_order(row) > _source_order(latest[key])):
+            latest[key] = row
+    current = [row for row in latest.values()
+        if 0 <= (stamp - _time(row['provider_timestamp'])).total_seconds() <= 6 * 3600
+        and _source_order(row) <= _source_order(parsed)]
+    reply = str(parsed.get('reply_to_message_id') or '')
+    if reply:
+        current = [row for row in current if reply in row.get('_card_ids', ())]
+    supplied = supplied or {}
+    if len(current) > 1:
+        for key in ('sow_ref', 'litter_ref'):
+            ref = str(supplied.get(key) or '').strip().casefold()
+            if ref:
+                current = [row for row in current if
+                    str((row.get('facts') or {}).get(key) or '').strip().casefold() == ref]
+    if current:
+        newest = max(current, key=_source_order)
+        if newest.get('_claim_status') == 'cancelled':
+            return {'context_id': newest['context_id'], '_cancelled': True}
+    current = [row for row in current if row.get('_claim_status') != 'cancelled']
+    return current[0] if len(current) == 1 else None
 
 
 def _source_order(row):
@@ -80,6 +141,8 @@ def load_weaning_context(parsed, *, connect_factory=None):
             with db.cursor() as cursor:
                 prior = _eligible_context(_context_rows(cursor, actor), parsed)
         if prior:
+            if prior.get('_cancelled'):
+                return {'status': 'weaning_context_cancelled'}
             return {key: prior.get(key) for key in ('context_id', 'facts', 'provider_timestamp', 'question')}
     except Exception:
         return None
@@ -109,6 +172,7 @@ ENGLISH = {
     'Hierdie boodskap se herhaling verskil. Niks is gestoor nie.': 'This repeated message has conflicting content. Nothing was saved.',
     'Hierdie voorskou is nie meer aktief nie. Gebruik die jongste speenkaart.': 'This preview is no longer active. Use the latest weaning card.',
     'Die vorige speengesprek is nie meer duidelik nie. Gee weer die werpsel, datum en omvang.': 'The previous weaning context is no longer clear. Give the litter, date and scope again.',
+    "Hierdie speengesprek is gekanselleer. Begin met 'n nuwe verslag as jy weer wil voortgaan.": 'This weaning conversation was cancelled. Start a new report if you want to continue.',
     'Daar is reeds nuwer speenfeite. Gebruik die jongste voorskou.': 'Newer weaning facts have already arrived. Use the latest preview.',
     'Die vorige bevestiging word reeds verwerk of is gestoor. Lees eers daardie uitslag terug.': 'The previous confirmation is processing or saved. Recover its result first.',
     'Bevestig asseblief die werpsel, werklike speendatum en watter varkies jy bedoel.': 'Please clarify the litter, actual weaning date and which piglets you mean.',
@@ -346,18 +410,23 @@ def handle_litter_weaning_message(parsed, authority, *, connect_factory=None):
                         if not claim or claim[0] != 'active':
                             return answer('weaning_preview_superseded', 'Hierdie voorskou is nie meer aktief nie. Gebruik die jongste speenkaart.'), 409
                     return replay['outcome'], replay['http_status']
-                prior = _eligible_context(rows, parsed) if semantic.get('continuation') else None
-                if semantic.get('continuation') and not prior:
-                    return answer('weaning_context_not_current', 'Die vorige speengesprek is nie meer duidelik nie. Gee weer die werpsel, datum en omvang.'), 409
                 if rows and any(_source_order(row) > _source_order(parsed) for row in rows):
                     return answer('weaning_out_of_order', 'Daar is reeds nuwer speenfeite. Gebruik die jongste voorskou.'), 409
+                prior = _eligible_context(rows, parsed, supplied) if semantic.get('continuation') else None
+                if prior and prior.get('_cancelled'):
+                    return answer('weaning_context_cancelled', "Hierdie speengesprek is gekanselleer. Begin met 'n nuwe verslag as jy weer wil voortgaan."), 409
+                if semantic.get('continuation') and not prior:
+                    return answer('weaning_context_not_current', 'Die vorige speengesprek is nie meer duidelik nie. Gee weer die werpsel, datum en omvang.'), 409
                 facts = _merge(prior['facts'] if prior else {}, supplied)
                 context_id = prior['context_id'] if prior else 'OOM-WEAN-' + _digest(actor + ':' + provider)[:24].upper()
                 # Retire an old confirmation before accepting corrections, even
                 # if the corrected facts still need clarification.
                 cursor.execute("""select status from app_private.oom_protected_action_claims
                     where mission_id=%s and action_kind=%s for update""", (context_id, ACTION_KIND))
-                if any(row[0] in ('executing', 'completed') for row in cursor.fetchall()):
+                statuses = {row[0] for row in cursor.fetchall()}
+                if 'cancelled' in statuses:
+                    return answer('weaning_context_cancelled', "Hierdie speengesprek is gekanselleer. Begin met 'n nuwe verslag as jy weer wil voortgaan."), 409
+                if statuses & {'executing', 'completed'}:
                     return answer('weaning_prior_operation_requires_readback', 'Die vorige bevestiging word reeds verwerk of is gestoor. Lees eers daardie uitslag terug.'), 409
                 cursor.execute("""update app_private.oom_protected_action_claims set status='changed'
                     where mission_id=%s and action_kind=%s and status='active'""", (context_id, ACTION_KIND))

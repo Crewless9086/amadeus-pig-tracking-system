@@ -296,7 +296,7 @@ jobs:
         env:
           DATABASE_URL: ""
           PYTHON_DOTENV_DISABLED: "1"
-        run: python -m pytest -q tests/test_farrowing_conversation.py tests/test_herdmaster_farrowing_litter_intake.py tests/test_oom_sakkie_herdmaster_farrowing_runtime.py tests/test_herdmaster_farrowing_channel_equivalence.py tests/test_oom_sakkie_semantic_front_door.py tests/test_oom_sakkie_automatic_reassessment_scheduler.py
+        run: python -m pytest -q tests/test_farrowing_conversation.py tests/test_herdmaster_farrowing_litter_intake.py tests/test_oom_sakkie_herdmaster_farrowing_runtime.py tests/test_herdmaster_farrowing_channel_equivalence.py tests/test_oom_sakkie_semantic_front_door.py tests/test_oom_sakkie_automatic_reassessment_scheduler.py tests/test_oom_sakkie_litter_followup.py
 
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres

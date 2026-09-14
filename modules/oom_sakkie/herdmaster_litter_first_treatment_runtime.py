@@ -13,7 +13,7 @@ from modules.oom_sakkie.protected_action_claims import (
     resolve_natural_confirmation,
 )
 from modules.oom_sakkie.herdmaster_litter_weaning_runtime import (
-    _connect, _service_factory, _time, _digest, _eligible_context, _source_order,
+    _connect, _service_factory, _time, _digest, _eligible_context, _source_order, _retained_context_rows,
     _actual_date as _shared_actual_date, WeaningClarification, ENGLISH as SHARED_ENGLISH,
 )
 from modules.pig_weights import farm_supabase_read_service as reader
@@ -32,6 +32,7 @@ ENGLISH = {**SHARED_ENGLISH,
     'Ek kort die werpsel en die werklike behandelingsfeite.': 'I need the litter and actual treatment facts.',
     'Hierdie voorskou is nie meer aktief nie. Gebruik die jongste behandelingskaart.': 'This preview is no longer active. Use the latest treatment card.',
     'Die vorige behandelingsgesprek is nie meer duidelik nie. Gee weer die werpsel en behandelingsfeite.': 'The previous treatment context is no longer clear. Give the litter and treatment facts again.',
+    "Hierdie behandelingsgesprek is gekanselleer. Begin met 'n nuwe verslag as jy weer wil voortgaan.": 'This treatment conversation was cancelled. Start a new report if you want to continue.',
     'Daar is reeds nuwer behandelingsfeite. Gebruik die jongste voorskou.': 'Newer treatment facts have arrived. Use the latest preview.',
     'Verduidelik asseblief die onseker behandelingsfeit.': 'Please clarify the uncertain treatment fact.',
     'Ek kon die behandelingsgesprek nie veilig behou nie. Niks is bevestig nie.': 'The treatment conversation could not be safely retained. Nothing was confirmed.',
@@ -61,11 +62,7 @@ def _actual_date(raw, stamp):
 
 
 def _context_rows(cursor, actor):
-    cursor.execute("""select review_json->'litter_first_treatment'
-        from public.sam_live_stock_conversation_review_events
-        where event_source=%s and chatwoot_conversation_id=%s
-        order by created_at desc,review_event_id desc limit 100""", (EVENT_SOURCE, actor))
-    return [row[0] for row in cursor.fetchall()]
+    return _retained_context_rows(cursor, actor, EVENT_SOURCE, CONTEXT_KEY, ACTION_KIND)
 
 
 def load_first_treatment_context(parsed, *, connect_factory=None):
@@ -78,6 +75,8 @@ def load_first_treatment_context(parsed, *, connect_factory=None):
             with db.cursor() as cursor:
                 prior = _eligible_context(_context_rows(cursor, actor), parsed)
         if prior:
+            if prior.get('_cancelled'):
+                return {'status': 'first_treatment_context_cancelled'}
             return {key: prior.get(key) for key in ('context_id', 'facts', 'provider_timestamp', 'question')}
     except Exception:
         return None
@@ -238,18 +237,23 @@ def handle_litter_first_treatment_message(parsed, authority, *, connect_factory=
                         if not claim or claim[0] != 'active':
                             return answer('first_treatment_preview_superseded', 'Hierdie voorskou is nie meer aktief nie. Gebruik die jongste behandelingskaart.'), 409
                     return replay['outcome'], replay['http_status']
-                prior = _eligible_context(rows, parsed) if semantic.get('continuation') else None
-                if semantic.get('continuation') and not prior:
-                    return answer('first_treatment_context_not_current', 'Die vorige behandelingsgesprek is nie meer duidelik nie. Gee weer die werpsel en behandelingsfeite.'), 409
                 if rows and any(_source_order(row) > _source_order(parsed) for row in rows):
                     return answer('first_treatment_out_of_order', 'Daar is reeds nuwer behandelingsfeite. Gebruik die jongste voorskou.'), 409
+                prior = _eligible_context(rows, parsed, supplied) if semantic.get('continuation') else None
+                if prior and prior.get('_cancelled'):
+                    return answer('first_treatment_context_cancelled', "Hierdie behandelingsgesprek is gekanselleer. Begin met 'n nuwe verslag as jy weer wil voortgaan."), 409
+                if semantic.get('continuation') and not prior:
+                    return answer('first_treatment_context_not_current', 'Die vorige behandelingsgesprek is nie meer duidelik nie. Gee weer die werpsel en behandelingsfeite.'), 409
                 facts = {**(prior['facts'] if prior else {}), **supplied}
                 context_id = prior['context_id'] if prior else 'OOM-TREAT-' + _digest(actor + ':' + provider)[:24].upper()
                 # Retire an old confirmation before accepting corrections, even
                 # if the corrected facts still need clarification.
                 cursor.execute("""select status from app_private.oom_protected_action_claims
                     where mission_id=%s and action_kind=%s for update""", (context_id, ACTION_KIND))
-                if any(row[0] in ('executing', 'completed') for row in cursor.fetchall()):
+                statuses = {row[0] for row in cursor.fetchall()}
+                if 'cancelled' in statuses:
+                    return answer('first_treatment_context_cancelled', "Hierdie behandelingsgesprek is gekanselleer. Begin met 'n nuwe verslag as jy weer wil voortgaan."), 409
+                if statuses & {'executing', 'completed'}:
                     return answer('first_treatment_prior_operation_requires_readback', 'Die vorige bevestiging word reeds verwerk of is gestoor. Lees eers daardie uitslag terug.'), 409
                 cursor.execute("""update app_private.oom_protected_action_claims set status='changed'
                     where mission_id=%s and action_kind=%s and status='active'""", (context_id, ACTION_KIND))

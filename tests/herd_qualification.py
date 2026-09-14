@@ -29,6 +29,7 @@ MODULES = [
     'tests/test_telegram_voice.py',
     'tests/test_telegram_voice_ingress_postgres.py',
     'tests/test_farrowing_conversation_postgres.py',
+    'tests/test_herd_retained_cancellation_postgres.py',
 ]
 
 

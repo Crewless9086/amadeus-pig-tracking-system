@@ -49,6 +49,9 @@ def _context_failure(language, status):
         "farrowing_context_ambiguous": (
             "Which sow's birth report are you answering? Give her unique name, tag or ID.",
             "Watter sog se geboorteverslag beantwoord jy? Gee haar unieke naam, oornommer of ID."),
+        "farrowing_context_cancelled": (
+            "This birth conversation was cancelled. Start a new report if you want to continue.",
+            "Hierdie geboortegesprek is gekanselleer. Begin met 'n nuwe verslag as jy weer wil voortgaan."),
         "farrowing_reply_context_mismatch": (
             "That reply does not match the current birth question or preview. Please use its latest card.",
             "Daardie antwoord pas nie by die huidige geboortevraag of voorskou nie. Gebruik asseblief die jongste kaart."),

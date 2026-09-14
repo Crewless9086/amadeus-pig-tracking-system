@@ -71,6 +71,9 @@ def select_context(rows, parsed, supplied=None):
         birth = supplied.get("farrowing_date")
         if birth and len(current) > 1 and all((row.get("facts") or {}).get("farrowing_date") for row in current):
             current = [row for row in current if (row.get("facts") or {}).get("farrowing_date") == birth]
+    if current and max(current, key=source_order).get('_claim_status') == 'cancelled':
+        raise FarrowingContextError('farrowing_context_cancelled')
+    current = [row for row in current if row.get('_claim_status') != 'cancelled']
     if len(current) != 1:
         raise FarrowingContextError("farrowing_context_ambiguous" if len(current) > 1
                                     else "farrowing_context_not_current")
@@ -167,7 +170,10 @@ class _FarrowingTransaction:
             cursor.execute("""select status,result_payload from app_private.oom_protected_action_claims
                 where mission_id=%s and action_kind=%s and owner_user_id=%s and private_chat_id=%s
                 for update""", (context_id, ACTION_KIND, self.actor, self.chat))
-            protected = [dict(zip(("status", "result"), row)) for row in cursor.fetchall()
+            states = cursor.fetchall()
+            if any(row[0] == 'cancelled' for row in states):
+                raise FarrowingContextError('farrowing_context_cancelled')
+            protected = [dict(zip(("status", "result"), row)) for row in states
                          if row[0] in ("executing", "completed")]
             if not protected:
                 cursor.execute("""update app_private.oom_protected_action_claims set status='changed'
