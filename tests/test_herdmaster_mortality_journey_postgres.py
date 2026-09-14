@@ -40,7 +40,7 @@ def signed_init(actor, *, age=0, token=None):
 @pytest.fixture
 def journey(monkeypatch):
     url = urlparse(DSN)
-    assert ipaddress.ip_address(url.hostname).is_loopback and "test" in url.path
+    assert (url.hostname == "localhost" or ipaddress.ip_address(url.hostname).is_loopback) and "test" in url.path
     actor = str(7000000000 + int(uuid.uuid4().hex[:7], 16))
     pig = "PIG-2026-" + uuid.uuid4().hex[:4].upper()
     tag = "LOCAL-" + uuid.uuid4().hex[:10].upper()
