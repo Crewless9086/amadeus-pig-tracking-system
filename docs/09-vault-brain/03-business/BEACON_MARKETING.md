@@ -6,6 +6,12 @@ Beacon should support meat preorder, live pig sales, slaughter/abattoir fallback
 
 Beacon remains gated by owner approval, approved media, channel rules, spend caps, and backend fulfilment readiness.
 
+## Autonomy Promotion Readiness
+
+Beacon autonomy readiness is a read-only, fail-closed assessment. A server-resolved, versioned, SHA-256 content-addressed threshold policy is eligible only when its exact latest version is structurally valid, within its effective window, and has `authority_state=owner_approved` with approval lineage. Proposed, expired, malformed, hash-mismatched, or superseded policies cannot produce readiness.
+
+Readiness requires explicit AND of campaign evidence, unedited approval rate, attribution completeness, recommendation accuracy, safety incidents, trust history, and budget compliance. Each evidence item must be current, compatible with the policy schema, source-identified, and non-superseded; absent or incompatible evidence fails its own gate. A successful evaluation may create one local idempotent threshold-notification claim keyed to policy and evidence identity. It does not promote execution authority or enable posting, sending, spend, provider calls, orders, reservations, stock, or farm writes.
+
 ## Weekly Marketing Command Brief
 
 Beacon projects append-only campaign performance evidence into an authenticated owner brief. Comparisons use the latest evidence calendar week and only compatible measurement windows and currencies, with one latest snapshot per campaign. Weekly spend and qualified-lead targets must identify an explicit `proposed`, `owner_approved`, or `blocked` source state; missing or malformed target authority is `unavailable`, never inferred from a default. Attributed revenue remains unavailable until a canonical paid/completed-sale join is proven.
