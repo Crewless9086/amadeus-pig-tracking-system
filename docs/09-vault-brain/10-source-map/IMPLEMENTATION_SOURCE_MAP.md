@@ -16,8 +16,10 @@ Current provider ownership remains n8n GateKeeper `s8QaxmqT69Z5mhvE` plus relay
 `TlKy9kUgJJE0msU4`. The implemented replacement is the backend route
 `POST /api/oom-sakkie/channels/telegram/direct-webhook` in
 `modules/oom_sakkie/routes.py` and `modules/oom_sakkie/telegram_direct.py`.
-Provider cutover and genuine no-loss/no-duplicate acceptance remain incomplete;
-therefore the workflows are retained and no n8n business logic is added.
+A fresh read-only Render check found all five required direct-adapter environment
+keys absent. Protected configuration, provider cutover and genuine no-loss/no-
+duplicate acceptance remain incomplete; therefore the workflows are retained and
+no n8n business logic is added.
 
 ## 2026-09-13 - PR1335 hosted fixture failure and local one-line amendment
 
