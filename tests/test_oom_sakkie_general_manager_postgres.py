@@ -121,6 +121,52 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         return self.store.run_cycle(values, now=self.now, source_revision='local-regression',
             brain_guard_audit={'passed': True}, **kwargs)
 
+    def test_canonical_writer_case_identity_survives_refresh_delivery_and_replay(self):
+        key = 'herdmaster-litter-follow-up:LIT-OFFLINE'
+        canonical_id = 'OOM-MANAGER-HERD-LITTER-OFFLINE'
+        raw = self.value('retained-litter', dedupe_key=key)
+        old = worker_module.normalize_candidate(raw, now=self.now)
+        with self.db() as db, db.cursor() as cur:
+            self.store._reconcile(cur, {**old, 'case_id': canonical_id}, self.now)
+        changed = {**raw, 'summary': 'Current canonical litter needs care',
+            'evidence_refs': ['litter:LIT-OFFLINE', 'active_pigs:8'],
+            'next_reassessment_at': self.now.isoformat(),
+            'case_id': 'UNTRUSTED-CALLER-ID'}
+        sends = []
+        result = self.cycle([changed], refresh=lambda _case: changed,
+            deliver=lambda row, **_kwargs: sends.append(row['case_id']) or {
+                'success': True, 'delivery_confirmed': True,
+                'next_reassessment_at': (self.now + timedelta(minutes=30)).isoformat()})
+        self.assertTrue(result['success'], result)
+        self.assertEqual(sends, [canonical_id])
+        with self.db() as db:
+            row = db.execute("select case_id,status,generation,next_reassessment_at from app_private.oom_manager_cases where dedupe_key=%s", (key,)).fetchone()
+            self.assertEqual(row[:3], (canonical_id, 'waiting_reassessment', 2))
+            self.assertGreater(row[3], self.now)
+            identities = db.execute("select distinct case_id from app_private.oom_manager_case_events").fetchall()
+            self.assertEqual(identities, [(canonical_id,)])
+            self.assertEqual(db.execute("select count(*) from app_private.oom_manager_cases").fetchone()[0], 1)
+        again = self.cycle([changed], deliver=lambda *_args, **_kwargs: self.fail('duplicate delivery'))
+        self.assertTrue(again['success'], again)
+        self.assertEqual(again['candidate_replays'], 1)
+
+    def test_mixed_reconciliation_keeps_custom_identity_and_terminal_event(self):
+        raw = self.value('retained-litter', dedupe_key='herdmaster-litter-follow-up:LIT-MIXED')
+        custom = 'OOM-MANAGER-HERD-LITTER-MIXED'
+        with self.db() as db, db.cursor() as cur:
+            self.store._reconcile(cur, {**worker_module.normalize_candidate(raw, now=self.now),
+                'case_id': custom}, self.now)
+        changed = {**raw, 'summary': 'Changed current evidence'}
+        values = [self.value('new-before'), changed, self.value('new-after')]
+        result = self.cycle(values)
+        self.assertTrue(result['success'], result)
+        terminal = worker_module.normalize_candidate({**changed, 'terminal_state': 'completed',
+            'summary': 'Canonical outcome independently verified'}, now=self.now)
+        with self.db() as db, db.cursor() as cur:
+            self.assertEqual(self.store._reconcile(cur, terminal, self.now), 'changed')
+            cur.execute("select case_id from app_private.oom_manager_case_events where event_type='completed'")
+            self.assertEqual(cur.fetchall(), [(custom,)])
+
     def test_313_replays_keep_epochs_and_make_progress_with_latency_budget(self):
         values = [self.value(str(i), next_reassessment_at=self.now.isoformat()) for i in range(313)]
         self.seed(values)

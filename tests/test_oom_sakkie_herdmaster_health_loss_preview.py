@@ -38,6 +38,16 @@ def evidence(*animals, matings=(), litters=()):
     }
 
 
+@pytest.mark.parametrize('language',['en','af'])
+def test_uncertain_welfare_card_keeps_independent_urgent_assessment(language):
+    packet={**envelope('Maya is bleeding.',language),'welfare_observation':{'drinking':'unknown'}}
+    result=prepare_health_loss_owner_preview(packet,evidence(pig()))
+    assert result['status']=='welfare_observation_uncertain' and result['question_count']==1
+    assert ('Dringend:' if language=='af' else 'Physically assess') in result['owner_text']
+    assert ('water' if language=='af' else 'drinking water') in result['owner_text']
+    assert result['evaluator']['canonical_effects']==[]
+
+
 def test_maya_compound_report_renders_one_complete_human_preview_without_writes():
     maya = pig()
     result = prepare_health_loss_owner_preview(envelope(
@@ -135,7 +145,7 @@ def test_enriched_sick_report_does_not_repeat_supplied_welfare_facts():
     ), evidence(animal))
     assert result["question_count"] == 0
     assert result["confirmation_ready"] is True
-    assert "not eating: True" in result["owner_text"]
+    assert "not eating: Yes" in result["owner_text"]
     assert "Treatment evidence: Unknown." in result["owner_text"]
     assert "Confirm to record only this preview once." in result["owner_text"]
     assert "Provider message" not in result["owner_text"]

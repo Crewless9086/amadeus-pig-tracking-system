@@ -32,17 +32,21 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
               or execution_state in {"failed", "ambiguous", "contained"})
     started = (action == "mark_active" or execution_state in {"active", "started", "running"})
     authorized = action == "claim_before_on" or execution_state in {"claimed", "authorized"}
-    eligible = eligibility.get("eligible") is True or execution.get("eligibility_id") is not None
+    terminal = action == "record_completed" or execution_state == "completed"
+    eligible = (not terminal and
+        (eligibility.get("eligible") is True or bool(execution.get("eligibility_id"))))
     if failed:
         state, reason, next_action = "Failed", _reason(execution, recommendation), "ROOTLINE must reconcile and retry only the safe failed manager step."
     elif started:
         state, reason, next_action = "Started", _reason(execution, recommendation), "ROOTLINE must verify shutdown and the physical outcome."
     elif authorized:
         state, reason, next_action = "Authorized", _reason(execution, recommendation), "ROOTLINE must continue through the existing claimed execution."
-    elif eligible:
-        state, reason, next_action = "Eligible", _reason(eligibility, recommendation), "ROOTLINE must claim the existing canonical execution exactly once."
+    elif revalidating and terminal:
+        state, reason, next_action = "Revalidating", _reason(recommendation), "ROOTLINE must rebuild fresh eligibility for the remaining segment."
     elif completed:
         state, reason, next_action = "Completed", _completion_reason(completed), "Reassess at the next governed due time."
+    elif eligible:
+        state, reason, next_action = "Eligible", _reason(eligibility, recommendation), "ROOTLINE must claim the existing canonical execution exactly once."
     elif revalidating:
         state, reason, next_action = "Revalidating", _reason(recommendation), "ROOTLINE must rebuild fresh eligibility for the remaining segment."
     elif decision.casefold() in {"recommend", "run", "proceed", "eligible"}:

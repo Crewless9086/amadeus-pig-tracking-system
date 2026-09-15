@@ -82,7 +82,7 @@ def test_conversational_rootline_lifecycle_projection_is_recipient_localized():
 
     assert "<b>B Kamp:</b> Veilig teruggehou" in answer
     assert "<b>C Kamp:</b> Moet natgemaak word" in answer
-    assert "Vars kanonieke bewyse bepaal die huidige besluit." in answer
+    assert "ROOTLINE heroorweeg die plan outomaties." in answer
     assert "durable_zone_containment" not in answer
     assert "now_after_fresh_execution_revalidation" not in answer
     assert "Recommendation" not in answer and "Eligible" not in answer
@@ -103,7 +103,7 @@ def test_conversational_rootline_completed_label_requires_bound_off_evidence():
 
     packet["irrigation_lifecycle"]["B12345"]["completion_evidence"]["zone_id"] = "B12345"
     verified = compose_rootline(packet)
-    assert "<b>B Camp:</b> Completed" in verified and "off and verified" in verified
+    assert "<b>B Camp:</b> Controller OFF verified" in verified
 
 def test_manager_sections_and_afrikaans_layout_preserve_supported_facts():
     p=Provenance("herdmaster","R",("canonical",),NOW,1)
@@ -349,6 +349,13 @@ def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
         "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",
         "state": "Eligible", "reason": "now_after_fresh_execution_revalidation",
         "next_action_owner": "ROOTLINE", "next_action": "claim exactly once"}}
+    silent = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
+        specialist_loader=lambda: first_packet, state_store=state)
+    assert silent["status"] == "rootline_reassessment_observed_silently"
+    assert silent["notify_owner"] is False
+    # An unchanged owner question authorizes the notification exercised below;
+    # eligibility alone remains silent under the existing notification policy.
+    first_packet["owner_brief"]["family_fact_needed"] = "Is the tank empty?"
     first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
         specialist_loader=lambda: first_packet, state_store=state)
     record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
@@ -372,7 +379,7 @@ def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
     changed = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
         specialist_loader=lambda: completed, state_store=state)
     assert changed["status"] == "rootline_reassessment_changed"
-    assert "Completed — off and verified" in changed["answer"]
+    assert "Controller OFF verified" in changed["answer"]
 
 
 def test_meaningful_owner_reason_change_is_material_with_same_decision():

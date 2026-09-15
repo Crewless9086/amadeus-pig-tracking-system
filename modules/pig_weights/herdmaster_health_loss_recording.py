@@ -64,7 +64,7 @@ def confirm_health_loss_preview(lifecycle: Mapping[str, Any], confirmation_text:
     digest = hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     event_id = "OBS-HL-" + hashlib.sha256(operation_id.encode()).hexdigest()[:24].upper()
     note = _factual_note(facts)
-    severity = "urgent" if str((evaluator.get("immediate_welfare_priority") or {}).get("level") or "") in {"emergency", "urgent_follow_up"} else "attention"
+    severity = "urgent" if str((evaluator.get("immediate_welfare_priority") or {}).get("level") or "") in {"emergency", "urgent_follow_up", "urgent_assessment"} else "attention"
     try:
         connection_cm = connect_factory() if connect_factory else _connect()
         with connection_cm as connection:
@@ -96,6 +96,8 @@ def confirm_health_loss_preview(lifecycle: Mapping[str, Any], confirmation_text:
                         "owner_suspected_not_diagnosed": facts.get("owner_suspected") or [],
                         "owner_reported_veterinary_evidence": facts.get("veterinary_evidence") or [],
                         "diagnosis_inferred": False,
+                        "reviewed_event_family": str(evaluator.get("event_family") or ""),
+                        "owner_report_parts": lifecycle.get("report_parts") or [],
                         "provider_message_id": canonical["provider_message_id"],
                         "preview_sha256": canonical["preview_sha256"],
                     }, sort_keys=True), digest, operation_id))
@@ -397,6 +399,35 @@ def _readback_mortality_welfare(cursor, *, pig_id, event_id, welfare_case_id):
             "excluded_from_active_pen_and_availability_projections": bool(
                 pen_membership == 0 and active_outlets == 0),
             "preserved_distinct_work": int((distinct or [0])[0] or 0)}
+
+
+def list_health_observations(pig_id, *, connect_factory=None):
+    """Read recent confirmed welfare records for the existing animal profile."""
+    try:
+        with (connect_factory() if connect_factory else _connect()) as connection:
+            connection.read_only = True
+            with connection.cursor() as cursor:
+                cursor.execute("set local statement_timeout = '3000ms'")
+                cursor.execute("select 1 from public.pigs where pig_id=%s", (str(pig_id),))
+                if not cursor.fetchone():
+                    return {"success": False, "status": "pig_not_found"}, 404
+                cursor.execute("""select observation_event_id,observed_at,measurements_json
+                    from public.pig_observation_events where pig_id=%s
+                      and observation_category='welfare'
+                      and measurements_json->>'contract_version'='herdmaster_health_loss_recording_v1'
+                    order by observed_at desc,observation_event_id desc limit 50""", (str(pig_id),))
+                history = [{"observation_event_id": row[0], "observed_at": row[1].isoformat(),
+                    "observed": row[2].get("observed") or [],
+                    "reviewed_event_family": row[2].get("reviewed_event_family") or "",
+                    "owner_report_parts": row[2].get("owner_report_parts") or [],
+                    "owner_suspected_not_diagnosed": row[2].get("owner_suspected_not_diagnosed") or [],
+                    "owner_reported_veterinary_evidence": row[2].get("owner_reported_veterinary_evidence") or []}
+                    for row in cursor.fetchall()]
+        return {"success": True, "pig_id": str(pig_id), "history": history,
+            "limit": 50, "writes_farm_data": False}, 200
+    except Exception:
+        return {"success": False, "status": "welfare_history_unavailable",
+            "writes_farm_data": False}, 503
 
 
 def _factual_note(facts):

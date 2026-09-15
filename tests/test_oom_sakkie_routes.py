@@ -162,7 +162,9 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertTrue(data["backend_owns_oom_sakkie_chat"])
         self.assertFalse(data["n8n_required_for_oom_sakkie_chat"])
         self.assertIn("farm attention", data["carried_over_backend_capabilities"])
-        self.assertIn("Telegram voice-note transcription", data["not_carried_over_yet"])
+        self.assertNotIn("Telegram voice-note transcription", data["not_carried_over_yet"])
+        self.assertTrue(any('native Telegram Ogg/Opus voice input' in item
+            for item in data["carried_over_backend_capabilities"]))
         self.assertFalse(data["can_trigger_outbound_llm"])
         self.assertFalse(data["writes"])
         self.assertFalse(data["dispatch_enabled"])
@@ -252,6 +254,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "DATABASE_URL": "postgresql://test.invalid/db",
     }, clear=True)
+    @patch("modules.oom_sakkie.telegram_gateway.handle_manager_question_reply",
+           return_value=({"handled": False}, 200))
     @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result", return_value={
         "success": True, "status": "family_message_delivered", "telegram_sends": 1,
         "telegram_edits": 0, "telegram_message_id": "4001"})
@@ -268,7 +272,7 @@ class OomSakkieRouteTests(unittest.TestCase):
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
     def test_telegram_gateway_route_returns_read_only_reply_payload(
             self, mock_handle, _question, _manager, _specialist, _continuation,
-            _owner_task, _deliver):
+            _owner_task, _deliver, _manager_question_reply):
         mock_handle.return_value = ({
             "success": True,
             "answer": "Read-only answer.",

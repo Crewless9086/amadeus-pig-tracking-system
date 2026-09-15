@@ -165,7 +165,8 @@ def resolve_natural_confirmation(*, owner_user_id, private_chat_id, reply_to_mes
     reply=str(reply_to_message_id or "")
     if reply:rows=[row for row in rows if str(row[3] or "")==reply]
     if len(rows)!=1:return None
-    return {"callback_token":rows[0][0],"mission_id":rows[0][1],"preview_payload":rows[0][2]}
+    return {"callback_token":rows[0][0],"mission_id":rows[0][1],"preview_payload":rows[0][2],
+            "preview_card_message_id": str(rows[0][3])}
 
 def bind_claim_card(token, card_message_id, *, connect_factory=None):
     with (connect_factory() if connect_factory else _connect()) as db:
@@ -282,7 +283,8 @@ def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
 
 def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_message_id,
                    provider_timestamp, source_card_message_id="", connect_factory=None,
-                   allowed_action_kinds=None):
+                   allowed_action_kinds=None, weaning_semantic_confirmation=False,
+                   first_treatment_semantic_confirmation=False):
     data=str(callback_data or "")
     try:
         provider_time=datetime.fromisoformat(str(provider_timestamp or "").replace("Z","+00:00"))
@@ -295,7 +297,7 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
     if action not in {"confirm","change","cancel","details","nomedia"}:return {"success":False,"status":"protected_callback_invalid"},400
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
-        cur.execute("select action_kind,owner_user_id,private_chat_id,mission_id,preview_digest,evidence_generation,preview_payload,status,expires_at,result_payload,preview_card_message_id from app_private.oom_protected_action_claims where callback_token=%s for update",(token,))
+        cur.execute("select action_kind,owner_user_id,private_chat_id,mission_id,preview_digest,evidence_generation,preview_payload,status,expires_at,result_payload,preview_card_message_id,confirmation_provider_message_id,confirmation_provider_timestamp from app_private.oom_protected_action_claims where callback_token=%s for update",(token,))
         row=cur.fetchone()
         if not row:return {"success":False,"status":"protected_callback_unknown"},404
         if str(row[1])!=str(owner_user_id) or str(row[2])!=str(private_chat_id):return {"success":False,"status":"protected_callback_unauthorized"},403
@@ -305,15 +307,59 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
                     "writes_farm_data":False,"hardware_commands":0},403
         if not row[10]:
             return {"success":False,"status":"protected_callback_card_unbound"},409
-        if str(row[10])!=str(source_card_message_id or ""):
+        semantic_weaning = (weaning_semantic_confirmation is True
+            and row[0] == "herdmaster_record_litter_weaning" and action == "confirm")
+        semantic_treatment = (first_treatment_semantic_confirmation is True
+            and row[0] == "herdmaster_record_litter_first_treatment" and action == "confirm")
+        if weaning_semantic_confirmation and not semantic_weaning:
+            return {"success":False,"status":"protected_callback_invalid"},409
+        if first_treatment_semantic_confirmation and not semantic_treatment:
+            return {"success":False,"status":"protected_callback_invalid"},409
+        if str(row[10])!=str(source_card_message_id or "") and (source_card_message_id or not (semantic_weaning or semantic_treatment)):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
+        if semantic_weaning or semantic_treatment:
+            # The server's typed adapter may accept an ordinary-language yes
+            # without a reply reference. Validate chronology under this row lock;
+            # a selected active card is never itself evidence of consent.
+            if row[7] in {"executing", "completed"}:
+                cur.execute("""select confirmation_provider_message_id from
+                  app_private.oom_protected_action_claims where callback_token=%s""", (token,))
+                confirmation = cur.fetchone()
+                if not confirmation or str(confirmation[0] or "") != str(provider_message_id):
+                    return {"success":False,"status":"protected_callback_stale"},409
+            elif row[7] == "active":
+                preview = row[6] if isinstance(row[6], dict) else {}
+                try:
+                    preview_time = datetime.fromisoformat(str(preview.get("provider_timestamp") or "").replace("Z", "+00:00"))
+                    sequence = str(provider_message_id)
+                    source_sequence = str(preview.get("provider_message_id") or "")
+                    ordered = (preview_time.tzinfo is not None and provider_time >= preview_time
+                        and all(value.isascii() and value.isdecimal() and int(value) > 0
+                            for value in (sequence, source_sequence))
+                        and int(sequence) > int(source_sequence))
+                    card_sequence = str(row[10])
+                    if card_sequence.isascii() and card_sequence.isdecimal():
+                        ordered = ordered and 0 < int(card_sequence) < int(sequence)
+                    elif not source_card_message_id:
+                        ordered = False
+                except (ValueError, TypeError):
+                    ordered = False
+                if not ordered:
+                    return {"success":False,"status":("weaning_confirmation_not_unambiguous" if semantic_weaning else "first_treatment_confirmation_not_unambiguous"),
+                        "writes_farm_data":False},409
         if row[7]=="completed":
             if row[0] in {"mortality", "rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
                     "rootline_fertilizer_mixer_presence_refresh",
                     "sam_sale_payment", "beacon_media_review",
-                    "herdmaster_record_farrowing_litter", "herdmaster_record_litter_piglet_deaths"}:
+                    "herdmaster_record_farrowing_litter", "herdmaster_record_litter_piglet_deaths",
+                    "herdmaster_record_litter_weaning", "herdmaster_record_litter_first_treatment"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
+                  "preview_payload":row[6],
+                  "delivery_callback_binding": ({"owner_user_id":str(row[1]),"chat_id":str(row[2]),
+                    "provider_message_id":str(row[11]),"provider_timestamp":row[12].isoformat(),
+                    "reply_to_message_id":str(row[10])}
+                    if len(row)>12 and str(row[11] or "")==str(provider_message_id) and row[12] else {}),
                   "result":row[9],"telegram_sends":0,"telegram_edits":0},200
             return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
         if row[7] in {"cancelled", "changed"}:

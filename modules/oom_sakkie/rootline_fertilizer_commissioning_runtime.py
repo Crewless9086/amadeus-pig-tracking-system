@@ -150,6 +150,9 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
                                       transport=None, power_loader=None,
                                       acceptance_loader=None):
     """Advance only a fresh, exactly bound standing-authority Mixer request."""
+    if (parsed.get("input_provenance") or {}).get("source_kind") == "telegram_voice":
+        from modules.oom_sakkie.telegram_voice import voice_confirmation_required
+        return voice_confirmation_required(parsed)[0]
     deterministic_now = now is not None
     now = _aware(now or datetime.now(timezone.utc))
     source = environ if environ is not None else os.environ

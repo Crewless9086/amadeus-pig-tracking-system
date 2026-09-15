@@ -157,6 +157,7 @@ def test_morning_card_rootline_update_records_manager_receipt_before_canonical_d
     rootline = SemanticInterpretation(domain="rootline", intent="water_observation",
         message_kind="observation", continuation=True,
         observation="Reservoir 4/4, storage 4/4, and C Camp needs water.",
+        water_observation_context={"source": "current_message"},
         observation_facts=({"subject": "reservoir", "numerator": 4, "denominator": 4},
             {"subject": "storage_tanks", "numerator": 4, "denominator": 4}), confidence=.99)
     inbound = parsed("Reservoir is 4/4 and Storage is 4/4. C Camp needs water",
@@ -218,8 +219,10 @@ def rootline_question(at=NOW-timedelta(minutes=5)):
 
 
 def rootline_semantic(text="Reservoir is full"):
-    return SemanticInterpretation(domain="manager_round", intent="manager_question_reply",
+    return SemanticInterpretation(domain="rootline", intent="water_levels_observed",
         message_kind="observation", continuation=True, observation=text,
+        observation_facts=({"subject": "reservoir", "state": "FULL"},)
+            if text == "Reservoir is full" else (),
         language="en", confidence=.98)
 
 
@@ -259,7 +262,7 @@ def test_ambiguous_or_wrong_or_stale_rootline_card_never_writes_or_claims(dispat
         rootline_semantic("it is full"), question=rootline_question(), event_store=state)
     inferred = SemanticInterpretation(domain="rootline", intent="water_levels_observed",
         message_kind="observation", continuation=True, observation="it is full",
-        observation_facts=({"subject":"reservoir","state":"FULL"},), confidence=.99)
+        observation_facts=({"subject":"reservoir","state":"FULL"},), confidence=.79)
     inferred_result, inferred_status = handle_manager_question_reply(parsed("it is full"), authority,
         inferred, question=rootline_question(), event_store=state)
     wrong, _ = handle_manager_question_reply(parsed("Reservoir is full", reply="9999"), authority,
@@ -310,7 +313,7 @@ def test_typed_write_failure_and_readback_mismatch_are_not_acknowledged_and_prov
     assert first_status == second_status == 503
     assert first["manager_question_status"] == second["manager_question_status"] == "manager_question_rootline_retry_owned"
     assert "recorded against" not in first["answer"]
-    assert "not recorded" in second["answer"]
+    assert "not recorded" not in second["answer"] and second["writes_farm_data"] is True
     assert first["retry_owner"] == second["retry_owner"] == "same_provider_message_identity"
     assert recovered_status == 200 and recovered["manager_question_status"] == "manager_question_reply_recorded"
     assert recovered["answer"] == "Reservoir FULL recorded."
@@ -337,7 +340,7 @@ def test_repeated_provider_failures_end_in_precise_containment_not_false_in_prog
         event_loader=lambda key: state.rows.get(key, {})) for _ in range(9)]
     assert all(status == 503 for _, status in results)
     assert results[-1][0]["status"] == "manager_question_rootline_retry_exhausted"
-    assert "not recorded" in results[-1][0]["answer"]
+    assert "still unproven" in results[-1][0]["answer"]
     assert results[-1][0]["retry_owner"] == "rootline_technical_recovery"
     assert dispatch.call_count == 8
 
@@ -736,6 +739,9 @@ def test_partial_reply_keeps_one_smallest_visible_follow_up():
 def test_partial_facts_are_retained_in_context_and_accumulated_on_completion():
     prior = {"owner_evidence": "They are eating.", "provider_message_id": "3530",
         "provider_timestamp": NOW.isoformat(), "domain": "herd_health",
+        "clarification_question": "Are they also drinking and moving normally?",
+        "clarification_telegram_message_id": "SYNTHETIC-DELIVERED-3530",
+        "clarification_presented_at": NOW.isoformat(),
         "semantic_facts": {"observation": "They are eating.", "observation_facts": []}}
     active = question(); active["partial_replies"] = [prior]
     context = semantic_context_with_manager_question(parsed(message="3531"),
@@ -776,7 +782,7 @@ def test_changed_provider_binding_cannot_be_suppressed_as_replay():
     assert status == 409 and changed["status"] == "manager_question_concurrent_reply_conflict"
 
 
-def test_reloaded_partial_exact_replay_is_silent_and_does_not_advance_generation():
+def test_reloaded_partial_exact_replay_preserves_delivery_identity_without_advancing_generation():
     partial = SemanticInterpretation(domain="herd_health", intent="group_welfare_follow_up",
         message_kind="observation", continuation=True, observation="They are eating.",
         language="en", confidence=.9, needs_clarification=True,
@@ -788,8 +794,10 @@ def test_reloaded_partial_exact_replay_is_silent_and_does_not_advance_generation
     replay, status = handle_manager_question_reply(parsed("They are eating"), authority,
         partial, question=active, event_store=state)
     assert first["status"] == "manager_question_partial_reply_recorded"
-    assert status == 200 and replay["status"] == "manager_question_reply_replay_suppressed"
-    assert replay["suppress_owner_delivery"] is True and len(state.rows) == 1
+    assert status == 200 and replay["status"] == "manager_question_partial_reply_recorded"
+    assert replay["mission_id"] == first["mission_id"]
+    assert replay["card_mission_id"] == first["card_mission_id"]
+    assert replay["answer"] == first["answer"] and len(state.rows) == 1
 
 
 def test_answered_attributable_question_is_consumed_across_daily_identity_changes():

@@ -33,7 +33,8 @@ def test_active_c_execution_consumes_natural_physical_stop_before_clarification(
     rows,store=memory_store()
     result,status=handle_owner_operational_continuation(parsed(),issue_gateway_owner_authority("42","42"),
         lifecycle_loader=lambda *_:([],[c_active()]),context_store=store,now=NOW)
-    assert status==200 and result["status"]=="Completed"
+    assert status==200 and result["status"]=="owner_irrigation_observation_recorded"
+    assert result["verification_pending"] is True and result["execution_completed"] is False
     assert result["execution_id"]=="ROOTLINE-IRRIGATION-2CBB37586FE70DD527D9F54C"
     assert result["observation"]["observed_at"]==NOW.isoformat()
     assert result["observation"]["exact_runtime"]=="Unknown"
@@ -65,7 +66,7 @@ def test_explicit_stop_outranks_simultaneous_pending_clarification():
         "clarification_delivered_at":"2026-08-03T20:42:30+00:00"}
     result,_=handle_owner_operational_continuation(parsed(),issue_gateway_owner_authority("42","42"),
         lifecycle_loader=lambda *_:([pending],[c_active()]),context_store=memory_store()[1],now=NOW)
-    assert result["status"]=="Completed" and result["execution_id"]==c_active()["execution_id"]
+    assert result["status"]=="owner_irrigation_observation_recorded" and result["execution_id"]==c_active()["execution_id"]
 
 def test_multiple_domains_with_one_compatible_entity_selects_only_c():
     herd={"mission_id":"HERD-1","card_mission_id":"HERD-1","domain":"herd",

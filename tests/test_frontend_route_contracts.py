@@ -1615,7 +1615,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("litter-detail-shell", template)
         self.assertIn("litter-detail-page", template)
         self.assertIn('id="litter_detail_back_link"', template)
-        self.assertIn('href="/" class="secondary-link">&larr; Back to Dashboard</a>', template)
+        self.assertIn('href="/" class="secondary-link">&larr; Terug na plaasoorsig</a>', template)
         self.assertIn("litter-workspace", template)
         self.assertIn("litter-summary-grid", template)
         self.assertIn("litter-side-column", template)
@@ -1660,10 +1660,16 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Open Purpose Review", js)
         self.assertIn("Capture Weights", js)
         self.assertIn("litter.lifecycle_outcomes", js)
-        self.assertIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}/mark-weaned", js)
+        self.assertGreaterEqual(js.count(
+            "/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/weaning-day"
+        ), 2)
         self.assertIn("markWeanedUseLatestWeights", js)
-        self.assertIn("use_latest_weights_as_wean_weights", js)
-        self.assertIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}/newborn-health", js)
+        self.assertIn("function previewWeaningDay", js)
+        self.assertIn("function submitWeaningDay", js)
+        self.assertIn("confirmation_binding: latestWeaningDayPreview.confirmation_binding", js)
+        self.assertGreaterEqual(js.count(
+            "/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/newborn-health"
+        ), 2)
         self.assertIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}/piglet-deaths", js)
         self.assertIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}/sex-counts", js)
         self.assertIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}/tag-numbers", js)

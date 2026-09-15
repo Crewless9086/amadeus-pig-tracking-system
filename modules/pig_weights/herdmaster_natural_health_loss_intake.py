@@ -15,6 +15,14 @@ from zoneinfo import ZoneInfo
 
 
 CONTRACT_VERSION = "herdmaster_natural_health_loss_intake_v1"
+URGENT_WELFARE_ASSESSMENT = "Physically assess breathing, standing, water intake, bleeding and distress now; seek veterinary help for serious signs."
+CLINICAL_SIGNS = {
+    "injury": r"injur", "limping": r"limp", "wound": r"wound",
+    "bleeding": r"bleed", "broken_bone": r"broken", "swelling": r"swollen",
+    "illness": r"sick|ill", "vomiting": r"vomit", "diarrhoea": r"diarrh",
+    "cough": r"cough", "fever": r"fever",
+}
+INJURY_SIGNS = frozenset({"injury", "limping", "wound", "bleeding", "broken_bone", "swelling"})
 RESULT_FAMILIES = {
     "sick", "injured", "found_dead", "farrowing_complication",
     "piglet_loss", "compound_event", "welfare_update",
@@ -80,7 +88,25 @@ def evaluate_health_loss_intake(report: Mapping, canonical: Mapping) -> dict:
         )
 
     animal = matches[0]
-    parsed = _parse_report(text, provider_time)
+    typed_welfare = report.get("welfare_observation")
+    typed_clinical = report.get("clinical_observation")
+    if typed_welfare is not None or typed_clinical is not None:
+        parsed = _typed_welfare_report(typed_welfare, provider_time, text, clinical=typed_clinical)
+        unknown = [key for key, state in {**(typed_welfare or {}), **(typed_clinical or {})}.items()
+                   if state == "unknown"]
+        if unknown and not parsed["dead"] and not parsed["farrowing"]:
+            phrase = {"eating":"eating", "drinking":"drinking water",
+                      "standing":"standing", "moving":"moving normally",
+                      "breathing":"breathing normally"}.get(unknown[0])
+            question = (f"Is {_display(animal)} {phrase} now?" if phrase else
+                f"Is {_display(animal)} currently showing {unknown[0].replace('_', ' ')}?")
+            return {**_result(status="welfare_observation_uncertain", identity=identity,
+                family=parsed["family"], question=question,
+                provider_time=provider_time, observed=parsed["observed"],
+                suspected=parsed["suspected"], veterinary=parsed["veterinary"],
+                inference=parsed["inference"]), "immediate_welfare_priority": _welfare(parsed)}
+    else:
+        parsed = _parse_report(text, provider_time)
     if parsed["family"] == "unknown":
         return _result(
             status="event_details_required", identity=identity, family="unknown",
@@ -326,7 +352,8 @@ def _parse_report(text, provider_time):
             lower,
         )
 
-    injured = current_sign(r"injur|limp|wound|bleed|broken|swollen")
+    clinical_checks = {key: current_sign(pattern) for key, pattern in CLINICAL_SIGNS.items()}
+    injured = any(clinical_checks[key] for key in INJURY_SIGNS)
     eating_positive = r"\b(?:is|was)?\s*eating(?: food|normally|again|now)?\b|\bappetite (?:is )?(?:normal|back)\b"
     eating_negative = r"\b(?:not|no longer|isn't|wasn't|without) eating\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) eat(?:ing)?\b|\b(?:no|poor|reduced) appetite\b"
     drinking_positive = r"\bdrinking(?: water)?\b"
@@ -348,7 +375,7 @@ def _parse_report(text, provider_time):
     moving_now = latest_positive(moving_positive, moving_negative, lower)
     normal_now = latest_positive(normal_positive, normal_negative, lower)
     not_drinking = latest_negative(drinking_positive, drinking_negative, lower)
-    other_sick = current_sign(r"sick|ill|vomit|diarrh|cough|fever")
+    other_sick = any(value for key, value in clinical_checks.items() if key not in INJURY_SIGNS)
     sick = not_eating or not_drinking or other_sick
     severe_sick = not_drinking or other_sick
     complications = bool(re.search(r"\bcomplication\w*\b", lower))
@@ -448,10 +475,9 @@ def _parse_report(text, provider_time):
             "fact": "monitoring_intention_reported", "value": True,
             "attribution": "owner_reported_future_intention_not_completed_action",
         })
-    if current_sign(r"limp"):
-        observed.append({"fact": "limping", "value": True})
-    if current_sign(r"bleed"):
-        observed.append({"fact": "bleeding", "value": True})
+    for key in ("limping", "bleeding"):
+        if clinical_checks[key]:
+            observed.append({"fact": key, "value": True})
     welfare_checks = {
         "standing": latest_positive(
             standing_positive, standing_negative,
@@ -569,7 +595,71 @@ def _parse_report(text, provider_time):
         "removal_outcome": removal_outcome,
         "current_signs": sick or injured,
         "severe_signs": injured or severe_sick or complications,
+        "other_sick": other_sick,
+        "other_current_signs": injured or other_sick,
+        "other_severe_signs": injured or other_sick or complications,
+        "clinical_checks": clinical_checks,
+        "complications": complications,
     }
+
+
+def _typed_welfare_report(value, provider_time, text="", *, clinical=None):
+    """Replace only mapped welfare states; preserve independent report facts."""
+    if value is not None and (not isinstance(value, Mapping) or not value
+            or set(value) - {"eating", "drinking", "standing", "moving", "breathing"}
+            or any(type(state) is not str or state not in {"yes", "no", "unknown"}
+                   for state in value.values())):
+        raise IntakeEvidenceError("welfare_observation_invalid")
+    if clinical is not None and (not isinstance(clinical, Mapping) or not clinical
+            or set(clinical) - set(CLINICAL_SIGNS)
+            or any(type(state) is not str or state not in {"yes", "no", "unknown"}
+                   for state in clinical.values())):
+        raise IntakeEvidenceError("clinical_observation_invalid")
+    if value is None and clinical is None:
+        raise IntakeEvidenceError("welfare_observation_invalid")
+    value = value or {}
+    parsed = _parse_report(text, provider_time)
+    replaced = {key + "_reported" for key in value}
+    replaced.update("not_" + key for key in value)
+    if "standing" in value:
+        replaced.add("unable_to_stand")
+    parsed["observed"] = [row for row in parsed["observed"] if row["fact"] not in replaced]
+    if clinical:
+        parsed["observed"] = [row for row in parsed["observed"] if row["fact"] not in clinical]
+        for key, state in clinical.items():
+            parsed["clinical_checks"][key] = state == "yes"
+            if state != "unknown":
+                parsed["observed"].append({"fact": key, "value": state == "yes",
+                                          "attribution": "owner_reported_observation"})
+        injured = any(parsed["clinical_checks"][key] for key in INJURY_SIGNS)
+        other_sick = any(present for key, present in parsed["clinical_checks"].items()
+                         if key not in INJURY_SIGNS)
+        parsed["other_sick"] = other_sick
+        parsed["other_current_signs"] = injured or other_sick
+        parsed["other_severe_signs"] = injured or other_sick or parsed["complications"]
+        parsed["families"] = [family for family in parsed["families"] if family != "injured"]
+        if injured:
+            parsed["families"].append("injured")
+        parsed["clinical_state_supplied"] = True
+    for key, state in value.items():
+        if key in parsed["welfare_checks"]:
+            parsed["welfare_checks"][key] = state == "yes"
+            parsed["welfare_check_evidence"][key] = state
+        if state != "unknown":
+            parsed["observed"].append({"fact": key + "_reported", "value": state == "yes",
+                "attribution": "owner_reported_observation"})
+    mapped_negative = (any(state == "no" for state in value.values())
+        or any(row["fact"] in {"not_eating", "not_drinking", "unable_to_stand"}
+               and row["value"] is True for row in parsed["observed"]))
+    parsed["current_signs"] = parsed["other_current_signs"] or mapped_negative
+    parsed["severe_signs"] = parsed["other_severe_signs"] or mapped_negative
+    families = set(parsed["families"]) - {"sick", "welfare_update"}
+    if parsed["other_sick"] or mapped_negative:
+        families.add("sick")
+    parsed["families"] = sorted(families)
+    parsed["family"] = (next(iter(families)) if len(families) == 1 else
+        "compound_event" if families else "welfare_update")
+    return parsed
 
 
 def _explicit_event_dates(text):
@@ -793,7 +883,9 @@ def _welfare(parsed):
             and all(parsed["welfare_checks"].get(key) for key in ("standing", "breathing", "drinking"))):
         return {"level": "monitor_closely", "action": "The immediate standing, breathing and drinking checks are reassuring; keep monitoring appetite and seek experienced or veterinary help if signs worsen or eating does not resume."}
     if parsed["current_signs"]:
-        return {"level": "urgent_assessment", "action": "Physically assess breathing, standing, water intake, bleeding and distress now; seek veterinary help for serious signs."}
+        return {"level": "urgent_assessment", "action": URGENT_WELFARE_ASSESSMENT}
+    if parsed.get("clinical_state_supplied"):
+        return {"level": "monitor_closely", "action": "Keep monitoring the reported welfare state and seek experienced or veterinary help if signs appear or worsen."}
     if parsed["family"] == "welfare_update":
         return {"level": "monitor_closely", "action": "The reported recovery signs are reassuring; keep monitoring and report any renewed concern."}
     return {"level": "review", "action": "Verify the animal and observable welfare state."}

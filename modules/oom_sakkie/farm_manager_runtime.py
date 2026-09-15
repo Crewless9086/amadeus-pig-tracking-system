@@ -412,6 +412,7 @@ def _active_welfare_result(active, now, language="en"):
 
 
 def _whole_herd_specialist_result(canonical, observations, active, now, language="en"):
+    from modules.pig_weights.herdmaster_management_round import _pregnancy_planning
     is_af = str(language).casefold().startswith("af")
     tasks = _canonical_tasks_with_current_mating(canonical)
     observations = _current_cycle_observations(
@@ -424,6 +425,7 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
         "reassessment_trigger": "authenticated reply on the existing lifecycle card",
     } for row in active]
     reproductive = []
+    expired = []
     for observation in observations:
         pig_id = str(observation.get("pig_id") or "")
         task = tasks.get(pig_id) or {}
@@ -440,13 +442,21 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
             "clinical_confirmation": "Optional higher-confidence fact; not clinically confirmed.",
             "current_applicability": status == "Assumed Pregnant"}
         if status == "Assumed Pregnant":
-            mating_date = datetime.fromisoformat(str(observation.get("mating_date"))).date()
+            try:
+                planning = _pregnancy_planning(status, observation, known, now)
+            except (TypeError, ValueError):
+                continue
+            if planning.get("current_applicability") is not True:
+                expired.append({**row, **planning})
+                continue
+            window = planning["projected_farrowing_range"]
+            preparation = planning["farrowing_pen_preparation_window"]
             row.update({"mating_id": observation.get("mating_id") or known.get("current_mating_id"),
-                "mating_date": mating_date.isoformat(), "observed_signs": observation.get("observed_signs"),
-                "projected_farrowing_range": {"start": (mating_date + timedelta(days=112)).isoformat(),
-                    "end": (mating_date + timedelta(days=116)).isoformat(), "uncertainty": "approximately 114 +/- 2 days"},
-                "preparation_window": {"start": (mating_date + timedelta(days=98)).isoformat(),
-                    "end": (mating_date + timedelta(days=105)).isoformat(), "uncertainty": "prepare proportionally"},
+                "mating_date": planning["mating_date"], "observed_signs": observation.get("observed_signs"),
+                "projected_farrowing_range": {"start": window["earliest"],
+                    "end": window["latest"], "uncertainty": window["uncertainty"]},
+                "preparation_window": {"start": preparation["start"],
+                    "end": preparation["complete_by"], "uncertainty": "prepare proportionally"},
                 "change_triggers": ["return to heat", "illness", "early labour", "farrowing"],
                 "prohibited_without_more_evidence": ["clinical-confirmation claim", "mating", "movement", "farm write"]})
         reproductive.append(row)
@@ -461,12 +471,16 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
     items = list(_active_welfare_result(active, now, language).work_items)
     assumed = [row for row in packet["reproductive_reviews"]
                if row["operational_status"] == "Assumed Pregnant"]
-    if assumed:
-        labels = (" en " if is_af else " and ").join(str(row["tag_number"]) for row in assumed)
-        window = assumed[0]["projected_farrowing_range"]
-        prep = assumed[0]["preparation_window"]
+    groups = {}
+    for row in assumed:
+        groups.setdefault((row["projected_farrowing_range"]["start"], row["projected_farrowing_range"]["end"]), []).append(row)
+    for group in groups.values():
+        labels = (" en " if is_af else " and ").join(str(row["tag_number"]) for row in group)
+        window = group[0]["projected_farrowing_range"]
+        prep = group[0]["preparation_window"]
+        key = "herdmaster:farrowing-preparation:" + ":".join(sorted(row["pig_id"] for row in group))
         items.append(SpecialistWorkItem(
-            item_id=result_id + ":farrowing-round", dedupe_key="herdmaster:farrowing-preparation",
+            item_id=result_id + ":" + key, dedupe_key=key,
             domain="herd", title=f"Berei {labels} voor" if is_af else f"Prepare {labels}",
             why=((f"{labels} word vir plaasbeplanning steeds as dragtig aanvaar, maar dit is nie klinies bevestig nie; verwagte werping is ongeveer "
                   f"{window['start']} tot {window['end']}, met gepaste voorbereiding {prep['start']} tot {prep['end']}.") if is_af else
@@ -474,7 +488,26 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
                   f"{window['start']} to {window['end']}, with proportional preparation {prep['start']} to {prep['end']}.")),
             next_action="Berei hul werpareas in gepaste mate voor." if is_af else "Prepare their farrowing areas proportionally.",
             assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
-            provenance=provenance, business_value=110))
+            provenance=provenance, business_value=110,
+            metadata={"owner_followup": (f"HERDMASTER volg {labels} op wanneer nuwe werp- of dragtigheidsbewyse inkom."
+                if is_af else f"HERDMASTER will follow up on {labels} when new farrowing or pregnancy evidence arrives.")}))
+    expired_groups = {}
+    for row in expired:
+        window = row.get("historical_projected_farrowing_range") or {}
+        expired_groups.setdefault((window.get("earliest"), window.get("latest")), []).append(row)
+    for (start, end), group in expired_groups.items():
+        labels = (" en " if is_af else " and ").join(str(row["tag_number"]) for row in group)
+        key = "herdmaster:reproductive-status:" + ":".join(sorted(row["pig_id"] for row in group))
+        question = (f"Wat is {labels} se huidige status: reeds gewerp, weer op hitte, of nog geen duidelike verandering nie?"
+                    if is_af else f"What is the current status of {labels}: already farrowed, returned to heat, or no clear change yet?")
+        items.append(SpecialistWorkItem(item_id=result_id + ":" + key, dedupe_key=key,
+            domain="herd", title=(f"Huidige werpstatus — {labels}" if is_af else f"Current farrowing status — {labels}"),
+            why=(f"Die verwagte tydperk {start} tot {end} is verby. Die huidige rekords bevestig nie die uitkoms van hierdie parings nie."
+                 if is_af else f"The projected window {start} to {end} has passed. Current records do not confirm the outcome of these matings."),
+            next_action=("Gee die huidige uitkoms; as daar 'n werpsel was, sal ek die datum en geboortetellings vra en die bevestiging voorberei."
+                if is_af else "Tell me the current outcome; if there was a litter, I will ask for its date and birth counts and prepare the confirmation."),
+            assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
+            provenance=provenance, business_value=110, genuine_question=question, question_for="charl"))
     rebound = tuple(replace(item, provenance=provenance) for item in items)
     return SpecialistResult("herdmaster", result_id, observed,
         SpecialistAvailability.AVAILABLE, work_items=rebound)
@@ -508,6 +541,12 @@ def _current_cycle_observations(tasks, observations, generated_at):
         pig_id = str(observation.get("pig_id") or "")
         task = tasks.get(pig_id) or {}
         known = task.get("known_evidence") or {}
+        # A later canonical litter settles this mating's old pregnancy watch.
+        # The next litter lifecycle owns any remaining nursing/weaning work.
+        if (str(known.get("latest_litter_date") or "")[:10]
+                > str(known.get("current_mating_date") or "")[:10]
+                and known.get("latest_litter_date") and known.get("current_mating_date")):
+            continue
         current_mating_id = str(known.get("current_mating_id") or "")
         current_mating_date = str(known.get("current_mating_date") or "")
         if (not current_mating_id or not current_mating_date
@@ -580,6 +619,7 @@ def _project_rootline_snapshot(snapshot, now, language="en"):
         assignee="charl", state=state, authority=Authority.ADVISORY, provenance=provenance,
         business_value=80, genuine_question=projection["question"],
         question_for="charl" if projection["question"] else "",
+        metadata={"owner_followup": projection["next_action"]},
     )
     return SpecialistResult("rootline", result_id, observed,
         SpecialistAvailability.AVAILABLE if raw.get("success") else SpecialistAvailability.CONTAINED,

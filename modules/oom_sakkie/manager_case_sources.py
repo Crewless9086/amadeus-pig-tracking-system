@@ -68,6 +68,7 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
     configured = {
         "rootline": (_rootline, "ROOTLINE"),
         "herdmaster": (_herdmaster, "HERDMASTER"),
+        "herdmaster-litter-follow-up": (_herdmaster, "HERDMASTER"),
         "sam": (_sam, "SAM"), "beacon": (_beacon, "BEACON"),
         "delivery": (_delivery_gaps, None), "runtime": (_runtime, "RUNTIME"),
     }
@@ -81,7 +82,8 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
             return None
     collector = selected[0]
     if collectors is not None:
-        expected_name = "delivery_gaps" if prefix == "delivery" else prefix
+        expected_name = {"delivery": "delivery_gaps",
+                         "herdmaster-litter-follow-up": "herdmaster"}.get(prefix, prefix)
         collector = next((value for value in collectors
             if getattr(value, "__name__", "").strip("_").casefold() == expected_name), None)
         if collector is None:
@@ -117,6 +119,8 @@ def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
             wanted.add(prefix)
         elif prefix == "delivery":
             wanted.add("delivery_gaps")
+        elif prefix == "herdmaster-litter-follow-up":
+            wanted.add("herdmaster")
     selected = tuple(collector for collector in available
         if (getattr(collector, "__name__", "").strip("_").casefold() in wanted))
     rows = collect_manager_candidates(now=now, collectors=selected) if selected else []
@@ -284,6 +288,8 @@ def _herdmaster(now):
             raise
         snapshot = get_allocation_input_rows()
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
+    candidates.extend(_retained_litter_followup_candidates(
+        now, snapshot.get("litter_rows") or ()))
     candidates.extend(_purpose_review_candidates(
         snapshot, now=now, today=farm_today, observed_at=snapshot_observed,
     ))
@@ -305,17 +311,26 @@ def _herdmaster(now):
     for row in snapshot.get("litter_rows") or ():
         sow = str(row.get("Sow_Tag_Number") or "").strip()
         status = str(row.get("Litter_Status") or "").strip().casefold()
-        if sow.casefold() == "molly" and status not in {"completed", "closed", "weaned"}:
+        if status == "active" and (row.get("Active_Pig_Count") is None or int(row.get("Active_Pig_Count") or 0) > 0):
             litter_id = str(row.get("Litter_ID") or "unknown")
             farrowing = str(row.get("Farrowing_Date") or "unknown")
             wean = str(row.get("Wean_Date") or "unknown")
             weaned = row.get("Weaned_Count")
             treatment_state = str(row.get("first_treatment_evidence_state") or "unknown").casefold()
+            if treatment_state in {"completed", "skipped"}:
+                continue
+            if treatment_state == "not_due" and sow.casefold() != "molly":
+                continue
+            if litter_id == "unknown":
+                continue
+            identity = str(row.get("Sow_Name") or sow or row.get("Sow_Pig_ID") or litter_id)
+            case_key = ("herdmaster:molly-active-litter" if sow.casefold() == "molly"
+                else "herdmaster:litter-first-treatment:" + litter_id)
             treatment_due = (treatment_state == "due"
                              and row.get("first_treatment_attention_due") is True
                              and int(row.get("Active_Pig_Count") or 0) > 0)
             treatment_date = str(row.get("first_treatment_attention_date") or "unknown")
-            candidates.append(_candidate("herdmaster:molly-active-litter", "HERDMASTER", "due",
+            candidates.append(_candidate(case_key, "HERDMASTER", "due",
                 [f"litter:{litter_id}", f"status:{status or 'unknown'}",
                  f"farrowing:{farrowing}", f"wean_due:{wean}",
                  f"weaned_count:{weaned if weaned is not None else 'unknown'}",
@@ -325,12 +340,16 @@ def _herdmaster(now):
                  f"observed:{snapshot_observed.isoformat()}"],
                 ([] if treatment_due or treatment_state in {"not_due", "completed", "skipped"}
                  else [f"first_treatment_{treatment_state}_reconciliation"]),
-                ("Molly's litter first treatment is due and ready."
+                (f"{identity}'s litter first treatment is due and ready."
                  if treatment_due else
-                 f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}."),
-                ("Molly's litter — perform the first treatment now in the existing litter treatment journey."
+                 (f"{identity}'s litter {litter_id} has {treatment_state} first-treatment evidence."
+                  if treatment_state != "not_due" else
+                  f"{identity}'s litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}.")),
+                (f"{identity}'s litter — report the actual first treatment in the existing litter treatment journey."
                  if treatment_due else
-                 "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation."),
+                 ("HERDMASTER must reconcile the existing first-treatment records and current piglets before another treatment preview."
+                  if treatment_state != "not_due" else
+                  "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.")),
                 now + timedelta(minutes=30),
                 task_class=("physical_action_due" if treatment_due else
                             ("informational_watch" if treatment_state in {
@@ -340,9 +359,54 @@ def _herdmaster(now):
                 physical_work_ready=treatment_due,
                 physical_assignee=("Farm team" if treatment_due else None),
                 message_family=("litter_first_treatment" if treatment_due else "litter_care"),
-                presentation_identity={"human_name": "Molly",
+                presentation_identity={"human_name": identity,
                                        "stable_reference": litter_id}))
     return candidates
+
+
+def _retained_litter_followup_candidates(now, litter_rows, *, connect=None):
+    """Revisit the canonical litter writer's existing task, without minting one.
+
+    The allocation snapshot contains current care facts, but is not an exact
+    weaning/closure receipt. Changed or missing lifecycle evidence therefore
+    stays with HERDMASTER for reconciliation; delivery never closes this task.
+    """
+    with (connect or connect_bounded_read)() as connection:
+        with connection.cursor() as cur:
+            cur.execute("""select dedupe_key from app_private.oom_manager_cases
+                where specialist='HERDMASTER'
+                  and dedupe_key like 'herdmaster-litter-follow-up:%%'
+                  and status<>'completed' order by case_id limit 501""")
+            retained = cur.fetchall()
+    if len(retained) > 500:
+        raise ValueError("retained_litter_followup_read_bound_exceeded")
+    by_id = {str(row.get("Litter_ID") or ""): row for row in litter_rows}
+    result = []
+    for (key,) in retained:
+        litter_id = str(key).split(":", 1)[1]
+        row = by_id.get(litter_id) or {}
+        status = str(row.get("Litter_Status") or "unknown").strip().casefold()
+        label = str(row.get("Sow_Name") or row.get("Sow_Tag_Number") or litter_id)
+        active = row.get("Active_Pig_Count")
+        wean = str(row.get("Wean_Date") or "unknown")
+        treatment = str(row.get("first_treatment_evidence_state") or "unknown")
+        known_active = status == "active" and active is not None and int(active) > 0
+        unknowns = ([] if known_active else ["current_litter_lifecycle_and_followup_closure_evidence"])
+        result.append(_candidate(str(key), "HERDMASTER", "due",
+            [f"litter:{litter_id}", f"status:{status}", f"active_pigs:{active}",
+             f"wean_due:{wean}", f"weaned_count:{row.get('Weaned_Count')}",
+             f"first_treatment_state:{treatment}"], unknowns,
+            (f"{label}'s retained litter follow-up: {status}; {active if active is not None else 'unknown'} active piglets; planned weaning {wean}; first-treatment evidence {treatment}."),
+            ("HERDMASTER must reassess current litter care and the planned weaning boundary; "
+             "retrieve the existing piglets, tags, weights and movements before asking for missing facts. "
+             "Any treatment or weaning record requires its enabled protected journey and genuine confirmation."
+             if known_active else
+             "HERDMASTER must reconcile this existing litter task against canonical piglet lifecycle and operation receipts before deciding closure; missing records or a sent notification do not prove completion."),
+            now + timedelta(minutes=30),
+            task_class="informational_watch" if known_active else "status_reconciliation",
+            message_family="litter_care",
+            presentation_identity={"human_name": label, "stable_reference": litter_id}))
+    return result
 
 
 def _retained_herd_report_recovery_candidates(now, *, connect=None):

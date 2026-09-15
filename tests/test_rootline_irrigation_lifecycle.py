@@ -1,4 +1,5 @@
 from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle
+import pytest
 
 
 def rec(status="Recommend", reason="Water is due.", **extra):
@@ -78,3 +79,15 @@ def test_incomplete_parent_revalidates_and_stale_tank_is_not_a_hold_reason():
         history={"incomplete_parent_job": {"job": {"job_id": "JOB-1"}}})
     assert lifecycle["state"] == "Revalidating"
     assert "tank" not in lifecycle["reason"].casefold()
+
+
+@pytest.mark.parametrize('remaining', [False, True])
+def test_canonical_terminal_execution_does_not_reuse_its_old_eligibility(remaining):
+    terminal = {'action': 'record_completed', 'state': 'Completed',
+        'execution_id': 'EXEC-1', 'eligibility_id': 'OLD-ELIGIBILITY',
+        'shutdown_verified': True, 'objective_satisfied': True}
+    history = {'incomplete_parent_job': {'job': {'job_id': 'JOB-1'}}} if remaining else {}
+    value = project_zone_lifecycle(zone_id='C12345', recommendation=rec(),
+        history=history, execution=terminal)
+    assert value['state'] == ('Revalidating' if remaining else 'Completed')
+    assert 'claim' not in value['next_action'].casefold()

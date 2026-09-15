@@ -126,6 +126,14 @@ body { background: #f2f0e8; color: var(--farm-ink); }
 .technical-evidence { margin-top: 16px; padding: 16px; border: 1px solid var(--farm-line); border-radius: 16px; background: var(--farm-paper); }
 .detail-error { color: var(--farm-alert); }
 
+/* Keep long irrigation evidence readable within its card on small screens. */
+[data-operations-page="irrigation"] .detail-card[hidden] { display: none; }
+[data-operations-page="irrigation"] .detail-card,
+[data-operations-page="irrigation"] .detail-row,
+[data-operations-page="irrigation"] .detail-row > * { min-width: 0; overflow-wrap: anywhere; }
+[data-operations-page="irrigation"] .detail-list { grid-template-columns: minmax(0, 1fr); }
+[data-operations-page="irrigation"] .detail-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); }
+
 @media (max-width: 900px) {
   .farm-nav { gap: 14px; padding-inline: 16px; }
   .farm-nav-links { display: none; }
@@ -151,4 +159,5 @@ body { background: #f2f0e8; color: var(--farm-ink); }
   .operating-card { min-height: 250px; }
   .workflow-groups { grid-template-columns: 1fr; }
   .detail-wide { grid-column: span 1; }
+  [data-operations-page="irrigation"] .detail-row { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 }

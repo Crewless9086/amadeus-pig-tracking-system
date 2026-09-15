@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import date, datetime, timedelta
 from time import monotonic
 
@@ -287,6 +288,8 @@ def _current_state_rows(connect_factory=None):
             pig.father_pig_id,
             pig.wean_date,
             pig.wean_weight_kg,
+            pig.earmarked,
+            pig.earmark_date,
             pig.exit_date,
             pig.exit_reason,
             pig.notes,
@@ -1276,7 +1279,17 @@ def _get_allocation_input_rows_queries(connect_factory, today=None):
                litter.sow_tag_number, litter.boar_tag_number, litter.farrowing_date,
                litter.wean_date, litter.born_alive, litter.weaned_count,
                litter.litter_status,
-               to_jsonb(litter)->>'first_treatment_skipped_at'
+               (select jsonb_agg(jsonb_build_object('receipt',event.payload_json,
+                   'medical',(select jsonb_agg(to_jsonb(m)) from public.pig_medical_events m
+                       where m.medical_event_id in (select item->>0 from
+                           jsonb_array_elements(event.payload_json->'packet'->'treatment_rows') item)),
+                   'earmarks',(select jsonb_agg(jsonb_build_object('pig_id',p.pig_id,
+                       'earmarked',p.earmarked,'earmark_date',p.earmark_date)) from public.pigs p
+                       where p.pig_id in (select jsonb_array_elements_text(event.payload_json->'packet'->'pig_ids')))))
+                from public.operational_events event
+                where event.aggregate_id=litter.litter_id
+                  and event.event_type='litter.first_treatment_recorded') as first_treatment_operations,
+               to_jsonb(raw)->>'first_treatment_skipped_at'
                    as first_treatment_skipped_at,
                count(distinct case when pig.on_farm is true
                    and lower(coalesce(pig.status, '')) = 'active'
@@ -1290,13 +1303,14 @@ def _get_allocation_input_rows_queries(connect_factory, today=None):
                    and lower(coalesce(pig.status, '')) = 'active' then pig.pig_id end)
                    as active_pig_count
         from public.current_canonical_litters litter
+        join public.litters raw on raw.litter_id=litter.litter_id
         left join public.current_canonical_pigs pig on pig.litter_id = litter.litter_id
         left join public.pig_medical_events medical on medical.pig_id = pig.pig_id
         group by litter.litter_id, litter.sow_pig_id, litter.boar_pig_id,
                  litter.sow_tag_number, litter.boar_tag_number, litter.farrowing_date,
                  litter.wean_date, litter.born_alive, litter.weaned_count,
                  litter.litter_status,
-                 to_jsonb(litter)->>'first_treatment_skipped_at'
+                 to_jsonb(raw)->>'first_treatment_skipped_at'
         order by litter_id
         """,
         connect_factory=connect_factory,
@@ -1341,6 +1355,25 @@ def _get_allocation_input_rows_queries(connect_factory, today=None):
             active_count=int(row.get("active_pig_count") or 0),
         ),
     } for row in litter_rows]
+    for source, projected in zip(litter_rows, formatted_litter_rows):
+        operations = source.get("first_treatment_operations") or []
+        if not operations:
+            continue
+        verified = len(operations) == 1
+        if verified:
+            from modules.pig_weights.farm_supabase_write_service import verify_litter_first_treatment_evidence
+            from modules.pig_weights.herdmaster_litter_first_treatment_intake import treatment_digest
+            operation = operations[0]
+            saved = operation.get("receipt") or {}
+            packet = saved.get("packet")
+            try:
+                verified = (isinstance(packet, dict) and saved.get("packet_digest") == treatment_digest(packet)
+                    and bool(verify_litter_first_treatment_evidence(packet,
+                        operation.get("medical") or [], operation.get("earmarks") or [])))
+            except (ValueError, RuntimeError, KeyError):
+                verified = False
+        projected.update(_first_treatment_timing(source, (), complete=verified, partial=not verified,
+            today=today, active_count=int(source.get("active_pig_count") or 0)))
     pen_lookup = {
         _text(row.get("pen_id")): {
             "pen_id": _text(row.get("pen_id")),
@@ -1366,9 +1399,12 @@ def _get_allocation_input_rows_queries(connect_factory, today=None):
 def _litter_rows_with_pigs(connect_factory=None):
     litters = _fetch_all(
         """
-        select *
-        from public.current_canonical_litters
-        order by farrowing_date desc nulls last, litter_id
+        select canonical.*, to_jsonb(raw)->>'first_treatment_skipped_at' as first_treatment_skipped_at,
+               to_jsonb(raw)->>'first_treatment_skip_reason' as first_treatment_skip_reason,
+               to_jsonb(raw)->>'first_treatment_skipped_by' as first_treatment_skipped_by
+        from public.current_canonical_litters canonical
+        join public.litters raw on raw.litter_id=canonical.litter_id
+        order by canonical.farrowing_date desc nulls last, canonical.litter_id
         """,
         connect_factory=connect_factory,
     )
@@ -1835,6 +1871,87 @@ def list_litter_overview(connect_factory=None):
     }
 
 
+def litter_weaning_snapshot(cursor, litter_id):
+    """Exact effective litter/cohort evidence, shared by preview and the writer.
+
+    Read through the canonical supersession projections. Terminal piglets remain
+    in history; only active on-farm members may be selected for weaning.
+    This function also works inside the writer's serializable transaction.
+    """
+    def rows(sql, params):
+        cursor.execute(sql, params)
+        names = [column.name for column in cursor.description]
+        return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+    litters = rows("""select litter_id,sow_pig_id,sow_tag_number,boar_pig_id,
+        farrowing_date,total_born,born_alive,stillborn_count,mummified_count,
+        male_count,female_count,wean_date,weaned_count,litter_status,litter_notes
+        from public.current_canonical_litters where litter_id=%s""", (litter_id,))
+    if len(litters) != 1:
+        return None
+    litter = litters[0]
+    pigs = rows("""select p.pig_id,p.tag_number,p.pig_name,p.sex,p.animal_type,
+        p.litter_id,p.mother_pig_id,p.date_of_birth,p.status,p.on_farm,
+        p.wean_date,p.wean_weight_kg,p.litter_size_weaned,p.earmarked,p.earmark_date,
+        p.exit_date,p.exit_reason,p.notes,s.current_pen_id
+        from public.current_canonical_pigs p
+        join public.current_canonical_pig_state s on s.pig_id=p.pig_id
+        where p.litter_id=%s order by p.pig_id""", (litter_id,))
+    sows = rows("""select pig_id,tag_number,pig_name,sex,animal_type,status,on_farm
+        from public.current_canonical_pigs where pig_id=%s""", (litter['sow_pig_id'],))
+    snapshot = {"litter": litter, "piglets": pigs, "sow": sows[0] if len(sows) == 1 else None,
+                "reconciliation": _litter_reconciliation(litter, pigs)}
+    # The signed preview and transaction compare the same date/decimal values.
+    return json.loads(json.dumps(snapshot, default=str, sort_keys=True))
+
+
+def get_active_herd_count(connect_factory=None):
+    rows = _fetch_all("""select count(*) as count from public.current_canonical_pigs
+        where status='Active' and on_farm is true""", connect_factory=connect_factory)
+    return int(rows[0]['count'])
+
+
+def get_litter_weaning_snapshot(litter_id, connect_factory=None):
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("set transaction isolation level repeatable read read only")
+            cursor.execute("set local statement_timeout = '10s'")
+            return litter_weaning_snapshot(cursor, _text(litter_id))
+
+
+def litter_first_treatment_snapshot(cursor, litter_id):
+    """Same canonical cohort plus the existing treatment/skip evidence."""
+    snapshot = litter_weaning_snapshot(cursor, litter_id)
+    if not snapshot:
+        return None
+    cursor.execute("""select first_treatment_skipped_at,first_treatment_skipped_by,
+        first_treatment_skip_reason from public.litters where litter_id=%s""", (litter_id,))
+    snapshot["skip"] = dict(zip(("first_treatment_skipped_at", "first_treatment_skipped_by",
+        "first_treatment_skip_reason"), cursor.fetchone()))
+    cursor.execute("""select m.* from public.pig_medical_events m
+        where m.pig_id=any(%s) and (m.medical_event_id like 'MED-HFT-%%'
+            or position(lower(%s) in lower(coalesce(m.medical_notes,'')))>0
+            or position(lower(%s) in lower(coalesce(m.reason_for_treatment,'')))>0
+            or lower(coalesce(m.reason_for_treatment,'')) like '%%litter newborn health action%%')
+        order by m.medical_event_id""", ([row["pig_id"] for row in snapshot["piglets"]],
+            f"Litter {litter_id} newborn health action", f"Litter {litter_id} newborn health action"))
+    names = [column.name for column in cursor.description]
+    snapshot["medical"] = [dict(zip(names, row)) for row in cursor.fetchall()]
+    cursor.execute("""select event_id,payload_json->>'packet_digest' as packet_digest
+        from public.operational_events where event_type='litter.first_treatment_recorded'
+        and aggregate_id=%s order by event_id""", (litter_id,))
+    snapshot["treatment_receipts"] = [{"event_id": row[0], "packet_digest": row[1]} for row in cursor.fetchall()]
+    return json.loads(json.dumps(snapshot, default=str, sort_keys=True))
+
+
+def get_litter_first_treatment_snapshot(litter_id, connect_factory=None):
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("set transaction isolation level repeatable read read only")
+            cursor.execute("set local statement_timeout = '10s'")
+            return litter_first_treatment_snapshot(cursor, _text(litter_id))
+
+
 def get_litter_detail(litter_id, connect_factory=None):
     litters, pigs_by_litter = _litter_rows_with_pigs(connect_factory=connect_factory)
     litter = next((row for row in litters if _text(row.get("litter_id")) == _text(litter_id)), None)
@@ -1881,6 +1998,8 @@ def get_litter_detail(litter_id, connect_factory=None):
             "status": _text(pig.get("status")),
             "exit_reason": _text(pig.get("exit_reason")),
             "on_farm": _yes_no(pig.get("on_farm")),
+            "earmarked": pig.get("earmarked"),
+            "earmark_date": _date_text(pig.get("earmark_date")),
             "date_of_birth": _date_text(pig.get("date_of_birth")),
             "age_days": _age_days(pig.get("date_of_birth")),
             "current_weight_kg": weight,
@@ -1912,12 +2031,14 @@ def get_litter_detail(litter_id, connect_factory=None):
     pig_ids = [item["pig_id"] for item in piglets if item["pig_id"]]
     first_treatment_rows = _fetch_all(
         """
-        select medical_event_id, pig_id, treatment_date, treatment_type, product_id
+        select medical_event_id, pig_id, treatment_date, treatment_type, product_id,
+               product_name,dose,dose_unit,route,batch_lot_number,given_by,medical_notes
         from public.pig_medical_events
         where pig_id = any(%s)
           and (
             medical_notes ilike %s
             or reason_for_treatment ilike %s
+            or medical_event_id like 'MED-HFT-%%'
           )
         order by treatment_date, medical_event_id
         """,
@@ -1936,6 +2057,24 @@ def get_litter_detail(litter_id, connect_factory=None):
     treatment_packet_complete = bool(first_treatment_rows) and active_pig_ids.issubset(treated_pig_ids)
     first_treatment_complete = treatment_packet_complete
     first_treatment_partial = bool(first_treatment_rows) and not treatment_packet_complete
+    treatment_receipt = None
+    receipt_verified = None
+    receipt_rows = _fetch_all("""select payload_json from public.operational_events
+        where event_type='litter.first_treatment_recorded' and aggregate_id=%s order by occurred_at""",
+        (_text(litter_id),), connect_factory=connect_factory) if (connect_factory is not None or os.getenv(DATABASE_URL_ENV)) else []
+    if receipt_rows:
+        packet = receipt_rows[-1]["payload_json"]["packet"]
+        treatment_receipt = {key: packet.get(key) for key in ("operation_id", "litter_id", "sow_pig_id", "action_date", "principal",
+            "sow_name", "sow_tag_number", "total_count", "reported_total_count", "pig_ids", "earmarked",
+            "male_count", "female_count", "dose", "dose_unit", "route", "batch_lot_number", "products", "notes")}
+        from modules.pig_weights.farm_supabase_write_service import read_litter_first_treatment_receipt
+        try:
+            receipt_verified = bool(read_litter_first_treatment_receipt(packet, connect_factory=connect_factory)) and len(receipt_rows) == 1
+        except (ValueError, RuntimeError):
+            receipt_verified = False
+        first_treatment_complete = receipt_verified
+        first_treatment_partial = not receipt_verified
+        tally_recorded = packet.get("male_count") is not None and packet.get("female_count") is not None
     first_treatment_dates = [
         _date_text(row.get("treatment_date")) for row in first_treatment_rows
         if _date_text(row.get("treatment_date"))
@@ -1985,6 +2124,9 @@ def get_litter_detail(litter_id, connect_factory=None):
         "born_alive": reconciliation.get("born_alive"),
         "weaned_count": _float_or_none(litter.get("weaned_count")),
         "first_treatment_tally_recorded": tally_recorded,
+        "first_treatment_receipt": treatment_receipt,
+        "first_treatment_receipt_verified": receipt_verified,
+        "first_treatment_records": [{**row, "treatment_date": _date_text(row.get("treatment_date"))} for row in first_treatment_rows],
         "first_treatment_complete": first_treatment_complete,
         "first_treatment_partial": first_treatment_partial,
         "first_treatment_record_count": len(first_treatment_rows),

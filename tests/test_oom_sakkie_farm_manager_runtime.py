@@ -60,7 +60,7 @@ def test_rootline_manager_adapter_uses_shared_completed_projection_and_no_tank_q
     monkeypatch.setattr(farm_manager_runtime, "build_current_rootline_specialist_result",
                         lambda **_kwargs: raw)
     item = farm_manager_runtime._load_rootline(NOW, "en").work_items[0]
-    assert "B Camp: Completed" in item.title and "off and verified" in item.title
+    assert "B Camp: Controller OFF verified" in item.title
     assert "now_after" not in " ".join((item.title, item.why, item.next_action))
     assert item.genuine_question == "" and item.question_for == ""
 

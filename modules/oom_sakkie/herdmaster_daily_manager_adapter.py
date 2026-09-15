@@ -29,6 +29,8 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
         return SpecialistResult("herdmaster", provenance.result_id,
             observed_at, SpecialistAvailability.AVAILABLE, work_items=(item,))
     weight = packet["weight"]
+    window = weight.get("window") or {}
+    period = f"{window.get('start') or '?'} {'tot' if is_af else 'to'} {window.get('end') or '?'}"
     snapshot = weight["current_snapshot"]
     provenance = Provenance("herdmaster", packet["material_digest"],
         (PACKET_TYPE, packet["material_digest"]), observed_at, 1.0)
@@ -78,10 +80,10 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     f"{len(routine_missing)} oormerk(e) se status moet nagegaan word") if is_af else
                    (f"Weighing: {snapshot['covered']} of {snapshot['eligible_tagged']} recorded; "
                     f"{len(routine_missing)} tag(s) need status reconciliation")),
-            why=((f"Dekking volgens die huidige momentopname is {snapshot['covered']}/{snapshot['eligible_tagged']}. "
-                  "Teeldiere, ongemerkte diere, onaktiewe diere/diere weg van die plaas en Onbekende geskiktheid bly afsonderlik.") if is_af else
-                 (f"Current-snapshot coverage is {snapshot['covered']}/{snapshot['eligible_tagged']}. "
-                  "Breeding, untagged, inactive/off-farm and Unknown eligibility remain separate.")),
+            why=((f"Vir {period} het {snapshot['covered']}/{snapshot['eligible_tagged']} varke in die huidige groep gewigte. "
+                  "Ontbrekende gewigte vereis eers 'n kontrole van verkoop-, bestel- en huidige plaasstatus.") if is_af else
+                 (f"For {period}, {snapshot['covered']}/{snapshot['eligible_tagged']} pigs in the current cohort have weights. "
+                  "Missing weights first require a check of sale, order and current farm status.")),
             next_action=((f"Kontroleer die verkoop-, bestel- of ander kanonieke status vir oormerke {tags}; "
                           "moenie hulle vir herweging aanwys voordat daardie bewyse bestaan nie.") if is_af else
                          (f"Reconcile sale/order or other canonical status for tags {tags}; "
@@ -89,7 +91,9 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
             assignee="charl", state=WorkState.WAITING_EVIDENCE,
             authority=Authority.READ_ONLY,
             provenance=provenance, business_value=110,
-            metadata={"routine_weekly_weighing": True}))
+            metadata={"routine_weekly_weighing": True,
+                "owner_followup": ("HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag."
+                    if is_af else "HERDMASTER will reconcile the cohort's current status before any new weighing instruction.")}))
     elif snapshot["status"] == "complete":
         finding_text = _findings(findings, language=language)
         window = weight.get("window") or {}
@@ -148,16 +152,17 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                 str(value.get("effective_date") or ""), str(value.get("event_id") or "")))
             if len(ordered) == 1:
                 row = ordered[0]
+                death_date = str(row.get("effective_date") or ("datum onbekend" if is_af else "date unknown"))[:30]
                 tag = _bounded_identity(row.get("tag") or row.get("pig_id") or "the pig")
                 label = _bounded_identity(row.get("tag") or row.get("pig_id") or ("die vark" if is_af else "the pig"))
                 event_key = _compact_identity([str(row.get("event_id") or row.get("pig_id") or tag)])
                 items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality:"+event_key,
                     dedupe_key="herdmaster:mortality:"+event_key,
                     domain="herd", title=f"Sterfteopvolging — {label}" if is_af else f"Mortality follow-up — {tag}",
-                    why=((f"'n Sterfte is vir {label} aangeteken. HERDMASTER het een opvolg geopen om vas te stel of enige oorblywende varke of plaaswerk aandag nodig het."
+                    why=((f"'n Sterfte is vir {label} op {death_date} aangeteken. HERDMASTER kyk of oorblywende varke of plaaswerk aandag nodig het."
                           if str(row.get("pig_id") or "") not in open_ids else
                           f"Die opvolg vir {label} is steeds oop; HERDMASTER kyk of enige plaasfeit of handeling ontbreek.") if is_af else
-                         (f"A death was recorded for {tag}. HERDMASTER opened one follow-up to check whether any remaining pigs or farm actions need attention."
+                         (f"A death was recorded for {tag} on {death_date}. HERDMASTER is checking whether remaining pigs or farm actions need attention."
                          if str(row.get("pig_id") or "") not in open_ids else
                           f"The follow-up for {tag} is still open; HERDMASTER is checking whether any farm fact or action is missing.")),
                     next_action=("HERDMASTER sal die verwante rekords nagaan en slegs een duidelike vraag vra as 'n plaasfeit ontbreek; dit sal nie 'n diagnose raai nie." if is_af else
@@ -169,6 +174,11 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                         "welfare_exception": True,
                         "mortality_packet": dict(packet.get("specialist_mortality_packet") or {})}))
             else:
+                dates = sorted({str(row.get("effective_date") or "")[:10] for row in ordered
+                                if row.get("effective_date")})
+                complete_dates = all(row.get("effective_date") for row in ordered)
+                period = ((dates[0] + (f" {'tot' if is_af else 'to'} " + dates[-1] if dates[-1] != dates[0] else ""))
+                          if dates and complete_dates else ("tydperk onvolledig" if is_af else "period incomplete"))
                 identities = [_bounded_identity(row.get("tag") or row.get("pig_id") or row.get("event_id"))
                               for row in ordered]
                 event_ids = [str(row.get("event_id") or row.get("pig_id")) for row in ordered]
@@ -178,10 +188,10 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                 items.append(SpecialistWorkItem(
                     item_id=packet["material_digest"]+":mortality-cluster",
                     dedupe_key="herdmaster:mortality-cluster:"+_compact_identity(event_ids),
-                    domain="herd", title=(f"Sterfteopvolgings — {len(ordered)} sterftes met naspeurbare identiteit" if is_af else
-                                          f"Mortality follow-ups — {len(ordered)} attributable deaths"),
-                    why=(("Veranderde kanonieke sterftes: " + visible + ". Elke identiteit bly afsonderlik; die groepering hou slegs die oggendplan kort.") if is_af else
-                         ("Changed canonical deaths: " + visible + ". Each identity remains separate; the grouping only keeps the morning brief bounded.")),
+                    domain="herd", title=(f"Sterfterekords — {len(ordered)} sterftes vir hersiening" if is_af else
+                                          f"Mortality records — {len(ordered)} deaths for review"),
+                    why=((f"Aangetekende sterftes: {period}. HERDMASTER hersien hierdie rekords vir enige onopgeloste huidige opvolg; die totaal is nie 'n verslag van nuwe sterftes vandag nie.") if is_af else
+                         (f"Recorded deaths: {period}. HERDMASTER is reviewing these records for unresolved current follow-up; this total does not report new deaths today.")),
                     next_action=("Hersien hierdie begrensde groep met naspeurbare identiteite een keer; latere nuwe of onopgeloste individuele bewyse heropen afsonderlik. Patrone bly verbande, nie diagnoses nie." if is_af else
                                  "Review this bounded attributable group once; later new or unresolved individual evidence reopens separately. Patterns remain associations, not diagnoses."),
                     assignee="charl", state=WorkState.URGENT,
@@ -189,6 +199,8 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     metadata={"mortality_fingerprints": dict(
                         mortality["durable_death_event_fingerprints"]),
                         "welfare_exception": True,
+                        "owner_followup": ("HERDMASTER gaan die verwante rekords na en heropen slegs 'n opvolg wanneer nuwe of onopgeloste bewyse dit vereis."
+                            if is_af else "HERDMASTER will check the related records and reopen a follow-up only when new or unresolved evidence requires it."),
                         "mortality_packet": dict(packet.get("specialist_mortality_packet") or {})}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
     no_mortality_item = not any("mortality" in item.dedupe_key for item in items)
@@ -223,8 +235,13 @@ def reconcile_manager_question_answer(result, receipt):
     facts = facts if isinstance(facts, dict) else {}
     task_id = str(receipt.get("task_id") or "")
     dedupe = str(receipt.get("dedupe_key") or "")
+    observations = facts.get("observations")
+    has_observation = (isinstance(observations, list) and any(
+        isinstance(value, str) and value.strip() for value in observations))
+    has_observation = has_observation or bool(str(facts.get("observation") or "").strip())
     if (str(receipt.get("domain") or "") not in {"herd", "herd_health", "herd_management"}
-            or not str(facts.get("observation") or "").strip()
+            or receipt.get("status", "recorded") != "recorded"
+            or not has_observation
             or not str(receipt.get("owner_evidence") or "").strip()):
         return result
     matched = False

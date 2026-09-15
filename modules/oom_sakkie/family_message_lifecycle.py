@@ -13,6 +13,7 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
 EVENT_SOURCE = "oom_sakkie_family_message_lifecycle"
@@ -66,11 +67,51 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
     status = str(localized.get("status") or "").casefold()
     answer = str(localized.get("answer") or "").strip()
     original_answer = answer
+    # These messages are assembled by the typed treatment renderer. Reported
+    # product names and notes retain their original language inside its output.
+    structured_treatment = (
+        localized.get("recipient_render_contract") == "specialist_structured_recipient_v1"
+        and localized.get("recipient_language") == "af"
+        and answer.startswith("<b>Eerste behandeling</b>\n")
+        and ((status in {"first_treatment_committed", "first_treatment_replayed_noop"}
+              and localized.get("canonical_readback_verified") is True)
+             or (status == "litter_first_treatment_preview_ready"
+                 and localized.get("action_kind") == "herdmaster_record_litter_first_treatment"
+                 and bool(localized.get("callback_token")))
+             or (status == "litter_first_treatment_clarification_required"
+                 and localized.get("question_count") == 1
+                 and isinstance(localized.get("retained_facts"), Mapping))))
     if answer:
         identity = str(localized.get("specialist_identity") or localized.get("specialist")
                        or specialist or "OOM SAKKIE").replace("_", " ")
         campaign = localized.get("campaign_review_preview")
-        if status == "media_album_received":
+        trusted_question = (status == "manager_question_partial_reply_recorded"
+            and localized.get("recipient_render_contract") == "manager_question_clarification_v1"
+            and localized.get("question_count") == 1)
+        trusted_health = (localized.get("tool_used") == "herdmaster_health_loss_preview"
+            and localized.get("recipient_render_contract") == "herdmaster_health_loss_recipient_v1"
+            and status in {"preview_ready", "waiting_for_input"})
+        trusted_farrowing = (
+            localized.get("recipient_render_contract") == "herdmaster_farrowing_recipient_v1"
+            and (localized.get("specialist") == "HERDMASTER" or specialist == "HERDMASTER")
+            and (localized.get("handled") is True
+                 or localized.get("canonical_readback_verified") is True)
+            and int(localized.get("hardware_commands") or 0) == 0)
+        trusted_irrigation = (localized.get("specialist_identity") == "ROOTLINE"
+            and localized.get("recipient_render_contract") == "rootline_owner_observation_recipient_v1"
+            and status in {"owner_irrigation_observation_recorded", "owner_operational_transition_replayed_noop"}
+            and localized.get("verification_pending") is True
+            and localized.get("execution_completed") is False)
+        trusted_irrigation_question = (specialist == "ROOTLINE"
+            and localized.get("recipient_render_contract") == "rootline_owner_clarification_recipient_v1"
+            and status in {"owner_context_clarification_required", "owner_clarification_delivery_reconciliation_required"}
+            and localized.get("question_count") == 1 and localized.get("hardware_commands") == 0)
+        preserves_recipient_text = (trusted_question or trusted_health or trusted_farrowing or trusted_irrigation
+            or trusted_irrigation_question) and str(
+            localized.get("recipient_language") or "").casefold().startswith("af")
+        if preserves_recipient_text:
+            answer = original_answer
+        elif status == "media_album_received":
             count = int(localized.get("album_stored_count") or 0)
             answer = (f"<b>BEACON — PRIVAAT GESTOOR</b>\n\n{count} foto('s) is veilig in hierdie album gestoor. "
                 "Voeg die oorblywende foto's by en kies Voltooi album. Biblioteekaanvaarding, openbare gebruik, "
@@ -99,7 +140,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
         elif (localized.get("recipient_render_contract") == "specialist_structured_recipient_v1"
               and str(localized.get("recipient_language") or "").casefold().startswith("af")
               and answer.startswith("<b>") and "</b>" in answer
-              and _looks_afrikaans(answer)):
+              and (structured_treatment or _looks_afrikaans(answer))):
             # A specialist structured renderer already owns recipient wording.
             answer = original_answer
         elif "change" in status or "correct" in status:
@@ -137,7 +178,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             rows.append(translated)
         localized["reply_markup"] = {**markup, "inline_keyboard": rows}
     localized["recipient_language"] = "af"
-    if answer and answer == original_answer and not _looks_afrikaans(answer):
+    if answer and answer == original_answer and not preserves_recipient_text and not structured_treatment and not _looks_afrikaans(answer):
         localized["recipient_language_render_unrecognized"] = True
     return localized
 
@@ -273,6 +314,9 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         and str(result.get("status") or "") in {
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded",
             "payment_state_recorded", "payment_state_replay_noop",
+            "weaning_day_committed", "weaning_day_replayed_withheld",
+            "first_treatment_committed", "first_treatment_replayed_noop",
+            "farrowing_litter_recorded", "farrowing_litter_replayed_noop",
             "protected_preview_cancelled", "protected_preview_change_requested",
             "segment_started", "active_segment_owned", "private_media_review_recorded",
             "private_media_review_presented"
@@ -688,6 +732,7 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     payload = _event(parsed, mission_id, card_mission_id, "OOM_SAKKIE",
                      "brief_generation", digest)
     payload.update({"generation_digest": digest,
+                    "rendered_text_sha256": hashlib.sha256(text.encode()).hexdigest(),
                     "previous_telegram_message_id": prior_id})
     sends = 0
     if delivered:
@@ -1011,7 +1056,8 @@ def _send_telegram(chat_id, text, reply_markup=None, *, deadline_monotonic=None)
     except Exception:return {"success":False,"status":"telegram_delivery_ambiguous"}
     result=response.get("result") if isinstance(response,dict) else {}
     return {"success":response.get("ok") is True and bool((result or {}).get("message_id")),
-            "telegram_message_id":str((result or {}).get("message_id") or "")}
+            "telegram_message_id":str((result or {}).get("message_id") or ""),
+            "provider_timestamp": _provider_message_timestamp(result)}
 
 
 def _edit_telegram(chat_id, message_id, text, reply_markup=None, *,
@@ -1032,7 +1078,18 @@ def _edit_telegram(chat_id, message_id, text, reply_markup=None, *,
     except Exception:
         return {"success": False, "status": "telegram_edit_ambiguous"}
     return {"success": response.get("ok") is True,
-            "telegram_message_id": str(((response.get("result") or {}).get("message_id") if isinstance(response, dict) else "") or "")}
+            "telegram_message_id": str(((response.get("result") or {}).get("message_id") if isinstance(response, dict) else "") or ""),
+            "provider_timestamp": _provider_message_timestamp(response.get("result"), edited=True)}
+
+
+def _provider_message_timestamp(result, *, edited=False):
+    value = result.get("edit_date" if edited else "date") if isinstance(result, Mapping) else None
+    if type(value) is not int or value <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(value, timezone.utc).isoformat()
+    except (ValueError, OverflowError, OSError):
+        return ""
 
 
 def _delete_telegram(chat_id, message_id):
