@@ -12,6 +12,18 @@ Use `VAULT_MIGRATION_INVENTORY.md` to track migration status and archive readine
 
 Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md`.
 
+Latest Oom Sakkie mission handover:
+
+- Branch: `control-tower/herd-operations-20260910`
+- Path: `control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_RELEASE_AND_N8N_RETIREMENT_HANDOVER_20260915.md`
+- Scope: dated PR #1336 release, Telegram callback reconciliation and current
+  backend-replacement/n8n-retirement state. This is current-state evidence, not
+  reusable doctrine.
+- Dependency baseline: the preserved 2026-08-13 Phase 0 register at
+  `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`;
+  its Oom Sakkie Telegram rows are refreshed by the handover above.
+
+
 ## Common Mandatory Governance Pack
 
 - `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`

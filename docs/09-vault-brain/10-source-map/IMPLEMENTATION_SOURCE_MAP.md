@@ -1,5 +1,24 @@
 # Implementation Source Map
 
+## 2026-09-15 - Current PR #1336 release and Oom Sakkie Telegram retirement handover
+
+The current mission state is tracked on branch
+`control-tower/herd-operations-20260910`, not the older main-branch register.
+Its durable handover is
+`control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_RELEASE_AND_N8N_RETIREMENT_HANDOVER_20260915.md`.
+That handover binds merged PR #1336 revision `3d321e4932cf205d03e759cc71a26edd411bc9d2`,
+the still-old production revision `9edc57d643bae3974f3321478fc59e1631c50623`,
+the sole approved release operator/window, the successful one-attempt model probe,
+the exact reply-ID publication/rollback field, callback-effect reconciliation and
+the current backend Telegram retirement boundary.
+
+Current provider ownership remains n8n GateKeeper `s8QaxmqT69Z5mhvE` plus relay
+`TlKy9kUgJJE0msU4`. The implemented replacement is the backend route
+`POST /api/oom-sakkie/channels/telegram/direct-webhook` in
+`modules/oom_sakkie/routes.py` and `modules/oom_sakkie/telegram_direct.py`.
+Provider cutover and genuine no-loss/no-duplicate acceptance remain incomplete;
+therefore the workflows are retained and no n8n business logic is added.
+
 ## 2026-09-13 - PR1335 hosted fixture failure and local one-line amendment
 
 Approved 4859d8f1 was published as PR1335 and admitted under the existing morning

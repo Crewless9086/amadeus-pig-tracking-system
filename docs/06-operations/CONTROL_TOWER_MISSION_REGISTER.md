@@ -1,5 +1,54 @@
 # Control Tower Mission Register
 
+## 2026-09-15 - PR #1336 merged; release waiting, Telegram retirement state reconciled
+
+Continue existing `OMQ-20260813-03`. PR #1336 merged as
+`3d321e4932cf205d03e759cc71a26edd411bc9d2` after approved application candidate
+`cca25516ec9848afd3c629216c244afdad5850a6` and independently reviewed fixture-only
+successor `231305595391a982755b1dc916a1e6c2e4e19ca6`. All five candidate gates and
+all exact-merge gates passed, including fresh hosted execution of 272 herd tests,
+27 subtests, every later required selector and browser jobs. The first exact-merge
+audit failure remains preserved; retry passed after its Playwright server-start
+failure. Production still served `9edc57d643bae3974f3321478fc59e1631c50623`
+at the last readback. Sole deployment operator PID 29224 is attending the approved
+window opening 2026-09-15 22:00 UTC; passive observer PID 36628 waits for verified
+deployment. Neither has started a competing deployment.
+
+The one corrected configured-model probe passed once with usable `OK`, HTTP 200,
+`gpt-5.4-mini-2026-03-17`, finish `stop`, no truncation and 15 tokens. Do not
+repeat it. Telegram still points to active n8n GateKeeper `s8QaxmqT69Z5mhvE`,
+which calls active relay `TlKy9kUgJJE0msU4`. The backend replacement is implemented
+at `POST /api/oom-sakkie/channels/telegram/direct-webhook`, default-off and gated
+by provider secret, bot token, send enablement and owner allowlist. It is not yet
+the provider owner.
+
+The approved interim reply-ID correction remains unpublished and owns only relay
+node `2d0b4a5a-0002-4f41-b7db-2c3c5d1a9d02` field `parameters.jsCode`, before hash
+`a8bb6a2a492e2f59ef8a6e7a76863a7b8e64acabe4fc87b1215dfb58c2ae2708`, after hash
+`cd7e2d56185ee2f33e6bc5a2b1c8411a48e78dc74c5a4493e1eee45224aa38f0`.
+It follows verified web deployment and adds no n8n business logic. All three
+native-voice edits remain separately held.
+
+Historical callback timeouts were reconciled before retry: Charl's Linda
+farrowing and Anton's tag-138 mortality claims both completed exactly once and
+must not be retried; Anton's other farrowing callback was denied with no write.
+New current-version confirm/cancel acceptance remains open. The next usable farm
+outcome is Charl's genuine read-only Linda question and natural contextual
+follow-up immediately after deployed/model/transport readiness. Full n8n
+retirement additionally requires sole backend webhook ownership, genuine
+English/Afrikaans text and callback acceptance, one permitted confirmed update
+with canonical readback, zero-effect cancellation/replay, scheduled/event-driven
+operation with n8n unavailable, and a reversible no-loss/no-duplicate observation
+before GateKeeper and relay deactivation.
+
+Authoritative branch/path and exact handover:
+`control-tower/herd-operations-20260910` /
+`control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_RELEASE_AND_N8N_RETIREMENT_HANDOVER_20260915.md`.
+The main-branch register does not yet contain this state. Existing migration,
+weaning, treatment, voice, permission, physical-operation, ROOTLINE and CHARLIE
+holds remain unchanged. No provider, workflow, farm record or permission is
+changed by this record.
+
 ## 2026-09-13 - PR1335 hosted fixture failure and local one-line amendment
 
 Approved 4859d8f1 was published as PR1335 and admitted under the existing morning
