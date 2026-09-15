@@ -1,20 +1,29 @@
 {
-  "observed_at": "2026-09-15T18:45:49.346717+00:00",
+  "observed_at": "2026-09-15T18:50:29.270104+00:00",
   "render_service_id": "srv-d6sijjkhg0os73f7regg",
   "read_only": true,
   "values_or_digests_recorded": false,
-  "env_var_gets": 1,
+  "supersedes_observation": "2026-09-15T18:45:49.346717+00:00",
+  "supersession_reason": "the prior list endpoint was paginated and absence from its first page was not evidence of key absence",
+  "exact_key_gets": 5,
+  "http_status_by_key": {
+    "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": 200,
+    "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": 200,
+    "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": 200,
+    "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": 200,
+    "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": 200
+  },
   "configuration_changes": 0,
   "readiness_inputs": {
-    "direct_enabled_key_present": false,
-    "direct_enabled_truthy": false,
-    "direct_send_enabled_key_present": false,
-    "direct_send_enabled_truthy": false,
-    "bot_token_present": false,
-    "webhook_secret_present": false,
-    "webhook_secret_minimum_32_chars": false,
-    "allowed_user_ids_present": false,
-    "allowed_user_ids_count": 0
+    "direct_enabled_key_present": true,
+    "direct_enabled_truthy": true,
+    "direct_send_enabled_key_present": true,
+    "direct_send_enabled_truthy": true,
+    "bot_token_present": true,
+    "webhook_secret_present": true,
+    "webhook_secret_minimum_32_chars": true,
+    "allowed_user_ids_present": true,
+    "allowed_user_ids_count": 3
   },
-  "configured_ready_inputs": false
+  "configured_ready_inputs": true
 }

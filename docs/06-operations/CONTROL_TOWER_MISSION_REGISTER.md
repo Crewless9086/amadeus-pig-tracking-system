@@ -19,10 +19,12 @@ The one corrected configured-model probe passed once with usable `OK`, HTTP 200,
 repeat it. Telegram still points to active n8n GateKeeper `s8QaxmqT69Z5mhvE`,
 which calls active relay `TlKy9kUgJJE0msU4`. The backend replacement is implemented
 at `POST /api/oom-sakkie/channels/telegram/direct-webhook`, default-off and gated
-by provider secret, bot token, send enablement and owner allowlist. A fresh
-read-only Render check at 2026-09-15 18:45:49 UTC found all five required
-configuration keys absent, so it is neither configured nor the provider owner.
-No value, configuration or provider endpoint changed.
+by provider secret, bot token, send enablement and owner allowlist. A first
+paginated-list inference of absent keys was invalid and remains preserved.
+Corrected exact-key Render reads at 2026-09-15 18:50:29 UTC returned 200 for all
+five inputs: both gates true, credentials present and three allowed IDs. No value,
+configuration or endpoint changed. The adapter is configured but n8n remains the
+provider owner.
 
 The approved interim reply-ID correction remains unpublished and owns only relay
 node `2d0b4a5a-0002-4f41-b7db-2c3c5d1a9d02` field `parameters.jsCode`, before hash

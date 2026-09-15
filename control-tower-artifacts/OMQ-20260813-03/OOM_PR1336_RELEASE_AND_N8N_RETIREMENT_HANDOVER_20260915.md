@@ -78,14 +78,16 @@ Sakkie audit trace, and routes ordinary messages and protected callbacks through
 backend-owned Oom Sakkie/family/specialist action rails. The review-gated
 `GET /api/oom-sakkie/channels/telegram/direct-parity` route exposes readiness.
 The code is implemented and qualified; it is not provider-active while Telegram
-still points at n8n. A fresh read-only Render environment check at
-`2026-09-15T18:45:49Z` found that all five required direct-adapter keys are
-absent from the web service: the two enablement gates, bot token, webhook secret
-and allowed-user list. No values or digests were recorded. The replacement is
-therefore code-complete but not production-configured and cannot be called ready
-before merge deployment, protected configuration, sole-webhook cutover and live
-provider acceptance. The redacted receipt is
-`TELEGRAM_DIRECT_RENDER_READINESS.json` beside this handover.
+still points at n8n. A first read-only environment-list inference at
+`2026-09-15T18:45:49Z` was invalid because Render paginated the list; it is
+preserved as `TELEGRAM_DIRECT_RENDER_READINESS_ATTEMPT1_INVALID.json`. Corrected
+exact-key reads at `2026-09-15T18:50:29Z` returned HTTP 200 for all five inputs:
+both enablement gates are true, bot token is present, webhook secret is present
+and at least 32 characters, and three owner IDs are allowlisted. No values or
+digests were recorded. The replacement is configured but cannot become the
+provider owner before merge deployment, sole-webhook cutover and live acceptance.
+The corrected receipt is `TELEGRAM_DIRECT_RENDER_READINESS.json` beside this
+handover.
 
 ### Minimal interim transport correction
 
@@ -141,12 +143,11 @@ reversible path completes:
 2. publish and hash-verify only the approved relay reply-ID field, then prove an
    ordinary typed message, a genuine reply to an earlier Oom Sakkie message and
    protected confirmation/cancellation metadata through the current transport;
-3. configure the deployed direct adapter with the existing bot credential, a new
-   provider webhook secret, the exact existing owner allowlist and both explicit
-   enablement gates under a separately controlled transport decision; verify the
-   review-gated parity report without recording values; then execute the sole-
-   webhook cutover from the exact n8n URL to the backend direct-webhook URL while
-   preserving the exact provider rollback URL and secret boundary;
+3. reverify the currently configured direct-adapter inputs and review-gated parity
+   report without recording values; then, under a separately controlled transport
+   decision, execute the sole-webhook cutover from the exact n8n URL to the backend
+   direct-webhook URL while preserving the exact provider rollback URL and secret
+   boundary;
 4. prove English and Afrikaans ordinary conversation, canonical Linda lookup and
    natural follow-up context, one genuine permitted confirmed farm update saved
    exactly once with application/backend readback, one protected cancellation
