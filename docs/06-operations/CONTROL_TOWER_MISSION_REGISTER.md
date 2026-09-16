@@ -1,6 +1,37 @@
 # Control Tower Mission Register
 
 
+## 2026-09-16 - Scheduled observer reconciled; farm-brief correction qualified
+
+Continue existing `OMQ-20260813-03`. Production remains on deployed web revision
+`3d321e4932cf205d03e759cc71a26edd411bc9d2`. Charl's supplied morning brief is
+accepted as provider-confirmed delivery and improved wording; it does not prove
+Anton acceptance, business acceptance or a farm update.
+
+Backend reconciliation found that 74 is the current eligible/tagged snapshot,
+with zero pigs explicitly due now for weighing. The mortality archive contains 42
+attributable historical candidate events and zero in the last seven days; an
+unchanged total is not current morning work. C Camp was controller-verified ON at
+00:35:16 and OFF at 02:04:24 SAST. Those boundaries do not prove actual watering
+duration or volume. Eight ROOTLINE deliveries plus Charl's morning brief account
+for the nine messages; six ROOTLINE deliveries were routine rain/dry
+reassessments that should have stayed silent.
+
+Local runtime candidate `86bcee2709374353b7daf8d68bda839bac69337c`, tree
+`8582052f2cab5bf1a7abc4d26c27ebb085c6e23b`, is qualified and unpublished. It
+binds follow-through to real worker cases/events, preserves exact answer
+continuations, separates Mysikind and Mona, removes archive noise, and emits only
+verified concise irrigation ON/OFF notifications. It adds no n8n logic and
+changes no migration, workflow, selector or permission. A fresh disposable
+database passed all 272 herd tests and 27 subtests; the earlier 271-pass attempt
+is preserved. Exact runtime-candidate approval is required before publication,
+admission, hosted checks, merge or web-only deployment.
+
+Latest authoritative handover:
+`control-tower-artifacts/OMQ-20260813-03/OOM_SCHEDULED_OBSERVER_AND_FARM_BRIEF_CORRECTION_HANDOVER_20260916.md`.
+Linda live conversation, Anton acceptance, confirmation, cancellation and a
+genuinely needed permitted farm update remain pending. All existing holds remain.
+
 ## 2026-09-16 - PR #1336 deployed; scoped reply-ID correction published
 
 Continue existing `OMQ-20260813-03`. The sole release operator deployed merge

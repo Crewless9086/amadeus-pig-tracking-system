@@ -1,6 +1,28 @@
 # Implementation Source Map
 
 
+## 2026-09-16 - Scheduled observer finding and qualified farm-brief correction
+
+Current mission state is on branch `control-tower/herd-operations-20260910` in
+`control-tower-artifacts/OMQ-20260813-03/OOM_SCHEDULED_OBSERVER_AND_FARM_BRIEF_CORRECTION_HANDOVER_20260916.md`.
+Production remains on `3d321e4932cf205d03e759cc71a26edd411bc9d2`.
+
+The scheduled evidence proves Charl delivery and improved wording only. It does
+not prove Anton acceptance or a farm update. Backend reconciliation found that
+74 is a current weighing-eligibility snapshot with zero exact due-now pigs, that
+unchanged mortality history is not morning work, and that C Camp controller
+boundaries support ON/OFF times but not flow duration or volume.
+
+Local runtime candidate `86bcee2709374353b7daf8d68bda839bac69337c`, tree
+`8582052f2cab5bf1a7abc4d26c27ebb085c6e23b`, makes manager follow-through read
+the real case/event rail, preserves exact question continuations, separates
+Mysikind and Mona, removes archive noise, and keeps routine irrigation
+reassessments silent. It changes no workflow, migration, selector, permission or
+n8n logic. Fresh local qualification passed all 272 herd tests and 27 subtests
+after preserving one 271-pass failed attempt. The candidate remains unpublished
+pending exact runtime-candidate approval; its decision is
+`control-tower-artifacts/OMQ-20260813-03/OOM_FARM_BRIEF_RUNTIME_CANDIDATE_DECISION_20260916.md`.
+
 ## 2026-09-16 - Deployed PR #1336 and published Telegram reply identity
 
 Current mission state is on branch `control-tower/herd-operations-20260910` in

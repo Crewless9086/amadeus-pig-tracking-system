@@ -1,0 +1,70 @@
+{
+  "mission_id": "OMQ-20260813-03",
+  "observed_window": {
+    "start": "2026-09-15T16:56:49.241166+00:00",
+    "end": "2026-09-16T04:57:18.576792+00:00"
+  },
+  "deployed_revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+  "deployment_id": "dep-daks09jl550s73alg2g0",
+  "observer_status": "passive_scheduled_evidence_collected",
+  "business_acceptance_asserted": false,
+  "morning_brief": {
+    "charl": {
+      "provider_message_id": "4395",
+      "delivery": "provider_confirmed",
+      "answer_sha256": "4608e2518bd22483d7158cdc3f2459a09c955bccb997e20fc040535df82d0a4a",
+      "evidence_use": "delivery_and_improved_wording_only"
+    },
+    "anton_acceptance": "not_established",
+    "farm_update": "not_performed"
+  },
+  "observer_limitation": {
+    "collection_complete": false,
+    "section": "plan_hash_verification",
+    "error_type": "AttributeError",
+    "detail": "SimpleNamespace missing why"
+  },
+  "herd_reconciliation": {
+    "weighing": {
+      "current_snapshot_eligible_tagged": 74,
+      "covered_in_window": 0,
+      "explicit_due_now": 0,
+      "historical_eligibility": "not_reconstructable_from_current_snapshot",
+      "finding": "The 74 pigs are a current eligible/tagged snapshot, not a weighing worklist."
+    },
+    "mortality": {
+      "canonical_candidate_events": 42,
+      "stillbirth_events": 14,
+      "individual_death_events": 26,
+      "crushed_events": 2,
+      "last_7_days": 0,
+      "last_30_days": 5,
+      "last_90_days": 40,
+      "finding": "Historical records stay preserved; no unchanged historical total is routine morning work. A recent event or exact open individual lifecycle is required to reopen the brief."
+    }
+  },
+  "irrigation": {
+    "execution_id": "ROOTLINE-EXECUTION-0C182359F30AFE1ABE0D2F6F",
+    "zone": "C12345",
+    "controller_on_at": "2026-09-16T00:35:16+02:00",
+    "controller_off_at": "2026-09-16T02:04:24+02:00",
+    "native_stop_deadline": "2026-09-16T01:35:00+02:00",
+    "stored_segment_budget_minutes": 59.983333333333334,
+    "actual_watering_duration_supported": false,
+    "delivered_volume_supported": false,
+    "message_trace": {
+      "rootline_provider_messages": 8,
+      "charl_morning_brief": 1,
+      "relevant_total": 9,
+      "separate_recipient_projection": "4396"
+    },
+    "finding": "Six routine reassessment deliveries represented changing forecast/live rain-dry evidence; direct verified ON and OFF notifications already existed. Boundary timestamps do not prove flow duration."
+  },
+  "pending": {
+    "linda_live_conversation": true,
+    "anton_acceptance": true,
+    "genuine_confirmation": true,
+    "genuine_cancellation": true,
+    "genuine_farm_update": true
+  }
+}
