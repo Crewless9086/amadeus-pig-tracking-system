@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-09-16 - Control Tower desktop transition route
+
+Added a pointer-only root `AGENTS.md`, an authoritative source-map pointer and a
+current mission-register entry so Codex desktop can reconstruct the existing
+Control Tower mission from one repository folder. Published the reviewed
+desktop handover, receipt, Linda execution finding and compact worktree, pull
+request and canonical queue inventories on the existing mission branch.
+
+The update records the separate local runtime candidate and its added
+shutdown-visibility review gate, preserves the incomplete plan-hash verifier and
+all owner/operational holds, and adds no application, workflow, selector,
+migration, permission, provider, farm or physical change.
+
 ## 2026-09-13 - PR1335 hosted fixture failure and local one-line amendment
 
 Approved 4859d8f1 was published as PR1335 and admitted under the existing morning

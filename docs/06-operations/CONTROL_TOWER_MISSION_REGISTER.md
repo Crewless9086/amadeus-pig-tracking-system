@@ -1,6 +1,58 @@
 # Control Tower Mission Register
 
 
+## 2026-09-16 - Desktop transition reconciliation prepared
+
+Continue existing Control Tower session `01a08bfa-ca70-7a01-91df-fc3dd3922598`.
+The authoritative documentation line is branch
+`control-tower/herd-operations-20260910`, starting from published commit
+`fbcb78611dea6280ced120eaf7f600d1c31f7f57`. Fresh production readback, current
+`origin/main` and PR #1336's merge are exact revision
+`3d321e4932cf205d03e759cc71a26edd411bc9d2`. Documentation publication does not
+merge or deploy that application revision.
+
+Read-only reconciliation found all 628 registered worktrees present, with 52
+dirty and 34 ahead of upstream; 96 pull requests remain open. Unique work in the
+main workspace, CORE, OOM SAKKIE, HERDMASTER, ROOTLINE, SAM, BEACON, CODEX UI and
+other registered lanes remains at its recorded location. None was reset,
+stashed, deleted, moved, merged or promoted merely from registration or open
+state. The sanitized canonical read found 91 nonterminal rows; their existing
+identities and wake conditions remain authoritative, and old `new` or
+`in_progress` states are not proof of active execution.
+
+The real Linda question reached GateKeeper execution `71008` and relay execution
+`71009`. The backend asked for a generic category instead of retrieving Linda's
+saved 2026-08-22 litter (9 total, 8 alive, 0 stillborn, 1 mummified, 8 active
+piglets). Relay validation returned `send_allowed:false`; no Telegram send node
+or provider delivery evidence followed. Record retrieval, delivered answer and
+contextual follow-up therefore failed. The bounded existing watcher remains the
+only observation process; do not request another owner attempt until a useful
+first-answer path is qualified.
+
+Local Oom Sakkie candidate `86bcee2709374353b7daf8d68bda839bac69337c`, tree
+`8582052f2cab5bf1a7abc4d26c27ebb085c6e23b`, remains preserved at
+`C:\tmp\omq-farm-brief-20260916`. Its 272-test/27-subtest pass establishes the
+documented local selection only. Full runtime qualification remains open because
+there is no named regression proving that a missed shutdown deadline or an
+unverified OFF state stays visible while routine reassessments are silent. C
+Camp's 01:35 SAST stop deadline and OFF observation at 02:04:24 remain an
+unresolved discrepancy. The scheduled observer's plan-hash verifier also remains
+incomplete.
+
+Prepared successor `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260916` must open
+`C:\tmp\amadeus-herd-control-20260910` and remain read-only through its
+verification. Coordinating ownership stays with the existing session until
+Charl explicitly transfers it after `DESKTOP VERIFICATION PASS`; the sessions
+must never dispatch concurrently or share the release lane.
+
+Latest handover:
+`control-tower-artifacts/CONTROL-TOWER-DESKTOP-TRANSITION-20260916/CONTROL_TOWER_DESKTOP_TRANSITION_HANDOVER_20260916.md`.
+Detailed receipt and fresh inventories are stored beside it. Existing migration,
+weaning, treatment, native-voice, permission, physical-operation, ROOTLINE and
+CHARLIE holds remain unchanged. This entry grants no new runtime-release,
+provider-publication, farm-write or physical authority.
+
+
 ## 2026-09-16 - Scheduled observer reconciled; farm-brief correction qualified
 
 Continue existing `OMQ-20260813-03`. Production remains on deployed web revision

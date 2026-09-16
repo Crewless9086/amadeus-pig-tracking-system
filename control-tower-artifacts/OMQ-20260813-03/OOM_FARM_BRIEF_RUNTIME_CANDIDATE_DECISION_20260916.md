@@ -103,6 +103,22 @@ all **272 herd tests and 27 subtests**, with zero skips and one warning, in
 
 Python compilation and `git diff --check` passed.
 
+## Additional independent shutdown-visibility gate
+
+C Camp's planned stop deadline was 01:35 SAST and controller OFF was observed at
+02:04:24. That discrepancy remains unresolved. Silencing routine reassessment
+noise must not silence a missed shutdown deadline or a shutdown that has not
+been controller-verified.
+
+The retained 272-test/27-subtest qualification does not contain a named
+regression that proves both of those exception states remain owner-visible.
+Before this exact candidate can receive a runtime release decision, an
+independent reviewer must verify the implemented classification and exercise
+both paths. If the current code does not meet the condition, any repair requires
+an exact successor, refreshed evidence and its own applicable runtime approval.
+Notification wording alone cannot classify the C Camp timing discrepancy as
+resolved.
+
 ## Required release controls
 
 Exact approval of this commit and tree is required before publication because it

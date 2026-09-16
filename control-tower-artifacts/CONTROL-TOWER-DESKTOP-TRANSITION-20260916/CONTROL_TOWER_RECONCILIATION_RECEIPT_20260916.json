@@ -1,0 +1,124 @@
+{
+  "contract_version": "core_mission_outcome_handover_v1",
+  "handover_id": "CONTROL-TOWER-DESKTOP-TRANSITION-20260916",
+  "mission_id": "CMQ-20260813-05",
+  "reporting_actor_type": "control_tower",
+  "terminal_disposition": "RECONCILIATION_PRESERVED_DESKTOP_SUCCESSOR_PREPARED",
+  "requested_lifecycle": "WORKING",
+  "existing_control_tower_session_id": "01a08bfa-ca70-7a01-91df-fc3dd3922598",
+  "prepared_successor_id": "CONTROL-TOWER-DESKTOP-SUCCESSOR-20260916",
+  "technical_milestones": [
+    "governance_preflight_complete",
+    "repository_reconciled",
+    "worktrees_preserved",
+    "canonical_queue_read",
+    "provider_revision_read",
+    "desktop_handover_prepared"
+  ],
+  "repository": {
+    "desktop_folder": "C:\\tmp\\amadeus-herd-control-20260910",
+    "branch": "control-tower/herd-operations-20260910",
+    "starting_head": "fbcb78611dea6280ced120eaf7f600d1c31f7f57",
+    "starting_upstream_head": "fbcb78611dea6280ced120eaf7f600d1c31f7f57",
+    "origin_main": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+    "mission_branch_unique_commits": 32,
+    "origin_main_unique_commits": 28
+  },
+  "live_state": {
+    "deployed_web_revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+    "deployed_identity_complete": true,
+    "pr_1336": "merged",
+    "candidate_commit": "86bcee2709374353b7daf8d68bda839bac69337c",
+    "candidate_tree": "8582052f2cab5bf1a7abc4d26c27ebb085c6e23b",
+    "candidate_state": "local_qualified_unapproved_unpublished",
+    "worktrees_registered": 628,
+    "worktrees_existing": 628,
+    "worktrees_dirty": 52,
+    "worktrees_ahead": 34,
+    "open_pull_requests": 96,
+    "canonical_nonterminal_rows_read": 91
+  },
+  "evidence": {
+    "operational_actor": {
+      "evidence_id": "CT-DESKTOP-TRANSITION-ACTOR-20260916",
+      "observed_at": "2026-09-16T14:42:09Z",
+      "result": "control_tower_documentation_reconciliation_only"
+    },
+    "genuine_trigger": {
+      "evidence_id": "LINDA-GATEKEEPER-71008",
+      "observed_at": "2026-09-16T14:27:22.427Z",
+      "created_by_terminal": false,
+      "provider": "telegram_via_n8n_gatekeeper"
+    },
+    "loaded_revision": {
+      "evidence_id": "RENDER-REVISION-READBACK-20260916",
+      "observed_at": "2026-09-16T14:45:00Z",
+      "revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+      "exact_match": true
+    },
+    "canonical_readback": {
+      "evidence_id": "CHARLIE-MISSION-QUEUE-READONLY-20260916",
+      "observed_at": "2026-09-16T14:42:09.249837Z",
+      "read_only": true,
+      "status": "ok"
+    },
+    "provider_result": {
+      "evidence_id": "LINDA-RELAY-71009",
+      "observed_at": "2026-09-16T14:27:49.195Z",
+      "result": "backend_generic_clarification_transport_delivery_unproved"
+    },
+    "physical_or_customer_result": {
+      "evidence_id": "CT-DESKTOP-NO-NEW-BUSINESS-OUTCOME-20260916",
+      "observed_at": "2026-09-16T14:48:00Z",
+      "result": "no_new_physical_or_customer_result"
+    },
+    "later_independent_cycle": {
+      "evidence_id": "LINDA-WATCHER-20260916",
+      "observed_at": "2026-09-16T14:34:09.962051Z",
+      "terminal_independent": false,
+      "result": "bounded_local_watcher_active_first_pair_only"
+    },
+    "safe_final_state": {
+      "evidence_id": "CT-DESKTOP-READONLY-GATE-20260916",
+      "observed_at": "2026-09-16T14:48:00Z",
+      "result": "current_session_retains_coordination_desktop_successor_read_only"
+    },
+    "replay_and_concurrency_containment": {
+      "evidence_id": "CT-SINGLE-COORDINATOR-GATE-20260916",
+      "observed_at": "2026-09-16T14:48:00Z",
+      "result": "explicit_transfer_required_before_successor_dispatch"
+    },
+    "automatic_follow_up_or_unresolved_work_ownership": {
+      "evidence_id": "CT-OWNER-LANE-MATRIX-20260916",
+      "observed_at": "2026-09-16T14:48:00Z",
+      "result": "unresolved_work_bound_to_existing_owner_locations_and_wake_conditions"
+    },
+    "owner_work_removal": {
+      "evidence_id": "CT-DESKTOP-HANDOVER-ROUTE-20260916",
+      "observed_at": "2026-09-16T14:48:00Z",
+      "before_manual_steps": 4,
+      "after_manual_steps": 1,
+      "result": "desktop_reconstructs_from_one_folder_and_one_prompt"
+    }
+  },
+  "next_safe_stage": "desktop_read_only_verification_then_explicit_owner_transfer",
+  "hold": {
+    "type": "PROTECTED_BOUNDARY",
+    "owner": "Charl",
+    "reason": "Prevent concurrent coordinators and preserve release-lane ownership.",
+    "wake_condition": "Desktop returns DESKTOP VERIFICATION PASS.",
+    "automatic_continuation_trigger": "Charl explicitly transfers coordinating ownership to CONTROL-TOWER-DESKTOP-SUCCESSOR-20260916."
+  },
+  "effects": {
+    "documentation_and_indexes_only": true,
+    "application_code_changed": false,
+    "migration_changed": false,
+    "workflow_changed": false,
+    "selector_changed": false,
+    "permission_changed": false,
+    "production_release_triggered": false,
+    "provider_write": false,
+    "farm_write": false,
+    "physical_operation": false
+  }
+}
