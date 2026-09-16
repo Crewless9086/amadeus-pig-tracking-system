@@ -5,7 +5,7 @@ import hashlib, json
 import re
 from typing import Any, Callable, Mapping
 from modules.oom_sakkie.rootline_daily_presentation import (
-    compose_daily_rootline_plan, owner_notification_required,
+    compose_daily_rootline_plan, owner_reassessment_notification_required,
 )
 from modules.oom_sakkie.rootline_material import (
     rootline_material_digest,
@@ -43,7 +43,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     observed = state_store("record_observation", observation["identity"], observation)
     if not isinstance(observed, Mapping) or observed.get("success") is not True:
         return _contained("rootline_reassessment_observation_unproven")
-    if not owner_notification_required(current):
+    if not owner_reassessment_notification_required(current):
         return {**_result("rootline_reassessment_observed_silently", material, notify=False),
                 "operating_date": operating_date,
                 "result_id": result_id,

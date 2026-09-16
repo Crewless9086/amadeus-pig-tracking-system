@@ -1010,42 +1010,26 @@ def _controller_reading(execution, key, state):
             return ""
     except ValueError:
         return ""
-    return at.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%Y-%m-%d %H:%M:%S SAST")
+    return at.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%H:%M:%S SAST")
+
+
+def _rootline_zone_label(zone):
+    return {"B12345": "B Camp", "C12345": "C Camp"}.get(str(zone), str(zone))
 
 
 def _rootline_irrigation_start_summary(zone, execution):
     observed = _controller_reading(execution, "start_evidence", "ON")
-    lines = ["<b>IRRIGATION CONTROLLER</b>", "",
-             f"{zone}: controller ON observed at {observed}." if observed else
-             f"{zone}: start reported; a timestamped controller ON reading is unavailable."]
-    limit = execution.get("planned_runtime_seconds")
-    if type(limit) is int and limit > 0:
-        minutes, seconds = divmod(limit, 60)
-        lines.append(f"Configured segment limit: {minutes}m {seconds}s.")
-    lines.append("ROOTLINE will check shutdown. Water flow and elapsed watering time are not measured by this controller reading.")
-    return "\n".join(lines)
+    label = _rootline_zone_label(zone)
+    return (f"🟢 {label} irrigation ON — controller verified at {observed}." if observed else
+            f"⚠️ {label} irrigation start reported; controller ON verification is unavailable.")
 
 
 def _rootline_irrigation_completion_summary(zone, execution):
     """Describe observed controller state without promoting a planned limit to flow evidence."""
     stopped = _controller_reading(execution, "shutdown_evidence", "OFF")
-    started = _controller_reading(execution, "start_evidence", "ON")
-    lines = ["<b>IRRIGATION CONTROLLER</b>", "",
-             f"{zone}: controller OFF verified at {stopped}." if stopped else
-             f"{zone}: completion reported; a timestamped controller OFF reading is unavailable."]
-    if started:
-        lines.append(f"Controller ON was observed at {started}.")
-    lines.append("These are controller reading times. Actual watering duration and delivered volume are unverified.")
-    if execution.get("job_completed") is False:
-        lines.append("The full watering job remains incomplete; ROOTLINE owns the follow-up.")
-    if execution.get("fertilizer_delivery_verified") is True:
-        injections = execution.get("verified_fertilizer_injection_count")
-        mixes = execution.get("verified_fertilizer_mixing_count")
-        if isinstance(injections, int):
-            lines.append(f"Verified fertilizer injections: {injections}.")
-        if isinstance(mixes, int):
-            lines.append(f"Verified mixing cycles: {mixes}.")
-    return "\n".join(lines)
+    label = _rootline_zone_label(zone)
+    return (f"⚪ {label} irrigation OFF — controller verified at {stopped}." if stopped else
+            f"⚠️ {label} irrigation completion reported; controller OFF verification is unavailable.")
 
 
 def _canonical_rootline_plan_receipt(current):

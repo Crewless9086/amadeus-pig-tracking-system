@@ -52,6 +52,21 @@ def owner_notification_required(result: Mapping[str, Any]) -> bool:
     } for zone in ZONES if isinstance(lifecycle.get(zone), Mapping))
 
 
+def owner_reassessment_notification_required(result: Mapping[str, Any]) -> bool:
+    """Keep routine polling silent; direct execution owns ON/OFF notices."""
+    brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
+    if _owner_question(brief.get("family_fact_needed")):
+        return True
+    lifecycle = result.get("irrigation_lifecycle")
+    if not isinstance(lifecycle, Mapping):
+        # Older injected/test callers do not carry the typed lifecycle. Keep
+        # their notification contract; production specialist results always
+        # carry it and use the stricter reassessment rule below.
+        return True
+    return any(str((lifecycle.get(zone) or {}).get("state") or "") == "Failed"
+               for zone in ZONES if isinstance(lifecycle.get(zone), Mapping))
+
+
 def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
                                 specialist_loader: Callable[[], Mapping[str, Any]],
                                 state_store: Callable[[str, str, Any], Any],
@@ -190,15 +205,44 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
     question = _owner_question(brief.get("family_fact_needed"))
     reassess = _human_reassessment(brief.get("reassess") or _next_reassessment(result),
         now_hint=result.get("evidence_cutoff"))
+    outcomes = [row for row in result.get("recent_irrigation_outcomes") or ()
+                if isinstance(row, Mapping)
+                and row.get("controller_on_verified") is True
+                and row.get("controller_off_verified") is True]
+    overnight = []
+    for row in outcomes:
+        label = ({"B12345": "B Kamp" if af else "B Camp",
+                  "C12345": "C Kamp" if af else "C Camp"}
+                 .get(str(row.get("zone_id") or ""), str(row.get("zone_id") or "")))
+        on_at = _owner_clock(row.get("controller_on_at"))
+        off_at = _owner_clock(row.get("controller_off_at"))
+        if on_at and off_at:
+            overnight.append(f"{label} 🟢 AAN {on_at}; ⚪ AF {off_at}" if af else
+                             f"{label} 🟢 ON {on_at}; ⚪ OFF {off_at}")
+    title = (("Oornagbesproeiing: " if af else "Overnight irrigation: ")
+             + "; ".join(overnight)) if overnight else (
+             ("Besproeiing: " if af else "Irrigation: ") + "; ".join(decisions))
+    why = _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af)
+    if overnight:
+        why = (("Huidige plan: " if af else "Current plan: ")
+               + "; ".join(decisions) + ". " + why)
     return {
-        "title": ("Besproeiing: " if af else "Irrigation: ") + "; ".join(decisions),
-        "why": _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af),
-        "next_action": (("ROOTLINE heroorweeg outomaties" if af else
-                         "ROOTLINE will reassess automatically")
-                        + (" wanneer vars lesings of veranderde toestande beskikbaar is." if af else
-                           " when fresh readings or changed conditions are available.")),
+        "title": title,
+        "why": why,
+        "next_action": ("ROOTLINE behou enige onvoltooide deel en meld slegs 'n wesenlike uitsondering."
+                        if af else "ROOTLINE retains any unfinished segment and reports only a material exception."),
         "question": question,
     }
+
+
+def _owner_clock(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return ""
+    if parsed.tzinfo is None:
+        return ""
+    return parsed.astimezone(SAST).strftime("%H:%M")
 
 
 def _fresh_result(result: Any, now: datetime) -> bool:

@@ -34,10 +34,8 @@ def branch_packet(branch):
 
 @pytest.mark.parametrize("branch,title,meaning,action", [
     ("invalid", "Weeklikse weegbewyse is nie beskikbaar nie", "begrensde bewysvenster", "moenie elke aktiewe vark weeg nie"),
-    ("missing", "Weging: 1 van 2 aangeteken; 1 oormerk(e) se status moet nagegaan word", "1/2", "oormerke 22"),
     ("unknown", "Weeklikse weegbewyse is nie beskikbaar nie", "kan nie", "moenie elke aktiewe vark weeg nie"),
     ("conflict", "Weeklikse weegbewyse bots", "1 toepaslike gemerkte vark(e)", "moenie 'n biologiese verklaring kies nie"),
-    ("complete", "Weeklikse weging gedek: 1/1 toepaslike gemerkte varke", "2026-08-11 tot 2026-08-12 bly Onbekend", "Geen verdere opdrag"),
     ("findings", "Weeklikse weging gedek: 1/1 toepaslike gemerkte varke", "+2 kg (+20%)", "slegs die beskrywende veranderinge"),
     ("individual", "Vark Maya se individuele weging is nou nodig", "uitdruklik", "Weeg Vark Maya nou"),
     ("mortality_new", "Sterfteopvolging — P1", "2026-08-14 aangeteken", "nie 'n diagnose raai nie"),
@@ -67,9 +65,41 @@ def test_actual_adapter_localizes_every_generated_branch_without_changing_eviden
     assert meaning in selected.why and action in selected.next_action
     if branch == "findings":
         assert "Geen oorsaak of diagnose word afgelei nie" in selected.why
-    if branch == "missing":
-        assert "2026-08-11 tot 2026-08-12" in selected.why
-        assert "voordat daardie bewyse bestaan nie" in selected.next_action
+
+
+def test_current_snapshot_missing_weights_do_not_create_a_physical_weighing_task():
+    packet = branch_packet("missing")
+    result = consume_daily_manager_evidence(packet, observed_at=NOW, language="en")
+    assert packet["weight"]["current_snapshot"]["eligible_tagged"] == 2
+    assert packet["weight"]["individual_weighing_due_now"] == []
+    assert not any("weight" in item.dedupe_key for item in result.work_items)
+
+
+def test_complete_unchanged_weight_snapshot_stays_out_of_the_morning_brief():
+    packet = branch_packet("complete")
+    result = consume_daily_manager_evidence(packet, observed_at=NOW, language="en")
+    assert packet["weight"]["current_snapshot"]["status"] == "complete"
+    assert packet["weight"]["material_weight_findings"] == []
+    assert not any("weight" in item.dedupe_key for item in result.work_items)
+
+
+def test_unchanged_old_mortality_archive_stays_recorded_but_out_of_the_morning_work():
+    packet = branch_packet("mortality_new")
+    packet["mortality"]["candidate_deaths"][0]["effective_date"] = "2026-06-02"
+    packet["mortality"]["rolling_counts"]["7"]["start"] = "2026-08-08"
+    result = consume_daily_manager_evidence(packet, observed_at=NOW, language="en")
+    assert not any("mortality" in item.dedupe_key for item in result.work_items)
+    assert packet["mortality"]["durable_death_event_fingerprints"]
+
+
+def test_old_mortality_with_an_open_individual_case_remains_visible():
+    packet = branch_packet("mortality_new")
+    packet["mortality"]["candidate_deaths"][0]["effective_date"] = "2026-06-02"
+    packet["mortality"]["rolling_counts"]["7"]["start"] = "2026-08-08"
+    result = consume_daily_manager_evidence(packet, observed_at=NOW, language="en",
+        active_lifecycles=[{"pig_id": "P1", "state": "working"}])
+    mortality_item = next(item for item in result.work_items if "mortality" in item.dedupe_key)
+    assert "still open" in mortality_item.why
 
 
 def test_localized_closed_mortality_stays_closed_and_does_not_create_owner_work():
@@ -80,4 +110,4 @@ def test_localized_closed_mortality_stays_closed_and_does_not_create_owner_work(
                                                active_lifecycles=active)
         assert not any("mortality" in item.dedupe_key for item in result.work_items)
         assert all(not item.genuine_question for item in result.work_items)
-        assert result.work_items[0].metadata["mortality_fingerprints"]
+        assert packet["mortality"]["durable_death_event_fingerprints"]

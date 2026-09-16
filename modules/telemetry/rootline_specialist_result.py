@@ -76,11 +76,14 @@ def build_rootline_specialist_result(
     owner_questions = _owner_questions(plan, evidence, recommendations)
     overall = _overall_status(recommendations)
     cutoff = _evidence_cutoff(plan, generated_at)
+    recent_irrigation_outcomes = _recent_irrigation_outcomes(
+        evidence.get("irrigation_history"), generated_at)
     identity_material = {
         "contract": CONTRACT_VERSION,
         "operating_date": selected_date,
         "evidence_generation": plan["evidence_generation"],
         "recommendations": recommendations,
+        "recent_irrigation_outcomes": recent_irrigation_outcomes,
     }
     generation = sha256(
         json.dumps(identity_material, sort_keys=True, default=str).encode()
@@ -108,6 +111,7 @@ def build_rootline_specialist_result(
         "recommendations": recommendations,
         "irrigation_lifecycle": _irrigation_lifecycle(
             recommendations, evidence.get("irrigation_history")),
+        "recent_irrigation_outcomes": recent_irrigation_outcomes,
         "next_reassessment": reassessment,
         "owner_questions": owner_questions,
         "outcome_separation": {
@@ -133,6 +137,49 @@ def _irrigation_lifecycle(recommendations, irrigation_history):
         recommendation=indexed.get(zone), history=histories.get(zone),
         execution=(histories.get(zone) or {}).get("latest_execution"))
         for zone in ("B12345", "C12345")}
+
+
+def _recent_irrigation_outcomes(irrigation_history, generated_at):
+    """Project recent authoritative controller boundaries without a duration."""
+    histories = ((irrigation_history or {}).get("zones") or {}
+                 if isinstance(irrigation_history, dict) else {})
+    outcomes = []
+    for zone in ("B12345", "C12345"):
+        execution = (histories.get(zone) or {}).get("latest_execution") or {}
+        if not isinstance(execution, dict) or str(execution.get("zone_id") or zone) != zone:
+            continue
+        started = _verified_controller_time(execution, "start_evidence", "ON")
+        stopped = _verified_controller_time(execution, "shutdown_evidence", "OFF")
+        if not started or not stopped or stopped < started:
+            continue
+        if stopped < generated_at - timedelta(hours=12) or stopped > generated_at:
+            continue
+        outcomes.append({
+            "zone_id": zone,
+            "execution_id": str(execution.get("execution_id") or ""),
+            "controller_on_at": started.isoformat(),
+            "controller_off_at": stopped.isoformat(),
+            "controller_on_verified": True,
+            "controller_off_verified": True,
+            "watering_duration_supported": False,
+            "delivered_volume_supported": False,
+        })
+    return outcomes
+
+
+def _verified_controller_time(execution, key, state):
+    evidence = execution.get(key)
+    if (not isinstance(evidence, dict) or evidence.get("authoritative") is not True
+            or str(evidence.get("state") or "").upper() != state):
+        return None
+    try:
+        observed = datetime.fromisoformat(
+            str(evidence.get("observed_at") or "").replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if observed.tzinfo is None:
+        return None
+    return _as_za(observed)
 
 
 def build_current_rootline_specialist_result(
