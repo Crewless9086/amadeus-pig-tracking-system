@@ -12,6 +12,38 @@ Use `VAULT_MIGRATION_INVENTORY.md` to track migration status and archive readine
 
 Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md`.
 
+Latest Control Tower desktop-transition handover:
+
+- Branch: `control-tower/herd-operations-20260910`
+- Path:
+  `control-tower-artifacts/CONTROL-TOWER-DESKTOP-TRANSITION-20260916/CONTROL_TOWER_DESKTOP_TRANSITION_HANDOVER_20260916.md`
+- Receipt:
+  `control-tower-artifacts/CONTROL-TOWER-DESKTOP-TRANSITION-20260916/CONTROL_TOWER_RECONCILIATION_RECEIPT_20260916.json`
+- Scope: read-only reconciliation, mission/worktree preservation and a linked
+  desktop successor. The successor remains read-only until its verification
+  passes and coordinating ownership is explicitly transferred. This route adds
+  no runtime, provider, database, farm or release authority.
+- Detailed inventories beside the handover cover registered worktrees, open pull
+  requests, the canonical mission queue and Linda's genuine acceptance failure.
+
+Latest Oom Sakkie mission handover:
+
+- Branch: `control-tower/herd-operations-20260910`
+- Path: `control-tower-artifacts/OMQ-20260813-03/OOM_SCHEDULED_OBSERVER_AND_FARM_BRIEF_CORRECTION_HANDOVER_20260916.md`
+- Exact local candidate decision:
+  `control-tower-artifacts/OMQ-20260813-03/OOM_FARM_BRIEF_RUNTIME_CANDIDATE_DECISION_20260916.md`
+- Scheduled evidence:
+  `control-tower-artifacts/OMQ-20260813-03/PR1336_SCHEDULED_OBSERVER_RESULT_20260916.json`
+- Previous handover:
+  `control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_DEPLOYED_AND_TELEGRAM_ACCEPTANCE_HANDOVER_20260916.md`
+- Scope: deployed PR #1336 revision, bounded scheduled evidence, reconciled
+  weighing/mortality/irrigation findings, and the qualified but unpublished
+  actionable-brief runtime correction. This is current-state evidence, not
+  reusable doctrine.
+- Dependency baseline: the preserved 2026-08-13 Phase 0 register at
+  `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`;
+  its Oom Sakkie Telegram rows are refreshed by the handover above.
+
 ## Common Mandatory Governance Pack
 
 - `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
