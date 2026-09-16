@@ -1,5 +1,50 @@
 # Control Tower Mission Register
 
+
+## 2026-09-16 - PR #1336 deployed; scoped reply-ID correction published
+
+Continue existing `OMQ-20260813-03`. The sole release operator deployed merge
+`3d321e4932cf205d03e759cc71a26edd411bc9d2` to only web service
+`srv-d6sijjkhg0os73f7regg` as Render deploy `dep-daks09jl550s73alg2g0` in the
+approved fresh-date window. Production revision readback is exact, both identity
+checks were empty, bindings were unchanged and all other eight services remained
+unchanged. Candidate lineage remains approved `cca25516ec9848afd3c629216c244afdad5850a6`
+plus independently reviewed fixture successor
+`231305595391a982755b1dc916a1e6c2e4e19ca6`, tree
+`4162aaea74fc60a52039d0262a1e830bd550336e`; all required candidate and merge
+checks passed with the first merge-audit server-start failure preserved.
+
+The single corrected model probe remains successful and unrepeated: HTTP 200,
+usable `OK`, `gpt-5.4-mini-2026-03-17`, finish `stop`, not truncated, 15 tokens.
+The approved relay reply-ID correction was published once to active n8n version
+`84decfbb-62a9-4298-b9c6-f927dd4b59e4`. Only node
+`2d0b4a5a-0002-4f41-b7db-2c3c5d1a9d02` field `parameters.jsCode` changed, from
+hash `a8bb6a2a492e2f59ef8a6e7a76863a7b8e64acabe4fc87b1215dfb58c2ae2708`
+to `cd7e2d56185ee2f33e6bc5a2b1c8411a48e78dc74c5a4493e1eee45224aa38f0`.
+The relay never went inactive; its saved and published versions match and all
+other nodes, connections and mutable sections remained exact. The three voice
+fields remain separately held.
+
+Telegram still points to n8n GateKeeper `s8QaxmqT69Z5mhvE`, which remains the
+interim transport owner. The implemented replacement is backend route
+`POST /api/oom-sakkie/channels/telegram/direct-webhook`; all five exact Render
+inputs are configured, but sole-webhook cutover and no-loss/no-duplicate live
+acceptance remain incomplete. No new n8n business logic was added.
+
+Historical callback effects remain reconciled: Linda farrowing execution `66743`
+and tag-138 mortality execution `66840` each saved once despite timeout; Anton's
+execution `66837` was denied with no write. They must not be retried. The live
+Linda question was requested after baseline GateKeeper/relay executions
+`70783`/`70784`; its actual delivered reply and contextual follow-up remain
+pending. The genuine 06:45 scheduled observation remains time-dependent.
+
+Latest authoritative handover:
+`control-tower/herd-operations-20260910` /
+`control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_DEPLOYED_AND_TELEGRAM_ACCEPTANCE_HANDOVER_20260916.md`.
+The prior handover and main-branch gap remain visible. Existing migration,
+weaning, treatment, voice, permission, physical-operation, ROOTLINE and CHARLIE
+holds remain unchanged.
+
 ## 2026-09-15 - PR #1336 merged; release waiting, Telegram retirement state reconciled
 
 Continue existing `OMQ-20260813-03`. PR #1336 merged as

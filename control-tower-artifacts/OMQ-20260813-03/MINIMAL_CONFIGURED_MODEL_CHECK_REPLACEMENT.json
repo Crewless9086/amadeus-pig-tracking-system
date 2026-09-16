@@ -1,0 +1,47 @@
+{
+  "observed_at": "2026-09-15T17:17:06.400231+00:00",
+  "scope": "one_corrected_replacement_configured_model_request",
+  "render_service_id": "srv-d6sijjkhg0os73f7regg",
+  "configuration": {
+    "router_enabled_value": "true",
+    "model": "gpt-5.4-mini",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "api_key_present": true,
+    "api_key_value_or_digest_recorded": false
+  },
+  "provider_post_attempts": 1,
+  "automatic_retry": false,
+  "farm_record_reads": 0,
+  "farm_record_writes": 0,
+  "configuration_or_billing_changes": 0,
+  "replaces_failed_probe_request_id": "req_654bfea2081a4674871ac1b408611950",
+  "http_status": 200,
+  "response_headers": {
+    "x-request-id": "req_1a06d85882b74eaa93c4ec64c63b2913",
+    "openai-organization": "personal-pesc9i",
+    "openai-project": "proj_Dl2M53vn3X5VcfFiVnFip0Vd"
+  },
+  "success": true,
+  "usable_response": true,
+  "truncated": false,
+  "status": "configured_model_request_completed",
+  "response_id": "chatcmpl-EOR4IuuBpXtCWtKsfJf8wqDSeXc5s",
+  "response_model": "gpt-5.4-mini-2026-03-17",
+  "finish_reason": "stop",
+  "reply": "OK",
+  "usage": {
+    "prompt_tokens": 11,
+    "completion_tokens": 4,
+    "total_tokens": 15,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}

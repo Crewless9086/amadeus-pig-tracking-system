@@ -1,5 +1,22 @@
 # Implementation Source Map
 
+
+## 2026-09-16 - Deployed PR #1336 and published Telegram reply identity
+
+Current mission state is on branch `control-tower/herd-operations-20260910` in
+`control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_DEPLOYED_AND_TELEGRAM_ACCEPTANCE_HANDOVER_20260916.md`.
+Production web now serves merge `3d321e4932cf205d03e759cc71a26edd411bc9d2`.
+The active n8n relay version is `84decfbb-62a9-4298-b9c6-f927dd4b59e4`, with
+only the approved `parameters.jsCode` reply-ID field changed and exactly verified.
+GateKeeper remains the sole provider owner; the three voice fields remain held.
+
+The backend replacement remains
+`POST /api/oom-sakkie/channels/telegram/direct-webhook` in
+`modules/oom_sakkie/routes.py` and `modules/oom_sakkie/telegram_direct.py`.
+It is implemented and configured. Retirement still requires genuine text,
+reply, confirm, cancel and scheduled acceptance, then a controlled sole-webhook
+cutover and backend-only no-loss/no-duplicate observation before n8n deactivation.
+
 ## 2026-09-15 - Current PR #1336 release and Oom Sakkie Telegram retirement handover
 
 The current mission state is tracked on branch

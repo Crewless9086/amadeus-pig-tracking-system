@@ -15,10 +15,11 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 Latest Oom Sakkie mission handover:
 
 - Branch: `control-tower/herd-operations-20260910`
-- Path: `control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_RELEASE_AND_N8N_RETIREMENT_HANDOVER_20260915.md`
-- Scope: dated PR #1336 release, Telegram callback reconciliation and current
-  backend-replacement/n8n-retirement state. This is current-state evidence, not
-  reusable doctrine.
+- Path: `control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_DEPLOYED_AND_TELEGRAM_ACCEPTANCE_HANDOVER_20260916.md`
+- Previous handover: `control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_RELEASE_AND_N8N_RETIREMENT_HANDOVER_20260915.md`
+- Scope: deployed PR #1336 revision, published scoped reply-ID correction,
+  Telegram acceptance baseline and current backend-replacement/n8n-retirement
+  boundary. This is current-state evidence, not reusable doctrine.
 - Dependency baseline: the preserved 2026-08-13 Phase 0 register at
   `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`;
   its Oom Sakkie Telegram rows are refreshed by the handover above.

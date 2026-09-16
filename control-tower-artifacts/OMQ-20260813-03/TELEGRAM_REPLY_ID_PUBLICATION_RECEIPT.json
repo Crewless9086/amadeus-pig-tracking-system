@@ -1,0 +1,49 @@
+{
+  "schema": "telegram_reply_id_publication_receipt_v1",
+  "attempted_at": "2026-09-16T03:32:23.480391+00:00",
+  "completed_at": "2026-09-16T03:32:25.532979+00:00",
+  "status": "PUBLISHED_AND_EXACTLY_VERIFIED",
+  "workflow_id": "TlKy9kUgJJE0msU4",
+  "workflow_name": "2.0B - Oom Sakkie Backend Read-Only Relay",
+  "node_id": "2d0b4a5a-0002-4f41-b7db-2c3c5d1a9d02",
+  "node_name": "Code - Normalize GateKeeper Message",
+  "field": "parameters.jsCode",
+  "active_version_before": "b90f2f4d-399b-4d1d-beb2-eb28551105bb",
+  "active_version_after": "84decfbb-62a9-4298-b9c6-f927dd4b59e4",
+  "draft_version_after": "84decfbb-62a9-4298-b9c6-f927dd4b59e4",
+  "before_sha256": "a8bb6a2a492e2f59ef8a6e7a76863a7b8e64acabe4fc87b1215dfb58c2ae2708",
+  "published_after_sha256": "cd7e2d56185ee2f33e6bc5a2b1c8411a48e78dc74c5a4493e1eee45224aa38f0",
+  "saved_after_sha256": "cd7e2d56185ee2f33e6bc5a2b1c8411a48e78dc74c5a4493e1eee45224aa38f0",
+  "put_attempts": 1,
+  "http_status": 200,
+  "workflow_remained_active": true,
+  "published_and_saved_versions_match": true,
+  "connections_unchanged": true,
+  "all_non_node_mutable_sections_unchanged": true,
+  "unchanged_section_checks": {
+    "name": true,
+    "description": true,
+    "connections": true,
+    "nodeGroups": true,
+    "settings": true,
+    "staticData": true,
+    "pinData": true
+  },
+  "node_count_before": 7,
+  "node_count_after": 7,
+  "only_approved_node_field_changed": true,
+  "rollback": {
+    "precondition_after_sha256": "cd7e2d56185ee2f33e6bc5a2b1c8411a48e78dc74c5a4493e1eee45224aa38f0",
+    "restore_before_sha256": "a8bb6a2a492e2f59ef8a6e7a76863a7b8e64acabe4fc87b1215dfb58c2ae2708",
+    "exact_before_value_source": "TELEGRAM_REPLY_ID_SCOPED_CHANGE.json",
+    "scope": "parameters.jsCode"
+  },
+  "effects": {
+    "workflow_gets": 2,
+    "workflow_puts": 1,
+    "workflow_unpublishes": 0,
+    "workflow_executions": 0,
+    "telegram_messages_sent": 0,
+    "farm_writes": 0
+  }
+}

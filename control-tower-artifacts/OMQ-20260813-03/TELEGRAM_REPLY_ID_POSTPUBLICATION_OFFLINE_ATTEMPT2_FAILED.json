@@ -1,0 +1,13 @@
+{
+  "attempted_at": "2026-09-16T03:36:00Z",
+  "status": "FAILED_VERIFIER_RETURN_ARITY",
+  "verified_before_failure": {
+    "published_reply_to_message_id": "900",
+    "farrowing_context_selected": "SYNTHETIC-LINDA"
+  },
+  "failure": "ValueError: too many values to unpack (expected 2)",
+  "cause": "The offline verifier unpacked two values from a runtime helper whose contract returns three.",
+  "production_or_provider_effect": false,
+  "farm_effect": false,
+  "correction_scope": "Correct the verifier unpacking only; do not change runtime code or expected outcomes."
+}

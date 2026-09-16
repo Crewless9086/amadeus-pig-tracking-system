@@ -1,0 +1,171 @@
+{
+  "candidate": "231305595391a982755b1dc916a1e6c2e4e19ca6",
+  "candidate_tree": "4162aaea74fc60a52039d0262a1e830bd550336e",
+  "merge_sha": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+  "service_id": "srv-d6sijjkhg0os73f7regg",
+  "target_date_sast": "2026-09-16",
+  "started_at": "2026-09-15T22:00:48.423216+00:00",
+  "release_lock_owner": {
+    "pid": 40492,
+    "created_epoch": 1789509648.4206982,
+    "created_at": "2026-09-15T22:00:48.420698+00:00"
+  },
+  "scope_before": [
+    {
+      "id": "srv-dacofeoae00c73813eug",
+      "latest_deploy": "dep-dad64em7bikc739rcsng",
+      "revision": "cd2ff4acc398eb134050b843c012e3bebb662989",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d9vvpi9t0dsc738hjc70",
+      "latest_deploy": "dep-dahnaqcs728c73bkacfg",
+      "revision": "00d1bfa93e7abfad64f50cb828e4b03cf77e23e3",
+      "configuration_unchanged": true,
+      "last_successful_run_at": "2026-09-15T22:00:27Z"
+    },
+    {
+      "id": "crn-d9us6a3m8hqs73dgn91g",
+      "latest_deploy": "dep-d9us6jtbedkc73bv6dqg",
+      "revision": "8f8ec3b2d269dff1f8d4c9c9217533040d912ce6",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d9us4d3ncjis73adehrg",
+      "latest_deploy": "dep-dai64me743jc739h1ua0",
+      "revision": "203a7e9b44db5edf644a3ee1feba54118b12ede6",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d8a8q56l51nc73cif04g",
+      "latest_deploy": "dep-dahnaqks728c73bkacig",
+      "revision": "00d1bfa93e7abfad64f50cb828e4b03cf77e23e3",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "srv-d6sijjkhg0os73f7regg",
+      "latest_deploy": "dep-dajhr6ek1f9s73dn6t2g",
+      "revision": "9edc57d643bae3974f3321478fc59e1631c50623",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d5cc6sjuibrs73e8pu6g",
+      "latest_deploy": "dep-d87s7eh9rddc73atie5g",
+      "revision": "3bd47c5a415185078e22a947ef4a5067dcf402b3",
+      "configuration_unchanged": true,
+      "last_successful_run_at": "2026-09-15T21:55:34Z"
+    },
+    {
+      "id": "crn-d5a0plhr0fns73837e8g",
+      "latest_deploy": "dep-d9ndpj9t0dsc7390slmg",
+      "revision": "d40b9f408954babf22ee227fc88f63c9bddd255b",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d55dlp6mcj7s73f9smtg",
+      "latest_deploy": "dep-d87od8gjs32c73edh9b0",
+      "revision": "fb7a69006951439830c08a66d6025a756ca50331",
+      "configuration_unchanged": true,
+      "last_successful_run_at": "2026-09-15T21:55:36Z"
+    }
+  ],
+  "effects": "Only the approved web deployment and, if needed, its cancellation; no operational invocation.",
+  "status": "web_deployed_scheduled_acceptance_pending",
+  "updated_at": "2026-09-15T22:03:29.828659+00:00",
+  "request_body": {
+    "commitId": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+    "clearCache": "do_not_clear"
+  },
+  "first_identity_check_completed_at": "2026-09-15T22:01:09.125324+00:00",
+  "bindings_sha256": "8c83d53c0a17b2a4517797e502f0e5f8fd37e67dde1fc8e1d394264a6439771e",
+  "deploy_id": "dep-daks09jl550s73alg2g0",
+  "provider_status": "build_in_progress",
+  "provider_finished_at": "2026-09-15T22:02:50.592071Z",
+  "loaded_revision": {
+    "identity_complete": true,
+    "provider": "render",
+    "revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+    "status": "ok"
+  },
+  "second_identity_check_completed_at": "2026-09-15T22:03:17.735719+00:00",
+  "both_identity_checks_empty": true,
+  "bindings_unchanged": true,
+  "deployed": true,
+  "scope_after": [
+    {
+      "id": "srv-dacofeoae00c73813eug",
+      "latest_deploy": "dep-dad64em7bikc739rcsng",
+      "revision": "cd2ff4acc398eb134050b843c012e3bebb662989",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d9vvpi9t0dsc738hjc70",
+      "latest_deploy": "dep-dahnaqcs728c73bkacfg",
+      "revision": "00d1bfa93e7abfad64f50cb828e4b03cf77e23e3",
+      "configuration_unchanged": true,
+      "last_successful_run_at": "2026-09-15T22:02:17Z"
+    },
+    {
+      "id": "crn-d9us6a3m8hqs73dgn91g",
+      "latest_deploy": "dep-d9us6jtbedkc73bv6dqg",
+      "revision": "8f8ec3b2d269dff1f8d4c9c9217533040d912ce6",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d9us4d3ncjis73adehrg",
+      "latest_deploy": "dep-dai64me743jc739h1ua0",
+      "revision": "203a7e9b44db5edf644a3ee1feba54118b12ede6",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d8a8q56l51nc73cif04g",
+      "latest_deploy": "dep-dahnaqks728c73bkacig",
+      "revision": "00d1bfa93e7abfad64f50cb828e4b03cf77e23e3",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "srv-d6sijjkhg0os73f7regg",
+      "latest_deploy": "dep-daks09jl550s73alg2g0",
+      "revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d5cc6sjuibrs73e8pu6g",
+      "latest_deploy": "dep-d87s7eh9rddc73atie5g",
+      "revision": "3bd47c5a415185078e22a947ef4a5067dcf402b3",
+      "configuration_unchanged": true,
+      "last_successful_run_at": "2026-09-15T22:01:08Z"
+    },
+    {
+      "id": "crn-d5a0plhr0fns73837e8g",
+      "latest_deploy": "dep-d9ndpj9t0dsc7390slmg",
+      "revision": "d40b9f408954babf22ee227fc88f63c9bddd255b",
+      "configuration_unchanged": true,
+      "last_successful_run_at": null
+    },
+    {
+      "id": "crn-d55dlp6mcj7s73f9smtg",
+      "latest_deploy": "dep-d87od8gjs32c73edh9b0",
+      "revision": "fb7a69006951439830c08a66d6025a756ca50331",
+      "configuration_unchanged": true,
+      "last_successful_run_at": "2026-09-15T22:01:02Z"
+    }
+  ],
+  "required_acceptance": [
+    "two consecutive genuine manager cycles with useful progress",
+    "genuine 06:45 recipient-specific morning plan",
+    "later scheduled duplicate suppression and follow-up"
+  ],
+  "business_complete": false
+}

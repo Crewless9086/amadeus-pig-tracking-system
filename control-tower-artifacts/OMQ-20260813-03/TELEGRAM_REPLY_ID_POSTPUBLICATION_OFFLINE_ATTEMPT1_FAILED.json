@@ -1,0 +1,13 @@
+{
+  "attempted_at": "2026-09-16T03:35:00Z",
+  "status": "FAILED_SYNTHETIC_FIXTURE_TIMESTAMP",
+  "verified_before_failure": {
+    "published_reply_to_message_id": "900",
+    "exact_inverse_reply_to_message_id": ""
+  },
+  "failure": "farrowing_reply_context_mismatch",
+  "cause": "The synthetic retained contexts used a wall-clock timestamp later than the fixed synthetic provider timestamp, so the runtime correctly excluded them as non-current before card selection.",
+  "production_or_provider_effect": false,
+  "farm_effect": false,
+  "correction_scope": "Use a retained-context timestamp derived from the same fixed synthetic provider timestamp; do not change runtime code or assertions."
+}

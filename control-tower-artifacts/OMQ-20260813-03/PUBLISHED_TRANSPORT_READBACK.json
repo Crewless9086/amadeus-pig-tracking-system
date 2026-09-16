@@ -1,0 +1,93 @@
+{
+  "observed_at": "2026-09-16T03:32:42.003179+00:00",
+  "candidate": "231305595391a982755b1dc916a1e6c2e4e19ca6",
+  "workflows": [
+    {
+      "id": "s8QaxmqT69Z5mhvE",
+      "name": "2 - The GateKeeper",
+      "active": true,
+      "active_version_id": "00c44771-9a6c-4a4e-bcb4-087a0502908e",
+      "version_id": "00c44771-9a6c-4a4e-bcb4-087a0502908e",
+      "updated_at": "2026-08-25T08:16:14.857Z",
+      "uses_published_nodes": true,
+      "registered_webhook_matching_nodes": [
+        "Telegram Trigger"
+      ],
+      "response_sha256": "ed8a1c4563fa9345cf5aba8c5fa868a131431f9f832d40f5b961f55217fcf34b"
+    },
+    {
+      "id": "TlKy9kUgJJE0msU4",
+      "name": "2.0B - Oom Sakkie Backend Read-Only Relay",
+      "active": true,
+      "active_version_id": "84decfbb-62a9-4298-b9c6-f927dd4b59e4",
+      "version_id": "84decfbb-62a9-4298-b9c6-f927dd4b59e4",
+      "updated_at": "2026-09-16T03:32:24.347Z",
+      "uses_published_nodes": true,
+      "registered_webhook_matching_nodes": [],
+      "response_sha256": "d53ff5454b5ff0e3b0974190c5f35a90c128a764ea8790e0dbb589bb4d752a16"
+    }
+  ],
+  "retained_patch_fields": [
+    {
+      "workflow_id": "s8QaxmqT69Z5mhvE",
+      "node": "Code - Gate BEACON Single Photo",
+      "field": "parameters.jsCode",
+      "active_version_matches_retained_patch": true,
+      "current_sha256": "4d762cdeb14244152fff137178f04ded42f798d3625f9ae7025e7902e4eeea24",
+      "matches_before": true,
+      "matches_after": false
+    },
+    {
+      "workflow_id": "s8QaxmqT69Z5mhvE",
+      "node": "Switch - BEACON Media Intake",
+      "field": "parameters.rules.values",
+      "active_version_matches_retained_patch": true,
+      "current_sha256": "6d09bb05c23a2c53b0a250dbc740b7ce8de2147549ec1c92b1af696fea1a2e1e",
+      "matches_before": true,
+      "matches_after": false
+    },
+    {
+      "workflow_id": "s8QaxmqT69Z5mhvE",
+      "node": "Switch - BEACON Media Intake",
+      "field": "connections.main",
+      "active_version_matches_retained_patch": true,
+      "current_sha256": "84a2b5358047f2bb53f042747c7895e8efc93948bd94a60b4085ef3c859ea7c1",
+      "matches_before": true,
+      "matches_after": false
+    },
+    {
+      "workflow_id": "TlKy9kUgJJE0msU4",
+      "node": "Code - Normalize GateKeeper Message",
+      "field": "parameters.jsCode",
+      "active_version_matches_retained_patch": false,
+      "current_sha256": "cd7e2d56185ee2f33e6bc5a2b1c8411a48e78dc74c5a4493e1eee45224aa38f0",
+      "matches_before": false,
+      "matches_after": true
+    }
+  ],
+  "reply_id_scoped_field": {
+    "workflow_id": "TlKy9kUgJJE0msU4",
+    "node_id": "2d0b4a5a-0002-4f41-b7db-2c3c5d1a9d02",
+    "node_name": "Code - Normalize GateKeeper Message",
+    "field": "parameters.jsCode",
+    "active_version_id": "84decfbb-62a9-4298-b9c6-f927dd4b59e4",
+    "current_sha256": "cd7e2d56185ee2f33e6bc5a2b1c8411a48e78dc74c5a4493e1eee45224aa38f0",
+    "matches_before": false,
+    "matches_after": true
+  },
+  "registered_webhook": {
+    "hostname": "charln.app.n8n.cloud",
+    "path_sha256": "afdf1dca9369696908cad830b43f33dde5373cc64d94eec89c6c84846ac6a7dc",
+    "pending_update_count": 0
+  },
+  "topology_sha256": "e1a7b17663ffe94c516b1631d4ac97545851627d4a40f58d3da033db60597626",
+  "effects": {
+    "workflow_gets": 2,
+    "render_env_gets": 1,
+    "telegram_get_webhook_info": 1,
+    "message_audio_or_execution_fetches": 0,
+    "workflow_or_backend_invocations": 0,
+    "writes": 0,
+    "paid_calls": 0
+  }
+}

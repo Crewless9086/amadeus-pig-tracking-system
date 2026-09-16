@@ -1,0 +1,25 @@
+{
+  "observed_at": "2026-09-16T03:32:40.864053+00:00",
+  "read_only": true,
+  "render_service_id": "srv-d6sijjkhg0os73f7regg",
+  "render_token_exact_key_get": 200,
+  "telegram_get_webhook_info": 200,
+  "credential_or_webhook_url_recorded": false,
+  "configuration_changes": 0,
+  "provider_messages_or_callbacks": 0,
+  "registered_webhook": {
+    "scheme": "https",
+    "hostname": "charln.app.n8n.cloud",
+    "path_sha256": "afdf1dca9369696908cad830b43f33dde5373cc64d94eec89c6c84846ac6a7dc",
+    "pending_update_count": 0,
+    "max_connections": 40,
+    "allowed_updates": [
+      "message",
+      "callback_query"
+    ],
+    "has_custom_certificate": false,
+    "ip_address_present": true,
+    "last_error_present": false
+  },
+  "rollback_requirement": "reread and retain the exact current URL in protected execution memory immediately before setWebhook; do not commit or log it"
+}

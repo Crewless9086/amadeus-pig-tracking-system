@@ -1,0 +1,117 @@
+{
+  "observed_at": "2026-09-16T03:32:44.324945+00:00",
+  "source_candidate": "231305595391a982755b1dc916a1e6c2e4e19ca6",
+  "topology_sha256": "e1a7b17663ffe94c516b1631d4ac97545851627d4a40f58d3da033db60597626",
+  "classification": "OFFLINE_SYNTHETIC_PUBLISHED_CODE_AND_ACTUAL_BACKEND_PURE_FUNCTIONS",
+  "probes": [
+    {
+      "probe": "ordinary_typed_en",
+      "route": "ordinary",
+      "payload": {
+        "message": {
+          "message_id": 903,
+          "date": 1789396200,
+          "text": "How is Linda and her litter doing?",
+          "from": {
+            "id": "9910002"
+          },
+          "chat": {
+            "id": "9910002",
+            "type": "private"
+          }
+        }
+      },
+      "request_ready": true,
+      "actual_model_or_http_execution": false
+    },
+    {
+      "probe": "ordinary_typed_af",
+      "route": "ordinary",
+      "payload": {
+        "message": {
+          "message_id": 903,
+          "date": 1789396200,
+          "text": "Hoe gaan dit met Linda en haar werpsel?",
+          "from": {
+            "id": "9910002"
+          },
+          "chat": {
+            "id": "9910002",
+            "type": "private"
+          }
+        }
+      },
+      "request_ready": true,
+      "actual_model_or_http_execution": false
+    },
+    {
+      "probe": "native_typed_reply_identity",
+      "published": "",
+      "held_patch": "900"
+    },
+    {
+      "probe": "farrowing_context",
+      "single_current_context": "works_without_card",
+      "multiple_entity_free_contexts": "ambiguous_with_published_transport",
+      "explicit_unique_sow": "works_without_card",
+      "native_exact_card": "requires_held_reply_field"
+    },
+    {
+      "probe": "mortality_welfare_context",
+      "single_current_context": "selectable",
+      "multiple_entity_free_contexts": "ambiguous",
+      "exact_operation_id": "selectable_without_reply_field",
+      "native_exact_card": "requires_held_reply_field"
+    },
+    {
+      "probe": "scheduled_manager_question",
+      "published_reply_to_older_card_selects": "newest_current_question",
+      "held_patch_selects": "the_actual_replied_to_card",
+      "business_write_or_completion": false
+    },
+    {
+      "probe": "protected_confirm_button",
+      "raw_envelope_preserved": true,
+      "exact_card_and_callback_identity": true,
+      "existing_route": "/api/oom-sakkie/channels/telegram/direct-webhook",
+      "operation_executed": false
+    },
+    {
+      "probe": "protected_cancel_button",
+      "raw_envelope_preserved": true,
+      "exact_card_and_callback_identity": true,
+      "existing_route": "/api/oom-sakkie/channels/telegram/direct-webhook",
+      "operation_executed": false
+    },
+    {
+      "probe": "native_voice",
+      "published_route": "media_rejected",
+      "backend_handoff": false,
+      "requires_held_patch": true
+    },
+    {
+      "probe": "missing_date",
+      "status": "invalid_relay_input",
+      "backend_handoff": false
+    },
+    {
+      "probe": "group_chat",
+      "status": "invalid_relay_input",
+      "backend_handoff": false
+    },
+    {
+      "probe": "empty_text",
+      "status": "invalid_relay_input",
+      "backend_handoff": false
+    }
+  ],
+  "probe_count": 12,
+  "live_acceptance": false,
+  "effects": {
+    "paid_calls": 0,
+    "http_backend_or_provider_calls": 0,
+    "database_calls": 0,
+    "messages_sent": 0,
+    "farm_writes": 0
+  }
+}

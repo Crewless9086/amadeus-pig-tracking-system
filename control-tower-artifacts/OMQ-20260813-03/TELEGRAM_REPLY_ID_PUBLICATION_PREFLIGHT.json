@@ -1,0 +1,63 @@
+{
+  "observed_at": "2026-09-16T03:30:41.677498+00:00",
+  "workflow_id": "TlKy9kUgJJE0msU4",
+  "workflow_name": "2.0B - Oom Sakkie Backend Read-Only Relay",
+  "active": true,
+  "active_version_id": "b90f2f4d-399b-4d1d-beb2-eb28551105bb",
+  "draft_version_id": "b90f2f4d-399b-4d1d-beb2-eb28551105bb",
+  "base_active_version_id": "b90f2f4d-399b-4d1d-beb2-eb28551105bb",
+  "active_matches_approved_base": true,
+  "draft_matches_active": true,
+  "active_field_sha256": "a8bb6a2a492e2f59ef8a6e7a76863a7b8e64acabe4fc87b1215dfb58c2ae2708",
+  "draft_field_sha256": "a8bb6a2a492e2f59ef8a6e7a76863a7b8e64acabe4fc87b1215dfb58c2ae2708",
+  "expected_before_sha256": "a8bb6a2a492e2f59ef8a6e7a76863a7b8e64acabe4fc87b1215dfb58c2ae2708",
+  "active_matches_exact_before": true,
+  "draft_matches_exact_before": true,
+  "nodes_match_active": true,
+  "connections_match_active": true,
+  "node_count": 7,
+  "settings_keys": [
+    "availableInMCP",
+    "binaryMode",
+    "executionOrder"
+  ],
+  "top_level_keys": [
+    "active",
+    "activeVersion",
+    "activeVersionId",
+    "connections",
+    "createdAt",
+    "description",
+    "id",
+    "isArchived",
+    "meta",
+    "name",
+    "nodeGroups",
+    "nodes",
+    "pinData",
+    "settings",
+    "shared",
+    "sourceWorkflowId",
+    "staticData",
+    "tags",
+    "triggerCount",
+    "updatedAt",
+    "versionCounter",
+    "versionId"
+  ],
+  "mutable_section_sha256": {
+    "name": "170b2e1093c689ee9201ca6433b2044de48348dc7866fc032908e9be0e03b267",
+    "description": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "nodes": "145bef13f7c88a4a73bd8ad1e7ec2027967fe863e5b5dfc53d8de372e78f93f8",
+    "connections": "f7b0f3d54cd18a521693a4458286474447d46e9e09fa56596dd047bbd2160e23",
+    "nodeGroups": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "settings": "96b96a74a0d18e01668fec742f4cafcb8651ccef1176480551b968d7eec3aac0",
+    "staticData": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "pinData": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  "effects": {
+    "workflow_gets": 1,
+    "writes": 0,
+    "executions": 0
+  }
+}

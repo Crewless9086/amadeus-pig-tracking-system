@@ -1,0 +1,58 @@
+{
+  "observed_at": "2026-09-16T03:36:52.833594+00:00",
+  "source_candidate": "231305595391a982755b1dc916a1e6c2e4e19ca6",
+  "active_version_id": "84decfbb-62a9-4298-b9c6-f927dd4b59e4",
+  "published_after_sha256": "cd7e2d56185ee2f33e6bc5a2b1c8411a48e78dc74c5a4493e1eee45224aa38f0",
+  "exact_inverse_before_sha256": "a8bb6a2a492e2f59ef8a6e7a76863a7b8e64acabe4fc87b1215dfb58c2ae2708",
+  "topology_sha256": "e1a7b17663ffe94c516b1631d4ac97545851627d4a40f58d3da033db60597626",
+  "classification": "OFFLINE_POSTPUBLICATION_PUBLISHED_CODE_AND_ACTUAL_BACKEND_PURE_FUNCTIONS",
+  "probes": [
+    {
+      "probe": "ordinary_typed_en",
+      "passed": true
+    },
+    {
+      "probe": "ordinary_typed_af",
+      "passed": true
+    },
+    {
+      "probe": "published_native_reply_identity",
+      "published_reply_id": "900",
+      "exact_inverse_reply_id": "",
+      "passed": true
+    },
+    {
+      "probe": "published_reply_bound_context_selection",
+      "farrowing_context": "SYNTHETIC-LINDA",
+      "health_loss_context": "SYNTHETIC-PIG-1",
+      "manager_question_message_id": "900",
+      "passed": true
+    },
+    {
+      "probe": "missing_reply_id",
+      "passed": true,
+      "failed_closed": true
+    },
+    {
+      "probe": "string_reply_id",
+      "passed": true,
+      "failed_closed": true
+    },
+    {
+      "probe": "zero_reply_id",
+      "passed": true,
+      "failed_closed": true
+    }
+  ],
+  "probe_count": 7,
+  "passed": true,
+  "live_acceptance": false,
+  "invalid_prior_attempt": "PUBLISHED_TRANSPORT_OFFLINE_PROBES_ATTEMPT_INVALID_RACE.json",
+  "effects": {
+    "paid_calls": 0,
+    "http_backend_or_provider_calls": 0,
+    "database_calls": 0,
+    "messages_sent": 0,
+    "farm_writes": 0
+  }
+}

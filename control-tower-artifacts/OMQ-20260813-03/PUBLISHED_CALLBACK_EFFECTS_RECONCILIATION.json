@@ -1,0 +1,226 @@
+{
+  "observed_at": "2026-09-15T17:24:10.681209+00:00",
+  "source_execution_ids": [
+    "66743",
+    "66837",
+    "66840"
+  ],
+  "read_only": true,
+  "effects": "Render environment GETs and bounded SELECTs in an explicit READ ONLY transaction; rollback. No callbacks, messages, claims, farm records, permissions, or configuration changed.",
+  "credentials_tokens_user_ids_and_chat_ids_omitted": true,
+  "windows": [
+    {
+      "label": "66743",
+      "start": "2026-08-25T19:10:00Z",
+      "end": "2026-08-25T19:30:00Z",
+      "claim_count": 1,
+      "claims": [
+        {
+          "action_kind": "herdmaster_record_farrowing_litter",
+          "mission_id": "OOM-HERD-LITTER-E71867CF692725B072D0D50C",
+          "status": "completed",
+          "created_at": "2026-08-25 19:19:33.278943+00:00",
+          "completed_at": "2026-08-25 19:20:10.620365+00:00",
+          "expires_at": "2026-08-25 19:49:32.447134+00:00",
+          "preview_card_message_id": "4048",
+          "confirmation_provider_message_id": "6127564954207676252",
+          "confirmation_provider_timestamp": "2026-08-25 19:20:02.806419+00:00",
+          "owner_sha256": "3487c91435ddf2d1ed0f129facb4092a86605c0e249d0c63b1eb10aeec7ec59e",
+          "private_chat_sha256": "3487c91435ddf2d1ed0f129facb4092a86605c0e249d0c63b1eb10aeec7ec59e",
+          "private_chat_matches_owner": true,
+          "provider_message_id_sha256": "77b108f25becb7b98010b95f82b43773f8034c34b460b85ced81f170cc7b44a6",
+          "preview_summary": {
+            "operation_id": "HERD-LITTER-E71867CF692725B072D0D50C"
+          },
+          "result_summary": {
+            "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+            "pig_ids": [
+              "PIG-OOM-816604EDD5D58666",
+              "PIG-OOM-EFAF376AF5798A01",
+              "PIG-OOM-5AAFCA7079BEED11",
+              "PIG-OOM-077DAD348C435B24",
+              "PIG-OOM-DCB3AD314BF020E5",
+              "PIG-OOM-1B39925D080F002A",
+              "PIG-OOM-71800516FC160E71",
+              "PIG-OOM-941B7215F151B926"
+            ],
+            "status": "farrowing_litter_recorded",
+            "success": true,
+            "writes_farm_data": true
+          },
+          "terminal": true,
+          "confirmed": true,
+          "recorded_effect_claimed": true
+        }
+      ]
+    },
+    {
+      "label": "66837_66840",
+      "start": "2026-08-26T05:45:00Z",
+      "end": "2026-08-26T06:10:00Z",
+      "claim_count": 1,
+      "claims": [
+        {
+          "action_kind": "mortality",
+          "mission_id": "OOM-HERDMASTER-3DDE52A15BCF4B0F21E730DE",
+          "status": "completed",
+          "created_at": "2026-08-26 05:58:54.090710+00:00",
+          "completed_at": "2026-08-26 05:59:34.048137+00:00",
+          "expires_at": "2026-08-26 06:28:53.242695+00:00",
+          "preview_card_message_id": "4058",
+          "confirmation_provider_message_id": "7672064839568633510",
+          "confirmation_provider_timestamp": "2026-08-26 05:59:15.817190+00:00",
+          "owner_sha256": "a377a1f82445f41eafec22156439fd80ab5a374cfc70a62664566ed44115b4e5",
+          "private_chat_sha256": "a377a1f82445f41eafec22156439fd80ab5a374cfc70a62664566ed44115b4e5",
+          "private_chat_matches_owner": true,
+          "provider_message_id_sha256": "b9f981eeaf8b2eedda380ca152099a4e1661f4032e3732ffba70c75d865224f7",
+          "preview_summary": {
+            "operation_id": "HERD-HEALTH-LOSS-9A3E7EF14F90C8795BFAB82348F123F2"
+          },
+          "result_summary": {
+            "status": "completed",
+            "success": true,
+            "writes_farm_data": true
+          },
+          "terminal": true,
+          "confirmed": true,
+          "recorded_effect_claimed": true
+        }
+      ]
+    }
+  ],
+  "canonical_readbacks": {
+    "farrowing": {
+      "litter_rows": [
+        {
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "sow_pig_id": "PIG-2026-5AA8",
+          "sow_tag_number": "Linda",
+          "farrowing_date": "2026-08-22",
+          "total_born": 9,
+          "born_alive": 8,
+          "stillborn_count": 0,
+          "mummified_count": 1,
+          "litter_status": "Active",
+          "created_at": "2026-08-25 19:20:05.623678+00:00",
+          "updated_at": "2026-08-25 19:20:05.623678+00:00"
+        }
+      ],
+      "piglet_rows": [
+        {
+          "pig_id": "PIG-OOM-077DAD348C435B24",
+          "tag_number": null,
+          "pig_name": null,
+          "sex": "",
+          "status": "Active",
+          "on_farm": true,
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "created_at": "2026-08-25 19:20:05.623678+00:00"
+        },
+        {
+          "pig_id": "PIG-OOM-1B39925D080F002A",
+          "tag_number": null,
+          "pig_name": null,
+          "sex": "",
+          "status": "Active",
+          "on_farm": true,
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "created_at": "2026-08-25 19:20:05.623678+00:00"
+        },
+        {
+          "pig_id": "PIG-OOM-5AAFCA7079BEED11",
+          "tag_number": null,
+          "pig_name": null,
+          "sex": "",
+          "status": "Active",
+          "on_farm": true,
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "created_at": "2026-08-25 19:20:05.623678+00:00"
+        },
+        {
+          "pig_id": "PIG-OOM-71800516FC160E71",
+          "tag_number": null,
+          "pig_name": null,
+          "sex": "",
+          "status": "Active",
+          "on_farm": true,
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "created_at": "2026-08-25 19:20:05.623678+00:00"
+        },
+        {
+          "pig_id": "PIG-OOM-816604EDD5D58666",
+          "tag_number": null,
+          "pig_name": null,
+          "sex": "",
+          "status": "Active",
+          "on_farm": true,
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "created_at": "2026-08-25 19:20:05.623678+00:00"
+        },
+        {
+          "pig_id": "PIG-OOM-941B7215F151B926",
+          "tag_number": null,
+          "pig_name": null,
+          "sex": "",
+          "status": "Active",
+          "on_farm": true,
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "created_at": "2026-08-25 19:20:05.623678+00:00"
+        },
+        {
+          "pig_id": "PIG-OOM-DCB3AD314BF020E5",
+          "tag_number": null,
+          "pig_name": null,
+          "sex": "",
+          "status": "Active",
+          "on_farm": true,
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "created_at": "2026-08-25 19:20:05.623678+00:00"
+        },
+        {
+          "pig_id": "PIG-OOM-EFAF376AF5798A01",
+          "tag_number": null,
+          "pig_name": null,
+          "sex": "",
+          "status": "Active",
+          "on_farm": true,
+          "litter_id": "LIT-OOM-D7F1943733BEDCE0",
+          "created_at": "2026-08-25 19:20:05.623678+00:00"
+        }
+      ],
+      "exactly_one_litter": true,
+      "exactly_eight_piglets": true
+    },
+    "mortality": {
+      "lifecycle_rows": [
+        {
+          "lifecycle_event_id": "LIFE-HL-14C031928489C6B8ED1C71A2",
+          "pig_id": "PIG-2026-6BB3",
+          "lifecycle_event_type": "exited_farm",
+          "effective_at": "2026-08-26 00:00:00+00:00",
+          "recorded_at": "2026-08-26 05:59:20.683941+00:00",
+          "source_system": "owner",
+          "source_reference": "a8c87efa3912c3968f1e140ffffe97bbdbdbb069704e15000221dc94bbd29345",
+          "event_note": "Owner reported the pig found dead; exact time of death Unknown; body removed and buried; source Telegram 4057",
+          "idempotency_key": "HERD-HEALTH-LOSS-9A3E7EF14F90C8795BFAB82348F123F2",
+          "resulting_status": "Dead",
+          "resulting_on_farm": "false",
+          "exact_time_of_death": "Unknown",
+          "owner_reported_outcome": "removed and buried"
+        }
+      ],
+      "current_pig_rows": [
+        {
+          "pig_id": "PIG-2026-6BB3",
+          "tag_number": "138",
+          "pig_name": null,
+          "status": "Dead",
+          "on_farm": false,
+          "updated_at": "2026-08-26 05:59:20.683941+00:00"
+        }
+      ],
+      "exactly_one_lifecycle_event": true,
+      "current_pig_is_dead_and_off_farm": true
+    }
+  }
+}
