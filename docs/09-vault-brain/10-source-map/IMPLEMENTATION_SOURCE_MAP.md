@@ -13,9 +13,12 @@ GateKeeper remains the sole provider owner; the three voice fields remain held.
 The backend replacement remains
 `POST /api/oom-sakkie/channels/telegram/direct-webhook` in
 `modules/oom_sakkie/routes.py` and `modules/oom_sakkie/telegram_direct.py`.
-It is implemented and configured. Retirement still requires genuine text,
-reply, confirm, cancel and scheduled acceptance, then a controlled sole-webhook
-cutover and backend-only no-loss/no-duplicate observation before n8n deactivation.
+It is implemented and configured. Exact provider-input parity passed for direct
+chat/send policy, but the report retains generic non-SAM inline callbacks and
+persistent task/reminder/project memory as missing. Retirement still requires
+genuine text, reply, confirm, cancel and scheduled acceptance, then a controlled
+sole-webhook cutover and backend-only no-loss/no-duplicate observation before
+n8n deactivation.
 
 ## 2026-09-15 - Current PR #1336 release and Oom Sakkie Telegram retirement handover
 

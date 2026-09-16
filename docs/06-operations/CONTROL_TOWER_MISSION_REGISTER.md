@@ -28,8 +28,12 @@ fields remain separately held.
 Telegram still points to n8n GateKeeper `s8QaxmqT69Z5mhvE`, which remains the
 interim transport owner. The implemented replacement is backend route
 `POST /api/oom-sakkie/channels/telegram/direct-webhook`; all five exact Render
-inputs are configured, but sole-webhook cutover and no-loss/no-duplicate live
-acceptance remain incomplete. No new n8n business logic was added.
+inputs are configured. Local review with 21 exact current Render inputs passed
+direct chat/send policy for three allowlisted owners with writes, dispatch and
+physical controls false. The parity report still identifies generic inline
+callbacks outside SAM Live and persistent task/reminder/project memory as not
+carried over. Sole-webhook cutover and no-loss/no-duplicate live acceptance
+remain incomplete. No new n8n business logic was added.
 
 Historical callback effects remain reconciled: Linda farrowing execution `66743`
 and tag-138 mortality execution `66840` each saved once despite timeout; Anton's

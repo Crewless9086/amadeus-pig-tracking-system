@@ -100,8 +100,19 @@ both gates true, a secret of at least 32 characters and three allowlisted IDs.
 The earlier pagination-based inference that these keys were absent remains
 preserved as invalid.
 
+At `2026-09-16T03:43:55Z`, a local review evaluated the deployed policy with 21
+exact current Render inputs. Direct chat/send readiness passed for three
+allowlisted owners, the secret boundary and audit trace passed, and writes,
+dispatch, physical controls and customer output remained false. No provider,
+model or database call ran and no webhook changed. The report also makes the
+remaining functional gap explicit: generic Telegram inline callbacks outside
+the SAM Live owner-review path and persistent task/reminder/project memory are
+not carried over yet. Proactive daily delivery and BEACON media intake are
+disabled; the separate voice hold remains unchanged.
+
 The backend adapter is implemented and configured, but it is not yet provider
-owner. The remaining n8n dependency can retire only after:
+owner or full callback replacement. The remaining n8n dependency can retire
+only after:
 
 1. current-transport acceptance proves genuine ordinary English/Afrikaans text,
    native reply metadata, protected confirmation and protected cancellation;

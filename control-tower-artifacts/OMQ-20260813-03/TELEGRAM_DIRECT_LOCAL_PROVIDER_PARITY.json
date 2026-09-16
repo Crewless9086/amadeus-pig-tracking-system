@@ -1,0 +1,252 @@
+{
+  "observed_at": "2026-09-16T03:43:55.668970+00:00",
+  "source_candidate": "231305595391a982755b1dc916a1e6c2e4e19ca6",
+  "deployed_merge": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+  "render_service_id": "srv-d6sijjkhg0os73f7regg",
+  "classification": "LOCAL_REVIEW_WITH_EXACT_PROVIDER_CONFIGURATION",
+  "remote_route_result_retained": "403 review_access_denied is expected for non-local requests",
+  "exact_key_gets": 21,
+  "http_status_by_key": {
+    "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": 200,
+    "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": 200,
+    "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": 200,
+    "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": 200,
+    "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": 200,
+    "OOM_SAKKIE_TELEGRAM_PROACTIVE_ENABLED": 404,
+    "OOM_SAKKIE_TELEGRAM_DAILY_BRIEF_ENABLED": 404,
+    "OOM_SAKKIE_LEDGER_AGENT_ENABLED": 404,
+    "OOM_SAKKIE_LLM_ROUTER_MODEL": 200,
+    "OPENAI_API_KEY": 200,
+    "OOM_SAKKIE_LLM_ROUTER_URL": 404,
+    "BEACON_TELEGRAM_MEDIA_INTAKE_ENABLED": 404,
+    "BEACON_TELEGRAM_MEDIA_ALLOWED_CHAT_IDS": 404,
+    "BEACON_TELEGRAM_MEDIA_REQUEST_NOT_BEFORE_UTC": 404,
+    "BEACON_TELEGRAM_MEDIA_RETIRED_SHA256": 404,
+    "BEACON_TELEGRAM_MEDIA_RECOVERY_CONTEXT_TOKEN": 404,
+    "OWNER_SESSION_SECRET": 200,
+    "SECRET_KEY": 404,
+    "DATABASE_URL": 200,
+    "SUPABASE_URL": 200,
+    "SUPABASE_SERVICE_ROLE_KEY": 200
+  },
+  "values_or_digests_recorded": false,
+  "parity_report": {
+    "success": true,
+    "status": "direct_telegram_parity_report",
+    "mode": "owner_only_backend_direct_telegram",
+    "telegram_direct": {
+      "enabled": true,
+      "explicitly_enabled": true,
+      "send_enabled": true,
+      "configured": true,
+      "webhook_secret_configured": true,
+      "webhook_secret_meets_minimum_entropy": true,
+      "minimum_webhook_secret_chars": 32,
+      "mode": "owner_only_direct_telegram_bot",
+      "route": "POST /api/oom-sakkie/channels/telegram/direct-webhook",
+      "auth": "x_telegram_bot_api_secret_token",
+      "allowed_user_ids_required": true,
+      "allowed_user_ids_configured": true,
+      "allowed_user_ids_count": 3,
+      "auth_rate_limit": {
+        "enabled": true,
+        "failure_limit": 8,
+        "window_seconds": 60,
+        "lockout_seconds": 300,
+        "locked": false
+      },
+      "sends_telegram": true,
+      "reply_transport": "backend_sends_owner_telegram_reply",
+      "deterministic_only": true,
+      "deterministic_only_note": "Generic owner Telegram remains deterministic-only; explicit /ledger may call the Ledger LLM advisor when its env gate is enabled.",
+      "can_trigger_outbound_llm": false,
+      "ledger_sales_agent": {
+        "enabled": false,
+        "explicitly_enabled": false,
+        "configured": true,
+        "mode": "owner_only_ledger_sales_advisor",
+        "provider": "openai_compatible_chat_completions",
+        "outbound_endpoint_when_enabled": "https://api.openai.com/v1/chat/completions",
+        "sends_owner_sales_context_when_enabled": true,
+        "model_env": "OOM_SAKKIE_LLM_ROUTER_MODEL",
+        "api_key_env": "OPENAI_API_KEY",
+        "enable_env": "OOM_SAKKIE_LEDGER_AGENT_ENABLED",
+        "output_mode": "owner_review_strategy_and_copy_only",
+        "sends_customer_message": false,
+        "calls_chatwoot": false,
+        "calls_n8n": false,
+        "creates_quote": false,
+        "creates_order": false,
+        "changes_stock": false,
+        "writes": false,
+        "dispatch_enabled": false,
+        "changes_runtime_now": false,
+        "changes_prompt_now": false,
+        "physical_controls_enabled": false,
+        "customer_public_output_enabled": false
+      },
+      "direct_bot_cutover_enabled": true,
+      "writes": false,
+      "records_audit_trace": true,
+      "writes_note": "writes=false means no farm/control/public-output write; when enabled this path sends a Telegram reply only to an allowlisted owner chat and appends the normal Oom Sakkie audit trace.",
+      "dispatch_enabled": false,
+      "changes_runtime_now": false,
+      "changes_prompt_now": false,
+      "physical_controls_enabled": false,
+      "customer_public_output_enabled": false,
+      "proactive": {
+        "enabled": false,
+        "daily_brief_enabled": false,
+        "mode": "script_or_scheduler_invoked_only",
+        "background_loop_enabled": false,
+        "allowed_user_ids_count": 3,
+        "sends_telegram_when_invoked": false,
+        "writes": false,
+        "dispatch_enabled": false,
+        "can_trigger_outbound_llm": false
+      },
+      "beacon_media_intake": {
+        "success": true,
+        "mode": "beacon_media_intake_v1",
+        "enabled": false,
+        "explicitly_enabled": false,
+        "fresh_request_bound": false,
+        "retired_hash_registry_configured": false,
+        "allowed_private_chat_configured": false,
+        "allowed_private_chat_count": 0,
+        "allowed_owner_user_configured": true,
+        "stable_identity_secret_configured": true,
+        "bot_token_configured": true,
+        "database_configured": true,
+        "private_storage_configured": true,
+        "private_bucket": "beacon-raw-intake",
+        "supported_mime_types": [
+          "image/jpeg",
+          "image/png"
+        ],
+        "photo_max_bytes": 8388608,
+        "photo_max_dimension": 12000,
+        "photo_max_pixels": 40000000,
+        "video_state": "unsupported_until_bounded_resumable_upload",
+        "album_completion": "explicit_owner_completion_required",
+        "automatic_retry": false,
+        "gateway_active": false,
+        "library_accept": false,
+        "public_use_approved": false,
+        "publish": false,
+        "meta_call": false,
+        "upload_to_meta": false,
+        "schedule": false,
+        "send_customer_message": false,
+        "advertise": false,
+        "boost": false,
+        "spend": false,
+        "business_data_mutation": false
+      }
+    },
+    "backend_owns_oom_sakkie_chat": true,
+    "n8n_required_for_oom_sakkie_chat": false,
+    "n8n_still_required_for": [
+      "Sam sales/order workflows",
+      "Existing non-Oom-Sakkie Telegram approval workflows",
+      "Legacy GateKeeper rollback path if the direct bot webhook is deleted"
+    ],
+    "carried_over_backend_capabilities": [
+      "authenticated native Telegram Ogg/Opus voice input when shared STT is enabled and configured; reported facts require the existing confirmation flow",
+      "farm attention",
+      "daily command brief",
+      "farm operating brief",
+      "power status",
+      "weather",
+      "irrigation",
+      "farm dashboard summary",
+      "pig allocation readiness",
+      "meat planning",
+      "sales dashboard",
+      "business growth brief",
+      "agent command center",
+      "Ledger sales agent",
+      "safety gates",
+      "review packet",
+      "dry-run and learning backlog status"
+    ],
+    "telegram_commands": [
+      {
+        "command": "/help",
+        "text": "Show direct Telegram menu."
+      },
+      {
+        "command": "/brief",
+        "text": "Run the daily command brief."
+      },
+      {
+        "command": "/attention",
+        "text": "Show what needs attention today."
+      },
+      {
+        "command": "/gates",
+        "text": "Show safety and CI gate status."
+      },
+      {
+        "command": "/agents",
+        "text": "Show the agent command center."
+      },
+      {
+        "command": "/approvals",
+        "text": "Show owner approval queue/status."
+      },
+      {
+        "command": "/progress",
+        "text": "Show Jarvis progress."
+      },
+      {
+        "command": "/learning",
+        "text": "Show learning backlog status."
+      }
+    ],
+    "not_carried_over_yet": [
+      "Generic Telegram inline buttons and callback actions outside the SAM Live owner-review path",
+      "Persistent task/reminder/project memory",
+      "Write actions, dispatch, runtime changes, physical controls, or financial actions"
+    ],
+    "proactive_daily_brief": {
+      "enabled": false,
+      "daily_brief_enabled": false,
+      "mode": "script_or_scheduler_invoked_only",
+      "background_loop_enabled": false,
+      "allowed_user_ids_count": 3,
+      "sends_telegram_when_invoked": false,
+      "writes": false,
+      "dispatch_enabled": false,
+      "can_trigger_outbound_llm": false
+    },
+    "sends_telegram": true,
+    "can_trigger_outbound_llm": false,
+    "writes": false,
+    "records_audit_trace": true,
+    "dispatch_enabled": false,
+    "changes_runtime_now": false,
+    "changes_prompt_now": false,
+    "physical_controls_enabled": false,
+    "customer_public_output_enabled": false
+  },
+  "acceptance": {
+    "backend_direct_chat_policy_ready": true,
+    "direct_send_policy_ready": true,
+    "allowlisted_owner_count": 3,
+    "normal_audit_trace_enabled": true,
+    "farm_or_control_writes": false,
+    "dispatch_enabled": false,
+    "physical_controls_enabled": false,
+    "provider_webhook_cutover_performed": false,
+    "live_backend_direct_message_performed": false
+  },
+  "effects": {
+    "render_exact_key_gets": 21,
+    "provider_messages_or_callbacks": 0,
+    "model_calls": 0,
+    "database_calls": 0,
+    "configuration_changes": 0,
+    "farm_writes": 0
+  }
+}
