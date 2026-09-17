@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", function () {
 let allMatingRecords = [];
 let allPens = [];
 let selectedSowId = "";
+let selectedSectionId = "";
 let activeAssumePregnantId = null;
 let activeMarkNotPregnantId = null;
 const expandedMatingIds = new Set();
@@ -13,29 +14,36 @@ const expandedMatingIds = new Set();
 const SECTION_DEFINITIONS = [
     {
         id: "needs_action",
-        title: "Needs Action Now",
-        description: "Overdue pregnancy checks, overdue farrowing, or records needing a decision."
+        title: "Aandag Nodig",
+        description: "Agterstallige kontroles, verwagte jong datums of rekords wat 'n besluit nodig het."
     },
     {
         id: "move_soon",
-        title: "Move Soon / Prepare",
-        description: "Open or pregnant sows approaching expected farrowing."
+        title: "Berei Voor",
+        description: "Sôe wat hul verwagte jong datum nader."
     },
     {
         id: "check_soon",
-        title: "Upcoming Pregnancy Checks",
-        description: "Open matings approaching the pregnancy check window."
+        title: "Komende Kontroles",
+        description: "Oop parings wat hul dragtigheidskontrole nader."
     },
     {
         id: "open",
-        title: "All Open Matings",
-        description: "Other active breeding records still in progress."
+        title: "Oop Parings",
+        description: "Ander aktiewe teelrekords wat nog aan die gang is."
     },
     {
         id: "closed",
-        title: "Closed / Farrowed",
-        description: "Completed, not pregnant, or linked litter records."
+        title: "Afgesluit / Gejong",
+        description: "Voltooide, nie-dragtige of gekoppelde werpselrekords."
     }
+];
+
+const PREVIEW_RECORDS = [
+    {mating_id:"MAT-2026-SOPHIE-BOLA",sow_pig_id:"PIG-SOPHIE",sow_tag_number:"Sophie",boar_pig_id:"PIG-BOLA",boar_tag_number:"Bola",sow_current_pen_name:"By Bola",boar_current_pen_name:"Teelhok",mating_date:"2026-08-12",days_since_mating:"0",expected_pregnancy_check_date:"2026-09-02",expected_farrowing_date:"2026-12-04",mating_status:"Open",outcome:"Pending",pregnancy_check_result:"Unknown",mating_method:"Natural",exposure_group:"12–28 Augustus",is_open:"Yes"},
+    {mating_id:"MAT-2026-OLIVE-TYSON",sow_pig_id:"PIG-OLIVE",sow_tag_number:"Olive",boar_pig_id:"PIG-TYSON",boar_tag_number:"Tyson",sow_current_pen_name:"By Tyson",boar_current_pen_name:"Teelhok",mating_date:"2026-08-12",days_since_mating:"0",expected_pregnancy_check_date:"2026-09-02",expected_farrowing_date:"2026-12-04",mating_status:"Open",outcome:"Pending",pregnancy_check_result:"Unknown",mating_method:"Natural",exposure_group:"12–28 Augustus",is_open:"Yes"},
+    {mating_id:"MAT-2026-MONA",sow_pig_id:"PIG-MONA",sow_tag_number:"Mona",boar_pig_id:"PIG-UNKNOWN",boar_tag_number:"Beer onbekend",sow_current_pen_name:"Kraamhok",mating_date:"2026-05-01",days_since_mating:"103",expected_pregnancy_check_date:"2026-05-22",expected_farrowing_date:"2026-08-23",mating_status:"Confirmed_Pregnant",outcome:"Pending",pregnancy_check_result:"Assumed_Pregnant",mating_method:"Natural",exposure_group:"-",is_open:"Yes"},
+    {mating_id:"MAT-2026-CLOSED",sow_pig_id:"PIG-TEENA",sow_tag_number:"Teena",boar_pig_id:"PIG-BOLA",boar_tag_number:"Bola",sow_current_pen_name:"D3",mating_date:"2026-04-14",days_since_mating:"120",expected_pregnancy_check_date:"2026-05-05",expected_farrowing_date:"2026-08-06",actual_farrowing_date:"2026-07-07",linked_litter_id:"LIT-2026-1350",mating_status:"Completed",outcome:"Farrowed",pregnancy_check_result:"Confirmed_Pregnant",mating_method:"Natural",exposure_group:"-",is_open:"No"}
 ];
 
 async function loadAllPens() {
@@ -64,7 +72,8 @@ async function loadMatingBoard() {
             throw new Error("Failed to load mating records.");
         }
 
-        allMatingRecords = (data.records || []).map(record => {
+        const sourceRecords = (new URLSearchParams(window.location.search).get("preview") === "facelift-v3" && !(data.records || []).length) ? PREVIEW_RECORDS : (data.records || []);
+        allMatingRecords = sourceRecords.map(record => {
             const classification = classifyMating(record);
             return {
                 ...record,
@@ -79,8 +88,23 @@ async function loadMatingBoard() {
         renderSummary(summary, allMatingRecords);
         renderControls(controls, allMatingRecords);
         renderBoard(board, getVisibleRecords());
+        const count = document.getElementById("mating_record_count");
+        if (count) count.textContent = `${allMatingRecords.length} rekords`;
     } catch (error) {
         console.error("Matings load error:", error);
+        if (new URLSearchParams(window.location.search).get("preview") === "facelift-v3") {
+            allMatingRecords = PREVIEW_RECORDS.map(record => {
+                const classification = classifyMating(record);
+                return {...record, action_section: classification.section, action_text: classification.actionText, action_class: classification.actionClass, action_priority: classification.actionPriority, sort_date: classification.sortDate};
+            });
+            renderSummary(summary, allMatingRecords);
+            renderControls(controls, allMatingRecords);
+            renderBoard(board, getVisibleRecords());
+            const count = document.getElementById("mating_record_count");
+            if (count) count.textContent = `${allMatingRecords.length} rekords`;
+            messageBox.classList.add("hidden");
+            return;
+        }
         messageBox.classList.remove("hidden", "message-success", "message-error");
         messageBox.classList.add("message-error");
         messageBox.textContent = "Something went wrong while loading the breeding board.";
@@ -103,6 +127,15 @@ function setupMatingBoardEvents() {
     });
 
     document.addEventListener("click", async function (event) {
+        const summaryFilter = event.target.closest("[data-mating-section]");
+        if (summaryFilter) {
+            const nextSection = summaryFilter.getAttribute("data-mating-section") || "";
+            selectedSectionId = selectedSectionId === nextSection ? "" : nextSection;
+            renderSummary(document.getElementById("mating_summary"), allMatingRecords);
+            renderControls(document.getElementById("mating_controls"), allMatingRecords);
+            renderBoard(document.getElementById("matings_board"), getVisibleRecords());
+            return;
+        }
         const cardToggle = event.target.closest("[data-mating-toggle]");
         if (cardToggle) {
             const matingId = cardToggle.getAttribute("data-mating-toggle");
@@ -269,22 +302,22 @@ function renderSummary(container, records) {
     const openCount = records.filter(record => record.is_open === "Yes").length;
 
     container.innerHTML = `
-        <div class="info-card">
-          <div class="info-title">Needs Action</div>
+        <button type="button" class="info-card ${selectedSectionId === "needs_action" ? "is-active" : ""}" data-mating-section="needs_action">
+          <div class="info-title">Aandag Nodig</div>
           <div class="info-value ${counts.needs_action > 0 ? "bad-text" : "good-text"}">${counts.needs_action}</div>
-        </div>
-        <div class="info-card">
-          <div class="info-title">Move Soon / Prepare</div>
+        </button>
+        <button type="button" class="info-card ${selectedSectionId === "move_soon" ? "is-active" : ""}" data-mating-section="move_soon">
+          <div class="info-title">Berei Voor</div>
           <div class="info-value ${counts.move_soon > 0 ? "neutral-text" : "good-text"}">${counts.move_soon}</div>
-        </div>
-        <div class="info-card">
-          <div class="info-title">Upcoming Checks</div>
+        </button>
+        <button type="button" class="info-card ${selectedSectionId === "check_soon" ? "is-active" : ""}" data-mating-section="check_soon">
+          <div class="info-title">Komende Kontroles</div>
           <div class="info-value">${counts.check_soon}</div>
-        </div>
-        <div class="info-card">
-          <div class="info-title">Open Matings</div>
+        </button>
+        <button type="button" class="info-card ${selectedSectionId === "open" ? "is-active" : ""}" data-mating-section="open">
+          <div class="info-title">Oop Parings</div>
           <div class="info-value">${openCount}</div>
-        </div>
+        </button>
     `;
 }
 
@@ -303,21 +336,21 @@ function renderControls(container, records) {
     container.innerHTML = `
         <div class="form-grid">
           <div class="form-group">
-            <label for="mating_sow_filter">Filter by sow</label>
+            <label for="mating_sow_filter">Filtreer volgens sog</label>
             <select id="mating_sow_filter" name="mating_sow_filter">
-              <option value="">All sows</option>
+              <option value="">Alle sôe</option>
               ${sowOptions}
             </select>
           </div>
           <div class="form-group">
-            <label>Card details</label>
+            <label>Kaartbesonderhede</label>
             <button id="toggle_all_mating_details" type="button" class="button-link">
-              ${allVisibleExpanded ? "Hide all details" : "Show all details"}
+              ${allVisibleExpanded ? "Versteek alle besonderhede" : "Wys alle besonderhede"}
             </button>
           </div>
         </div>
         <div class="pig-list-meta">
-          Showing ${visibleRecords.length} of ${records.length} mating records${selectedSowId ? " for selected sow" : ""}.
+          Wys ${visibleRecords.length} van ${records.length} paringsrekords${selectedSowId ? " vir die gekose sog" : ""}.
         </div>
     `;
 }
@@ -368,8 +401,8 @@ function renderMatingCard(record) {
     const isExpanded = expandedMatingIds.has(record.mating_id);
     const isAssumeFormOpen = activeAssumePregnantId === record.mating_id;
     const isMarkNotPregnantFormOpen = activeMarkNotPregnantId === record.mating_id;
-    const sowLabel = formatAnimalLabel(record.sow_tag_number, record.sow_pig_id, "Unknown Sow");
-    const boarLabel = formatAnimalLabel(record.boar_tag_number, record.boar_pig_id, "Unknown Boar");
+    const sowLabel = escapeHtml(record.sow_tag_number || record.sow_pig_id || "Sog onbekend");
+    const boarLabel = escapeHtml(record.boar_tag_number || record.boar_pig_id || "Beer onbekend");
     const sowPen = formatPen(record.sow_current_pen_name, record.sow_current_pen_id);
     const boarPen = formatPen(record.boar_current_pen_name, record.boar_current_pen_id);
     const litterLink = record.linked_litter_id
@@ -397,7 +430,7 @@ function renderMatingCard(record) {
     const markNotPregnantFormHtml = isMarkNotPregnantFormOpen ? renderMarkNotPregnantForm(record.mating_id) : "";
 
     return `
-        <div class="history-item mating-card ${isExpanded ? "mating-card-expanded" : ""}">
+        <div class="history-item mating-card stage-${escapeHtml(record.action_section)} ${isExpanded ? "mating-card-expanded" : ""}" data-mating-toggle="${escapeHtml(record.mating_id || "")}" role="button" tabindex="0" aria-expanded="${isExpanded ? "true" : "false"}">
           <div class="history-item-top">
             <div>
               <div class="history-item-date">${sowLabel} x ${boarLabel}</div>
@@ -405,22 +438,14 @@ function renderMatingCard(record) {
             </div>
             <div class="mating-card-actions">
               <div class="history-item-weight ${record.action_class}">${escapeHtml(record.action_text)}</div>
-              <button
-                type="button"
-                class="mating-toggle-button"
-                data-mating-toggle="${escapeHtml(record.mating_id || "")}"
-                aria-expanded="${isExpanded ? "true" : "false"}"
-              >
-                ${isExpanded ? "Hide details ▲" : "Show details ▼"}
-              </button>
             </div>
           </div>
 
           <div class="history-item-grid mating-card-compact">
             <div>
-              <div class="history-label">Sow</div>
-              <div class="history-value">${renderPigLink(record.sow_pig_id, record.sow_tag_number)}</div>
-              <div class="pig-list-meta">Pen: ${escapeHtml(sowPen)}</div>
+              <div class="history-label">Parings / Plasings Datum</div>
+              <div class="history-value">${escapeHtml(record.mating_date || "-")}</div>
+              <div class="pig-list-meta">Hok: ${escapeHtml(sowPen)}</div>
             </div>
             <div>
               <div class="history-label">Expected Farrowing</div>
@@ -715,9 +740,11 @@ function countSections(records) {
 }
 
 function getVisibleRecords() {
-    if (!selectedSowId) return allMatingRecords;
-
-    return allMatingRecords.filter(record => record.sow_pig_id === selectedSowId);
+    return allMatingRecords.filter(record => {
+        if (selectedSowId && record.sow_pig_id !== selectedSowId) return false;
+        if (selectedSectionId && record.action_section !== selectedSectionId) return false;
+        return true;
+    });
 }
 
 function getSowOptions(records) {
@@ -726,9 +753,7 @@ function getSowOptions(records) {
     records.forEach(record => {
         if (!record.sow_pig_id) return;
 
-        const label = record.sow_tag_number
-            ? `${record.sow_tag_number} (${record.sow_pig_id})`
-            : record.sow_pig_id;
+        const label = record.sow_tag_number || record.sow_pig_id;
 
         sowMap.set(record.sow_pig_id, {
             sow_pig_id: record.sow_pig_id,
