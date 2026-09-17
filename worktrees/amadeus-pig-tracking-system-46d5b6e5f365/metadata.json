@@ -1,0 +1,22 @@
+{
+  "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system",
+  "source_branch": "preserve/main-workspace-reconciliation-20260812",
+  "source_head": "b88ae99d4daa02113f6a3ba1975a7fdc362844c1",
+  "source_upstream": "origin/preserve/main-workspace-reconciliation-20260812",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 0,
+  "captured_at": "2026-09-17T17:54:21.563753+00:00",
+  "tracked_combined_patch_bytes": 36827,
+  "tracked_combined_patch_sha256": "174E041BCFE624A4AD498C3542FB6E2E84F5C58B2B307E4308F8AB67FBF2D667",
+  "tracked_staged_patch_bytes": 8205,
+  "tracked_staged_patch_sha256": "3D3A6D80F84EB3B3908D78710215D763F22A006474AACAFFEA9CFF6F570786AC",
+  "tracked_unstaged_patch_bytes": 28622,
+  "tracked_unstaged_patch_sha256": "42EA0D569A60ADA61FD3BA36574377F6F9E0FC56DEC3AE7245FCAAB370860B0D",
+  "untracked_file_count": 1,
+  "untracked_archive_entry_count": 1,
+  "untracked_archive_bytes": 1049,
+  "untracked_archive_sha256": "5B49101708DE0CBAFA00A28AE9E76ECEABDA7FF57323F88845A6FFA2E7DCFBA5",
+  "untracked_paths": [
+    "control-tower-artifacts/HMQ-20260813-05/GENUINE_BCS_BATCH_ACCEPTANCE_20260825.md"
+  ]
+}

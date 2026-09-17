@@ -1,0 +1,17 @@
+diff --git a/tests/test_rootline_reassessment_cron.py b/tests/test_rootline_reassessment_cron.py
+index 7ed669b3..af8f997b 100644
+--- a/tests/test_rootline_reassessment_cron.py
++++ b/tests/test_rootline_reassessment_cron.py
+@@ -28,10 +28,12 @@ def test_cron_calls_only_authenticated_existing_application_spine():
+         seen.update({"url":request.full_url,"auth":request.headers["Authorization"],
+                      "payload":json.loads(request.data),"timeout":timeout})
+         return Response({"success":True,"status":"rootline_reassessment_unchanged",
++                         "scheduled_underlying_status":"",
+                          "schedule_identity":"OOM-SCHEDULE-ROOTLINE-X","next_due_at":"later",
+                          "hardware_commands":0,"telegram_sends":0})
+     result=run(environ=ENV,now=NOW,opener=open_)
+     assert result["success"] is True and result["hardware_commands"]==0
++    assert result["scheduled_underlying_status"]==""
+     assert seen["url"].endswith("/api/oom-sakkie/management/rootline/reassess")
+     assert seen["auth"].startswith("Bearer ") and seen["timeout"]==115
+ 

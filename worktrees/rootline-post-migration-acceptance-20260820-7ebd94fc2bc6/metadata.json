@@ -1,0 +1,22 @@
+{
+  "source_worktree": "C:\\tmp\\rootline-post-migration-acceptance-20260820",
+  "source_branch": "audit/rootline-post-migration-acceptance-20260820",
+  "source_head": "b9eefabf65f30811c771a484b0459c5280401686",
+  "source_upstream": "origin/main",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 757,
+  "captured_at": "2026-09-17T17:54:16.881980+00:00",
+  "tracked_combined_patch_bytes": 2613,
+  "tracked_combined_patch_sha256": "16A43F690C9CC0844B1E22CB1AE4C1620CA78B7FDDEEFA327CDEE395C7719075",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 2613,
+  "tracked_unstaged_patch_sha256": "16A43F690C9CC0844B1E22CB1AE4C1620CA78B7FDDEEFA327CDEE395C7719075",
+  "untracked_file_count": 1,
+  "untracked_archive_entry_count": 1,
+  "untracked_archive_bytes": 6226,
+  "untracked_archive_sha256": "65B11FC9AAFC7E4DD50BEEC02C80A1197D9F33D736A0FD67FD607DDEC855FEF7",
+  "untracked_paths": [
+    "docs/06-operations/ROOTLINE_FERTILIZER_MIXER_POST_MIGRATION_ACCEPTANCE_20260820.md"
+  ]
+}

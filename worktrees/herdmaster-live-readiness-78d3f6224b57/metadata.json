@@ -1,0 +1,23 @@
+{
+  "source_worktree": "C:\\tmp\\herdmaster-live-readiness",
+  "source_branch": "feat/herdmaster-auction-evidence-review",
+  "source_head": "686766a84158c930ab8f363da3d1d68797150d86",
+  "source_upstream": "origin/feat/herdmaster-auction-evidence-review",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 0,
+  "captured_at": "2026-09-17T17:54:08.745073+00:00",
+  "tracked_combined_patch_bytes": 0,
+  "tracked_combined_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 0,
+  "tracked_unstaged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "untracked_file_count": 2,
+  "untracked_archive_entry_count": 2,
+  "untracked_archive_bytes": 168173,
+  "untracked_archive_sha256": "968E7D57114E8DC0CA7C5396D8772D9E7D5F3C37F1AECB90B4D183FDB43C3C4A",
+  "untracked_paths": [
+    "breeding-attention-visual/desktop.png",
+    "breeding-attention-visual/mobile.png"
+  ]
+}

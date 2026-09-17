@@ -1,0 +1,512 @@
+diff --git a/.claude/settings.local.json b/.claude/settings.local.json
+index 2ae8adba..cb73bda9 100644
+--- a/.claude/settings.local.json
++++ b/.claude/settings.local.json
+@@ -15,7 +15,15 @@
+       "Bash(echo \"smoke_exit=$?\")",
+       "Bash(node --check tests/oom_sakkie_playwright_behavior.spec.js)",
+       "Bash(node --check playwright.config.js)",
+-      "Bash(python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_service tests.test_oom_sakkie_routes)"
++      "Bash(python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_service tests.test_oom_sakkie_routes)",
++      "Bash(venv/Scripts/python.exe -m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow tests.test_charlie_mission_store tests.test_charlie_mission_pickup)",
++      "Bash(git checkout *)",
++      "Bash(venv/Scripts/python.exe -m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow tests.test_charlie_mission_store tests.test_charlie_mission_pickup tests.test_charlie_mission_memory)",
++      "Bash(venv/Scripts/python.exe -m unittest tests.test_charlie_execution_bridge.CharlieExecutionBridgeTests.test_rerun_recovers_upstream_artifacts_from_mission_memory tests.test_charlie_execution_bridge.CharlieExecutionBridgeTests.test_durable_backflow_count_persists_across_sessions)",
++      "Bash(venv/Scripts/python.exe -m unittest discover -s tests -p \"test_charlie_*.py\")",
++      "Bash(git add *)",
++      "Bash(git commit -q -m ' *)",
++      "Bash(git branch *)"
+     ]
+   }
+ }
+diff --git a/control-tower-artifacts/PR-1167/review-01d3890d/PR1167_01D3890D_INDEPENDENT_DEFENSIVE_QA_HANDOVER_20260822.md b/control-tower-artifacts/PR-1167/review-01d3890d/PR1167_01D3890D_INDEPENDENT_DEFENSIVE_QA_HANDOVER_20260822.md
+new file mode 100644
+index 00000000..a9cea905
+--- /dev/null
++++ b/control-tower-artifacts/PR-1167/review-01d3890d/PR1167_01D3890D_INDEPENDENT_DEFENSIVE_QA_HANDOVER_20260822.md
+@@ -0,0 +1,110 @@
++# PR #1167 exact-head independent defensive QA handover
++
++## Verdict
++
++**FAIL / CONTAINED — DO NOT MERGE OR DEPLOY.**
++
++Candidate `01d3890d33f1341bcce5f9551ded858de4fd1833` is not class-complete for internal foreign-key enforcement triggers. The v4 catalog manifest records foreign-key definitions whenever either endpoint is governed, but records internal triggers only when the trigger's physical table is in the fixed `CATALOG_RELATIONS` list. A referenced-side enforcement trigger on non-governed `public.pigs`, for a governed `public.pig_welfare_cases` foreign key, can therefore be disabled without changing the manifest. Exact-head replay accepts the weakened catalog.
++
++No repository source, PR, external system, deployment or production database was mutated. Testing used only the workspace-local disposable PostgreSQL runtime.
++
++## Exact identity and collision audit
++
++- Reviewed PR head: `01d3890d33f1341bcce5f9551ded858de4fd1833`.
++- Original exact base: `8c517580bb03fd2036cfe359c403ebb55c43d5cf`.
++- Current authoritative main observed during review: `c2fda06aa2748f5e16e0d3af79a0cf031027a648`.
++- Main advancement from the original base changes only `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` (348 inserted lines).
++- Candidate source changes are `.github/workflows/oom-sakkie-audit-rails.yml`, `scripts/run_render_production_migrations.py`, `supabase/migrations/202608220002_allow_herdmaster_farrowing_protected_claims.sql`, and `tests/test_render_production_migration_rail.py`.
++- Therefore the observed advancement is documentation-only and has no file collision with candidate source. If a repaired candidate later passes, it still requires rebase onto exact current main and exact-current gates before merge.
++
++## Governance and skill preflight
++
++- Read `.agents/skills/amadeus-operational-acceptance/SKILL.md` completely and applied its exact-revision, collision, failure-containment, replay and evidence contract.
++- Requested root `AGENTS.md` is absent from both the exact isolated checkout and repository root. This is an explicit governance preflight gap; no remembered `AGENTS.md` rules were invented.
++- Read the tracked active governance and the PR #1167 repair/current-main handovers, including the earlier rewrite-rule, view `_RETURN` rule and internal-trigger failures.
++
++## Hosted and tracked evidence
++
++GitHub reported four successful exact-head checks:
++
++- `Closed Render migration rail with disposable Postgres` — pass, 50s.
++- `Playwright real-browser behavior gate` — pass, 1m04s.
++- `Unit tests with disposable Postgres audit rails` — pass, 2m14s.
++- `charlie-core` — pass, 2m04s.
++
++Fresh local exact-head tracked suite:
++
++```text
++RENDER_MIGRATION_TEST_DATABASE_URL=postgresql://postgres:***@127.0.0.1:55485/render_migration_rail_test
++C:\Users\charl\venv\Scripts\python.exe -m unittest tests.test_render_production_migration_rail
++Ran 25 tests in 132.720s
++OK
++```
++
++The first invocation raced container initialization and was discarded; the identical command after PostgreSQL readiness passed.
++
++## Independent reproduction — untracked referenced-side FK trigger
++
++Runtime fixture: `.codex-runtime/missions/PR-1167/review-01d3890d/external_fk_trigger_attack.py`.
++
++Procedure:
++
++1. Reset the disposable database to the tracked predecessor fixture.
++2. Run the exact-head rail successfully, producing five applied receipts and its checkpoint.
++3. Select the DELETE-side internal FK trigger physically installed on `public.pigs` for constraint `pig_welfare_cases_pig_id_fkey` whose referencing relation is the governed `public.pig_welfare_cases`.
++4. Capture `_catalog_snapshot()`.
++5. Execute `ALTER TABLE public.pigs DISABLE TRIGGER <selected internal trigger>` and commit the attack.
++6. Capture the manifest again and replay the exact-head rail.
++7. Read receipt count and trigger state.
++
++Exact result:
++
++```text
++selected_trigger=('public','pigs','RI_ConstraintTrigger_a_29757',
++                  'pig_welfare_cases_pig_id_fkey',9)
++catalog_digest_before=a529d7913c904cc323083aadd8e568c7a4ded191879783a246af85be45443fa7
++catalog_digest_after_attack=a529d7913c904cc323083aadd8e568c7a4ded191879783a246af85be45443fa7
++manifest_equal_after_attack=True
++replay_error=None
++replay_accepted=True
++receipt_count_before=5
++receipt_count_after=5
++trigger_state_after_replay=D
++```
++
++This is a deterministic fail-open acceptance defect. The rail does not merely fail to diagnose the drift: it positively accepts replay while the FK enforcement trigger remains disabled. Receipt count stays stable only because replay is idempotent; it is not evidence of drift rejection.
++
++## Root cause
++
++`foreign_keys` selects a constraint when either its source or target relation belongs to `CATALOG_RELATIONS`. `internal_triggers`, however, selects solely on the physical trigger relation belonging to `CATALOG_RELATIONS`. PostgreSQL installs FK enforcement triggers on both referencing and referenced tables. Consequently, an FK that crosses the manifest boundary has only a partial enforcement-trigger inventory.
++
++The tracked regression selects an internal FK trigger whose own physical relation is already in `CATALOG_RELATIONS`; it therefore cannot prove the external-counterpart case.
++
++## Required repair and acceptance
++
++Derive internal FK-trigger scope from the complete selected FK constraint set, not from the static relation list alone. For every selected foreign key, inventory every associated `pg_trigger` row by `tgconstraint`, regardless of whether `tgrelid` is itself a governed relation. Preserve the separate inventory for non-FK internal triggers on governed relations. Add a regression which deliberately selects a crossed-boundary FK and disables both referenced-side DELETE and UPDATE enforcement classes in independent cases; each must reject before any durable bootstrap/catalog/receipt change.
++
++Also audit every allowlisted FK for both endpoints so this is class-complete rather than another object-name patch. The existing immutable checksum ledger plus separately governed baseline remains the right architecture; the repair belongs in the deterministic catalog-manifest drift gate, not in a new migration-specific semantic checker.
++
++## What passed but does not override the failure
++
++- Exact checksum-bound ordered allowlist and exact Render commit binding are covered and green.
++- Tracked tests cover predecessor/target semantics, receipt identity, timezone invariance, replay, concurrency/advisory locking, full-transaction rollback, prior trigger/rule/view attacks, ACLs and owner checks.
++- Static inspection confirms bootstrap, migrations, receipts, anchors, baselines and checkpoint mutations are enclosed in one transaction under a session advisory lock.
++- The new reproduction proves the catalog gate is not class-complete, so those otherwise positive results cannot support operational acceptance.
++
++## Unknowns and boundaries
++
++- No production or provider readback was attempted or authorized.
++- No deployment was attempted.
++- The absent root `AGENTS.md` remains an Unknown/governance packaging defect.
++- Numeric internal trigger names are disposable-database OIDs and are expected to vary; selection is semantic by constraint, endpoint table and DELETE event class.
++
++## Check Receipt / Control Tower disposition
++
++- Decision: **FAIL / contained**.
++- Owner-visible production outcome: none; source review only.
++- Protected actions performed: none.
++- Rollback required: none; no candidate or external mutation occurred.
++- Next owner action: none. Return to implementer with the bounded manifest-scope repair above.
++- Merge/deploy status: forbidden pending repair, independent rerun, rebase to exact current main, and exact-current green gates.
+diff --git a/docs/06-operations/HERDMASTER_OPEN_MISSION_REGISTER_20260812.md b/docs/06-operations/HERDMASTER_OPEN_MISSION_REGISTER_20260812.md
+index e5b15799..954e387d 100644
+--- a/docs/06-operations/HERDMASTER_OPEN_MISSION_REGISTER_20260812.md
++++ b/docs/06-operations/HERDMASTER_OPEN_MISSION_REGISTER_20260812.md
+@@ -2,19 +2,39 @@
+ 
+ ## Purpose
+ 
+-Concise owner tracking register prepared on 2026-08-12. This is a planning view, not execution authority. Reconcile authoritative main and terminal releases before starting any item.
++Concise owner tracking register prepared on 2026-08-12 and maintained by Control Tower. This is a planning view, not execution authority. Reconcile authoritative main, the target worktree, the last delivered instruction and terminal/runtime ownership before dispatching any item.
++
++Charl does not schedule this register manually. He may report observations and paste terminal feedback at any time. Control Tower records new work here, preserves its acceptance contract, and dispatches it only when the owning terminal is proven available.
++
++## Dispatch control
++
++| Terminal | Visible-terminal state | Current mission | Last delivery truth | Next Control Tower decision |
++|---|---|---|---|---|
++| HERDMASTER | **RUNNING** by Charl's latest report; exact fresh terminal acknowledgement still required in its next feedback | Individual piglet observations at weaning, including the unresolved independent livestock and data-integrity findings | Current mission was delivered by Charl; later defects are queued here and have **not** been delivered | Reconcile the next complete terminal feedback. Issue no new full mission while it remains running. Use an addendum only when the new fact is essential to the active mission and cannot safely wait. |
++
++Allowed dispatch decisions are `CONTINUE - SEND NOTHING`, `ADDENDUM`, `NEW MISSION`, `PARALLEL MISSION`, or `WAIT FOR INPUT`. A prepared prompt remains `prompt_prepared`; it is not `delivered`, `acknowledged`, or `started` until evidence proves each transition.
++
++## Queued owner observations and defects
++
++| Queue order | Mission identity | Status | Dependency | Preserved owner-visible acceptance |
++|---|---|---|---|---|
++| HMQ-20260813-01 | Breeding Attention canonical truth: future planned weaning and recognisable litter label | `queued_not_dispatched` | Current HERDMASTER weaning-observation mission must release or explicitly absorb this as a reviewed successor without overlapping work | Molly's future planned 2026-09-11 weaning does not trigger `complete_weaning`; actual-weaning evidence remains authoritative; the dashboard tile shows Molly first and `LIT-2026-5C36` second. |
++| HMQ-20260813-02 | Breeding Attention protected-page login journey | `queued_not_dispatched` | HMQ-20260813-01 or a proven disjoint successor boundary; current main and shared auth contract must be reconciled | Logged-out dashboard navigation redirects to `/owner/login?next=/api/pig-weights/breeding-attention/view`, successful login returns to the page, expired sessions redirect cleanly, and real JSON endpoints retain API-style 403 denial. |
++
++Neither queued item authorizes source work, deployment, production access or interruption of the running terminal. Their complete continuation contracts remain in the Control Tower conversation until the next dispatch reconciliation.
+ 
+ ## Ordered register
+ 
+ | Priority | Mission | Current status | Dependency | Next genuine trigger |
+ |---|---|---|---|---|
+-| 1 | Breeding Attention and `/matings` current-truth correction | `/matings` names, pens and windows deployed and live-proven on 2026-08-13; Breeding Attention lifecycle and readiness corrections remain pending | Authoritative production/read contract | Prove active-exposure exclusion, Molly nursing and body-condition holds on the real Breeding Attention page |
+-| 2 | `/matings` UI simplification | Ready for isolated Codex/UI work against the deployed read contract; existing dirty facelift work remains preserved | Stable, live-proven HERDMASTER read contract | Reconcile the preserved facelift and build a faithful local preview for Charl |
+-| 3 | Individual piglet observations at weaning | Owner-approved plan; implementation not started | Stable litter/weaning UI and canonical observation writer | Implement exact-pig positive/negative capture and prove one genuine observation |
+-| 4 | Full-lifecycle genetic merit | Substantial unmerged branch work; not authoritative | Reconcile `docs/herdmaster-lifetime-genetic-merit` and `feat/herdmaster-lifetime-genetic-merit-evidence` without rebuilding blindly | Reviewed integration of mating-to-financial outcome evidence |
+-| 5 | Weight-batch intelligence | Implemented and merged; real-world acceptance pending | Next genuine completed weight batch | Printable report plus one concise provider-confirmed Afrikaans summary and zero-effect replay |
+-| 6 | Active exposure actual UIT | Event-bound, not due now | Genuine physical separation of the current group | Owner reports actual separation date, expected around 2026-08-28 |
+-| 7 | Lifetime evidence used in pairing recommendations | Dependent outcome | Priorities 3 and 4 provide attributable evidence | New recommendation explains lifecycle evidence without inventing proof |
++| 1 | Individual piglet observations at weaning | Active development mission; exact current terminal status must be reconciled from its next feedback | Preserve the existing dirty/unique mission worktree and close independent livestock and data-integrity findings | Complete reviewed integration, then retain the mission for one genuine exact-pig observation and visible HERDMASTER consumption |
++| 2 | Breeding Attention canonical truth and protected-page access | Two bounded defects are registered as HMQ-20260813-01 and HMQ-20260813-02; neither has been dispatched | Current HERDMASTER mission release and authoritative-main reconciliation | Correct future planned-weaning semantics and owner-login return journey without weakening JSON endpoint privacy |
++| 3 | Breeding Attention and `/matings` current-truth correction | `/matings` names, pens and windows deployed and live-proven on 2026-08-13; other lifecycle and readiness corrections remain pending | Authoritative production/read contract | Prove active-exposure exclusion, Molly nursing and body-condition holds on the real Breeding Attention page |
++| 4 | `/matings` UI simplification | Ready for isolated Codex/UI work against the deployed read contract; existing dirty facelift work remains preserved | Stable, live-proven HERDMASTER read contract | Reconcile the preserved facelift and build a faithful local preview for Charl |
++| 5 | Full-lifecycle genetic merit | Substantial unmerged branch work; not authoritative | Reconcile `docs/herdmaster-lifetime-genetic-merit` and `feat/herdmaster-lifetime-genetic-merit-evidence` without rebuilding blindly | Reviewed integration of mating-to-financial outcome evidence |
++| 6 | Weight-batch intelligence | Implemented and merged; real-world acceptance pending | Next genuine completed weight batch | Printable report plus one concise provider-confirmed Afrikaans summary and zero-effect replay |
++| 7 | Active exposure actual UIT | Event-bound, not due now | Genuine physical separation of the current group | Owner reports actual separation date, expected around 2026-08-28 |
++| 8 | Lifetime evidence used in pairing recommendations | Dependent outcome | Piglet observations and full-lifecycle merit provide attributable evidence | New recommendation explains lifecycle evidence without inventing proof |
+ 
+ ## Other historical queue entries requiring reconciliation
+ 
+diff --git a/docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md b/docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md
+index a0e50992..53334b08 100644
+--- a/docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md
++++ b/docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md
+@@ -2,6 +2,8 @@
+ 
+ This standard controls CHARLIE CORE missions that build or change owner-facing UI, dashboards, pages, overlays, approval flows, or visual layouts.
+ 
++For a facelift, dashboard match, shared farm style, or page-by-page UI upgrade, `AMADEUS_FARM_UI_FACELIFT_STANDARD.md` is mandatory and defines the product-design foundation.
++
+ ## Non-Negotiable Rule
+ 
+ UI missions are not ready for owner review because strings exist in the DOM or routes return HTTP 200. They are ready only when the actual screen is usable, visually coherent, and checked against the owner's request and any attached reference media.
+@@ -15,7 +17,8 @@ For every UI mission, agents must identify:
+ - visible owner actions;
+ - required responsive viewports;
+ - attached screenshots, sketches, or reference images;
+-- the Vault Brain UI standards used.
++- the Vault Brain UI standards used;
++- the authoritative shared farm UI assets and approved reference routes used.
+ 
+ If the mission includes attached media, Visual Reference Interpreter, Creative UI Designer, UX Interaction Designer, Frontend Design Implementer, Builder, Tester, QA/Red-Team, Visual QA Reviewer, and Reviewer must explicitly cite the media reference path or URL and describe how it affected the implementation or review.
+ 
+diff --git a/docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md b/docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md
+index f9ce6935..308ed084 100644
+--- a/docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md
++++ b/docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md
+@@ -2,6 +2,8 @@
+ 
+ Owner dashboards must help Charl decide quickly. They must not bury decisions, hide buttons, overflow, or look like raw technical dumps.
+ 
++All Amadeus Farm operational-page facelifts must also follow `AMADEUS_FARM_UI_FACELIFT_STANDARD.md`. The live dashboard and approved descendant pages are the visual baseline; never approximate them from an older checkout or substitute a second component system.
++
+ ## Required Dashboard Principles
+ 
+ - Put critical owner actions directly where the decision appears.
+diff --git a/static/js/matings.js b/static/js/matings.js
+index df6949d7..5b53c2c4 100644
+--- a/static/js/matings.js
++++ b/static/js/matings.js
+@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", function () {
+ let allMatingRecords = [];
+ let allPens = [];
+ let selectedSowId = "";
++let selectedSectionId = "";
+ let activeAssumePregnantId = null;
+ let activeMarkNotPregnantId = null;
+ const expandedMatingIds = new Set();
+@@ -13,31 +14,38 @@ const expandedMatingIds = new Set();
+ const SECTION_DEFINITIONS = [
+     {
+         id: "needs_action",
+-        title: "Needs Action Now",
+-        description: "Overdue pregnancy checks, overdue farrowing, or records needing a decision."
++        title: "Aandag Nodig",
++        description: "Agterstallige kontroles, verwagte jong datums of rekords wat 'n besluit nodig het."
+     },
+     {
+         id: "move_soon",
+-        title: "Move Soon / Prepare",
+-        description: "Open or pregnant sows approaching expected farrowing."
++        title: "Berei Voor",
++        description: "Sôe wat hul verwagte jong datum nader."
+     },
+     {
+         id: "check_soon",
+-        title: "Upcoming Pregnancy Checks",
+-        description: "Open matings approaching the pregnancy check window."
++        title: "Komende Kontroles",
++        description: "Oop parings wat hul dragtigheidskontrole nader."
+     },
+     {
+         id: "open",
+-        title: "All Open Matings",
+-        description: "Other active breeding records still in progress."
++        title: "Oop Parings",
++        description: "Ander aktiewe teelrekords wat nog aan die gang is."
+     },
+     {
+         id: "closed",
+-        title: "Closed / Farrowed",
+-        description: "Completed, not pregnant, or linked litter records."
++        title: "Afgesluit / Gejong",
++        description: "Voltooide, nie-dragtige of gekoppelde werpselrekords."
+     }
+ ];
+ 
++const PREVIEW_RECORDS = [
++    {mating_id:"MAT-2026-SOPHIE-BOLA",sow_pig_id:"PIG-SOPHIE",sow_tag_number:"Sophie",boar_pig_id:"PIG-BOLA",boar_tag_number:"Bola",sow_current_pen_name:"By Bola",boar_current_pen_name:"Teelhok",mating_date:"2026-08-12",days_since_mating:"0",expected_pregnancy_check_date:"2026-09-02",expected_farrowing_date:"2026-12-04",mating_status:"Open",outcome:"Pending",pregnancy_check_result:"Unknown",mating_method:"Natural",exposure_group:"12–28 Augustus",is_open:"Yes"},
++    {mating_id:"MAT-2026-OLIVE-TYSON",sow_pig_id:"PIG-OLIVE",sow_tag_number:"Olive",boar_pig_id:"PIG-TYSON",boar_tag_number:"Tyson",sow_current_pen_name:"By Tyson",boar_current_pen_name:"Teelhok",mating_date:"2026-08-12",days_since_mating:"0",expected_pregnancy_check_date:"2026-09-02",expected_farrowing_date:"2026-12-04",mating_status:"Open",outcome:"Pending",pregnancy_check_result:"Unknown",mating_method:"Natural",exposure_group:"12–28 Augustus",is_open:"Yes"},
++    {mating_id:"MAT-2026-MONA",sow_pig_id:"PIG-MONA",sow_tag_number:"Mona",boar_pig_id:"PIG-UNKNOWN",boar_tag_number:"Beer onbekend",sow_current_pen_name:"Kraamhok",mating_date:"2026-05-01",days_since_mating:"103",expected_pregnancy_check_date:"2026-05-22",expected_farrowing_date:"2026-08-23",mating_status:"Confirmed_Pregnant",outcome:"Pending",pregnancy_check_result:"Assumed_Pregnant",mating_method:"Natural",exposure_group:"-",is_open:"Yes"},
++    {mating_id:"MAT-2026-CLOSED",sow_pig_id:"PIG-TEENA",sow_tag_number:"Teena",boar_pig_id:"PIG-BOLA",boar_tag_number:"Bola",sow_current_pen_name:"D3",mating_date:"2026-04-14",days_since_mating:"120",expected_pregnancy_check_date:"2026-05-05",expected_farrowing_date:"2026-08-06",actual_farrowing_date:"2026-07-07",linked_litter_id:"LIT-2026-1350",mating_status:"Completed",outcome:"Farrowed",pregnancy_check_result:"Confirmed_Pregnant",mating_method:"Natural",exposure_group:"-",is_open:"No"}
++];
++
+ async function loadAllPens() {
+     try {
+         const response = await fetch("/api/pig-weights/pens");
+@@ -64,7 +72,8 @@ async function loadMatingBoard() {
+             throw new Error("Failed to load mating records.");
+         }
+ 
+-        allMatingRecords = (data.records || []).map(record => {
++        const sourceRecords = (new URLSearchParams(window.location.search).get("preview") === "facelift-v3" && !(data.records || []).length) ? PREVIEW_RECORDS : (data.records || []);
++        allMatingRecords = sourceRecords.map(record => {
+             const classification = classifyMating(record);
+             return {
+                 ...record,
+@@ -79,8 +88,23 @@ async function loadMatingBoard() {
+         renderSummary(summary, allMatingRecords);
+         renderControls(controls, allMatingRecords);
+         renderBoard(board, getVisibleRecords());
++        const count = document.getElementById("mating_record_count");
++        if (count) count.textContent = `${allMatingRecords.length} rekords`;
+     } catch (error) {
+         console.error("Matings load error:", error);
++        if (new URLSearchParams(window.location.search).get("preview") === "facelift-v3") {
++            allMatingRecords = PREVIEW_RECORDS.map(record => {
++                const classification = classifyMating(record);
++                return {...record, action_section: classification.section, action_text: classification.actionText, action_class: classification.actionClass, action_priority: classification.actionPriority, sort_date: classification.sortDate};
++            });
++            renderSummary(summary, allMatingRecords);
++            renderControls(controls, allMatingRecords);
++            renderBoard(board, getVisibleRecords());
++            const count = document.getElementById("mating_record_count");
++            if (count) count.textContent = `${allMatingRecords.length} rekords`;
++            messageBox.classList.add("hidden");
++            return;
++        }
+         messageBox.classList.remove("hidden", "message-success", "message-error");
+         messageBox.classList.add("message-error");
+         messageBox.textContent = "Something went wrong while loading the breeding board.";
+@@ -103,6 +127,15 @@ function setupMatingBoardEvents() {
+     });
+ 
+     document.addEventListener("click", async function (event) {
++        const summaryFilter = event.target.closest("[data-mating-section]");
++        if (summaryFilter) {
++            const nextSection = summaryFilter.getAttribute("data-mating-section") || "";
++            selectedSectionId = selectedSectionId === nextSection ? "" : nextSection;
++            renderSummary(document.getElementById("mating_summary"), allMatingRecords);
++            renderControls(document.getElementById("mating_controls"), allMatingRecords);
++            renderBoard(document.getElementById("matings_board"), getVisibleRecords());
++            return;
++        }
+         const cardToggle = event.target.closest("[data-mating-toggle]");
+         if (cardToggle) {
+             const matingId = cardToggle.getAttribute("data-mating-toggle");
+@@ -269,22 +302,22 @@ function renderSummary(container, records) {
+     const openCount = records.filter(record => record.is_open === "Yes").length;
+ 
+     container.innerHTML = `
+-        <div class="info-card">
+-          <div class="info-title">Needs Action</div>
++        <button type="button" class="info-card ${selectedSectionId === "needs_action" ? "is-active" : ""}" data-mating-section="needs_action">
++          <div class="info-title">Aandag Nodig</div>
+           <div class="info-value ${counts.needs_action > 0 ? "bad-text" : "good-text"}">${counts.needs_action}</div>
+-        </div>
+-        <div class="info-card">
+-          <div class="info-title">Move Soon / Prepare</div>
++        </button>
++        <button type="button" class="info-card ${selectedSectionId === "move_soon" ? "is-active" : ""}" data-mating-section="move_soon">
++          <div class="info-title">Berei Voor</div>
+           <div class="info-value ${counts.move_soon > 0 ? "neutral-text" : "good-text"}">${counts.move_soon}</div>
+-        </div>
+-        <div class="info-card">
+-          <div class="info-title">Upcoming Checks</div>
++        </button>
++        <button type="button" class="info-card ${selectedSectionId === "check_soon" ? "is-active" : ""}" data-mating-section="check_soon">
++          <div class="info-title">Komende Kontroles</div>
+           <div class="info-value">${counts.check_soon}</div>
+-        </div>
+-        <div class="info-card">
+-          <div class="info-title">Open Matings</div>
++        </button>
++        <button type="button" class="info-card ${selectedSectionId === "open" ? "is-active" : ""}" data-mating-section="open">
++          <div class="info-title">Oop Parings</div>
+           <div class="info-value">${openCount}</div>
+-        </div>
++        </button>
+     `;
+ }
+ 
+@@ -303,21 +336,21 @@ function renderControls(container, records) {
+     container.innerHTML = `
+         <div class="form-grid">
+           <div class="form-group">
+-            <label for="mating_sow_filter">Filter by sow</label>
++            <label for="mating_sow_filter">Filtreer volgens sog</label>
+             <select id="mating_sow_filter" name="mating_sow_filter">
+-              <option value="">All sows</option>
++              <option value="">Alle sôe</option>
+               ${sowOptions}
+             </select>
+           </div>
+           <div class="form-group">
+-            <label>Card details</label>
++            <label>Kaartbesonderhede</label>
+             <button id="toggle_all_mating_details" type="button" class="button-link">
+-              ${allVisibleExpanded ? "Hide all details" : "Show all details"}
++              ${allVisibleExpanded ? "Versteek alle besonderhede" : "Wys alle besonderhede"}
+             </button>
+           </div>
+         </div>
+         <div class="pig-list-meta">
+-          Showing ${visibleRecords.length} of ${records.length} mating records${selectedSowId ? " for selected sow" : ""}.
++          Wys ${visibleRecords.length} van ${records.length} paringsrekords${selectedSowId ? " vir die gekose sog" : ""}.
+         </div>
+     `;
+ }
+@@ -368,8 +401,8 @@ function renderMatingCard(record) {
+     const isExpanded = expandedMatingIds.has(record.mating_id);
+     const isAssumeFormOpen = activeAssumePregnantId === record.mating_id;
+     const isMarkNotPregnantFormOpen = activeMarkNotPregnantId === record.mating_id;
+-    const sowLabel = formatAnimalLabel(record.sow_tag_number, record.sow_pig_id, "Unknown Sow");
+-    const boarLabel = formatAnimalLabel(record.boar_tag_number, record.boar_pig_id, "Unknown Boar");
++    const sowLabel = escapeHtml(record.sow_tag_number || record.sow_pig_id || "Sog onbekend");
++    const boarLabel = escapeHtml(record.boar_tag_number || record.boar_pig_id || "Beer onbekend");
+     const sowPen = formatPen(record.sow_current_pen_name, record.sow_current_pen_id);
+     const boarPen = formatPen(record.boar_current_pen_name, record.boar_current_pen_id);
+     const litterLink = record.linked_litter_id
+@@ -397,7 +430,7 @@ function renderMatingCard(record) {
+     const markNotPregnantFormHtml = isMarkNotPregnantFormOpen ? renderMarkNotPregnantForm(record.mating_id) : "";
+ 
+     return `
+-        <div class="history-item mating-card ${isExpanded ? "mating-card-expanded" : ""}">
++        <div class="history-item mating-card stage-${escapeHtml(record.action_section)} ${isExpanded ? "mating-card-expanded" : ""}" data-mating-toggle="${escapeHtml(record.mating_id || "")}" role="button" tabindex="0" aria-expanded="${isExpanded ? "true" : "false"}">
+           <div class="history-item-top">
+             <div>
+               <div class="history-item-date">${sowLabel} x ${boarLabel}</div>
+@@ -405,22 +438,14 @@ function renderMatingCard(record) {
+             </div>
+             <div class="mating-card-actions">
+               <div class="history-item-weight ${record.action_class}">${escapeHtml(record.action_text)}</div>
+-              <button
+-                type="button"
+-                class="mating-toggle-button"
+-                data-mating-toggle="${escapeHtml(record.mating_id || "")}"
+-                aria-expanded="${isExpanded ? "true" : "false"}"
+-              >
+-                ${isExpanded ? "Hide details ▲" : "Show details ▼"}
+-              </button>
+             </div>
+           </div>
+ 
+           <div class="history-item-grid mating-card-compact">
+             <div>
+-              <div class="history-label">Sow</div>
+-              <div class="history-value">${renderPigLink(record.sow_pig_id, record.sow_tag_number)}</div>
+-              <div class="pig-list-meta">Pen: ${escapeHtml(sowPen)}</div>
++              <div class="history-label">Parings / Plasings Datum</div>
++              <div class="history-value">${escapeHtml(record.mating_date || "-")}</div>
++              <div class="pig-list-meta">Hok: ${escapeHtml(sowPen)}</div>
+             </div>
+             <div>
+               <div class="history-label">Expected Farrowing</div>
+@@ -715,9 +740,11 @@ function countSections(records) {
+ }
+ 
+ function getVisibleRecords() {
+-    if (!selectedSowId) return allMatingRecords;
+-
+-    return allMatingRecords.filter(record => record.sow_pig_id === selectedSowId);
++    return allMatingRecords.filter(record => {
++        if (selectedSowId && record.sow_pig_id !== selectedSowId) return false;
++        if (selectedSectionId && record.action_section !== selectedSectionId) return false;
++        return true;
++    });
+ }
+ 
+ function getSowOptions(records) {
+@@ -726,9 +753,7 @@ function getSowOptions(records) {
+     records.forEach(record => {
+         if (!record.sow_pig_id) return;
+ 
+-        const label = record.sow_tag_number
+-            ? `${record.sow_tag_number} (${record.sow_pig_id})`
+-            : record.sow_pig_id;
++        const label = record.sow_tag_number || record.sow_pig_id;
+ 
+         sowMap.set(record.sow_pig_id, {
+             sow_pig_id: record.sow_pig_id,
+diff --git a/templates/matings.html b/templates/matings.html
+index 3aaf1ab1..eecf02d9 100644
+--- a/templates/matings.html
++++ b/templates/matings.html
+@@ -1,36 +1 @@
+-<!DOCTYPE html>
+-<html lang="en">
+-<head>
+-  <meta charset="UTF-8" />
+-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-  <title>Matings / Breeding Board</title>
+-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+-</head>
+-<body>
+-  <div class="page-shell">
+-    <div class="page-card">
+-      <div class="page-header page-header-with-link">
+-        <div>
+-          <h1>Matings / Breeding Board</h1>
+-          <p>Read-only view of open matings, overdue checks, farrowing dates, and pen context.</p>
+-        </div>
+-        <div class="detail-actions compact-actions">
+-          <a href="/" class="button-link button-link-secondary">Dashboard</a>
+-          <a href="/breeding-analytics" class="button-link button-link-secondary">Analytics</a>
+-          <a href="/master/add-mating" class="button-link">Add Mating</a>
+-        </div>
+-      </div>
+-
+-      <div class="info-grid" id="mating_summary"></div>
+-
+-      <div id="mating_controls" class="matings-controls"></div>
+-
+-      <div id="matings_message" class="message-box hidden"></div>
+-
+-      <div id="matings_board" class="history-list"></div>
+-    </div>
+-  </div>
+-
+-  <script src="{{ url_for('static', filename='js/matings.js') }}"></script>
+-</body>
+-</html>
++<!DOCTYPE html><html lang="af"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Parings · Amadeus Farm</title><link rel="stylesheet" href="{{ url_for('static',filename='css/main.css') }}"><link rel="stylesheet" href="{{ url_for('static',filename='css/farmDashboardV2.css') }}"><link rel="stylesheet" href="{{ url_for('static',filename='css/matingsRegisterV2.css') }}"></head><body><div class="farm-app-shell">{% include '_farm_nav.html' %}<main class="mating-register"><header class="mating-hero"><div><span class="farm-eyebrow">HERDMASTER · TEELBESTUUR</span><h1>Parings</h1><p>Van beerplasing tot jong datum—een duidelike werklys vir die volgende plaasaksie.</p></div><div class="mating-hero-actions"><a class="secondary-action" href="/api/pig-weights/breeding-attention/view">Teel-aandag</a><a class="secondary-action" href="/verwagte-jongdatums">Verwagte Jong Datums</a><a class="primary-action" href="/master/add-mating">+ Voeg Paring By</a></div></header><div id="matings_message" class="message-box hidden"></div><section id="mating_summary" class="mating-metrics"></section><section class="mating-workspace"><div class="workspace-heading"><div><span class="farm-eyebrow">PARINGSREGISTER</span><h2>Huidige teelwerk</h2><p>Die belangrikste werk verskyn eerste. Maak ’n kaart oop vir die volledige rekord en beskermde aksies.</p></div><span class="record-count" id="mating_record_count">–</span></div><div id="mating_controls" class="matings-controls"></div><div id="matings_board" class="mating-board"></div></section></main></div><script src="{{ url_for('static',filename='js/matings.js') }}"></script></body></html>

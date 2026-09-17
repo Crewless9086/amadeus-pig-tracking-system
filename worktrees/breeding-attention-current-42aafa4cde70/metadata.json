@@ -1,0 +1,19 @@
+{
+  "source_worktree": "C:\\tmp\\breeding-attention-current",
+  "source_branch": null,
+  "source_head": "df2bd2cd638b638036d3c5f98c623086a88048fb",
+  "source_upstream": null,
+  "source_ahead_upstream": null,
+  "source_behind_upstream": null,
+  "captured_at": "2026-09-17T17:52:49.000877+00:00",
+  "tracked_combined_patch_bytes": 1996,
+  "tracked_combined_patch_sha256": "F01A51B871BFBCF9526B8BDC449813F91CF6976B2FDC92301DB7C75238DE9BD5",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 1996,
+  "tracked_unstaged_patch_sha256": "F01A51B871BFBCF9526B8BDC449813F91CF6976B2FDC92301DB7C75238DE9BD5",
+  "untracked_file_count": 0,
+  "untracked_archive_bytes": 22,
+  "untracked_archive_sha256": "8739C76E681F900923B900C9DF0EF75CF421D39CABB54650C4B9AD19B6A76D85",
+  "untracked_paths": []
+}

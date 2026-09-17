@@ -1,0 +1,20 @@
+{
+  "source_worktree": "C:\\tmp\\vault-night-handover",
+  "source_branch": "docs/vault-night-handover-2026-07-26",
+  "source_head": "d8bebbd7455042e6f8c95a4ab7eee036d5acd67f",
+  "source_upstream": "origin/docs/vault-night-handover-2026-07-26",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 0,
+  "captured_at": "2026-09-17T17:54:20.887393+00:00",
+  "tracked_combined_patch_bytes": 196884,
+  "tracked_combined_patch_sha256": "6CCDB5B8D72A953026597CC2DEE0C6266A641610C0E44E45D758C4FDFE490B10",
+  "tracked_staged_patch_bytes": 196884,
+  "tracked_staged_patch_sha256": "6CCDB5B8D72A953026597CC2DEE0C6266A641610C0E44E45D758C4FDFE490B10",
+  "tracked_unstaged_patch_bytes": 0,
+  "tracked_unstaged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "untracked_file_count": 0,
+  "untracked_archive_entry_count": 0,
+  "untracked_archive_bytes": 22,
+  "untracked_archive_sha256": "8739C76E681F900923B900C9DF0EF75CF421D39CABB54650C4B9AD19B6A76D85",
+  "untracked_paths": []
+}

@@ -1,0 +1,22 @@
+{
+  "source_worktree": "C:\\tmp\\green-030-publication-recovery",
+  "source_branch": "fix/green-030-publication-recovery",
+  "source_head": "b75153f274d17aa62c05cee562a961d5b8ec8027",
+  "source_upstream": "origin/main",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 686,
+  "captured_at": "2026-09-17T17:54:06.297132+00:00",
+  "tracked_combined_patch_bytes": 2243,
+  "tracked_combined_patch_sha256": "85605CB0C4C52B0AE64B687C80A005590E5208C69671C77B4E393A29D97CF59F",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 2243,
+  "tracked_unstaged_patch_sha256": "85605CB0C4C52B0AE64B687C80A005590E5208C69671C77B4E393A29D97CF59F",
+  "untracked_file_count": 1,
+  "untracked_archive_entry_count": 1,
+  "untracked_archive_bytes": 2703,
+  "untracked_archive_sha256": "AB9C30C6FFA5648CB400D6D32AF143583E0A4F6313061697BB61163F17EA0107",
+  "untracked_paths": [
+    ".github/workflows/green-print-image-recovery.yml"
+  ]
+}

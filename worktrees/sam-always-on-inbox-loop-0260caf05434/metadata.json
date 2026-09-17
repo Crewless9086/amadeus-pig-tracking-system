@@ -1,0 +1,20 @@
+{
+  "source_worktree": "C:\\tmp\\sam-always-on-inbox-loop",
+  "source_branch": "fix/sam-always-on-inbox-loop",
+  "source_head": "486306ab24e18baf9d96b91c623adf2b5a27266e",
+  "source_upstream": "origin/fix/sam-always-on-inbox-loop",
+  "source_ahead_upstream": 19,
+  "source_behind_upstream": 0,
+  "captured_at": "2026-09-17T17:54:17.786306+00:00",
+  "tracked_combined_patch_bytes": 5474,
+  "tracked_combined_patch_sha256": "28D8DDC187E8D339541CC94253AA64708B096E6ACCC7B206EA80777929DB6531",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 5474,
+  "tracked_unstaged_patch_sha256": "28D8DDC187E8D339541CC94253AA64708B096E6ACCC7B206EA80777929DB6531",
+  "untracked_file_count": 0,
+  "untracked_archive_entry_count": 0,
+  "untracked_archive_bytes": 22,
+  "untracked_archive_sha256": "8739C76E681F900923B900C9DF0EF75CF421D39CABB54650C4B9AD19B6A76D85",
+  "untracked_paths": []
+}

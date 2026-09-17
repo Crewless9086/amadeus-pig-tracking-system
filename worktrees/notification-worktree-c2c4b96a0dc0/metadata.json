@@ -1,0 +1,20 @@
+{
+  "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.codex-runtime\\missions\\RMQ-20260813-04\\notification-worktree",
+  "source_branch": "fix/rootline-current-plan-delivery-20260824",
+  "source_head": "b3ad3cfa51e178356ab3e27b7b2fcf7821339705",
+  "source_upstream": "origin/main",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 327,
+  "captured_at": "2026-09-17T17:54:33.722102+00:00",
+  "tracked_combined_patch_bytes": 6810,
+  "tracked_combined_patch_sha256": "F69058439CEF78A410BB73F39FC8662024B8B6ADD59E0CA9CBF5B663EF0FBA93",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 6810,
+  "tracked_unstaged_patch_sha256": "F69058439CEF78A410BB73F39FC8662024B8B6ADD59E0CA9CBF5B663EF0FBA93",
+  "untracked_file_count": 0,
+  "untracked_archive_entry_count": 0,
+  "untracked_archive_bytes": 22,
+  "untracked_archive_sha256": "8739C76E681F900923B900C9DF0EF75CF421D39CABB54650C4B9AD19B6A76D85",
+  "untracked_paths": []
+}

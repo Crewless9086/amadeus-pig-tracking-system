@@ -1,0 +1,29 @@
+{
+  "source_worktree": "C:\\tmp\\uiq-20260813-01-matings",
+  "source_branch": "ui/uiq-20260813-01-production-fidelity",
+  "source_head": "a7524f19724c18a5ccbaba39d58b95ac79c9c4cb",
+  "source_upstream": "origin/ui/uiq-20260813-01-production-fidelity",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 0,
+  "captured_at": "2026-09-17T17:54:20.393091+00:00",
+  "tracked_combined_patch_bytes": 0,
+  "tracked_combined_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 0,
+  "tracked_unstaged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "untracked_file_count": 8,
+  "untracked_archive_entry_count": 8,
+  "untracked_archive_bytes": 684261,
+  "untracked_archive_sha256": "6C8D1B4FE03A4111421075572DFC0B5662DFBF8A514675B9133D61661E60B44B",
+  "untracked_paths": [
+    "production-desktop.png",
+    "production-mobile.png",
+    "tests/uiq_production_verify.js",
+    "uiq-matings-desktop.png",
+    "uiq-matings-empty.png",
+    "uiq-matings-mobile.png",
+    "uiq-preview.stderr.log",
+    "uiq-preview.stdout.log"
+  ]
+}

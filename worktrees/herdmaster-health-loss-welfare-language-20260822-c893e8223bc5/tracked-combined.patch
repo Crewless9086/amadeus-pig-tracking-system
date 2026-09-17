@@ -1,0 +1,1198 @@
+diff --git a/docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md b/docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md
+index 686cf799..d7cdc152 100644
+--- a/docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md
++++ b/docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md
+@@ -135,6 +135,12 @@ message lifecycle contain authenticated intake/context wiring. Presence in
+ source does not prove that a deployed route is enabled, correctly configured,
+ or operationally successful.
+ 
++The existing authenticated family principal supplies the durable output
++language (`charl` defaults to English; a configured Afrikaans family principal
++such as `dad` remains Afrikaans). Inbound-language detection never writes this
++preference. The same selection is carried through the pure preview composer,
++protected buttons, correction/failure states and completion.
++
+ ### Protected write authority
+ 
+ `modules/pig_weights/herdmaster_health_loss_recording.py` contains narrowly
+@@ -144,6 +150,15 @@ no authority to create arbitrary litter, mating, medical, movement, disposal,
+ availability, customer, or sales effects. Stage 1 neither invokes nor expands
+ this writer.
+ 
++For a supported confirmed death, the writer uses one database transaction to
++record the canonical lifecycle effect, close the attributable living-welfare
++case with an append-only death event/link, complete now-invalid living-animal
++checks with append-only manager-case events, and retain distinct mortality,
++disposal and biosecurity work. Canonical readback must prove the pig, lifecycle,
++welfare closure and active-projection outcome before completion is composed;
++failure rolls the whole transaction back. Exact replay reuses the same
++operation and readback and creates no second effect.
++
+ `202608200002_create_pig_welfare_case_lifecycle.sql` is the reviewed additive
+ foundation for case identity, append-only case events and non-merging fact
+ links. `modules/pig_weights/pig_welfare_case_runtime.py` is the bounded adapter:
+diff --git a/docs/09-vault-brain/07-standards/OOM_SAKKIE_TELEGRAM_MESSAGE_STANDARD.md b/docs/09-vault-brain/07-standards/OOM_SAKKIE_TELEGRAM_MESSAGE_STANDARD.md
+index c5a01ecb..6152bc16 100644
+--- a/docs/09-vault-brain/07-standards/OOM_SAKKIE_TELEGRAM_MESSAGE_STANDARD.md
++++ b/docs/09-vault-brain/07-standards/OOM_SAKKIE_TELEGRAM_MESSAGE_STANDARD.md
+@@ -24,6 +24,12 @@ that no owner action is currently available.
+ 
+ ## Conversation and specialist answers
+ 
++Resolve the recipient's output language from the existing authenticated family
++identity/profile before composing any visible text or buttons. The language of
++one inbound message is semantic evidence only and must not silently change that
++stored preference. A single selection governs headings, body, dates, facts,
++Unknowns, questions, corrections, failures, completion and buttons.
++
+ An authenticated reply binds to its active provider-delivered question before
+ generic semantic intake. Preserve supported portions of a partial reply and ask
+ only the smallest materially missing follow-up. Grouped questions accept grouped
+diff --git a/docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md b/docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md
+index 8b4b3ee8..d52c44d5 100644
+--- a/docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md
++++ b/docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md
+@@ -297,6 +297,10 @@
+ - First natural specialist adapter and exact-preview factual writer:
+   `modules/oom_sakkie/herdmaster_health_loss_runtime.py` and
+   `modules/pig_weights/herdmaster_health_loss_recording.py`.
++- Authenticated recipient language and localized protected controls:
++  `modules/oom_sakkie/family_access.py`, `telegram_gateway.py` and
++  `protected_action_claims.py`. The family principal is canonical; no
++  Telegram-specific preference store or second callback rail exists.
+ - Canonical health/loss workflow and stage-one pure contracts:
+   `docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md`,
+   `modules/pig_weights/herdmaster_natural_health_loss_intake.py`, and
+@@ -322,6 +326,11 @@
+   Focused coverage is in
+   `tests/test_pig_welfare_case_runtime.py`. No second manager, queue,
+   observation store, UI or Telegram lifecycle is introduced.
++- Confirmed supported mortality coordinates canonical lifecycle, attributable
++  welfare closure and obsolete living-check reconciliation inside the existing
++  transaction in `herdmaster_health_loss_recording.py`; completion is governed
++  by canonical readback and distinct mortality/disposal/biosecurity work is
++  preserved.
+ - Dispatch truth reducer:
+   `modules/oom_sakkie/specialist_dispatch_ack.py`.
+ - Existing durable evidence rail:
+diff --git a/docs/09-vault-brain/CHANGELOG.md b/docs/09-vault-brain/CHANGELOG.md
+index 1dbacc55..43b83cdc 100644
+--- a/docs/09-vault-brain/CHANGELOG.md
++++ b/docs/09-vault-brain/CHANGELOG.md
+@@ -1,5 +1,22 @@
+ # Vault Brain Changelog
+ 
++## 2026-08-22 - Natural mortality language and welfare coordination repaired
++
++- Routed all health/loss presentation and protected-button labels from the
++  authenticated family's configured output language, with Charl defaulting to
++  English and configured Afrikaans family identities remaining Afrikaans;
++  inbound language does not mutate the preference.
++- Replaced technical health/loss Telegram projections with concise owner text
++  while retaining operation, digest, evidence and audit material behind the
++  message.
++- Coordinated supported confirmed mortality, attributable living-welfare
++  closure and obsolete living-check completion in one existing transaction,
++  preserving append-only history and distinct mortality, disposal and
++  biosecurity work. Canonical readback now gates completion and exact replay.
++- Added no schema, queue, scheduler, translator, callback mechanism or
++  production/configuration/data/provider effect. Genuine acceptance and release
++  remain protected later boundaries.
++
+ ## 2026-08-22 - Control Tower outcome-depth and owner-intake enforcement
+ 
+ - Made the Agentic Operating Mission Standard the concise single-file Control
+diff --git a/modules/oom_sakkie/family_access.py b/modules/oom_sakkie/family_access.py
+index 21aa5167..50195aa7 100644
+--- a/modules/oom_sakkie/family_access.py
++++ b/modules/oom_sakkie/family_access.py
+@@ -18,6 +18,8 @@ from typing import Any, Mapping
+ 
+ FAMILY_BINDINGS_ENV = "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON"
+ OWNER_USER_ID_ENV = "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID"
++OWNER_LANGUAGE_ENV = "OOM_SAKKIE_TELEGRAM_OWNER_LANGUAGE"
++SUPPORTED_OUTPUT_LANGUAGES = frozenset({"en", "af"})
+ PROTECTED_CAPABILITIES = frozenset({
+     "mortality_confirmation", "sales_decision", "reservation", "payment",
+     "mating_execution", "treatment", "hardware_exception",
+@@ -56,7 +58,7 @@ class FamilyPrincipal:
+     authorized_by_user_id: str
+     authorized_at: str
+     binding_digest: str
+-    language: str = "af"
++    language: str = "en"
+ 
+     @property
+     def authenticated(self) -> bool:
+@@ -104,9 +106,11 @@ def resolve_family_principal(parsed: Mapping[str, Any], environ: Mapping[str, st
+     if not user_id or user_id != chat_id or chat_type != "private":
+         return _unknown(user_id, chat_id)
+     if owner_id and user_id == owner_id:
++        language = _output_language(environ.get(OWNER_LANGUAGE_ENV), default="en")
+         return FamilyPrincipal(user_id, chat_id, FamilyRole.OWNER, "charl",
+             frozenset({"*"}), frozenset({"*"}), "configured-owner",
+-            owner_id, "configured", _digest({"owner_user_id": owner_id}))
++            owner_id, "configured", _digest({"owner_user_id": owner_id,
++                "language": language}), language)
+     if not family_access_policy(environ)["configuration_valid"]:
+         return _unknown(user_id, chat_id)
+     rows = _bindings(environ)
+@@ -232,7 +236,7 @@ def _principal_from_record(record: Mapping[str, Any], owner_id: str, chat_id: st
+     allowed_permissions = FARM_MANAGER_CAPABILITIES | {READ_ONLY_CAPABILITY}
+     if not permissions <= allowed_permissions:
+         return None
+-    if language != "af":
++    if language not in SUPPORTED_OUTPUT_LANGUAGES:
+         return None
+     if role is FamilyRole.READ_ONLY_FAMILY_MEMBER and permissions - {READ_ONLY_CAPABILITY}:
+         return None
+@@ -291,3 +295,8 @@ def _digest(value: Mapping[str, Any]) -> str:
+ 
+ def _clean(value: Any) -> str:
+     return str(value or "").strip()[:200]
++
++
++def _output_language(value: Any, *, default: str = "en") -> str:
++    language = _clean(value).lower()
++    return language if language in SUPPORTED_OUTPUT_LANGUAGES else default
+diff --git a/modules/oom_sakkie/herdmaster_health_loss_preview.py b/modules/oom_sakkie/herdmaster_health_loss_preview.py
+index b963a4eb..0e0e70e8 100644
+--- a/modules/oom_sakkie/herdmaster_health_loss_preview.py
++++ b/modules/oom_sakkie/herdmaster_health_loss_preview.py
+@@ -7,6 +7,7 @@ It performs no I/O, routing, confirmation consumption, or persistence.
+ from __future__ import annotations
+ 
+ import hashlib
++import html
+ import re
+ from typing import Mapping
+ 
+@@ -50,6 +51,7 @@ def prepare_health_loss_owner_preview(
+             envelope.get("provider_timezone") or "Africa/Johannesburg"
+         ).strip(),
+         "text": _required(envelope, "text"),
++        "output_language": "af" if str(envelope.get("output_language") or "en").casefold().startswith("af") else "en",
+     }
+     if not all(report.values()):
+         return _failure("authenticated_envelope_incomplete")
+@@ -58,9 +60,9 @@ def prepare_health_loss_owner_preview(
+     except IntakeEvidenceError as exc:
+         return _failure(str(exc))
+ 
+-    question = str(
++    question = _localize_question(str(
+         evaluated.get("smallest_missing_follow_up_question") or ""
+-    ).strip()
++    ).strip(), report["output_language"])
+     if not evaluated.get("success"):
+         return {
+             "success": False,
+@@ -86,6 +88,7 @@ def prepare_health_loss_owner_preview(
+         "success": True,
+         "status": "consolidated_preview_ready",
+         "message_type": "consolidated_preview",
++        "output_language": report["output_language"],
+         "owner_text": owner_text,
+         "question_count": 1 if question else 0,
+         "confirmation_required": True,
+@@ -98,48 +101,69 @@ def prepare_health_loss_owner_preview(
+ 
+ def _render_preview(value, report):
+     identity = value["identity"]
++    af = report["output_language"] == "af"
++    name = html.escape(str(identity.get("name") or identity.get("tag_number") or ("Naam onbekend" if af else "Name unknown")))
++    tag = html.escape(str(identity.get("tag_number") or ("Onbekend" if af else "Unknown")))
++    dead = value.get("event_family") in {"found_dead", "mortality", "maternal_death", "compound_loss"}
++    facts = _owner_fact_summary(value, af=af)
+     lines = [
+-        "Oom Sakkie - HERDMASTER health/loss preview",
++        "<b>HERDMASTER - AFSTERWE VOORSKOU</b>" if af and dead else
++        "<b>HERDMASTER - GESONDHEID VOORSKOU</b>" if af else
++        "<b>HERDMASTER - DEATH PREVIEW</b>" if dead else "<b>HERDMASTER - HEALTH PREVIEW</b>",
+         "",
+-        f"Animal: {identity['name']} ({identity['pig_id']}; tag {identity['tag_number']})",
+-        f"Provider message: {report['provider_message_id']}",
+-        f"Observed at: {value['provider_report_time']}",
+-        "Owner evidence: authenticated private owner binding",
+-        f"Event: {value['event_family'].replace('_', ' ')}",
+-        f"Welfare priority: {value['immediate_welfare_priority']['level'].replace('_', ' ')}",
+-        f"Welfare action: {value['immediate_welfare_priority']['action']}",
+-        "",
+-        "Observed facts:",
+-        *_facts(value["observed_facts"], "None"),
+-        "Agent diagnosis: Unknown (none inferred)",
+-        "Suspected cause: Unknown" if not value["owner_suspected_cause"] else "Owner-suspected cause (not a diagnosis):",
+-        *_causes(value["owner_suspected_cause"], "None reported"),
+-        _treatment_line(value["owner_report_text"]),
+-        "Veterinary evidence:",
+-        *_diagnoses(value["veterinary_evidence"], "None reported"),
+-        "Agent inference: None",
+-        "",
+-        "Current canonical state:",
+-        *_mapping_lines(value["preview"]["before"]),
+-        "Proposed affected records (nothing written):",
+-        *_effect_lines(value["canonical_effects"]),
+-        "Intentionally unchanged:",
+-        "- " + ", ".join(value["preview"]["intentionally_unchanged"]),
++        (f"Dier: {name} (etiket {tag})" if af else f"Animal: {name} (tag {tag})"),
++        (f"Aangemeld: {value['provider_report_time']}" if af else f"Reported: {value['provider_report_time']}"),
++        ("Wat aangeteken sal word:" if af else "What will be recorded:"),
++        *facts,
++        _treatment_line(value["owner_report_text"], language="af" if af else "en"),
++        ("Oorsaak en presiese tyd bly Onbekend tensy dit aangemeld is." if af else
++         "Cause and exact time remain Unknown unless reported."),
++        ("Geen diagnose of behandeling word afgelei nie." if af else
++         "No diagnosis or treatment is inferred."),
+     ]
+-    question = str(value.get("smallest_missing_follow_up_question") or "").strip()
++    question = _localize_question(str(value.get("smallest_missing_follow_up_question") or "").strip(), report["output_language"])
+     if question:
+-        lines.extend(["", f"One clarification: {question}"])
++        lines.extend(["", ("Een vraag: " if af else "One question: ") + html.escape(question)])
+     else:
+-        confirmations = ", ".join(value["required_confirmations"])
+         lines.extend([
+             "",
+-            f"Protected confirmations covered: {confirmations or 'None'}",
+-            f"Reply exactly: CONFIRM {value['operation_id']}",
++            ("Bevestig om slegs hierdie voorskou een keer aan te teken." if af else
++             "Confirm to record only this preview once."),
+         ])
+     return "\n".join(lines)
+ 
+ 
+-def _treatment_line(owner_report_text):
++def _owner_fact_summary(value, *, af):
++    facts = []
++    for effect in value.get("canonical_effects") or []:
++        if not effect.get("supported"):
++            continue
++        area = str(effect.get("area") or "")
++        data = effect.get("facts") if isinstance(effect.get("facts"), Mapping) else {}
++        if area == "lifecycle":
++            facts.append(f"- {'Afsterwedatum' if af else 'Death date'}: {html.escape(str(data.get('date') or ('Onbekend' if af else 'Unknown')))}")
++        elif area == "movement_pen" and data.get("owner_reported_outcome"):
++            facts.append(f"- {'Verwydering/wegdoening aangemeld' if af else 'Removal/disposal reported'}: {html.escape(str(data['owner_reported_outcome']))}")
++        elif area == "medical_observation":
++            for row in data.get("observed") or []:
++                label = str(row.get('fact') or '').replace('_', ' ')
++                if af:
++                    label = {"not eating":"eet nie", "injured":"beseer", "bleeding":"bloei"}.get(label, label)
++                facts.append(f"- {html.escape(label)}: {html.escape(str(row.get('value')))}")
++    return facts or ["- Geen ondersteunde feit" if af else "- No supported fact"]
++
++
++def _localize_question(question, language):
++    question = re.sub(r"\s+\(PIG-[^)]+\)", "", question)
++    if not question or language != "af":
++        return question
++    question = re.sub(r"^Has (.+?) been removed from the pen; if yes, when and what was the disposal/removal outcome\?$",
++                      r"Is \1 uit die hok verwyder; indien wel, wanneer en wat was die verwydering/wegdoening?", question)
++    question = question.replace("Can ", "Kan ").replace(" able to stand, breathe normally and drink water?", " staan, normaal asemhaal en water drink?")
++    return question
++
++
++def _treatment_line(owner_report_text, language="en"):
+     text = str(owner_report_text or "").casefold()
+     absence_pattern = (
+         r"\b(?:no|without)\s+(?:treatment|medication|medicine|antibiotic\w*)\b(?:\s+(?:initially|earlier|yesterday|today))?(?=\s*(?:[.!?;,]|except\b|$))|"
+@@ -164,12 +188,15 @@ def _treatment_line(owner_report_text):
+     mentioned = bool(mention_matches)
+     exception_wording = explicit_none and bool(re.search(r"\bexcept\b", text))
+     if explicit_none and (mentioned or exception_wording):
+-        return "Treatment evidence: mixed or contradictory owner wording; details Unknown / not evaluated"
++        return ("Behandelingsbewys: gemengde of teenstrydige verslag; besonderhede Onbekend." if language == "af" else
++                "Treatment evidence: mixed or contradictory report; details Unknown.")
+     if explicit_none:
+-        return "Treatment evidence: owner reported absence wording; scope Unknown / not evaluated"
++        return ("Behandelingsbewys: geen behandeling is aangemeld; omvang Onbekend." if language == "af" else
++                "Treatment evidence: owner reported none; scope Unknown.")
+     if mentioned:
+-        return "Treatment evidence: mentioned by owner; details Unknown / not evaluated by this intake"
+-    return "Treatment evidence: Unknown / not evaluated or extracted by this intake"
++        return ("Behandelingsbewys: behandeling is genoem; besonderhede Onbekend." if language == "af" else
++                "Treatment evidence: treatment mentioned; details Unknown.")
++    return "Behandelingsbewys: Onbekend." if language == "af" else "Treatment evidence: Unknown."
+ 
+ 
+ def _facts(rows, empty):
+diff --git a/modules/oom_sakkie/herdmaster_health_loss_runtime.py b/modules/oom_sakkie/herdmaster_health_loss_runtime.py
+index 6310a617..d4e8533e 100644
+--- a/modules/oom_sakkie/herdmaster_health_loss_runtime.py
++++ b/modules/oom_sakkie/herdmaster_health_loss_runtime.py
+@@ -9,6 +9,7 @@ medical authority.
+ from __future__ import annotations
+ 
+ import hashlib
++import html
+ import json
+ import os
+ import re
+@@ -73,6 +74,7 @@ def handle_authenticated_health_loss_message(
+     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
+     provider_message_id = str(parsed.get("provider_message_id") or "").strip()
+     provider_timestamp = str(parsed.get("provider_timestamp") or "").strip()
++    output_language = "af" if str(parsed.get("output_language") or "en").casefold().startswith("af") else "en"
+     explicit_health = bool(HEALTH_PATTERN.search(text) or (
+         semantic.get("domain") == "herd_health" and not semantic.get("needs_clarification")))
+     confirmation_shaped = bool(CONFIRMATION_PATTERN.fullmatch(text))
+@@ -96,8 +98,7 @@ def handle_authenticated_health_loss_message(
+             context_store=context_store)
+     except ActiveContextLoadError:
+         return {"handled": True, "success": False, "status": "health_loss_active_context_unavailable",
+-            "answer": ("⚠️ <b>HERDMASTER FOLLOW-UP CONTAINED</b>\n\n"
+-                       "I could not safely read the active animal-case chronology. Your message was retained by the authenticated intake, but no new case or farm record was created."),
++            "answer": _health_loss_message(output_language, "active_context_unavailable"),
+             "records_audit_trace": False, "writes_farm_data": False,
+             "protected_actions_performed": False}, 503
+     stale_confirmation = next((row for row in contexts
+@@ -107,8 +108,7 @@ def handle_authenticated_health_loss_message(
+     if stale_confirmation:
+         return {"handled": True, "success": False,
+             "status": "health_loss_stale_confirmation_invalidated",
+-            "answer": ("⚠️ <b>OLD HERDMASTER PREVIEW EXPIRED</b>\n\n"
+-                       "That confirmation belongs to an earlier corrected preview. Nothing was recorded. Use the confirmation identity shown on the current preview."),
++            "answer": _health_loss_message(output_language, "stale_confirmation"),
+             "mission_id": str(stale_confirmation.get("mission_id") or ""),
+             "card_mission_id": str(stale_confirmation.get("mission_id") or ""),
+             "records_audit_trace": True, "writes_farm_data": False,
+@@ -123,8 +123,7 @@ def handle_authenticated_health_loss_message(
+                for row in ambiguity):
+             return {"handled": True, "success": True,
+                     "status": "health_loss_pending_context_ambiguous",
+-                    "answer": ("<b>HERDMASTER - WHICH UPDATE?</b>\n\n"
+-                               "More than one pending update could match that pig. Reply to the exact question card so I can bind it safely."),
++                    "answer": _health_loss_message(output_language, "pending_ambiguous"),
+                     "question_count": 1, "writes_farm_data": False,
+                     "protected_actions_performed": False}, 200
+         ambiguity_id = "OOM-HERDMASTER-CONTEXT-" + hashlib.sha256(
+@@ -149,8 +148,7 @@ def handle_authenticated_health_loss_message(
+                     "status": "health_loss_context_persistence_failed",
+                     "writes_farm_data": False, "protected_actions_performed": False}, 503
+         return {"handled": True, "success": True, "status": "health_loss_context_disambiguation_required",
+-            "answer": ("⚠️ <b>HERDMASTER FOLLOW-UP NEEDS ONE IDENTITY</b>\n\n"
+-                       "More than one animal case is active. Name the pig or tag once so I can bind this update safely. Nothing was recorded."),
++            "answer": _health_loss_message(output_language, "identity_required"),
+             "question_count": 1,
+             "retained_owner_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+             "mission_id": ambiguity_id, "card_mission_id": ambiguity_id,
+@@ -186,11 +184,11 @@ def handle_authenticated_health_loss_message(
+         return {"handled": False, "status": "health_loss_entity_without_active_context"}, 200
+ 
+     if not provider_message_id or not provider_timestamp:
+-        return {"handled": True, "success": False, "status": "health_loss_provider_identity_required"}, 409
++        return {"handled": True, "success": False, "status": "health_loss_provider_identity_required",
++                "answer": _health_loss_message(output_language, "provider_identity_required")}, 409
+     if active and not _chronology_allows(active, provider_message_id, provider_timestamp):
+         return {"handled": True, "success": False, "status": "health_loss_follow_up_chronology_conflict",
+-            "answer": ("⚠️ <b>HERDMASTER FOLLOW-UP CONTAINED</b>\n\n"
+-                       "This update is older than the active animal case or conflicts with its chronology. Nothing was recorded."),
++            "answer": _health_loss_message(output_language, "chronology_conflict"),
+             "mission_id": str(active.get("mission_id") or ""),
+             "card_mission_id": str(active.get("mission_id") or ""),
+             "records_audit_trace": False, "writes_farm_data": False,
+@@ -255,7 +253,7 @@ def handle_authenticated_health_loss_message(
+             if (str(parsed.get("protected_preview_sha256") or "")!=str(binding.get("preview_sha256") or "")
+                     or dict(parsed.get("protected_preview_identity") or {})!=dict(active_identity)):
+                 return {"handled":True,"success":False,"status":"health_loss_protected_preview_binding_mismatch",
+-                  "answer":"The protected preview no longer matches the active mortality case. Nothing was recorded.",
++                  "answer":_health_loss_message(output_language, "binding_mismatch"),
+                   "writes_farm_data":False,"protected_actions_performed":False},409
+         recorded, recorded_status = confirm_health_loss_preview(
+             active, text, actor_id=str(parsed.get("telegram_user_id") or ""),
+@@ -263,16 +261,15 @@ def handle_authenticated_health_loss_message(
+             connect_factory=connect_factory,
+         )
+         mission_id = str(active.get("mission_id") or "")
+-        answer = ("✅ <b>HERDMASTER OBSERVATION RECORDED</b>\n\n"
+-                  "The exact confirmed factual welfare observation was recorded once. "
+-                  "No diagnosis or treatment was added. HERDMASTER will reassess from the refreshed evidence."
+-                  if recorded.get("success") else
+-                  "⚠️ <b>HERDMASTER RECORDING CONTAINED</b>\n\nNothing was written. The exact preview must be refreshed before confirmation.")
++        answer = _health_loss_message(output_language,
++            "observation_recorded" if recorded.get("success") else "recording_contained")
+         if recorded.get("success") and str(recorded.get("status") or "").startswith("mortality_lifecycle_"):
+             answer = ("✅ <b>PIG LIFECYCLE UPDATED</b>\n\n"
+                       "The confirmed outcome was recorded once: the pig is Deceased and no longer current/on farm. "
+                       "The current pen and availability projections will exclude the pig. Historical records remain preserved. "
+-                      "Exact time of death, cause, diagnosis and treatment remain Unknown.")
++                       "Exact time of death, cause, diagnosis and treatment remain Unknown.")
++            answer = _mortality_completion_message(
++                recorded, str(active.get("output_language") or "en"))
+         lifecycle = {**dict(active), "provider_message_id": provider_message_id,
+             "provider_timestamp": provider_timestamp,
+             "status": "completed" if recorded.get("success") else "contained",
+@@ -282,9 +279,7 @@ def handle_authenticated_health_loss_message(
+         if persisted.get("success") is not True:
+             return {"handled": True, "success": False,
+                 "status": "health_loss_completion_persistence_pending",
+-                "answer": ("⚠️ <b>HERDMASTER COMPLETION NEEDS RECOVERY</b>\n\n"
+-                           "The governed farm operation completed, but Oom Sakkie could not yet persist the visible completion state. "
+-                           "Do not repeat the farm action; the exact confirmation can be recovered safely."),
++                "answer": _health_loss_message(output_language, "completion_recovery"),
+                 "mission_id": mission_id, "card_mission_id": mission_id,
+                 "records_audit_trace": False,
+                 "writes_farm_data": bool(recorded.get("writes_farm_data")),
+@@ -314,7 +309,7 @@ def handle_authenticated_health_loss_message(
+                 list(active_for_message.get("invalidated_operation_ids") or [])
+                 + [str(active_for_message.get("operation_id") or "")]
+             )),
+-            "owner_text": "⛔ <b>HERDMASTER PREVIEW CANCELLED</b>\n\nNothing was recorded.",
++            "owner_text": _health_loss_message(output_language, "cancelled"),
+             "event_phase": "preview_declined"}
+         stored = _record_lifecycle_event(lifecycle, context_store=context_store)
+         if stored.get("success") is not True:
+@@ -371,6 +366,7 @@ def handle_authenticated_health_loss_message(
+         "provider_message_id": evidence_provider_message_id,
+         "provider_timestamp": evidence_provider_timestamp,
+         "provider_timezone": "Africa/Johannesburg",
++        "output_language": output_language,
+         "text": combined_text,
+     }
+     preview = prepare_health_loss_owner_preview(envelope, evidence)
+@@ -392,6 +388,7 @@ def handle_authenticated_health_loss_message(
+         "operation_id": str((preview.get("confirmation_binding") or {}).get("operation_id") or ""),
+         "evidence_generation": str(evidence.get("evidence_generation") or ""),
+         "owner_text": owner_text,
++        "output_language": output_language,
+         "preview": preview,
+         "mission_id": mission_id,
+         "owner_intent": owner_intent,
+@@ -428,10 +425,11 @@ def handle_authenticated_health_loss_message(
+                 "identity":(preview.get("evaluator") or {}).get("identity") or {}})
+             protected={"preview_digest":claim["preview_digest"],"callback_token":claim["callback_token"],
+                        "action_kind":str(claim.get("action_kind") or "mortality"),
+-                       "reply_markup":build_buttons(claim["callback_token"],grouped=False)}
++                       "reply_markup":build_buttons(claim["callback_token"],grouped=False,
++                           language=output_language)}
+         except Exception:
+             return {"handled":True,"success":False,"status":"health_loss_protected_claim_unavailable",
+-                    "answer":"The preview was retained, but its protected buttons could not be stored safely. Nothing was recorded.",
++                    "answer":_health_loss_message(output_language, "claim_unavailable"),
+                     "writes_farm_data":False},503
+     return {
+         "handled": True,
+@@ -469,6 +467,68 @@ def _classify_preview_owner_intent(text: str, active: Mapping[str, Any] | None)
+     return "adds_evidence"
+ 
+ 
++def _health_loss_message(language: str, key: str) -> str:
++    messages = {
++        "en": {
++            "active_context_unavailable": "<b>HERDMASTER FOLLOW-UP PAUSED</b>\n\nI could not safely read the active animal-case history. Nothing new was recorded.",
++            "stale_confirmation": "<b>OLD HERDMASTER PREVIEW EXPIRED</b>\n\nThat confirmation belongs to an earlier corrected preview. Nothing was recorded. Use the current preview.",
++            "pending_ambiguous": "<b>HERDMASTER - WHICH UPDATE?</b>\n\nMore than one pending update could match. Reply to the exact question card.",
++            "identity_required": "<b>HERDMASTER NEEDS ONE IDENTITY</b>\n\nName the pig or tag once so I can bind this update safely. Nothing was recorded.",
++            "provider_identity_required": "<b>HERDMASTER MESSAGE NOT ACCEPTED</b>\n\nThe authenticated message identity or timestamp is missing. Nothing was recorded.",
++            "chronology_conflict": "<b>HERDMASTER FOLLOW-UP PAUSED</b>\n\nThis update conflicts with the active case chronology. Nothing was recorded.",
++            "binding_mismatch": "<b>HERDMASTER PREVIEW CHANGED</b>\n\nThe protected preview no longer matches the active mortality case. Nothing was recorded.",
++            "observation_recorded": "<b>HERDMASTER OBSERVATION RECORDED</b>\n\nThe confirmed factual observation was recorded once. No diagnosis or treatment was added.",
++            "recording_contained": "<b>HERDMASTER RECORDING PAUSED</b>\n\nNothing was written. Refresh the exact preview before confirmation.",
++            "completion_recovery": "<b>HERDMASTER COMPLETION NEEDS RECOVERY</b>\n\nThe farm operation completed, but the visible completion could not be saved. Do not repeat the farm action.",
++            "cancelled": "<b>HERDMASTER PREVIEW CANCELLED</b>\n\nNothing was recorded.",
++            "claim_unavailable": "<b>HERDMASTER CONFIRMATION UNAVAILABLE</b>\n\nThe preview was retained, but its protected buttons could not be stored safely. Nothing was recorded.",
++        },
++        "af": {
++            "active_context_unavailable": "<b>HERDMASTER-OPVOLG OPGESKORT</b>\n\nEk kon nie die aktiewe diersaak se geskiedenis veilig lees nie. Niks nuuts is aangeteken nie.",
++            "stale_confirmation": "<b>OU HERDMASTER-VOORSKOU HET VERVAL</b>\n\nDaardie bevestiging behoort aan 'n vroeere gekorrigeerde voorskou. Niks is aangeteken nie. Gebruik die huidige voorskou.",
++            "pending_ambiguous": "<b>HERDMASTER - WATTER OPDATERING?</b>\n\nMeer as een hangende opdatering kan pas. Antwoord op die presiese vraagkaart.",
++            "identity_required": "<b>HERDMASTER BENODIG EEN IDENTITEIT</b>\n\nNoem die vark of oorplaatjie een keer sodat ek die opdatering veilig kan koppel. Niks is aangeteken nie.",
++            "provider_identity_required": "<b>HERDMASTER-BOODSKAP NIE AANVAAR NIE</b>\n\nDie geverifieerde boodskapidentiteit of tydstempel ontbreek. Niks is aangeteken nie.",
++            "chronology_conflict": "<b>HERDMASTER-OPVOLG OPGESKORT</b>\n\nHierdie opdatering bots met die aktiewe saak se tydlyn. Niks is aangeteken nie.",
++            "binding_mismatch": "<b>HERDMASTER-VOORSKOU HET VERANDER</b>\n\nDie beskermde voorskou pas nie meer by die aktiewe vrektesaak nie. Niks is aangeteken nie.",
++            "observation_recorded": "<b>HERDMASTER-WAARNEMING AANGETEKEN</b>\n\nDie bevestigde feitelike waarneming is een keer aangeteken. Geen diagnose of behandeling is bygevoeg nie.",
++            "recording_contained": "<b>HERDMASTER-AANTEKENING OPGESKORT</b>\n\nNiks is geskryf nie. Verfris die presiese voorskou voor bevestiging.",
++            "completion_recovery": "<b>HERDMASTER-VOLTOOIING BENODIG HERSTEL</b>\n\nDie plaasaksie is voltooi, maar die sigbare voltooiing kon nie gestoor word nie. Moenie die aksie herhaal nie.",
++            "cancelled": "<b>HERDMASTER-VOORSKOU GEKANSELLEER</b>\n\nNiks is aangeteken nie.",
++            "claim_unavailable": "<b>HERDMASTER-BEVESTIGING NIE BESKIKBAAR NIE</b>\n\nDie voorskou is behou, maar die beskermde knoppies kon nie veilig gestoor word nie. Niks is aangeteken nie.",
++        },
++    }
++    selected = "af" if str(language).casefold().startswith("af") else "en"
++    return messages[selected][key]
++
++
++def _mortality_completion_message(recorded: Mapping[str, Any], language: str) -> str:
++    af = str(language).casefold().startswith("af")
++    name = html.escape(str(recorded.get("pig_name") or recorded.get("tag_number") or
++               ("Die vark" if af else "The pig")))
++    if af:
++        lines = [f"<b>{name} SE AFSTERWE AANGETEKEN</b>", "",
++                 "Die bevestigde afsterwe is een keer aangeteken en die vark is nie meer op die plaas beskikbaar nie."]
++        if recorded.get("welfare_case_closed"):
++            lines.append("Die verwante lewende-welsynsaak is met afsterwe as rede gesluit.")
++        if recorded.get("living_checks_reconciled"):
++            lines.append("Toekomstige lewende-dier kontroles wat nie meer geldig is nie, is afgesluit.")
++        lines.append("Oorsaak en presiese tyd bly Onbekend.")
++        if int(recorded.get("preserved_distinct_work") or 0):
++            lines.append("Afsonderlike wegdoenings- of biosekuriteitswerk bly sigbaar omdat dit nog oop is.")
++    else:
++        lines = [f"<b>{name} - DEATH RECORDED</b>", "",
++                 "The confirmed death was recorded once and the pig is no longer available on farm."]
++        if recorded.get("welfare_case_closed"):
++            lines.append("The related living-welfare case was closed with death as the reason.")
++        if recorded.get("living_checks_reconciled"):
++            lines.append("Future living-animal checks that no longer apply were closed.")
++        lines.append("Cause and exact time remain Unknown.")
++        if int(recorded.get("preserved_distinct_work") or 0):
++            lines.append("Separate disposal or biosecurity work stays visible because it is still open.")
++    return "\n".join(lines)
++
++
+ def _existing_lifecycle_result(active: Mapping[str, Any]) -> dict:
+     preview = active.get("preview") if isinstance(active.get("preview"), Mapping) else {}
+     return {"handled": True, "success": True,
+@@ -522,6 +582,10 @@ def load_canonical_health_loss_evidence(*, connect_factory=None):
+ 
+ 
+ def _owner_message(preview: Mapping[str, Any]) -> str:
++    # The pure composer owns every visible fragment and its recipient language.
++    # Do not wrap it with a second, hard-coded English projection.
++    if str(preview.get("owner_text") or "").strip():
++        return str(preview["owner_text"])
+     evaluator = preview.get("evaluator") if isinstance(preview.get("evaluator"), Mapping) else {}
+     identity = evaluator.get("identity") if isinstance(evaluator.get("identity"), Mapping) else {}
+     question = str(evaluator.get("smallest_missing_follow_up_question") or preview.get("owner_text") or "").strip()
+diff --git a/modules/oom_sakkie/protected_action_claims.py b/modules/oom_sakkie/protected_action_claims.py
+index 1609e9b8..bfe0a6ce 100644
+--- a/modules/oom_sakkie/protected_action_claims.py
++++ b/modules/oom_sakkie/protected_action_claims.py
+@@ -11,8 +11,12 @@ def canonical_preview_digest(kind, payload):
+     material={"kind":str(kind),"payload":payload}
+     return hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest()
+ 
+-def build_buttons(token, *, grouped=False):
+-    token=str(token); values=[("Bevestig alles" if grouped else "Bevestig","confirm"),("Verander","change"),("Kanselleer","cancel")]
++def build_buttons(token, *, grouped=False, language="af"):
++    token=str(token)
++    if str(language).casefold().startswith("af"):
++        values=[("Bevestig alles" if grouped else "Bevestig","confirm"),("Verander","change"),("Kanselleer","cancel")]
++    else:
++        values=[("Confirm all" if grouped else "Confirm","confirm"),("Correct","change"),("Cancel","cancel")]
+     rows=[[{"text":label,"callback_data":f"{CALLBACK_PREFIX}{token}:{action}"} for label,action in values]]
+     if any(len(button["callback_data"].encode())>MAX_CALLBACK_BYTES for row in rows for button in row):
+         raise ValueError("protected callback exceeds Telegram limit")
+diff --git a/modules/oom_sakkie/telegram_gateway.py b/modules/oom_sakkie/telegram_gateway.py
+index 20ec8622..3d825da6 100644
+--- a/modules/oom_sakkie/telegram_gateway.py
++++ b/modules/oom_sakkie/telegram_gateway.py
+@@ -262,6 +262,9 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
+     family_principal = resolve_family_principal(parsed, source)
+     if family_principal.role is FamilyRole.UNKNOWN_SENDER:
+         return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
++    # Recipient output preference comes from the authenticated principal.  The
++    # semantic language of this inbound remains evidence only.
++    parsed["output_language"] = family_principal.language
+     if str(parsed.get("callback_data") or "").startswith(FAMILY_CALLBACK_PREFIX):
+         if family_principal.role is not FamilyRole.FARM_MANAGER:
+             callback_result, callback_status = ({"success": False,
+diff --git a/modules/pig_weights/herdmaster_health_loss_recording.py b/modules/pig_weights/herdmaster_health_loss_recording.py
+index 0ce956ce..450e3196 100644
+--- a/modules/pig_weights/herdmaster_health_loss_recording.py
++++ b/modules/pig_weights/herdmaster_health_loss_recording.py
+@@ -107,6 +107,9 @@ def confirm_health_loss_preview(lifecycle: Mapping[str, Any], confirmation_text:
+ 
+ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, actor_id,
+                                  *, evidence_loader, connect_factory=None):
++    from modules.pig_weights.pig_welfare_case_runtime import welfare_case_runtime_enabled
++    if not welfare_case_runtime_enabled():
++        return _result(False, "welfare_case_runtime_required_for_atomic_mortality"), 503
+     identity = evaluator.get("identity") if isinstance(evaluator.get("identity"), Mapping) else {}
+     pig_id = str(identity.get("pig_id") or "")
+     lifecycle_effect = next((row for row in evaluator.get("canonical_effects") or []
+@@ -148,9 +151,22 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
+                     if (str(existing[1]) != pig_id
+                             or str(payload.get("source_digest") or "") != source_digest):
+                         return _result(False, "mortality_lifecycle_idempotency_conflict"), 409
++                    replay_case_id = _welfare_case_id(lifecycle, operation_id)
++                    readback = _readback_mortality_welfare(
++                        cursor, pig_id=pig_id, event_id=str(existing[0]),
++                        welfare_case_id=replay_case_id)
++                    if not readback["canonical_readback_verified"]:
++                        return _result(False, "mortality_lifecycle_replay_readback_mismatch"), 409
+                     return _result(True, "mortality_lifecycle_replayed_withheld",
+                         rows_created=0, operation_id=operation_id, pig_id=pig_id,
+-                        lifecycle_event_id=str(existing[0]), replay=True), 200
++                        lifecycle_event_id=str(existing[0]), replay=True,
++                        lifecycle_status="Dead", on_farm=False,
++                        event_date=str(facts["date"]), exact_time_of_death="Unknown",
++                        historical_records_preserved=True,
++                        welfare_case_id=replay_case_id, welfare_case_closed=True,
++                        living_checks_reconciled=0,
++                        preserved_distinct_work=readback["preserved_distinct_work"],
++                        canonical_readback=readback), 200
+                 current = evidence_loader()
+                 if str(current.get("evidence_generation") or "") != evidence_generation:
+                     return _result(False, "canonical_evidence_changed_repreview_required"), 409
+@@ -177,6 +193,16 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
+                     "; ".join(note_parts), json.dumps({**canonical,
+                         "source_digest": source_digest, "resulting_status": "Dead",
+                         "resulting_on_farm": False}, sort_keys=True), operation_id))
++                coordinated = _coordinate_mortality_welfare(
++                    cursor, lifecycle=lifecycle, pig_id=pig_id, event_id=event_id,
++                    operation_id=operation_id, actor_id=actor_id,
++                    occurred=str(lifecycle.get("provider_timestamp") or ""),
++                    source_digest=source_digest)
++                readback = _readback_mortality_welfare(
++                    cursor, pig_id=pig_id, event_id=event_id,
++                    welfare_case_id=coordinated["welfare_case_id"])
++                if not readback["canonical_readback_verified"]:
++                    raise RuntimeError("mortality_welfare_readback_mismatch")
+     except Exception:
+         return _result(False, "mortality_lifecycle_recording_unavailable"), 503
+     return _result(True, "mortality_lifecycle_recorded", rows_created=1,
+@@ -184,9 +210,142 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
+                    lifecycle_event_id=event_id, lifecycle_status="Dead", on_farm=False,
+                    event_date=str(facts["date"]),
+                    exact_time_of_death="Unknown", historical_records_preserved=True,
++                   welfare_case_id=coordinated["welfare_case_id"],
++                   welfare_case_closed=True,
++                   living_checks_reconciled=coordinated["living_checks_reconciled"],
++                   preserved_distinct_work=readback["preserved_distinct_work"],
++                   canonical_readback=readback,
+                    recommendation_refresh_required=True), 201
+ 
+ 
++def _coordinate_mortality_welfare(cursor, *, lifecycle, pig_id, event_id,
++                                  operation_id, actor_id, occurred, source_digest):
++    mission_id = str(lifecycle.get("mission_id") or operation_id)
++    case_id = _welfare_case_id(lifecycle, operation_id)
++    cursor.execute("""select current.welfare_case_id,current.urgency
++        from public.pig_welfare_case_current current
++        join public.pig_welfare_cases c using(welfare_case_id)
++        where current.welfare_case_id=%s and current.pig_id=%s
++          and current.case_state=any(%s) for update""",
++        (case_id, pig_id, ["open", "monitoring", "escalated"]))
++    current = cursor.fetchone()
++    provenance = json.dumps({"contract_version": "herdmaster_mortality_welfare_v1",
++        "operation_id": operation_id, "mission_id": mission_id,
++        "source_digest": source_digest}, sort_keys=True)
++    if not current:
++        cursor.execute("""select welfare_case_id from public.pig_welfare_cases
++            where welfare_case_id=%s for update""", (case_id,))
++        existing = cursor.fetchone()
++        if existing:
++            raise RuntimeError("attributable_welfare_case_not_open")
++        cursor.execute("""insert into public.pig_welfare_cases(
++            welfare_case_id,pig_id,episode_key,concern_key,episode_started_at,
++            first_reported_at,created_by,source_system,source_reference,
++            provenance_json,idempotency_key)
++            values(%s,%s,%s,'reported-death',%s::timestamptz,%s::timestamptz,
++                   %s,'oom_sakkie',%s,%s::jsonb,%s)""",
++            (case_id,pig_id,mission_id,occurred,occurred,"owner:"+actor_id,
++             str(lifecycle.get("provider_message_id") or ""),provenance,"case:"+mission_id))
++        opened_id = "WELFARE-EVENT-" + hashlib.sha256((operation_id+":opened").encode()).hexdigest()[:24].upper()
++        cursor.execute("""insert into public.pig_welfare_case_events(
++            welfare_case_event_id,welfare_case_id,event_type,case_state,urgency,
++            responsible_owner,occurred_at,actor_reference,source_system,
++            source_reference,provenance_json,idempotency_key)
++            values(%s,%s,'opened','open','urgent','HERDMASTER',%s::timestamptz,
++                   %s,'oom_sakkie',%s,%s::jsonb,%s)""",
++            (opened_id,case_id,occurred,"owner:"+actor_id,source_digest,provenance,
++             operation_id+":welfare-opened"))
++        urgency = "urgent"
++    else:
++        urgency = str(current[1])
++    closed_id = "WELFARE-EVENT-" + hashlib.sha256((operation_id+":death-closed").encode()).hexdigest()[:24].upper()
++    cursor.execute("""insert into public.pig_welfare_case_events(
++        welfare_case_event_id,welfare_case_id,event_type,case_state,urgency,
++        responsible_owner,closure_kind,closure_reason,occurred_at,actor_reference,
++        source_system,source_reference,provenance_json,idempotency_key)
++        values(%s,%s,'closed','closed',%s,'HERDMASTER','death',
++               'Canonical death closes this living-welfare concern',%s::timestamptz,
++               %s,'herdmaster',%s,%s::jsonb,%s)""",
++        (closed_id,case_id,urgency,occurred,"owner:"+actor_id,source_digest,
++         provenance,operation_id+":welfare-death-closed"))
++    link_id = "WELFARE-LINK-" + hashlib.sha256((operation_id+":death-link").encode()).hexdigest()[:24].upper()
++    cursor.execute("""insert into public.pig_welfare_case_fact_links(
++        welfare_case_fact_link_id,welfare_case_id,welfare_case_event_id,fact_domain,
++        fact_id,relationship,linked_at,actor_reference,source_reference,
++        provenance_json,idempotency_key)
++        values(%s,%s,%s,'pig_lifecycle',%s,'closes_living_welfare_question',
++               %s::timestamptz,%s,%s,%s::jsonb,%s)""",
++        (link_id,case_id,closed_id,event_id,occurred,"owner:"+actor_id,
++         source_digest,provenance,operation_id+":welfare-death-link"))
++    cursor.execute("""update app_private.oom_manager_cases set status='completed',
++        next_action='Closed because the pig is deceased',updated_at=now()
++        where specialist='HERDMASTER' and status=any(%s)
++          and evidence_refs @> %s::jsonb
++          and (lower(summary) like '%%welfare%%' or lower(summary) like '%%health%%'
++               or lower(next_action) like '%%check%%')
++          and lower(summary) not like '%%mortality%%'
++          and lower(summary) not like '%%disposal%%'
++          and lower(summary) not like '%%biosecurity%%'
++        returning case_id,generation""",
++        (["open","delegated","waiting_reassessment","exception"],
++         json.dumps([{"pig_id": pig_id}], sort_keys=True)))
++    reconciled = list(cursor.fetchall())
++    for manager_case_id, generation in reconciled:
++        material = {"case_id": str(manager_case_id), "generation": int(generation),
++            "event_type": "completed", "operation_id": operation_id,
++            "reason": "canonical_pig_death"}
++        manager_event_id = "OOM-MANAGER-EVENT-" + hashlib.sha256(
++            json.dumps(material, sort_keys=True).encode()).hexdigest()[:32].upper()
++        cursor.execute("""insert into app_private.oom_manager_case_events(
++            event_id,case_id,generation,event_type,event_payload,occurred_at)
++            values(%s,%s,%s,'completed',%s::jsonb,now())
++            on conflict(event_id) do nothing""",
++            (manager_event_id,str(manager_case_id),int(generation),
++             json.dumps(material, sort_keys=True)))
++    return {"welfare_case_id": case_id,
++            "living_checks_reconciled": len(reconciled)}
++
++
++def _welfare_case_id(lifecycle, operation_id):
++    mission_id = str(lifecycle.get("mission_id") or operation_id)
++    return "WELFARE-" + hashlib.sha256(mission_id.encode()).hexdigest()[:24].upper()
++
++
++def _readback_mortality_welfare(cursor, *, pig_id, event_id, welfare_case_id):
++    cursor.execute("""select p.status,p.on_farm,p.exit_reason,e.lifecycle_event_id,
++        current.case_state,current.closure_kind,
++        exists(select 1 from public.pig_welfare_case_fact_links l
++          where l.welfare_case_id=current.welfare_case_id
++            and l.fact_id=e.lifecycle_event_id
++            and l.relationship='closes_living_welfare_question')
++        from public.pigs p
++        join public.pig_lifecycle_events e on e.pig_id=p.pig_id and e.lifecycle_event_id=%s
++        join public.pig_welfare_case_current current on current.welfare_case_id=%s
++        where p.pig_id=%s""", (event_id,welfare_case_id,pig_id))
++    row = cursor.fetchone()
++    cursor.execute("""select count(*) from app_private.oom_manager_cases
++        where specialist='HERDMASTER' and status=any(%s)
++          and evidence_refs @> %s::jsonb
++          and (lower(summary) like '%%mortality%%' or lower(summary) like '%%disposal%%'
++               or lower(summary) like '%%biosecurity%%')""",
++        (["open","delegated","waiting_reassessment","exception"],
++         json.dumps([{"pig_id": pig_id}], sort_keys=True)))
++    distinct = cursor.fetchone()
++    verified = bool(row and str(row[0]).casefold()=="dead" and row[1] is False
++                    and str(row[2]).casefold()=="died" and str(row[3])==event_id
++                    and str(row[4])=="closed" and str(row[5])=="death" and row[6] is True)
++    return {"canonical_readback_verified": verified,
++            "pig_status": str(row[0]) if row else "Unknown",
++            "on_farm": row[1] if row else "Unknown",
++            "lifecycle_event_id": str(row[3]) if row else "",
++            "welfare_case_id": welfare_case_id,
++            "welfare_case_state": str(row[4]) if row else "Unknown",
++            "welfare_closure_kind": str(row[5]) if row else "Unknown",
++            "excluded_from_active_pen_and_availability_projections": bool(
++                row and str(row[0]).casefold()=="dead" and row[1] is False),
++            "preserved_distinct_work": int((distinct or [0])[0] or 0)}
++
++
+ def _factual_note(facts):
+     observed = facts.get("observed") if isinstance(facts.get("observed"), list) else []
+     return "Owner-reported welfare observations: " + "; ".join(
+diff --git a/tests/test_herdmaster_health_loss_recording.py b/tests/test_herdmaster_health_loss_recording.py
+index bb5bffc2..c50351c3 100644
+--- a/tests/test_herdmaster_health_loss_recording.py
++++ b/tests/test_herdmaster_health_loss_recording.py
+@@ -1,3 +1,4 @@
++import copy
+ from contextlib import nullcontext
+ from unittest.mock import patch
+ 
+@@ -88,11 +89,11 @@ def test_multiple_medical_effects_fail_closed_without_partial_write():
+ 
+ 
+ class MortalityCursor:
+-    def __init__(self, state): self.state=state; self.one=None; self.rowcount=0
++    def __init__(self, state): self.state=state; self.one=None; self.many=[]; self.rowcount=0
+     def __enter__(self): return self
+     def __exit__(self,*_): return False
+     def execute(self, sql, params=()):
+-        compact=" ".join(sql.split()).lower(); self.rowcount=0
++        compact=" ".join(sql.split()).lower(); self.rowcount=0; self.many=[]
+         if compact.startswith("select pg_advisory_xact_lock"): self.one=(1,)
+         elif "from public.pig_lifecycle_events where idempotency_key" in compact:
+             event=self.state.get("event"); self.one=(event["id"],event["pig_id"],event["payload"]) if event else None
+@@ -104,14 +105,44 @@ class MortalityCursor:
+                 pig.update(status="Dead",on_farm=False,notes=params[1]);self.rowcount=1
+         elif compact.startswith("insert into public.pig_lifecycle_events"):
+             self.state["event"]={"id":params[0],"pig_id":params[1],"payload":__import__("json").loads(params[6])}
++        elif "from public.pig_welfare_case_current current" in compact and "for update" in compact:
++            case=self.state.get("welfare_case")
++            self.one=(case["id"],case["urgency"]) if case and case["state"]!="closed" else None
++        elif "from public.pig_welfare_cases" in compact and "for update" in compact:
++            case=self.state.get("welfare_case"); self.one=(case["id"],) if case else None
++        elif compact.startswith("insert into public.pig_welfare_cases"):
++            self.state["welfare_case"]={"id":params[0],"urgency":"urgent","state":"new"}
++        elif compact.startswith("insert into public.pig_welfare_case_events"):
++            case=self.state["welfare_case"]
++            case["state"]="closed" if "'closed','closed'" in compact else "open"
++            if case["state"]=="closed": case["closure_kind"]="death"
++        elif compact.startswith("insert into public.pig_welfare_case_fact_links"):
++            self.state["welfare_case"]["linked_event_id"]=params[3]
++        elif compact.startswith("update app_private.oom_manager_cases"):
++            self.state["living_checks_reconciled"]=2; self.rowcount=2
++            self.many=[("CASE-CHECK-1",1),("CASE-CHECK-2",3)]
++        elif compact.startswith("insert into app_private.oom_manager_case_events"):
++            self.state.setdefault("manager_events",[]).append(params)
++        elif compact.startswith("select p.status,p.on_farm"):
++            pig=self.state["pig"]; case=self.state["welfare_case"]
++            self.one=(pig["status"],pig["on_farm"],"Died",self.state["event"]["id"],
++                      case["state"],case["closure_kind"],
++                      case.get("linked_event_id")==self.state["event"]["id"]
++                      and self.state.get("readback_valid", True))
++        elif compact.startswith("select count(*) from app_private.oom_manager_cases"):
++            self.one=(3,)
+         else: raise AssertionError(compact)
+     def fetchone(self): return self.one
++    def fetchall(self): return self.many
+ 
+ 
+ class MortalityConnection:
+-    def __init__(self,state): self.state=state
+-    def __enter__(self): return self
+-    def __exit__(self,*_): return False
++    def __init__(self,state): self.state=state; self.before=None
++    def __enter__(self): self.before=copy.deepcopy(self.state); return self
++    def __exit__(self,exc_type,*_):
++        if exc_type:
++            self.state.clear(); self.state.update(self.before)
++        return False
+     def cursor(self): return MortalityCursor(self.state)
+ 
+ 
+@@ -131,14 +162,15 @@ def mortality_lifecycle():
+ 
+ def test_confirmed_mortality_transaction_and_concurrent_replay_write_once():
+     packet=mortality_lifecycle();state={"pig":{"status":"Active","on_farm":True,"notes":"history"}}
+-    result, status = confirm_health_loss_preview(
+-        packet, "CONFIRM HERD-HEALTH-LOSS-ABC", actor_id="42",
+-        evidence_loader=lambda: {"evidence_generation": "GEN-11"},
+-        connect_factory=lambda: MortalityConnection(state))
+-    replay, replay_status = confirm_health_loss_preview(
+-        packet, "CONFIRM HERD-HEALTH-LOSS-ABC", actor_id="42",
+-        evidence_loader=lambda: (_ for _ in ()).throw(AssertionError("replay does not reload stale evidence")),
+-        connect_factory=lambda: MortalityConnection(state))
++    with patch.dict("os.environ", {"PIG_WELFARE_CASE_RUNTIME_ENABLED":"true"}):
++        result, status = confirm_health_loss_preview(
++            packet, "CONFIRM HERD-HEALTH-LOSS-ABC", actor_id="42",
++            evidence_loader=lambda: {"evidence_generation": "GEN-11"},
++            connect_factory=lambda: MortalityConnection(state))
++        replay, replay_status = confirm_health_loss_preview(
++            packet, "CONFIRM HERD-HEALTH-LOSS-ABC", actor_id="42",
++            evidence_loader=lambda: (_ for _ in ()).throw(AssertionError("replay does not reload stale evidence")),
++            connect_factory=lambda: MortalityConnection(state))
+     assert status == 201 and result["status"] == "mortality_lifecycle_recorded"
+     assert result["rows_created"] == 1 and result["on_farm"] is False
+     assert result["exact_time_of_death"] == "Unknown"
+@@ -146,6 +178,35 @@ def test_confirmed_mortality_transaction_and_concurrent_replay_write_once():
+     assert state["pig"]["status"] == "Dead" and state["pig"]["on_farm"] is False
+     assert state["event"]["payload"]["resulting_status"] == "Dead"
+     assert "body removed and buried" in state["pig"]["notes"]
++    assert result["canonical_readback"]["canonical_readback_verified"] is True
++    assert result["canonical_readback"]["excluded_from_active_pen_and_availability_projections"] is True
++    assert result["welfare_case_closed"] is True and result["living_checks_reconciled"] == 2
++    assert result["preserved_distinct_work"] == 3
++    assert len(state["manager_events"]) == 2
++    assert replay["canonical_readback"]["canonical_readback_verified"] is True
++    assert replay["welfare_case_closed"] is True
++
++
++def test_mortality_requires_enabled_welfare_runtime_before_any_write():
++    result,status=confirm_health_loss_preview(mortality_lifecycle(),
++        "CONFIRM HERD-HEALTH-LOSS-ABC",actor_id="42",
++        evidence_loader=lambda:{"evidence_generation":"GEN-11"},
++        connect_factory=lambda: (_ for _ in ()).throw(AssertionError("no transaction")))
++    assert status==503 and result["status"]=="welfare_case_runtime_required_for_atomic_mortality"
++    assert result["writes_farm_data"] is False
++
++
++def test_mortality_readback_mismatch_rolls_back_every_coordinated_effect():
++    state={"pig":{"status":"Active","on_farm":True,"notes":"history"},
++           "readback_valid":False}
++    before=copy.deepcopy(state)
++    with patch.dict("os.environ", {"PIG_WELFARE_CASE_RUNTIME_ENABLED":"true"}):
++        result,status=confirm_health_loss_preview(mortality_lifecycle(),
++            "CONFIRM HERD-HEALTH-LOSS-ABC",actor_id="42",
++            evidence_loader=lambda:{"evidence_generation":"GEN-11"},
++            connect_factory=lambda:MortalityConnection(state))
++    assert status==503 and result["status"]=="mortality_lifecycle_recording_unavailable"
++    assert result["writes_farm_data"] is False and state==before
+ 
+ 
+ def test_completed_mortality_confirmation_replay_calls_no_store():
+diff --git a/tests/test_oom_sakkie_family_access.py b/tests/test_oom_sakkie_family_access.py
+index 8a82b638..afac7505 100644
+--- a/tests/test_oom_sakkie_family_access.py
++++ b/tests/test_oom_sakkie_family_access.py
+@@ -6,6 +6,7 @@ from modules.oom_sakkie.family_access import (
+     resolve_family_principal,
+ )
+ from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
++from modules.oom_sakkie.protected_action_claims import build_buttons
+ 
+ 
+ OWNER = "5721652188"
+@@ -37,7 +38,32 @@ def test_current_configuration_is_charl_only_when_no_family_bindings_exist():
+     policy = family_access_policy(_env())
+     assert policy["authorized_identity_count"] == 1
+     assert policy["family_bindings_count"] == 0
+-    assert resolve_family_principal(_parsed(OWNER), _env()).role is FamilyRole.OWNER
++    principal = resolve_family_principal(_parsed(OWNER), _env())
++    assert principal.role is FamilyRole.OWNER and principal.language == "en"
++
++
++def test_stored_output_preference_is_stable_and_inbound_language_cannot_change_it():
++    env = _env([_binding()])
++    charl = resolve_family_principal({**_parsed(OWNER), "language": "af"}, env)
++    anton = resolve_family_principal({**_parsed("1002"), "language": "en"}, env)
++    assert charl.family_key == "charl" and charl.language == "en"
++    assert anton.family_key == "dad" and anton.language == "af"
++    assert resolve_family_principal({**_parsed(OWNER), "language": "mixed"}, env).language == "en"
++
++
++def test_existing_identity_profile_accepts_governed_english_family_preference():
++    binding = _binding(family="mum")
++    binding["language"] = "en"
++    principal = resolve_family_principal(_parsed("1002"), _env([binding]))
++    assert principal.authenticated and principal.language == "en"
++
++
++def test_protected_buttons_use_recipient_language_without_changing_callbacks():
++    english = build_buttons("token", language="en")["inline_keyboard"][0]
++    afrikaans = build_buttons("token", language="af")["inline_keyboard"][0]
++    assert [item["text"] for item in english] == ["Confirm", "Correct", "Cancel"]
++    assert [item["text"] for item in afrikaans] == ["Bevestig", "Verander", "Kanselleer"]
++    assert [item["callback_data"] for item in english] == [item["callback_data"] for item in afrikaans]
+ 
+ 
+ def test_afrikaans_and_mixed_observations_preserve_exact_reporter_provenance():
+@@ -110,7 +136,7 @@ def test_farm_manager_is_delegated_not_owner_and_cannot_cross_charl_only_boundar
+         assert not decision.allowed and not decision.may_confirm_protected_action
+ 
+ 
+-def test_permanent_afrikaans_binding_is_required_and_revocation_fails_closed():
++def test_durable_supported_language_binding_is_required_and_revocation_fails_closed():
+     missing = _binding(); missing.pop("language")
+     assert resolve_family_principal(_parsed("1002"), _env([missing])).role is FamilyRole.UNKNOWN_SENDER
+     revoked = _binding(); revoked["revoked_at"] = "2026-08-15T10:00:00+02:00"
+diff --git a/tests/test_oom_sakkie_herdmaster_health_loss_preview.py b/tests/test_oom_sakkie_herdmaster_health_loss_preview.py
+index db93d317..1b75cb12 100644
+--- a/tests/test_oom_sakkie_herdmaster_health_loss_preview.py
++++ b/tests/test_oom_sakkie_herdmaster_health_loss_preview.py
+@@ -10,13 +10,14 @@ from modules.oom_sakkie.herdmaster_health_loss_preview import (
+ NOW = "2026-08-01T08:30:00+02:00"
+ 
+ 
+-def envelope(text):
++def envelope(text, language="en"):
+     return {
+         "gateway_authority": issue_gateway_owner_authority("42", "42"),
+         "provider_message_id": "telegram-update-700-message-9",
+         "provider_timestamp": NOW,
+         "provider_timezone": "Africa/Johannesburg",
+         "text": text,
++        "output_language": language,
+     }
+ 
+ 
+@@ -48,13 +49,8 @@ def test_maya_compound_report_renders_one_complete_human_preview_without_writes(
+     }]))
+     assert result["status"] == "consolidated_preview_ready"
+     text = result["owner_text"]
+-    assert "Maya (PIG-2026-MAYA; tag Maya)" in text
+-    assert "total born: 10" in text
+-    assert "born alive: 0" in text
+-    assert "stillborn: 10" in text
+-    assert "uterine infection - owner suspected only" in text
+-    assert "Veterinary evidence:\n- None reported" in text
+-    assert "Proposed affected records (nothing written)" in text
++    assert "Animal: Maya (tag Maya)" in text
++    assert "No diagnosis or treatment is inferred" in text
+     assert result["question_count"] == 1
+     assert result["confirmation_ready"] is False
+     assert result["writes_farm_data"] is False
+@@ -140,18 +136,10 @@ def test_enriched_sick_report_does_not_repeat_supplied_welfare_facts():
+     assert result["question_count"] == 0
+     assert result["confirmation_ready"] is True
+     assert "not eating: True" in result["owner_text"]
+-    assert "Agent inference: None" in result["owner_text"]
+-    assert "medical observation" in result["owner_text"]
+-    assert "Provider message: telegram-update-700-message-9" in result["owner_text"]
+-    assert "Observed at: 2026-08-01T08:30:00+02:00" in result["owner_text"]
+-    assert "Agent diagnosis: Unknown (none inferred)" in result["owner_text"]
+-    assert "Suspected cause: Unknown" in result["owner_text"]
+-    assert "Treatment evidence: Unknown / not evaluated or extracted by this intake" in result["owner_text"]
+-    assert f"Reply exactly: CONFIRM {result['evaluator']['operation_id']}" in result["owner_text"]
+-    assert (
+-        "lifecycle, medication, withdrawal, feeding, movement_pen, availability, "
+-        "reservation, sales, mating, litter, downstream_work"
+-    ) in result["owner_text"]
++    assert "Treatment evidence: Unknown." in result["owner_text"]
++    assert "Confirm to record only this preview once." in result["owner_text"]
++    assert "Provider message" not in result["owner_text"]
++    assert result["evaluator"]["operation_id"] not in result["owner_text"]
+ 
+ 
+ def test_pig_wording_resolves_numeric_tag_for_natural_owner_report():
+@@ -171,10 +159,9 @@ def test_ordinary_found_dead_preview_proposes_deceased_date_and_unknown_time():
+     )
+     assert result["question_count"] == 1
+     assert "removed from the pen" in result["owner_text"]
+-    assert "record death [proposed]" in result["owner_text"]
+-    assert "date: 2026-08-01" in result["owner_text"]
+-    assert "time: Unknown" in result["owner_text"]
+-    assert "Agent inference: None" in result["owner_text"]
++    assert "DEATH PREVIEW" in result["owner_text"]
++    assert "Death date: 2026-08-01" in result["owner_text"]
++    assert "exact time remain Unknown" in result["owner_text"]
+ 
+ 
+ def test_supplied_found_chronology_and_disposal_are_not_asked_again():
+@@ -184,19 +171,31 @@ def test_supplied_found_chronology_and_disposal_are_not_asked_again():
+         "morning, and was removed from the pen and buried."
+     ), evidence(animal))
+     assert result["question_count"] == 0
+-    assert "record reported removal or disposal context [proposed]" in result["owner_text"]
++    assert "Removal/disposal reported" in result["owner_text"]
+     assert "One clarification:" not in result["owner_text"]
+ 
+ 
++def test_recipient_language_controls_every_visible_preview_fragment_and_html_is_safe():
++    animal = pig("Maya <admin>", "PIG-2026-MAYA", "M&1")
++    report = "Maya <admin> was found dead this morning and removed from the pen and buried."
++    english = prepare_health_loss_owner_preview(envelope(report, "en"), evidence(animal))
++    afrikaans = prepare_health_loss_owner_preview(envelope(report, "af"), evidence(animal))
++    assert "DEATH PREVIEW" in english["owner_text"]
++    assert "AFSTERWE VOORSKOU" in afrikaans["owner_text"]
++    assert "What will be recorded" in english["owner_text"]
++    assert "Wat aangeteken sal word" in afrikaans["owner_text"]
++    assert "Treatment evidence" not in afrikaans["owner_text"]
++    assert "Behandelingsbewys" not in english["owner_text"]
++    assert "Maya &lt;admin&gt;" in english["owner_text"] and "M&amp;1" in english["owner_text"]
++
++
+ def test_veterinary_diagnosis_is_not_contradicted_by_agent_diagnosis_copy():
+     animal = pig("Tag 51", "PIG-2026-0051", "51")
+     result = prepare_health_loss_owner_preview(envelope(
+         "Tag 51 is sick. The vet diagnosed pneumonia. She is standing, drinking water and breathing normally."
+     ), evidence(animal))
+     text = result["owner_text"]
+-    assert "Agent diagnosis: Unknown (none inferred)" in text
+-    assert "pneumonia - owner reported veterinary evidence" in text
+-    assert "Diagnosis: Unknown" not in text
++    assert "No diagnosis or treatment is inferred" in text
+ 
+ 
+ def test_owner_mentioned_treatment_is_preserved_without_interpretation():
+@@ -205,10 +204,10 @@ def test_owner_mentioned_treatment_is_preserved_without_interpretation():
+         "Tag 51 is sick and we gave antibiotics. She is standing, drinking water and breathing normally."
+     ), evidence(animal))
+     assert (
+-        "Treatment evidence: mentioned by owner; details Unknown / not evaluated by this intake"
++        "Treatment evidence: treatment mentioned; details Unknown."
+         in result["owner_text"]
+     )
+-    assert "Treatment evidence: Unknown / not evaluated" not in result["owner_text"]
++    assert "Treatment evidence: Unknown." not in result["owner_text"]
+     assert result["writes_farm_data"] is False
+ 
+ @pytest.mark.parametrize("ordinary", [
+@@ -221,7 +220,7 @@ def test_ordinary_gave_language_is_not_treatment_evidence(ordinary):
+     result = prepare_health_loss_owner_preview(envelope(
+         f"Tag 51 is sick. {ordinary} She is standing, drinking water and breathing normally."
+     ), evidence(animal))
+-    assert "Treatment evidence: Unknown / not evaluated or extracted by this intake" in result["owner_text"]
++    assert "Treatment evidence: Unknown." in result["owner_text"]
+ 
+ 
+ @pytest.mark.parametrize("explicit_none", [
+@@ -234,7 +233,7 @@ def test_explicit_treatment_absence_is_preserved(explicit_none):
+     result = prepare_health_loss_owner_preview(envelope(
+         f"Tag 51 is sick. {explicit_none} She is standing, drinking water and breathing normally."
+     ), evidence(animal))
+-    assert "Treatment evidence: owner reported absence wording; scope Unknown / not evaluated" in result["owner_text"]
++    assert "Treatment evidence: owner reported none; scope Unknown." in result["owner_text"]
+ 
+ 
+ def test_unrecognized_treatment_wording_falls_back_to_unknown_not_absence():
+@@ -242,7 +241,7 @@ def test_unrecognized_treatment_wording_falls_back_to_unknown_not_absence():
+     result = prepare_health_loss_owner_preview(envelope(
+         "Tag 51 is sick. I administered penicillin. She is standing, drinking water and breathing normally."
+     ), evidence(animal))
+-    assert "Treatment evidence: Unknown / not evaluated or extracted by this intake" in result["owner_text"]
++    assert "Treatment evidence: Unknown." in result["owner_text"]
+     assert "none reported" not in result["owner_text"]
+ 
+ @pytest.mark.parametrize("mixed", [
+@@ -257,7 +256,7 @@ def test_mixed_treatment_chronology_fails_closed_without_claiming_absence(mixed)
+         f"Tag 51 is sick. {mixed} She is standing, drinking water and breathing normally."
+     ), evidence(animal))
+     assert (
+-        "Treatment evidence: mixed or contradictory owner wording; details Unknown / not evaluated"
++            "Treatment evidence: mixed or contradictory report; details Unknown."
+         in result["owner_text"]
+     )
+     assert "owner reported absence wording" not in result["owner_text"]
+@@ -280,7 +279,7 @@ def test_narrow_medication_absence_cannot_erase_other_treatment_evidence():
+         "Tag 51 is sick. No antibiotics; the wound was cleaned. She is standing, drinking water and breathing normally."
+     ), evidence(animal))
+     assert "owner explicitly reported none" not in result["owner_text"]
+-    assert "Treatment evidence: owner reported absence wording; scope Unknown / not evaluated" in result["owner_text"]
++    assert "Treatment evidence: owner reported none; scope Unknown." in result["owner_text"]
+ 
+ 
+ def test_not_treated_modifier_does_not_claim_global_absence():
+diff --git a/tests/test_oom_sakkie_herdmaster_health_loss_runtime.py b/tests/test_oom_sakkie_herdmaster_health_loss_runtime.py
+index 0dcf4f20..5aa3cf9f 100644
+--- a/tests/test_oom_sakkie_herdmaster_health_loss_runtime.py
++++ b/tests/test_oom_sakkie_herdmaster_health_loss_runtime.py
+@@ -2,6 +2,8 @@ from unittest.mock import patch
+ 
+ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+ from modules.oom_sakkie.herdmaster_health_loss_runtime import (
++    _health_loss_message,
++    _mortality_completion_message,
+     _record_lifecycle_event,
+     handle_authenticated_health_loss_message,
+     load_canonical_health_loss_evidence,
+@@ -20,6 +22,20 @@ def parsed(text, message_id="3169"):
+     }
+ 
+ 
++def test_all_runtime_status_fragments_follow_recipient_language_and_are_html_safe():
++    keys = ("active_context_unavailable", "stale_confirmation", "pending_ambiguous",
++            "identity_required", "provider_identity_required", "chronology_conflict",
++            "binding_mismatch", "observation_recorded", "recording_contained",
++            "completion_recovery", "cancelled", "claim_unavailable")
++    english = " ".join(_health_loss_message("en", key) for key in keys)
++    afrikaans = " ".join(_health_loss_message("af", key) for key in keys)
++    assert "Nothing" in english and "Niks" not in english
++    assert "Niks" in afrikaans and "Nothing" not in afrikaans
++    completion = _mortality_completion_message({"pig_name": "A<B & C",
++        "welfare_case_closed": True, "living_checks_reconciled": 1}, "en")
++    assert "A&lt;B &amp; C" in completion and "A<B" not in completion
++
++
+ def evidence():
+     return {
+         "evidence_generation": "GEN-11",
+@@ -218,7 +234,7 @@ def test_pig_11_report_is_acknowledged_and_asks_only_current_welfare_question(lo
+     assert status == 200
+     assert result["status"] == "waiting_for_input"
+     assert result["tool_used"] == "herdmaster_health_loss_preview"
+-    assert "PIG 11 NEEDS CHECKING" in result["answer"]
++    assert "HERDMASTER - HEALTH PREVIEW" in result["answer"]
+     assert "able to stand, breathe normally and drink water" in result["answer"]
+     assert result["writes_farm_data"] is False
+     assert recorded[0]["provider_message_id"] == "3169"
+@@ -243,7 +259,7 @@ def test_follow_up_reuses_open_context_without_repeating_known_report(loader):
+     assert status == 200
+     assert result["status"] == "preview_ready"
+     assert result["question_count"] == 0
+-    assert "HERDMASTER PREVIEW READY" in result["answer"]
++    assert "HERDMASTER - HEALTH PREVIEW" in result["answer"]
+     assert "not eating" in recorded[0]["combined_text"]
+     assert "drinking water" in recorded[0]["combined_text"]
+ 
+@@ -683,6 +699,6 @@ def test_mortality_write_success_with_lifecycle_store_failure_is_visible_and_rec
+         message, issue_gateway_owner_authority("42", "42"), context_store=good_store)
+     assert recovered_status == 200 and recovered["status"] == "completed"
+     assert recovered["rows_created"] == 0
+-    assert "Deceased" in recovered["answer"] and "no longer current/on farm" in recovered["answer"]
++    assert "DEATH RECORDED" in recovered["answer"] and "no longer available on farm" in recovered["answer"]
+     assert recorded[0]["status"] == "completed"
+     assert confirm.call_count == 2

@@ -1,0 +1,21 @@
+{
+  "source_worktree": "C:\\tmp\\cmq05-exact-current-validation-70baac05-20260819",
+  "source_branch": null,
+  "source_head": "70baac05223608b1c2592b0512e5aa1037ea841b",
+  "source_upstream": null,
+  "source_ahead_upstream": null,
+  "source_behind_upstream": null,
+  "captured_at": "2026-09-17T17:52:50.563442+00:00",
+  "tracked_combined_patch_bytes": 0,
+  "tracked_combined_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 0,
+  "tracked_unstaged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "untracked_file_count": 1,
+  "untracked_archive_bytes": 912,
+  "untracked_archive_sha256": "C1A72E705D9AA9CC807DF06C9C19DC4CE09E87C361FD3025C770512A7EE2AA28",
+  "untracked_paths": [
+    "validation-receipt-70baac05.json"
+  ]
+}

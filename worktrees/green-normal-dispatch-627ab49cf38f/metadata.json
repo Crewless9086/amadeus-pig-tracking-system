@@ -1,0 +1,22 @@
+{
+  "source_worktree": "C:\\tmp\\green-normal-dispatch",
+  "source_branch": "fix/green-normal-migration-dispatch",
+  "source_head": "00e29870f2483b431246d9e7358500fa0b08128d",
+  "source_upstream": "origin/fix/green-normal-migration-dispatch",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 0,
+  "captured_at": "2026-09-17T17:54:06.877880+00:00",
+  "tracked_combined_patch_bytes": 0,
+  "tracked_combined_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 0,
+  "tracked_unstaged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "untracked_file_count": 1,
+  "untracked_archive_entry_count": 1,
+  "untracked_archive_bytes": 1286,
+  "untracked_archive_sha256": "FC92D2EC9941455836645F039EABB5FC195EF2138B642468274C9082F50DBB7B",
+  "untracked_paths": [
+    ".green_postmigration_readonly.py"
+  ]
+}

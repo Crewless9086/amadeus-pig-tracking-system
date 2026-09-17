@@ -1,0 +1,54 @@
+diff --git a/modules/telemetry/rootline_device_registry.py b/modules/telemetry/rootline_device_registry.py
+index 21899ce5..9c4fa00b 100644
+--- a/modules/telemetry/rootline_device_registry.py
++++ b/modules/telemetry/rootline_device_registry.py
+@@ -63,6 +63,31 @@ _DEVICES = {
+         "authority_flag": "ROOTLINE_FERTILIZER_MIXING_ENABLED",
+         "dependencies": ["injection_off", "verified_shutdown", "daily_verified_minutes_cap"],
+     },
++    "BOREHOLE-1": {
++        "collection": "water_infrastructure_devices",
++        "device_type": "borehole_pump_smart_plug",
++        "physical_name": "Borehole 1 Pump",
++        "provider": "tuya_smartlife",
++        "provider_account_binding": "protected_tuya_project",
++        "manufacturer": "Tuya-compatible",
++        "device_id_env": "TUYA_EXPECTED_BOREHOLE1_DEVICE_ID",
++        "device_id": "protected_runtime_binding",
++        "device_name": "Borehole 1 Pump",
++        "channel": 1,
++        "on_event": "borehole_1_on",
++        "off_event": "borehole_1_off",
++        "energy_relevance": "material_load",
++        "native_fail_stop_seconds": 300,
++        "native_fail_stop_verified": False,
++        "power_restoration_state": "Unknown",
++        "output_state": "Unknown",
++        "manual_isolation": "supply_smartlife_and_physical_button_owner_verified",
++        "commissioning_generation": None,
++        "commissioned": False,
++        "authority_flag": "ROOTLINE_BOREHOLE1_ENABLED",
++        "dependencies": ["water_need", "power_eligibility", "provider_readback",
++                         "owner_supervised_commissioning"],
++    },
+ }
+ 
+ 
+@@ -105,7 +130,8 @@ def validate_device_registry(registry=None):
+             if not event or event in events:
+                 raise ValueError("rootline_device_event_collision")
+             events.add(event)
+-        if row.get("collection") not in {"irrigation_zones", "irrigation_auxiliary_devices"}:
++        if row.get("collection") not in {"irrigation_zones", "irrigation_auxiliary_devices",
++                                         "water_infrastructure_devices"}:
+             raise ValueError("rootline_device_collection_invalid")
+     return True
+ 
+@@ -117,6 +143,7 @@ def source_authority_defaults(environ=None):
+             "ROOTLINE_FERTILIZER_MIXING_ENABLED")),
+         "ROOTLINE_FERTILIZER_INJECTION_ENABLED": _true(source.get(
+             "ROOTLINE_FERTILIZER_INJECTION_ENABLED")),
++        "ROOTLINE_BOREHOLE1_ENABLED": _true(source.get("ROOTLINE_BOREHOLE1_ENABLED")),
+     }
+ 
+ 

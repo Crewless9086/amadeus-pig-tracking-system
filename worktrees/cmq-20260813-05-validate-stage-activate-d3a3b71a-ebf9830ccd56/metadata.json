@@ -1,0 +1,23 @@
+{
+  "source_worktree": "C:\\tmp\\cmq-20260813-05-validate-stage-activate-d3a3b71a",
+  "source_branch": null,
+  "source_head": "d3a3b71a2163a5199d0a6863a24a5f8dfdf87b1b",
+  "source_upstream": null,
+  "source_ahead_upstream": null,
+  "source_behind_upstream": null,
+  "captured_at": "2026-09-17T17:52:49.557981+00:00",
+  "tracked_combined_patch_bytes": 0,
+  "tracked_combined_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 0,
+  "tracked_unstaged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "untracked_file_count": 3,
+  "untracked_archive_bytes": 2088,
+  "untracked_archive_sha256": "ECC2385813DEFAB230073F65A1505F8B00961266D47733A547E6DFB1ACA4B0A8",
+  "untracked_paths": [
+    "cmq05-activation-authority-d3a3b71a-v2.json",
+    "cmq05-activation-authority-d3a3b71a.json",
+    "cmq05-validation-receipt-d3a3b71a.json"
+  ]
+}

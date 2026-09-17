@@ -1,0 +1,551 @@
+diff --git a/modules/pig_weights/farm_supabase_write_service.py b/modules/pig_weights/farm_supabase_write_service.py
+index e0e72553..d61d5ad7 100644
+--- a/modules/pig_weights/farm_supabase_write_service.py
++++ b/modules/pig_weights/farm_supabase_write_service.py
+@@ -6,6 +6,10 @@ from datetime import datetime
+ 
+ from modules.pig_weights.pig_weights_utils import parse_sheet_date, to_clean_string, to_float
+ from services.database_service import DATABASE_URL_ENV
++from modules.pig_weights.herdmaster_piglet_observation_action import (
++    _readback as _readback_piglet_observations,
++    _validate_and_insert as _insert_piglet_observations,
++)
+ 
+ 
+ def farm_supabase_writes_available():
+@@ -638,6 +642,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
+         list(row or []) + [""] * 18
+         for row in packet.get("treatment_rows", [])
+     ]
++    observation_action = packet.get("observation_action") if isinstance(packet.get("observation_action"), dict) else None
+     if not litter_id or not wean_date or not piglets:
+         raise ValueError("complete_weaning_packet_required")
+     pig_ids = [to_clean_string(row.get("pig_id")) for row in piglets]
+@@ -681,6 +686,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
+             row["withdrawal_end"], row["given_by"], row["follow_up"],
+             row["follow_up_date"], row["notes"],
+         )),
++        "observations": observation_action,
+     }
+     operation_id = "WEAN-" + hashlib.sha256(json.dumps(
+         identity_packet, sort_keys=True, separators=(",", ":")
+@@ -689,7 +695,9 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
+         "tags_created": 0, "treatments_created": 0,
+         "weights_created": 0, "movements_created": 0,
+         "piglets_updated": 0, "litter_updated": 0,
++        "observations_created": 0,
+     }
++    observation_readback = []
+     with _connect(connect_factory=connect_factory) as connection:
+         with connection.cursor() as cursor:
+             cursor.execute("set transaction isolation level serializable")
+@@ -991,6 +999,17 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
+                 )
+                 counts["treatments_created"] += 1
+ 
++            if observation_action:
++                existing_keys = set()
++                for index, item in enumerate(observation_action["observations"]):
++                    key = f"{observation_action['idempotency_key']}:{item['pig_id']}:{index}"
++                    cursor.execute("select 1 from public.pig_observation_events where idempotency_key=%s", (key,))
++                    if cursor.fetchone():
++                        existing_keys.add(key)
++                _insert_piglet_observations(cursor, observation_action, changed_by)
++                counts["observations_created"] = len(observation_action["observations"]) - len(existing_keys)
++                observation_readback = _readback_piglet_observations(cursor, observation_action, existing_keys=existing_keys)
++
+             if not exact_complete:
+                 cursor.execute(
+                     """
+@@ -1008,6 +1027,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
+         if exact_complete and not any(counts.values())
+         else "weaning_day_committed",
+         "operation_id": operation_id,
++        "observation_readback": observation_readback,
+         **counts,
+     }
+ 
+diff --git a/modules/pig_weights/herdmaster_breeding_evidence.py b/modules/pig_weights/herdmaster_breeding_evidence.py
+index 15e87b8a..fece74a4 100644
+--- a/modules/pig_weights/herdmaster_breeding_evidence.py
++++ b/modules/pig_weights/herdmaster_breeding_evidence.py
+@@ -78,6 +78,15 @@ def reconcile_breeding_evidence(snapshot, *, today=None):
+         "evidence_generation": snapshot.get("evidence_generation"),
+         "data_quality_recovery": sorted(data_quality, key=lambda row: (row["tag_number"], row["pig_id"], row["field"])),
+         "coverage": {"reservation": reservations["__coverage__"], "withdrawal": withdrawals["__coverage__"]},
++        "observation_history_by_pig": observations.get("__history__", {}),
++        "unclassified_observation_watchlist": sorted([
++            {"pig_id": pig_id, "tag_number": pigs[pig_id].get("tag_number") or pig_id,
++             "classification": pigs[pig_id].get("purpose") or "Unknown",
++             "observation": current}
++            for pig_id, current in observations.items()
++            if pig_id != "__history__" and current.get("future_review_watch")
++            and not _breeder(pigs.get(pig_id, {}))
++        ], key=lambda row: (str(row["tag_number"]).casefold(), row["pig_id"])),
+         "privacy_boundary": "internal_authorized_evidence_only",
+         "writes_performed": False, "protected_actions_performed": False,
+     }
+@@ -318,11 +327,37 @@ def _coverage(raw,pig_ids,today):
+ 
+ 
+ def _observations(rows, today):
+-    latest=_latest_valid(rows,"pig_id","observed_at",today);out={}
+-    for pig_id,row in latest.items():
++    valid = [dict(row) for row in rows if _text(row.get("pig_id")) and _date(row.get("observed_at")) and _date(row.get("observed_at")) <= today]
++    superseded = {_text(row.get("supersedes_observation_event_id")) for row in valid if _text(row.get("supersedes_observation_event_id"))}
++    grouped = defaultdict(list)
++    for row in valid: grouped[_text(row.get("pig_id"))].append(row)
++    out={"__history__": {}}
++    for pig_id, pig_rows in grouped.items():
++        ordered = sorted(pig_rows, key=lambda row: (_date(row.get("observed_at")), _text(row.get("recorded_at")), _text(row.get("observation_event_id"))))
++        current_rows = [row for row in ordered if _text(row.get("observation_event_id")) not in superseded]
++        row = (current_rows or ordered)[-1]
+         measurements=row.get("measurements_json") if isinstance(row.get("measurements_json"),dict) else {}
+         out[pig_id]={"observed_at":_date_text(row.get("observed_at")),"observation_event_id":_text(row.get("observation_event_id")),**{key:measurements.get(key) for key in ("body_condition","body_condition_score","legs_sound","feet_sound","build_acceptable","visible_concern","heat") if key in measurements}}
++        if measurements.get("contract_version") == "herdmaster_piglet_observation_v1":
++            traits = sorted({str(value) for value in measurements.get("traits", [])})
++            out[pig_id].update({
++                "weaning_observation_traits": traits,
++                "weaning_observation_sentiment": measurements.get("sentiment") or "Unknown",
++                "weaning_observation_note": _text(row.get("factual_note")),
++                "weaning_observation_freshness": "Historical evidence; reassess current structure before selection",
++                "weaning_observation_limitations": "Human observation is supporting evidence only; it does not assign purpose or breeding status",
++                "future_review_watch": measurements.get("watch_flag") is True or "potential_breeding_review" in traits,
++            })
+         if "body_condition_score" in out[pig_id] and "body_condition" not in out[pig_id]: out[pig_id]["body_condition"]=out[pig_id].pop("body_condition_score")
++        out["__history__"][pig_id] = [{
++            "observation_event_id": _text(item.get("observation_event_id")),
++            "observed_at": _date_text(item.get("observed_at")),
++            "recorded_at": _text(item.get("recorded_at")) or None,
++            "factual_note": _text(item.get("factual_note")),
++            "supersedes_observation_event_id": _text(item.get("supersedes_observation_event_id")) or None,
++            "superseded": _text(item.get("observation_event_id")) in superseded,
++            "measurements": item.get("measurements_json") if isinstance(item.get("measurements_json"), dict) else {},
++        } for item in ordered]
+     return out
+ 
+ 
+diff --git a/modules/pig_weights/pig_weights_routes.py b/modules/pig_weights/pig_weights_routes.py
+index ef02a8f9..9f9ec7d6 100644
+--- a/modules/pig_weights/pig_weights_routes.py
++++ b/modules/pig_weights/pig_weights_routes.py
+@@ -4,8 +4,10 @@ from modules.auth.owner_access import (
+     correction_batch_owner_admin_principal,
+     require_correction_batch_owner_admin_access,
+     require_owner_admin_access,
++    require_strict_owner_admin_access,
+     require_owner_read_access,
+     owner_admin_principal,
++    strict_owner_admin_principal,
+ )
+ from modules.pig_weights.bulk_weight_batch_service import (
+     get_bulk_weight_batch_status,
+@@ -13,6 +15,10 @@ from modules.pig_weights.bulk_weight_batch_service import (
+     retry_failed_bulk_weight_batch,
+     stage_bulk_weight_batch,
+ )
++from modules.pig_weights.herdmaster_piglet_observation_action import (
++    execute_action as execute_piglet_observations,
++    preview_authoritative as preview_piglet_observations,
++)
+ 
+ from modules.pig_weights.pig_weights_controller import (
+     get_status,
+@@ -352,12 +358,14 @@ def mark_litter_weaned_route(litter_id):
+ @pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
+ def litter_weaning_day_route(litter_id):
+     denied = require_owner_admin_access()
++    if not denied:
++        denied = require_strict_owner_admin_access()
+     if denied:
+         return denied
+     payload = dict(request.get_json(silent=True) or {})
+     # Audit identity is always derived from the authenticated server session.
+     # A browser-supplied changed_by value has no authority.
+-    payload["changed_by"] = owner_admin_principal()
++    payload["changed_by"] = owner_admin_principal() or strict_owner_admin_principal()
+     try:
+         result, status_code = process_litter_profile_weaning_day(litter_id, payload)
+         return jsonify(result), status_code
+@@ -379,6 +387,26 @@ def litter_weaning_day_route(litter_id):
+         }), 500
+ 
+ 
++@pig_weights_bp.route("/litter/<litter_id>/piglet-observations", methods=["POST"])
++def litter_piglet_observations_route(litter_id):
++    denied = require_owner_admin_access()
++    if not denied:
++        denied = require_strict_owner_admin_access()
++    if denied:
++        return denied
++    payload = dict(request.get_json(silent=True) or {})
++    payload["litter_id"] = litter_id
++    actor_id = owner_admin_principal() or strict_owner_admin_principal()
++    if payload.get("dry_run", True) is True:
++        result, status = preview_piglet_observations(payload, actor_id=actor_id, channel="application")
++    else:
++        result, status = execute_piglet_observations(
++            payload, actor_id=actor_id, channel="application",
++            confirmation_binding=payload.get("confirmation_binding"),
++        )
++    return jsonify(result), status
++
++
+ @pig_weights_bp.route("/litter/<litter_id>/newborn-health", methods=["POST"])
+ def litter_newborn_health_route(litter_id):
+     payload = request.get_json(silent=True) or {}
+diff --git a/modules/pig_weights/pig_weights_service.py b/modules/pig_weights/pig_weights_service.py
+index fe6e40c1..378421a4 100644
+--- a/modules/pig_weights/pig_weights_service.py
++++ b/modules/pig_weights/pig_weights_service.py
+@@ -1,5 +1,9 @@
+ import logging
+ import math
++import hashlib
++import hmac
++import json
++import os
+ from datetime import datetime, timedelta
+ 
+ from services.google_sheets_service import (
+@@ -28,6 +32,7 @@ from modules.pig_weights.pig_weights_utils import (
+ from modules.pig_weights.mating_service import get_breeding_analytics, link_litter_to_mating
+ from modules.pig_weights import farm_supabase_read_service
+ from modules.pig_weights import farm_supabase_write_service
++from modules.pig_weights.herdmaster_piglet_observation_action import preview_action as preview_piglet_observation_action
+ from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
+ from modules.sales.riversdale_auction import (
+     build_riversdale_auction_packet,
+@@ -69,6 +74,7 @@ LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
+ DEFAULT_LITTER_WEAN_AGE_DAYS = 30
+ WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
+ POST_WEAN_PURPOSE_REVIEW_DAYS = 14
++WEANING_PREVIEW_TTL_SECONDS = 30 * 60
+ LIVE_SALE_TARGET_KG = 60
+ MEAT_TARGET_MIN_KG = 60
+ MEAT_TARGET_MAX_KG = 80
+@@ -2223,6 +2229,42 @@ def mark_litter_weaned(
+     }, 200
+ 
+ 
++def _weaning_confirmation_secret():
++    return str(os.getenv("OWNER_SESSION_SECRET") or os.getenv("SECRET_KEY") or "").encode()
++
++
++def _weaning_confirmation_binding(preview_digest, actor_id, *, now=None):
++    now = now or datetime.now()
++    issued_at = int(now.timestamp())
++    material = f"herdmaster_weaning_day_v2|{preview_digest}|{actor_id}|{issued_at}"
++    secret = _weaning_confirmation_secret()
++    signature = hmac.new(secret, material.encode(), hashlib.sha256).hexdigest() if secret else ""
++    return {"contract_version": "herdmaster_weaning_day_confirmation_v1",
++            "preview_digest": preview_digest, "actor_id": actor_id,
++            "issued_at": issued_at, "signature": signature}
++
++
++def _valid_weaning_confirmation(binding, preview_digest, actor_id, *, now=None):
++    if not isinstance(binding, dict):
++        return False
++    now = now or datetime.now()
++    try:
++        issued_at = int(binding.get("issued_at"))
++    except (TypeError, ValueError):
++        return False
++    if issued_at > int(now.timestamp()) or int(now.timestamp()) - issued_at > WEANING_PREVIEW_TTL_SECONDS:
++        return False
++    if (str(binding.get("preview_digest") or "") != preview_digest
++            or str(binding.get("actor_id") or "") != actor_id):
++        return False
++    expected = _weaning_confirmation_binding(
++        preview_digest, actor_id, now=datetime.fromtimestamp(issued_at)
++    )
++    return bool(expected["signature"] and hmac.compare_digest(
++        str(binding.get("signature") or ""), expected["signature"]
++    ))
++
++
+ def process_litter_weaning_day(
+     litter_id: str,
+     payload=None,
+@@ -2236,6 +2278,13 @@ def process_litter_weaning_day(
+     target_pen_id = to_clean_string(payload.get("target_pen_id", ""))
+     notes = to_clean_string(payload.get("notes", ""))
+     medicine = payload.get("medicine", {}) if isinstance(payload.get("medicine", {}), dict) else {}
++    confirmation_material = {key: value for key, value in payload.items()
++                             if key not in {"dry_run", "confirmed_preview_digest", "confirmation_binding", "changed_by"}}
++    confirmation_material["changed_by"] = changed_by
++    preview_digest = hashlib.sha256(json.dumps(
++        confirmation_material, sort_keys=True, separators=(",", ":"), default=str
++    ).encode()).hexdigest()
++    confirmation_binding = _weaning_confirmation_binding(preview_digest, changed_by)
+ 
+     if not to_clean_string(litter_id):
+         return {"success": False, "errors": ["Litter ID is required."]}, 400
+@@ -2252,6 +2301,29 @@ def process_litter_weaning_day(
+         to_clean_string(row.get(columns["pig_id"], "")): row
+         for row in active_rows
+     }
++    observation_items = [dict(row.get("observation") or {}, pig_id=to_clean_string(row.get("pig_id")))
++                         for row in assignments if isinstance(row, dict) and isinstance(row.get("observation"), dict)
++                         and (to_clean_string(row.get("observation", {}).get("factual_note"))
++                              or row.get("observation", {}).get("traits"))]
++    observation_preview = {"success": True, "observation_count": 0, "observation_effects": []}
++    observation_action = None
++    if observation_items:
++        observation_payload = {
++            "litter_id": litter_id, "observed_on": action_date.isoformat(),
++            "source_context": "weaning", "source_reference": "litter_weaning_day",
++            "idempotency_key": f"weaning-observations:{litter_id}:{action_date.isoformat()}",
++            "observations": observation_items,
++        }
++        requested_observation_ids = {item["pig_id"] for item in observation_items}
++        identity_rows = [{"pig_id": pig_id, "litter_id": litter_id,
++                          "tag_number": to_clean_string(row.get("Tag_Number", ""))}
++                         for pig_id, row in current_by_id.items() if pig_id in requested_observation_ids]
++        observation_preview, observation_status = preview_piglet_observation_action(
++            observation_payload, channel="application", identity_rows=identity_rows)
++        if observation_status != 200:
++            validation_errors.extend(observation_preview.get("errors", [observation_preview.get("status")]))
++        else:
++            observation_action = observation_preview["action"]
+     requested_tags = {
+         to_clean_string(row.get("pig_id")): to_clean_string(row.get("tag_number"))
+         for row in assignments if isinstance(row, dict)
+@@ -2380,8 +2452,22 @@ def process_litter_weaning_day(
+             changed_by=changed_by,
+         )
+         preview_result["sex_count"] = len(requested_sexes)
++        preview_result["observation_result"] = observation_preview
++        preview_result["observation_count"] = observation_preview.get("observation_count", 0)
++        preview_result["preview_digest"] = preview_digest
++        preview_result["confirmation_binding"] = confirmation_binding
+         return preview_result, 200
+ 
++    if not _valid_weaning_confirmation(
++        payload.get("confirmation_binding"), preview_digest, changed_by
++    ):
++        return {
++            "success": False, "status": "exact_weaning_preview_confirmation_required",
++            "errors": ["Preview this exact Weaning Day packet before saving."],
++            "dry_run": False, "litter_id": litter_id,
++            "operation_committed": False, "writes_to_sheets": False, "writes_to_supabase": False,
++        }, 409
++
+     if farm_supabase_write_service.farm_supabase_writes_available():
+         assignment_by_id = {
+             to_clean_string(row.get("pig_id")): row
+@@ -2425,6 +2511,7 @@ def process_litter_weaning_day(
+                 "treatment_rows": health_preview.get(
+                     "planned_treatment_rows", []
+                 ),
++                "observation_action": observation_action,
+             })
+         except Exception as exc:
+             LOGGER.exception(
+@@ -2483,6 +2570,8 @@ def process_litter_weaning_day(
+                 atomic["status"] == "weaning_day_replayed_withheld"
+             ),
+             "atomic_counts": atomic,
++            "observation_result": atomic.get("observation_readback", []),
++            "observation_count": atomic.get("observations_created", 0),
+         })
+         result["source"] = {
+             "writes_to_sheets": False,
+@@ -2490,6 +2579,18 @@ def process_litter_weaning_day(
+         }
+         return result, 200
+ 
++    if observation_action:
++        return {
++            "success": False,
++            "status": "atomic_observation_store_required",
++            "errors": ["Weaning Day observations require the canonical atomic observation store; nothing was saved."],
++            "dry_run": False,
++            "litter_id": litter_id,
++            "operation_committed": False,
++            "writes_to_sheets": False,
++            "writes_to_supabase": False,
++        }, 503
++
+     # Preserve the established Google Sheets fallback when canonical
+     # Supabase writes are unavailable.
+     applied = {}
+diff --git a/static/js/litterDetail.js b/static/js/litterDetail.js
+index 958cce55..b410042e 100644
+--- a/static/js/litterDetail.js
++++ b/static/js/litterDetail.js
+@@ -99,6 +99,8 @@ let latestTagNumbersPreview = null;
+ let latestReconcilePreview = null;
+ let latestStillbornReclassifyPreview = null;
+ let latestWeaningDayPreview = null;
++let latestHistoricalObservationPreview = null;
++let historicalObservationOperationKey = null;
+ let productsLoaded = false;
+ let weaningProductsLoaded = false;
+ let pensLoaded = false;
+@@ -454,6 +456,14 @@ function renderClosedLitterView(litter) {
+         </tr>`;
+       }).join("")}</tbody>
+     </table>`;
++  const historicalRows = document.getElementById("historical_observation_rows");
++  if (historicalRows) historicalRows.innerHTML = (litter.piglets || []).map((piglet) => `<fieldset class="piglet-observation-control historical-observation-row" data-pig-id="${escapeHtml(piglet.pig_id)}"><legend>${escapeHtml(piglet.tag_number || piglet.pig_id)} <small>${escapeHtml(piglet.pig_id)}</small></legend><select class="historical-observation-trait"><option value="">Geen waarneming</option><option value="good_build">Goeie bou</option><option value="strong_legs">Sterk bene</option><option value="good_growth">Goeie groei</option><option value="broad_body">BreÃ« lyf</option><option value="good_temperament">Goeie temperament</option><option value="potential_breeding_review">PotensiÃ«le teeldier (hersien)</option><option value="concern">Kommer</option><option value="other">Ander</option></select><select class="historical-observation-sentiment"><option value="positive">Positief</option><option value="concerning">Kommer</option><option value="mixed">Gemeng</option><option value="neutral">Neutraal</option></select><input class="historical-observation-note" maxlength="500" placeholder="Kort feitelike papiernota"><label><input type="checkbox" class="historical-observation-watch"> Hou dop</label></fieldset>`).join("");
++  historicalRows?.querySelectorAll("input,select").forEach((input) => input.addEventListener("change", () => {
++    latestHistoricalObservationPreview = null;
++    historicalObservationOperationKey = null;
++    document.getElementById("historical_observation_apply_button").disabled = true;
++  }));
++  document.getElementById("historical_observation_date").value ||= litter.wean_date || "";
+ 
+   const exceptions = [];
+   (litter.piglets || []).forEach((piglet) => {
+@@ -468,6 +478,41 @@ function renderClosedLitterView(litter) {
+   document.getElementById("closed_litter_exception_list").innerHTML = exceptions.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+ }
+ 
++function historicalObservationPayload(dryRun) {
++  const observedOn = document.getElementById("historical_observation_date").value;
++  const observations = Array.from(document.querySelectorAll(".historical-observation-row")).map((row) => ({
++    pig_id: row.dataset.pigId, traits: row.querySelector(".historical-observation-trait").value ? [row.querySelector(".historical-observation-trait").value] : [],
++    sentiment: row.querySelector(".historical-observation-sentiment").value,
++    factual_note: row.querySelector(".historical-observation-note").value.trim(),
++    watch_flag: row.querySelector(".historical-observation-watch").checked,
++  })).filter((row) => row.traits.length || row.factual_note);
++  return { dry_run: dryRun, observed_on: observedOn, source_context: "historical_weaning", source_reference: "paper-note", idempotency_key: historicalObservationOperationKey || "", observations };
++}
++
++async function previewHistoricalObservations() {
++  historicalObservationOperationKey ||= `paper-weaning:${getLitterIdFromUrl()}:${crypto.randomUUID()}`;
++  const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/piglet-observations`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(historicalObservationPayload(true))});
++  const data = await response.json();
++  if (!response.ok || !data.success) return showLitterMessage((data.errors || [data.status]).join(" "), "error");
++  latestHistoricalObservationPreview = data;
++  document.getElementById("historical_observation_apply_button").disabled = false;
++  const panel = document.getElementById("historical_observation_preview"); panel.classList.remove("hidden");
++  panel.innerHTML = `<strong>${data.observation_count} waarneming(s)</strong>${data.observation_effects.map((row) => `<p>${escapeHtml(row.visible_identity)}: ${escapeHtml(row.factual_note)}</p>`).join("")}`;
++}
++
++async function submitHistoricalObservations(event) {
++  event.preventDefault();
++  if (!latestHistoricalObservationPreview || !window.confirm("Teken hierdie presiese waarnemings een keer aan?")) return;
++  const payload = historicalObservationPayload(false); payload.confirmation_binding = latestHistoricalObservationPreview.confirmation_binding;
++  const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/piglet-observations`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
++  const data = await response.json();
++  if (!response.ok || !data.success) return showLitterMessage(data.status || "Waarnemings kon nie aangeteken word nie.", "error");
++  const panel = document.getElementById("historical_observation_preview");
++  panel.innerHTML = data.canonical_readback.map((row) => `<p><strong>${escapeHtml(row.pig_id)}</strong>: ${escapeHtml(row.factual_note)} · ${escapeHtml(row.observed_at)} · ${escapeHtml(row.observer)} · ${escapeHtml(row.observation_event_id)}</p>`).join("");
++  showLitterMessage(`${data.canonical_readback.length} kanonieke waarneming(s) bevestig met presiese teruglees.`, "success");
++  latestHistoricalObservationPreview = null; document.getElementById("historical_observation_apply_button").disabled = true;
++}
++
+ document.getElementById("closed_history_toggle")?.addEventListener("click", (event) => {
+   const workspace = document.getElementById("litter_workspace");
+   const showing = !workspace.classList.contains("hidden");
+@@ -695,9 +740,19 @@ function weaningDayPayload(dryRun) {
+     if (!assignmentByPigId.has(pigId)) assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
+     assignmentByPigId.get(pigId).sex = input.value;
+   });
++  document.querySelectorAll(".piglet-observation-note").forEach((input) => {
++    const pigId = input.dataset.pigId || "";
++    if (!assignmentByPigId.has(pigId)) assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
++    const trait = document.querySelector(`.piglet-observation-trait[data-pig-id="${CSS.escape(pigId)}"]`)?.value || "";
++    const sentiment = document.querySelector(`.piglet-observation-sentiment[data-pig-id="${CSS.escape(pigId)}"]`)?.value || "neutral";
++    const watchFlag = document.querySelector(`.piglet-observation-watch[data-pig-id="${CSS.escape(pigId)}"]`)?.checked === true;
++    if (input.value.trim() || trait) assignmentByPigId.get(pigId).observation = {
++      factual_note: input.value.trim(), traits: trait ? [trait] : [], sentiment, watch_flag: watchFlag,
++    };
++  });
+   const assignments = Array.from(assignmentByPigId.values())
+     .filter((assignment) => assignment.pig_id || assignment.tag_number || assignment.wean_weight_kg);
+-  return {
++  const payload = {
+     wean_date: weaningDayDate.value,
+     assignments,
+     target_pen_id: weaningDayTargetPen.value,
+@@ -711,6 +766,8 @@ function weaningDayPayload(dryRun) {
+     },
+     dry_run: dryRun,
+   };
++  if (!dryRun && latestWeaningDayPreview?.confirmation_binding) payload.confirmation_binding = latestWeaningDayPreview.confirmation_binding;
++  return payload;
+ }
+ 
+ function resetWeaningDayPreview() {
+@@ -753,7 +810,10 @@ function renderWeaningDayPreview(preview) {
+       <div><span class="history-label">Geslag</span><span class="history-value">${preview.sex_count || 0}</span></div>
+       <div><span class="history-label">Treatments</span><span class="history-value">${preview.treatment_count || 0}</span></div>
+       <div><span class="history-label">Pen Moves</span><span class="history-value">${preview.movement_count || 0}</span></div>
++      <div><span class="history-label">Waarnemings</span><span class="history-value">${preview.observation_count || 0}</span></div>
+     </div>
++    ${(preview.observation_result?.observation_effects || []).map((row) => `<p class="form-helper"><strong>${escapeHtml(row.visible_identity)}</strong>: ${escapeHtml(row.factual_note)} (${escapeHtml(row.sentiment)})</p>`).join("")}
++    ${(Array.isArray(preview.observation_result) ? preview.observation_result : []).map((row) => `<p class="form-helper"><strong>${escapeHtml(row.pig_id)}</strong>: ${escapeHtml(row.factual_note)} · ${escapeHtml(row.observed_at)} · ${escapeHtml(row.observer)} · ${escapeHtml(row.observation_event_id)}</p>`).join("")}
+     <p class="form-helper">${escapeHtml(preview.message || "Review the packet before saving.")}</p>
+   `;
+ }
+@@ -1582,12 +1642,19 @@ function buildPigletTable(piglets) {
+     const sexCell = canEditWeanWeight
+       ? `<select class="piglet-sex-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Geslag vir ${escapeHtml(piglet.tag_number || piglet.pig_id || "varkie")}"><option value="">Kies geslag</option><option value="Male" ${sexValue === "Reuntjie" ? "selected" : ""}>Reuntjie</option><option value="Female" ${sexValue === "Soggie" ? "selected" : ""}>Soggie</option><option value="Castrated_Male" ${sexValue === "Gekastreerde reuntjie" ? "selected" : ""}>Gekastreer</option></select>`
+       : escapeHtml(sexValue);
++    const observationCell = canEditWeanWeight ? `<div class="piglet-observation-control">
++      <select class="piglet-observation-trait" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Waarnemingstipe"><option value="">Geen</option><option value="good_build">Goeie bou</option><option value="strong_legs">Sterk bene</option><option value="good_growth">Goeie groei</option><option value="broad_body">BreÃ« lyf</option><option value="good_temperament">Goeie temperament</option><option value="potential_breeding_review">PotensiÃ«le teeldier (hersien)</option><option value="concern">Kommer</option><option value="other">Ander</option></select>
++      <select class="piglet-observation-sentiment" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Positief of kommer"><option value="positive">Positief</option><option value="concerning">Kommer</option><option value="mixed">Gemeng</option><option value="neutral">Neutraal</option></select>
++      <input class="piglet-observation-note" data-pig-id="${escapeHtml(piglet.pig_id || "")}" maxlength="500" placeholder="Kort feitelike waarneming" />
++      <label><input type="checkbox" class="piglet-observation-watch" data-pig-id="${escapeHtml(piglet.pig_id || "")}" /> Hou dop</label>
++    </div>` : "-";
+     return `
+       <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">
+         <td>${tagCell}<span class="table-subtext">${escapeHtml(piglet.pig_id || "")}</span></td>
+         <td>${sexCell}</td>
+         <td>${escapeHtml(pigletWeightText(piglet))}</td>
+         <td>${weanWeightCell}</td>
++        <td>${observationCell}</td>
+         <td><span>${escapeHtml(pigletStatusText(piglet))}</span><span class="table-subtext">${escapeHtml(piglet.current_pen_id || "Geen kamp")}</span></td>
+         <td><a class="small-action-button table-open-link" href="${profileHref}">Maak oop</a></td>
+       </tr>
+@@ -1603,6 +1670,7 @@ function buildPigletTable(piglets) {
+             <th>Geslag</th>
+             <th>Huidige gewig</th>
+             <th>Speengewig</th>
++            <th>Waarneming</th>
+             <th>Status / kamp</th>
+             <th>Profiel</th>
+           </tr>
+@@ -1639,6 +1707,10 @@ function wirePigletTableRows() {
+   document.querySelectorAll(".piglet-sex-input").forEach((input) => {
+     input.addEventListener("change", resetWeaningDayPreview);
+   });
++  document.querySelectorAll(".piglet-observation-control input, .piglet-observation-control select").forEach((input) => {
++    input.addEventListener("input", resetWeaningDayPreview);
++    input.addEventListener("change", resetWeaningDayPreview);
++  });
+ }
+ 
+ async function loadLitterDetail(options = {}) {
+@@ -1749,6 +1821,8 @@ tagNumbersPreviewButton.addEventListener("click", previewTagNumbers);
+ tagNumbersForm.addEventListener("submit", submitTagNumbers);
+ weaningDayPreviewButton.addEventListener("click", previewWeaningDay);
+ weaningDayForm.addEventListener("submit", submitWeaningDay);
++document.getElementById("historical_observation_preview_button")?.addEventListener("click", previewHistoricalObservations);
++document.getElementById("historical_observation_form")?.addEventListener("submit", submitHistoricalObservations);
+ reconcilePreviewButton.addEventListener("click", previewReconcileBirthCounts);
+ reconcileForm.addEventListener("submit", submitReconcileBirthCounts);
+ stillbornReclassifyPreviewButton.addEventListener("click", previewStillbornReclassify);
+diff --git a/templates/litter-detail.html b/templates/litter-detail.html
+index ec9b558e..6687857f 100644
+--- a/templates/litter-detail.html
++++ b/templates/litter-detail.html
+@@ -77,6 +77,15 @@
+           <div class="section-title-row"><div><h2>Ontbrekende of onsekere feite</h2></div></div>
+           <ul id="closed_litter_exception_list"></ul>
+         </section>
++        <section class="closed-litter-section" id="historical_observation_panel">
++          <div class="section-title-row"><div><h2>Historiese speenwaarnemings</h2><p>Teken papiernotas teen die presiese varkies aan sonder om speen weer uit te voer.</p></div></div>
++          <form id="historical_observation_form" class="attention-action-form">
++            <label>Werklike waarnemingsdatum <input type="date" id="historical_observation_date" required></label>
++            <div id="historical_observation_rows"></div>
++            <div id="historical_observation_preview" class="bulk-review-panel hidden"></div>
++            <div class="form-actions"><button type="button" id="historical_observation_preview_button" class="button-link button-link-secondary">Kontroleer waarnemings</button><button type="submit" id="historical_observation_apply_button" disabled>Bevestig en teken aan</button></div>
++          </form>
++        </section>
+       </section>
+ 
+       <div id="litter_workspace" class="litter-workspace">

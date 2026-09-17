@@ -1,0 +1,39 @@
+diff --git a/docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md b/docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md
+index e5854de6..dfea858d 100644
+--- a/docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md
++++ b/docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md
+@@ -1313,3 +1313,34 @@ revision, one provider-origin canonical readiness result with current/next cycle
+ and a later terminal-independent provider-origin cycle. No owner action, provider
+ readback, secret/configuration change, merge, deployment or hardware action was
+ performed by the development terminal.
++
++Post-migration acceptance completed at deployed/main
++`b9eefabf65f30811c771a484b0459c5280401686`. Owner-authorized GitHub run
++`32388286765` and Render job `job-da3i3djtqb8s73cujbpg` reached terminal
++success; append-only receipt
++`202608190002_create_beacon_protected_publication_consumer` binds that exact
++source and Render job instance. The next genuine provider-origin manager cycle
++`OOM-MANAGER-CYCLE-20260820T155028565924Z-58ADBD9683F4426AA97B20D8774CF733`
++completed after the prior `UndefinedTable` / `42P01` failure and created
++readiness case `OOM-CASE-C0C589F1A0970494C2BB730F`. Exact deployed worker
++`oom-sakkie-general-manager-v1`, trigger
++`oom-sakkie-morning-scheduler:general-manager`, source revision, current
++authenticated OFF, channel-2 registry/account/device binding, enabled exact
++300-second native fail-stop, no conflicting auxiliary execution and zero
++provider control calls all passed; the case had no unknowns and no delivery.
++The later independent provider cycle
++`OOM-MANAGER-CYCLE-20260820T155524836498Z-1C9A6D79DB98406F8080635CB286DA81`
++completed with zero exceptions, zero confirmed deliveries and ten suppressed
++deliveries. The readiness case remained generation 1 with identical readiness
++and registry digests, no delivery digest/time and next provider cycle recorded
++for 16:00:24Z. The terminal issued zero scheduler/route/worker/provider
++invocations and zero writes.
++
++Lifecycle: bounded readiness observer `BUSINESS_COMPLETE / MISSING_TABLE_BLOCKER_REMOVED /
++PROVIDER_ORIGIN_AND_LATER_REPLAY_SILENCE_PROVEN`. The overarching fertilizer
++mixer physical commissioning mission remains `WORKING / AUTHORITY_DISABLED`.
++No commissioning, claim, confirmation, Telegram, provider control, ON/OFF,
++mixer, valve, injection, irrigation, borehole or hardware authority is created.
++Slot 2 is released; no follow-on dispatch is authorized by this acceptance.
++Complete evidence and Control Tower receipt:
++`docs/06-operations/ROOTLINE_FERTILIZER_MIXER_POST_MIGRATION_ACCEPTANCE_20260820.md`.

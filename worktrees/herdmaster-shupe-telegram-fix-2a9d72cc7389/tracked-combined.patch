@@ -1,0 +1,14 @@
+diff --git a/.github/workflows/oom-sakkie-audit-rails.yml b/.github/workflows/oom-sakkie-audit-rails.yml
+index cadee744..177146cd 100644
+--- a/.github/workflows/oom-sakkie-audit-rails.yml
++++ b/.github/workflows/oom-sakkie-audit-rails.yml
+@@ -175,6 +175,9 @@ jobs:
+       - name: Run pig lifecycle audit disposable-Postgres tests
+         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_lifecycle_event_postgres
+ 
++      - name: Run HERDMASTER grouped breeding exposure transaction gates
++        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_herdmaster_breeding_exposure_postgres
++
+       - name: Run ROOTLINE plan-only ledger disposable-Postgres tests
+         run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres tests.test_irrigation_daily_plan_postgres
+ 

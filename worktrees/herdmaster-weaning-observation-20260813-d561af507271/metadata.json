@@ -1,0 +1,23 @@
+{
+  "source_worktree": "C:\\tmp\\herdmaster-weaning-observation-20260813",
+  "source_branch": "feat/herdmaster-weaning-observation-20260813",
+  "source_head": "6c03d1e1a7719e2c847ce440fab5afb7bce394a2",
+  "source_upstream": null,
+  "source_ahead_upstream": null,
+  "source_behind_upstream": null,
+  "captured_at": "2026-09-17T17:54:09.846084+00:00",
+  "tracked_combined_patch_bytes": 28885,
+  "tracked_combined_patch_sha256": "308024AD43482C41C2E08D9E7F911C9B99A92885A542E9DAA908C52023FDB871",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 28885,
+  "tracked_unstaged_patch_sha256": "308024AD43482C41C2E08D9E7F911C9B99A92885A542E9DAA908C52023FDB871",
+  "untracked_file_count": 2,
+  "untracked_archive_entry_count": 2,
+  "untracked_archive_bytes": 5115,
+  "untracked_archive_sha256": "0E8C2F98FFB43E8D2EB460F2FD83082AB3BC00C924C4913916AA47369A9E609C",
+  "untracked_paths": [
+    "modules/pig_weights/herdmaster_piglet_observation_action.py",
+    "tests/test_herdmaster_piglet_observation_action.py"
+  ]
+}

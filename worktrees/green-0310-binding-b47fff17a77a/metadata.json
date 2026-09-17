@@ -1,0 +1,22 @@
+{
+  "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.w\\green-0310-binding",
+  "source_branch": "fix/green-0310-binding",
+  "source_head": "8465103df799acd7b6225c8c98440ccb4cfa05b5",
+  "source_upstream": "origin/main",
+  "source_ahead_upstream": 0,
+  "source_behind_upstream": 258,
+  "captured_at": "2026-09-17T17:54:35.358765+00:00",
+  "tracked_combined_patch_bytes": 11661,
+  "tracked_combined_patch_sha256": "862069C0DF577E0484E7A04C83A8139AA048C12A86B3AC8EDD8ADC45D33C3600",
+  "tracked_staged_patch_bytes": 0,
+  "tracked_staged_patch_sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "tracked_unstaged_patch_bytes": 11661,
+  "tracked_unstaged_patch_sha256": "862069C0DF577E0484E7A04C83A8139AA048C12A86B3AC8EDD8ADC45D33C3600",
+  "untracked_file_count": 1,
+  "untracked_archive_entry_count": 1,
+  "untracked_archive_bytes": 1267,
+  "untracked_archive_sha256": "FF3F56FF5C0676F855D57CEAE16E7ADE5102A40E5EF21574C6FAAB330297E124",
+  "untracked_paths": [
+    "supabase/migrations/202608250001_harden_green_pre_attempt_recovery.sql"
+  ]
+}
